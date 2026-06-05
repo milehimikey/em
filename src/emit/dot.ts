@@ -13,8 +13,11 @@ import { edgeColorFor, styleFor } from "./theme.js";
 
 const HEADER_FILL = "#E3E7EB";
 const HEADER_BORDER = "#C7CDD4";
-const COL_W = 154; // points — header width anchors a uniform column width
-const HEADER_H = 34;
+// Every cell is the same width so columns are evenly spaced and the header row
+// lines up with the element columns. Header width (pt) must match CELL_W (in).
+const CELL_W = 2.0; // inches
+const CELL_H = 0.62;
+const HEADER_H = 0.46;
 
 interface SemanticEdge {
   from: string;
@@ -99,23 +102,22 @@ function elementCell(el: Element): string {
   const shape = el.kind === "ui" ? `"filled"` : `"filled,rounded"`;
   return (
     `${el.id} [label=${q(wrapLabel(el.name))}, fillcolor="${s.fill}", ` +
-    `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}];`
+    `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
+    `fixedsize=true, width=${CELL_W}, height=${CELL_H}];`
   );
 }
 
 function emptyCell(r: number, c: number): string {
-  return `${placeholderId(r, c)} [label="", style=invis, fixedsize=true, width=1.9, height=0.6];`;
+  return `${placeholderId(r, c)} [label="", style=invis, fixedsize=true, width=${CELL_W}, height=${CELL_H}];`;
 }
 
-/** Fixed-width title cell per slice (anchors the column width). */
+/** Fixed-size title cell per slice (same width as cells, so columns line up). */
 function headerCell(c: number, name: string): string {
   return (
-    `${headerCellId(c)} [shape=plaintext, label=<<TABLE BORDER="1" ` +
-    `COLOR="${HEADER_BORDER}" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" ` +
-    `BGCOLOR="${HEADER_FILL}" WIDTH="${COL_W}" HEIGHT="${HEADER_H}">` +
-    `<TR><TD ALIGN="CENTER" VALIGN="MIDDLE">` +
-    `<FONT COLOR="#1F2933" POINT-SIZE="10"><B>${htmlLabel(name, 20)}</B></FONT>` +
-    `</TD></TR></TABLE>>];`
+    `${headerCellId(c)} [label=${q(wrapLabel(name, 20))}, shape=box, ` +
+    `style=filled, fillcolor="${HEADER_FILL}", color="${HEADER_BORDER}", ` +
+    `fontcolor="#1F2933", fontname="Helvetica-Bold", fontsize=10, ` +
+    `fixedsize=true, width=${CELL_W}, height=${HEADER_H}, penwidth=1];`
   );
 }
 
@@ -204,11 +206,6 @@ function wrapLabel(name: string, max = 18): string {
   return wrap(name, max).join("\\n");
 }
 
-/** Word-wrap + HTML-escape a label, using <BR/> between lines (header cells). */
-function htmlLabel(name: string, max = 16): string {
-  return wrap(name, max).map(htmlEscape).join("<BR/>");
-}
-
 function wrap(name: string, max: number): string[] {
   const words = name.split(/\s+/);
   const lines: string[] = [];
@@ -223,10 +220,6 @@ function wrap(name: string, max: number): string[] {
   }
   if (cur) lines.push(cur);
   return lines;
-}
-
-function htmlEscape(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Quote a string for DOT (label newlines already encoded as \n). */

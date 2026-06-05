@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+# rendered output
+*.svg
+*.png
+!examples/*.png
