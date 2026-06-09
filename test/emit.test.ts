@@ -10,48 +10,21 @@ describe("dot emitter", () => {
     expect(dot).toContain("style=invis");
     // each row is locked to one rank
     expect(dot).toContain("rank=same");
-    // semantic overlay must not perturb the grid
-    expect(dot).toContain("constraint=false");
     expect(dot).toMatch(/digraph EventModel/);
   });
 
-  it("draws the event->view data-flow arrow from a `from` clause", () => {
-    const { dot, model } = compile(`
+  it("emits no semantic arrows (the renderer draws them over the grid)", () => {
+    const { dot } = compile(`
 context Order
 slice "A" {
+  ui Catalog @Customer
   command Place Order
   event Order Placed @Order
 }
-slice "B" {
-  view Open Orders from "Order Placed"
-}
 `);
-    const placed = model.byName.get("order placed")![0].id;
-    const view = model.byName.get("open orders")![0].id;
-    expect(dot).toContain(`${placed} -> ${view}`);
-  });
-
-  it("wires automation: read model -> processor (own slice), processor -> command (next slice)", () => {
-    const { dot, model } = compile(`
-context P
-slice "Trigger" {
-  command Make It
-  event Thing Happened @P
-}
-slice "Auto" {
-  view Todo List from "Thing Happened"
-  processor Worker
-}
-slice "Do" {
-  command Do Work
-  event Work Done @P
-}
-`);
-    const todo = model.byName.get("todo list")![0].id;
-    const worker = model.byName.get("worker")![0].id;
-    const cmd = model.byName.get("do work")![0].id;
-    expect(dot).toContain(`${todo} -> ${worker}`); // reads read model in its slice
-    expect(dot).toContain(`${worker} -> ${cmd}`); // triggers command in the next slice
+    // structural chains use `->` but are invisible/uncoloured; a semantic arrow
+    // would be a coloured edge (`a -> b [color=…]`), which must not appear.
+    expect(dot).not.toMatch(/->[^\n;]*\[color=/);
   });
 
   it("warns when an automation slice also contains the triggered command", () => {
