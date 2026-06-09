@@ -3,13 +3,16 @@
 //   - one `rank=same` group per row locks rows and orders cells left -> right
 //   - a fixed-width title cell per slice anchors the column widths
 //   - empty coordinates are invisible spacers; elements are floating boxes
-//   - semantic arrows overlay with constraint=false and head/tail ports so
-//     vertical neighbours connect as straight lines and routing stays clean.
+//
+// No semantic arrows are emitted here: Graphviz only lays out the grid and
+// renders the boxes/labels. The renderer reads each box's rectangle back out of
+// the rendered SVG and draws the arrows itself (see src/render/drawEdges.ts), so
+// it has full control over straight within-slice lines and curved cross-slice
+// lines instead of fighting Graphviz's global edge router.
 
-import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
-import { Element, NormalizedModel, normalizeName } from "../model/model.js";
+import { Element, NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId, nodeIdAt, placeholderId } from "../layout/grid.js";
-import { edgeColorFor, styleFor } from "./theme.js";
+import { styleFor } from "./theme.js";
 
 const HEADER_FILL = "#E3E7EB";
 const HEADER_BORDER = "#C7CDD4";
@@ -19,18 +22,12 @@ const CELL_W = 2.0; // inches
 const CELL_H = 0.62;
 const HEADER_H = 0.46;
 
-interface SemanticEdge {
-  from: string;
-  to: string;
-  color: string;
-}
-
 export function emitDot(model: NormalizedModel, grid: Grid): string {
   const L: string[] = [];
 
   L.push(`digraph EventModel {`);
   L.push(
-    `  graph [rankdir=TB, splines=ortho, nodesep=0.35, ranksep="0.5 equally", ` +
+    `  graph [rankdir=TB, splines=false, nodesep=0.35, ranksep="0.5 equally", ` +
       `fontname="Helvetica", fontsize=18, labelloc="t", label=${q(model.name)}];`,
   );
   L.push(
@@ -80,18 +77,6 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
     for (let c = 0; c < grid.cols; c++) ids.push(nodeIdAt(grid, r, c));
     L.push(`  { rank=same; ${ids.join(" -> ")} [style=invis, arrowhead=none]; }`);
   });
-  L.push("");
-
-  // ---- semantic overlay arrows ----
-  // No fixed ports: let Graphviz route each arrow the shortest orthogonal path
-  // to the nearest side of the next box.
-  L.push("  // semantic arrows");
-  L.push(
-    `  edge [style=solid, weight=0, constraint=false, arrowsize=0.8, penwidth=1.5];`,
-  );
-  for (const e of semanticEdges(model)) {
-    L.push(`  ${e.from} -> ${e.to} [color="${e.color}"];`);
-  }
 
   L.push(`}`);
   return L.join("\n");
@@ -107,6 +92,7 @@ function elementCell(el: Element): string {
   );
 }
 
+/** Empty cells are invisible spacers that hold the column width and row height. */
 function emptyCell(r: number, c: number): string {
   return `${placeholderId(r, c)} [label="", style=invis, fixedsize=true, width=${CELL_W}, height=${CELL_H}];`;
 }
@@ -131,74 +117,6 @@ function columnChain(grid: Grid, col: number): string {
 
 function rowLabelId(r: number): string {
   return `__row_${r}`;
-}
-
-/** Infer pattern arrows from each slice plus cross-slice `from` sources. */
-function semanticEdges(model: NormalizedModel): SemanticEdge[] {
-  const edges: SemanticEdge[] = [];
-  const seen = new Set<string>();
-  const add = (from: string, to: string, kind: ElementKind | undefined) => {
-    if (from === to) return;
-    const key = `${from}>${to}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    edges.push({ from, to, color: edgeColorFor(kind) });
-  };
-
-  model.slices.forEach((slice, i) => {
-    const uis = slice.elements.filter((e) => e.kind === "ui");
-    const command = slice.elements.find((e) => e.kind === "command");
-    const view = slice.elements.find((e) => e.kind === "view");
-    const events = slice.elements.filter((e) => e.kind === "event");
-    const auto = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
-
-    // Input pattern: UI -> command -> event(s)
-    if (command) {
-      for (const ui of uis) add(ui.id, command.id, "ui");
-      for (const ev of events) add(command.id, ev.id, "command");
-    }
-
-    // Automation/translation: it reads the read model in its own slice, then
-    // triggers the command in the next slice.
-    if (auto) {
-      if (view) add(view.id, auto.id, "view");
-      const nextCommand = model.slices[i + 1]?.elements.find(
-        (e) => e.kind === "command",
-      );
-      if (nextCommand) add(auto.id, nextCommand.id, auto.kind);
-      else for (const ev of events) add(auto.id, ev.id, auto.kind);
-    }
-
-    // Output pattern: view -> UI (read model feeds the screen)
-    if (view) {
-      for (const ui of uis) add(view.id, ui.id, "view");
-      if ((view.from ?? []).length === 0) {
-        for (const ev of events) add(ev.id, view.id, "event");
-      }
-    }
-  });
-
-  // Cross-slice `from` wiring:
-  //   view       from event(s)      -> event -> view
-  //   automation from read model(s) -> view  -> automation
-  for (const el of model.elements) {
-    for (const name of el.from ?? []) {
-      const bucket = model.byName.get(normalizeName(name));
-      if (!bucket) continue;
-      const src =
-        el.kind === "view"
-          ? bucket.find((x) => x.kind === "event") ?? bucket[0]
-          : bucket.find((x) => x.kind === "view") ?? bucket[0];
-      if (src) add(src.id, el.id, src.kind);
-    }
-  }
-
-  // Explicit arrows from the DSL.
-  for (const a of model.arrows) {
-    if (a.fromId && a.toId) add(a.fromId, a.toId, model.byId.get(a.fromId)?.kind);
-  }
-
-  return edges;
 }
 
 /** Word-wrap long labels onto multiple lines for tidier boxes. */
