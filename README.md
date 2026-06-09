@@ -17,12 +17,20 @@ impossible there — you end up estimating pixel widths and nudging boxes by han
 generates DOT directly and uses the
 [Graphviz grid technique](https://graphviz.org/Gallery/undirected/grid.html): a full
 *rows × columns* matrix where every empty cell is an invisible placeholder, so columns
-stay perfectly aligned regardless of how sparse the model is. Semantic arrows overlay
-with `constraint=false` and never disturb the grid.
+stay perfectly aligned regardless of how sparse the model is.
+
+Graphviz lays out the grid and renders the boxes/labels, but it does **not** route the
+arrows: a global spline mode can't give straight within-slice verticals *and* clean
+cross-slice curves at once. Instead `em` reads each box's rectangle back out of the
+rendered SVG and draws the arrows itself — straight, centred lines within a slice and
+smooth curves into another slice — so routing is exact and never disturbs the grid.
 
 ## Install / run
 
-Requires **Node ≥ 18** and **Graphviz** (`dot` on your `PATH`).
+Requires **Node ≥ 18** and **Graphviz** (`dot` on your `PATH`). Rendering to formats
+other than SVG (PNG, PDF, …) also needs **librsvg** (`rsvg-convert` on your `PATH`) —
+the arrows are drawn into the SVG, so raster/PDF output is converted from it. SVG output
+needs only Graphviz.
 
 ```bash
 npm install
@@ -128,13 +136,16 @@ data-flow arrow. Arrows between elements in a slice are inferred from the patter
 
 ```
 src/
-  parser/   lexer.ts, parser.ts, ast.ts      # .em -> AST
-  model/    model.ts, validate.ts            # AST -> normalized model + rule checks
-  layout/   grid.ts                          # bands -> rows, slices -> cols, R×C matrix
-  emit/     dot.ts, theme.ts                 # grid DOT + EM colours + semantic overlay
-  render/   render.ts, watch.ts              # spawn `dot`; chokidar watcher
-  pipeline.ts                                # source -> { model, grid, diagnostics, dot }
-  cli.ts                                      # init | render | watch | validate
-examples/   order-fulfillment.em
-test/       parser / layout / emit + validation tests (vitest)
+  parser/   lexer.ts, parser.ts, ast.ts        # .em -> AST
+  model/    model.ts, edges.ts, validate.ts    # normalized model, semantic edges, rule checks
+  layout/   grid.ts                            # bands -> rows, slices -> cols, R×C matrix
+  emit/     dot.ts, theme.ts                   # grid-only DOT + EM colours
+  render/   render.ts, svgGeometry.ts,         # run dot -> read box rects -> draw arrows
+            drawEdges.ts, watch.ts             #   -> inject SVG; rsvg-convert; chokidar watcher
+  pipeline.ts                                  # source -> { model, grid, diagnostics, dot }
+  cli.ts                                        # init | render | watch | validate
+examples/   order-fulfillment.em               # the canonical walkthrough
+            ecommerce-fulfillment.em           # wide: all 4 patterns, 4 personas, 4 contexts
+            insurance-claim.em                 # mid: all 4 patterns, 3 personas, 3 contexts
+test/       parser / layout / emit / edges / svgGeometry + validation tests (vitest)
 ```
