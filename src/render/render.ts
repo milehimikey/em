@@ -12,7 +12,7 @@ import { extname } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
-import { buildNoteMarkers } from "./drawNotes.js";
+import { buildNoteMarkers, appendNoteLegend } from "./drawNotes.js";
 
 const DOT_BIN = process.env.EM_DOT || "dot";
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
@@ -63,6 +63,8 @@ function withOverlays(svg: string, model: NormalizedModel): string {
   // (so they share the box coordinate space) but after every node, as the last
   // child of that group, making them the topmost clickable layer.
   out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}$1$2`);
+  // grow the canvas and append the legend below the diagram (root coords)
+  out = appendNoteLegend(out, model);
   return out;
 }
 

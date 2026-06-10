@@ -39,11 +39,14 @@ them to `persona "Customer Service"`. Update parser + a couple of tests.
 
 ## 2b. Element notes 🟢 (shipped)
 
-Any element can carry `note "path.md"`; the box shows a folded-corner marker that
-links to the markdown in SVG output. See README → DSL → Notes. Parser
-(`note` clause), `Element.note`, and `src/render/drawNotes.ts` (corner marker
-injected into the SVG over the boxes). `em render`/`watch` warn on a missing note
-file without failing.
+Any element can carry `note "path.md"`; the box shows a numbered folded-corner
+marker and a legend is appended below the diagram mapping number → element → note
+file (so raster exports, which can't carry links, are still self-describing). In
+SVG the markers and legend rows link to the markdown. See README → DSL → Notes.
+Parser (`note` clause), `Element.note`, and `src/render/drawNotes.ts` (marker +
+legend injected into the SVG). `em render`/`watch` warn on a missing note file
+without failing. Note: neither PNG nor our PDF path (librsvg) preserves links —
+SVG only.
 
 ## 2c. Element fields (next: PR #2) 🔴
 

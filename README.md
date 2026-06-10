@@ -122,12 +122,15 @@ data-flow arrow. Arrows between elements in a slice are inferred from the patter
 ### Notes
 
 Any element can carry `note "path.md"` (valid on every keyword). The prose lives in the
-markdown file — keeping the diagram uncluttered — and the box gets a small **folded-corner
-marker** in its top-right corner showing it has notes. In **SVG** output that marker is a
-link: clicking it opens the markdown file (paths resolve relative to the `.em` file, so keep
-the notes directory beside the diagram). Raster output (PNG/PDF) shows the marker but, being
-an image, can't carry the link. `em render`/`em watch` warn (without failing) if a note file
-can't be found.
+markdown file — keeping the diagram uncluttered — and the box gets a small **numbered
+folded-corner marker** in its top-right corner showing it has notes. A **legend** is
+appended below the diagram mapping each number to its element and note file, so even in a
+static export you can tell which note belongs to which box.
+
+In **SVG** output the markers and legend rows are links: clicking one opens the markdown
+file (paths resolve relative to the `.em` file, so keep the notes directory beside the
+diagram). Raster output (PNG/PDF) can't carry links — that's what the footnote numbers and
+legend are for. `em render`/`em watch` warn (without failing) if a note file can't be found.
 
 ## Validation rules (`em validate`)
 

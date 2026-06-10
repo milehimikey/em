@@ -39,7 +39,7 @@ slice "Payments To Process" {
 
 # --- Command slice: the command the automation triggers + its event ---
 slice "Capture Payment" {
-  command Capture Payment
+  command Capture Payment note "notes/capture-payment.md"
   event Payment Captured @Payment
 }
 
