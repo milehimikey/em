@@ -83,8 +83,8 @@ so it runs everywhere.
 
 `npm run build` produces a working `dist/` and `node dist/cli.js render …` renders
 SVG + PNG with `dot`/`rsvg-convert` shadowed off PATH. `package.json` is publish-
-ready (`@milehimikey/em`, `files`, `publishConfig`, `prepublishOnly`); release
-steps are in `docs/publishing.md` (not yet executed).
+ready (`@milehimikey/em`, `files`, `publishConfig`, `prepublishOnly`). The npm
+release checklist is kept locally (not in the public repo) and not yet executed.
 
 ## 6. Cross-slice curve aesthetics (low priority) 🟡
 
