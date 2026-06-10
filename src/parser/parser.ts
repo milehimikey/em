@@ -130,6 +130,14 @@ function parseElement(
   let rest = raw;
   const node: ElementNode = { kind, name: "", line };
 
+  // `note "path.md"` clause (valid on any element). Pulled off first because
+  // the `from` clause below greedily consumes to end-of-line.
+  const noteMatch = rest.match(/\snote\s+"([^"]*)"/i);
+  if (noteMatch && noteMatch.index !== undefined) {
+    node.note = noteMatch[1];
+    rest = (rest.slice(0, noteMatch.index) + rest.slice(noteMatch.index + noteMatch[0].length)).trim();
+  }
+
   // `from "A", "B"` clause (view only, but parsed wherever present).
   const fromMatch = rest.match(/\sfrom\s+(.+)$/i);
   if (fromMatch && fromMatch.index !== undefined) {

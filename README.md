@@ -79,7 +79,7 @@ context Payment
 slice "Browse Catalog" {           # each slice is one column (time, left -> right)
   ui Product Catalog @Customer     # @Persona places the screen in a persona row
   command Place Order
-  event Order Placed @Order         # @Context places the event in a context row
+  event Order Placed @Order note "notes/order-placed.md"   # note "…" links docs
 }
 
 slice "View Open Orders" {
@@ -119,6 +119,26 @@ anchors uniform column widths; elements float in their columns and arrows route 
 data-flow arrow. Arrows between elements in a slice are inferred from the pattern; use
 `arrow A -> B` for anything extra (e.g. a read model feeding a different screen).
 
+### Notes
+
+Any element can carry `note "path.md"` (valid on every keyword). The prose lives in the
+markdown file — keeping the diagram uncluttered — and the box gets a small **numbered
+folded-corner marker** in its top-right corner showing it has notes. A **legend** is
+appended below the diagram mapping each number to its element and note file, so even in a
+static export you can tell which note belongs to which box.
+
+In **SVG** output the markers and legend rows are links: clicking one opens the markdown
+file. Notes are authored relative to the `.em` file, and the link is rewritten relative to
+the **output SVG's location**, so links keep working whether the SVG is rendered beside the
+model or into a separate folder (e.g. `docs/`) — as long as the notes travel with it.
+
+> Open the SVG in a **web browser** to use the links. macOS **Preview** / **Quick Look**
+> (the default for double-clicking an `.svg`) are image viewers and ignore SVG hyperlinks —
+> the markers will show but won't be clickable there.
+
+Raster output (PNG/PDF) can't carry links at all — that's what the footnote numbers and the
+legend are for. `em render`/`em watch` warn (without failing) if a note file can't be found.
+
 ## Validation rules (`em validate`)
 
 - two same-band elements in one slice (collision) → **error** (split into separate slices;
@@ -141,11 +161,13 @@ src/
   layout/   grid.ts                            # bands -> rows, slices -> cols, R×C matrix
   emit/     dot.ts, theme.ts                   # grid-only DOT + EM colours
   render/   render.ts, svgGeometry.ts,         # run dot -> read box rects -> draw arrows
-            drawEdges.ts, watch.ts             #   -> inject SVG; rsvg-convert; chokidar watcher
+            drawEdges.ts, drawNotes.ts,        #   + note markers -> inject SVG;
+            watch.ts                           #   rsvg-convert; chokidar watcher
   pipeline.ts                                  # source -> { model, grid, diagnostics, dot }
   cli.ts                                        # init | render | watch | validate
-examples/   order-fulfillment.em               # the canonical walkthrough
+examples/   order-fulfillment.em               # the canonical walkthrough (+ a linked note)
+            notes/order-placed.md              # markdown a note marker links to
             ecommerce-fulfillment.em           # wide: all 4 patterns, 4 personas, 4 contexts
             insurance-claim.em                 # mid: all 4 patterns, 3 personas, 3 contexts
-test/       parser / layout / emit / edges / svgGeometry + validation tests (vitest)
+test/       parser / layout / emit / edges / svgGeometry / drawNotes + validation tests (vitest)
 ```

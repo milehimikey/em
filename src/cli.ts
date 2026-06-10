@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 import { Command } from "commander";
 import { compile, CompileOptions } from "./pipeline.js";
+import { NormalizedModel } from "./model/model.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, formatFromPath } from "./render/render.js";
 import { watchFile } from "./render/watch.js";
@@ -43,6 +44,7 @@ program
       keepEmptyLanes: opts.keepEmptyLanes,
     });
     printDiagnostics(diagnostics);
+    warnMissingNotes(file, model);
 
     if (opts.emitDot) {
       if (opts.out) {
@@ -61,7 +63,7 @@ program
 
     const out = opts.out ?? defaultOut(file, opts.format ?? "svg");
     const fmt = opts.format ?? formatFromPath(out);
-    await renderDot(dot, model, out, fmt);
+    await renderDot(dot, model, out, fmt, dirname(file));
     console.log(`rendered ${out}`);
   });
 
@@ -83,11 +85,12 @@ program
           keepEmptyLanes: opts.keepEmptyLanes,
         });
         printDiagnostics(diagnostics);
+        warnMissingNotes(file, model);
         if (hasErrors(diagnostics)) {
           console.error("skipped render (errors above)");
           return;
         }
-        await renderDot(dot, model, out, fmt);
+        await renderDot(dot, model, out, fmt, dirname(file));
         console.log(`rendered ${out} (${Date.now() - started}ms)`);
       } catch (e) {
         reportError(e);
@@ -139,6 +142,16 @@ function compileFile(file: string, opts: CompileOptions = {}) {
 function defaultOut(file: string, fmt: string): string {
   const base = basename(file, extname(file));
   return `${base}.${fmt}`;
+}
+
+/** Warn (without failing) when an element's `note` file can't be found. */
+function warnMissingNotes(file: string, model: NormalizedModel): void {
+  const base = dirname(file);
+  for (const el of model.elements) {
+    if (el.note && !existsSync(resolve(base, el.note))) {
+      console.warn(`  warn  note file not found for "${el.name}": ${el.note}`);
+    }
+  }
 }
 
 function printDiagnostics(diags: Diagnostic[]): void {

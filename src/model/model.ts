@@ -16,6 +16,8 @@ export interface Element {
   context?: string;
   /** Source event names (view only). */
   from?: string[];
+  /** Markdown file holding this element's notes, relative to the .em file. */
+  note?: string;
   sliceIndex: number;
   line: number;
 }
@@ -96,6 +98,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         sliceIndex,
         line: el.line,
         from: el.from,
+        note: el.note,
       };
 
       if (el.kind === "ui") {

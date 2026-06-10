@@ -10,7 +10,7 @@ context Payment
 slice "Browse Catalog" {
   ui Product Catalog @Customer
   command Place Order
-  event Order Placed @Order
+  event Order Placed @Order note "notes/order-placed.md"
 }
 
 # --- View pattern: event -> read model -> UI ---
@@ -39,7 +39,7 @@ slice "Payments To Process" {
 
 # --- Command slice: the command the automation triggers + its event ---
 slice "Capture Payment" {
-  command Capture Payment
+  command Capture Payment note "notes/capture-payment.md"
   event Payment Captured @Payment
 }
 
