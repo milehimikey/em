@@ -27,6 +27,30 @@ slice "A" {
     expect(dot).not.toMatch(/->[^\n;]*\[color=/);
   });
 
+  it("emits a UML-style HTML label for an element with fields", () => {
+    const { dot } = compile(`
+slice "S" {
+  event Order Placed {
+    orderId
+    total: Money
+  }
+}
+`);
+    // HTML table with a divider rule, the title, and a typed field
+    expect(dot).toContain("<TABLE");
+    expect(dot).toContain("<HR/>");
+    expect(dot).toContain("<B>Order Placed</B>");
+    expect(dot).toContain("total : ");
+    expect(dot).toMatch(/<FONT COLOR="#5F6368">Money<\/FONT>/);
+    // field boxes auto-size (height grows), so they are not fixedsize
+    expect(dot).toMatch(/order_placed \[label=<<TABLE[\s\S]*fixedsize=false/);
+  });
+
+  it("keeps fixed-size boxes for elements without fields", () => {
+    const { dot } = compile(`slice "S" {\n  command Place Order\n}`);
+    expect(dot).toMatch(/place_order \[label="Place Order"[^\]]*fixedsize=true/);
+  });
+
   it("warns when an automation slice also contains the triggered command", () => {
     const { diagnostics } = compile(`
 slice "Auto" {

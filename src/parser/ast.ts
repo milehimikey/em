@@ -18,6 +18,13 @@ export const AUTOMATION_KINDS: ReadonlySet<ElementKind> = new Set([
   "translation",
 ]);
 
+/** A data attribute on an element, e.g. `total: Money`. */
+export interface Field {
+  name: string;
+  /** Optional type annotation after a `:`. */
+  type?: string;
+}
+
 export interface ElementNode {
   kind: ElementKind;
   name: string;
@@ -29,6 +36,8 @@ export interface ElementNode {
   from?: string[];
   /** `note "path.md"` — markdown file holding this element's notes. */
   note?: string;
+  /** Data attributes declared in a `{ … }` block on the element. */
+  fields?: Field[];
   line: number;
 }
 

@@ -64,6 +64,56 @@ slice "S" {
     });
   });
 
+  it("parses a multi-line `{ … }` field block with optional types", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed @Order {
+    orderId
+    total: Money
+    items : List<LineItem>
+  }
+}
+`);
+    const el = ast.slices[0].elements[0];
+    expect(el).toMatchObject({ name: "Order Placed", context: "Order" });
+    expect(el.fields).toEqual([
+      { name: "orderId" },
+      { name: "total", type: "Money" },
+      { name: "items", type: "List<LineItem>" },
+    ]);
+  });
+
+  it("parses an inline `{ a, b: T }` field list", () => {
+    const ast = parse(`slice "S" {\n  command Place Order { customerId, total: Money }\n}`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Place Order",
+      fields: [{ name: "customerId" }, { name: "total", type: "Money" }],
+    });
+  });
+
+  it("allows a field block alongside note/from clauses", () => {
+    const ast = parse(`
+slice "S" {
+  view Open Orders note "notes/o.md" from "Order Placed" {
+    orderId
+    status
+  }
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Open Orders",
+      note: "notes/o.md",
+      from: ["Order Placed"],
+      fields: [{ name: "orderId" }, { name: "status" }],
+    });
+  });
+
+  it("rejects an unclosed field block", () => {
+    expect(() => parse(`slice "S" {\n  event E {\n    a`)).toThrow(
+      /field block .* missing a closing/,
+    );
+  });
+
   it("ignores comments and blank lines", () => {
     const ast = parse(`
 # a comment

@@ -1,7 +1,7 @@
 // Normalizes a parsed AST into a resolved model: stable ids, resolved
 // persona/context lanes, and lookup indexes used by layout and validation.
 
-import { AUTOMATION_KINDS, ElementKind, ModelNode } from "../parser/ast.js";
+import { AUTOMATION_KINDS, ElementKind, Field, ModelNode } from "../parser/ast.js";
 
 export const DEFAULT_PERSONA = "User";
 export const DEFAULT_CONTEXT = "Domain";
@@ -18,6 +18,8 @@ export interface Element {
   from?: string[];
   /** Markdown file holding this element's notes, relative to the .em file. */
   note?: string;
+  /** Data attributes declared on the element. */
+  fields?: Field[];
   sliceIndex: number;
   line: number;
 }
@@ -99,6 +101,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         line: el.line,
         from: el.from,
         note: el.note,
+        fields: el.fields,
       };
 
       if (el.kind === "ui") {
