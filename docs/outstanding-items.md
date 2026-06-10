@@ -37,6 +37,29 @@ swimlanes like "Customer Service" or "Claims Ops".
 **Proposed:** support quoted tags, e.g. `ui Inbox @"Customer Service"`, and match
 them to `persona "Customer Service"`. Update parser + a couple of tests.
 
+## 2b. Element notes 🟢 (shipped)
+
+Any element can carry `note "path.md"`; the box shows a folded-corner marker that
+links to the markdown in SVG output. See README → DSL → Notes. Parser
+(`note` clause), `Element.note`, and `src/render/drawNotes.ts` (corner marker
+injected into the SVG over the boxes). `em render`/`watch` warn on a missing note
+file without failing.
+
+## 2c. Element fields (next: PR #2) 🔴
+
+Structured data attributes on elements — critical to the later event-modeling
+phases (information completeness / slicing). Design settled:
+
+- **Syntax:** nested brace block under the element; each line is a field
+  (`name` or `name: Type`). Parser gains one more level of brace-depth tracking
+  (today `{`/`}` only bracket slices). Coexists with a `note "…"` clause:
+  `event Order Placed @Order note "notes/order-placed.md" { orderId\n total: Money }`.
+- **Model:** `fields?: { name: string; type?: string }[]` on `ElementNode`/`Element`.
+- **Display:** detail layer only for now — do **not** render fields on the boxes
+  (sidesteps the fixed-cell clipping issue below). Surface them via the note/detail
+  markdown and enable future field-mapping validation (every read-model/UI field
+  traces to an event field traces to a command field).
+
 ## 3. Fixed-size cells clip long labels 🔴
 
 Element cells are a fixed 2.0in × 0.62in (`CELL_W`/`CELL_H` in

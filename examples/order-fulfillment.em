@@ -10,7 +10,7 @@ context Payment
 slice "Browse Catalog" {
   ui Product Catalog @Customer
   command Place Order
-  event Order Placed @Order
+  event Order Placed @Order note "notes/order-placed.md"
 }
 
 # --- View pattern: event -> read model -> UI ---

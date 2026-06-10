@@ -27,6 +27,8 @@ export interface ElementNode {
   context?: string;
   /** `from "Event", "Event2"` — only meaningful for `view`. */
   from?: string[];
+  /** `note "path.md"` — markdown file holding this element's notes. */
+  note?: string;
   line: number;
 }
 

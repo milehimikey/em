@@ -37,6 +37,33 @@ slice "S" {
     expect(ast.slices[0].elements[0].name).toBe("Open Orders");
   });
 
+  it("parses a `note` clause and keeps it out of the name", () => {
+    const ast = parse(`
+slice "S" {
+  command Place Order note "notes/place-order.md"
+  event Order Placed @Order note "notes/order-placed.md"
+  ui Catalog note "notes/catalog.md" @Customer
+}
+`);
+    const [cmd, evt, ui] = ast.slices[0].elements;
+    expect(cmd).toMatchObject({ name: "Place Order", note: "notes/place-order.md" });
+    expect(evt).toMatchObject({ name: "Order Placed", context: "Order", note: "notes/order-placed.md" });
+    expect(ui).toMatchObject({ name: "Catalog", persona: "Customer", note: "notes/catalog.md" });
+  });
+
+  it("strips `note` before the `from` clause without swallowing it", () => {
+    const ast = parse(`
+slice "S" {
+  view Open Orders note "notes/open.md" from "Order Placed", "Order Updated"
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Open Orders",
+      note: "notes/open.md",
+      from: ["Order Placed", "Order Updated"],
+    });
+  });
+
   it("ignores comments and blank lines", () => {
     const ast = parse(`
 # a comment
