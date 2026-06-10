@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Turns a normalized model into a rigid R x C grid.
 //
 // Rows (bands), top -> bottom:

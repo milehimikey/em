@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Event-modeling rule checks over the normalized model + grid.
 
 import { AUTOMATION_KINDS } from "../parser/ast.js";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Event Modeling colour conventions.
 
 import { ElementKind } from "../parser/ast.js";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { describe, it, expect } from "vitest";
 import { parseNodeRects } from "../src/render/svgGeometry.js";
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The semantic edges of a model: which arrows exist and their colour. This is
 // the single source of truth for the diagram's arrows, decoupled from how they
 // are drawn (the renderer turns these into SVG paths over the Graphviz grid).

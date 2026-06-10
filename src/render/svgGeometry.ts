@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Reads box rectangles back out of a Graphviz-rendered SVG.
 //
 // Each node is emitted as `<g class="node"><title>ID</title> … <polygon|path …>`

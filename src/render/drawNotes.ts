@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Draws "has notes" affordances on top of a Graphviz-rendered SVG:
 //   - a small folded-corner (dog-ear) marker in each noted box's top-right
 //     corner, carrying a footnote number;

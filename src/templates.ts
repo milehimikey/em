@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Starter model used by `em init`.
 
 export const STARTER_EM = `model "Order Fulfillment"

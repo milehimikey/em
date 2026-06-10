@@ -1,23 +1,54 @@
 {
-  "name": "em-cli",
+  "name": "@milehimikey/em",
   "version": "0.1.0",
-  "description": "CLI Event Modeling tool — a slice-first DSL that renders a strict Graphviz grid",
+  "description": "AI-friendly Event Modeling — a slice-first text DSL rendered to a strict, self-contained Graphviz grid (SVG/PNG)",
   "type": "module",
   "bin": {
     "em": "./dist/cli.js"
   },
   "main": "./dist/cli.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "em": "tsx src/cli.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
   },
   "engines": {
     "node": ">=18"
   },
+  "license": "MIT",
+  "author": "milehimikey",
+  "homepage": "https://github.com/milehimikey/em#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/milehimikey/em.git"
+  },
+  "bugs": {
+    "url": "https://github.com/milehimikey/em/issues"
+  },
+  "keywords": [
+    "event-modeling",
+    "event-sourcing",
+    "diagram",
+    "dsl",
+    "graphviz",
+    "svg",
+    "cli",
+    "architecture"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
+    "@hpcc-js/wasm-graphviz": "^1.22.0",
+    "@resvg/resvg-js": "^2.6.2",
     "chokidar": "^3.6.0",
     "commander": "^12.1.0"
   },

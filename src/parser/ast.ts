@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Abstract syntax tree produced by the parser.
 
 export type ElementKind =

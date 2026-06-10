@@ -1,21 +1,30 @@
+// SPDX-License-Identifier: MIT
 // Renders a model to an image.
 //
-// Graphviz lays out the grid and renders boxes/labels to SVG; it does NOT route
-// the arrows. We read each box's rectangle back out of that SVG, draw the edges
-// ourselves (straight within a slice, curved across slices), and inject them.
-// SVG is written directly; other formats are produced from the rounded SVG via
-// `rsvg-convert`.
+// Graphviz (bundled as WebAssembly) lays out the grid and renders boxes/labels
+// to SVG; it does NOT route the arrows. We read each box's rectangle back out of
+// that SVG, draw the edges ourselves (straight within a slice, curved across
+// slices) plus the note markers, and inject them. SVG is written directly; PNG
+// is rasterized in-process with resvg. PDF/other formats use an optional system
+// `rsvg-convert` if one is installed. No system Graphviz is required.
 
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { Graphviz } from "@hpcc-js/wasm-graphviz";
+import { Resvg } from "@resvg/resvg-js";
 import { Element, NormalizedModel } from "../model/model.js";
 import { parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, appendNoteLegend } from "./drawNotes.js";
 
-const DOT_BIN = process.env.EM_DOT || "dot";
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
+
+// The WASM Graphviz module is loaded once and reused across renders.
+let graphvizModule: Promise<Graphviz> | undefined;
+function graphviz(): Promise<Graphviz> {
+  return (graphvizModule ??= Graphviz.load());
+}
 
 export function formatFromPath(outPath: string, fallback = "svg"): string {
   const ext = extname(outPath).replace(/^\./, "").toLowerCase();
@@ -33,21 +42,30 @@ export async function renderDot(
   // relative to the output SVG so they resolve wherever the SVG is written.
   const outDir = dirname(outPath);
   const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
-  const svg = withOverlays(await runDot(dot, "svg"), model, hrefOf);
+
+  const gv = await graphviz();
+  const svg = withOverlays(gv.layout(dot, "svg", "dot"), model, hrefOf);
 
   if (format === "svg") {
     await writeFile(outPath, svg, "utf8");
     return;
   }
 
+  if (format === "png") {
+    const png = new Resvg(svg).render().asPng();
+    await writeFile(outPath, png);
+    return;
+  }
+
+  // Other formats (pdf, ps, …) aren't built in; use a system rsvg-convert if present.
   if (await hasBin(RSVG_BIN)) {
     await rsvgConvert(svg, outPath, format);
     return;
   }
 
   throw new Error(
-    `'${RSVG_BIN}' is required to render '${format}' (the arrows are drawn into the SVG). ` +
-      `Install librsvg or render to .svg instead.`,
+    `format '${format}' is not built in (svg and png are). Install librsvg ` +
+      `(provides '${RSVG_BIN}') to render '${format}', or use -o file.svg / -o file.png.`,
   );
 }
 
@@ -89,34 +107,15 @@ function withOverlays(
   return out;
 }
 
-/** Run `dot` and capture stdout for the given format. */
-function runDot(dot: string, format: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(DOT_BIN, [`-T${format}`]);
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    child.on("error", (e) =>
-      reject(new Error(`failed to run '${DOT_BIN}' (is Graphviz installed?): ${e.message}`)),
-    );
-    child.on("close", (code) =>
-      code === 0 ? resolve(out) : reject(new Error(`dot exited with code ${code}: ${err.trim()}`)),
-    );
-    child.stdin.write(dot);
-    child.stdin.end();
-  });
-}
-
-/** Convert an SVG string to the requested format with rsvg-convert. */
+/** Convert an SVG string to the requested format with an optional system rsvg-convert. */
 function rsvgConvert(svg: string, outPath: string, format: string): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((res, rej) => {
     const child = spawn(RSVG_BIN, [`--format=${format}`, "-o", outPath]);
     let err = "";
     child.stderr.on("data", (d) => (err += d.toString()));
-    child.on("error", (e) => reject(new Error(`failed to run '${RSVG_BIN}': ${e.message}`)));
+    child.on("error", (e) => rej(new Error(`failed to run '${RSVG_BIN}': ${e.message}`)));
     child.on("close", (code) =>
-      code === 0 ? resolve() : reject(new Error(`${RSVG_BIN} exited with code ${code}: ${err.trim()}`)),
+      code === 0 ? res() : rej(new Error(`${RSVG_BIN} exited with code ${code}: ${err.trim()}`)),
     );
     child.stdin.write(svg);
     child.stdin.end();
@@ -124,9 +123,9 @@ function rsvgConvert(svg: string, outPath: string, format: string): Promise<void
 }
 
 function hasBin(bin: string): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise((res) => {
     const child = spawn(bin, ["--version"]);
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => res(false));
+    child.on("close", (code) => res(code === 0));
   });
 }

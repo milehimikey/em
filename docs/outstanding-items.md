@@ -7,25 +7,14 @@ Status legend: 🔴 not started · 🟡 in progress · 🟢 decided/done
 
 ---
 
-## 1. Output format: SVG by default, PNG opt-in 🟢 (decided)
+## 1. Output format + self-contained rendering 🟢 (done)
 
-Arrows are drawn into the SVG by the renderer, so non-SVG output (PNG, PDF, …)
-is produced by converting the SVG with **`rsvg-convert`** (librsvg). SVG output
-needs only Graphviz.
-
-**Decision:** default to **SVG** (already the case — `em render` with no format
-produces `.svg`); PNG/PDF remain available for those who want them via
-`-o file.png` / `-T png`. SVG is the better default anyway (scalable, smaller,
-embeds in docs/wikis, diff-able-ish).
-
-**Remaining:**
-- Onboarding/docs should lead with SVG and present PNG as "if you need a raster,
-  install librsvg". (README install note added.)
-- Consider a friendlier message when `rsvg-convert` is missing and a non-SVG
-  format is requested (currently throws a clear error — verify the wording
-  points users to `brew install librsvg` / distro equivalent).
-- Future option: bundle a pure-JS rasterizer (e.g. `@resvg/resvg-js`) so PNG
-  works with zero external setup. Adds a dependency; evaluate before doing.
+Default is **SVG** (`em render` with no format → `.svg`). Rendering is now
+**self-contained**: Graphviz runs as bundled WebAssembly (`@hpcc-js/wasm-graphviz`)
+and PNG is rasterized in-process (`@resvg/resvg-js`) — no system `dot`/`librsvg`
+for SVG or PNG. PDF/other formats use an optional system `rsvg-convert` if present,
+otherwise a clear error points to `librsvg` (see `docs/dependencies.md`). README
+leads with `npm install -g @milehimikey/em`.
 
 ## 2. Multi-word persona / context tags 🔴
 
@@ -82,20 +71,20 @@ height is fixed, so a 3+ line label overflows/clips.
 labels, or enforce a max name length with a validation warning. Auto-height is
 the most robust but interacts with the rigid-grid row locking — needs care.
 
-## 4. No end-to-end render test 🔴
+## 4. End-to-end render test 🟢 (done)
 
-Tests are unit-level (parser, layout, emit DOT, edge geometry, SVG parsing).
-Nothing shells out to `dot`/`rsvg-convert` to assert a real render succeeds.
+`test/render.e2e.test.ts` renders `examples/order-fulfillment.em` through the full
+pipeline (WASM Graphviz + overlays + resvg) and asserts the edge group, note
+markers, legend, working note link, and field text are present and the SVG is
+well-formed; plus a PNG smoke test (valid PNG magic bytes). No system deps needed,
+so it runs everywhere.
 
-**Proposed:** add an integration test that renders an example to SVG (skipped if
-`dot` is unavailable) and asserts the edge overlay is present and well-formed
-(e.g. one `marker-end` per `<path>`), plus the box-intersection invariant used
-during manual QA.
+## 5. Build / packaging 🟢 (done)
 
-## 5. Build / packaging verification 🔴
-
-Confirm `npm run build` produces a working `dist/` and the `em` bin runs from
-the built output (not just `tsx` dev mode) before any publish/promotion.
+`npm run build` produces a working `dist/` and `node dist/cli.js render …` renders
+SVG + PNG with `dot`/`rsvg-convert` shadowed off PATH. `package.json` is publish-
+ready (`@milehimikey/em`, `files`, `publishConfig`, `prepublishOnly`); release
+steps are in `docs/publishing.md` (not yet executed).
 
 ## 6. Cross-slice curve aesthetics (low priority) 🟡
 

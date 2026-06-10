@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Emits Graphviz DOT for a normalized model using the strict-grid technique:
 //   - one heavily-weighted invisible vertical edge chain per column locks columns
 //   - one `rank=same` group per row locks rows and orders cells left -> right
