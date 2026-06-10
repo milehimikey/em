@@ -51,20 +51,26 @@ as long as the notes travel with the SVG. Caveats: neither PNG nor our PDF path
 (librsvg) preserves links — SVG only; and image viewers (macOS Preview/Quick
 Look) ignore SVG hyperlinks, so links only work in a browser.
 
-## 2c. Element fields (next: PR #2) 🔴
+## 2c. Element fields 🟢 (shipped — rendering) / 🔴 (validation: next)
 
 Structured data attributes on elements — critical to the later event-modeling
-phases (information completeness / slicing). Design settled:
+phases (information completeness / slicing).
 
-- **Syntax:** nested brace block under the element; each line is a field
-  (`name` or `name: Type`). Parser gains one more level of brace-depth tracking
-  (today `{`/`}` only bracket slices). Coexists with a `note "…"` clause:
-  `event Order Placed @Order note "notes/order-placed.md" { orderId\n total: Money }`.
-- **Model:** `fields?: { name: string; type?: string }[]` on `ElementNode`/`Element`.
-- **Display:** detail layer only for now — do **not** render fields on the boxes
-  (sidesteps the fixed-cell clipping issue below). Surface them via the note/detail
-  markdown and enable future field-mapping validation (every read-model/UI field
-  traces to an event field traces to a command field).
+Shipped:
+- **Syntax:** `{ … }` block on the element, one field per line or inline
+  comma-separated; each field is `name` with optional `: Type`. Parser tracks a
+  second brace level (`currentElement`). Coexists with `note`/`from` clauses.
+- **Model:** `fields?: Field[]` (`{ name, type? }`) on `ElementNode`/`Element`.
+- **Display:** rendered **in the box**, UML-style (title, `<HR/>` divider, field
+  rows) via a Graphviz HTML-table label. Boxes auto-grow in height (width fixed,
+  so columns stay aligned); arrows still anchor to box edges so lines stay stable.
+  Row alignment is Graphviz-default **center** (tops drift slightly when field
+  counts differ a lot within a lane — acceptable; could switch to uniform-per-lane
+  height later if needed).
+
+Next (separate PR): **information-completeness validation** — every field shown
+by a read model / UI should trace to a field on a source event, and every event
+field to a field on the command that produced it. Warn on gaps.
 
 ## 3. Fixed-size cells clip long labels 🔴
 

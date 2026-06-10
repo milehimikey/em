@@ -18,6 +18,7 @@ import {
   ArrowNode,
   ElementKind,
   ElementNode,
+  Field,
   ModelNode,
   SliceNode,
 } from "./ast.js";
@@ -52,17 +53,33 @@ export function parse(source: string): ModelNode {
 
   const rawLines = source.split(/\r?\n/);
   let currentSlice: SliceNode | null = null;
+  let currentElement: ElementNode | null = null; // open `{ … }` field block
 
   for (let i = 0; i < rawLines.length; i++) {
     const lineNo = i + 1;
     const line = stripComment(rawLines[i]).trim();
     if (line.length === 0) continue;
 
-    // End of a slice block.
+    // End of a block: an element's field block closes before its slice.
     if (line === "}") {
-      if (!currentSlice) throw new ParseError("unexpected '}'", lineNo);
-      model.slices.push(currentSlice);
-      currentSlice = null;
+      if (currentElement) {
+        currentElement = null;
+        continue;
+      }
+      if (currentSlice) {
+        model.slices.push(currentSlice);
+        currentSlice = null;
+        continue;
+      }
+      throw new ParseError("unexpected '}'", lineNo);
+    }
+
+    // Inside an open field block: each line is a field declaration.
+    if (currentElement) {
+      for (const spec of line.split(",")) {
+        const f = parseFieldSpec(spec);
+        if (f) (currentElement.fields ??= []).push(f);
+      }
       continue;
     }
 
@@ -76,6 +93,22 @@ export function parse(source: string): ModelNode {
           `'${keyword}' is not valid inside a slice (expected ui/command/view/event/automation/processor/saga/translation or '}')`,
           lineNo,
         );
+      }
+      // An element may open a `{ … }` field block (inline or multi-line).
+      const braceAt = remainder.indexOf("{");
+      if (braceAt >= 0) {
+        const el = parseElement(keyword as ElementKind, remainder.slice(0, braceAt).trim(), lineNo);
+        el.fields = [];
+        currentSlice.elements.push(el);
+        const after = remainder.slice(braceAt + 1);
+        const closeAt = after.indexOf("}");
+        const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
+        for (const spec of inner.split(",")) {
+          const f = parseFieldSpec(spec);
+          if (f) el.fields.push(f);
+        }
+        if (closeAt < 0) currentElement = el; // block stays open across lines
+        continue;
       }
       currentSlice.elements.push(
         parseElement(keyword as ElementKind, remainder, lineNo),
@@ -111,6 +144,12 @@ export function parse(source: string): ModelNode {
     }
   }
 
+  if (currentElement) {
+    throw new ParseError(
+      `field block for "${currentElement.name}" is missing a closing '}'`,
+      currentElement.line,
+    );
+  }
   if (currentSlice) {
     throw new ParseError(
       `slice "${currentSlice.name}" is missing a closing '}'`,
@@ -162,6 +201,20 @@ function parseElement(
   node.name = unquote(rest);
   if (!node.name) throw new ParseError(`${kind} requires a name`, line);
   return node;
+}
+
+/** Parse one field spec: `name` or `name: Type`. Returns null for blanks. */
+function parseFieldSpec(raw: string): Field | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const colon = s.indexOf(":");
+  if (colon >= 0) {
+    const name = unquote(s.slice(0, colon).trim());
+    const type = unquote(s.slice(colon + 1).trim());
+    return name ? { name, ...(type ? { type } : {}) } : null;
+  }
+  const name = unquote(s);
+  return name ? { name } : null;
 }
 
 function parseArrow(raw: string, line: number): ArrowNode {

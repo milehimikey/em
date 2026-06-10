@@ -85,11 +85,45 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
 function elementCell(el: Element): string {
   const s = styleFor(el.kind);
   const shape = el.kind === "ui" ? `"filled"` : `"filled,rounded"`;
+  if (el.fields && el.fields.length > 0) {
+    // UML-style box: title, a divider rule, then the fields. The HTML table
+    // auto-sizes the box (height grows with the field count); width stays at
+    // CELL_W as a minimum so columns stay aligned. Arrows still anchor to the
+    // box edges read back from the SVG, so they remain stable.
+    return (
+      `${el.id} [label=${fieldLabel(el)}, fillcolor="${s.fill}", ` +
+      `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
+      `shape=box, fixedsize=false, width=${CELL_W}, margin="0.04,0.03"];`
+    );
+  }
   return (
     `${el.id} [label=${q(wrapLabel(el.name))}, fillcolor="${s.fill}", ` +
     `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
     `fixedsize=true, width=${CELL_W}, height=${CELL_H}];`
   );
+}
+
+/** Graphviz HTML-table label: bold title, a horizontal rule, one row per field. */
+function fieldLabel(el: Element): string {
+  const rows: string[] = [];
+  rows.push(`<TR><TD><B>${esc(el.name)}</B></TD></TR>`);
+  rows.push(`<HR/>`);
+  for (const f of el.fields ?? []) {
+    const ftype = f.type ? ` : <FONT COLOR="#5F6368">${esc(f.type)}</FONT>` : "";
+    rows.push(
+      `<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9">${esc(f.name)}${ftype}</FONT></TD></TR>`,
+    );
+  }
+  return (
+    `<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1">` +
+    rows.join("") +
+    `</TABLE>>`
+  );
+}
+
+/** Escape text for use inside a Graphviz HTML-like label. */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Empty cells are invisible spacers that hold the column width and row height. */

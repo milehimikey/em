@@ -79,7 +79,10 @@ context Payment
 slice "Browse Catalog" {           # each slice is one column (time, left -> right)
   ui Product Catalog @Customer     # @Persona places the screen in a persona row
   command Place Order
-  event Order Placed @Order note "notes/order-placed.md"   # note "…" links docs
+  event Order Placed @Order note "notes/order-placed.md" {   # note "…" links docs
+    orderId                         # a `{ … }` block declares the element's fields
+    total: Money                    # optional `: Type` annotation
+  }
 }
 
 slice "View Open Orders" {
@@ -118,6 +121,30 @@ anchors uniform column widths; elements float in their columns and arrows route 
 `view … from "Event"[, "Event2"]` declares which events feed a read model and draws the
 data-flow arrow. Arrows between elements in a slice are inferred from the pattern; use
 `arrow A -> B` for anything extra (e.g. a read model feeding a different screen).
+
+### Fields
+
+Any element can declare **data fields** in a `{ … }` block — the data it accepts (command),
+records (event), projects (read model), or shows (UI). Each field is `name` with an optional
+`: Type`; write one per line, or inline and comma-separated:
+
+```
+command Place Order {            # one per line
+  customerId
+  items: List<LineItem>
+  total: Money
+}
+
+event Payment Requested @Payment { orderId, amount: Money }   # inline
+```
+
+Fields render **in the box**, UML-style: the name, a divider rule, then the fields. The box
+grows downward to fit them (width stays fixed, so columns stay aligned), and arrows still
+anchor to the box edges so the lines stay stable. A field block can coexist with `note`/`from`
+clauses on the same element: `view Open Orders from "Order Placed" note "o.md" { orderId, status }`.
+
+Fields are the foundation of the later event-modeling phases (the slicing / information-
+completeness process); field-level validation across slices is planned.
 
 ### Notes
 

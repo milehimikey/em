@@ -9,13 +9,26 @@ context Payment
 # --- Command pattern: UI -> command -> event ---
 slice "Browse Catalog" {
   ui Product Catalog @Customer
-  command Place Order
-  event Order Placed @Order note "notes/order-placed.md"
+  command Place Order {
+    customerId
+    items: List<LineItem>
+    total: Money
+  }
+  event Order Placed @Order note "notes/order-placed.md" {
+    orderId
+    customerId
+    total: Money
+    placedAt: Instant
+  }
 }
 
 # --- View pattern: event -> read model -> UI ---
 slice "View Open Orders" {
-  view Open Orders from "Order Placed"
+  view Open Orders from "Order Placed" {
+    orderId
+    total: Money
+    status
+  }
   ui Order List @Customer
 }
 
@@ -39,8 +52,15 @@ slice "Payments To Process" {
 
 # --- Command slice: the command the automation triggers + its event ---
 slice "Capture Payment" {
-  command Capture Payment note "notes/capture-payment.md"
-  event Payment Captured @Payment
+  command Capture Payment note "notes/capture-payment.md" {
+    authorizationId
+    amount: Money
+  }
+  event Payment Captured @Payment {
+    orderId
+    amount: Money
+    capturedAt: Instant
+  }
 }
 
 # --- View pattern: receipt ---
