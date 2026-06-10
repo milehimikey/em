@@ -24,14 +24,23 @@ export function notedElements(model: NormalizedModel): Element[] {
   return model.elements.filter((el) => el.note);
 }
 
+/** How to turn an element's note into the link href (default: the raw note path). */
+export type HrefOf = (el: Element) => string;
+
+const rawNote: HrefOf = (el) => el.note ?? "";
+
 /** SVG group with a numbered corner marker per noted element (inside the graph group). */
-export function buildNoteMarkers(model: NormalizedModel, rects: Map<string, Rect>): string {
+export function buildNoteMarkers(
+  model: NormalizedModel,
+  rects: Map<string, Rect>,
+  hrefOf: HrefOf = rawNote,
+): string {
   const markers: string[] = [];
 
   notedElements(model).forEach((el, i) => {
     const r = rects.get(el.id);
     if (!r) return;
-    markers.push(marker(r, el.note!, i + 1));
+    markers.push(marker(r, hrefOf(el), i + 1));
   });
 
   return `<g class="em-notes">${markers.join("")}</g>`;
@@ -72,7 +81,11 @@ const PAD_BOTTOM = 14;
  * Grow the canvas and append a notes legend below the diagram. Returns the SVG
  * unchanged if there are no notes or the dimensions can't be parsed.
  */
-export function appendNoteLegend(svg: string, model: NormalizedModel): string {
+export function appendNoteLegend(
+  svg: string,
+  model: NormalizedModel,
+  hrefOf: HrefOf = rawNote,
+): string {
   const noted = notedElements(model);
   if (noted.length === 0) return svg;
 
@@ -95,7 +108,9 @@ export function appendNoteLegend(svg: string, model: NormalizedModel): string {
   out = out.replace(vb[0], `viewBox="${vb[1]} ${vb[2]} ${vb[3]} ${n(newVh)}"`);
 
   const rows = noted
-    .map((el, i) => row(el, i + 1, minX + PAD_X, top + PAD_TOP + HEAD_H + i * LINE_H + 13))
+    .map((el, i) =>
+      row(el, hrefOf(el), i + 1, minX + PAD_X, top + PAD_TOP + HEAD_H + i * LINE_H + 13),
+    )
     .join("");
 
   const legend =
@@ -111,15 +126,16 @@ export function appendNoteLegend(svg: string, model: NormalizedModel): string {
 }
 
 /** One legend row: "N.  Element name — path", linked to the note. */
-function row(el: Element, num: number, x: number, y: number): string {
-  const href = esc(el.note!);
+function row(el: Element, note: string, num: number, x: number, y: number): string {
+  const href = esc(note); // resolved link target
+  const label = esc(el.note ?? ""); // authored path, shown as the readable label
   const name = esc(el.name);
   return (
     `<a xlink:href="${href}" href="${href}" target="_blank">` +
     `<text x="${n(x)}" y="${n(y)}" font-family="Helvetica" font-size="11" fill="#202124">` +
     `<tspan font-weight="bold" fill="${STROKE}">${num}.</tspan>` +
     `<tspan dx="6">${name}</tspan>` +
-    `<tspan dx="6" fill="#5F6368">— ${href}</tspan>` +
+    `<tspan dx="6" fill="#5F6368">— ${label}</tspan>` +
     `</text></a>`
   );
 }

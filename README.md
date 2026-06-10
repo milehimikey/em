@@ -128,8 +128,15 @@ appended below the diagram mapping each number to its element and note file, so 
 static export you can tell which note belongs to which box.
 
 In **SVG** output the markers and legend rows are links: clicking one opens the markdown
-file (paths resolve relative to the `.em` file, so keep the notes directory beside the
-diagram). Raster output (PNG/PDF) can't carry links — that's what the footnote numbers and
+file. Notes are authored relative to the `.em` file, and the link is rewritten relative to
+the **output SVG's location**, so links keep working whether the SVG is rendered beside the
+model or into a separate folder (e.g. `docs/`) — as long as the notes travel with it.
+
+> Open the SVG in a **web browser** to use the links. macOS **Preview** / **Quick Look**
+> (the default for double-clicking an `.svg`) are image viewers and ignore SVG hyperlinks —
+> the markers will show but won't be clickable there.
+
+Raster output (PNG/PDF) can't carry links at all — that's what the footnote numbers and the
 legend are for. `em render`/`em watch` warn (without failing) if a note file can't be found.
 
 ## Validation rules (`em validate`)

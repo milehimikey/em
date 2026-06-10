@@ -45,8 +45,11 @@ file (so raster exports, which can't carry links, are still self-describing). In
 SVG the markers and legend rows link to the markdown. See README → DSL → Notes.
 Parser (`note` clause), `Element.note`, and `src/render/drawNotes.ts` (marker +
 legend injected into the SVG). `em render`/`watch` warn on a missing note file
-without failing. Note: neither PNG nor our PDF path (librsvg) preserves links —
-SVG only.
+without failing. Note links are rewritten relative to the output SVG's location
+(see `noteHref` in `render.ts`), so they survive rendering into a separate folder
+as long as the notes travel with the SVG. Caveats: neither PNG nor our PDF path
+(librsvg) preserves links — SVG only; and image viewers (macOS Preview/Quick
+Look) ignore SVG hyperlinks, so links only work in a browser.
 
 ## 2c. Element fields (next: PR #2) 🔴
 

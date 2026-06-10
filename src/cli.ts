@@ -63,7 +63,7 @@ program
 
     const out = opts.out ?? defaultOut(file, opts.format ?? "svg");
     const fmt = opts.format ?? formatFromPath(out);
-    await renderDot(dot, model, out, fmt);
+    await renderDot(dot, model, out, fmt, dirname(file));
     console.log(`rendered ${out}`);
   });
 
@@ -90,7 +90,7 @@ program
           console.error("skipped render (errors above)");
           return;
         }
-        await renderDot(dot, model, out, fmt);
+        await renderDot(dot, model, out, fmt, dirname(file));
         console.log(`rendered ${out} (${Date.now() - started}ms)`);
       } catch (e) {
         reportError(e);

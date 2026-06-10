@@ -8,8 +8,8 @@
 
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
-import { extname } from "node:path";
-import { NormalizedModel } from "../model/model.js";
+import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { Element, NormalizedModel } from "../model/model.js";
 import { parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, appendNoteLegend } from "./drawNotes.js";
@@ -27,8 +27,13 @@ export async function renderDot(
   model: NormalizedModel,
   outPath: string,
   format = formatFromPath(outPath),
+  baseDir = process.cwd(),
 ): Promise<void> {
-  const svg = withOverlays(await runDot(dot, "svg"), model);
+  // Note links are authored relative to the .em file (baseDir); rewrite them
+  // relative to the output SVG so they resolve wherever the SVG is written.
+  const outDir = dirname(outPath);
+  const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
+  const svg = withOverlays(await runDot(dot, "svg"), model, hrefOf);
 
   if (format === "svg") {
     await writeFile(outPath, svg, "utf8");
@@ -46,11 +51,27 @@ export async function renderDot(
   );
 }
 
+/**
+ * Resolve a note path (authored relative to the .em file) into an href relative
+ * to the output SVG's directory, so links stay valid wherever the SVG is
+ * written. URLs and absolute paths are passed through untouched.
+ */
+export function noteHref(note: string, baseDir: string, outDir: string): string {
+  if (!note) return note;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(note) || isAbsolute(note)) return note;
+  const rel = relative(outDir, resolve(baseDir, note)) || note;
+  return rel.split(sep).join("/"); // posix separators for URLs
+}
+
 /** Draw the semantic edges and note markers into a Graphviz-rendered SVG. */
-function withOverlays(svg: string, model: NormalizedModel): string {
+function withOverlays(
+  svg: string,
+  model: NormalizedModel,
+  hrefOf: (el: Element) => string,
+): string {
   const rects = parseNodeRects(svg, new Set(model.byId.keys()));
   const { defs, group } = buildEdgeOverlay(model, rects);
-  const notes = buildNoteMarkers(model, rects);
+  const notes = buildNoteMarkers(model, rects, hrefOf);
 
   let out = svg;
   // arrowhead markers go just inside <svg …>
@@ -64,7 +85,7 @@ function withOverlays(svg: string, model: NormalizedModel): string {
   // child of that group, making them the topmost clickable layer.
   out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}$1$2`);
   // grow the canvas and append the legend below the diagram (root coords)
-  out = appendNoteLegend(out, model);
+  out = appendNoteLegend(out, model, hrefOf);
   return out;
 }
 
