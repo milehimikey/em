@@ -168,7 +168,6 @@ em validate <file>                    # check event-modeling rules (non-zero exi
   self-drawn-edges architecture
 - [docs/features.md](docs/features.md) — full feature list and roadmap
 - [docs/dependencies.md](docs/dependencies.md) — how rendering works with no system deps
-- [docs/publishing.md](docs/publishing.md) — release / npm-publish checklist
 
 ## Development
 
