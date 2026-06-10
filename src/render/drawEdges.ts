@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Turns the model's semantic edges into SVG, drawn over the Graphviz grid.
 //
 // Coordinates come from parseNodeRects (same user space as the SVG). y grows

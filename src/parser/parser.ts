@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Line-oriented parser for the `.em` slice-first DSL.
 //
 // Grammar (whitespace-tolerant, `#` starts a comment):

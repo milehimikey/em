@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { describe, it, expect } from "vitest";
 import { compile } from "../src/pipeline.js";
 import { STARTER_EM } from "../src/templates.js";

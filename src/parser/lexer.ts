@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Small lexing helpers shared by the line-oriented parser.
 
 /** Remove a trailing `# comment`, ignoring `#` inside double quotes. */

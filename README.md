@@ -1,53 +1,70 @@
-# `em` — CLI Event Modeling with a strict Graphviz grid
+# em — AI friendly event modeling
 
-A command-line tool for [Event Modeling](https://eventmodeling.org/) (Adam Dymitruk's
-method). You write a model in a small **slice-first** text DSL (`.em`); `em` transpiles
-it to **Graphviz DOT** and renders an image. Layout is a **rigid grid** — swimlane rows
-and time-ordered slice columns are locked with Graphviz `rank=same` groups and weighted
-invisible edges, so there are **no manual offsets and no alignment drift**.
+`em` is a command-line tool for [Event Modeling](https://eventmodeling.org/). You write a
+model in a small, **plain-text, slice-first DSL** (`.em`) and `em` renders it to a clean,
+deterministic diagram (SVG by default, PNG on request). Because the source is just text —
+diff-able, reviewable, and unambiguous — it's as easy for an LLM to generate and edit as it
+is for a person to write by hand. Layout is a **strict grid**: swimlane rows and
+time-ordered slice columns stay perfectly aligned with no manual offsets.
 
 ```
-                example: examples/order-fulfillment.em  ->  em render  ->  SVG/PNG
+examples/order-fulfillment.em  ->  em render  ->  order-fulfillment.svg
 ```
 
-## Why DOT, not PlantUML
+Rendering is **self-contained** — Graphviz runs as bundled WebAssembly and PNG is
+rasterized in-process, so there's nothing to `apt`/`brew` install for SVG or PNG output.
 
-PlantUML's component diagrams cannot express `rank=same`, so a truly strict grid is
-impossible there — you end up estimating pixel widths and nudging boxes by hand. `em`
-generates DOT directly and uses the
-[Graphviz grid technique](https://graphviz.org/Gallery/undirected/grid.html): a full
-*rows × columns* matrix where every empty cell is an invisible placeholder, so columns
-stay perfectly aligned regardless of how sparse the model is.
-
-Graphviz lays out the grid and renders the boxes/labels, but it does **not** route the
-arrows: a global spline mode can't give straight within-slice verticals *and* clean
-cross-slice curves at once. Instead `em` reads each box's rectangle back out of the
-rendered SVG and draws the arrows itself — straight, centred lines within a slice and
-smooth curves into another slice — so routing is exact and never disturbs the grid.
-
-## Install / run
-
-Requires **Node ≥ 18** and **Graphviz** (`dot` on your `PATH`). Rendering to formats
-other than SVG (PNG, PDF, …) also needs **librsvg** (`rsvg-convert` on your `PATH`) —
-the arrows are drawn into the SVG, so raster/PDF output is converted from it. SVG output
-needs only Graphviz.
+## Install
 
 ```bash
-npm install
-npm run build          # produces dist/, exposes the `em` bin
-# during development, run straight from source:
-npx tsx src/cli.ts <command> ...
+npm install -g @milehimikey/em     # then `em` is on your PATH
 ```
 
-## Commands
+Requires **Node ≥ 18**. SVG and PNG need no other tools. PDF (and other Graphviz raster
+formats) are optional and use a system `rsvg-convert` (librsvg) if one is installed.
+
+Run without installing:
 
 ```bash
-em init [file]                 # scaffold a starter model (default: model.em)
-em render <file> [-o out.svg]  # transpile + render (format from -o extension or -T)
-em render <file> --emit-dot    # print the generated DOT instead of rendering
-em render <file> --keep-empty-lanes   # don't collapse the API lane when empty
-em watch <file> [-o out.svg]   # re-render on every save
-em validate <file>             # check event-modeling rules (non-zero exit on errors)
+npx @milehimikey/em init model.em
+npx @milehimikey/em render model.em
+```
+
+## Quickstart
+
+```bash
+em init model.em          # scaffold a starter model
+em render model.em        # -> model.svg  (open it in a browser)
+em watch model.em         # re-render on every save
+em validate model.em      # check event-modeling rules
+```
+
+A `.em` model is a list of **slices** (vertical time steps), each holding elements that fall
+into swimlane rows:
+
+```
+model "Order Fulfillment"
+
+persona Customer           # UI swimlanes (top), one row per persona
+context Order              # event swimlanes (bottom), one row per context
+context Payment
+
+slice "Browse Catalog" {           # each slice is one column (time, left -> right)
+  ui Product Catalog @Customer     # @Persona places the screen in a persona row
+  command Place Order {            # a `{ … }` block declares the element's fields
+    customerId
+    total: Money                   # optional `: Type` annotation
+  }
+  event Order Placed @Order note "notes/order-placed.md" {   # note "…" links docs
+    orderId
+    total: Money
+  }
+}
+
+slice "View Open Orders" {
+  view Open Orders from "Order Placed"   # from "<event>" wires the data flow
+  ui Order List @Customer
+}
 ```
 
 ## The four patterns
@@ -62,65 +79,28 @@ Event Modeling is built from four patterns, all expressible as slices:
 | **Translation** | external read model → translation → command → event | `view from "…"` + `translation`, then `command` + `event` |
 
 Automation/translation slices are **not** triggered by a command — they react to a read
-model (a "todo list") or a timer/cron and *issue* a command when done. The automation slice
+model (a "todo list") or a timer and *issue* a command when done. The automation slice
 contains **only** the read model it reads and the processor/translation; the command it
 triggers (and that command's event) is the **next** slice.
 
-## DSL
-
-```
-model "Order Fulfillment"
-
-persona Customer          # UI swimlanes (top band), one row each
-persona Manager
-context Order              # event swimlanes (bottom band), one row each
-context Payment
-
-slice "Browse Catalog" {           # each slice is one column (time, left -> right)
-  ui Product Catalog @Customer     # @Persona places the screen in a persona row
-  command Place Order
-  event Order Placed @Order note "notes/order-placed.md" {   # note "…" links docs
-    orderId                         # a `{ … }` block declares the element's fields
-    total: Money                    # optional `: Type` annotation
-  }
-}
-
-slice "View Open Orders" {
-  view Open Orders from "Order Placed"   # from "<event>" wires the data flow
-  ui Order List @Customer
-}
-
-slice "Payments To Process" {       # automation slice: read model + processor only
-  view Payments To Process from "Payment Requested"
-  processor Payment Gateway
-}
-
-slice "Capture Payment" {           # next slice: the command the automation triggers + its event
-  command Capture Payment
-  event Payment Captured @Payment
-}
-
-arrow Receipts -> Receipt Screen    # optional explicit arrow (overrides inference)
-```
+## DSL reference
 
 ### Element keywords → swimlane bands (top → bottom)
 
 0. *(header)* — each slice name is rendered as a title cell in the top row
 1. `automation` / `processor` / `saga` / `translation` — **Automation** band (only shown if used)
 2. `ui` — **persona** rows (one per `persona`)
-3. `command` + `view` — the **API** row (commands and read models share one lane — they
-   form the system's API)
+3. `command` + `view` — the **API** row (commands and read models share one lane)
 4. `event` — **context/concept** rows (one per `context`)
 
-Commands and read models share the **API** row, so a single slice holds *either* a command
-*or* a read model (a command slice vs a view slice). The empty API lane is dropped when a
-model has neither; pass `--keep-empty-lanes` to keep it. A fixed-width title cell per slice
-anchors uniform column widths; elements float in their columns and arrows route between them.
+Commands and read models share the **API** row, so a slice holds *either* a command *or* a
+read model. The empty API lane is dropped when a model has neither; pass `--keep-empty-lanes`
+to keep it.
 
 `@Persona` / `@Context` choose the row within a band (undeclared tags create a new row).
 `view … from "Event"[, "Event2"]` declares which events feed a read model and draws the
-data-flow arrow. Arrows between elements in a slice are inferred from the pattern; use
-`arrow A -> B` for anything extra (e.g. a read model feeding a different screen).
+data-flow arrow. Arrows within a slice are inferred from the pattern; use `arrow A -> B` for
+anything extra (e.g. a read model feeding a different screen).
 
 ### Fields
 
@@ -139,62 +119,66 @@ event Payment Requested @Payment { orderId, amount: Money }   # inline
 ```
 
 Fields render **in the box**, UML-style: the name, a divider rule, then the fields. The box
-grows downward to fit them (width stays fixed, so columns stay aligned), and arrows still
-anchor to the box edges so the lines stay stable. A field block can coexist with `note`/`from`
-clauses on the same element: `view Open Orders from "Order Placed" note "o.md" { orderId, status }`.
-
-Fields are the foundation of the later event-modeling phases (the slicing / information-
-completeness process); field-level validation across slices is planned.
+grows to fit them (width stays fixed, so columns stay aligned), and arrows still anchor to
+the box edges so the lines stay stable. A field block coexists with `note`/`from` clauses on
+the same element. Fields are the foundation of the later event-modeling phases (the slicing /
+information-completeness process); field-level validation across slices is planned.
 
 ### Notes
 
 Any element can carry `note "path.md"` (valid on every keyword). The prose lives in the
 markdown file — keeping the diagram uncluttered — and the box gets a small **numbered
-folded-corner marker** in its top-right corner showing it has notes. A **legend** is
-appended below the diagram mapping each number to its element and note file, so even in a
-static export you can tell which note belongs to which box.
+folded-corner marker** in its top-right corner. A **legend** is appended below the diagram
+mapping each number to its element and note file, so even a static export tells you which
+note belongs to which box.
 
-In **SVG** output the markers and legend rows are links: clicking one opens the markdown
-file. Notes are authored relative to the `.em` file, and the link is rewritten relative to
-the **output SVG's location**, so links keep working whether the SVG is rendered beside the
-model or into a separate folder (e.g. `docs/`) — as long as the notes travel with it.
+In **SVG** output the markers and legend rows are links; clicking one opens the markdown
+file. Links resolve relative to the **output SVG's location**, so they keep working whether
+the SVG is rendered beside the model or into another folder (as long as the notes travel
+with it). Open the SVG in a **web browser** to use the links — image viewers like macOS
+Preview/Quick Look show the markers but ignore SVG hyperlinks. Raster output (PNG/PDF) can't
+carry links — that's what the footnote numbers + legend are for.
 
-> Open the SVG in a **web browser** to use the links. macOS **Preview** / **Quick Look**
-> (the default for double-clicking an `.svg`) are image viewers and ignore SVG hyperlinks —
-> the markers will show but won't be clickable there.
+## Commands
 
-Raster output (PNG/PDF) can't carry links at all — that's what the footnote numbers and the
-legend are for. `em render`/`em watch` warn (without failing) if a note file can't be found.
+```bash
+em init [file]                        # scaffold a starter model (default: model.em)
+em render <file> [-o out.svg]         # render (format from -o extension or -T)
+em render <file> -o out.png           # PNG (in-process, no system deps)
+em render <file> --emit-dot           # print the generated DOT instead of rendering
+em render <file> --keep-empty-lanes   # don't collapse the API lane when empty
+em watch <file> [-o out.svg]          # re-render on every save
+em validate <file>                    # check event-modeling rules (non-zero exit on errors)
+```
 
 ## Validation rules (`em validate`)
 
-- two same-band elements in one slice (collision) → **error** (split into separate slices;
-  e.g. a command and a read model both land in the API row)
+- two same-band elements in one slice (collision) → **error** (split into separate slices)
 - a read model whose `from "Event"` doesn't exist → **error**
 - an automation/translation whose `from "<read model>"` doesn't exist → **error**
 - an `arrow` endpoint that matches no element → **error**
 - an automation/translation slice that also holds the command it triggers → **warning**
-  (move the command to the next slice)
 - a command that records no event → **warning**
 - a read model with no source event → **warning**
 - a name defined more than once and referenced → **warning** (resolves to first)
 
-## Project layout
+## Documentation
 
+- [docs/why-dot-not-plantuml.md](docs/why-dot-not-plantuml.md) — why DOT + the strict-grid /
+  self-drawn-edges architecture
+- [docs/features.md](docs/features.md) — full feature list and roadmap
+- [docs/dependencies.md](docs/dependencies.md) — how rendering works with no system deps
+- [docs/publishing.md](docs/publishing.md) — release / npm-publish checklist
+
+## Development
+
+```bash
+npm install
+npm run build          # produces dist/, exposes the `em` bin
+npm test               # vitest
+npx tsx src/cli.ts <command> ...   # run straight from source
 ```
-src/
-  parser/   lexer.ts, parser.ts, ast.ts        # .em -> AST
-  model/    model.ts, edges.ts, validate.ts    # normalized model, semantic edges, rule checks
-  layout/   grid.ts                            # bands -> rows, slices -> cols, R×C matrix
-  emit/     dot.ts, theme.ts                   # grid-only DOT + EM colours
-  render/   render.ts, svgGeometry.ts,         # run dot -> read box rects -> draw arrows
-            drawEdges.ts, drawNotes.ts,        #   + note markers -> inject SVG;
-            watch.ts                           #   rsvg-convert; chokidar watcher
-  pipeline.ts                                  # source -> { model, grid, diagnostics, dot }
-  cli.ts                                        # init | render | watch | validate
-examples/   order-fulfillment.em               # the canonical walkthrough (+ a linked note)
-            notes/order-placed.md              # markdown a note marker links to
-            ecommerce-fulfillment.em           # wide: all 4 patterns, 4 personas, 4 contexts
-            insurance-claim.em                 # mid: all 4 patterns, 3 personas, 3 contexts
-test/       parser / layout / emit / edges / svgGeometry / drawNotes + validation tests (vitest)
-```
+
+## License
+
+[MIT](LICENSE) © milehimikey

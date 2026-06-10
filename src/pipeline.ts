@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Ties the stages together: source -> AST -> model -> grid -> diagnostics -> DOT.
 
 import { parse } from "./parser/parser.js";

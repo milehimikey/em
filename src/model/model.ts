@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Normalizes a parsed AST into a resolved model: stable ids, resolved
 // persona/context lanes, and lookup indexes used by layout and validation.
 

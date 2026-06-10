@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Debounced file watcher for `em watch`.
 
 import chokidar from "chokidar";
