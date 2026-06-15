@@ -17,7 +17,7 @@ const STYLES: Record<ElementKind, NodeStyle> = {
   automation: { fill: "#DBDBDB", stroke: "#5F6368", fontColor: "#202124" },
   processor: { fill: "#DBDBDB", stroke: "#5F6368", fontColor: "#202124" },
   saga: { fill: "#DBDBDB", stroke: "#5F6368", fontColor: "#202124" },
-  translation: { fill: "#E4D5F7", stroke: "#6B46C1", fontColor: "#2A1A4A" },
+  translation: { fill: "#DBDBDB", stroke: "#5F6368", fontColor: "#202124" },
 };
 
 export function styleFor(kind: ElementKind): NodeStyle {
@@ -36,9 +36,8 @@ export function edgeColorFor(kind: ElementKind | undefined): string {
     case "automation":
     case "processor":
     case "saga":
-      return "#5F6368";
     case "translation":
-      return "#6B46C1";
+      return "#5F6368";
     default:
       return "#3C4043";
   }
