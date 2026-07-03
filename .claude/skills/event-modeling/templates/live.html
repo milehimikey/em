@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  Live viewer for an em event model. Auto-reloads the rendered SVG so a team on a shared
+  screen sees updates from `em watch` without manual refresh.
+
+  Usage:
+    1) In one terminal:  em watch MODEL.em -o MODEL.svg
+    2) Set SVG_FILE below to the SVG filename (same folder as this file).
+    3) Open this file in a browser (open live.html) and share the screen.
+
+  The SVG is embedded via <object> so note "..." links inside it stay clickable.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Event Model — Live</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #fafafa; }
+    header {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .5rem .9rem; background: #1f2933; color: #fff; font-size: 14px;
+    }
+    header .dot { width: 9px; height: 9px; border-radius: 50%; background: #34c759; }
+    header .stamp { margin-left: auto; opacity: .7; font-variant-numeric: tabular-nums; }
+    #stage { padding: 1rem; }
+    object { width: 100%; height: calc(100vh - 60px); border: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="dot"></span>
+    <span>Event Model — live (auto-refresh)</span>
+    <span class="stamp" id="stamp">—</span>
+  </header>
+  <div id="stage">
+    <object id="svg" type="image/svg+xml"></object>
+  </div>
+  <script>
+    // Change this to your model's SVG filename:
+    const SVG_FILE = "model.svg";
+    const obj = document.getElementById("svg");
+    const stamp = document.getElementById("stamp");
+    function reload() {
+      // cache-bust so the freshly written SVG is fetched each tick
+      obj.setAttribute("data", SVG_FILE + "?t=" + Date.now());
+      stamp.textContent = new Date().toLocaleTimeString();
+    }
+    reload();
+    setInterval(reload, 1000);
+  </script>
+</body>
+</html>

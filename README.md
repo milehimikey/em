@@ -178,6 +178,32 @@ npm test               # vitest
 npx tsx src/cli.ts <command> ...   # run straight from source
 ```
 
+## AI Assistant (Claude Code)
+
+`em` ships a **Claude Code skill** that guides you and your team through Event Modeling using the 7-step process and 4 design patterns, producing implementation-ready slice specifications. The AI drives the model — asking focused questions, never guessing domain facts — while `em validate` keeps the diagram honest.
+
+**Install the skill into your project:**
+
+```bash
+em skill install          # copies the skill into .claude/skills/event-modeling/
+em skill install --force  # overwrite an existing installation
+```
+
+Then, in Claude Code, run:
+
+```
+/event-modeling           # start (or resume) a guided session
+/event-modeling discover  # steps 1–4: brainstorm events, timeline, commands, read models
+/event-modeling model     # steps 5–7: swimlanes, patterns, completeness check
+/event-modeling slice     # deep implementation specs, one per slice
+/event-modeling watch     # open a live browser view for team modeling sessions
+/event-modeling validate  # run em validate and resolve all diagnostics
+```
+
+Sessions are **resumable** — the skill checkpoints progress in `.event-modeling.md` so you can continue across conversations.
+
+For a complete worked example (a headless CPQ system with ~50 slices), see the [em-with-ai repository](https://github.com/milehimikey/em-with-ai).
+
 ## License
 
 [MIT](LICENSE) © milehimikey
