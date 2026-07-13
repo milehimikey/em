@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { basename, dirname, extname, resolve } from "node:path";
+import { cp, mkdir } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { compile, CompileOptions } from "./pipeline.js";
 import { NormalizedModel } from "./model/model.js";
@@ -16,7 +18,7 @@ const program = new Command();
 program
   .name("em")
   .description("Event Modeling CLI — slice-first DSL rendered as a strict Graphviz grid")
-  .version("0.1.1");
+  .version("0.2.0");
 
 program
   .command("init")
@@ -112,6 +114,31 @@ program
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) process.exit(1);
     if (diagnostics.length === 0) console.log("ok — no issues");
+  });
+
+const skill = program
+  .command("skill")
+  .description("manage Claude Code skills bundled with em");
+
+skill
+  .command("install")
+  .description("copy the event-modeling skill into .claude/skills/event-modeling/")
+  .option("-f, --force", "overwrite an existing installation")
+  .action(async (opts: { force?: boolean }) => {
+    const pkgDir = dirname(fileURLToPath(import.meta.url));
+    const src = join(pkgDir, "..", ".claude", "skills", "event-modeling");
+    const dest = join(process.cwd(), ".claude", "skills", "event-modeling");
+
+    if (existsSync(dest) && !opts.force) {
+      console.log(`skill already installed at ${dest}`);
+      console.log("re-run with --force to overwrite");
+      return;
+    }
+
+    await mkdir(join(process.cwd(), ".claude", "skills"), { recursive: true });
+    await cp(src, dest, { recursive: true });
+    console.log(`installed event-modeling skill → ${dest}`);
+    console.log("in Claude Code, run /event-modeling to start a guided session");
   });
 
 program.parseAsync().catch((e) => {
