@@ -45,7 +45,8 @@ Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl
   only that one adjacent event, so every arrow is short (a read model far from its source events
   draws long arrows that look like a forbidden read→read link). Repeats render cleanly — em only
   warns on a duplicate name that's *referenced* by `from`/`arrow`. Slice order matters: a reaction
-  must be directly followed by its command slice, and a read slice must not be (see `em-dsl.md`).
+  must be directly followed by its command slice, and a read slice must not be immediately
+  followed by a command slice (see `em-dsl.md`).
   See `reference/methodology.md` (State View) and `reference/em-dsl.md`.
 - **Validate continuously.** Run `em validate` and fix errors/warnings as you go (see DSL ref).
 - **Save state at the end of every session** so work resumes cleanly.
@@ -87,6 +88,9 @@ Goal: a draft model of events, storyboard, commands, and views. Loose is OK; str
    facts. Capture a flat list. Probe for missed state changes.
 2. **Plot / storyboard (step 2).** Order the events into the narrative. Identify **personas**
    (actors) and the **UI** screens at each step. Add `persona` declarations and `ui` elements.
+   In a **headless/API** model there are no personas or screens — identify the external
+   **callers** at each step instead; they become the inbound write translations and read
+   translations (see `reference/methodology.md`).
 3. **Inputs (step 3).** For each event, find the **command** that causes it (imperative name).
    Form `command → event` slices (State Change pattern).
 4. **Outputs (step 4).** Identify the **read models / views** consumers need and wire them with

@@ -156,6 +156,9 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
 - A **read** slice (read model → read translation, no command) must **not** be immediately followed
   by a `command` slice, or the read translation will be mis-wired to that command. Put reads after a
   command+event slice, or before another read / a reaction / an inbound `(request)` slice.
+- A read model fed by an early event (e.g. a queue or to-do view) can't always sit directly after
+  its source event when a reaction must immediately precede its command slice — placing the read
+  later, in narrative order with a longer arrow, is the correct trade-off, not something to force-fix.
 
 ---
 
