@@ -11,6 +11,11 @@ Keep it current at the end of every working session.
 - **Current step:** {{1–7, see methodology}}
 - **Last updated:** {{YYYY-MM-DD}}
 
+## Session inputs
+- **Scope line:** {{one-line description of what's in/out of bounds for this model}}
+- **PRD / spec reference:** {{path, link, or "none"}}
+- **Headless/API model:** {{yes | no}}
+
 ## Steps completed
 - [ ] 1. Brainstorm events
 - [ ] 2. Plot / storyboard (personas + UI)
