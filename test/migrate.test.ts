@@ -114,4 +114,29 @@ describe("em migrate", () => {
     expect(data).toMatchObject({ schemaVersion: 1, model: "demo.em" });
     expect(body).toContain("# Event Modeling Progress — Demo");
   });
+
+  it("regenerates the Slice inventory table, matching rows by slice name", () => {
+    writeFileSync(
+      join(dir, ".event-modeling.md"),
+      [
+        "# Event Modeling Progress — Demo",
+        "",
+        "## Slice inventory",
+        "| Slice | Pattern | Doc status |",
+        "|-------|---------|------------|",
+        "| Place Order | State Change | draft |",
+        "| Unmatched Slice | State View | none |",
+        "",
+      ].join("\n"),
+    );
+    const plan = planMigration(dir);
+    const { body } = parseFrontmatter(plan.stateFile!.content!);
+    const lines = body.split("\n");
+
+    expect(lines).toContain("| Slice | Id | Pattern | Doc status |");
+    expect(lines).toContain("| Place Order | place-order | state-change | reviewed (v1) |");
+    // Unmatched row (no doc named "Unmatched Slice") is left as-is, and flagged.
+    expect(lines).toContain("| Unmatched Slice | State View | none |");
+    expect(plan.notes.some((n) => /Slice inventory row/.test(n.message))).toBe(true);
+  });
 });

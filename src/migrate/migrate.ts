@@ -173,24 +173,114 @@ export function planMigration(dir: string, opts: MigrateOptions = {}): Migration
     return { path: doc.path, file: doc.file, alreadyMigrated: false, content };
   });
 
-  const stateFile = planStateFile(dir, modelPath);
+  // Every slice's final (id, pattern, status, version) — migrated-this-run or already-migrated —
+  // used to regenerate the state file's Slice inventory table below.
+  const summaries: InventorySummary[] = docs.map((doc) => {
+    const draft = drafts.find((d) => d.doc === doc);
+    if (draft) return { title: draft.title, id: draft.id, pattern: draft.pattern, status: draft.status, version: 1 };
+    const fm = doc.frontmatter!;
+    return {
+      title: typeof fm.title === "string" ? fm.title : String(fm.id),
+      id: String(fm.id),
+      pattern: fm.pattern as SlicePattern,
+      status: fm.status as SliceStatus,
+      version: typeof fm.version === "number" ? fm.version : 1,
+    };
+  });
+
+  const stateFile = planStateFile(dir, modelPath, summaries, notes);
 
   return { dir, modelPath, docs: docPlans, stateFile, notes };
 }
 
-function planStateFile(dir: string, modelPath: string): DocPlan | undefined {
+interface InventorySummary {
+  title: string;
+  id: string;
+  pattern: SlicePattern;
+  status: SliceStatus;
+  version: number;
+}
+
+function planStateFile(
+  dir: string,
+  modelPath: string,
+  summaries: InventorySummary[],
+  notes: MigrationNote[],
+): DocPlan | undefined {
   const stateFilePath = join(dir, ".event-modeling.md");
   if (!existsSync(stateFilePath)) return undefined;
 
   const raw = readFileSync(stateFilePath, "utf8");
-  const { data } = parseFrontmatter(raw);
+  const { data, body } = parseFrontmatter(raw);
   if (data && typeof data.schemaVersion === "number") {
     return { path: stateFilePath, file: ".event-modeling.md", alreadyMigrated: true };
   }
 
   const fmData = { schemaVersion: CURRENT_SCHEMA_VERSION, model: relative(dir, modelPath) };
-  const content = stringifyFrontmatter(frontmatterFromData(fmData), raw);
+  const { content: newBody, matchedAny, unmatchedRows } = regenerateSliceInventory(body, summaries);
+  if (summaries.length > 0 && !matchedAny) {
+    notes.push({
+      file: stateFilePath,
+      message: "Slice inventory table couldn't be matched to any migrated doc by name; review manually",
+    });
+  } else if (unmatchedRows > 0) {
+    notes.push({
+      file: stateFilePath,
+      message: `${unmatchedRows} Slice inventory row(s) couldn't be matched to a migrated doc by name; review manually`,
+    });
+  }
+
+  const content = stringifyFrontmatter(frontmatterFromData(fmData), newBody);
   return { path: stateFilePath, file: ".event-modeling.md", alreadyMigrated: false, content };
+}
+
+/**
+ * Rewrite the "| Slice | Pattern | Doc status |" table to "| Slice | Id | Pattern | Doc status |",
+ * matching each row to a migrated slice by title (or by kebab-slugging the row's slice name) and
+ * filling in id/pattern/status/version. Rows that can't be matched (e.g. a still-unfilled
+ * `{{Slice Name}}` template row) are left untouched — never guessed.
+ */
+function regenerateSliceInventory(
+  content: string,
+  summaries: InventorySummary[],
+): { content: string; matchedAny: boolean; unmatchedRows: number } {
+  const lines = content.split("\n");
+  const headerIdx = lines.findIndex((l) => /^\|\s*Slice\s*\|/i.test(l.trim()));
+  const separatorOk = headerIdx !== -1 && /^\|[\s\-:|]+\|$/.test((lines[headerIdx + 1] ?? "").trim());
+  if (!separatorOk) return { content, matchedAny: false, unmatchedRows: 0 };
+
+  const byTitle = new Map(summaries.map((s) => [s.title.toLowerCase(), s]));
+  const bySlug = new Map(summaries.map((s) => [kebabSlug(s.title), s]));
+
+  let rowEnd = headerIdx + 2;
+  while (rowEnd < lines.length && lines[rowEnd].trim().startsWith("|")) rowEnd++;
+
+  let matchedAny = false;
+  let unmatchedRows = 0;
+  const newRows: string[] = [];
+  for (let i = headerIdx + 2; i < rowEnd; i++) {
+    const cells = lines[i].split("|").slice(1, -1).map((c) => c.trim());
+    const sliceName = cells[0] ?? "";
+    const summary = byTitle.get(sliceName.toLowerCase()) ?? bySlug.get(kebabSlug(sliceName));
+    if (summary) {
+      matchedAny = true;
+      newRows.push(`| ${summary.title} | ${summary.id} | ${summary.pattern} | ${summary.status} (v${summary.version}) |`);
+    } else {
+      unmatchedRows++;
+      newRows.push(lines[i]);
+    }
+  }
+
+  if (!matchedAny) return { content, matchedAny: false, unmatchedRows };
+
+  const rewritten = [
+    ...lines.slice(0, headerIdx),
+    "| Slice | Id | Pattern | Doc status |",
+    "|-------|-----|---------|------------|",
+    ...newRows,
+    ...lines.slice(rowEnd),
+  ];
+  return { content: rewritten.join("\n"), matchedAny: true, unmatchedRows };
 }
 
 function patternFromElementKind(kind: string): SlicePattern {
