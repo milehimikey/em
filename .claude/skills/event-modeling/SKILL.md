@@ -16,9 +16,10 @@ You are facilitating an Event Modeling session. Your job is to **extract an accu
 the user through Socratic questioning** — never to invent the domain. You drive the `em` CLI to
 render the model live, and you produce implementation-ready slice design docs.
 
-Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl.md` (DSL syntax
-+ validation rules) before doing real work — they are the source of truth. Templates live in
-`templates/`.
+Read `reference/methodology.md` (the 7 steps + 4 patterns), `reference/em-dsl.md` (DSL syntax +
+validation rules), and — before the `slice` phase specifically — `reference/frontmatter.md` (the
+slice-doc frontmatter schema, lifecycle, and `em slice` CLI) before doing real work; they are the
+source of truth. Templates live in `templates/`.
 
 ## Operating principles (every phase)
 
@@ -58,7 +59,13 @@ Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl
 2. Locate the model. Look for an existing `<dir>/.event-modeling.md` and `*.em` in the working
    directory (or a `models/` subfolder). If found, read the state file. If not, and the phase
    needs one, ask the user for the model name and where to create it.
-3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, read the
+3. **Pre-1.0 model check.** If a `slices/*.md` doc exists with no YAML frontmatter block (run
+   `em validate <model>.em` — a missing-frontmatter doc errors with a message pointing at this),
+   tell the user this model predates the frontmatter standard and offer to run
+   `em migrate <model-dir>` before continuing (it refuses a dirty git tree by default — commit
+   first, or pass `--force`). Don't hand-edit old-format docs around this; migrate once, then
+   proceed normally.
+4. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, read the
    state file and resume the recorded phase/step; if no model exists, propose starting `discover`.
 
 ## Project layout this skill creates
@@ -69,14 +76,18 @@ Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl
   <model-name>.svg         # render target for em watch
   live.html                # auto-refresh viewer (copy of templates/live.html, SVG_FILE set)
   README.md                # overview + slice index (from templates/model-readme.md)
-  .event-modeling.md       # resumable state (from templates/state.md)
-  slices/<slice-name>.md   # one rich slice doc per slice (from templates/slice.md)
+  .event-modeling.md       # resumable state (from templates/state.md, with frontmatter)
+  em.config.json           # optional: { "sliceTemplate": "..." } for a team's own slice template
+  slices/<slice-id>.md     # one rich slice doc per slice, scaffolded via `em slice new`
 ```
 
-When creating a new model, scaffold the directory, copy the templates in (filling the
-placeholders), and set `SVG_FILE` in the copied `live.html` to `<model-name>.svg`. You may use
-`em init` for a starter `.em`, but usually you'll build it up from the discovery conversation
-instead. Fill template placeholders — never leave `{{...}}` in delivered files.
+When creating a new model, scaffold the directory, copy the `model-readme.md`/`state.md`
+templates in (filling the placeholders), and set `SVG_FILE` in the copied `live.html` to
+`<model-name>.svg`. You may use `em init` for a starter `.em`, but usually you'll build it up from
+the discovery conversation instead. Fill template placeholders — never leave `{{...}}` in
+delivered files. **Slice docs are the one exception**: don't hand-copy `templates/slice.md` —
+use `em slice new` (see the `slice` phase below), which injects the required frontmatter and
+respects a project's `em.config.json` custom template if one is configured.
 
 ---
 
@@ -138,17 +149,28 @@ the corresponding event/slice to the `.em` and re-render. The happy-path spine f
 phases is the starting point, not the finished event set.
 
 For each slice:
-1. Hold a Socratic deep-dive to fill every section of `templates/slice.md`: intent, trigger/actor,
-   command + field table (types & rules), event(s) + payload (mark immutable facts), invariants
-   (give each a stable ID), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
+1. Scaffold the doc: `em slice new "<Slice Name>" --pattern <state-change|state-view|automation|translation>`.
+   This writes `slices/<id>.md` with the required frontmatter already filled in (`id`, `pattern`,
+   `status: draft`, `version: 1`, …) and the body template (custom, if `em.config.json` configures
+   one; the shipped default otherwise) ready to fill in.
+2. Hold a Socratic deep-dive to fill every body section: intent, trigger/actor, command + field
+   table (types & rules), event(s) + payload (mark immutable facts), invariants (give each a
+   stable ID), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
    alternate/error flows (retries, idempotency, compensations), read models affected, open
-   questions. Park anything unresolved rather than guessing.
-2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name).
-3. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
-   (the command for State Change, the view for State View, the processor for Automation, the
-   translation for Translation).
-4. Update `README.md`'s slice index and the state file's slice inventory (`draft` → `ready`).
-5. Re-render and `em validate`.
+   questions. Park anything unresolved rather than guessing. Pattern and status are frontmatter
+   now, not prose — see `reference/frontmatter.md`.
+3. Wire it into the `.em`: add `note "slices/<id>.md"` to the slice's primary element (the command
+   for State Change, the view for State View, the processor for Automation, the translation for
+   Translation).
+4. Run `em slice sync <id>` — it discovers the linked element from that `note` and fills in the
+   generated frontmatter fields (`commands`/`events`/`readModels`/`contexts`/`personas`, and
+   `triggers`/`triggeredBy` for automation/translation). **Re-run `em slice sync <id>` (or
+   `--all`) after any later `.em` edit that touches this slice's elements** — generated fields
+   drift otherwise, and `em validate` will flag it.
+5. When the doc is solid, move it forward: `em slice update <id> --status reviewed` (and later
+   `--status ready-to-implement`). Update `README.md`'s slice index.
+6. Re-render and `em validate` (validates the `.em` **and** every slice doc's frontmatter by
+   default).
 
 ## Phase: `watch` — live team view
 
@@ -163,8 +185,13 @@ For each slice:
 ## Phase: `validate`
 
 Run `em validate <model-name>.em` and walk through each diagnostic with the user, explaining the
-rule (see `reference/em-dsl.md`) and proposing the fix (e.g. split an automation's command into
-the next slice, add a missing `from`, give a command its event). Apply fixes on agreement.
+rule (see `reference/em-dsl.md` for `.em` rules, `reference/frontmatter.md` for slice-doc
+frontmatter rules) and proposing the fix. Apply fixes on agreement:
+- `.em`-level fixes: split an automation's command into the next slice, add a missing `from`, give
+  a command its event.
+- Slice-doc-level fixes: no frontmatter block → run `em migrate` (pre-1.0 model); "out of sync
+  with .em" → run `em slice sync <id>`; orphan doc → wire a `note "slices/<id>.md"` onto the
+  right element, then sync.
 
 Then do one check `em validate` can't: scan every `translation`/`processor`/`automation` slice and
 confirm none contains an `event` — each reaction must trigger a `command` in the next slice
@@ -178,11 +205,19 @@ two slices and route it through a command.
 ```bash
 em --version
 em init <name>.em                          # optional starter scaffold
-em validate <name>.em                      # check rules; exit 0 if clean/warnings only
+em validate <name>.em                      # check .em rules + slice-doc frontmatter
 em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
 em watch <name>.em -o <name>.svg           # re-render on save (run in background)
+
+em slice new "<Slice Name>" --pattern <pattern>   # scaffold slices/<id>.md with frontmatter
+em slice sync <id>                                # after wiring note "slices/<id>.md" into the .em
+em slice update <id> --status <status>            # move a slice's lifecycle status forward
+em slice list / show <id> / search "<query>"      # query slice docs by frontmatter (--format json)
+em migrate <model-dir>                            # one-time upgrade from a pre-1.0 model
 ```
+
+See `reference/frontmatter.md` for the full slice-doc frontmatter schema and CLI reference.
 
 Always finish a working session by: re-rendering, running `em validate`, and updating
 `.event-modeling.md` with the current phase/step, decisions, and open questions.

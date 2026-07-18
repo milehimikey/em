@@ -11,6 +11,8 @@ export interface Diagnostic {
   severity: Severity;
   message: string;
   line?: number;
+  /** Slice-doc path, for diagnostics that point at a Markdown doc rather than a .em line. */
+  file?: string;
 }
 
 export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
@@ -143,7 +145,7 @@ export function hasErrors(diags: Diagnostic[]): boolean {
 
 /** Pretty one-line diagnostic for terminal output. */
 export function formatDiagnostic(d: Diagnostic): string {
-  const where = d.line ? `:${d.line}` : "";
+  const where = d.file ? ` ${d.file}` : d.line ? `:${d.line}` : "";
   const tag = d.severity === "error" ? "error" : "warn ";
   return `  ${tag}${where} ${d.message}`;
 }

@@ -4,6 +4,11 @@ The skill reads this on `/event-modeling` (no arg) to resume where you left off.
 Keep it current at the end of every working session.
 -->
 
+---
+schemaVersion: 1
+model: {{model-name}}.em
+---
+
 # Event Modeling Progress — {{Model Name}}
 
 - **Model file:** `{{model-name}}.em`
@@ -34,6 +39,6 @@ Keep it current at the end of every working session.
 - [ ] {{question}}
 
 ## Slice inventory
-| Slice | Pattern | Doc status |
-|-------|---------|------------|
-| {{Slice Name}} | {{State Change/View/Automation/Translation}} | {{none / draft / ready}} |
+| Slice | Id | Pattern | Doc status |
+|-------|-----|---------|------------|
+| {{Slice Name}} | {{slice-id}} | {{state-change/state-view/automation/translation}} | {{none / draft / reviewed / ready-to-implement}} |

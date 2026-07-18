@@ -11,6 +11,17 @@ import { ParseError } from "./parser/parser.js";
 import { renderDot, formatFromPath } from "./render/render.js";
 import { watchFile } from "./render/watch.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
+import { loadSliceDocs, SlicePattern, SliceStatus } from "./model/sliceDoc.js";
+import { validateSliceDocs } from "./model/validateSliceDocs.js";
+import { newSlice } from "./slice/generate.js";
+import { syncAll, syncSlice } from "./slice/sync.js";
+import { listSlices, searchSlices, showSlice, SliceSummary, updateSlice } from "./slice/query.js";
+import {
+  applyMigration,
+  assertCleanWorkingTree,
+  formatMigrationReport,
+  planMigration,
+} from "./migrate/migrate.js";
 import { STARTER_EM } from "./templates.js";
 
 const program = new Command();
@@ -18,7 +29,7 @@ const program = new Command();
 program
   .name("em")
   .description("Event Modeling CLI — slice-first DSL rendered as a strict Graphviz grid")
-  .version("0.2.0");
+  .version("1.0.0");
 
 program
   .command("init")
@@ -109,8 +120,13 @@ program
   .command("validate")
   .description("check a model against event-modeling rules")
   .argument("<file>", "input .em file")
-  .action((file: string) => {
-    const { diagnostics } = compileFile(file);
+  .option("--skip-slices", "don't validate slice docs (slices/*.md)")
+  .action((file: string, opts: { skipSlices?: boolean }) => {
+    const { model, diagnostics } = compileFile(file);
+    if (!opts.skipSlices) {
+      const docs = loadSliceDocs(dirname(file));
+      diagnostics.push(...validateSliceDocs(model, file, docs));
+    }
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) process.exit(1);
     if (diagnostics.length === 0) console.log("ok — no issues");
@@ -140,6 +156,217 @@ skill
     console.log(`installed event-modeling skill → ${dest}`);
     console.log("in Claude Code, run /event-modeling to start a guided session");
   });
+
+const slice = program.command("slice").description("manage slice design docs (slices/*.md)");
+
+slice
+  .command("new")
+  .description("scaffold a new slice doc with injected frontmatter")
+  .argument("<name>", 'slice title, e.g. "Place Order"')
+  .option("--dir <path>", "model directory", ".")
+  .option("--model <path>", "explicit .em file (default: the only .em in --dir)")
+  .option("--config <path>", "explicit em.config.json path")
+  .option(
+    "--pattern <pattern>",
+    "state-change | state-view | automation | translation",
+    "state-change",
+  )
+  .option("--id <id>", "explicit slice id (default: kebab-case of the name)")
+  .option("--slice-element <id>", "the .em Element.id this doc documents, if already known")
+  .option("-f, --force", "overwrite an existing doc with this id")
+  .action(
+    (
+      name: string,
+      opts: {
+        dir: string;
+        model?: string;
+        config?: string;
+        pattern: SlicePattern;
+        id?: string;
+        sliceElement?: string;
+        force?: boolean;
+      },
+    ) => {
+      try {
+        const result = newSlice(name, {
+          dir: opts.dir,
+          modelPath: opts.model,
+          configPath: opts.config,
+          pattern: opts.pattern,
+          id: opts.id,
+          sliceElement: opts.sliceElement,
+          force: opts.force,
+        });
+        console.log(`wrote ${result.path} (id: ${result.id})`);
+      } catch (e) {
+        reportError(e);
+        process.exit(1);
+      }
+    },
+  );
+
+slice
+  .command("sync")
+  .description(
+    "recompute generated frontmatter fields (commands/events/readModels/contexts/personas/triggers) from the .em",
+  )
+  .argument("[id]", "slice id to sync (omit with --all)")
+  .option("--dir <path>", "model directory", ".")
+  .option("--model <path>", "explicit .em file")
+  .option("--all", "sync every slice doc in the directory")
+  .action((id: string | undefined, opts: { dir: string; model?: string; all?: boolean }) => {
+    try {
+      if (opts.all) {
+        const { synced, skipped } = syncAll({ dir: opts.dir, modelPath: opts.model });
+        for (const s of synced) console.log(`synced ${s.path}${s.changed ? "" : " (no changes)"}`);
+        for (const s of skipped) console.warn(`  skip  ${s.file}: ${s.reason}`);
+      } else {
+        if (!id) {
+          console.error("pass a slice id, or --all");
+          process.exit(1);
+        }
+        const result = syncSlice(id, { dir: opts.dir, modelPath: opts.model });
+        console.log(`synced ${result.path}${result.changed ? "" : " (no changes)"}`);
+      }
+    } catch (e) {
+      reportError(e);
+      process.exit(1);
+    }
+  });
+
+slice
+  .command("list")
+  .description("list slice docs from frontmatter only (no .em parse, no body read)")
+  .option("--dir <path>", "model directory", ".")
+  .option("--status <status>", "filter by status")
+  .option("--pattern <pattern>", "filter by pattern")
+  .option("--format <fmt>", "table | json", "table")
+  .action(
+    (opts: { dir: string; status?: SliceStatus; pattern?: SlicePattern; format: string }) => {
+      printSlices(
+        listSlices({ dir: opts.dir, status: opts.status, pattern: opts.pattern }),
+        opts.format,
+      );
+    },
+  );
+
+slice
+  .command("show")
+  .description("show one slice doc's frontmatter")
+  .argument("<id>", "slice id")
+  .option("--dir <path>", "model directory", ".")
+  .option("--format <fmt>", "table | json", "table")
+  .option("--body", "include the doc body")
+  .action((id: string, opts: { dir: string; format: string; body?: boolean }) => {
+    const doc = showSlice(id, { dir: opts.dir });
+    if (!doc) {
+      console.error(`no slice doc with id "${id}" found in ${opts.dir}`);
+      process.exit(1);
+    }
+    if (opts.format === "json") {
+      const payload = opts.body ? { ...doc.frontmatter, body: doc.body } : doc.frontmatter;
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log(`# ${doc.file}`);
+    for (const [k, v] of Object.entries(doc.frontmatter ?? {})) {
+      console.log(`${k}: ${JSON.stringify(v)}`);
+    }
+    if (opts.body) {
+      console.log("");
+      console.log(doc.body);
+    }
+  });
+
+slice
+  .command("search")
+  .description("search slice docs by frontmatter only (title/tags/commands/events/readModels)")
+  .argument("[query]", "free-text query", "")
+  .option("--dir <path>", "model directory", ".")
+  .option("--status <status>", "filter by status")
+  .option("--pattern <pattern>", "filter by pattern")
+  .option("--context <context>", "filter by context")
+  .option("--tag <tag>", "filter by tag")
+  .option("--format <fmt>", "table | json", "table")
+  .action(
+    (
+      query: string,
+      opts: {
+        dir: string;
+        status?: SliceStatus;
+        pattern?: SlicePattern;
+        context?: string;
+        tag?: string;
+        format: string;
+      },
+    ) => {
+      const results = searchSlices(query, {
+        dir: opts.dir,
+        status: opts.status,
+        pattern: opts.pattern,
+        context: opts.context,
+        tag: opts.tag,
+      });
+      printSlices(results, opts.format);
+    },
+  );
+
+slice
+  .command("update")
+  .description("write status/version changes back into a slice doc's frontmatter")
+  .argument("<id>", "slice id")
+  .option("--dir <path>", "model directory", ".")
+  .option("--status <status>", "new status")
+  .option("--bump-version", "increment version by 1")
+  .action((id: string, opts: { dir: string; status?: SliceStatus; bumpVersion?: boolean }) => {
+    try {
+      const result = updateSlice(id, {
+        dir: opts.dir,
+        status: opts.status,
+        bumpVersion: opts.bumpVersion,
+      });
+      console.log(`updated ${result.path}`);
+    } catch (e) {
+      reportError(e);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("migrate")
+  .description("upgrade a pre-1.0 model directory to the frontmatter standard (docs/1.0.0-spec.md)")
+  .argument("<model-dir>", "model directory")
+  .option("--model <path>", "explicit .em file")
+  .option("--dry-run", "print the plan/report without writing")
+  .option("--force", "proceed even with uncommitted changes or no git repo")
+  .option("--report <path>", "write the migration report to a file instead of stdout")
+  .action(
+    (
+      dir: string,
+      opts: { model?: string; dryRun?: boolean; force?: boolean; report?: string },
+    ) => {
+      try {
+        if (!opts.dryRun) assertCleanWorkingTree(dir, opts.force);
+        const plan = planMigration(dir, { modelPath: opts.model });
+        const report = formatMigrationReport(plan);
+        if (opts.report) {
+          writeFileSync(opts.report, report);
+          console.log(`wrote migration report -> ${opts.report}`);
+        } else {
+          console.log(report);
+        }
+        if (opts.dryRun) {
+          console.log("dry run — no files written");
+          return;
+        }
+        applyMigration(plan);
+        console.log("migration applied");
+      } catch (e) {
+        reportError(e);
+        process.exit(1);
+      }
+    },
+  );
 
 program.parseAsync().catch((e) => {
   reportError(e);
@@ -193,4 +420,18 @@ function printDiagnostics(diags: Diagnostic[]): void {
 
 function reportError(e: unknown): void {
   console.error(e instanceof Error ? e.message : String(e));
+}
+
+function printSlices(results: SliceSummary[], format: string): void {
+  if (format === "json") {
+    console.log(JSON.stringify(results, null, 2));
+    return;
+  }
+  if (results.length === 0) {
+    console.log("no matching slices");
+    return;
+  }
+  for (const s of results) {
+    console.log(`${s.id}\t${s.pattern ?? "?"}\t${s.status ?? "?"}\tv${s.version ?? "?"}\t${s.title}`);
+  }
 }

@@ -148,8 +148,11 @@ em render <file> -o out.png           # PNG (in-process, no system deps)
 em render <file> --emit-dot           # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes   # don't collapse the API lane when empty
 em watch <file> [-o out.svg]          # re-render on every save
-em validate <file>                    # check event-modeling rules (non-zero exit on errors)
+em validate <file>                    # check event-modeling rules + slice-doc frontmatter
+em migrate <model-dir>                # one-time upgrade of a pre-1.0 model to the frontmatter standard
 ```
+
+See [Slice docs & frontmatter](#slice-docs--frontmatter) below for the `em slice` command group.
 
 ## Validation rules (`em validate`)
 
@@ -162,8 +165,33 @@ em validate <file>                    # check event-modeling rules (non-zero exi
 - a read model with no source event → **warning**
 - a name defined more than once and referenced → **warning** (resolves to first)
 
+## Slice docs & frontmatter
+
+Slice design docs (`slices/<id>.md`, written during the skill's `slice` phase or via
+`em slice new`) carry a required YAML frontmatter block — a stable `id`, lifecycle `status`,
+integer `version`, and fields generated from the `.em` (`commands`/`events`/`readModels`/
+`contexts`/`personas`, plus `triggers`/`triggeredBy` for automation/translation) — so an AI agent
+can search and filter across a model with hundreds of slices from frontmatter alone, without
+reading every doc's body or re-parsing the `.em`:
+
+```bash
+em slice new "Place Order" --pattern state-change   # scaffold slices/place-order.md
+em slice sync place-order                           # after wiring note "slices/..." into the .em
+em slice list --status ready-to-implement
+em slice search --pattern automation --context Payment --format json
+em slice update place-order --status reviewed --bump-version
+```
+
+The doc body itself is **yours to define** — point `em.config.json` at a custom template
+(`{ "sliceTemplate": "path/to/template.md" }`) and `em` injects the frontmatter on top of it
+regardless of what sections you ask for. Full schema, lifecycle model, and the handoff contract a
+build/SDD tool should treat as authoritative once a slice is `ready-to-implement`:
+[docs/1.0.0-spec.md](docs/1.0.0-spec.md).
+
 ## Documentation
 
+- [docs/1.0.0-spec.md](docs/1.0.0-spec.md) — slice frontmatter standard, config, `em slice`/
+  `em migrate`, and the SDD handoff contract
 - [docs/why-dot-not-plantuml.md](docs/why-dot-not-plantuml.md) — why DOT + the strict-grid /
   self-drawn-edges architecture
 - [docs/features.md](docs/features.md) — full feature list and roadmap
@@ -195,7 +223,7 @@ Then, in Claude Code, run:
 /event-modeling           # start (or resume) a guided session
 /event-modeling discover  # steps 1–4: brainstorm events, timeline, commands, read models
 /event-modeling model     # steps 5–7: swimlanes, patterns, completeness check
-/event-modeling slice     # deep implementation specs, one per slice
+/event-modeling slice     # deep implementation specs, one per slice (frontmatter via `em slice new`)
 /event-modeling watch     # open a live browser view for team modeling sessions
 /event-modeling validate  # run em validate and resolve all diagnostics
 ```
