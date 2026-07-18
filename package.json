@@ -1,6 +1,6 @@
 {
   "name": "@milehimikey/em",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AI-friendly Event Modeling — a slice-first text DSL rendered to a strict, self-contained Graphviz grid (SVG/PNG)",
   "type": "module",
   "bin": {
