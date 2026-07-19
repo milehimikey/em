@@ -229,6 +229,7 @@ em slice new "<Slice Name>" --pattern <pattern>   # scaffold slices/<id>.md with
 em slice sync <id>                                # after wiring note "slices/<id>.md" into the .em
 em slice update <id> --status <status>            # move a slice's lifecycle status forward
 em slice list / show <id> / search "<query>"      # query slice docs by frontmatter (--format json)
+em slice search "<q>" --format json --full        # ...with every field, not just the summary row
 em migrate <model-dir>                            # one-time upgrade from a pre-1.0 model
 ```
 

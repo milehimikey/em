@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { newSlice } from "../src/slice/generate.js";
 import { syncSlice, syncAll } from "../src/slice/sync.js";
-import { listSlices, searchSlices, showSlice, updateSlice } from "../src/slice/query.js";
+import {
+  listSliceRecords,
+  listSlices,
+  searchSliceRecords,
+  searchSlices,
+  showSlice,
+  updateSlice,
+} from "../src/slice/query.js";
 import { mergeFrontmatter, parseFrontmatter, stringifyFrontmatter } from "../src/model/frontmatter.js";
 
 const MODEL = `model "Demo"
@@ -201,6 +208,54 @@ slice "Capture Payment" {
 
     expect(listSlices({ dir, status: "reviewed" })).toHaveLength(1);
     expect(listSlices({ dir, status: "draft" })).toHaveLength(0);
+  });
+
+  it("list/search --full return every frontmatter field, including ones em doesn't know", () => {
+    newSlice("Place Order", { dir });
+    const wired = MODEL.replace(
+      "command Place Order",
+      'command Place Order note "slices/place-order.md"',
+    );
+    writeFileSync(join(dir, "demo.em"), wired);
+    syncSlice("place-order", { dir });
+
+    // Hand-author an em-known optional field and one em has never heard of.
+    const path = join(dir, "slices", "place-order.md");
+    const { document, body } = parseFrontmatter(readFileSync(path, "utf8"));
+    mergeFrontmatter(document!, { tags: ["core"], jira: "LEND-1" });
+    writeFileSync(path, stringifyFrontmatter(document!, body));
+
+    const [record] = listSliceRecords({ dir });
+    expect(record).toMatchObject({
+      id: "place-order",
+      commands: ["Place Order"],
+      events: ["Order Placed"],
+      contexts: ["Order"],
+      personas: ["Customer"],
+      tags: ["core"],
+      jira: "LEND-1",
+      file: "place-order.md",
+    });
+
+    // Same selection semantics as the summary form, just a wider shape.
+    expect(searchSliceRecords("", { dir, tag: "core" })).toEqual([record]);
+    expect(searchSliceRecords("", { dir, tag: "nope" })).toEqual([]);
+    expect(listSliceRecords({ dir }).map((r) => r.id)).toEqual(
+      listSlices({ dir }).map((s) => s.id),
+    );
+  });
+
+  it("list gained --context/--tag filtering from the unified select path", () => {
+    newSlice("Place Order", { dir });
+    const wired = MODEL.replace(
+      "command Place Order",
+      'command Place Order note "slices/place-order.md"',
+    );
+    writeFileSync(join(dir, "demo.em"), wired);
+    syncSlice("place-order", { dir });
+
+    expect(listSlices({ dir, context: "Order" }).map((s) => s.id)).toEqual(["place-order"]);
+    expect(listSlices({ dir, context: "Billing" })).toEqual([]);
   });
 
   it("compliance: is reserved — never touched by sync/update, but findable via search", () => {

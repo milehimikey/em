@@ -113,9 +113,9 @@ tool's own bookkeeping fields survive.
 em slice new "Place Order" [--pattern state-change] [--id <id>]   # scaffold slices/<id>.md
 em slice sync <id>                     # after wiring `note "slices/<id>.md"` into the .em
 em slice sync --all                    # re-sync every doc in the directory
-em slice list [--status <s>] [--pattern <p>] [--format json]
+em slice list [--status <s>] [--pattern <p>] [--context <c>] [--tag <t>] [--format json] [--full]
 em slice show <id> [--body] [--format json]
-em slice search "<query>" [--pattern <p>] [--status <s>] [--context <c>] [--tag <t>] [--format json]
+em slice search "<query>" [--pattern <p>] [--status <s>] [--context <c>] [--tag <t>] [--format json] [--full]
 em slice update <id> [--status <s>] [--bump-version]
 em migrate <model-dir> [--dry-run] [--report <path>]    # one-time upgrade from a pre-1.0 model
 ```
@@ -123,3 +123,7 @@ em migrate <model-dir> [--dry-run] [--report <path>]    # one-time upgrade from 
 All commands take `--dir <path>` (default `.`) and `--model <path.em>` if a directory has more
 than one `.em` file. `list`/`show`/`search` read **frontmatter only** — never the `.em`, never the
 doc body — so they stay cheap across a large model.
+
+`list`/`search` emit a summary row per slice by default. Add **`--full`** (with `--format json`)
+to get every frontmatter field instead — use it when you need the filtered slices' commands,
+events, or contexts, so you don't follow a search with one `slice show` per hit.

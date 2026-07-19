@@ -179,6 +179,7 @@ em slice new "Place Order" --pattern state-change   # scaffold slices/place-orde
 em slice sync place-order                           # after wiring note "slices/..." into the .em
 em slice list --status ready-to-implement
 em slice search --pattern automation --context Payment --format json
+em slice search --status ready-to-implement --format json --full   # every field, not just a summary
 em slice update place-order --status reviewed --bump-version
 ```
 

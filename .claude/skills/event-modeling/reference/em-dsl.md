@@ -26,9 +26,9 @@ Install if missing: `npm i -g @milehimikey/em`. PNG works with no system deps; P
 em slice new "Slice Name" [--pattern state-change] [--id <id>]   # scaffold slices/<id>.md
 em slice sync <id>            # after wiring note "slices/<id>.md" into the .em
 em slice sync --all           # re-sync every doc in the model directory
-em slice list [--status <s>] [--pattern <p>] [--format json]
+em slice list [--status <s>] [--pattern <p>] [--context <c>] [--tag <t>] [--format json] [--full]
 em slice show <id> [--body] [--format json]
-em slice search "<query>" [--pattern <p>] [--status <s>] [--context <c>] [--format json]
+em slice search "<query>" [--pattern <p>] [--status <s>] [--context <c>] [--tag <t>] [--format json] [--full]
 em slice update <id> [--status <s>] [--bump-version]
 em migrate <model-dir> [--dry-run] [--report <path>]   # one-time upgrade from a pre-1.0 model
 ```

@@ -16,19 +16,42 @@ export interface SliceSummary {
   file: string;
 }
 
+/**
+ * A doc's complete frontmatter, plus the `file` it came from so a caller can
+ * open it without a second lookup. `file` is set after the spread, so it wins
+ * over a frontmatter key of the same name — treat `file` as reserved.
+ */
+export type SliceRecord = Record<string, unknown> & { file: string };
+
 export interface ListOptions {
   dir?: string;
   status?: SliceStatus;
   pattern?: SlicePattern;
+  context?: string;
+  tag?: string;
+}
+
+/** The one filter path. Every list/search entry point narrows docs through this. */
+function selectDocs(opts: ListOptions, query = ""): SliceDoc[] {
+  const dir = opts.dir ?? process.cwd();
+  const q = query.trim().toLowerCase();
+
+  return loadSliceDocs(dir)
+    .filter((d) => typeof d.frontmatter?.id === "string")
+    .filter((d) => !opts.status || d.frontmatter!.status === opts.status)
+    .filter((d) => !opts.pattern || d.frontmatter!.pattern === opts.pattern)
+    .filter((d) => !opts.context || asStringArray(d.frontmatter!.contexts).includes(opts.context!))
+    .filter((d) => !opts.tag || asStringArray(d.frontmatter!.tags).includes(opts.tag!))
+    .filter((d) => q.length === 0 || matchesQuery(d.frontmatter!, q));
 }
 
 export function listSlices(opts: ListOptions = {}): SliceSummary[] {
-  const dir = opts.dir ?? process.cwd();
-  return loadSliceDocs(dir)
-    .map(toSummary)
-    .filter((s): s is SliceSummary => s !== null)
-    .filter((s) => !opts.status || s.status === opts.status)
-    .filter((s) => !opts.pattern || s.pattern === opts.pattern);
+  return selectDocs(opts).map(toSummary).filter((s): s is SliceSummary => s !== null);
+}
+
+/** Same selection as listSlices, but every frontmatter field rather than the summary. */
+export function listSliceRecords(opts: ListOptions = {}): SliceRecord[] {
+  return selectDocs(opts).map(toRecord);
 }
 
 export function showSlice(id: string, opts: { dir?: string } = {}): SliceDoc | undefined {
@@ -36,24 +59,15 @@ export function showSlice(id: string, opts: { dir?: string } = {}): SliceDoc | u
   return loadSliceDocs(dir).find((d) => d.frontmatter?.id === id);
 }
 
-export interface SearchOptions extends ListOptions {
-  context?: string;
-  tag?: string;
-}
+export type SearchOptions = ListOptions;
 
 export function searchSlices(query: string, opts: SearchOptions = {}): SliceSummary[] {
-  const dir = opts.dir ?? process.cwd();
-  const q = query.trim().toLowerCase();
+  return selectDocs(opts, query).map(toSummary).filter((s): s is SliceSummary => s !== null);
+}
 
-  return loadSliceDocs(dir)
-    .filter((d) => d.frontmatter)
-    .filter((d) => !opts.status || d.frontmatter!.status === opts.status)
-    .filter((d) => !opts.pattern || d.frontmatter!.pattern === opts.pattern)
-    .filter((d) => !opts.context || asStringArray(d.frontmatter!.contexts).includes(opts.context!))
-    .filter((d) => !opts.tag || asStringArray(d.frontmatter!.tags).includes(opts.tag!))
-    .filter((d) => q.length === 0 || matchesQuery(d.frontmatter!, q))
-    .map(toSummary)
-    .filter((s): s is SliceSummary => s !== null);
+/** Same selection as searchSlices, but every frontmatter field rather than the summary. */
+export function searchSliceRecords(query: string, opts: SearchOptions = {}): SliceRecord[] {
+  return selectDocs(opts, query).map(toRecord);
 }
 
 export interface UpdateOptions {
@@ -96,6 +110,10 @@ function toSummary(doc: SliceDoc): SliceSummary | null {
     version: typeof data.version === "number" ? data.version : undefined,
     file: doc.file,
   };
+}
+
+function toRecord(doc: SliceDoc): SliceRecord {
+  return { ...doc.frontmatter, file: doc.file };
 }
 
 function matchesQuery(data: Record<string, unknown>, q: string): boolean {

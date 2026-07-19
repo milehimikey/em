@@ -15,7 +15,15 @@ import { loadSliceDocs, SlicePattern, SliceStatus } from "./model/sliceDoc.js";
 import { validateSliceDocs, VALID_PATTERNS, VALID_STATUSES } from "./model/validateSliceDocs.js";
 import { newSlice } from "./slice/generate.js";
 import { syncAll, syncSlice } from "./slice/sync.js";
-import { listSlices, searchSlices, showSlice, SliceSummary, updateSlice } from "./slice/query.js";
+import {
+  listSliceRecords,
+  listSlices,
+  searchSliceRecords,
+  searchSlices,
+  showSlice,
+  SliceSummary,
+  updateSlice,
+} from "./slice/query.js";
 import {
   applyMigration,
   assertCleanWorkingTree,
@@ -238,13 +246,33 @@ slice
   .option("--dir <path>", "model directory", ".")
   .addOption(new Option("--status <status>", "filter by status").choices(VALID_STATUSES))
   .addOption(new Option("--pattern <pattern>", "filter by pattern").choices(VALID_PATTERNS))
+  .option("--context <context>", "filter by context")
+  .option("--tag <tag>", "filter by tag")
   .option("--format <fmt>", "table | json", "table")
+  .option("--full", "emit every frontmatter field per slice (requires --format json)")
   .action(
-    (opts: { dir: string; status?: SliceStatus; pattern?: SlicePattern; format: string }) => {
-      printSlices(
-        listSlices({ dir: opts.dir, status: opts.status, pattern: opts.pattern }),
-        opts.format,
-      );
+    (opts: {
+      dir: string;
+      status?: SliceStatus;
+      pattern?: SlicePattern;
+      context?: string;
+      tag?: string;
+      format: string;
+      full?: boolean;
+    }) => {
+      const filter = {
+        dir: opts.dir,
+        status: opts.status,
+        pattern: opts.pattern,
+        context: opts.context,
+        tag: opts.tag,
+      };
+      if (opts.full) {
+        requireJson(opts.format);
+        console.log(JSON.stringify(listSliceRecords(filter), null, 2));
+        return;
+      }
+      printSlices(listSlices(filter), opts.format);
     },
   );
 
@@ -286,6 +314,7 @@ slice
   .option("--context <context>", "filter by context")
   .option("--tag <tag>", "filter by tag")
   .option("--format <fmt>", "table | json", "table")
+  .option("--full", "emit every frontmatter field per slice (requires --format json)")
   .action(
     (
       query: string,
@@ -296,16 +325,22 @@ slice
         context?: string;
         tag?: string;
         format: string;
+        full?: boolean;
       },
     ) => {
-      const results = searchSlices(query, {
+      const filter = {
         dir: opts.dir,
         status: opts.status,
         pattern: opts.pattern,
         context: opts.context,
         tag: opts.tag,
-      });
-      printSlices(results, opts.format);
+      };
+      if (opts.full) {
+        requireJson(opts.format);
+        console.log(JSON.stringify(searchSliceRecords(query, filter), null, 2));
+        return;
+      }
+      printSlices(searchSlices(query, filter), opts.format);
     },
   );
 
@@ -418,6 +453,14 @@ function printDiagnostics(diags: Diagnostic[]): void {
 
 function reportError(e: unknown): void {
   console.error(e instanceof Error ? e.message : String(e));
+}
+
+/** --full emits a shape only JSON can carry; fail loudly rather than silently ignoring it. */
+function requireJson(format: string): void {
+  if (format !== "json") {
+    console.error("--full requires --format json");
+    process.exit(1);
+  }
 }
 
 function printSlices(results: SliceSummary[], format: string): void {
