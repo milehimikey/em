@@ -3,13 +3,15 @@ Rich slice design document. One per slice, stored in <model>/slices/<slice-name>
 linked from the .em model with:  note "slices/<slice-name>.md"  on the slice's defining element.
 Fill every section through Socratic questioning. Leave "Open Questions" rather than guessing.
 Replace the bracketed placeholders; delete guidance comments before finishing.
+
+This is the body template only — `em slice new` injects the required frontmatter block above
+this content (id, pattern, status, version, sliceElement, and the generated search fields).
+Pattern and status live there now, not as prose here — see reference/frontmatter.md.
 -->
 
 # Slice: {{Slice Name}}
 
-- **Pattern:** {{State Change | State View | Automation | Translation}}
 - **Swimlane:** {{Persona/Actor}} → {{Context/Aggregate}}
-- **Status:** {{draft | reviewed | ready-to-implement}}
 
 ## Intent
 {{Why this slice exists — the user or business goal it serves, in one or two sentences.}}

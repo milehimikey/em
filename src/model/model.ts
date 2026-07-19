@@ -3,6 +3,7 @@
 // persona/context lanes, and lookup indexes used by layout and validation.
 
 import { AUTOMATION_KINDS, ElementKind, Field, ModelNode } from "../parser/ast.js";
+import { dedupe, slug } from "../util/slug.js";
 
 export const DEFAULT_PERSONA = "User";
 export const DEFAULT_CONTEXT = "Domain";
@@ -57,15 +58,6 @@ export function normalizeName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function slug(name: string): string {
-  const s = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return s || "n";
-}
-
 export function normalize(ast: ModelNode): NormalizedModel {
   const personas = [...ast.personas];
   const contexts = [...ast.contexts];
@@ -76,14 +68,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
   const usedIds = new Set<string>();
   let hasAutomation = false;
 
-  const makeId = (name: string): string => {
-    const base = slug(name);
-    let id = base;
-    let n = 2;
-    while (usedIds.has(id)) id = `${base}_${n++}`;
-    usedIds.add(id);
-    return id;
-  };
+  const makeId = (name: string): string => dedupe(slug(name), usedIds, "_");
 
   ast.slices.forEach((sliceNode, sliceIndex) => {
     const slice: Slice = {

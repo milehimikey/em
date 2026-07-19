@@ -7,3 +7,6 @@ dist/
 # keep canonical reference renders for the examples (SVG is the default format)
 !examples/*.svg
 !examples/*.png
+
+# Local Claude Code permission config — never committed, never published
+.claude/settings.local.json
