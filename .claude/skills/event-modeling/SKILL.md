@@ -102,7 +102,11 @@ for a model with no regulatory scope.
 Goal: a draft model of events, storyboard, commands, and views. Loose is OK; structure comes next.
 
 1. **Brainstorm events (step 1).** Ask the user to name everything that happens, as past-tense
-   facts. Capture a flat list. Probe for missed state changes.
+   facts. Probe for missed state changes. For each candidate, apply the **"is it an event?"
+   test** (`reference/methodology.md` step 1 — the "would this wake the CEO at 3am" heuristic):
+   reject derived values (belong in a read model) and telemetry/activity (not business state).
+   Don't silently drop rejections — park them in the state file's Decisions log with why, so
+   they aren't re-proposed later. Capture the survivors as a flat list.
 2. **Plot / storyboard (step 2).** Order the events into the narrative. Identify **personas**
    (actors) and the **UI** screens at each step. Add `persona` declarations and `ui` elements.
    In a **headless/API** model there are no personas or screens — identify the external
