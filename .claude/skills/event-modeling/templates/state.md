@@ -20,6 +20,7 @@ model: {{model-name}}.em
 - **Scope line:** {{one-line description of what's in/out of bounds for this model}}
 - **PRD / spec reference:** {{path, link, or "none"}}
 - **Headless/API model:** {{yes | no}}
+- **Regulatory scope:** {{e.g. PCI-DSS, SOX, HIPAA, or "none"}}
 
 ## Steps completed
 - [ ] 1. Brainstorm events

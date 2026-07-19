@@ -47,6 +47,26 @@ what the `.em` actually says. It never auto-fixes this — you have to run `sync
 | `owner`, `created`, `updated` | |
 | `supersededBy`, `implementedRef` | Written by external build tools, not by `em` — see Handoff below. |
 
+**`compliance` — reserved, unvalidated.** For regulated domains (financial, medical, etc.). `em`
+never writes, reads, or validates this key — it's a documented convention only, so it works the
+same way across industries without `em` having to know any regulation's specifics. Only ask about
+it when the model's Regulatory scope (state file) isn't "none" — see the `slice` phase below.
+
+```yaml
+compliance:
+  frameworks: [PCI-DSS, SOX, GAAP]          # or [HIPAA], [GDPR], etc. — whatever applies
+  dataClassification: restricted             # public | internal | confidential | restricted
+  sensitiveDataCategories: [PCI, financial]   # freeform: PCI, PHI, PII, financial, biometric, ...
+  controlRefs: [PCI-DSS-3.4, SOX-404]         # specific control/citation ids
+  retention: 7y
+  dataResidency: US-only
+  reviewedBy: jane@co.com
+  reviewedAt: 2026-06-01
+```
+
+`em slice search` includes this block in its free-text match, so it stays findable even though
+it's unvalidated (e.g. `em slice search "PCI-DSS"`).
+
 ---
 
 ## Lifecycle

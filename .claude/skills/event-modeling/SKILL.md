@@ -89,6 +89,12 @@ delivered files. **Slice docs are the one exception**: don't hand-copy `template
 use `em slice new` (see the `slice` phase below), which injects the required frontmatter and
 respects a project's `em.config.json` custom template if one is configured.
 
+Ask the **Regulatory scope** session input (state.md) up front, alongside Scope line / PRD
+reference / Headless-API-model: does this domain have compliance requirements (PCI-DSS, SOX,
+HIPAA, GDPR, ...) or none? This decides whether the `slice` phase asks about the `compliance:`
+frontmatter block per slice (see `reference/frontmatter.md`) — don't ask about compliance at all
+for a model with no regulatory scope.
+
 ---
 
 ## Phase: `discover` — steps 1-4
@@ -158,7 +164,12 @@ For each slice:
    stable ID), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
    alternate/error flows (retries, idempotency, compensations), read models affected, open
    questions. Park anything unresolved rather than guessing. Pattern and status are frontmatter
-   now, not prose — see `reference/frontmatter.md`.
+   now, not prose — see `reference/frontmatter.md`. If the model's **Regulatory scope** (state
+   file) isn't "none," additionally ask whether *this* slice touches regulated data or processes;
+   if so, hand-add a `compliance:` block to the doc's frontmatter (see `reference/frontmatter.md`
+   for the suggested shape — `em` never validates it, so use whatever sub-fields fit). Skip this
+   question entirely for non-regulated models, and skip the block for slices with no compliance
+   relevance even in a regulated model — don't ask by rote.
 3. Wire it into the `.em`: add `note "slices/<id>.md"` to the slice's primary element (the command
    for State Change, the view for State View, the processor for Automation, the translation for
    Translation).

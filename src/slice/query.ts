@@ -105,6 +105,11 @@ function matchesQuery(data: Record<string, unknown>, q: string): boolean {
     ...asStringArray(data.commands),
     ...asStringArray(data.events),
     ...asStringArray(data.readModels),
+    // `compliance` is a reserved, unvalidated block (docs/1.0.0-spec.md §2.6) — its shape isn't
+    // known, so flatten whatever's there rather than reading named sub-fields. Without this,
+    // freeform compliance data (PCI-DSS, SOX, HIPAA, ...) would be the one thing in frontmatter
+    // an agent couldn't search for.
+    data.compliance !== undefined ? JSON.stringify(data.compliance) : undefined,
   ]
     .filter((v): v is string => typeof v === "string")
     .join(" ")

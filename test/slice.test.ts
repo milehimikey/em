@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { newSlice } from "../src/slice/generate.js";
 import { syncSlice, syncAll } from "../src/slice/sync.js";
 import { listSlices, searchSlices, showSlice, updateSlice } from "../src/slice/query.js";
-import { parseFrontmatter } from "../src/model/frontmatter.js";
+import { mergeFrontmatter, parseFrontmatter, stringifyFrontmatter } from "../src/model/frontmatter.js";
 
 const MODEL = `model "Demo"
 persona Customer
@@ -130,5 +130,44 @@ describe("em slice new / sync / list / show / search / update", () => {
 
     expect(listSlices({ dir, status: "reviewed" })).toHaveLength(1);
     expect(listSlices({ dir, status: "draft" })).toHaveLength(0);
+  });
+
+  it("compliance: is reserved — never touched by sync/update, but findable via search", () => {
+    newSlice("Place Order", { dir });
+    const wired = MODEL.replace(
+      "command Place Order",
+      'command Place Order note "slices/place-order.md"',
+    );
+    writeFileSync(join(dir, "demo.em"), wired);
+    syncSlice("place-order", { dir });
+
+    // Simulate a human hand-adding a compliance block per the documented convention.
+    const path = join(dir, "slices", "place-order.md");
+    const beforeAdd = parseFrontmatter(readFileSync(path, "utf8"));
+    mergeFrontmatter(beforeAdd.document!, {
+      compliance: { frameworks: ["PCI-DSS", "SOX"], dataClassification: "restricted" },
+    });
+    writeFileSync(path, stringifyFrontmatter(beforeAdd.document!, beforeAdd.body));
+
+    // A generated-field sync (e.g. after a later .em edit) must not touch it.
+    syncSlice("place-order", { dir });
+    const afterSync = parseFrontmatter(readFileSync(path, "utf8"));
+    expect(afterSync.data!.compliance).toEqual({
+      frameworks: ["PCI-DSS", "SOX"],
+      dataClassification: "restricted",
+    });
+
+    // Neither must a status/version update.
+    updateSlice("place-order", { dir, status: "reviewed", bumpVersion: true });
+    const afterUpdate = parseFrontmatter(readFileSync(path, "utf8"));
+    expect(afterUpdate.data!.compliance).toEqual({
+      frameworks: ["PCI-DSS", "SOX"],
+      dataClassification: "restricted",
+    });
+    expect(afterUpdate.data).toMatchObject({ status: "reviewed", version: 2 });
+
+    // It's still searchable despite being unvalidated.
+    expect(searchSlices("PCI-DSS", { dir })).toHaveLength(1);
+    expect(searchSlices("HIPAA", { dir })).toHaveLength(0);
   });
 });
