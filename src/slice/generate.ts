@@ -61,7 +61,7 @@ export function newSlice(name: string, opts: NewSliceOptions = {}): NewSliceResu
   const resolvedConfig = resolveConfig(dir, opts.configPath);
   const templatePath = resolveSliceTemplatePath(resolvedConfig);
   const bodyTemplate = readFileSync(templatePath, "utf8");
-  const body = bodyTemplate.replace("{{Slice Name}}", name);
+  const body = bodyTemplate.replaceAll("{{Slice Name}}", name);
 
   const today = new Date().toISOString().slice(0, 10);
   const data: Record<string, unknown> = {

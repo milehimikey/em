@@ -46,7 +46,14 @@ function readConfig(path: string): EmConfig {
   } catch (e) {
     throw new Error(`invalid JSON in ${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
-  return (parsed ?? {}) as EmConfig;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${path} must contain a JSON object`);
+  }
+  const { sliceTemplate } = parsed as Record<string, unknown>;
+  if (sliceTemplate !== undefined && typeof sliceTemplate !== "string") {
+    throw new Error(`${path}: \`sliceTemplate\` must be a string path`);
+  }
+  return parsed as EmConfig;
 }
 
 /** The default slice template shipped with the package (the same one `em skill install` copies). */
@@ -59,5 +66,11 @@ export function defaultSliceTemplatePath(): string {
 export function resolveSliceTemplatePath(resolved: ResolvedConfig): string {
   if (!resolved.config.sliceTemplate) return defaultSliceTemplatePath();
   const base = resolved.configPath ? dirname(resolved.configPath) : process.cwd();
-  return resolve(base, resolved.config.sliceTemplate);
+  const path = resolve(base, resolved.config.sliceTemplate);
+  if (!existsSync(path)) {
+    throw new Error(
+      `slice template not found: ${path} (\`sliceTemplate\` in ${resolved.configPath ?? "config"})`,
+    );
+  }
+  return path;
 }

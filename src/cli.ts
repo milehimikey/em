@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { compile, CompileOptions } from "./pipeline.js";
 import { NormalizedModel } from "./model/model.js";
 import { ParseError } from "./parser/parser.js";
@@ -12,7 +12,7 @@ import { renderDot, formatFromPath } from "./render/render.js";
 import { watchFile } from "./render/watch.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { loadSliceDocs, SlicePattern, SliceStatus } from "./model/sliceDoc.js";
-import { validateSliceDocs } from "./model/validateSliceDocs.js";
+import { validateSliceDocs, VALID_PATTERNS, VALID_STATUSES } from "./model/validateSliceDocs.js";
 import { newSlice } from "./slice/generate.js";
 import { syncAll, syncSlice } from "./slice/sync.js";
 import { listSlices, searchSlices, showSlice, SliceSummary, updateSlice } from "./slice/query.js";
@@ -166,10 +166,8 @@ slice
   .option("--dir <path>", "model directory", ".")
   .option("--model <path>", "explicit .em file (default: the only .em in --dir)")
   .option("--config <path>", "explicit em.config.json path")
-  .option(
-    "--pattern <pattern>",
-    "state-change | state-view | automation | translation",
-    "state-change",
+  .addOption(
+    new Option("--pattern <pattern>", "slice pattern").choices(VALID_PATTERNS).default("state-change"),
   )
   .option("--id <id>", "explicit slice id (default: kebab-case of the name)")
   .option("--slice-element <id>", "the .em Element.id this doc documents, if already known")
@@ -238,8 +236,8 @@ slice
   .command("list")
   .description("list slice docs from frontmatter only (no .em parse, no body read)")
   .option("--dir <path>", "model directory", ".")
-  .option("--status <status>", "filter by status")
-  .option("--pattern <pattern>", "filter by pattern")
+  .addOption(new Option("--status <status>", "filter by status").choices(VALID_STATUSES))
+  .addOption(new Option("--pattern <pattern>", "filter by pattern").choices(VALID_PATTERNS))
   .option("--format <fmt>", "table | json", "table")
   .action(
     (opts: { dir: string; status?: SliceStatus; pattern?: SlicePattern; format: string }) => {
@@ -283,8 +281,8 @@ slice
   .description("search slice docs by frontmatter only (title/tags/commands/events/readModels)")
   .argument("[query]", "free-text query", "")
   .option("--dir <path>", "model directory", ".")
-  .option("--status <status>", "filter by status")
-  .option("--pattern <pattern>", "filter by pattern")
+  .addOption(new Option("--status <status>", "filter by status").choices(VALID_STATUSES))
+  .addOption(new Option("--pattern <pattern>", "filter by pattern").choices(VALID_PATTERNS))
   .option("--context <context>", "filter by context")
   .option("--tag <tag>", "filter by tag")
   .option("--format <fmt>", "table | json", "table")
@@ -316,7 +314,7 @@ slice
   .description("write status/version changes back into a slice doc's frontmatter")
   .argument("<id>", "slice id")
   .option("--dir <path>", "model directory", ".")
-  .option("--status <status>", "new status")
+  .addOption(new Option("--status <status>", "new status").choices(VALID_STATUSES))
   .option("--bump-version", "increment version by 1")
   .action((id: string, opts: { dir: string; status?: SliceStatus; bumpVersion?: boolean }) => {
     try {

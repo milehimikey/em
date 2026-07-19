@@ -12,14 +12,14 @@ import { buildDocIdByElementId, deriveGeneratedFields } from "./deriveSliceField
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
-const VALID_PATTERNS: SlicePattern[] = [
+export const VALID_PATTERNS: SlicePattern[] = [
   "state-change",
   "state-view",
   "automation",
   "translation",
 ];
 
-const VALID_STATUSES: SliceStatus[] = [
+export const VALID_STATUSES: SliceStatus[] = [
   "draft",
   "reviewed",
   "ready-to-implement",
@@ -55,6 +55,7 @@ export function validateSliceDocs(
   const docIdByElementId = buildDocIdByElementId(model, docs);
 
   const seenIds = new Map<string, string>(); // id -> first doc path that used it
+  const knownIds = new Set(docs.map((d) => d.frontmatter?.id).filter(Boolean));
 
   for (const doc of docs) {
     const data = doc.frontmatter;
@@ -161,7 +162,6 @@ export function validateSliceDocs(
     }
 
     if (Array.isArray(data.relatedSlices)) {
-      const knownIds = new Set(docs.map((d) => d.frontmatter?.id).filter(Boolean));
       for (const id of data.relatedSlices) {
         if (!knownIds.has(id)) {
           diags.push({

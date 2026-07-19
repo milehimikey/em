@@ -90,6 +90,34 @@ describe("em slice new / sync / list / show / search / update", () => {
     expect(syncSlice("place-order", { dir }).changed).toBe(false);
   });
 
+  it("substitutes every {{Slice Name}} in a custom template, not just the first", () => {
+    writeFileSync(
+      join(dir, "body.md"),
+      "# {{Slice Name}}\n\nOverview of {{Slice Name}} goes here.\n",
+    );
+    writeFileSync(join(dir, "em.config.json"), JSON.stringify({ sliceTemplate: "body.md" }));
+
+    const result = newSlice("Place Order", { dir });
+    const { body } = parseFrontmatter(readFileSync(result.path, "utf8"));
+    expect(body).toBe("# Place Order\n\nOverview of Place Order goes here.\n");
+  });
+
+  it("reports a missing custom template by path instead of a raw ENOENT", () => {
+    writeFileSync(join(dir, "em.config.json"), JSON.stringify({ sliceTemplate: "nope.md" }));
+    expect(() => newSlice("Place Order", { dir })).toThrow(/slice template not found/);
+  });
+
+  it("rejects a non-string sliceTemplate rather than throwing from path.resolve", () => {
+    writeFileSync(join(dir, "em.config.json"), JSON.stringify({ sliceTemplate: 42 }));
+    expect(() => newSlice("Place Order", { dir })).toThrow(/`sliceTemplate` must be a string path/);
+  });
+
+  it("rejects an explicit --model path that doesn't exist instead of writing it to frontmatter", () => {
+    expect(() => newSlice("Place Order", { dir, modelPath: join(dir, "missing.em") })).toThrow(
+      /model file not found/,
+    );
+  });
+
   it("syncAll syncs every wired doc and skips unwired ones", () => {
     newSlice("Place Order", { dir });
     const wired = MODEL.replace(

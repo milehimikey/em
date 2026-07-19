@@ -178,12 +178,15 @@ export function planMigration(dir: string, opts: MigrateOptions = {}): Migration
   const summaries: InventorySummary[] = docs.map((doc) => {
     const draft = drafts.find((d) => d.doc === doc);
     if (draft) return { title: draft.title, id: draft.id, pattern: draft.pattern, status: draft.status, version: 1 };
+    // Already-migrated doc: its frontmatter is whatever's on disk, which may be
+    // malformed. Fall back rather than rendering `undefined` into the table —
+    // `em validate` is what reports the malformed field.
     const fm = doc.frontmatter!;
     return {
       title: typeof fm.title === "string" ? fm.title : String(fm.id),
       id: String(fm.id),
-      pattern: fm.pattern as SlicePattern,
-      status: fm.status as SliceStatus,
+      pattern: typeof fm.pattern === "string" ? (fm.pattern as SlicePattern) : "state-change",
+      status: typeof fm.status === "string" ? (fm.status as SliceStatus) : "draft",
       version: typeof fm.version === "number" ? fm.version : 1,
     };
   });

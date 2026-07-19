@@ -4,11 +4,19 @@
 // command so an explicit --model always wins and the "which .em?" ambiguity
 // error is worded the same way everywhere.
 
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 export function findModelFile(dir: string, explicitPath?: string): string {
-  if (explicitPath) return resolve(dir, explicitPath);
+  if (explicitPath) {
+    // Relative to cwd, not `dir` — an explicit --model is a path the user typed
+    // at the shell, so it must resolve the same way their shell would resolve it.
+    // Checked eagerly: callers like `em slice new` only ever store this path in
+    // frontmatter, so a wrong one would otherwise sit undetected until validate.
+    const path = resolve(explicitPath);
+    if (!existsSync(path)) throw new Error(`model file not found: ${path}`);
+    return path;
+  }
 
   const candidates = readdirSync(dir).filter((f) => f.endsWith(".em"));
   if (candidates.length === 1) return resolve(dir, candidates[0]);
