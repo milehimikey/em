@@ -31,37 +31,64 @@ export interface SyncAllResult {
 
 const GENERATED_KEYS = ["commands", "events", "readModels", "contexts", "personas"] as const;
 
-export function syncSlice(id: string, opts: SyncOptions = {}): SyncResult {
+/**
+ * Parse the .em and load every slice doc once. Shared by syncSlice and syncAll.
+ *
+ * Every doc's sliceElement is resolved up front — from frontmatter, or discovered
+ * from the .em's `note` back-reference — so `docIdByElementId` already covers docs
+ * that haven't had their sliceElement written yet. That makes a `--all` run
+ * order-independent: triggers/triggeredBy resolve between two freshly-scaffolded
+ * docs regardless of which one syncs first.
+ */
+function loadContext(opts: SyncOptions) {
   const dir = opts.dir ?? process.cwd();
   const modelPath = findModelFile(dir, opts.modelPath);
   const model = normalize(parse(readFileSync(modelPath, "utf8")));
   const docs = loadSliceDocs(dir);
+
+  const elementByDocId = new Map<string, string>();
+  for (const doc of docs) {
+    const id = doc.frontmatter?.id;
+    if (typeof id !== "string") continue;
+    const raw = doc.frontmatter!.sliceElement;
+    if (typeof raw === "string" && raw.length > 0) {
+      elementByDocId.set(id, raw);
+      continue;
+    }
+    const discovered = model.elements.find(
+      (el) => el.note && resolve(dirname(modelPath), el.note) === resolve(doc.path),
+    );
+    if (discovered) elementByDocId.set(id, discovered.id);
+  }
+
+  const docIdByElementId = buildDocIdByElementId(model, docs);
+  for (const [docId, elementId] of elementByDocId) docIdByElementId.set(elementId, docId);
+
+  return { dir, modelPath, model, docs, elementByDocId, docIdByElementId };
+}
+
+type SyncContext = ReturnType<typeof loadContext>;
+
+export function syncSlice(id: string, opts: SyncOptions = {}): SyncResult {
+  return syncOne(id, loadContext(opts));
+}
+
+function syncOne(id: string, ctx: SyncContext): SyncResult {
+  const { dir, modelPath, model, docs, elementByDocId, docIdByElementId } = ctx;
 
   const doc = docs.find((d) => d.frontmatter?.id === id);
   if (!doc || !doc.frontmatter || !doc.document) {
     throw new Error(`no slice doc with id "${id}" (with valid frontmatter) found in ${dir}`);
   }
 
-  const rawSliceElement = doc.frontmatter.sliceElement;
-  let sliceElementId: string;
-  if (typeof rawSliceElement === "string" && rawSliceElement.length > 0) {
-    sliceElementId = rawSliceElement;
-  } else {
-    // Not set yet — discover it from the .em side: the element whose `note`
-    // points back at this doc (the agent wires that in after `em slice new`).
-    const discovered = model.elements.find(
-      (el) => el.note && resolve(dirname(modelPath), el.note) === resolve(doc.path),
+  const sliceElementId = elementByDocId.get(id);
+  if (!sliceElementId) {
+    throw new Error(
+      `slice "${id}" has no sliceElement set — wire \`note "slices/${doc.file}"\` onto an ` +
+        `element in ${modelPath} first, then re-run sync`,
     );
-    if (!discovered) {
-      throw new Error(
-        `slice "${id}" has no sliceElement set — wire \`note "slices/${doc.file}"\` onto an ` +
-          `element in ${modelPath} first, then re-run sync`,
-      );
-    }
-    sliceElementId = discovered.id;
   }
 
-  const docIdByElementId = buildDocIdByElementId(model, docs);
   const derived = deriveGeneratedFields(model, sliceElementId, docIdByElementId);
   if (!derived) {
     throw new Error(`sliceElement "${sliceElementId}" does not match any element in ${modelPath}`);
@@ -84,19 +111,18 @@ export function syncSlice(id: string, opts: SyncOptions = {}): SyncResult {
 }
 
 export function syncAll(opts: SyncOptions = {}): SyncAllResult {
-  const dir = opts.dir ?? process.cwd();
-  const docs = loadSliceDocs(dir);
+  const ctx = loadContext(opts);
   const synced: SyncResult[] = [];
   const skipped: { file: string; reason: string }[] = [];
 
-  for (const doc of docs) {
+  for (const doc of ctx.docs) {
     const id = doc.frontmatter?.id;
     if (typeof id !== "string") {
       skipped.push({ file: doc.file, reason: "no frontmatter (or no `id`); run `em migrate`" });
       continue;
     }
     try {
-      synced.push(syncSlice(id, opts));
+      synced.push(syncOne(id, ctx));
     } catch (e) {
       skipped.push({ file: doc.file, reason: e instanceof Error ? e.message : String(e) });
     }

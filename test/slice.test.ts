@@ -131,6 +131,49 @@ describe("em slice new / sync / list / show / search / update", () => {
     expect(skipped).toEqual([]);
   });
 
+  it("syncAll resolves triggers/triggeredBy between two docs neither of which has a sliceElement yet", () => {
+    // Both docs are freshly scaffolded, so each one's sliceElement can only be
+    // discovered from the .em's `note`. The automation's `triggers` points at the
+    // command doc and vice versa, which only resolves if sliceElement discovery
+    // happens for every doc before any single doc's fields are derived.
+    const em = `model "Payments"
+persona Customer
+context Payment
+
+slice "Payments To Process" {
+  view Payments To Process from "Payment Requested"
+  processor Payment Gateway note "slices/payments-to-process.md"
+}
+
+slice "Capture Payment" {
+  command Capture Payment note "slices/capture-payment.md"
+  event Payment Captured @Payment
+}
+`;
+    const d = mkdtempSync(join(tmpdir(), "em-sync-order-"));
+    try {
+      writeFileSync(join(d, "payments.em"), em);
+      newSlice("Payments To Process", { dir: d, pattern: "automation" });
+      newSlice("Capture Payment", { dir: d });
+
+      const { synced, skipped } = syncAll({ dir: d });
+      expect(skipped).toEqual([]);
+      expect(synced.map((s) => s.id).sort()).toEqual(["capture-payment", "payments-to-process"]);
+
+      const automation = parseFrontmatter(
+        readFileSync(join(d, "slices", "payments-to-process.md"), "utf8"),
+      ).data;
+      const command = parseFrontmatter(
+        readFileSync(join(d, "slices", "capture-payment.md"), "utf8"),
+      ).data;
+
+      expect(automation!.triggers).toBe("capture-payment");
+      expect(command!.triggeredBy).toBe("payments-to-process");
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
   it("list/show/search read frontmatter and reflect status/version updates", () => {
     newSlice("Place Order", { dir });
     const wired = MODEL.replace(
