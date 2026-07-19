@@ -111,6 +111,16 @@ List the domain **events** as past-tense facts, unordered at first. Go wide; cap
 state change anyone can think of. No commands, no UI yet — just facts.
 - Prompts: *"What are all the things that happen in this process? Say each as something that
   already occurred. What changed when that happened?"*
+- **Is it an event?** Events here are *business* facts, not technical ones. Test: if this fact
+  failed to occur, would it wake the CEO at 3am? Yes → event. No → not an event.
+  - **Yes:** Order Created, Item Added to Order, Order Shipped, Order Delivered, Order
+    Cancelled, User Registered, Item Provisioned.
+  - **No — derived values** (a read model computes these from other events; they aren't
+    independent facts): Order Total Calculated, Order Tax Calculated, Discount Applied.
+  - **No — activity, not business state** (telemetry, not something the domain decides on):
+    User Clicked Button, User Viewed Page, User Logged In.
+- Model the process the business **needs**, not how the current system happens to work. Existing
+  system behavior is a common source of fake events — screens and tables leaking in as facts.
 - Output: a flat list of candidate `event` names.
 
 ### Step 2 — The Plot / Storyboard  *(discover)*
