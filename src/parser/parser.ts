@@ -199,6 +199,16 @@ function parseElement(
     rest = rest.slice(0, tagMatch.index).trim();
   }
 
+  // Trailing `again` (view only): a later timeline instance of an existing read model —
+  // the Event Modeling device for keeping arrows forward as a view evolves.
+  const againMatch = rest.match(/(?:^|\s)again$/i);
+  if (againMatch && againMatch.index !== undefined) {
+    if (kind !== "view")
+      throw new ParseError("`again` is only valid on view — read models are the only elements that reappear along the timeline", line);
+    node.again = true;
+    rest = rest.slice(0, againMatch.index).trim();
+  }
+
   node.name = unquote(rest);
   if (!node.name) throw new ParseError(`${kind} requires a name`, line);
   return node;

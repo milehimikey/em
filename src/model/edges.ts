@@ -68,9 +68,26 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
       const src =
         el.kind === "view"
           ? bucket.find((x) => x.kind === "event") ?? bucket[0]
-          : bucket.find((x) => x.kind === "view") ?? bucket[0];
+          : nearestViewAtOrBefore(bucket, el.sliceIndex) ??
+            bucket.find((x) => x.kind === "view") ??
+            bucket[0];
       if (src) add(src.id, el.id, src.kind);
     }
+  }
+
+  // Instance continuity: a `view X again` instance is the same logical read model reappearing
+  // further along the timeline — link it forward from its previous instance so the evolution
+  // reads left to right (the Event Modeling device that replaces backward arrows).
+  const instancesByLogical = new Map<string, typeof model.elements>();
+  for (const el of model.elements) {
+    if (el.kind !== "view") continue;
+    const list = instancesByLogical.get(el.logicalId) ?? [];
+    list.push(el);
+    instancesByLogical.set(el.logicalId, list);
+  }
+  for (const list of instancesByLogical.values()) {
+    const ordered = [...list].sort((a, b) => a.sliceIndex - b.sliceIndex);
+    for (let i = 1; i < ordered.length; i++) add(ordered[i - 1].id, ordered[i].id, "view");
   }
 
   // Explicit arrows from the DSL.
@@ -79,4 +96,14 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   }
 
   return edges;
+}
+
+/** Latest view instance declared at-or-before the given slice (reactions read what exists). */
+function nearestViewAtOrBefore(
+  bucket: { kind: ElementKind; sliceIndex: number; id: string }[],
+  sliceIndex: number,
+) {
+  return bucket
+    .filter((x) => x.kind === "view" && x.sliceIndex <= sliceIndex)
+    .sort((a, b) => b.sliceIndex - a.sliceIndex)[0];
 }

@@ -39,6 +39,8 @@ export interface ElementNode {
   note?: string;
   /** Data attributes declared in a `{ … }` block on the element. */
   fields?: Field[];
+  /** view-only: a later timeline instance of an already-declared read model. */
+  again?: boolean;
   line: number;
 }
 

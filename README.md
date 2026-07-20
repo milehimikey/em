@@ -98,6 +98,12 @@ read model. The empty API lane is dropped when a model has neither; pass `--keep
 to keep it.
 
 `@Persona` / `@Context` choose the row within a band (undeclared tags create a new row).
+`view <Name> again [from "Event", …]` declares a LATER INSTANCE of an already-declared read
+model — the Event Modeling device for keeping the timeline forward-only as a view evolves.
+Instances are one logical view: the first declaration owns the `note` doc; each instance lists
+the events that reach it there; instances are linked left-to-right with a continuity arrow, and
+reactions (`processor … from "View"`) read the nearest instance at-or-before their slice.
+
 `view … from "Event"[, "Event2"]` declares which events feed a read model and draws the
 data-flow arrow. Arrows within a slice are inferred from the pattern; use `arrow A -> B` for
 anything extra (e.g. a read model feeding a different screen).
@@ -158,6 +164,12 @@ See [Slice docs & frontmatter](#slice-docs--frontmatter) below for the `em slice
 
 - two same-band elements in one slice (collision) → **error** (split into separate slices)
 - a read model whose `from "Event"` doesn't exist → **error**
+- **time flows left to right** (the Two Laws): an event feeding an EARLIER view instance,
+  a reaction reading a view that only exists later, or an explicit backward `arrow` → **error**
+  (fix: add `view X again` at the point on the timeline where the event lands)
+- `again` on a view with no earlier declaration → **error**; `again` on non-views → parse error
+- multi-event slices always render as a FAN from the command (never event→event); fanned
+  arrows route around the column gutter so they cannot read as a chain
 - an automation/translation whose `from "<read model>"` doesn't exist → **error**
 - an `arrow` endpoint that matches no element → **error**
 - an automation/translation slice that also holds the command it triggers → **warning**

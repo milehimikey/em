@@ -27,13 +27,28 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
   const paths: string[] = [];
   const colors = new Set<string>();
 
+  const sideLaneBySource = new Map<string, number>();
   for (const e of semanticEdges(model)) {
     const f = rects.get(e.from);
     const t = rects.get(e.to);
     if (!f || !t) continue;
     const fSlice = model.byId.get(e.from)?.sliceIndex;
     const tSlice = model.byId.get(e.to)?.sliceIndex;
-    const d = fSlice !== undefined && fSlice === tSlice ? straight(f, t) : curve(f, t);
+    let d: string;
+    if (fSlice !== undefined && fSlice === tSlice) {
+      // A straight vertical that would pass THROUGH another box in the column (the multi-event
+      // fan case: command -> 2nd/3rd event) reads as a false event->event chain. Route those
+      // around the column's right side instead, one gutter lane per fanned edge.
+      if (isObstructed(model, rects, fSlice, e.from, e.to, f, t)) {
+        const lane = sideLaneBySource.get(e.from) ?? 0;
+        sideLaneBySource.set(e.from, lane + 1);
+        d = sideRoute(f, t, lane);
+      } else {
+        d = straight(f, t);
+      }
+    } else {
+      d = curve(f, t);
+    }
     colors.add(e.color);
     paths.push(
       `<path fill="none" stroke="${e.color}" stroke-width="${STROKE}" ` +
@@ -46,6 +61,43 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
     defs: markers ? `<defs>${markers}</defs>` : "",
     group: `<g class="em-edges">${paths.join("")}</g>`,
   };
+}
+
+/** True when any other box in the slice's column sits vertically between f and t on the
+ *  centerline a straight edge would use. */
+function isObstructed(
+  model: NormalizedModel,
+  rects: Map<string, Rect>,
+  sliceIndex: number,
+  fromId: string,
+  toId: string,
+  f: Rect,
+  t: Rect,
+): boolean {
+  const top = Math.min(f.bottom, t.bottom);
+  const bottom = Math.max(f.top, t.top);
+  const x = (f.cx + t.cx) / 2;
+  for (const el of model.slices[sliceIndex]?.elements ?? []) {
+    if (el.id === fromId || el.id === toId) continue;
+    const r = rects.get(el.id);
+    if (!r) continue;
+    if (r.left < x && r.right > x && r.top < bottom && r.bottom > top) return true;
+  }
+  return false;
+}
+
+/** Route around the column's right gutter, entering the target's right edge — used when the
+ *  direct vertical would cross intermediate boxes (multi-event fans stay visually a fan). */
+function sideRoute(f: Rect, t: Rect, lane: number): string {
+  const gx = Math.max(f.right, t.right) + 10 + lane * 12;
+  const s = t.cy > f.cy ? 1 : -1;
+  const b = 14;
+  return (
+    `M${n(f.right)},${n(f.cy)} ` +
+    `C${n(f.right + b)},${n(f.cy)} ${n(gx)},${n(f.cy)} ${n(gx)},${n(f.cy + s * b)} ` +
+    `L${n(gx)},${n(t.cy - s * b)} ` +
+    `C${n(gx)},${n(t.cy)} ${n(t.right + b)},${n(t.cy)} ${n(t.right)},${n(t.cy)}`
+  );
 }
 
 /** Straight vertical between two same-column boxes, facing edge to facing edge. */

@@ -77,28 +77,73 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
             message: `read model "${view.name}" references unknown event "${src}"`,
             line: view.line,
           });
+        } else if (evt.sliceIndex > view.sliceIndex) {
+          diags.push({
+            severity: "error",
+            message:
+              `time flows left to right: event "${evt.name}" (slice ${evt.sliceIndex + 1}) happens ` +
+              `after read model "${view.name}" (slice ${view.sliceIndex + 1}); move this source to a ` +
+              `later \`view ${view.name} again\` instance`,
+            line: view.line,
+          });
         }
       }
     }
   }
 
-  // Automation/translation consumes a read model via `from`.
+  // Automation/translation consumes a read model via `from` — and must read one that
+  // already exists on the timeline (forward-only).
   for (const el of model.elements) {
     if (!AUTOMATION_KINDS.has(el.kind)) continue;
     for (const src of el.from ?? []) {
       const bucket = model.byName.get(normalizeName(src));
-      if (!bucket?.some((e) => e.kind === "view")) {
+      const views = bucket?.filter((e) => e.kind === "view") ?? [];
+      if (views.length === 0) {
         diags.push({
           severity: "error",
           message: `${el.kind} "${el.name}" references unknown read model "${src}"`,
+          line: el.line,
+        });
+      } else if (!views.some((v) => v.sliceIndex <= el.sliceIndex)) {
+        diags.push({
+          severity: "error",
+          message:
+            `time flows left to right: ${el.kind} "${el.name}" (slice ${el.sliceIndex + 1}) reads ` +
+            `"${src}" before any instance of it exists; declare the view in or before that slice`,
           line: el.line,
         });
       }
     }
   }
 
-  // Explicit arrow endpoints must resolve.
+  // A \`view X again\` instance needs an earlier declaration to continue.
+  for (const el of model.elements) {
+    if (el.kind === "view" && el.again && el.logicalId === el.id) {
+      diags.push({
+        severity: "error",
+        message:
+          `view "${el.name}" is marked \`again\` but has no earlier declaration; ` +
+          `declare it plainly the first time it appears`,
+        line: el.line,
+      });
+    }
+  }
+
+  // Explicit arrow endpoints must resolve — and point forward.
   for (const a of model.arrows) {
+    if (a.fromId && a.toId) {
+      const fromEl = model.byId.get(a.fromId);
+      const toEl = model.byId.get(a.toId);
+      if (fromEl && toEl && toEl.sliceIndex < fromEl.sliceIndex) {
+        diags.push({
+          severity: "error",
+          message:
+            `time flows left to right: arrow "${a.from}" -> "${a.to}" points backward ` +
+            `(slice ${fromEl.sliceIndex + 1} -> ${toEl.sliceIndex + 1}); restructure so the target comes later`,
+          line: a.line,
+        });
+      }
+    }
     if (!a.fromId)
       diags.push({
         severity: "error",
@@ -115,11 +160,14 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
 
   // Ambiguous names (used by arrows / view sources) get a heads-up.
   for (const [key, els] of model.byName) {
-    if (els.length > 1 && isReferenced(model, key)) {
+    // Later \`again\` instances of a view are the SAME logical read model reappearing on the
+    // timeline — deliberate, not an ambiguity. Only warn when a duplicate is NOT an instance.
+    const nonInstances = els.filter((e, i) => i === 0 || !(e.kind === "view" && e.again));
+    if (nonInstances.length > 1 && isReferenced(model, key)) {
       diags.push({
         severity: "warning",
         message:
-          `name "${els[0].name}" is defined ${els.length} times; ` +
+          `name "${els[0].name}" is defined ${nonInstances.length} times; ` +
           `references resolve to the first occurrence`,
         line: els[0].line,
       });

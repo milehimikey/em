@@ -24,6 +24,10 @@ export interface Element {
   fields?: Field[];
   sliceIndex: number;
   line: number;
+  /** view-only: marks a later timeline instance of an already-declared read model. */
+  again?: boolean;
+  /** id of the first instance of this logical element (== id for everything except later view instances). */
+  logicalId: string;
 }
 
 export interface Slice {
@@ -66,6 +70,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
   const byId = new Map<string, Element>();
   const byName = new Map<string, Element[]>();
   const usedIds = new Set<string>();
+  const firstViewIdByName = new Map<string, string>();
   let hasAutomation = false;
 
   const makeId = (name: string): string => dedupe(slug(name), usedIds, "_");
@@ -81,6 +86,8 @@ export function normalize(ast: ModelNode): NormalizedModel {
     for (const el of sliceNode.elements) {
       const element: Element = {
         id: makeId(el.name),
+        logicalId: "",
+        again: el.again,
         kind: el.kind,
         name: el.name,
         sliceIndex,
@@ -102,6 +109,14 @@ export function normalize(ast: ModelNode): NormalizedModel {
         hasAutomation = true;
       }
 
+      if (element.kind === "view") {
+        const lkey = normalizeName(element.name);
+        const first = firstViewIdByName.get(lkey);
+        element.logicalId = first ?? element.id;
+        if (!first) firstViewIdByName.set(lkey, element.id);
+      } else {
+        element.logicalId = element.id;
+      }
       slice.elements.push(element);
       elements.push(element);
       byId.set(element.id, element);
