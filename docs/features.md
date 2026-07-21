@@ -29,14 +29,7 @@
 
 **Validation** (`em validate`) — lane collisions, unknown `from` events / read models,
 dangling `arrow` endpoints, automation-slice command placement, commands with no event, read
-models with no source, ambiguous duplicate names; plus slice-doc frontmatter (required fields,
-`id` uniqueness, `sliceElement` resolution, generated-field drift against the `.em`).
-
-**Slice docs** — `em slice new/sync/list/show/search/update` and `em migrate`: required YAML
-frontmatter (stable `id`, lifecycle `status`, `version`, and fields generated from the `.em` for
-frontmatter-only search across large models), a user-configurable body template via
-`em.config.json`, and a one-time migration from the pre-1.0 fixed template. See
-[1.0.0-spec.md](1.0.0-spec.md).
+models with no source, ambiguous duplicate names.
 
 ## Roadmap / potential future features
 
