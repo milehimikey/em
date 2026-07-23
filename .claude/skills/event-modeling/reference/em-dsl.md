@@ -1,3 +1,5 @@
+<!-- DSL behavior change? Update BOTH docs/dsl.md and .claude/skills/event-modeling/reference/em-dsl.md -->
+
 # `em` DSL Reference & Cheatsheet
 
 The `em` tool (`@milehimikey/em`) is a slice-first text DSL rendered to a strict Graphviz
@@ -35,6 +37,7 @@ slice "Name" {                   # one vertical time step (a column)
   ui   Free Text @Persona        # screen; @Persona picks its row (defaults to first/"User")
   command Free Text              # state-changing request (API band)
   view Free Text from "Event A", "Event B"   # read model fed by event(s)
+  view Free Text again from "Event C"        # later instance of an evolving read model (see Clauses)
   event Free Text @Context       # recorded fact; @Context picks its row (defaults to "Domain")
   processor Free Text from "View"   # automation; aliases: automation | saga | translation
 }
@@ -54,7 +57,16 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 ### Clauses
 - **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a row.
 - **`from "X"`** on views/automations declares the source(s); names are quoted, comma-separated.
-  Matching is case-insensitive and whitespace-normalized.
+  Matching is case-insensitive and whitespace-normalized. A `from` may never point at an event or
+  view that first appears in a LATER slice (forward-only timeline — validation error).
+- **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an
+  already-declared read model — the forward-only device for a view that evolves as later events
+  land. Instances are ONE logical view: the first declaration owns the `note` binding; each
+  instance's `from` lists only the NEW events landing at that point (not cumulative); instances are
+  linked left-to-right with a continuity arrow; a reaction (`from "View"`) reads the nearest
+  instance at-or-before its own slice. `again` with no earlier declaration is a validation error.
+  Use `again` (not a plain repeated `view` name) whenever the view is referenced by a
+  `from`/`arrow` — plain repeats are only warning-free while unreferenced.
 - **`note "path.md"`** on ANY element links a markdown doc. Relative to the `.em` file. Renders as
   a clickable marker in SVG and a legend entry in PNG/PDF. **This is how slice docs attach.**
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
@@ -142,7 +154,9 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
   *referenced* duplicate, resolving to the first). **Wire each event to a read model exactly once:**
   a repeated instance's `from` lists only the **new** events since the previous instance (not
   cumulative), or the event draws a duplicate arrow to the same read model at every repeat. (An
-  event may still feed several *different* read models, once each.)
+  event may still feed several *different* read models, once each.) When a repeated view **must be
+  referenced** — e.g. a reaction reads it via `from` — declare its later instances with
+  `view X again` instead (see Clauses); instances resolve properly and draw continuity arrows.
 - **Keep arrows span-1: put each repeat right after its feeding event.** Place a read-model instance
   immediately after the event that updates it, sourcing only that single adjacent event. A read
   model far from its source events draws long arrows that cross the read-model row and read as
@@ -171,6 +185,11 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
 2. **Unknown event source** — `view X from "Event"` where the event doesn't exist anywhere.
 3. **Unknown read-model source** — `processor X from "View"` where the view doesn't exist.
 4. **Arrow endpoint mismatch** — `arrow A -> B` where A or B matches no element name.
+5. **Backward timeline** ("time flows left to right") — an event feeding a view instance in an
+   EARLIER slice (fix: add a `view X again` instance where the event lands and move the source
+   there), a reaction reading a view before any instance of it exists, or an explicit backward
+   `arrow`.
+6. **`again` without an earlier declaration** — declare the view plainly the first time it appears.
 
 **Warnings (should fix):**
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and

@@ -32,13 +32,5 @@ Install librsvg only if you need PDF:
 
 Override the binary name/path with the `EM_RSVG` environment variable if needed.
 
-## How a render flows
-
-1. `.em` → AST → normalized model → strict-grid **DOT** (`src/emit/dot.ts`).
-2. WASM Graphviz lays out the grid and renders boxes/labels → **SVG**.
-3. `em` reads each box rectangle from the SVG and injects self-drawn **arrows** and **note
-   markers/legend** (`src/render/{svgGeometry,drawEdges,drawNotes}.ts`).
-4. Output: write the SVG directly, rasterize to PNG with resvg, or convert to PDF/other via
-   optional `rsvg-convert`.
-
-See [why-dot-not-plantuml.md](why-dot-not-plantuml.md) for the architecture rationale.
+For how a render flows through these pieces, and why Graphviz lays out the grid while `em`
+draws the arrows itself, see [architecture.md](architecture.md).
