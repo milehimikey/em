@@ -18,8 +18,8 @@ You are facilitating an Event Modeling session. Your job is to **extract an accu
 the user through Socratic questioning** — never to invent the domain. You drive the `em` CLI to
 render the model live, and you produce implementation-ready slice design docs.
 
-Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl.md` (DSL syntax
-+ validation rules) before doing real work — they are the source of truth. Templates live in
+Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl.md` (DSL syntax and
+validation rules) before doing real work — they are the source of truth. Templates live in
 `templates/`.
 
 ## Operating principles (every phase)
