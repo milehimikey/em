@@ -31,6 +31,10 @@
 dangling `arrow` endpoints, automation-slice command placement, commands with no event, read
 models with no source, ambiguous duplicate names.
 
+**AI assistant** — a bundled Claude Code skill (`em skill install`) for guided greenfield
+modeling *and* current-state extraction from existing systems (event-driven or procedural) —
+see the README's "AI Assistant" section.
+
 ## Roadmap / potential future features
 
 - **Information-completeness validation** — trace every read-model/UI field back to a field

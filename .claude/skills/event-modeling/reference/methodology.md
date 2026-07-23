@@ -121,6 +121,9 @@ state change anyone can think of. No commands, no UI yet — just facts.
     User Clicked Button, User Viewed Page, User Logged In.
 - Model the process the business **needs**, not how the current system happens to work. Existing
   system behavior is a common source of fake events — screens and tables leaking in as facts.
+  (**Extract mode inverts this**: in the skill's `extract` phase the existing system *is* the
+  subject and this caution is deliberately suspended — see the "Extract" section below and
+  `reference/extract.md`. The derived-value and telemetry filters still apply there.)
 - Output: a flat list of candidate `event` names.
 
 ### Step 2 — The Plot / Storyboard  *(discover)*
@@ -175,6 +178,26 @@ Walk the whole model with stakeholders and check for loose ends:
 - Prompts: *"Is there any event nobody sees? Any screen with no way in or out? Any command that
   records nothing? Any external system we haven't translated? Any translation or automation that
   records an event instead of triggering a command?"*
+
+---
+
+## Extract: current-state models of existing systems
+
+The `extract` phase derives a model from an **existing** system instead of a greenfield
+conversation. It is discover's as-is sibling: its confirm-and-clarify rounds converge the same
+step 1–4 outputs (events, timeline, commands, read models) — *derived from the system*, then
+confirmed with the user — after which the model enters `model` (steps 5–7) as usual.
+
+The stance inversion, stated authoritatively: **extraction captures how the system behaves
+today — faithfully, warts included — and never invents future or desired state.** Step 1's
+anti-current-system caution is suspended for the duration; the "is it an event?" filter is
+not — derived values and telemetry are still rejected even when the current system emits them.
+Unknown or ambiguous current behavior is parked (`# TBD` in the `.em`, mirrored in the state
+file's Open Questions), never guessed. Desired-state improvements belong to the `model` and
+`slice` phases, after the as-is picture is agreed.
+
+Procedure, source modes (event-driven vs. procedural synthesis), and the round-by-round loop:
+`reference/extract.md`.
 
 ---
 

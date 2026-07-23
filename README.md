@@ -196,7 +196,7 @@ npx tsx src/cli.ts <command> ...   # run straight from source
 
 ## AI Assistant (Claude Code)
 
-`em` ships a **Claude Code skill** that guides you and your team through Event Modeling using the 7-step process and 4 design patterns, producing implementation-ready slice specifications. The AI drives the model — asking focused questions, never guessing domain facts — while `em validate` keeps the diagram honest.
+`em` ships a **Claude Code skill** that guides you and your team through Event Modeling using the 7-step process and 4 design patterns, producing implementation-ready slice specifications. It models greenfield processes or **extracts a current-state model from an existing system** — event-driven or legacy/procedural. The AI drives the model — asking focused questions, never guessing domain facts — while `em validate` keeps the diagram honest.
 
 **Install the skill into your project:**
 
@@ -210,6 +210,7 @@ Then, in Claude Code, run:
 ```
 /event-modeling           # start (or resume) a guided session
 /event-modeling discover  # steps 1–4: brainstorm events, timeline, commands, read models
+/event-modeling extract   # derive a current-state model from an existing system/codebase
 /event-modeling model     # steps 5–7: swimlanes, patterns, completeness check
 /event-modeling slice     # deep implementation specs, one per slice
 /event-modeling watch     # open a live browser view for team modeling sessions

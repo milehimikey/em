@@ -5,8 +5,10 @@ description: >-
   the 7 steps of Event Modeling and the 4 patterns (State Change, State View, Automation,
   Translation), and produce implementation-ready slice design documents. Use when the user wants
   to event-model a business process or system, do event modeling / event storming, design slices,
-  build or edit an `.em` model, or run the em tool. Works in resumable phases via an argument:
-  `discover` (steps 1-4), `model` (steps 5-7), `slice` (deep slice specs), plus `watch` and
+  build or edit an `.em` model, run the em tool, or extract / reverse-engineer a current-state
+  event model from an existing system or codebase (event-driven or legacy/procedural). Works in
+  resumable phases via an argument: `discover` (steps 1-4, greenfield), `extract` (current-state
+  model of an existing system), `model` (steps 5-7), `slice` (deep slice specs), plus `watch` and
   `validate`. With no argument it resumes from the saved state file.
 ---
 
@@ -59,7 +61,8 @@ Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl
    directory (or a `models/` subfolder). If found, read the state file. If not, and the phase
    needs one, ask the user for the model name and where to create it.
 3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, read the
-   state file and resume the recorded phase/step; if no model exists, propose starting `discover`.
+   state file and resume the recorded phase/step; if no model exists, propose starting `discover`
+   (greenfield) or `extract` (modeling an existing system).
 
 ## Project layout this skill creates
 
@@ -84,6 +87,7 @@ template placeholders — never leave `{{...}}` in delivered files.
 ## Phase: `discover` — steps 1-4
 
 Goal: a draft model of events, storyboard, commands, and views. Loose is OK; structure comes next.
+**Existing system?** Use `extract` instead (next section) — discover is for greenfield modeling.
 
 1. **Brainstorm events (step 1).** Ask the user to name everything that happens, as past-tense
    facts. Probe for missed state changes. For each candidate, apply the **"is it an event?"
@@ -107,6 +111,27 @@ Goal: a draft model of events, storyboard, commands, and views. Loose is OK; str
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
 decisions, open questions, slice inventory). Tell the user they can stop here and resume with
 `/event-modeling model`.
+
+## Phase: `extract` — current-state model of an existing system
+
+Goal: a faithful **current-state** model extracted from an existing system — the as-is sibling
+of `discover` (it replaces discover; the model then proceeds to `model` as usual).
+
+**Read `reference/extract.md` before doing any extract work** — it carries a stance override
+that inverts methodology step 1 (capture how the system behaves *today*; never model desired
+state).
+
+- Two source modes, detected from the system itself and confirmed with the user:
+  **event-driven** (an event vocabulary already exists — schemas, topics, handlers) and
+  **procedural/monolith** (no event vocabulary — synthesize candidate events from behavior
+  and docs).
+- Converge via a ~7-round confirm-and-clarify loop (one concern per round; render from round 2,
+  validate from round 4 — see the playbook).
+- **Current-state-only:** park unknowns as `# TBD` comments in the `.em`, mirrored in the state
+  file's Open Questions — never guess intended design.
+
+End of phase: validated as-is model; state file updated (source mode, rounds, decisions, slice
+inventory); then chain to `/event-modeling model` (steps 5-7).
 
 ## Phase: `model` — steps 5-7
 
