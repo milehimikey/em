@@ -177,7 +177,7 @@ For each slice:
 3. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).
-4. Update `README.md`'s slice index and the state file's slice inventory (`draft` → `ready`).
+4. Update `README.md`'s slice index and the state file's slice inventory (`draft` → `ready-to-implement`).
 5. Re-render and `em validate`.
 
 ## Phase: `watch` — live team view
