@@ -47,4 +47,4 @@ Keep it current at the end of every working session.
 ## Slice inventory
 | Slice | Pattern | Doc status |
 |-------|---------|------------|
-| {{Slice Name}} | {{State Change/View/Automation/Translation}} | {{none / draft / ready}} |
+| {{Slice Name}} | {{State Change/View/Automation/Translation}} | {{none / draft / reviewed / ready-to-implement}} |
