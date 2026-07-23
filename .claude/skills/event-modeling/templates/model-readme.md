@@ -6,9 +6,12 @@
 While modeling, run the live view so the team can watch the diagram update:
 
 ```bash
-em watch {{model-name}}.em -o {{model-name}}.svg   # re-renders on every save
-# then open live.html in a browser (auto-refreshes ~1s; share the screen)
+em watch {{model-name}}.em -o {{model-name}}.svg --serve   # re-render + instant push-reload
+# then open the URL it prints (http://localhost:5173/?svg={{model-name}}.svg) and share the screen
 ```
+
+No server? Run `em watch {{model-name}}.em -o {{model-name}}.svg` and open
+`live.html?svg={{model-name}}.svg` in a browser (polls ~2s; share the screen).
 
 Static render: `em render {{model-name}}.em -o {{model-name}}.svg`
 

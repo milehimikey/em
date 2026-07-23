@@ -13,7 +13,8 @@ em init [file]                 # scaffold a starter model.em (default: model.em)
 em render <file> -o out.svg    # render (extension picks format: svg, png, pdf)
 em render <file> --emit-dot    # print the Graphviz DOT instead of rendering
 em render <file> --keep-empty-lanes   # keep the API lane even when empty
-em watch  <file> -o out.svg    # re-render on every save (file-based; no HTTP server)
+em watch  <file> -o out.svg    # re-render on every save (file-based)
+em watch  <file> -o out.svg --serve   # + localhost live viewer, instant SSE push-reload (--port N)
 em validate <file>             # check event-modeling rules; exit 0 if only warnings/clean
 ```
 

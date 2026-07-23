@@ -67,16 +67,17 @@ Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl
 <model-name>/
   <model-name>.em          # the model (slice docs linked via note "...")
   <model-name>.svg         # render target for em watch
-  live.html                # auto-refresh viewer (copy of templates/live.html, SVG_FILE set)
+  live.html                # file:// auto-refresh viewer (copy of templates/live.html, verbatim)
   README.md                # overview + slice index (from templates/model-readme.md)
   .event-modeling.md       # resumable state (from templates/state.md)
   slices/<slice-name>.md   # one rich slice doc per slice (from templates/slice.md)
 ```
 
-When creating a new model, scaffold the directory, copy the templates in (filling the
-placeholders), and set `SVG_FILE` in the copied `live.html` to `<model-name>.svg`. You may use
-`em init` for a starter `.em`, but usually you'll build it up from the discovery conversation
-instead. Fill template placeholders — never leave `{{...}}` in delivered files.
+When creating a new model, scaffold the directory and copy the templates in (filling the
+placeholders). Copy `live.html` **verbatim** — it takes the SVG name from its URL query
+(`live.html?svg=<model-name>.svg`), so there's nothing to edit. You may use `em init` for a
+starter `.em`, but usually you'll build it up from the discovery conversation instead. Fill
+template placeholders — never leave `{{...}}` in delivered files.
 
 ---
 
@@ -156,13 +157,16 @@ For each slice:
 
 ## Phase: `watch` — live team view
 
-1. Ensure `live.html` exists in the model dir (copy from `templates/live.html`) with `SVG_FILE`
-   set to `<model-name>.svg`.
-2. Start the watcher in the background: `em watch <model-name>.em -o <model-name>.svg`
-   (run_in_background). It re-renders the SVG on every save.
-3. Tell the user to open `live.html` in a browser and share their screen — it auto-refreshes ~1s,
-   so the team sees the model evolve as you edit during the session. (`em` has no built-in server;
-   the HTML viewer provides the auto-reload.)
+**Recommended (instant push, no polling):** start the watcher with `--serve` in the background:
+`em watch <model-name>.em -o <model-name>.svg --serve` (run_in_background). It re-renders on every
+save and pushes an instant reload to the browser over Server-Sent Events. Tell the user to open the
+URL it prints (e.g. `http://localhost:5173/?svg=<model-name>.svg`) and share their screen — updates
+appear the moment you save, with no idle churn between edits.
+
+**No-server fallback (`file://`):** if the user prefers not to run a server, start the plain watcher
+`em watch <model-name>.em -o <model-name>.svg` (run_in_background) and have them open the copied
+`live.html?svg=<model-name>.svg` in a browser. It polls every ~2s and reloads without flicker. No
+editing of `live.html` is needed — the `?svg=` query picks the model.
 
 ## Phase: `validate`
 
@@ -186,6 +190,7 @@ em validate <name>.em                      # check rules; exit 0 if clean/warnin
 em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
 em watch <name>.em -o <name>.svg           # re-render on save (run in background)
+em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-reload (--port N)
 ```
 
 Always finish a working session by: re-rendering, running `em validate`, and updating

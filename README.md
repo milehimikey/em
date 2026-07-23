@@ -36,6 +36,7 @@ npx @milehimikey/em render model.em
 em init model.em          # scaffold a starter model
 em render model.em        # -> model.svg  (open it in a browser)
 em watch model.em         # re-render on every save
+em watch model.em --serve # + live browser view with instant push-reload (great for team sessions)
 em validate model.em      # check event-modeling rules
 ```
 
@@ -154,6 +155,7 @@ em render <file> -o out.png           # PNG (in-process, no system deps)
 em render <file> --emit-dot           # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes   # don't collapse the API lane when empty
 em watch <file> [-o out.svg]          # re-render on every save
+em watch <file> --serve [--port N]    # + localhost live viewer, instant SSE push-reload
 em validate <file>                    # check event-modeling rules (non-zero exit on errors)
 ```
 
