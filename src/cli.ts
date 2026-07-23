@@ -10,6 +10,7 @@ import { NormalizedModel } from "./model/model.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, formatFromPath } from "./render/render.js";
 import { watchFile } from "./render/watch.js";
+import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { STARTER_EM } from "./templates.js";
 
@@ -77,9 +78,13 @@ program
   .option("-o, --out <path>", "output path (extension picks the format)")
   .option("-T, --format <fmt>", "output format (svg, png, pdf, ...)")
   .option("--keep-empty-lanes", "keep the API lane even when empty")
+  .option("--serve", "serve a live viewer with instant push-reload (no polling)")
+  .option("--port <n>", "port for --serve (default 5173)", (v) => parseInt(v, 10))
   .action(async (file: string, opts) => {
     const out = opts.out ?? defaultOut(file, opts.format ?? "svg");
     const fmt = opts.format ?? formatFromPath(out);
+
+    let server: LiveServer | undefined;
 
     const build = async () => {
       const started = Date.now();
@@ -95,12 +100,26 @@ program
         }
         await renderDot(dot, model, out, fmt, dirname(file));
         console.log(`rendered ${out} (${Date.now() - started}ms)`);
+        server?.notify();
       } catch (e) {
         reportError(e);
       }
     };
 
     await build();
+
+    if (opts.serve) {
+      try {
+        // Serve the directory the SVG is written to — that's what the browser
+        // fetches, and note "..." links inside the SVG resolve relative to it.
+        server = await startLiveServer({ dir: dirname(resolve(out)), port: opts.port });
+        console.log(`→ live view: ${server.url}/?svg=${encodeURIComponent(basename(out))}`);
+        console.log("  open it in a browser and share your screen");
+      } catch (e) {
+        reportError(e);
+      }
+    }
+
     watchFile(file, build);
     console.log(`watching ${file} … (ctrl-c to stop)`);
   });

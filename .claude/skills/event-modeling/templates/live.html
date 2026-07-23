@@ -3,10 +3,22 @@
   Live viewer for an em event model. Auto-reloads the rendered SVG so a team on a shared
   screen sees updates from `em watch` without manual refresh.
 
-  Usage:
-    1) In one terminal:  em watch MODEL.em -o MODEL.svg
-    2) Set SVG_FILE below to the SVG filename (same folder as this file).
-    3) Open this file in a browser (open live.html) and share the screen.
+  Two ways to use it:
+
+    A) Push (recommended, instant, no polling):
+         em watch MODEL.em -o MODEL.svg --serve
+       then open the URL it prints (http://localhost:5173/?svg=MODEL.svg). You don't need
+       this file at all in that mode — the server serves its own push-based viewer.
+
+    B) This file, over file:// (no server):
+         1) In one terminal:  em watch MODEL.em -o MODEL.svg
+         2) Open this file with the SVG name in the query:
+              open "live.html?svg=MODEL.svg"      (macOS)
+            No editing required — the ?svg= param picks the model.
+
+  Under file:// the browser gives no reliable "did the file change?" signal (fetch/HEAD is
+  blocked), so this fallback polls and reloads on a gentle interval. It double-buffers the
+  swap so a shared screen never flashes. For zero idle work and instant updates, use --serve.
 
   The SVG is embedded via <object> so note "..." links inside it stay clickable.
 -->
@@ -37,17 +49,57 @@
     <object id="svg" type="image/svg+xml"></object>
   </div>
   <script>
-    // Change this to your model's SVG filename:
-    const SVG_FILE = "model.svg";
-    const obj = document.getElementById("svg");
+    // SVG filename from ?svg=<name>.svg (defaults to model.svg) — one file serves any model.
+    const SVG_FILE = new URLSearchParams(location.search).get("svg") || "model.svg";
+    // Poll cadence for the file:// fallback. Tune freely; --serve makes polling unnecessary.
+    const REFRESH_INTERVAL_MS = 2000;
+
+    const stage = document.getElementById("stage");
     const stamp = document.getElementById("stamp");
-    function reload() {
-      // cache-bust so the freshly written SVG is fetched each tick
-      obj.setAttribute("data", SVG_FILE + "?t=" + Date.now());
-      stamp.textContent = new Date().toLocaleTimeString();
+    let current = document.getElementById("svg");
+    let lastModified = null;
+
+    // Best-effort change check — only meaningful when served over http(s). Under file://
+    // fetch/HEAD is blocked, so this throws and we fall back to reloading every tick.
+    async function changed() {
+      if (!location.protocol.startsWith("http")) return true;
+      try {
+        const res = await fetch(SVG_FILE, { method: "HEAD", cache: "no-store" });
+        const tag = res.headers.get("last-modified") || res.headers.get("etag");
+        if (tag && tag === lastModified) return false;
+        lastModified = tag;
+        return true;
+      } catch {
+        return true; // can't tell — reload to be safe
+      }
     }
-    reload();
-    setInterval(reload, 1000);
+
+    // Double-buffer: load into a hidden <object>, swap on load, so the shared screen
+    // never flashes white during a reload.
+    function swap() {
+      const next = document.createElement("object");
+      next.type = "image/svg+xml";
+      next.style.cssText = current.style.cssText;
+      next.addEventListener("load", () => {
+        stage.replaceChild(next, current);
+        current = next;
+        stamp.textContent = new Date().toLocaleTimeString();
+      }, { once: true });
+      next.setAttribute("data", SVG_FILE + "?t=" + Date.now());
+    }
+
+    // Self-scheduling loop: schedule the next tick only after this one resolves, so a slow
+    // reload can never overlap the next tick.
+    async function tick() {
+      try {
+        if (await changed()) swap();
+      } finally {
+        setTimeout(tick, REFRESH_INTERVAL_MS);
+      }
+    }
+
+    swap();
+    setTimeout(tick, REFRESH_INTERVAL_MS);
   </script>
 </body>
 </html>

@@ -36,6 +36,7 @@ npx @milehimikey/em render model.em
 em init model.em          # scaffold a starter model
 em render model.em        # -> model.svg  (open it in a browser)
 em watch model.em         # re-render on every save
+em watch model.em --serve # + live browser view with instant push-reload (great for team sessions)
 em validate model.em      # check event-modeling rules
 ```
 
@@ -154,6 +155,7 @@ em render <file> -o out.png           # PNG (in-process, no system deps)
 em render <file> --emit-dot           # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes   # don't collapse the API lane when empty
 em watch <file> [-o out.svg]          # re-render on every save
+em watch <file> --serve [--port N]    # + localhost live viewer, instant SSE push-reload
 em validate <file>                    # check event-modeling rules (non-zero exit on errors)
 ```
 
@@ -194,7 +196,7 @@ npx tsx src/cli.ts <command> ...   # run straight from source
 
 ## AI Assistant (Claude Code)
 
-`em` ships a **Claude Code skill** that guides you and your team through Event Modeling using the 7-step process and 4 design patterns, producing implementation-ready slice specifications. The AI drives the model — asking focused questions, never guessing domain facts — while `em validate` keeps the diagram honest.
+`em` ships a **Claude Code skill** that guides you and your team through Event Modeling using the 7-step process and 4 design patterns, producing implementation-ready slice specifications. It models greenfield processes or **extracts a current-state model from an existing system** — event-driven or legacy/procedural. The AI drives the model — asking focused questions, never guessing domain facts — while `em validate` keeps the diagram honest.
 
 **Install the skill into your project:**
 
@@ -208,6 +210,7 @@ Then, in Claude Code, run:
 ```
 /event-modeling           # start (or resume) a guided session
 /event-modeling discover  # steps 1–4: brainstorm events, timeline, commands, read models
+/event-modeling extract   # derive a current-state model from an existing system/codebase
 /event-modeling model     # steps 5–7: swimlanes, patterns, completeness check
 /event-modeling slice     # deep implementation specs, one per slice
 /event-modeling watch     # open a live browser view for team modeling sessions
