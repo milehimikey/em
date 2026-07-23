@@ -19,7 +19,7 @@ const program = new Command();
 program
   .name("em")
   .description("Event Modeling CLI — slice-first DSL rendered as a strict Graphviz grid")
-  .version("1.1.1");
+  .version("1.2.0");
 
 program
   .command("init")
