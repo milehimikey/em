@@ -29,9 +29,31 @@ The timeline rules ("time flows left to right") are the Two Laws in action;
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
+| A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
+| An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
+
+### Fields completeness
+
+This is the payoff of the `{ fields }` block for slicing rigor: once you bother writing down
+what data an element actually carries, `em validate` can check that data flows forward
+consistently instead of trusting it by eye.
+
+- **View ← events** — every field on a `view` should trace back to a field on one of its
+  source events (any instance of each named event, unioned). A view field with no matching
+  event field gets a warning.
+- **Event ← command** — every field on an `event` should trace back to a field on a command
+  in the same slice (unioned across commands, in the rare case a slice has more than one).
+  An event field the command never mentions gets a warning.
+
+Both checks only fire when **both sides declare `{ fields }`** — a model that never uses
+fields produces zero completeness warnings, and a view/event that hasn't gotten a fields
+block yet is silently skipped rather than flagged. Field names are matched with the same
+normalization as `from`/`arrow` references (trim, lowercase, collapse whitespace); types are
+not compared. UI fields, cross-slice/automation tracing, and rename detection are out of
+scope for now.
 
 An `issue` warning never blocks by default, same as every other warning — `em render`,
 `em watch`, and `em validate` all still succeed on a model with open issues. Use
