@@ -10,3 +10,7 @@ dist/
 
 # Local Claude Code permission config — never committed, never published
 .claude/settings.local.json
+
+# Private working notes / engagements — kept in the private project-notes vault,
+# never in this public repo
+internal/
