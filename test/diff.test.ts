@@ -154,6 +154,57 @@ slice "B" {
     ]);
     expect(diff.removals).toEqual([]);
   });
+
+  it("detects a move from a removed slice into a surviving slice (not suppressed as a rename)", () => {
+    const OLD = `
+slice "Legacy" {
+  event Thing Happened
+}
+slice "Keep" {
+  command Do Keep
+}
+`;
+    const NEW = `
+slice "Keep" {
+  command Do Keep
+  event Thing Happened
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    // Origin slice removed, but the target slice survives — a genuine move, so it
+    // must still report a `moved:` line (only removed-origin + new-target pairs,
+    // the slice-rename signature, are suppressed).
+    expect(diff.changes).toEqual([
+      { type: "element-moved", kind: "event", name: "Thing Happened", fromSlice: "Legacy", toSlice: "Keep" },
+    ]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Legacy" }]);
+    expect(diff.counts.elementsMoved).toBe(1);
+  });
+});
+
+describe("slice rename", () => {
+  it("reads as slice removed + added, without a `moved:` line per element", () => {
+    const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+    const NEW = `
+slice "Checkout Flow" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    // The slug-based slice key changes, re-keying every element — but the slice
+    // add/remove lines already tell the story, so no per-element move noise.
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Checkout Flow" }]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Checkout" }]);
+    expect(diff.counts.elementsMoved).toBe(0);
+    expect(diff.counts.elementsAdded).toBe(0);
+    expect(diff.counts.elementsRemoved).toBe(0);
+  });
 });
 
 describe("field add/remove/type-change", () => {

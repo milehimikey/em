@@ -158,8 +158,8 @@ each git revision via `git show <rev>:<path>` — the file must be tracked in a 
 exclusive: passing two file arguments together with `--from`/`--to` is an error.
 
 Both sides must compile without errors (parse errors or validation errors) — `em diff`
-refuses and prints diagnostics, same as `em render`/`em export`. Warnings are ignored for
-diffing purposes.
+refuses and prints diagnostics, same as `em render`/`em export`. Warnings are printed but
+don't block the diff.
 
 | Flag | Effect |
 |---|---|

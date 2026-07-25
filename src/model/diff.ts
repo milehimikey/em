@@ -146,7 +146,8 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
   const movedOldRefs = new Set<string>();
   const movedNewRefs = new Map<string, { fromSlice: string }>();
   // Walk new-model elements in document order so the pairing itself is deterministic.
-  newModel.slices.forEach((slice) => {
+  newModel.slices.forEach((slice, i) => {
+    const targetIsNew = !oldSliceKeySet.has(newRefs.sliceKeys[i]);
     for (const el of slice.elements) {
       const ref = newRefs.refById.get(el.id)!;
       if (oldElByRef.has(ref)) continue;
@@ -154,8 +155,20 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
       const bucket = removedQueue.get(key);
       if (bucket && bucket.length > 0) {
         const origin = bucket.shift()!;
+        // A slice rename changes every element's ref (the ref embeds the slice
+        // key), so each element pairs up as a "move" from the old slice name to
+        // the new one. That's noise: the slice add/remove lines already tell the
+        // story. Suppress the per-element move when its origin slice was removed
+        // AND its target slice is new (the rename signature) — mark the origin as
+        // "moved" so the removal pass stays quiet, but don't record a move line
+        // (and, since the target slice is new, the additions pass won't enumerate
+        // it as an add either). Genuine moves — into a new slice from a surviving
+        // origin, or from a removed slice into a surviving target — still report.
+        const originRemoved = !newSliceKeySet.has(origin.sliceKey);
         movedOldRefs.add(origin.ref);
-        movedNewRefs.set(ref, { fromSlice: origin.sliceName });
+        if (!(targetIsNew && originRemoved)) {
+          movedNewRefs.set(ref, { fromSlice: origin.sliceName });
+        }
       }
     }
   });
