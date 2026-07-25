@@ -42,8 +42,9 @@ Keep it current at the end of every working session.
 - [ ] 7. Evaluate completeness (`em validate` clean)
 
 ## Decisions log
-<!-- Resolved choices, with the reasoning, so they aren't re-litigated. -->
-- {{YYYY-MM-DD}}: {{decision}} — {{why}}
+<!-- Resolved choices, with the reasoning, so they aren't re-litigated. In a live workshop,
+     attribute each entry to the participant who made the call (see Participants above). -->
+- {{YYYY-MM-DD}}: {{decision}} — {{why}} — by {{participant, if a live workshop}}
 
 ## Open questions / parking lot
 <!-- Unresolved items to bring back to the user. Never guess these. Metadata is optional and
