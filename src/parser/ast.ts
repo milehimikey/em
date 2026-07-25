@@ -37,6 +37,8 @@ export interface ElementNode {
   from?: string[];
   /** `note "path.md"` — markdown file holding this element's notes. */
   note?: string;
+  /** `issue "text"` — an open question, flagged red on the diagram until resolved. */
+  issue?: string;
   /** Data attributes declared in a `{ … }` block on the element. */
   fields?: Field[];
   /** view-only: a later timeline instance of an already-declared read model. */

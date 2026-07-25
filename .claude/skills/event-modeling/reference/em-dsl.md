@@ -18,6 +18,8 @@ em render <file> --keep-empty-lanes   # keep the API lane even when empty
 em watch  <file> -o out.svg    # re-render on every save (file-based)
 em watch  <file> -o out.svg --serve   # + localhost live viewer, instant SSE push-reload (--port N)
 em validate <file>             # check event-modeling rules; exit 0 if only warnings/clean
+em validate <file> --list-issues       # print only open `issue "..."` clauses (slice, element, line, text)
+em validate <file> --fail-on-issues    # opt-in CI gate: exit non-zero while any issue remains open
 ```
 
 Install if missing: `npm i -g @milehimikey/em`. PNG works with no system deps; PDF needs
@@ -48,11 +50,11 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 ### Element kinds (8 keywords, nothing else)
 | Keyword | Band | Meaning | Tag | Extra clauses |
 |---|---|---|---|---|
-| `ui` | persona | screen / interface | `@Persona` | `note`, `{ fields }` |
-| `command` | API | state-changing request | — | `note`, `{ fields }` |
-| `view` | API | read model / projection | — | `from "Event"…`, `note`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `{ fields }` |
-| `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `{ fields }` |
+| `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `{ fields }` |
+| `command` | API | state-changing request | — | `note`, `issue`, `{ fields }` |
+| `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `{ fields }` |
+| `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `{ fields }` |
 
 ### Clauses
 - **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a row.
@@ -69,6 +71,11 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
   `from`/`arrow` — plain repeats are only warning-free while unreferenced.
 - **`note "path.md"`** on ANY element links a markdown doc. Relative to the `.em` file. Renders as
   a clickable marker in SVG and a legend entry in PNG/PDF. **This is how slice docs attach.**
+- **`issue "text"`** on ANY element flags an open question inline — the diagram-visible red
+  sticky note. Renders as a red corner marker (opposite corner from `note`, so both can coexist
+  on one element) plus a legend entry; `em validate` warns on every open issue. **Prefer this
+  over a `# TBD` comment for anything that should show up on the rendered diagram** — `# TBD` is
+  invisible once rendered, `issue` isn't.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking). Keep these light; full field specs
   with rules live in the slice doc.
@@ -197,6 +204,9 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
 2. **Command without event** — every command should record at least one event.
 3. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
 4. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
+5. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
+   clause. `em validate --list-issues` prints just these; `--fail-on-issues` (opt-in) makes CI
+   fail while any remain open.
 
 **Design rules that keep models valid:**
 - One element per band per slice (multiple personas/contexts are fine — they're different rows).

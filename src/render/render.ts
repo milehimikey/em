@@ -16,7 +16,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { Element, NormalizedModel } from "../model/model.js";
 import { parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
-import { buildNoteMarkers, appendNoteLegend } from "./drawNotes.js";
+import { buildNoteMarkers, buildIssueMarkers, appendNoteLegend } from "./drawNotes.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -90,6 +90,7 @@ function withOverlays(
   const rects = parseNodeRects(svg, new Set(model.byId.keys()));
   const { defs, group } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
+  const issues = buildIssueMarkers(model, rects);
 
   let out = svg;
   // arrowhead markers go just inside <svg …>
@@ -98,10 +99,10 @@ function withOverlays(
   const nodeAt = out.search(/<g\b[^>]*class="node"[^>]*>/);
   if (nodeAt >= 0) out = out.slice(0, nodeAt) + group + out.slice(nodeAt);
   else out = out.replace(/<\/svg>/, `${group}</svg>`);
-  // note markers go on top of the boxes — inside the graph transform group
+  // note/issue markers go on top of the boxes — inside the graph transform group
   // (so they share the box coordinate space) but after every node, as the last
-  // child of that group, making them the topmost clickable layer.
-  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}$1$2`);
+  // children of that group, making them the topmost clickable layer.
+  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}$1$2`);
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
   return out;

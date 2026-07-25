@@ -192,9 +192,11 @@ The stance inversion, stated authoritatively: **extraction captures how the syst
 today — faithfully, warts included — and never invents future or desired state.** Step 1's
 anti-current-system caution is suspended for the duration; the "is it an event?" filter is
 not — derived values and telemetry are still rejected even when the current system emits them.
-Unknown or ambiguous current behavior is parked (`# TBD` in the `.em`, mirrored in the state
-file's Open Questions), never guessed. Desired-state improvements belong to the `model` and
-`slice` phases, after the as-is picture is agreed.
+Unknown or ambiguous current behavior is parked, never guessed — mirrored in the state file's
+Open Questions, and on the element itself with `issue "text"` when it should also show up on the
+rendered diagram (preferred over a bare `# TBD` comment, which is invisible once rendered).
+Desired-state improvements belong to the `model` and `slice` phases, after the as-is picture is
+agreed.
 
 Procedure, source modes (event-driven vs. procedural synthesis), and the round-by-round loop:
 `reference/extract.md`.

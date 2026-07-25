@@ -20,6 +20,8 @@ export interface Element {
   from?: string[];
   /** Markdown file holding this element's notes, relative to the .em file. */
   note?: string;
+  /** Open question text, flagged red on the diagram until resolved. */
+  issue?: string;
   /** Data attributes declared on the element. */
   fields?: Field[];
   sliceIndex: number;
@@ -94,6 +96,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         line: el.line,
         from: el.from,
         note: el.note,
+        issue: el.issue,
         fields: el.fields,
       };
 

@@ -178,6 +178,15 @@ function parseElement(
     rest = (rest.slice(0, noteMatch.index) + rest.slice(noteMatch.index + noteMatch[0].length)).trim();
   }
 
+  // `issue "text"` clause (valid on any element): an open question flagged red on
+  // the diagram, distinct from `note`'s file link. Extracted the same way, before
+  // `from`, for the same reason.
+  const issueMatch = rest.match(/\sissue\s+"([^"]*)"/i);
+  if (issueMatch && issueMatch.index !== undefined) {
+    node.issue = issueMatch[1];
+    rest = (rest.slice(0, issueMatch.index) + rest.slice(issueMatch.index + issueMatch[0].length)).trim();
+  }
+
   // `from "A", "B"` clause (view only, but parsed wherever present).
   const fromMatch = rest.match(/\sfrom\s+(.+)$/i);
   if (fromMatch && fromMatch.index !== undefined) {

@@ -156,6 +156,18 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       });
   }
 
+  // Open issues (`issue "text"`) are always surfaced as a warning — the red-note
+  // device for a question that hasn't been resolved yet.
+  for (const el of model.elements) {
+    if (el.issue) {
+      diags.push({
+        severity: "warning",
+        message: `open issue on "${el.name}": ${el.issue}`,
+        line: el.line,
+      });
+    }
+  }
+
   // Ambiguous names (used by arrows / view sources) get a heads-up.
   for (const [key, els] of model.byName) {
     // Later \`again\` instances of a view are the SAME logical read model reappearing on the
