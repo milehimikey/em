@@ -6,6 +6,7 @@
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
+| `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 
 Every command that reads a model also parses and validates it first, printing any
@@ -79,6 +80,59 @@ em validate model.em                          # full diagnostics; exits non-zero
 em validate model.em --list-issues             # just the open `issue` clauses, for a quick sweep
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
 ```
+
+## `em export <file>`
+
+Exports a versioned JSON snapshot of the normalized model — the machine-readable counterpart
+to `em render`'s picture. Same validation as every other command: `em export` refuses (exits
+non-zero, prints the diagnostics) when the model has errors; warnings never block and are
+included in the output's `diagnostics` array instead. Writes pretty-printed JSON to stdout by
+default (pipe-friendly); `-o` writes a file.
+
+| Flag | Effect |
+|---|---|
+| `-o, --out <path>` | Write to a file instead of stdout |
+
+```bash
+em export model.em                    # pretty JSON on stdout
+em export model.em -o model.json      # write to a file
+```
+
+**Determinism.** The same source text always exports to byte-identical JSON: no timestamps,
+no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
+the source text, so a consumer can tell whether an export is stale without re-running `em`.
+
+**Schema summary** (`schemaVersion: "1.0"`):
+
+- `generator` — `{ name, version }` of the tool that produced the export.
+- `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line.
+- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `slices`, `arrows`.
+  - Each **slice** has a stable `key` (`slug(name)`, with a `~2`, `~3`, … suffix — and a
+    warning diagnostic — if two slices share a name), plus `name`, `index`, `line`, and its
+    `elements`. Elements appear only inside their slice, not flattened at `model.elements`.
+  - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
+    way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
+    `fields`, `note`, `issue`, `from`, `persona`, `context`, `again`, and `logicalRef`.
+    Fields that don't apply to a given element are emitted as explicit `null` (not omitted),
+    so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
+    resolved to both the referenced name and its `ref`. `logicalRef` points at the first
+    timeline instance of a `view … again` read model; `null` for everything else.
+  - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
+- `diagnostics` — every diagnostic `em validate` would print (severity, message, line),
+  plus any export-only ref-collision warnings.
+
+**Stable identity.** `ref`/`key` are edit-stable: inserting or reordering slices never changes
+an existing slice's `key` or an existing element's `ref` (only `index` moves). A rename does
+change identity — that's intentional, a rename is a model change. These refs are NOT the same
+as the internal id used by layout/rendering, which is document-order-deduped and only
+render-stable.
+
+**Versioning policy.** `schemaVersion` is independent of the npm package version. Additive
+optional fields are a minor bump; renames, removals, or meaning changes are a major bump.
+**Consumers must tolerate unknown fields.**
+
+See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step alongside
+`em validate` as a merge gate.
 
 ## `em skill install`
 
