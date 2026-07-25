@@ -9,10 +9,12 @@ Replace the bracketed placeholders; delete guidance comments before finishing.
 
 - **Pattern:** {{State Change | State View | Automation | Translation}}
 - **Swimlane:** {{Persona/Actor}} → {{Context/Aggregate}}
-- **Status:** {{draft | reviewed | ready-to-implement}}
+- **Status:** {{draft | reviewed | ready-to-implement | implemented}}
+- **Implemented in:** {{PR/commit link — fill in once status is `implemented`}}
 
 ## Intent
-{{Why this slice exists — the user or business goal it serves, in one or two sentences.}}
+{{Why this slice exists — the user or business goal it serves, in one or two sentences. Note the
+originating ticket/conversation link here if one exists.}}
 
 ## Trigger & Actor
 {{Who or what initiates this slice and under what circumstances. For automations, the watched
@@ -60,6 +62,13 @@ an event directly.}}
 <!-- Failure paths, retries, compensations, timeouts, idempotency. -->
 - {{e.g. external call fails → retry policy / compensating event}}
 - {{idempotency: what happens if the command/event arrives twice?}}
+
+## Non-Functional Requirements
+<!-- Short checklist. Idempotency is covered above under Alternate & Error Flows — not repeated
+     here. -->
+- **Security / authz:** {{who may invoke this; role/permission checks — or "none"}}
+- **PII & compliance:** {{personal data touched, retention/consent constraints — or "none"}}
+- **Performance / SLA:** {{latency/throughput expectation — or "none"}}
 
 ## Dependencies & Read Models Affected
 - **Upstream events this slice relies on:** {{...}}

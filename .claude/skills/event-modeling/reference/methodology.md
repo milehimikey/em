@@ -163,6 +163,9 @@ dedicated `slice` phase writes the full rich spec (see `templates/slice.md`).
 - Prompts: *"Given what starting state, when this command/trigger fires, then what event(s)
   result? What must always be true? What are the failure paths? Which fields are essential and
   what are their rules?"*
+- **Existing codebase:** before finalizing field names/types, check adjacent real sources
+  (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling contexts) rather than
+  guessing — mirrors `extract.md`'s whole-system grounding, applied per-slice.
 - Output: rich slice docs linked into the `.em` via `note "slices/<name>.md"`.
 
 ### Step 7 — Evaluate Completeness  *(model)*
@@ -210,3 +213,6 @@ Procedure, source modes (event-driven vs. procedural synthesis), and the round-b
 - Mirror the model back after each increment and **re-render** so the team sees it evolve.
 - Park unresolved questions in the state file instead of guessing.
 - Name things crisply: events past-tense, commands imperative, views as the thing-shown.
+- **Live workshop, one chat interface:** route through a single human proxy who relays questions
+  to the room and reports answers back; attribute every answer/decision in the Decisions log to
+  the named participant who gave it (see the state file's Participants section).

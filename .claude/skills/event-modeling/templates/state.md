@@ -18,6 +18,11 @@ Keep it current at the end of every working session.
 - **Source mode:** {{greenfield | extract-event-driven | extract-procedural}}
 - **Existing system refs:** {{repo paths, event-schema/topic locations, docs — or "n/a"}}
 
+## Participants
+<!-- Populate at session start. Live workshop: one human proxy relays questions to the room;
+     attribute every answer/decision in the Decisions log to a named participant here. -->
+- {{Name}} — {{role}} — {{domain area}}
+
 ## Extraction progress (existing-system models only — delete for greenfield)
 - [ ] R1. Candidate events (extracted/synthesized, filtered, confirmed)
 - [ ] R2. Timeline order (as-is narrative, actors/callers, first render)
@@ -37,14 +42,17 @@ Keep it current at the end of every working session.
 - [ ] 7. Evaluate completeness (`em validate` clean)
 
 ## Decisions log
-<!-- Resolved choices, with the reasoning, so they aren't re-litigated. -->
-- {{YYYY-MM-DD}}: {{decision}} — {{why}}
+<!-- Resolved choices, with the reasoning, so they aren't re-litigated. In a live workshop,
+     attribute each entry to the participant who made the call (see Participants above). -->
+- {{YYYY-MM-DD}}: {{decision}} — {{why}} — by {{participant, if a live workshop}}
 
 ## Open questions / parking lot
-<!-- Unresolved items to bring back to the user. Never guess these. -->
-- [ ] {{question}}
+<!-- Unresolved items to bring back to the user. Never guess these. Metadata is optional and
+     flat — add only what's known: source (ticket/conversation that spawned it), blocked on
+     (who/what), revisit (when). -->
+- [ ] {{question}} — source: {{ticket/conversation link, optional}} — blocked on: {{who/what, optional}} — revisit: {{when, optional}}
 
 ## Slice inventory
 | Slice | Pattern | Doc status |
 |-------|---------|------------|
-| {{Slice Name}} | {{State Change/View/Automation/Translation}} | {{none / draft / reviewed / ready-to-implement}} |
+| {{Slice Name}} | {{State Change/View/Automation/Translation}} | {{none / draft / reviewed / ready-to-implement / implemented}} |
