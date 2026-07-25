@@ -7,6 +7,7 @@
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
+| `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 
 Every command that reads a model also parses and validates it first, printing any
@@ -133,6 +134,65 @@ optional fields are a minor bump; renames, removals, or meaning changes are a ma
 
 See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step alongside
 `em validate` as a merge gate.
+
+## `em diff <old> <new>`
+
+Compares two models structurally and prints a rollup summary plus one line per change —
+slices and elements added/removed/moved, field/`from`/note changes, and issue lifecycle
+(opened, resolved, text changed). It's the semantic counterpart to `git diff` on a `.em`
+file: raw `git diff` shows line hunks; `em diff` groups them into what actually happened to
+the model, and — crucially — collapses a cross-slice move into one `moved:` line instead of
+a delete-hunk-plus-add-hunk in two different places.
+
+Two forms:
+
+```bash
+em diff old-model.em new-model.em             # two files
+em diff model.em --from HEAD~5                # model.em now vs. 5 commits ago
+em diff model.em --from v1.0 --to v1.1        # two tags of the same file
+```
+
+With `--from <rev>` (and optional `--to <rev>`), `em diff` resolves the file's content at
+each git revision via `git show <rev>:<path>` — the file must be tracked in a git repo.
+`--to` defaults to the file's current on-disk content. The two forms are mutually
+exclusive: passing two file arguments together with `--from`/`--to` is an error.
+
+Both sides must compile without errors (parse errors or validation errors) — `em diff`
+refuses and prints diagnostics, same as `em render`/`em export`. Warnings are ignored for
+diffing purposes.
+
+| Flag | Effect |
+|---|---|
+| `--from <rev>` | Diff `<old>` against this git revision instead of a second file |
+| `--to <rev>` | Diff against this git revision instead of the current file (requires `--from`) |
+| `--exit-code` | Exit 1 if the models differ, 0 if identical (opt-in, `git diff --exit-code` convention) |
+
+By default `em diff` always exits 0 (except on a compile error); pass `--exit-code` to use
+it as a CI gate that fails when a model actually changed.
+
+**Identity.** Slices are matched by their `em export` key, elements by their `em export`
+`ref` — the same edit-stable identity `em export` guarantees, so inserting or reordering
+slices doesn't spuriously show up as changes.
+
+**Renames are out of scope (deliberate).** There's no rename detection in v1: renaming an
+element reads as a remove + an add (or as a move, if the same name reappears in a different
+slice). This is intentional — a rename genuinely is a change to the model's ubiquitous
+language, and `em diff` surfacing it as one is the honest read, not a bug to fix later.
+
+Example output:
+
+```
+1 slice added, 1 element moved, 1 field change, 1 issue resolved
+
+~ field "total": Money added to command "Submit Order" (slice "Checkout")
+issue resolved: event "Order Submitted" (slice "Checkout"): "do we need a currency code here?"
++ slice "Payment"
+moved: event "Payment Failed" (slice "Checkout" -> slice "Payment")
+```
+
+A moved element's own field/note/issue changes aren't further diffed in v1 — only the move
+itself is reported (`kind` + normalized name is the whole match key). Diff a version before
+and after a move separately if you need both.
 
 ## `em skill install`
 

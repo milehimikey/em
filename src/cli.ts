@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { compile, CompileOptions } from "./pipeline.js";
+import { compile, CompileOptions, CompileResult } from "./pipeline.js";
 import { NormalizedModel } from "./model/model.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, formatFromPath } from "./render/render.js";
@@ -13,6 +14,7 @@ import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { buildExport } from "./emit/json.js";
+import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
 import { STARTER_EM } from "./templates.js";
 
 const program = new Command();
@@ -94,6 +96,40 @@ program
     } else {
       process.stdout.write(exported.text + "\n");
     }
+  });
+
+program
+  .command("diff")
+  .description("compare two models structurally (two files, or one file across git revisions)")
+  .argument("<old>", "old model file — or the file to diff, when using --from")
+  .argument("[new]", "new model file (omit when using --from/--to)")
+  .option("--from <rev>", "diff <old> against this git revision instead of a second file")
+  .option("--to <rev>", "diff against this git revision instead of the current file (requires --from)")
+  .option("--exit-code", "exit 1 if the models differ, 0 if identical (git-diff convention)")
+  .action((oldFile: string, newFile: string | undefined, opts: { from?: string; to?: string; exitCode?: boolean }) => {
+    if (opts.from) {
+      if (newFile) {
+        console.error("em diff: cannot combine two file arguments with --from/--to — use one form or the other");
+        process.exit(1);
+      }
+      const oldSource = readAtRevision(oldFile, opts.from);
+      const oldLabel = `${oldFile}@${opts.from}`;
+      const newSource = opts.to ? readAtRevision(oldFile, opts.to) : readFileOrExit(oldFile);
+      const newLabel = opts.to ? `${oldFile}@${opts.to}` : oldFile;
+      runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode);
+      return;
+    }
+    if (opts.to) {
+      console.error("em diff: --to requires --from");
+      process.exit(1);
+    }
+    if (!newFile) {
+      console.error("em diff: provide two files (`em diff old.em new.em`) or one file with --from <rev>");
+      process.exit(1);
+    }
+    const oldSource = readFileOrExit(oldFile);
+    const newSource = readFileOrExit(newFile);
+    runDiff(oldSource, oldFile, newSource, newFile, opts.exitCode);
   });
 
 program
@@ -219,6 +255,75 @@ function compileFile(file: string, opts: CompileOptions = {}) {
     }
     throw e;
   }
+}
+
+/** Read a file's text, or exit with a clear error — used by `em diff`'s two-file form. */
+function readFileOrExit(file: string): string {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    console.error(`cannot read ${file}`);
+    process.exit(1);
+  }
+}
+
+/** Parse+normalize source text for `em diff`, exiting with a labeled parse error on failure. */
+function compileSource(source: string, label: string): CompileResult {
+  try {
+    return compile(source);
+  } catch (e) {
+    if (e instanceof ParseError) {
+      console.error(`parse error in ${label} ${e.message}`);
+      process.exit(1);
+    }
+    throw e;
+  }
+}
+
+/** Resolve `file`'s content at a git revision via `git show <rev>:<repo-relative-path>`. */
+function readAtRevision(file: string, rev: string): string {
+  const abs = resolve(file);
+  const toplevel = spawnSync("git", ["-C", dirname(abs), "rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+  });
+  if (toplevel.status !== 0) {
+    console.error(`em diff: ${file} is not inside a git repository (needed for --from/--to)`);
+    process.exit(1);
+  }
+  const repoRoot = toplevel.stdout.trim();
+  const lsFiles = spawnSync("git", ["-C", repoRoot, "ls-files", "--full-name", "--", abs], {
+    encoding: "utf8",
+  });
+  const relPath = lsFiles.stdout.trim().split("\n")[0];
+  if (!relPath) {
+    console.error(`em diff: ${file} is not tracked by git in ${repoRoot}`);
+    process.exit(1);
+  }
+  const show = spawnSync("git", ["-C", repoRoot, "show", `${rev}:${relPath}`], { encoding: "utf8" });
+  if (show.status !== 0) {
+    console.error(`em diff: cannot read ${relPath} at revision "${rev}": ${(show.stderr || "").trim() || "unknown git error"}`);
+    process.exit(1);
+  }
+  return show.stdout;
+}
+
+/** Shared body for both `em diff` forms: compile both sides, gate on errors, print, exit-code. */
+function runDiff(oldSource: string, oldLabel: string, newSource: string, newLabel: string, exitCode?: boolean): void {
+  const oldResult = compileSource(oldSource, oldLabel);
+  const newResult = compileSource(newSource, newLabel);
+
+  printDiagnostics(oldResult.diagnostics);
+  printDiagnostics(newResult.diagnostics);
+
+  if (hasErrors(oldResult.diagnostics) || hasErrors(newResult.diagnostics)) {
+    console.error("not diffing: fix the errors above");
+    process.exit(1);
+  }
+
+  const diff = diffModels(oldResult.model, newResult.model);
+  console.log(formatModelDiff(diff));
+
+  if (exitCode && hasChanges(diff)) process.exit(1);
 }
 
 function defaultOut(file: string, fmt: string): string {
