@@ -28,7 +28,8 @@ validation rules) before doing real work — they are the source of truth. Templ
   multiple-choice decisions. Never assume a domain fact — extract it. Prefer "who/why/what-if/
   what-must-always-be-true/how-do-you-know" over yes-no.
 - **Don't guess — park it.** Unresolved items go into the Open Questions list in
-  `.event-modeling.md`, not into invented model content.
+  `.event-modeling.md`, not into invented model content. Note the source, blocker, and revisit
+  date when known — cheap now, useful when you come back to it.
 - **Happy path first; branches belong to slicing.** Steps 1-7 build the **happy-path spine**.
   Alternate, unhappy, and exception-path events (rejections, removals, cancellations,
   expirations, declines) are **not** enumerated as a separate discover/model task — they
@@ -63,6 +64,9 @@ validation rules) before doing real work — they are the source of truth. Templ
 3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, read the
    state file and resume the recorded phase/step; if no model exists, propose starting `discover`
    (greenfield) or `extract` (modeling an existing system).
+4. Populate the state file's Participants section at session start. For a live workshop, ask for
+   a single human proxy to relay questions to the room, and attribute every answer/decision in
+   the Decisions log to a named participant.
 
 ## Project layout this skill creates
 
@@ -88,6 +92,10 @@ template placeholders — never leave `{{...}}` in delivered files.
 
 Goal: a draft model of events, storyboard, commands, and views. Loose is OK; structure comes next.
 **Existing system?** Use `extract` instead (next section) — discover is for greenfield modeling.
+**New feature inside an existing codebase?** Stay in `discover`, but before locking in
+command/event names, Grep/Read adjacent real sources (OpenAPI specs, DB migrations, existing
+DTOs/event classes in sibling contexts) rather than guessing conventions — same check `slice`
+phase applies to field tables, below.
 
 1. **Brainstorm events (step 1).** Ask the user to name everything that happens, as past-tense
    facts. Probe for missed state changes. For each candidate, apply the **"is it an event?"
@@ -171,13 +179,19 @@ For each slice:
 1. Hold a Socratic deep-dive to fill every section of `templates/slice.md`: intent, trigger/actor,
    command + field table (types & rules), event(s) + payload (mark immutable facts), invariants
    (give each a stable ID), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
-   alternate/error flows (retries, idempotency, compensations), read models affected, open
-   questions. Park anything unresolved rather than guessing.
-2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name).
+   alternate/error flows (retries, idempotency, compensations), non-functional requirements
+   (security/authz, PII/compliance, performance/SLA), read models affected, open questions. Park
+   anything unresolved rather than guessing. If the slice lives in an existing codebase, Grep/Read
+   adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling
+   contexts) before finalizing field names/types or invariants — don't guess a shape that's
+   already defined elsewhere.
+2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name). Record the originating
+   need (ticket/conversation link) in the Intent section when one exists.
 3. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).
-4. Update `README.md`'s slice index and the state file's slice inventory (`draft` → `ready-to-implement`).
+4. Update `README.md`'s slice index and the state file's slice inventory (`draft` →
+   `ready-to-implement`, later `implemented` once shipped, with `Implemented in:` filled in).
 5. Re-render and `em validate`.
 
 ## Phase: `watch` — live team view

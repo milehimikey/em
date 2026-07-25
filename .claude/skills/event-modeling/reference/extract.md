@@ -94,8 +94,9 @@ one for a sprawling one. Record any deviation in the Decisions log.
 - Inline `.em` comment on its own line directly above (or trailing) the element it concerns:
   `# TBD: <specific question about current behavior>`. Comments are native DSL syntax — they
   render and validate cleanly.
-- Mirror every `# TBD` 1:1 as a checkbox in the state file's **Open questions / parking lot**,
-  and remove both together when resolved.
+- Mirror every `# TBD` 1:1 as a checkbox in the state file's **Open questions / parking lot** —
+  add `source`/`blocked on`/`revisit` metadata when known — and remove both together when
+  resolved.
 - A `# TBD` is only ever resolved by a confirmed current-state fact — never replaced by a
   guessed element.
 
