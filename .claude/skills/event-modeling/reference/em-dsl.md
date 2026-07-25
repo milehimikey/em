@@ -207,6 +207,13 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
 5. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
    clause. `em validate --list-issues` prints just these; `--fail-on-issues` (opt-in) makes CI
    fail while any remain open.
+6. **View field with no source** — a `view` field whose name matches no field on any instance
+   of its source events. Only checked once BOTH the view and at least one source event declare
+   `{ fields }`.
+7. **Event field not from a command** — an `event` field whose name matches no field on any
+   command in the same slice. Only checked once BOTH the event and at least one same-slice
+   command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
+   once fields are written down, `em validate` checks that data flows forward consistently.
 
 **Design rules that keep models valid:**
 - One element per band per slice (multiple personas/contexts are fine — they're different rows).

@@ -72,3 +72,160 @@ slice "S" {
     expect(el.issue).toBeUndefined();
   });
 });
+
+describe("fields-completeness warnings", () => {
+  const gapDiags = (src: string) =>
+    diagsFor(src).filter(
+      (d) => d.message.includes("has no source in") || d.message.includes("not provided by command"),
+    );
+
+  it("view field with a matching source event field: no warning", () => {
+    const src = `
+slice "S" {
+  command Place Order { orderId, total: Money }
+  event Order Placed { orderId, total: Money }
+}
+slice "T" {
+  view Open Orders from "Order Placed" {
+    orderId
+  }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("view field with no matching source event field: warning", () => {
+    const src = `
+slice "S" {
+  command Place Order { orderId }
+  event Order Placed { orderId }
+}
+slice "T" {
+  view Open Orders from "Order Placed" {
+    orderId
+    status
+  }
+}
+`;
+    const diags = gapDiags(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      severity: "warning",
+      message: 'view "Open Orders" field "status" has no source in "Order Placed"',
+    });
+  });
+
+  it("event field not provided by the slice's command: warning", () => {
+    const src = `
+slice "S" {
+  command Place Order { customerId }
+  event Order Placed { customerId, total: Money }
+}
+`;
+    const diags = gapDiags(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      severity: "warning",
+      message: 'event "Order Placed" field "total" not provided by command "Place Order"',
+    });
+  });
+
+  it("event field covered by the slice's command: no warning", () => {
+    const src = `
+slice "S" {
+  command Place Order { customerId, total: Money }
+  event Order Placed { customerId, total: Money }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("neither side declares fields: no warnings (both-sides-undeclared skip)", () => {
+    const src = `
+slice "S" {
+  command Place Order
+  event Order Placed
+}
+slice "T" {
+  view Open Orders from "Order Placed"
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("only one side declares fields: skipped, not treated as a full gap", () => {
+    const viewOnly = `
+slice "S" {
+  command Place Order
+  event Order Placed
+}
+slice "T" {
+  view Open Orders from "Order Placed" {
+    orderId
+    status
+  }
+}
+`;
+    expect(gapDiags(viewOnly)).toHaveLength(0);
+
+    const eventOnly = `
+slice "S" {
+  command Place Order
+  event Order Placed { orderId, total: Money }
+}
+`;
+    expect(gapDiags(eventOnly)).toHaveLength(0);
+  });
+
+  it("unions fields across every instance of a same-named source event", () => {
+    // "Order Placed" appears twice (once per slice, both feeding the same view via
+    // separate `from` sources); the view field is only covered by the SECOND
+    // instance's fields, so the union across both instances must still find it.
+    const src = `
+slice "S1" {
+  command Place Order { orderId }
+  event Order Placed { orderId }
+}
+slice "S2" {
+  command Place Order { orderId, total: Money }
+  event Order Placed { orderId, total: Money }
+}
+slice "T" {
+  view Order Summary from "Order Placed" {
+    orderId
+    total
+  }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("`view X again` instances are checked independently — no spurious warnings when the later instance simply doesn't redeclare fields", () => {
+    const src = `
+context Inventory
+slice "Receive" {
+  command Receive Stock { sku, qty: Int }
+  event Stock Received @Inventory { sku, qty: Int }
+}
+slice "Catalog" {
+  view Availability from "Stock Received" {
+    sku
+    qty
+  }
+}
+slice "Reserve" {
+  command Reserve Stock { sku }
+  event Stock Reserved @Inventory { sku }
+}
+slice "Catalog Updated" {
+  view Availability again from "Stock Reserved"
+}
+`;
+    // The first instance declares fields and is fully covered by "Stock Received".
+    // The `again` instance declares no fields block of its own, so — per the
+    // both-sides-declare gate applied per element instance — it is skipped
+    // entirely rather than re-checked against "Stock Reserved" (which doesn't
+    // carry `qty`).
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+});

@@ -106,6 +106,10 @@ box grows vertically to fit (width stays fixed, so columns stay aligned) and arr
 to the real box edges. A field block coexists with `note` and `from` clauses on the same
 element.
 
+Once two connected elements both declare fields, `em validate` traces them — a view field
+with no matching source-event field, or an event field no same-slice command provides, gets
+a warning. See [validation.md](validation.md).
+
 ## Notes
 
 Any element can carry `note "path.md"`. The prose lives in the markdown file, keeping the

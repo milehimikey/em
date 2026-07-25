@@ -29,6 +29,7 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
 
   for (const slice of model.slices) {
     const command = slice.elements.find((e) => e.kind === "command");
+    const commands = slice.elements.filter((e) => e.kind === "command");
     const events = slice.elements.filter((e) => e.kind === "event");
     const views = slice.elements.filter((e) => e.kind === "view");
     const auto = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
@@ -84,6 +85,63 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
               `later \`view ${view.name} again\` instance`,
             line: view.line,
           });
+        }
+      }
+
+      // Fields completeness: every view field should trace to a field on some
+      // instance of a source event — but only once both sides opt in by declaring
+      // `{ fields }` at all (a model that never declares fields stays silent).
+      if (view.fields && view.fields.length > 0) {
+        const fromNames = view.from ?? [];
+        const sourceEvents: Element[] = [];
+        for (const src of fromNames) {
+          const bucket = model.byName.get(normalizeName(src)) ?? [];
+          for (const e of bucket) if (e.kind === "event") sourceEvents.push(e);
+        }
+        const sourcesDeclareFields = sourceEvents.some((e) => (e.fields ?? []).length > 0);
+        if (sourcesDeclareFields) {
+          const fieldUnion = new Set<string>();
+          for (const e of sourceEvents) {
+            for (const f of e.fields ?? []) fieldUnion.add(normalizeName(f.name));
+          }
+          const eventList = fromNames.map((n) => `"${n}"`).join(", ");
+          for (const f of view.fields) {
+            if (!fieldUnion.has(normalizeName(f.name))) {
+              diags.push({
+                severity: "warning",
+                message: `view "${view.name}" field "${f.name}" has no source in ${eventList}`,
+                line: view.line,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Fields completeness: every event field in a slice should trace to a field on
+    // one of that slice's commands — again, only once both sides declare `{ fields }`.
+    if (commands.length > 0) {
+      const commandFieldUnion = new Set<string>();
+      let commandsDeclareFields = false;
+      for (const c of commands) {
+        for (const f of c.fields ?? []) {
+          commandsDeclareFields = true;
+          commandFieldUnion.add(normalizeName(f.name));
+        }
+      }
+      if (commandsDeclareFields) {
+        const cmdNames = commands.map((c) => c.name).join(", ");
+        for (const evt of events) {
+          if (!evt.fields || evt.fields.length === 0) continue;
+          for (const f of evt.fields) {
+            if (!commandFieldUnion.has(normalizeName(f.name))) {
+              diags.push({
+                severity: "warning",
+                message: `event "${evt.name}" field "${f.name}" not provided by command "${cmdNames}"`,
+                line: evt.line,
+              });
+            }
+          }
         }
       }
     }
