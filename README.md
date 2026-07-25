@@ -75,6 +75,7 @@ built this way.
 | [docs/dsl.md](docs/dsl.md) | Full DSL reference: keywords, `from`, `again`, fields, notes |
 | [docs/cli.md](docs/cli.md) | Every command and flag |
 | [docs/validation.md](docs/validation.md) | Every rule `em validate` checks, and the fixes |
+| [docs/ci.md](docs/ci.md) | Copy-paste GitHub Actions recipe: validate `.em` changes in CI |
 | [docs/timeline.md](docs/timeline.md) | The Two Laws of the Timeline |
 | [docs/ai-workflow.md](docs/ai-workflow.md) | The Claude Code skill: install, phases, artifacts |
 | [docs/dependencies.md](docs/dependencies.md) | What's bundled vs. what needs a system install |

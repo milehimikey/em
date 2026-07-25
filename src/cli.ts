@@ -12,6 +12,7 @@ import { renderDot, formatFromPath } from "./render/render.js";
 import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
+import { buildExport } from "./emit/json.js";
 import { STARTER_EM } from "./templates.js";
 
 const program = new Command();
@@ -69,6 +70,30 @@ program
     const fmt = opts.format ?? formatFromPath(out);
     await renderDot(dot, model, out, fmt, dirname(file));
     console.log(`rendered ${out}`);
+  });
+
+program
+  .command("export")
+  .description("export a versioned JSON snapshot of the normalized model")
+  .argument("<file>", "input .em file")
+  .option("-o, --out <path>", "write to a file instead of stdout")
+  .action((file: string, opts: { out?: string }) => {
+    const { model, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("not exporting: fix the errors above");
+      process.exit(1);
+    }
+
+    const exported = buildExport(model, diagnostics, source, file);
+    printDiagnostics(exported.diagnostics.filter((d) => !diagnostics.includes(d)));
+
+    if (opts.out) {
+      writeFileSync(opts.out, exported.text + "\n");
+      console.log(`wrote ${opts.out}`);
+    } else {
+      process.stdout.write(exported.text + "\n");
+    }
   });
 
 program
@@ -186,7 +211,7 @@ function compileFile(file: string, opts: CompileOptions = {}) {
     process.exit(1);
   }
   try {
-    return compile(source, opts);
+    return { ...compile(source, opts), source };
   } catch (e) {
     if (e instanceof ParseError) {
       console.error(`parse error in ${file} ${e.message}`);
