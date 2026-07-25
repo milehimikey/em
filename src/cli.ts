@@ -128,11 +128,21 @@ program
   .command("validate")
   .description("check a model against event-modeling rules")
   .argument("<file>", "input .em file")
-  .action((file: string) => {
-    const { diagnostics } = compileFile(file);
-    printDiagnostics(diagnostics);
+  .option("--list-issues", "print only open `issue` diagnostics (slice, element, line, text)")
+  .option(
+    "--fail-on-issues",
+    "exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)",
+  )
+  .action((file: string, opts: { listIssues?: boolean; failOnIssues?: boolean }) => {
+    const { model, diagnostics } = compileFile(file);
+    if (opts.listIssues) {
+      printIssues(model);
+    } else {
+      printDiagnostics(diagnostics);
+      if (diagnostics.length === 0) console.log("ok — no issues");
+    }
     if (hasErrors(diagnostics)) process.exit(1);
-    if (diagnostics.length === 0) console.log("ok — no issues");
+    if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
   });
 
 const skill = program
@@ -198,6 +208,19 @@ function warnMissingNotes(file: string, model: NormalizedModel): void {
     if (el.note && !existsSync(resolve(base, el.note))) {
       console.warn(`  warn  note file not found for "${el.name}": ${el.note}`);
     }
+  }
+}
+
+/** Print only the open `issue "text"` diagnostics: slice, element, line, text — for CI. */
+function printIssues(model: NormalizedModel): void {
+  const withIssues = model.elements.filter((el) => el.issue);
+  if (withIssues.length === 0) {
+    console.log("no open issues");
+    return;
+  }
+  for (const el of withIssues) {
+    const slice = model.slices[el.sliceIndex];
+    console.log(`  issue :${el.line} slice "${slice.name}" ${el.kind} "${el.name}": ${el.issue}`);
   }
 }
 

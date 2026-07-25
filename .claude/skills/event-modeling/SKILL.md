@@ -199,6 +199,11 @@ Run `em validate <model-name>.em` and walk through each diagnostic with the user
 rule (see `reference/em-dsl.md`) and proposing the fix (e.g. split an automation's command into
 the next slice, add a missing `from`, give a command its event). Apply fixes on agreement.
 
+For anything genuinely unresolved rather than a rule violation, prefer `issue "text"` on the
+relevant element over a `# TBD` comment — it shows up as a red marker on the rendered diagram and
+`em validate` tracks it as an open-issue warning, so it isn't lost once rendered. `em validate
+--list-issues` gives a quick sweep of everything still open.
+
 Then do one check `em validate` can't: scan every `translation`/`processor`/`automation` slice and
 confirm none contains an `event` — each reaction must trigger a `command` in the next slice
 (`reaction → command → event`). If you find a reaction wired straight to an event, split it into

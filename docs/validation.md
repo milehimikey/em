@@ -28,9 +28,16 @@ The timeline rules ("time flows left to right") are the Two Laws in action;
 | A command that records no event | Add the event, or reconsider the command |
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
+| An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
+
+An `issue` warning never blocks by default, same as every other warning — `em render`,
+`em watch`, and `em validate` all still succeed on a model with open issues. Use
+`em validate --list-issues` to print just the open issues (slice, element, line, text), and
+`em validate --fail-on-issues` (opt-in) to make CI fail while any remain — see
+[cli.md](cli.md).
 
 ## What the validator can't catch
 

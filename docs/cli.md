@@ -69,6 +69,17 @@ non-zero if there are errors; exits zero on warnings or a clean model, printing
 `ok — no issues` when there is nothing to report. Useful in CI to keep a committed model
 honest.
 
+| Flag | Effect |
+|---|---|
+| `--list-issues` | Print only the open `issue "text"` diagnostics (slice, element, line, text) instead of the full diagnostic list |
+| `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
+
+```bash
+em validate model.em                          # full diagnostics; exits non-zero only on errors
+em validate model.em --list-issues             # just the open `issue` clauses, for a quick sweep
+em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
+```
+
 ## `em skill install`
 
 Copies the bundled `event-modeling` Claude Code skill out of the npm package into

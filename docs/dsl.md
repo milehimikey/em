@@ -31,11 +31,11 @@ same element kind.
 
 | Keyword | Band | Meaning | Tag | Clauses |
 |---|---|---|---|---|
-| `ui` | persona rows | screen / interface | `@Persona` | `note`, `{ fields }` |
-| `command` | API | state-changing request (imperative name) | — | `note`, `{ fields }` |
-| `view` | API | read model / projection | — | `from`, `again`, `note`, `{ fields }` |
-| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `{ fields }` |
-| `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `{ fields }` |
+| `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `{ fields }` |
+| `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `{ fields }` |
+| `view` | API | read model / projection | — | `from`, `again`, `note`, `issue`, `{ fields }` |
+| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `{ fields }` |
+| `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `{ fields }` |
 
 ### Swimlane bands, top to bottom
 
@@ -118,6 +118,22 @@ resolve relative to the output SVG's location, so they keep working when the SVG
 into another folder, as long as the notes travel with it. Open the SVG in a web browser to
 use them; image viewers like macOS Preview show the markers but ignore SVG hyperlinks.
 Raster output (PNG/PDF) can't carry links, which is what the numbered legend is for.
+
+## Issues
+
+Any element can carry `issue "text"` — a short, inline open question, the diagram-visible
+equivalent of a red sticky note in a physical Event Modeling session. Unlike `note`, there's
+no separate file: write the question directly in the DSL. The box gets a small numbered
+folded-corner marker in its top-left corner, red instead of the note marker's amber, with a
+tooltip carrying the full text; the legend below the diagram lists every open issue in its own
+"Issues" section. An element can carry both `note` and `issue` at once — the two markers sit on
+opposite top corners, so they never overlap.
+
+Use `note` for durable documentation you want linked from the diagram; use `issue` for a
+question that's still open. `em validate` emits a warning for every element with an open issue
+(see [validation.md](validation.md)), and `em validate --list-issues` lists just those, which is
+useful for a quick open-questions sweep or a CI check (`--fail-on-issues`, opt-in — see
+[cli.md](cli.md)).
 
 ## Colors
 

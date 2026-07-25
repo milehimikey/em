@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
-import { buildNoteMarkers, appendNoteLegend } from "../src/render/drawNotes.js";
+import { buildNoteMarkers, buildIssueMarkers, appendNoteLegend } from "../src/render/drawNotes.js";
 import { Rect } from "../src/render/svgGeometry.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
@@ -60,6 +60,73 @@ slice "S" {
   });
 });
 
+describe("buildIssueMarkers", () => {
+  it("emits a red corner marker at the box's top-left for an issued element", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed issue "does this fire before payment?"
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const group = buildIssueMarkers(model, new Map([[id, box(100, 100)]]));
+
+    // anchored near the box's top-left corner (left=50, top=80), inset by 5
+    expect(group).toContain("55,85");
+    // red fill, not the amber note color
+    expect(group).toContain("#E53935");
+    expect(group).not.toContain("#F4C430");
+    // carries a footnote number
+    expect(group).toContain(">1</text>");
+    // no anchor — nothing to link to; a tooltip carries the text instead
+    expect(group).not.toContain("<a");
+    expect(group).toContain("<title>1. does this fire before payment?</title>");
+  });
+
+  it("emits nothing for an element without an issue", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const group = buildIssueMarkers(model, new Map([[id, box(100, 100)]]));
+    expect(group).not.toContain("<path");
+  });
+
+  it("xml-escapes the tooltip text", () => {
+    const model = modelFrom(`
+slice "S" {
+  event E issue "a & b?"
+}
+`);
+    const id = model.byName.get("e")![0].id;
+    const group = buildIssueMarkers(model, new Map([[id, box(0, 0)]]));
+    expect(group).toContain("a &amp; b?");
+  });
+
+  it("an element with both note and issue gets both markers, on opposite corners with no overlap", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed note "notes/order-placed.md" issue "does this fire before payment?"
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const rects = new Map([[id, box(100, 100)]]);
+    const notes = buildNoteMarkers(model, rects);
+    const issues = buildIssueMarkers(model, rects);
+
+    // note marker: top-right (right=150, top=80), inset 5 -> 145,85
+    expect(notes).toContain("145,85");
+    expect(notes).toContain('href="notes/order-placed.md"');
+    // issue marker: top-left (left=50, top=80), inset 5 -> 55,85
+    expect(issues).toContain("55,85");
+    expect(issues).not.toContain("<a");
+    // distinct colors, distinct corners — no shared coordinate between the two
+    expect(notes).toContain("#F4C430");
+    expect(issues).toContain("#E53935");
+  });
+});
+
 describe("appendNoteLegend", () => {
   const fakeSvg = (w: number, h: number) =>
     `<svg width="${w}pt" height="${h}pt"\n viewBox="0.00 0.00 ${w}.00 ${h}.00" ` +
@@ -89,9 +156,35 @@ slice "T" {
     expect(out).toMatch(/viewBox="0.00 0.00 400.00 [\d.]+"/);
   });
 
-  it("leaves the SVG untouched when there are no notes", () => {
+  it("leaves the SVG untouched when there are no notes and no issues", () => {
     const model = modelFrom(`slice "S" {\n  event Order Placed\n}`);
     const svg = fakeSvg(400, 200);
     expect(appendNoteLegend(svg, model)).toBe(svg);
+  });
+
+  it("adds an Issues section with the full issue text, distinct from Notes", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed note "notes/order-placed.md"
+  command Place Order issue "who validates the discount code?"
+}
+`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    expect(out).toContain("Notes");
+    expect(out).toContain("Issues");
+    expect(out).toContain("Place Order");
+    expect(out).toContain("who validates the discount code?");
+    // issue heading/number rendered in the red tone, not the note amber
+    expect(out).toContain("#8B0000");
+  });
+
+  it("grows the canvas for issues-only models (no notes present)", () => {
+    const model = modelFrom(`slice "S" {\n  command Do Thing issue "unresolved question"\n}`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    const newH = Number(/height="([\d.]+)pt"/.exec(out)![1]);
+    expect(newH).toBeGreaterThan(200);
+    expect(out).toContain("Issues");
+    expect(out).toContain("unresolved question");
+    expect(out).not.toContain(">Notes<");
   });
 });

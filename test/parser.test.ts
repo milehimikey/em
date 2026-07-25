@@ -52,6 +52,67 @@ slice "S" {
     expect(ui).toMatchObject({ name: "Catalog", persona: "Customer", note: "notes/catalog.md" });
   });
 
+  it("parses an `issue` clause and keeps it out of the name", () => {
+    const ast = parse(`
+slice "S" {
+  command Place Order issue "who validates the discount code?"
+  event Order Placed @Order issue "does this fire before or after payment?"
+  ui Catalog issue "which persona sees pending items?" @Customer
+}
+`);
+    const [cmd, evt, ui] = ast.slices[0].elements;
+    expect(cmd).toMatchObject({
+      name: "Place Order",
+      issue: "who validates the discount code?",
+    });
+    expect(evt).toMatchObject({
+      name: "Order Placed",
+      context: "Order",
+      issue: "does this fire before or after payment?",
+    });
+    expect(ui).toMatchObject({
+      name: "Catalog",
+      persona: "Customer",
+      issue: "which persona sees pending items?",
+    });
+  });
+
+  it("coexists `issue` with `note`, `from`, and a field block on the same element", () => {
+    const ast = parse(`
+slice "S" {
+  view Open Orders note "notes/open.md" issue "should cancelled orders show here?" from "Order Placed" {
+    orderId
+    status
+  }
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Open Orders",
+      note: "notes/open.md",
+      issue: "should cancelled orders show here?",
+      from: ["Order Placed"],
+      fields: [{ name: "orderId" }, { name: "status" }],
+    });
+  });
+
+  it("strips `issue` before the `from` clause without swallowing it", () => {
+    const ast = parse(`
+slice "S" {
+  view Open Orders issue "TBD: refunds?" from "Order Placed", "Order Updated"
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Open Orders",
+      issue: "TBD: refunds?",
+      from: ["Order Placed", "Order Updated"],
+    });
+  });
+
+  it("leaves `issue` undefined when absent", () => {
+    const ast = parse(`slice "S" {\n  command Do Thing\n}`);
+    expect(ast.slices[0].elements[0].issue).toBeUndefined();
+  });
+
   it("strips `note` before the `from` clause without swallowing it", () => {
     const ast = parse(`
 slice "S" {
