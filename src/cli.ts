@@ -5,7 +5,7 @@ import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { compile, CompileOptions } from "./pipeline.js";
+import { compile, CompileOptions, CompileResult } from "./pipeline.js";
 import { NormalizedModel } from "./model/model.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, formatFromPath } from "./render/render.js";
@@ -13,6 +13,8 @@ import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { buildExport } from "./emit/json.js";
+import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
+import { planDiffArgs, resolveRevision } from "./cli/diff-inputs.js";
 import { STARTER_EM } from "./templates.js";
 
 const program = new Command();
@@ -94,6 +96,33 @@ program
     } else {
       process.stdout.write(exported.text + "\n");
     }
+  });
+
+program
+  .command("diff")
+  .description("compare two models structurally (two files, or one file across git revisions)")
+  .argument("<old>", "old model file — or the file to diff, when using --from")
+  .argument("[new]", "new model file (omit when using --from/--to)")
+  .option("--from <rev>", "diff <old> against this git revision instead of a second file")
+  .option("--to <rev>", "diff against this git revision instead of the current file (requires --from)")
+  .option("--exit-code", "exit 1 if the models differ, 0 if identical (git-diff convention)")
+  .action((oldFile: string, newFile: string | undefined, opts: { from?: string; to?: string; exitCode?: boolean }) => {
+    const plan = planDiffArgs(oldFile, newFile, opts);
+    if ("error" in plan) {
+      console.error(plan.error);
+      process.exit(1);
+    }
+    if (plan.form === "files") {
+      const oldSource = readFileOrExit(plan.oldFile);
+      const newSource = readFileOrExit(plan.newFile);
+      runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode);
+      return;
+    }
+    const oldSource = readAtRevision(plan.file, plan.from);
+    const oldLabel = `${plan.file}@${plan.from}`;
+    const newSource = plan.to ? readAtRevision(plan.file, plan.to) : readFileOrExit(plan.file);
+    const newLabel = plan.to ? `${plan.file}@${plan.to}` : plan.file;
+    runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode);
   });
 
 program
@@ -219,6 +248,58 @@ function compileFile(file: string, opts: CompileOptions = {}) {
     }
     throw e;
   }
+}
+
+/** Read a file's text, or exit with a clear error — used by `em diff`'s two-file form. */
+function readFileOrExit(file: string): string {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    console.error(`cannot read ${file}`);
+    process.exit(1);
+  }
+}
+
+/** Parse+normalize source text for `em diff`, exiting with a labeled parse error on failure. */
+function compileSource(source: string, label: string): CompileResult {
+  try {
+    return compile(source);
+  } catch (e) {
+    if (e instanceof ParseError) {
+      console.error(`parse error in ${label} ${e.message}`);
+      process.exit(1);
+    }
+    throw e;
+  }
+}
+
+/** Resolve `file`'s content at a git revision, exiting with a clear error on any git failure. */
+function readAtRevision(file: string, rev: string): string {
+  const result = resolveRevision(file, rev);
+  if (!result.ok) {
+    console.error(result.message);
+    process.exit(1);
+  }
+  return result.content;
+}
+
+/** Shared body for both `em diff` forms: compile both sides, gate on errors, print, exit-code. */
+function runDiff(oldSource: string, oldLabel: string, newSource: string, newLabel: string, exitCode?: boolean): void {
+  const oldResult = compileSource(oldSource, oldLabel);
+  const newResult = compileSource(newSource, newLabel);
+
+  printDiagnostics(oldResult.diagnostics);
+  printDiagnostics(newResult.diagnostics);
+
+  if (hasErrors(oldResult.diagnostics) || hasErrors(newResult.diagnostics)) {
+    console.error("not diffing: fix the errors above");
+    process.exit(1);
+  }
+
+  const diff = diffModels(oldResult.model, newResult.model);
+  console.log(formatModelDiff(diff));
+
+  if (exitCode && hasChanges(diff)) process.exit(1);
 }
 
 function defaultOut(file: string, fmt: string): string {

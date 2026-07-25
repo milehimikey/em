@@ -30,14 +30,24 @@ export interface ExportResult {
   diagnostics: Diagnostic[];
 }
 
-/** Build the `em export` document for an already-validated (error-free) model. */
-export function buildExport(
-  model: NormalizedModel,
-  diagnostics: Diagnostic[],
-  source: string,
-  path: string,
-): ExportResult {
-  const extra: Diagnostic[] = [];
+export interface RefsResult {
+  /** Export key per slice, same order/index as `model.slices`. */
+  sliceKeys: string[];
+  /** Internal `Element.id` -> stable export `ref`. */
+  refById: Map<string, string>;
+  /** Ref-collision warnings raised while assigning keys/refs (duplicate names). */
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * Assign every slice its export key (`slug(name)`) and every element its
+ * export ref (`<sliceKey>/<kind>.<slug(name)>`), in document order, deduped
+ * with a `~2`, `~3`, … suffix on collision. Shared by `em export` (this
+ * module) and `em diff` (`src/model/diff.ts`), which both need the same
+ * edit-stable identity scheme to match elements/slices across models.
+ */
+export function computeRefs(model: NormalizedModel): RefsResult {
+  const diagnostics: Diagnostic[] = [];
 
   // Pass 1: assign every slice its export key and every element its export
   // ref, in document order, before resolving any cross-references. Doing
@@ -48,7 +58,7 @@ export function buildExport(
     const base = kebabSlug(slice.name);
     const key = dedupe(base, usedSliceKeys, "~");
     if (key !== base) {
-      extra.push({
+      diagnostics.push({
         severity: "warning",
         message: `duplicate slice name "${slice.name}" (export key "${base}" already used); rename slices uniquely for stable export refs`,
         line: slice.line,
@@ -65,7 +75,7 @@ export function buildExport(
       const base = `${sliceKey}/${el.kind}.${kebabSlug(el.name)}`;
       const ref = dedupe(base, usedElementRefs, "~");
       if (ref !== base) {
-        extra.push({
+        diagnostics.push({
           severity: "warning",
           message: `duplicate ${el.kind} "${el.name}" in slice "${slice.name}" (export ref "${base}" already used); rename for a stable export ref`,
           line: el.line,
@@ -74,6 +84,18 @@ export function buildExport(
       refById.set(el.id, ref);
     }
   });
+
+  return { sliceKeys, refById, diagnostics };
+}
+
+/** Build the `em export` document for an already-validated (error-free) model. */
+export function buildExport(
+  model: NormalizedModel,
+  diagnostics: Diagnostic[],
+  source: string,
+  path: string,
+): ExportResult {
+  const { sliceKeys, refById, diagnostics: extra } = computeRefs(model);
 
   const refOf = (id: string | undefined): string | null =>
     id ? refById.get(id) ?? null : null;

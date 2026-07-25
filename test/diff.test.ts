@@ -1,0 +1,478 @@
+// SPDX-License-Identifier: MIT
+// Coverage for `em diff`'s structural diff (src/model/diff.ts): identical models,
+// slice/element add/remove, move detection, field/from/note/issue changes, arrow
+// add/remove, ordering determinism, and the --exit-code semantics (hasChanges()),
+// tested at the diff-module level per the repo convention of not subprocess-
+// testing cli.ts (see test/export.test.ts's header comment for the same call).
+import { describe, it, expect } from "vitest";
+import { compile } from "../src/pipeline.js";
+import { diffModels, formatModelDiff, hasChanges, ChangeEntry } from "../src/model/diff.js";
+
+const modelOf = (src: string) => compile(src).model;
+const diffOf = (oldSrc: string, newSrc: string) => diffModels(modelOf(oldSrc), modelOf(newSrc));
+const reportOf = (oldSrc: string, newSrc: string) => formatModelDiff(diffOf(oldSrc, newSrc));
+
+describe("identical models", () => {
+  it("produce an empty diff and the 'no structural changes' report", () => {
+    const src = `
+slice "Submit" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+    const diff = diffOf(src, src);
+    expect(diff.changes).toEqual([]);
+    expect(diff.removals).toEqual([]);
+    expect(hasChanges(diff)).toBe(false);
+    expect(reportOf(src, src)).toBe("no structural changes");
+  });
+});
+
+describe("slice add/remove", () => {
+  const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+  const NEW = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+slice "Fulfillment" {
+  command Ship Order
+  event Order Shipped
+}
+`;
+
+  it("reports an added slice, without enumerating its elements separately", () => {
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Fulfillment" }]);
+    expect(diff.counts.slicesAdded).toBe(1);
+    expect(diff.counts.elementsAdded).toBe(0);
+  });
+
+  it("reports a removed slice symmetrically", () => {
+    const diff = diffOf(NEW, OLD);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Fulfillment" }]);
+    expect(diff.counts.slicesRemoved).toBe(1);
+    expect(diff.counts.elementsRemoved).toBe(0);
+  });
+});
+
+describe("element add/remove within a surviving slice", () => {
+  const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+  const NEW = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+  event Discount Applied
+}
+`;
+
+  it("reports the added element", () => {
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "element-added", kind: "event", name: "Discount Applied", sliceName: "Checkout" },
+    ]);
+    expect(diff.counts.elementsAdded).toBe(1);
+  });
+
+  it("reports the removed element symmetrically", () => {
+    const diff = diffOf(NEW, OLD);
+    expect(diff.removals).toEqual([
+      { type: "element-removed", kind: "event", name: "Discount Applied", sliceName: "Checkout" },
+    ]);
+    expect(diff.counts.elementsRemoved).toBe(1);
+  });
+});
+
+describe("move detection", () => {
+  it("reports a same-kind-same-name element moved from slice A to slice B as one move, not add+remove", () => {
+    const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+  event Payment Failed
+}
+`;
+    const NEW = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+slice "Payment" {
+  event Payment Failed
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "slice-added", name: "Payment" },
+      {
+        type: "element-moved",
+        kind: "event",
+        name: "Payment Failed",
+        fromSlice: "Checkout",
+        toSlice: "Payment",
+      },
+    ]);
+    // The move is reported once — no separate add/remove entries for it.
+    expect(diff.counts.elementsMoved).toBe(1);
+    expect(diff.counts.elementsAdded).toBe(0);
+    expect(diff.counts.elementsRemoved).toBe(0);
+    expect(diff.removals).toEqual([]);
+  });
+
+  it("detects a move even when both endpoints are otherwise-unrelated existing slices", () => {
+    const OLD = `
+slice "A" {
+  command Do A
+  event Thing Happened
+}
+slice "B" {
+  command Do B
+}
+`;
+    const NEW = `
+slice "A" {
+  command Do A
+}
+slice "B" {
+  command Do B
+  event Thing Happened
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "element-moved", kind: "event", name: "Thing Happened", fromSlice: "A", toSlice: "B" },
+    ]);
+    expect(diff.removals).toEqual([]);
+  });
+
+  it("detects a move from a removed slice into a surviving slice (not suppressed as a rename)", () => {
+    const OLD = `
+slice "Legacy" {
+  event Thing Happened
+}
+slice "Keep" {
+  command Do Keep
+}
+`;
+    const NEW = `
+slice "Keep" {
+  command Do Keep
+  event Thing Happened
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    // Origin slice removed, but the target slice survives — a genuine move, so it
+    // must still report a `moved:` line (only removed-origin + new-target pairs,
+    // the slice-rename signature, are suppressed).
+    expect(diff.changes).toEqual([
+      { type: "element-moved", kind: "event", name: "Thing Happened", fromSlice: "Legacy", toSlice: "Keep" },
+    ]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Legacy" }]);
+    expect(diff.counts.elementsMoved).toBe(1);
+  });
+});
+
+describe("slice rename", () => {
+  it("reads as slice removed + added, without a `moved:` line per element", () => {
+    const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+    const NEW = `
+slice "Checkout Flow" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    // The slug-based slice key changes, re-keying every element — but the slice
+    // add/remove lines already tell the story, so no per-element move noise.
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Checkout Flow" }]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Checkout" }]);
+    expect(diff.counts.elementsMoved).toBe(0);
+    expect(diff.counts.elementsAdded).toBe(0);
+    expect(diff.counts.elementsRemoved).toBe(0);
+  });
+});
+
+describe("field add/remove/type-change", () => {
+  const OLD = `
+slice "S" {
+  command Do Thing {
+    sku
+    qty: Int
+    memo: Text
+  }
+}
+`;
+  const NEW = `
+slice "S" {
+  command Do Thing {
+    sku
+    qty: Float
+    total: Money
+  }
+}
+`;
+
+  it("reports field added, removed, and type-changed as 'field changes'", () => {
+    const diff = diffOf(OLD, NEW);
+    const types = diff.changes.map((c) => c.type);
+    expect(types).toEqual(
+      expect.arrayContaining(["field-added", "field-removed", "field-changed"]),
+    );
+    const added = diff.changes.find((c) => c.type === "field-added") as ChangeEntry;
+    expect(added).toMatchObject({ field: "total", fieldType: "Money", name: "Do Thing" });
+    const removed = diff.changes.find((c) => c.type === "field-removed") as ChangeEntry;
+    expect(removed).toMatchObject({ field: "memo", fieldType: "Text" });
+    const changed = diff.changes.find((c) => c.type === "field-changed") as ChangeEntry;
+    expect(changed).toMatchObject({ field: "qty", oldType: "Int", newType: "Float" });
+    expect(diff.counts.fieldChanges).toBe(3);
+  });
+});
+
+describe("`from` list changes", () => {
+  it("reports a source added to a view's `from`", () => {
+    const OLD = `
+slice "Receive" {
+  event Stock Received
+}
+slice "Catalog" {
+  view Availability from "Stock Received"
+}
+`;
+    const NEW = `
+slice "Receive" {
+  event Stock Received
+  event Stock Adjusted
+}
+slice "Catalog" {
+  view Availability from "Stock Received", "Stock Adjusted"
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    const fromChange = diff.changes.find((c) => c.type === "from-added") as ChangeEntry;
+    expect(fromChange).toMatchObject({ source: "Stock Adjusted", name: "Availability" });
+    expect(diff.counts.fromChanges).toBe(1);
+  });
+
+  it("reports a source removed from a view's `from`", () => {
+    const OLD = `
+slice "Receive" {
+  event Stock Received
+  event Stock Adjusted
+}
+slice "Catalog" {
+  view Availability from "Stock Received", "Stock Adjusted"
+}
+`;
+    const NEW = `
+slice "Receive" {
+  event Stock Received
+  event Stock Adjusted
+}
+slice "Catalog" {
+  view Availability from "Stock Received"
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    const fromChange = diff.changes.find((c) => c.type === "from-removed") as ChangeEntry;
+    expect(fromChange).toMatchObject({ source: "Stock Adjusted", name: "Availability" });
+    expect(diff.counts.fromChanges).toBe(1);
+  });
+});
+
+describe("issue lifecycle", () => {
+  it("reports an issue opened", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n}`;
+    const NEW = `slice "S" {\n  command Do Thing issue "who approves?"\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "issue-opened", kind: "command", name: "Do Thing", sliceName: "S", newText: "who approves?" },
+    ]);
+    expect(diff.counts.issuesOpened).toBe(1);
+  });
+
+  it("reports an issue resolved — positive framing, not a generic removal", () => {
+    const OLD = `slice "S" {\n  command Do Thing issue "who approves?"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "issue-resolved", kind: "command", name: "Do Thing", sliceName: "S", oldText: "who approves?" },
+    ]);
+    expect(diff.counts.issuesResolved).toBe(1);
+    expect(formatModelDiff(diff)).toContain("issue resolved:");
+  });
+
+  it("reports the issue text changing", () => {
+    const OLD = `slice "S" {\n  command Do Thing issue "v1 question"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing issue "v2 question"\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      {
+        type: "issue-changed",
+        kind: "command",
+        name: "Do Thing",
+        sliceName: "S",
+        oldText: "v1 question",
+        newText: "v2 question",
+      },
+    ]);
+    expect(diff.counts.issuesChanged).toBe(1);
+  });
+});
+
+describe("note change", () => {
+  it("reports a note added/removed/changed", () => {
+    const added = diffOf(
+      `slice "S" {\n  event Thing Happened\n}`,
+      `slice "S" {\n  event Thing Happened note "docs/thing.md"\n}`,
+    );
+    expect(added.changes).toEqual([
+      { type: "note-added", kind: "event", name: "Thing Happened", sliceName: "S", newNote: "docs/thing.md" },
+    ]);
+
+    const changed = diffOf(
+      `slice "S" {\n  event Thing Happened note "docs/thing.md"\n}`,
+      `slice "S" {\n  event Thing Happened note "docs/thing-v2.md"\n}`,
+    );
+    expect(changed.changes).toEqual([
+      {
+        type: "note-changed",
+        kind: "event",
+        name: "Thing Happened",
+        sliceName: "S",
+        oldNote: "docs/thing.md",
+        newNote: "docs/thing-v2.md",
+      },
+    ]);
+    expect(changed.counts.noteChanges).toBe(1);
+  });
+});
+
+describe("arrow add/remove", () => {
+  const base = `
+slice "Submit" {
+  ui Screen @Customer
+  command Submit Order
+}
+slice "React" {
+  view Orders from "Submit Order"
+}
+`;
+  it("reports an added arrow", () => {
+    const diff = diffOf(base, base + `arrow "Orders" -> "Screen"\n`);
+    expect(diff.changes).toEqual([{ type: "arrow-added", from: "Orders", to: "Screen" }]);
+    expect(diff.counts.arrowsAdded).toBe(1);
+  });
+
+  it("reports a removed arrow", () => {
+    const diff = diffOf(base + `arrow "Orders" -> "Screen"\n`, base);
+    expect(diff.removals).toEqual([{ type: "arrow-removed", from: "Orders", to: "Screen" }]);
+    expect(diff.counts.arrowsRemoved).toBe(1);
+  });
+});
+
+describe("ordering determinism", () => {
+  it("orders additions/changes in new-file document order, then removals in old-file document order", () => {
+    const OLD = `
+slice "Alpha" {
+  command Do Alpha
+  event Alpha Done issue "still true?"
+}
+slice "Beta" {
+  command Do Beta
+  event Beta Done
+}
+slice "Gamma" {
+  command Do Gamma
+}
+`;
+    const NEW = `
+slice "Zero" {
+  command Do Zero
+}
+slice "Alpha" {
+  command Do Alpha
+  event Alpha Done
+}
+slice "Beta" {
+  command Do Beta
+}
+`;
+    const diff = diffOf(OLD, NEW);
+    // changes: "Zero" slice added first (new doc order), then the issue-resolved
+    // change on Alpha's event (Alpha comes before Beta in the new file).
+    expect(diff.changes.map((c) => c.type)).toEqual(["slice-added", "issue-resolved"]);
+    // removals: Gamma slice removed, appearing in OLD document order after Beta's
+    // element removal (Beta Done removed from a surviving slice).
+    expect(diff.removals.map((c) => c.type)).toEqual(["element-removed", "slice-removed"]);
+  });
+
+  it("produces the same report for the same inputs (deterministic)", () => {
+    const OLD = `slice "S" {\n  command A\n  event B\n}`;
+    const NEW = `slice "S" {\n  command A\n  event B issue "q"\n}\nslice "T" {\n  command C\n}`;
+    expect(reportOf(OLD, NEW)).toBe(reportOf(OLD, NEW));
+  });
+});
+
+describe("--exit-code semantics (hasChanges)", () => {
+  it("is false for identical models", () => {
+    const src = `slice "S" {\n  command A\n}`;
+    expect(hasChanges(diffOf(src, src))).toBe(false);
+  });
+
+  it("is true when any structural change exists", () => {
+    const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
+    expect(hasChanges(diff)).toBe(true);
+  });
+});
+
+describe("rollup summary line", () => {
+  it("lists only non-zero categories, pluralized correctly", () => {
+    const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted issue "who approves refunds?"
+}
+`;
+    const NEW = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+slice "Fulfillment" {
+  command Ship Order
+}
+`;
+    const report = reportOf(OLD, NEW);
+    const summaryLine = report.split("\n")[0];
+    expect(summaryLine).toBe("1 slice added, 1 issue resolved");
+  });
+});
+
+describe("renames are out of scope (deliberate)", () => {
+  it("a plain rename within the same slice reads as remove+add, not a move", () => {
+    const OLD = `slice "S" {\n  command Submit Order\n}`;
+    const NEW = `slice "S" {\n  command Place Order\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "element-added", kind: "command", name: "Place Order", sliceName: "S" },
+    ]);
+    expect(diff.removals).toEqual([
+      { type: "element-removed", kind: "command", name: "Submit Order", sliceName: "S" },
+    ]);
+  });
+});
