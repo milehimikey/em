@@ -15,11 +15,12 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
     "dev": "tsx src/cli.ts",
     "em": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm run typecheck && npm test"
   },
   "engines": {
     "node": ">=18"

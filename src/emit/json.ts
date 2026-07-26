@@ -19,7 +19,7 @@ import { dedupe, kebabSlug } from "../util/slug.js";
 // Read once from package.json (two levels up from src/emit/ and dist/emit/
 // alike) so `generator.version` can never drift from the released version.
 // tsconfig targets NodeNext without resolveJsonModule, hence fs over import.
-const GENERATOR_NAME = "@milehimikey/em";
+export const GENERATOR_NAME = "@milehimikey/em";
 export const GENERATOR_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8"),
 ).version;
