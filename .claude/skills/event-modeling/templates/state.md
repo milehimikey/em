@@ -53,6 +53,7 @@ Keep it current at the end of every working session.
 - [ ] {{question}} — source: {{ticket/conversation link, optional}} — blocked on: {{who/what, optional}} — revisit: {{when, optional}}
 
 ## Slice inventory
-| Slice | Pattern | Doc status |
-|-------|---------|------------|
-| {{Slice Name}} | {{State Change/View/Automation/Translation}} | {{none / draft / reviewed / ready-to-implement / implemented}} |
+<!-- Deliberately NOT a table: the canonical slice index (slice, pattern, status, doc link)
+     lives in README.md's "Slices" section — one source of truth, updated there. This file
+     only tracks resumable session state. -->
+See `README.md` → **Slices** for the slice index and per-slice doc status.

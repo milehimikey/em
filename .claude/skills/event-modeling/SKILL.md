@@ -117,8 +117,8 @@ phase applies to field tables, below.
    `reference/methodology.md`).
 
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
-decisions, open questions, slice inventory). Tell the user they can stop here and resume with
-`/event-modeling model`.
+decisions, open questions) and `README.md`'s slice index. Tell the user they can stop here and
+resume with `/event-modeling model`.
 
 ## Phase: `extract` — current-state model of an existing system
 
@@ -138,8 +138,8 @@ state).
 - **Current-state-only:** park unknowns as `# TBD` comments in the `.em`, mirrored in the state
   file's Open Questions — never guess intended design.
 
-End of phase: validated as-is model; state file updated (source mode, rounds, decisions, slice
-inventory); then chain to `/event-modeling model` (steps 5-7).
+End of phase: validated as-is model; state file updated (source mode, rounds, decisions) and
+`README.md`'s slice index seeded; then chain to `/event-modeling model` (steps 5-7).
 
 ## Phase: `model` — steps 5-7
 
@@ -168,7 +168,7 @@ End of phase: render, update state, suggest `/event-modeling slice` to write imp
 ## Phase: `slice` — deep slice documents
 
 Goal: implementation-ready specs. Go slice by slice (let the user pick order, or follow the
-timeline). Check the state file's slice inventory for what's already done.
+timeline). Check `README.md`'s slice index for what's already done.
 
 This is also where **branch / unhappy-path events** are discovered and added to the model — as a
 slice's alternate/error flows surface (a rejection, removal, cancellation, decline, expiry), add
@@ -190,7 +190,7 @@ For each slice:
 3. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).
-4. Update `README.md`'s slice index and the state file's slice inventory (`draft` →
+4. Update `README.md`'s slice index — the one canonical slice table (`draft` →
    `ready-to-implement`, later `implemented` once shipped, with `Implemented in:` filled in).
 5. Re-render and `em validate`.
 

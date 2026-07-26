@@ -22,10 +22,12 @@ Static render: `em render {{model-name}}.em -o {{model-name}}.svg`
 - **Translation** — External input (or Read Model) → Translation → (next slice) Command → Event
 
 ## Slices
-<!-- Keep this index in sync as slice docs are written. -->
-| # | Slice | Pattern | Design doc |
-|---|-------|---------|------------|
-| 1 | {{Slice Name}} | {{Pattern}} | [slices/{{slice-name}}.md](slices/{{slice-name}}.md) |
+<!-- The canonical slice index — the ONE place slices are enumerated (the state file
+     points here rather than keeping its own copy). Keep it in sync as slice docs are
+     written and as statuses move. -->
+| # | Slice | Pattern | Status | Design doc |
+|---|-------|---------|--------|------------|
+| 1 | {{Slice Name}} | {{Pattern}} | {{none / draft / reviewed / ready-to-implement / implemented}} | [slices/{{slice-name}}.md](slices/{{slice-name}}.md) |
 
 ## Status
 See [`.event-modeling.md`](.event-modeling.md) for current phase, decisions, and open questions.
