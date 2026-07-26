@@ -40,7 +40,9 @@ difference is what you do with what you find: extract *builds* a model from the 
    tell the user and skip it rather than reporting "drift" against a doc nobody built to yet.
 3. The codebase to check: the state file's **Existing system refs** (populated during
    `extract`, if this model came from one) or ask the user for the repo path if not set. Record
-   it if missing.
+   it if missing. In a headless/scheduled run with no user to ask, default to the repository
+   the model lives in (if it contains the implementation) and state that assumption in the
+   report's run metadata.
 4. Confirm `em --version` works (same check as every other phase) — you'll run `em diff`.
 
 ## The three conformance surfaces
@@ -88,18 +90,34 @@ For each slice in scope:
      this slice.
    - **Spec:** for every named invariant (`INV-*`) in the doc, its enforcement site and its
      test site (by name/path, both or neither — a half-found invariant is an uncertainty, not
-     a pass). For every Given/When/Then scenario, its test site the same way. Where the doc
-     doesn't name invariants/scenarios individually, fall back to slice-level test presence
-     (some vs. none) rather than inventing IDs the doc never gave you.
+     a pass). Scenarios are budgeted: map Given/When/Then scenarios to individual test sites
+     when the in-scope slice count is small (roughly ≤5) or the user asks for that depth;
+     otherwise record slice-level scenario-test presence and say so in the report — per-scenario
+     mapping across a full model roughly doubles the walk. Where the doc doesn't name
+     invariants/scenarios individually, fall back to slice-level test presence (some vs. none)
+     rather than inventing IDs the doc never gave you.
+   - **Legitimate non-materialized views:** an automation's watched view may have no
+     materialized projection in code — a direct event handler with criteria-sourced state is
+     the same pattern expressed in the code idiom (extract.md's R5 reaction rules). That is
+     NOT structural drift; note the idiom in the evidence log instead of reporting the view
+     as missing.
 3. Write what you found into the scratch model (`<model-name>-asis.em`, see below), **reusing
    the canonical model's slice and element names wherever the code genuinely matches them** —
    the canonical model is the vocabulary anchor. Give a new name only to code behavior the
    model doesn't cover at all. Record the mapping decision for every element you name this way
    (e.g. `CartItemAdded` code class ↔ `"Cart Item Added"` model event) so it's auditable, not a
-   silent judgment call.
+   silent judgment call. **Match the canonical model's field granularity:** declare `{ fields }`
+   in the scratch model only where the canonical model declares them (if the canonical model
+   puts fields on commands but not events, so does the scratch model — writing code-derived
+   event fields there would flood the diff with `field-added` noise). Schema claims at finer
+   granularity than the `.em` declares — e.g. event fields documented only in a slice doc's
+   table — are checked on the **spec surface** against the doc, not smuggled into the
+   structural diff.
 4. Cross-check the doc's header metadata and Command/Event/Read Model sections against the
    slice's actual `.em` elements and fields for the internal surface — this doesn't need code
-   evidence, just doc-vs-`.em` reading.
+   evidence, just doc-vs-`.em` reading. Narrative sections (Intent, Open Questions, notes)
+   count too when the contradiction is unambiguous — a stale sentence that flatly contradicts
+   the `.em` is an internal inconsistency; a vague or interpretable one is not a finding.
 
 Do this for every in-scope slice before moving on to diffing. The evidence you record here is
 what every finding in the report will cite — file paths, not vibes.
@@ -128,16 +146,23 @@ structural findings) — a finding with no citation isn't ready to report.
 ### 5. Report + proposals
 
 Write `conformance/<YYYY-MM-DD>-report.md` in the model directory, from
-`templates/conformance-report.md`. For every real-drift or model-gap finding, propose a
-ready-to-apply red note: `issue "conformance: <text>"` on the right element, written out in the
-report exactly as it should be pasted into the `.em`. **You never edit the canonical model or a
-slice doc unprompted** — walk the report with the user, apply only the proposals they approve,
-then re-render and `em validate`.
+`templates/conformance-report.md`. For a real-drift or model-gap finding, propose a
+ready-to-apply red note — `issue "conformance: <text>"` on the right element, written out in
+the report exactly as it should be pasted into the `.em` — when a model-side marker is the
+right fix; when the fix is purely doc wording (or the finding is an internal inconsistency
+with no clear side to flag), omit the red note and say why instead. **You never edit the
+canonical model or a slice doc unprompted** — walk the report with the user, apply only the
+proposals they approve, then re-render and `em validate`.
 
-End of run: update the state file's `Last conformance:` marker to today's date + the target
-repo's current revision (the one you just diffed against, so the next run's scope starts from
-here). If any proposals were ratified and applied, log a Decisions entry noting what changed and
-why.
+End of run: update the state file's `Last conformance:` marker, exact format:
+
+```
+- **Last conformance:** YYYY-MM-DD @ <target-repo revision> — report: conformance/YYYY-MM-DD-report.md
+```
+
+The revision is the one you just diffed against, so the next run's scope starts from here —
+step 1 parses this line, so keep the format exact. If any proposals were ratified and applied,
+log a Decisions entry noting what changed and why.
 
 ## Conventions
 

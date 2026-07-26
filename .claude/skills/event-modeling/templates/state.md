@@ -10,7 +10,7 @@ Keep it current at the end of every working session.
 - **Current phase:** {{extract | discover | model | slice}}
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}
-- **Last conformance:** {{YYYY-MM-DD @ <target-repo revision> | never}}
+- **Last conformance:** {{YYYY-MM-DD @ <target-repo revision> — report: conformance/<date>-report.md | never}}
 
 ## Session inputs
 - **Scope line:** {{one-line description of what's in/out of bounds for this model}}
