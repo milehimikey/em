@@ -6,10 +6,17 @@
 // rest of the repo tests that logic — asserting `hasErrors()` on the diagnostics
 // `em export` would gate on.
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { compile } from "../src/pipeline.js";
 import { hasErrors } from "../src/model/validate.js";
 import { buildExport } from "../src/emit/json.js";
 import { STARTER_EM } from "../src/templates.js";
+
+const PKG_VERSION: string = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version;
 
 const exportOf = (src: string, path = "model.em") => {
   const { model, diagnostics } = compile(src);
@@ -22,7 +29,9 @@ describe("schema shape", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
     expect(doc.schemaVersion).toBe("1.0");
-    expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
+    // generator.version is read from package.json at runtime — comparing against
+    // the same file here means a release bump can never leave it stale.
+    expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
   });
 
   it("records source.path exactly as given and a sha256 of the source text", () => {
