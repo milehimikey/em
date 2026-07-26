@@ -80,7 +80,8 @@ validation rules) before doing real work — they are the source of truth. Templ
   README.md                # overview + slice index (from templates/model-readme.md)
   .event-modeling.md       # resumable state (from templates/state.md)
   slices/<slice-name>.md   # one rich slice doc per slice (from templates/slice.md)
-  conformance/<date>-report.md   # conform-phase reports (from templates/conformance-report.md)
+  conformance/<date>-report.md
+                           # conform-phase reports (from templates/conformance-report.md)
   <model-name>-asis.em     # conform-phase scratch model, regenerated per run — git-ignore this
 ```
 
@@ -89,9 +90,9 @@ placeholders). Copy `live.html` **verbatim** — it takes the SVG name from its 
 (`live.html?svg=<model-name>.svg`), so there's nothing to edit. You may use `em init` for a
 starter `.em`, but usually you'll build it up from the discovery conversation instead. Fill
 template placeholders — never leave `{{...}}` in delivered files. The `conformance/` directory
-and `<model-name>-asis.em` only appear once the `conform` phase runs; add `<model-name>-asis.em`
-to the repository's `.gitignore` the first time it's created (see `reference/conform.md`) — it's
-scratch, never committed.
+and `<model-name>-asis.em` only appear once the `conform` phase runs; add the pattern `*-asis.em`
+to the repository's `.gitignore` the first time one is created (see `reference/conform.md`) —
+it's scratch, never committed.
 
 ---
 

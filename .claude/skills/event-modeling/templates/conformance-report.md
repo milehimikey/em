@@ -57,7 +57,9 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 <!-- Listed separately from Findings — these are NOT drift. No evidence either way; say what was
      missing (time, clarity, an ambiguous test) so a follow-up run can pick it up. -->
 
-- {{what's uncertain}} — {{slice}} — {{why: e.g. "couldn't locate the test for INV-CHK-3, only its enforcement site"}}
+- **{{structural | spec | internal}}** — {{what's uncertain}} — {{slice}} — {{why: e.g. "couldn't locate the test for INV-CHK-3, only its enforcement site"}}
+
+<!-- Tag each with its surface so these reconcile against the Summary table's Uncertainty column. -->
 
 ## Applied this run
 

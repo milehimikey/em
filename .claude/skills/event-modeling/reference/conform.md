@@ -43,7 +43,9 @@ difference is what you do with what you find: extract *builds* a model from the 
    it if missing. In a headless/scheduled run with no user to ask, default to the repository
    the model lives in (if it contains the implementation) and state that assumption in the
    report's run metadata.
-4. Confirm `em --version` works (same check as every other phase) — you'll run `em diff`.
+4. Confirm `em --version` works (same check as every other phase) — you'll run `em diff`. The
+   phase needs `em diff --json`; if the flag errors as unknown, the installed `em` predates it
+   — say so and stop rather than falling back to eyeballing the two models.
 
 ## The three conformance surfaces
 
@@ -70,11 +72,11 @@ authoritative.
 ### 1. Scope
 
 Default: **diff-scoped.** Read the state file's `Last conformance:` marker (date + target-repo
-revision). If it's set, `git log <recorded-revision>..HEAD -- <target-repo-path>` on the target
-repo to see what changed, then map changed paths to slices (via each slice doc's known code
-locations, `Implemented in:` links, or a quick Grep if those are stale) — that's your in-scope
-set. If the marker reads `never` (first run) or the user passes `--full`, scope is every
-`implemented` slice.
+revision). If it's set, run `git diff --name-only <recorded-revision>..HEAD` from the target
+repo's root to list the changed paths (`git log` alone prints commit subjects, not paths), then
+map those paths to slices (via each slice doc's known code locations, `Implemented in:` links,
+or a quick Grep if those are stale) — that's your in-scope set. If the marker reads `never`
+(first run) or the user passes `--full`, scope is every `implemented` slice.
 
 Cost containment here is cadence, not a trigger condition — diff-scoped-by-default is what
 keeps a recurring conform run cheap; don't invent a smarter trigger.
@@ -101,12 +103,18 @@ For each slice in scope:
      the same pattern expressed in the code idiom (extract.md's R5 reaction rules). That is
      NOT structural drift; note the idiom in the evidence log instead of reporting the view
      as missing.
-3. Write what you found into the scratch model (`<model-name>-asis.em`, see below), **reusing
-   the canonical model's slice and element names wherever the code genuinely matches them** —
-   the canonical model is the vocabulary anchor. Give a new name only to code behavior the
-   model doesn't cover at all. Record the mapping decision for every element you name this way
-   (e.g. `CartItemAdded` code class ↔ `"Cart Item Added"` model event) so it's auditable, not a
-   silent judgment call. **Match the canonical model's field granularity:** declare `{ fields }`
+3. Write what you found into the scratch model (`<model-name>-asis.em`, see below). **Seed the
+   scratch model as a copy of the canonical `.em` and replace only the in-scope slices** with
+   the as-is picture, leaving out-of-scope slices byte-identical. This is not an optimization:
+   `em diff` matches slices by name, so a scratch model containing *only* the in-scope slices
+   reports every other canonical slice as `slice-removed` plus one `element-removed` per
+   element — a phantom-removal flood on every diff-scoped run, which is the exact false drift
+   this phase exists to avoid. It also keeps the scratch model compilable (see step 3). Within
+   the slices you do rewrite, **reuse the canonical model's slice and element names wherever
+   the code genuinely matches them** — the canonical model is the vocabulary anchor. Give a
+   new name only to code behavior the model doesn't cover at all. Record the mapping decision
+   for every element you name this way (e.g. `CartItemAdded` code class ↔ `"Cart Item Added"`
+   model event) so it's auditable, not a silent judgment call. **Match the canonical model's field granularity:** declare `{ fields }`
    in the scratch model only where the canonical model declares them (if the canonical model
    puts fields on commands but not events, so does the scratch model — writing code-derived
    event fields there would flood the diff with `field-added` noise). Schema claims at finer
@@ -124,7 +132,16 @@ what every finding in the report will cite — file paths, not vibes.
 
 ### 3. Deterministic diff
 
-Run `em diff <model-name>.em <model-name>-asis.em --json`. `em`, not you, decides what
+First `em validate <model-name>-asis.em`. `em diff` refuses when either side has validation
+*errors* (warnings are fine), so a scratch model that doesn't compile stops the run cold. The
+usual cause is a slice that depends on one you rewrote incompletely — a `view X again` whose
+first declaration you dropped, or an automation `from` a read model that no longer exists.
+Seeding from the canonical model (step 2) prevents this; if it still fails, **fix the scratch
+model and report the failure as a tooling problem in the run metadata — never as drift.** A
+model you couldn't compile is an uncertainty about your own scratch file, not a finding
+against the codebase.
+
+Then run `em diff <model-name>.em <model-name>-asis.em --json`. `em`, not you, decides what
 structurally differs — don't re-derive by eye what the tool already computed. Parse the JSON
 (`docs/cli.md`'s diff section documents the envelope: `diffSchemaVersion`, `counts`, `changes`,
 `removals`, every optional `ChangeEntry` field explicit-`null` when unused) and use it as the
@@ -167,8 +184,10 @@ log a Decisions entry noting what changed and why.
 ## Conventions
 
 - **Scratch model:** `<model-name>-asis.em`, written **next to** the canonical model (same
-  directory as `.event-modeling.md`). It's regenerated every conform run — add it to the
-  repository's `.gitignore` (create the entry if there isn't one) so it never gets committed.
+  directory as `.event-modeling.md`). Always seeded as a copy of the canonical model with only
+  the in-scope slices rewritten (step 2), never built up from nothing. It's regenerated every
+  conform run — add the pattern `*-asis.em` to the repository's `.gitignore` (create the entry
+  if there isn't one) so it never gets committed.
 - **Report location:** `conformance/<YYYY-MM-DD>-report.md` in the model directory. One file
   per run; don't overwrite a prior date's report.
 - **Red note wording:** `issue "conformance: <what's wrong, plainly>"` — plain enough that
@@ -194,6 +213,9 @@ whatever cadence the user wants (see `docs/ci.md` for a scheduled-run recipe).
 
 - **Blind extraction** — deriving the as-is scratch model with no sight of the canonical
   model's vocabulary. Loses the anchor and produces naming-driven false drift.
+- **A scratch model holding only the in-scope slices** — `em diff` reads every omitted
+  canonical slice as removed, so a diff-scoped run drowns in phantom removals. Seed from the
+  canonical model and rewrite only the slices you walked.
 - **Reporting uncertainty as drift** — "I couldn't find the enforcement site" is an
   uncertainty, never a finding against the model.
 - **Editing the model or a slice doc without ratification** — conform proposes; the user
