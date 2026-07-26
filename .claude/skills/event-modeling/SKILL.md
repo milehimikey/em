@@ -5,11 +5,13 @@ description: >-
   the 7 steps of Event Modeling and the 4 patterns (State Change, State View, Automation,
   Translation), and produce implementation-ready slice design documents. Use when the user wants
   to event-model a business process or system, do event modeling / event storming, design slices,
-  build or edit an `.em` model, run the em tool, or extract / reverse-engineer a current-state
-  event model from an existing system or codebase (event-driven or legacy/procedural). Works in
-  resumable phases via an argument: `discover` (steps 1-4, greenfield), `extract` (current-state
-  model of an existing system), `model` (steps 5-7), `slice` (deep slice specs), plus `watch` and
-  `validate`. With no argument it resumes from the saved state file.
+  build or edit an `.em` model, run the em tool, extract / reverse-engineer a current-state
+  event model from an existing system or codebase (event-driven or legacy/procedural), or check
+  a ratified model for drift against the codebase that implements it. Works in resumable phases
+  via an argument: `discover` (steps 1-4, greenfield), `extract` (current-state model of an
+  existing system), `model` (steps 5-7), `slice` (deep slice specs), `conform` (drift check
+  against the codebase), plus `watch` and `validate`. With no argument it resumes from the saved
+  state file.
 ---
 
 # Event Modeling with `em`
@@ -78,13 +80,19 @@ validation rules) before doing real work — they are the source of truth. Templ
   README.md                # overview + slice index (from templates/model-readme.md)
   .event-modeling.md       # resumable state (from templates/state.md)
   slices/<slice-name>.md   # one rich slice doc per slice (from templates/slice.md)
+  conformance/<date>-report.md
+                           # conform-phase reports (from templates/conformance-report.md)
+  <model-name>-asis.em     # conform-phase scratch model, regenerated per run — git-ignore this
 ```
 
 When creating a new model, scaffold the directory and copy the templates in (filling the
 placeholders). Copy `live.html` **verbatim** — it takes the SVG name from its URL query
 (`live.html?svg=<model-name>.svg`), so there's nothing to edit. You may use `em init` for a
 starter `.em`, but usually you'll build it up from the discovery conversation instead. Fill
-template placeholders — never leave `{{...}}` in delivered files.
+template placeholders — never leave `{{...}}` in delivered files. The `conformance/` directory
+and `<model-name>-asis.em` only appear once the `conform` phase runs; add the pattern `*-asis.em`
+to the repository's `.gitignore` the first time one is created (see `reference/conform.md`) —
+it's scratch, never committed.
 
 ---
 
@@ -193,6 +201,29 @@ For each slice:
 4. Update `README.md`'s slice index — the one canonical slice table (`draft` →
    `ready-to-implement`, later `implemented` once shipped, with `Implemented in:` filled in).
 5. Re-render and `em validate`.
+
+## Phase: `conform` — drift check against the codebase
+
+Goal: check a **ratified** model (and its slice docs) against the codebase that implements it,
+and report where they've drifted — advisory only, never a gate, never an unprompted edit.
+
+**Read `reference/conform.md` before doing any conform work** — it carries the full flow
+(scope, evidence-first verification, `em diff --json`, classification, report) and the
+stance guardrails (evidence-first, uncertainty is never drift, propose-don't-edit). It reuses
+`extract`'s sourcing/mode rules for reading the target codebase rather than duplicating them.
+
+In short: for each in-scope slice, gather code evidence *before* comparing to the model or doc;
+write the as-is picture into a scratch model (`<model-name>-asis.em`, reusing the canonical
+model's names wherever the code matches them); run `em diff <model-name>.em
+<model-name>-asis.em --json` and let `em` decide the structural deltas; classify every finding
+(real drift / model gap / internal inconsistency / uncertainty) with cited evidence; write
+`conformance/<date>-report.md` with proposed `issue "conformance: …"` red notes; apply only the
+proposals the user ratifies, then re-render and validate; update the state file's
+`Last conformance:` marker.
+
+End of phase: state file's `Last conformance:` marker updated, Decisions log entry if any
+proposals were applied. Conform doesn't chain to another phase — it's a recurring loop, run
+again whenever the codebase has moved.
 
 ## Phase: `watch` — live team view
 
