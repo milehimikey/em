@@ -105,10 +105,18 @@ event-modeling skill installed and asks it to run the phase:
 
 ```yaml
 name: model-conformance
+
 on:
   schedule:
-    - cron: "0 6 * * 1"   # weekly, Monday morning
+    - cron: "0 6 * * 1"     # weekly, Monday 06:00 UTC
   workflow_dispatch: {}     # and on demand
+
+permissions:
+  contents: read
+  issues: write             # the Post report step opens an issue
+
+env:
+  MODEL_DIR: docs/model     # wherever the model lives
 
 jobs:
   conform:
@@ -117,28 +125,50 @@ jobs:
       - uses: actions/checkout@v4          # the repo holding model + code
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
+
+      - name: Note reports already present
+        run: ls "$MODEL_DIR"/conformance/*-report.md 2>/dev/null | sort > /tmp/reports-before
+
       - name: Run conform phase
         run: |
-          npm i -g @milehimikey/em
-          em skill install
-          claude -p "/event-modeling conform" --allowedTools "Bash,Read,Grep,Glob,Write,Edit"
+          npm i -g @milehimikey/em@1 @anthropic-ai/claude-code
+          em skill install --force
+          claude -p "/event-modeling conform" \
+            --allowedTools "Bash(em:*),Bash(git:*),Read,Grep,Glob,Write,Edit"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
       - name: Post report
         run: |
-          report=$(ls -t "$MODEL_DIR"/conformance/*-report.md | head -1)
+          ls "$MODEL_DIR"/conformance/*-report.md 2>/dev/null | sort > /tmp/reports-after
+          report=$(comm -13 /tmp/reports-before /tmp/reports-after | tail -1)
+          if [ -z "$report" ]; then
+            echo "the run produced no new report — nothing to post"
+            exit 0
+          fi
           gh issue create --title "Model conformance report $(date +%F)" \
-            --body-file "$report" --label conformance
+            --body-file "$report"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MODEL_DIR: docs/model   # wherever the model lives
 ```
 
-Ground rules, matching the phase's own stance (see the skill's `reference/conform.md`):
+Unlike the recipes above, this one installs `em` globally rather than reaching for `npx`: the
+agent shells out to a bare `em` of its own accord, so the binary has to be on `PATH` for the
+whole run. `em skill install --force` overwrites the copy committed in the repo, so the phase
+that runs is the one bundled with the `em` version just installed — drop the `--force` if you'd
+rather pin the phase to whatever your repo has committed.
+
+Ground rules, matching the phase's own stance (see
+`.claude/skills/event-modeling/reference/conform.md` once the skill is installed):
 
 - **The job never fails on drift.** Findings land in the report/issue; humans ratify any
   red notes in a normal PR. Fail the job only on infrastructure errors (tool missing, model
   doesn't compile).
+- **The report itself is throwaway; the issue is the artifact.** Nothing commits the
+  generated `conformance/<date>-report.md`, so the state file's `Last conformance:` line —
+  which cites that path — gets written by whoever ratifies the findings locally, in the same
+  PR that applies them. If you want the file itself kept, add an `upload-artifact` step or
+  have the job open a PR instead of an issue.
 - **Diff-scoped by default.** The phase reads the state file's `Last conformance:` marker
   and only walks slices whose code changed since — a weekly run on a quiet repo is cheap.
   Note the marker only advances when a human ratifies the run's outcome and commits the
@@ -151,5 +181,8 @@ Ground rules, matching the phase's own stance (see the skill's `reference/confor
   event-schema change in code is invisible to the structural diff and is caught instead on
   the spec surface, via the slice docs' event field tables. If event-schema drift matters
   to you structurally, declare event fields in the model.
+- **Scope the agent's shell.** `--allowedTools` above grants `Bash` only for `em` and `git`;
+  an unattended run has an API key and a full checkout in reach, so widen that list
+  deliberately rather than passing a bare `Bash`.
 - If the model and code live in different repos, check both out and point the phase at the
   code path when it asks for the target repo (the state file's `Existing system refs`).

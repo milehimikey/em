@@ -43,13 +43,13 @@ the previous session left off.
 
 ```
 <model-name>/
-  <model-name>.em          # the model
-  <model-name>.svg         # kept fresh by em watch
-  live.html                # no-server fallback viewer (file://, ~2s poll)
-  README.md                # overview + slice index
-  .event-modeling.md       # session state — this is what makes sessions resumable
-  slices/<slice-name>.md   # one implementation spec per slice
-  conformance/<date>-report.md   # conform-phase drift reports (advisory)
+  <model-name>.em               # the model
+  <model-name>.svg              # kept fresh by em watch
+  live.html                     # no-server fallback viewer (file://, ~2s poll)
+  README.md                     # overview + slice index
+  .event-modeling.md            # session state — this is what makes sessions resumable
+  slices/<slice-name>.md        # one implementation spec per slice
+  conformance/<date>-report.md  # conform-phase drift reports (advisory)
 ```
 
 The `.event-modeling.md` state file records the current phase, decisions made, and open
