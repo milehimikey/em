@@ -9,17 +9,20 @@
 // changes an existing element's public identity.
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Element, NormalizedModel, resolveByName } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 
-// NOTE: kept in sync with package.json's "version" by hand (same convention
-// already used by the `.version(...)` call in cli.ts) — tsconfig targets
-// NodeNext without resolveJsonModule, so importing package.json cleanly would
-// need a build-config change outside this module's ownership. Bump this
-// alongside package.json on every release.
+// Read once from package.json (two levels up from src/emit/ and dist/emit/
+// alike) so `generator.version` can never drift from the released version.
+// tsconfig targets NodeNext without resolveJsonModule, hence fs over import.
 const GENERATOR_NAME = "@milehimikey/em";
-const GENERATOR_VERSION = "1.2.0";
+export const GENERATOR_VERSION: string = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8"),
+).version;
 
 export const SCHEMA_VERSION = "1.0";
 

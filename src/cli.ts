@@ -19,10 +19,17 @@ import { STARTER_EM } from "./templates.js";
 
 const program = new Command();
 
+// Single source of truth for the version (also read by src/emit/json.ts for
+// `generator.version` in `em export`): package.json, one level up from both
+// src/ and dist/.
+const PKG_VERSION: string = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version;
+
 program
   .name("em")
   .description("Event Modeling CLI — slice-first DSL rendered as a strict Graphviz grid")
-  .version("1.2.0");
+  .version(PKG_VERSION);
 
 program
   .command("init")
@@ -191,6 +198,9 @@ program
     const { model, diagnostics } = compileFile(file);
     if (opts.listIssues) {
       printIssues(model);
+      // Errors still fail the run below — surface them rather than exiting
+      // non-zero with nothing but the issue list on screen.
+      printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
     } else {
       printDiagnostics(diagnostics);
       if (diagnostics.length === 0) console.log("ok — no issues");
