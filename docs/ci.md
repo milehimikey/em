@@ -146,5 +146,10 @@ Ground rules, matching the phase's own stance (see the skill's `reference/confor
   silently marking it checked.
 - **Cadence, not trigger.** Resist wiring this to every push; a schedule (plus manual
   dispatch before a release or stakeholder review) is the intended shape.
+- **Know what the structural diff can see.** `em diff` compares what the `.em` declares —
+  in a model that declares `{ fields }` on commands but not events (a common style), an
+  event-schema change in code is invisible to the structural diff and is caught instead on
+  the spec surface, via the slice docs' event field tables. If event-schema drift matters
+  to you structurally, declare event fields in the model.
 - If the model and code live in different repos, check both out and point the phase at the
   code path when it asks for the target repo (the state file's `Existing system refs`).
