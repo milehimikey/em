@@ -166,9 +166,12 @@ don't block the diff.
 | `--from <rev>` | Diff `<old>` against this git revision instead of a second file |
 | `--to <rev>` | Diff against this git revision instead of the current file (requires `--from`) |
 | `--exit-code` | Exit 1 if the models differ, 0 if identical (opt-in, `git diff --exit-code` convention) |
+| `--json` | Print a JSON document instead of the text report (see below) |
 
 By default `em diff` always exits 0 (except on a compile error); pass `--exit-code` to use
-it as a CI gate that fails when a model actually changed.
+it as a CI gate that fails when a model actually changed. `--exit-code` composes with
+`--json`: stdout is still exactly the JSON document, and the exit code still reflects
+whether the models differ.
 
 **Identity.** Slices are matched by their `em export` key, elements by their `em export`
 `ref` — the same edit-stable identity `em export` guarantees, so inserting or reordering
@@ -193,6 +196,39 @@ moved: event "Payment Failed" (slice "Checkout" -> slice "Payment")
 A moved element's own field/note/issue changes aren't further diffed in v1 — only the move
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
+
+**`--json` shape** (`diffSchemaVersion: "1.0"`, versioned independently of the npm package,
+same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
+report). Diagnostics are still printed to stderr, *and* carried in the document.
+
+- `generator` — `{ name, version }` of the tool that produced the diff.
+- `oldModel` / `newModel` — `{ label, sha256 }`. `label` is the same string diagnostics are
+  prefixed with (a file path, or `path@rev` for the `--from`/`--to` form); `sha256` hashes
+  that side's source text, so a consumer can pin exactly what was compared.
+- `identical` — `true` when the models have no structural differences (`hasChanges()`
+  negated).
+- `counts` — the same 13 counters the text rollup line summarizes (`slicesAdded`,
+  `elementsMoved`, `fieldChanges`, `issuesResolved`, …), as-is.
+- `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
+- `removals` — `ChangeEntry[]` in old-file document order.
+- `diagnostics` — both sides' warnings, flat and side-tagged:
+  `{ side: "old" | "new", severity, message, line }`. Empty when neither side warned.
+  (`em diff` refuses to run at all if either side has *errors*, so these are warnings.)
+
+Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rather than
+`old`/`new`, since `const { old, new } = doc` is a syntax error.
+
+Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `sliceName`,
+`fromSlice`, `toSlice`, `field`, `fieldType`, `oldType`, `newType`, `source`, `oldNote`,
+`newNote`, `oldText`, `newText`, `from`, `to`) — explicit `null` when unused by that entry's
+`type`, never omitted, so a typed consumer can destructure without sniffing for key
+presence (same convention as `em export`). Output is byte-deterministic for the same two
+inputs.
+
+Entries identify elements by display name (`name`, `sliceName`), not by the `em export`
+`ref`/slice `key` the diff actually matched on — joining a diff entry back to an `em export`
+document means re-deriving the slug. Carrying refs on entries is a planned additive change
+([#40](https://github.com/milehimikey/em/issues/40)).
 
 ## `em skill install`
 
