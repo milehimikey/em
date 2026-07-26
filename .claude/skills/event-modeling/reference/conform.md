@@ -177,5 +177,5 @@ whatever cadence the user wants (see `docs/ci.md` for a scheduled-run recipe).
   finding to report and classify, not a reason to stop the run or block anything. Conform is
   advisory; there's no gate here.
 - **Re-deriving what `em diff` already decided** — once you have the JSON, use it; don't
-  eyeball the two `.em` files yourselves looking for structural differences the tool already
+  eyeball the two `.em` files yourself looking for structural differences the tool already
   computed for you.
