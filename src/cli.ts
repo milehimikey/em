@@ -13,6 +13,7 @@ import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { buildExport } from "./emit/json.js";
+import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
 import { planDiffArgs, resolveRevision } from "./cli/diff-inputs.js";
 import { STARTER_EM } from "./templates.js";
@@ -113,24 +114,31 @@ program
   .option("--from <rev>", "diff <old> against this git revision instead of a second file")
   .option("--to <rev>", "diff against this git revision instead of the current file (requires --from)")
   .option("--exit-code", "exit 1 if the models differ, 0 if identical (git-diff convention)")
-  .action((oldFile: string, newFile: string | undefined, opts: { from?: string; to?: string; exitCode?: boolean }) => {
-    const plan = planDiffArgs(oldFile, newFile, opts);
-    if ("error" in plan) {
-      console.error(plan.error);
-      process.exit(1);
-    }
-    if (plan.form === "files") {
-      const oldSource = readFileOrExit(plan.oldFile);
-      const newSource = readFileOrExit(plan.newFile);
-      runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode);
-      return;
-    }
-    const oldSource = readAtRevision(plan.file, plan.from);
-    const oldLabel = `${plan.file}@${plan.from}`;
-    const newSource = plan.to ? readAtRevision(plan.file, plan.to) : readFileOrExit(plan.file);
-    const newLabel = plan.to ? `${plan.file}@${plan.to}` : plan.file;
-    runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode);
-  });
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action(
+    (
+      oldFile: string,
+      newFile: string | undefined,
+      opts: { from?: string; to?: string; exitCode?: boolean; json?: boolean },
+    ) => {
+      const plan = planDiffArgs(oldFile, newFile, opts);
+      if ("error" in plan) {
+        console.error(plan.error);
+        process.exit(1);
+      }
+      if (plan.form === "files") {
+        const oldSource = readFileOrExit(plan.oldFile);
+        const newSource = readFileOrExit(plan.newFile);
+        runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode, opts.json);
+        return;
+      }
+      const oldSource = readAtRevision(plan.file, plan.from);
+      const oldLabel = `${plan.file}@${plan.from}`;
+      const newSource = plan.to ? readAtRevision(plan.file, plan.to) : readFileOrExit(plan.file);
+      const newLabel = plan.to ? `${plan.file}@${plan.to}` : plan.file;
+      runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json);
+    },
+  );
 
 program
   .command("watch")
@@ -294,7 +302,14 @@ function readAtRevision(file: string, rev: string): string {
 }
 
 /** Shared body for both `em diff` forms: compile both sides, gate on errors, print, exit-code. */
-function runDiff(oldSource: string, oldLabel: string, newSource: string, newLabel: string, exitCode?: boolean): void {
+function runDiff(
+  oldSource: string,
+  oldLabel: string,
+  newSource: string,
+  newLabel: string,
+  exitCode?: boolean,
+  json?: boolean,
+): void {
   const oldResult = compileSource(oldSource, oldLabel);
   const newResult = compileSource(newSource, newLabel);
 
@@ -307,7 +322,11 @@ function runDiff(oldSource: string, oldLabel: string, newSource: string, newLabe
   }
 
   const diff = diffModels(oldResult.model, newResult.model);
-  console.log(formatModelDiff(diff));
+  if (json) {
+    process.stdout.write(buildDiffJson(diff, oldLabel, newLabel) + "\n");
+  } else {
+    console.log(formatModelDiff(diff));
+  }
 
   if (exitCode && hasChanges(diff)) process.exit(1);
 }

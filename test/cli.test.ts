@@ -103,3 +103,31 @@ describe("em validate --list-issues / --fail-on-issues (CLI)", () => {
     expect(r.stderr).toContain('unknown event "No Such Event"');
   });
 });
+
+describe("em diff --json (CLI)", () => {
+  it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
+    const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
+    expect(doc.diffSchemaVersion).toBe("1.0");
+    expect(doc.identical).toBe(false);
+    expect(r.stderr).toContain("produces no event");
+  });
+
+  it("--json --exit-code still exits 1 when the models differ, 0 when identical", () => {
+    const differing = em(["diff", "clean.em", "warn.em", "--json", "--exit-code"], dir);
+    expect(differing.status).toBe(1);
+    expect(JSON.parse(differing.stdout).identical).toBe(false);
+
+    const identical = em(["diff", "clean.em", "clean.em", "--json", "--exit-code"], dir);
+    expect(identical.status).toBe(0);
+    expect(JSON.parse(identical.stdout).identical).toBe(true);
+  });
+
+  it("refuses on errors with a non-zero exit, same as the text form", () => {
+    const r = em(["diff", "clean.em", "error.em", "--json"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not diffing");
+    expect(r.stdout).toBe("");
+  });
+});
