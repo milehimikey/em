@@ -1,0 +1,14 @@
+// Type-checks the test suite too, which the build config (tsconfig.json)
+// deliberately excludes — `dist` should only ever contain `src`. Several tests
+// carry compile-time guards (e.g. test/diffJson.test.ts keys its ChangeType
+// case table as `Record<ChangeType, …>`, so growing the union is an error);
+// those only bite if something actually runs tsc over `test`.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "test"],
+  "exclude": ["dist", "node_modules"]
+}

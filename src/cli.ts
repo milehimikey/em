@@ -323,12 +323,17 @@ function runDiff(
 
   const diff = diffModels(oldResult.model, newResult.model);
   if (json) {
-    process.stdout.write(buildDiffJson(diff, oldLabel, newLabel) + "\n");
+    const oldSide = { label: oldLabel, source: oldSource, diagnostics: oldResult.diagnostics };
+    const newSide = { label: newLabel, source: newSource, diagnostics: newResult.diagnostics };
+    process.stdout.write(buildDiffJson(diff, oldSide, newSide) + "\n");
   } else {
     console.log(formatModelDiff(diff));
   }
 
-  if (exitCode && hasChanges(diff)) process.exit(1);
+  // Set the code rather than process.exit(): stdout to a pipe is asynchronous
+  // on POSIX, so exiting here would truncate a JSON document larger than the
+  // pipe buffer — exactly the `--json --exit-code | ...` case in CI.
+  if (exitCode && hasChanges(diff)) process.exitCode = 1;
 }
 
 function defaultOut(file: string, fmt: string): string {

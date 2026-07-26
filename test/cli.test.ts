@@ -130,4 +130,75 @@ describe("em diff --json (CLI)", () => {
     expect(r.stderr).toContain("not diffing");
     expect(r.stdout).toBe("");
   });
+
+  it("carries both sides' warnings in the document, side-tagged", () => {
+    const doc = JSON.parse(em(["diff", "clean.em", "warn.em", "--json"], dir).stdout);
+    expect(doc.diagnostics).toContainEqual(
+      expect.objectContaining({ side: "new", severity: "warning", message: expect.stringContaining("produces no event") }),
+    );
+    expect(doc.diagnostics.filter((d: { side: string }) => d.side === "old")).toEqual([]);
+  });
+
+  it("does not truncate a large document piped through --exit-code", () => {
+    // stdout to a pipe is async on POSIX: process.exit() here would cut the
+    // JSON off mid-document. Big enough to overrun the ~64KB pipe buffer.
+    const big = (n: number, extra: string) =>
+      Array.from({ length: n }, (_, i) => `slice "S${i}" {\n  command Do ${i}${extra}\n  event Did ${i}\n}`).join("\n");
+    writeFileSync(join(dir, "big-old.em"), big(400, ""));
+    writeFileSync(join(dir, "big-new.em"), big(400, ` issue "q${"x".repeat(40)}"`));
+
+    const r = em(["diff", "big-old.em", "big-new.em", "--json", "--exit-code"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stdout.length).toBeGreaterThan(64 * 1024);
+    const doc = JSON.parse(r.stdout); // throws if the document was cut short
+    expect(doc.changes).toHaveLength(400);
+  });
+});
+
+describe("em diff --json with --from/--to (CLI, real git repo)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-git-"));
+    git(["init", "-q", "-b", "main"], repo);
+    writeFileSync(join(repo, "model.em"), CLEAN);
+    git(["add", "model.em"], repo);
+    git(["commit", "-qm", "first"], repo);
+    // Second revision adds a slice; the working tree adds one more on top, so
+    // HEAD~1 -> HEAD and HEAD -> working tree are both non-empty diffs.
+    const READ = `slice "Read" {\n  view Open Orders from "Order Placed"\n}\n`;
+    writeFileSync(join(repo, "model.em"), CLEAN + READ);
+    git(["commit", "-qam", "second"], repo);
+    writeFileSync(join(repo, "model.em"), CLEAN + READ + `slice "Ship" {\n  command Ship It\n}\n`);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("--from labels the old side path@rev and the new side as the working tree", () => {
+    const r = em(["diff", "model.em", "--from", "HEAD", "--json"], repo);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.oldModel.label).toBe("model.em@HEAD");
+    expect(doc.newModel.label).toBe("model.em");
+    expect(doc.oldModel.sha256).not.toBe(doc.newModel.sha256);
+    expect(doc.identical).toBe(false);
+    expect(doc.changes).toContainEqual(expect.objectContaining({ type: "slice-added", name: "Ship" }));
+  });
+
+  it("--from/--to labels both sides path@rev and composes with --exit-code", () => {
+    const r = em(["diff", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json", "--exit-code"], repo);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.oldModel.label).toBe("model.em@HEAD~1");
+    expect(doc.newModel.label).toBe("model.em@HEAD");
+    expect(doc.changes).toContainEqual(expect.objectContaining({ type: "slice-added", name: "Read" }));
+  });
+
+  it("exits 0 with identical: true when the two revisions match", () => {
+    const r = em(["diff", "model.em", "--from", "HEAD", "--to", "HEAD", "--json", "--exit-code"], repo);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).identical).toBe(true);
+  });
 });

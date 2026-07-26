@@ -199,17 +199,24 @@ and after a move separately if you need both.
 
 **`--json` shape** (`diffSchemaVersion: "1.0"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
-report), diagnostics still go to stderr.
+report). Diagnostics are still printed to stderr, *and* carried in the document.
 
 - `generator` — `{ name, version }` of the tool that produced the diff.
-- `old` / `new` — `{ label }`, the same labels the text report's header would use (a file
-  path, or `path@rev` for the `--from`/`--to` form).
+- `oldModel` / `newModel` — `{ label, sha256 }`. `label` is the same string diagnostics are
+  prefixed with (a file path, or `path@rev` for the `--from`/`--to` form); `sha256` hashes
+  that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
 - `counts` — the same 13 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
+- `diagnostics` — both sides' warnings, flat and side-tagged:
+  `{ side: "old" | "new", severity, message, line }`. Empty when neither side warned.
+  (`em diff` refuses to run at all if either side has *errors*, so these are warnings.)
+
+Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rather than
+`old`/`new`, since `const { old, new } = doc` is a syntax error.
 
 Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `sliceName`,
 `fromSlice`, `toSlice`, `field`, `fieldType`, `oldType`, `newType`, `source`, `oldNote`,
@@ -217,6 +224,11 @@ Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `sliceName`
 `type`, never omitted, so a typed consumer can destructure without sniffing for key
 presence (same convention as `em export`). Output is byte-deterministic for the same two
 inputs.
+
+Entries identify elements by display name (`name`, `sliceName`), not by the `em export`
+`ref`/slice `key` the diff actually matched on — joining a diff entry back to an `em export`
+document means re-deriving the slug. Carrying refs on entries is a planned additive change
+([#40](https://github.com/milehimikey/em/issues/40)).
 
 ## `em skill install`
 
