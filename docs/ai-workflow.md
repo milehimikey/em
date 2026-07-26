@@ -35,6 +35,7 @@ the previous session left off.
 | `extract` | The as-is sibling of discover: derives a current-state model from an existing system (event-driven or procedural), confirming each round with you | A validated as-is `.em`, unknowns parked as `# TBD` |
 | `model` | Steps 5–7: group events into contexts, classify every slice as one of the [four patterns](patterns.md), check completeness | A structurally complete, validated model |
 | `slice` | Deep-dive one slice at a time: fields, invariants, Given/When/Then scenarios, error flows | One implementation-ready `slices/<name>.md` per slice, wired in via `note` |
+| `conform` | Checks a ratified model (and its slice docs) against the codebase that implements it: evidence-first per-slice walk, `em diff --json` for structural drift, findings classified with cited evidence | An advisory `conformance/<date>-report.md` with proposed red notes you ratify |
 | `watch` | Starts `em watch --serve` in the background for a live team view | A running live viewer |
 | `validate` | Walks every diagnostic with you and applies fixes, plus the one check the validator can't do itself | A clean `em validate` |
 
@@ -42,12 +43,13 @@ the previous session left off.
 
 ```
 <model-name>/
-  <model-name>.em          # the model
-  <model-name>.svg         # kept fresh by em watch
-  live.html                # no-server fallback viewer (file://, ~2s poll)
-  README.md                # overview + slice index
-  .event-modeling.md       # session state — this is what makes sessions resumable
-  slices/<slice-name>.md   # one implementation spec per slice
+  <model-name>.em               # the model
+  <model-name>.svg              # kept fresh by em watch
+  live.html                     # no-server fallback viewer (file://, ~2s poll)
+  README.md                     # overview + slice index
+  .event-modeling.md            # session state — this is what makes sessions resumable
+  slices/<slice-name>.md        # one implementation spec per slice
+  conformance/<date>-report.md  # conform-phase drift reports (advisory)
 ```
 
 The `.event-modeling.md` state file records the current phase, decisions made, and open
