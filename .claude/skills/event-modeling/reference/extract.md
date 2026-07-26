@@ -106,8 +106,8 @@ Extraction is complete when: the model renders; `em validate` is clean (or remai
 are consciously accepted in the Decisions log); every unknown is a parked `# TBD`; and the
 user has confirmed the model reflects today's behavior. Then:
 
-1. State file: set phase progress (extraction rounds checked), log the completion decision,
-   seed the **Slice inventory** (every slice, pattern, doc status `none`).
+1. State file: set phase progress (extraction rounds checked), log the completion decision.
+   Seed `README.md`'s **slice index** (every slice, pattern, status `none`).
 2. The extracted model **replaces `discover`** — suggest `/event-modeling model` next
    (steps 5-7: swimlanes, patterns, completeness). Desired-state changes belong *after* the
    as-is model is agreed — as normal `model`/`slice` evolution, clearly separated from
