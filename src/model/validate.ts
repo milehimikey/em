@@ -90,7 +90,9 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
 
       // Fields completeness: every view field should trace to a field on some
       // instance of a source event — but only once both sides opt in by declaring
-      // `{ fields }` at all (a model that never declares fields stays silent).
+      // `{ fields }`: the view, and *every* source event. A partially-declared
+      // source set can't prove a gap (the fieldless event may well provide the
+      // field), so it stays silent rather than warning on legitimate fields.
       if (view.fields && view.fields.length > 0) {
         const fromNames = view.from ?? [];
         const sourceEvents: Element[] = [];
@@ -98,7 +100,8 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
           const bucket = model.byName.get(normalizeName(src)) ?? [];
           for (const e of bucket) if (e.kind === "event") sourceEvents.push(e);
         }
-        const sourcesDeclareFields = sourceEvents.some((e) => (e.fields ?? []).length > 0);
+        const sourcesDeclareFields =
+          sourceEvents.length > 0 && sourceEvents.every((e) => (e.fields ?? []).length > 0);
         if (sourcesDeclareFields) {
           const fieldUnion = new Set<string>();
           for (const e of sourceEvents) {
@@ -119,25 +122,25 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
 
     // Fields completeness: every event field in a slice should trace to a field on
-    // one of that slice's commands — again, only once both sides declare `{ fields }`.
+    // one of that slice's commands (unioned) — again, only once both sides declare
+    // `{ fields }`: the event, and *every* command in the slice. A fieldless
+    // command may be the field's provider, so a mixed slice stays silent.
     if (commands.length > 0) {
-      const commandFieldUnion = new Set<string>();
-      let commandsDeclareFields = false;
-      for (const c of commands) {
-        for (const f of c.fields ?? []) {
-          commandsDeclareFields = true;
-          commandFieldUnion.add(normalizeName(f.name));
-        }
-      }
+      const commandsDeclareFields = commands.every((c) => (c.fields ?? []).length > 0);
       if (commandsDeclareFields) {
-        const cmdNames = commands.map((c) => c.name).join(", ");
+        const commandFieldUnion = new Set<string>();
+        for (const c of commands) {
+          for (const f of c.fields ?? []) commandFieldUnion.add(normalizeName(f.name));
+        }
+        const cmdList = commands.map((c) => `"${c.name}"`).join(", ");
+        const byCommands = commands.length === 1 ? `command ${cmdList}` : `any of commands ${cmdList}`;
         for (const evt of events) {
           if (!evt.fields || evt.fields.length === 0) continue;
           for (const f of evt.fields) {
             if (!commandFieldUnion.has(normalizeName(f.name))) {
               diags.push({
                 severity: "warning",
-                message: `event "${evt.name}" field "${f.name}" not provided by command "${cmdNames}"`,
+                message: `event "${evt.name}" field "${f.name}" not provided by ${byCommands}`,
                 line: evt.line,
               });
             }

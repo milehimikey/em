@@ -48,9 +48,13 @@ consistently instead of trusting it by eye.
   in the same slice (unioned across commands, in the rare case a slice has more than one).
   An event field the command never mentions gets a warning.
 
-Both checks only fire when **both sides declare `{ fields }`** — a model that never uses
-fields produces zero completeness warnings, and a view/event that hasn't gotten a fields
-block yet is silently skipped rather than flagged. Field names are matched with the same
+Both checks only fire when **both sides declare `{ fields }`** — the view/event being
+checked, and *every* element on the contributing side (every source event of the view;
+every command in the slice). A model that never uses fields produces zero completeness
+warnings, a view/event that hasn't gotten a fields block yet is silently skipped rather
+than flagged, and a mixed contributing side (say, `from "A", "B"` where only `A` declares
+fields) is also skipped — a fieldless `B` may well be the field's provider, so a warning
+there could flag a legitimate field. Field names are matched with the same
 normalization as `from`/`arrow` references (trim, lowercase, collapse whitespace); types are
 not compared. UI fields, cross-slice/automation tracing, and rename detection are out of
 scope for now.

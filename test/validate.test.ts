@@ -76,7 +76,7 @@ slice "S" {
 describe("fields-completeness warnings", () => {
   const gapDiags = (src: string) =>
     diagsFor(src).filter(
-      (d) => d.message.includes("has no source in") || d.message.includes("not provided by command"),
+      (d) => d.message.includes("has no source in") || d.message.includes("not provided by"),
     );
 
   it("view field with a matching source event field: no warning", () => {
@@ -226,6 +226,80 @@ slice "Catalog Updated" {
     // both-sides-declare gate applied per element instance — it is skipped
     // entirely rather than re-checked against "Stock Reserved" (which doesn't
     // carry `qty`).
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("unions fields across multiple commands in a slice", () => {
+    // `total` is only provided by the SECOND command; the union across both
+    // commands must still cover it.
+    const src = `
+slice "S" {
+  command Place Order { orderId }
+  command Price Order { orderId, total: Money }
+  event Order Priced { orderId, total: Money }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("multi-command warning quotes each command name individually", () => {
+    const src = `
+slice "S" {
+  command Place Order { orderId }
+  command Price Order { orderId }
+  event Order Priced { orderId, total: Money }
+}
+`;
+    const diags = gapDiags(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toBe(
+      'event "Order Priced" field "total" not provided by any of commands "Place Order", "Price Order"',
+    );
+  });
+
+  it("matching is name-only — a type mismatch is not a gap", () => {
+    // `total: Money` on the event vs `total: Int` on the command: types are
+    // intentionally not compared, so this stays silent.
+    const src = `
+slice "S" {
+  command Place Order { orderId, total: Int }
+  event Order Placed { orderId, total: Money }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("mixed source events (one declares fields, one doesn't): view check is skipped", () => {
+    // "Order Shipped" never opted in to fields, so it may well provide
+    // `shippedAt` — warning here would flag a legitimate field.
+    const src = `
+slice "S" {
+  command Place Order { orderId }
+  event Order Placed { orderId }
+}
+slice "T" {
+  command Ship Order
+  event Order Shipped
+}
+slice "U" {
+  view Order History from "Order Placed", "Order Shipped" {
+    orderId
+    shippedAt
+  }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("mixed commands (one declares fields, one doesn't): event check is skipped", () => {
+    // The fieldless "Import Order" may be the provider of `importedAt`.
+    const src = `
+slice "S" {
+  command Place Order { orderId }
+  command Import Order
+  event Order Recorded { orderId, importedAt }
+}
+`;
     expect(gapDiags(src)).toHaveLength(0);
   });
 });
