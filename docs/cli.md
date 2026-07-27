@@ -8,6 +8,7 @@
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
+| `em changelog <file>` | Render a model's git history as a business-readable ledger |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 
 Every command that reads a model also parses and validates it first, printing any
@@ -229,6 +230,64 @@ Entries identify elements by display name (`name`, `sliceName`), not by the `em 
 `ref`/slice `key` the diff actually matched on — joining a diff entry back to an `em export`
 document means re-deriving the slug. Carrying refs on entries is a planned additive change
 ([#40](https://github.com/milehimikey/em/issues/40)).
+
+## `em changelog <file>`
+
+Renders the model's git history as a business-readable ledger — one section per commit
+that touched the file, newest first, each with its structural delta (via the same
+machinery as `em diff`) and any dated Decisions-log entries from that day woven in.
+Roadmap framing: the model's git history *is* a ledger of business decisions; `em
+changelog` renders it as one, without an LLM — same deterministic posture as `em diff`
+and `em export`.
+
+`<file>` must be tracked in a git repository. Renames are followed (`git log --follow`),
+so history survives a slice/file rename. Writes markdown to stdout by default (clean —
+diagnostics never print); `-o` writes a file.
+
+| Flag | Effect |
+|---|---|
+| `--from <rev>` | Start the walk at this revision (inclusive) |
+| `--to <rev>` | End the walk at this revision (inclusive; default `HEAD`) |
+| `-o, --out <path>` | Write to a file instead of stdout |
+
+```bash
+em changelog model.em                          # full history, newest first
+em changelog model.em --from v1.0               # only commits at/after v1.0
+em changelog model.em --from HEAD~5 --to HEAD~1 # a bounded window
+em changelog model.em -o CHANGELOG.md
+```
+
+**`--from`/`--to` semantics.** Both bounds are inclusive of the named commit — the walk
+compiles to git's `<from>^..<to>` idiom, so `--from`'s own commit is the oldest entry in
+the output and `--to`'s is the newest. `--to` defaults to `HEAD`. `--from` on a root
+commit (no parent to exclude) falls back to an unbounded walk up to `--to` — equivalent,
+since there's nothing earlier to exclude anyway.
+
+**Section anatomy.** Each section is `## <date> — <commit subject> (<short-hash>)`
+(`<date>` is the commit's author date, `YYYY-MM-DD`), followed by the structural rollup
+and per-change lines (identical to `em diff`'s text report — see above), and a
+`Decisions:` block when the adjacent state file has a dated entry matching that date.
+Sections with no structural change *and* no matching decision are omitted — a
+whitespace- or comment-only commit produces no section. A revision that fails to
+parse/validate never crashes the walk; it gets a `_could not compile this revision:
+<reason>_` note in its own section instead, and the next good revision diffs against
+the last revision that *did* compile.
+
+**The oldest commit is the introduction**, not a diff (it has no predecessor): its
+section reads `Model introduced: N slices, M elements.` — computed by compiling that
+revision, not by diffing against an empty model.
+
+**Decisions weaving.** If `<file>`'s directory has a `.event-modeling.md` state file (see
+[ai-workflow.md](ai-workflow.md)), `em changelog` parses its `## Decisions log` section
+for dated bullets (`- YYYY-MM-DD: …`, including any continuation lines) and attaches each
+one to every section sharing its date. A decision whose date matches no commit in the
+walk appears in a trailing `## Decisions not tied to a model commit` section — nothing
+from the log is ever silently dropped. No state file at all is fine; the changelog just
+carries no Decisions blocks.
+
+**Determinism.** Given the same commit range and the same state file content, the output
+is byte-identical — no timestamps beyond the commits' own author dates, no environment-
+derived values.
 
 ## `em skill install`
 

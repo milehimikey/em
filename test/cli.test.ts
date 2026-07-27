@@ -202,3 +202,167 @@ describe("em diff --json with --from/--to (CLI, real git repo)", () => {
     expect(JSON.parse(r.stdout).identical).toBe(true);
   });
 });
+
+describe("em changelog (CLI, real git repo)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
+
+  // Commits at fixed author dates (rather than "whenever the test happens to
+  // run") so decision-date matching is deterministic and never flaky across
+  // a midnight boundary.
+  const commitAt = (cwd: string, date: string, message: string) =>
+    git(["commit", "-qam", message], cwd, {
+      ...process.env,
+      GIT_AUTHOR_DATE: `${date}T10:00:00`,
+      GIT_COMMITTER_DATE: `${date}T10:00:00`,
+    });
+
+  const INTRO = `slice "Place" {\n  command Place Order\n  event Order Placed\n}\n`;
+  const WITH_FIELDS = INTRO + `slice "Ship" {\n  command Ship Order total: Money\n  event Order Shipped\n}\n`;
+  // Comment + blank lines only — stripComment() means this parses to the
+  // exact same structural model as WITH_FIELDS.
+  const REFORMAT_ONLY = WITH_FIELDS.replace(
+    'command Ship Order total: Money',
+    'command Ship Order total: Money  # reformatted for clarity',
+  ) + "\n\n";
+  const WITH_ISSUE =
+    INTRO +
+    `slice "Ship" {\n  command Ship Order total: Money\n  event Order Shipped issue "who confirms delivery?"\n}\n`;
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-changelog-"));
+    git(["init", "-q", "-b", "main"], repo);
+
+    writeFileSync(join(repo, "model.em"), INTRO);
+    git(["add", "model.em"], repo);
+    commitAt(repo, "2026-01-01", "introduce order placement");
+
+    writeFileSync(join(repo, "model.em"), WITH_FIELDS);
+    git(["add", "model.em"], repo);
+    commitAt(repo, "2026-01-02", "add shipping slice with a field");
+
+    writeFileSync(join(repo, "model.em"), REFORMAT_ONLY);
+    git(["add", "model.em"], repo);
+    commitAt(repo, "2026-01-03", "reformat only");
+
+    writeFileSync(join(repo, "model.em"), WITH_ISSUE);
+    writeFileSync(
+      join(repo, ".event-modeling.md"),
+      "# Event Modeling Progress — Orders\n\n## Decisions log\n- 2026-01-04: opened the delivery-confirmation question for follow-up\n",
+    );
+    git(["add", "model.em", ".event-modeling.md"], repo);
+    commitAt(repo, "2026-01-04", "open delivery confirmation issue");
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("walks history newest-first, omits the comment-only commit, and weaves in the matching decision", () => {
+    const r = em(["changelog", "model.em"], repo);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+
+    const headings = [...r.stdout.matchAll(/^## .+$/gm)].map((m) => m[0]);
+    expect(headings).toEqual([
+      expect.stringContaining("open delivery confirmation issue"),
+      expect.stringContaining("add shipping slice with a field"),
+      expect.stringContaining("introduce order placement"),
+    ]);
+    expect(r.stdout).not.toContain("reformat only");
+    expect(r.stdout).toContain("Decisions:\n- opened the delivery-confirmation question for follow-up");
+    expect(r.stdout).toContain('issue opened: event "Order Shipped"');
+    expect(r.stdout.startsWith("# Model changelog — model.em")).toBe(true);
+    expect(r.stdout).toContain("Model introduced: 1 slice, 2 elements.");
+  });
+
+  it("--from bounds the walk: the boundary commit becomes the introduction, earlier commits drop out", () => {
+    const r = em(["changelog", "model.em", "--from", "HEAD~1"], repo);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain("introduce order placement");
+    expect(r.stdout).not.toContain("add shipping slice with a field");
+    expect(r.stdout).toContain("open delivery confirmation issue");
+    // HEAD~1 ("reformat only") has no predecessor inside the bounded walk,
+    // so it renders as the introduction instead of being diffed/omitted.
+    expect(r.stdout).toContain("reformat only");
+    expect(r.stdout).toContain("Model introduced:");
+  });
+
+  it("-o writes the file and confirms on stdout", () => {
+    const r = em(["changelog", "model.em", "-o", "changelog.md"], repo);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote changelog.md");
+    const text = readFileSync(join(repo, "changelog.md"), "utf8");
+    expect(text.startsWith("# Model changelog — model.em")).toBe(true);
+  });
+
+  it("fails with a clear, non-zero exit outside a git repository", () => {
+    const outside = mkdtempSync(join(tmpdir(), "em-cli-changelog-nogit-"));
+    writeFileSync(join(outside, "model.em"), INTRO);
+    const r = em(["changelog", "model.em"], outside);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("is not inside a git repository");
+    expect(r.stdout).toBe("");
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("fails with a clear, non-zero exit on an unknown --from revision", () => {
+    const r = em(["changelog", "model.em", "--from", "not-a-real-rev"], repo);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('unknown revision "not-a-real-rev"');
+  });
+});
+
+describe("em changelog follows renames (CLI, real git repo)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
+
+  const commitAt = (cwd: string, date: string, message: string) =>
+    git(["commit", "-qam", message], cwd, {
+      ...process.env,
+      GIT_AUTHOR_DATE: `${date}T10:00:00`,
+      GIT_COMMITTER_DATE: `${date}T10:00:00`,
+    });
+
+  const INTRO = `slice "Place" {\n  command Place Order\n  event Order Placed\n}\n`;
+  const WITH_SHIP = INTRO + `slice "Ship" {\n  command Ship Order\n  event Order Shipped\n}\n`;
+  const WITH_CANCEL = WITH_SHIP + `slice "Cancel" {\n  command Cancel Order\n  event Order Cancelled\n}\n`;
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-changelog-rename-"));
+    git(["init", "-q", "-b", "main"], repo);
+
+    writeFileSync(join(repo, "old-name.em"), INTRO);
+    git(["add", "old-name.em"], repo);
+    commitAt(repo, "2026-01-01", "introduce model");
+
+    writeFileSync(join(repo, "old-name.em"), WITH_SHIP);
+    git(["add", "old-name.em"], repo);
+    commitAt(repo, "2026-01-02", "add shipping");
+
+    git(["mv", "old-name.em", "new-name.em"], repo);
+    commitAt(repo, "2026-01-03", "rename model file");
+
+    writeFileSync(join(repo, "new-name.em"), WITH_CANCEL);
+    git(["add", "new-name.em"], repo);
+    commitAt(repo, "2026-01-04", "add cancellation");
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("reads pre-rename revisions at their historical path — no error sections", () => {
+    const r = em(["changelog", "new-name.em"], repo);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).not.toContain("could not compile");
+
+    // Pre-rename history renders as real content: the introduction compiles,
+    // and the pre-rename diff (01-01 -> 01-02) is a structural section.
+    expect(r.stdout).toContain("Model introduced: 1 slice, 2 elements.");
+    expect(r.stdout).toContain('+ slice "Ship"');
+    // The post-rename diff computes against the pre-rename side too.
+    expect(r.stdout).toContain('+ slice "Cancel"');
+    // A pure rename changes nothing structurally — its section is omitted.
+    expect(r.stdout).not.toContain("rename model file");
+  });
+});
