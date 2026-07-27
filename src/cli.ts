@@ -16,6 +16,8 @@ import { buildExport } from "./emit/json.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
 import { planDiffArgs, resolveRevision } from "./cli/diff-inputs.js";
+import { listModelCommits } from "./cli/changelog-git.js";
+import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
 import { STARTER_EM } from "./templates.js";
 
 const program = new Command();
@@ -139,6 +141,29 @@ program
       runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json);
     },
   );
+
+program
+  .command("changelog")
+  .description("render a model's git history as a business-readable ledger (see docs/cli.md)")
+  .argument("<file>", "input .em file (must be tracked in git)")
+  .option("--from <rev>", "start the walk at this revision (inclusive)")
+  .option("--to <rev>", "end the walk at this revision (inclusive; default HEAD)")
+  .option("-o, --out <path>", "write to a file instead of stdout")
+  .action((file: string, opts: { from?: string; to?: string; out?: string }) => {
+    const commitsResult = listModelCommits(file, { from: opts.from, to: opts.to });
+    if (!commitsResult.ok) {
+      console.error(commitsResult.message);
+      process.exit(1);
+    }
+    const markdown = buildChangelogDoc(file, commitsResult.commits);
+
+    if (opts.out) {
+      writeFileSync(opts.out, markdown + "\n");
+      console.log(`wrote ${opts.out}`);
+    } else {
+      process.stdout.write(markdown + "\n");
+    }
+  });
 
 program
   .command("watch")
@@ -299,6 +324,67 @@ function readAtRevision(file: string, rev: string): string {
     process.exit(1);
   }
   return result.content;
+}
+
+/**
+ * Build the `em changelog` markdown document for an already-resolved commit
+ * list (oldest -> newest). Compiles every revision once; per-revision
+ * warnings are deliberately never printed (historical revisions can be noisy)
+ * — only a compile *failure* (parse error or validation error, same
+ * threshold `em diff` uses) surfaces, as that entry's error note, never a
+ * crash. Diffs are computed against the previous *parseable* revision, so a
+ * single bad revision in the middle of the walk doesn't break every entry
+ * after it.
+ */
+function buildChangelogDoc(file: string, commits: { hash: string; shortHash: string; date: string; subject: string }[]): string {
+  const models: (NormalizedModel | null)[] = [];
+  const errors: (string | null)[] = [];
+
+  for (const c of commits) {
+    const rev = resolveRevision(file, c.hash);
+    if (!rev.ok) {
+      models.push(null);
+      errors.push(rev.message);
+      continue;
+    }
+    try {
+      const { model, diagnostics } = compile(rev.content);
+      if (hasErrors(diagnostics)) {
+        models.push(null);
+        errors.push(`validation errors at ${c.shortHash} — fix with \`em validate\` at that revision`);
+      } else {
+        models.push(model);
+        errors.push(null);
+      }
+    } catch (e) {
+      models.push(null);
+      errors.push(e instanceof ParseError ? `parse error: ${e.message}` : e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const entries: ChangelogEntry[] = [];
+  let prevParseable = -1;
+  commits.forEach((c, i) => {
+    const base = { shortHash: c.shortHash, date: c.date, subject: c.subject };
+    if (i === 0) {
+      entries.push({ ...base, diff: null });
+    } else if (!models[i]) {
+      entries.push({ ...base, diff: null, error: errors[i]! });
+    } else if (prevParseable === -1) {
+      entries.push({ ...base, diff: null, error: `no earlier parseable revision to diff against (${commits[0].shortHash}: ${errors[0]})` });
+    } else {
+      entries.push({ ...base, diff: diffModels(models[prevParseable]!, models[i]!) });
+    }
+    if (models[i]) prevParseable = i;
+  });
+
+  const intro: ChangelogIntro | null = models[0] ? { slices: models[0].slices.length, elements: models[0].elements.length } : null;
+  const introError = models[0] ? undefined : (errors[0] ?? undefined);
+
+  const stateFile = join(dirname(file), ".event-modeling.md");
+  const decisions = existsSync(stateFile) ? parseDecisionsLog(readFileSync(stateFile, "utf8")) : [];
+
+  return buildChangelog(entries, decisions, { file, intro, introError });
 }
 
 /** Shared body for both `em diff` forms: compile both sides, gate on errors, print, exit-code. */
