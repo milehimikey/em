@@ -2,6 +2,13 @@
 
 Directions under consideration, in rough priority order. Nothing here is a commitment.
 
+Recently shipped, for context on where things are heading: open questions as diagram-visible
+red notes (`issue`), JSON export with stable refs, structural `em diff`, the `conform` phase
+for model-versus-code drift, and `em changelog`. [workflow.md](workflow.md) is the resulting
+picture.
+
+**Modeling and rendering**
+
 - **UI-field tracing** — extend fields-completeness validation (shipped for view←event and
   event←command) to trace `ui` fields back to the read model they display.
 - **Multi-word `@tags`** — quoted persona/context tags (`@"Customer Service"`).
@@ -10,4 +17,27 @@ Directions under consideration, in rough priority order. Nothing here is a commi
 - **Theming / palette options** and additional export niceties.
 - **Pure-JS PDF** so PDF needs no system dependency either.
 
-Have a case for one of these, or something missing? Open an issue.
+**The conformance loop**
+
+- **Slice-doc ↔ model consistency as a validate rule** — the `conform` phase checks this by
+  judgment today, but slice-doc frontmatter and `{ fields }` blocks are structured enough to
+  check deterministically ([#41](https://github.com/milehimikey/em/issues/41)).
+- **Export refs on diff entries** so a `em diff --json` entry joins directly to an
+  `em export` document without re-deriving slugs
+  ([#40](https://github.com/milehimikey/em/issues/40)).
+- **Accepted-divergence annotations** — a way to record a deliberate, reasoned deviation
+  between model and code so it stops being re-reported as drift on every run.
+
+**Bigger, and deliberately waiting for a reason**
+
+These are real ideas held back on purpose until something concrete asks for them — more
+models than a repo can comfortably hold, a second agent surface, a non-engineer audience
+that needs to browse models outside git:
+
+- A static catalog site rendered from git history (git stays the only history store).
+- An MCP server over `em export`, for agent surfaces beyond Claude Code.
+- A stakeholder walkthrough mode — stepping a model slice by slice in a review session.
+- A glossary export, with cross-model consistency checks on shared terms.
+
+Have a case for one of these, or something missing? Open an issue — a concrete use case is
+exactly what moves something out of the waiting list.

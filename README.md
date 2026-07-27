@@ -28,6 +28,14 @@ em watch model.em --serve # live browser view, re-renders on every save
 em validate model.em      # check event-modeling rules
 ```
 
+Once a model is real and committed, `em` keeps working on it over time:
+
+```bash
+em export model.em        # versioned JSON, for agents and tooling
+em diff model.em --from HEAD~1   # what this change did to the model
+em changelog model.em     # the model's git history as a business ledger
+```
+
 A model is a list of slices — vertical time steps, read left to right — whose elements land
 in swimlane rows:
 
@@ -50,7 +58,9 @@ slice "View Open Orders" {
 ```
 
 The [tutorial](docs/tutorial.md) builds a complete model from an empty file in about twenty
-minutes.
+minutes, and [docs/workflow.md](docs/workflow.md) picks up where it leaves off: how a model
+gets specified, gated in CI, handed to implementation, and checked against the code that
+implements it.
 
 ## Model with AI
 
@@ -61,8 +71,10 @@ the questions, you supply the domain, and the model renders live as it grows.
 em skill install          # copy the skill into .claude/skills/event-modeling/
 ```
 
-Then run `/event-modeling` in Claude Code. See [docs/ai-workflow.md](docs/ai-workflow.md)
-for the phases and what a session produces, and the
+Then run `/event-modeling` in Claude Code. The same skill also runs the reverse direction:
+`extract` derives a model from a system that already exists, and `conform` checks a model
+against the code implementing it and reports where they've drifted. See
+[docs/ai-workflow.md](docs/ai-workflow.md) for the phases and what a session produces, and the
 [em-with-ai repository](https://github.com/milehimikey/em-with-ai) for a ~50-slice model
 built this way.
 
@@ -71,11 +83,12 @@ built this way.
 | Doc | What it answers |
 |---|---|
 | [docs/tutorial.md](docs/tutorial.md) | Learn the tool by building a model from scratch |
+| [docs/workflow.md](docs/workflow.md) | The model lifecycle: specify, gate, hand off, track change, detect drift |
 | [docs/patterns.md](docs/patterns.md) | The four Event Modeling patterns and their DSL shapes |
 | [docs/dsl.md](docs/dsl.md) | Full DSL reference: keywords, `from`, `again`, fields, notes |
 | [docs/cli.md](docs/cli.md) | Every command and flag |
 | [docs/validation.md](docs/validation.md) | Every rule `em validate` checks, and the fixes |
-| [docs/ci.md](docs/ci.md) | Copy-paste GitHub Actions recipe: validate `.em` changes in CI |
+| [docs/ci.md](docs/ci.md) | Copy-paste CI recipes: validate `.em` changes, run conformance on a schedule |
 | [docs/timeline.md](docs/timeline.md) | The Two Laws of the Timeline |
 | [docs/ai-workflow.md](docs/ai-workflow.md) | The Claude Code skill: install, phases, artifacts |
 | [docs/dependencies.md](docs/dependencies.md) | What's bundled vs. what needs a system install |

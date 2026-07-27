@@ -59,6 +59,15 @@ normalization as `from`/`arrow` references (trim, lowercase, collapse whitespace
 not compared. UI fields, cross-slice/automation tracing, and rename detection are out of
 scope for now.
 
+**Expect some of these warnings to be correct and permanent.** System-generated data —
+identifiers the server mints, `…At` timestamps taken at decision time, values a read model
+derives rather than copies — legitimately appears on an event or view without appearing on
+the command that triggered it. The example model shipped with `em` warns for exactly this
+reason. The rule can't tell "the system supplies this" from "somebody forgot this", so it
+reports both and leaves the judgment to you: confirm it's intentional and move on, or add
+the field where it was genuinely missing. That's also why these are warnings and never
+block a render or a merge.
+
 An `issue` warning never blocks by default, same as every other warning — `em render`,
 `em watch`, and `em validate` all still succeed on a model with open issues. Use
 `em validate --list-issues` to print just the open issues (slice, element, line, text), and
