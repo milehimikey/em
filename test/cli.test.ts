@@ -311,3 +311,58 @@ describe("em changelog (CLI, real git repo)", () => {
     expect(r.stderr).toContain('unknown revision "not-a-real-rev"');
   });
 });
+
+describe("em changelog follows renames (CLI, real git repo)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
+
+  const commitAt = (cwd: string, date: string, message: string) =>
+    git(["commit", "-qam", message], cwd, {
+      ...process.env,
+      GIT_AUTHOR_DATE: `${date}T10:00:00`,
+      GIT_COMMITTER_DATE: `${date}T10:00:00`,
+    });
+
+  const INTRO = `slice "Place" {\n  command Place Order\n  event Order Placed\n}\n`;
+  const WITH_SHIP = INTRO + `slice "Ship" {\n  command Ship Order\n  event Order Shipped\n}\n`;
+  const WITH_CANCEL = WITH_SHIP + `slice "Cancel" {\n  command Cancel Order\n  event Order Cancelled\n}\n`;
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-changelog-rename-"));
+    git(["init", "-q", "-b", "main"], repo);
+
+    writeFileSync(join(repo, "old-name.em"), INTRO);
+    git(["add", "old-name.em"], repo);
+    commitAt(repo, "2026-01-01", "introduce model");
+
+    writeFileSync(join(repo, "old-name.em"), WITH_SHIP);
+    git(["add", "old-name.em"], repo);
+    commitAt(repo, "2026-01-02", "add shipping");
+
+    git(["mv", "old-name.em", "new-name.em"], repo);
+    commitAt(repo, "2026-01-03", "rename model file");
+
+    writeFileSync(join(repo, "new-name.em"), WITH_CANCEL);
+    git(["add", "new-name.em"], repo);
+    commitAt(repo, "2026-01-04", "add cancellation");
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("reads pre-rename revisions at their historical path — no error sections", () => {
+    const r = em(["changelog", "new-name.em"], repo);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).not.toContain("could not compile");
+
+    // Pre-rename history renders as real content: the introduction compiles,
+    // and the pre-rename diff (01-01 -> 01-02) is a structural section.
+    expect(r.stdout).toContain("Model introduced: 1 slice, 2 elements.");
+    expect(r.stdout).toContain('+ slice "Ship"');
+    // The post-rename diff computes against the pre-rename side too.
+    expect(r.stdout).toContain('+ slice "Cancel"');
+    // A pure rename changes nothing structurally — its section is omitted.
+    expect(r.stdout).not.toContain("rename model file");
+  });
+});

@@ -16,7 +16,7 @@ import { buildExport } from "./emit/json.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
 import { planDiffArgs, resolveRevision } from "./cli/diff-inputs.js";
-import { listModelCommits } from "./cli/changelog-git.js";
+import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
 import { STARTER_EM } from "./templates.js";
 
@@ -155,7 +155,7 @@ program
       console.error(commitsResult.message);
       process.exit(1);
     }
-    const markdown = buildChangelogDoc(file, commitsResult.commits);
+    const markdown = buildChangelogDoc(file, commitsResult.repoRoot, commitsResult.commits);
 
     if (opts.out) {
       writeFileSync(opts.out, markdown + "\n");
@@ -334,14 +334,15 @@ function readAtRevision(file: string, rev: string): string {
  * threshold `em diff` uses) surfaces, as that entry's error note, never a
  * crash. Diffs are computed against the previous *parseable* revision, so a
  * single bad revision in the middle of the walk doesn't break every entry
- * after it.
+ * after it. Content is read at each commit's own path (`readFileAtCommit`),
+ * so the walk survives renames.
  */
-function buildChangelogDoc(file: string, commits: { hash: string; shortHash: string; date: string; subject: string }[]): string {
+function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]): string {
   const models: (NormalizedModel | null)[] = [];
   const errors: (string | null)[] = [];
 
   for (const c of commits) {
-    const rev = resolveRevision(file, c.hash);
+    const rev = readFileAtCommit(repoRoot, c);
     if (!rev.ok) {
       models.push(null);
       errors.push(rev.message);
