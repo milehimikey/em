@@ -137,7 +137,8 @@ function renderUnmatchedSection(decisions: DecisionEntry[]): string {
 /**
  * Assemble the full `em changelog` markdown document: header, then sections
  * newest-first, then a trailing "Decisions not tied to a model commit"
- * section for any decision whose date matches no commit. `entries` must be
+ * section for any decision whose date matches no commit. A date's decisions
+ * attach once, to the newest commit of that date. `entries` must be
  * oldest -> newest (matches `listModelCommits`); `entries[0]` is the model's
  * introduction (no predecessor to diff against — see `opts.intro`).
  *
@@ -154,10 +155,21 @@ export function buildChangelog(entries: ChangelogEntry[], decisions: DecisionEnt
   }
   const entryDates = new Set(entries.map((e) => e.date));
 
+  // Each decision attaches to exactly ONE section: the newest commit of its
+  // date. Attaching to every same-date section duplicates the whole day's
+  // decisions block per commit — on a real history with many commits in a
+  // day, that duplication drowns the ledger. The map is consumed on first
+  // (i.e. newest, given the reverse walk below) use.
+  const takeDecisions = (date: string): DecisionEntry[] => {
+    const bucket = decisionsByDate.get(date) ?? [];
+    decisionsByDate.delete(date);
+    return bucket;
+  };
+
   const sections: string[] = [];
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    const matching = decisionsByDate.get(entry.date) ?? [];
+    const matching = takeDecisions(entry.date);
 
     if (i === 0) {
       sections.push(renderIntroSection(entry, opts, matching));

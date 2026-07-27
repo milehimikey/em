@@ -229,6 +229,27 @@ describe("buildChangelog: decisions weaving", () => {
     expect(doc).toContain("Decisions:\n- decision A\n- decision B");
   });
 
+  it("attaches a date's decisions only to the NEWEST commit of that date — never duplicated per commit", () => {
+    const OLD = `slice "S" {\n  command A\n}`;
+    const MID = `slice "S" {\n  command A\n}\nslice "T" {\n  command B\n}`;
+    const NEW = `${MID}\nslice "U" {\n  command C\n}`;
+    const entries: ChangelogEntry[] = [
+      { shortHash: "c1", date: "2026-01-01", subject: "first", diff: null },
+      { shortHash: "c2", date: "2026-01-02", subject: "morning commit", diff: diffOf(OLD, MID) },
+      { shortHash: "c3", date: "2026-01-02", subject: "evening commit", diff: diffOf(MID, NEW) },
+    ];
+    const decisions: DecisionEntry[] = [{ date: "2026-01-02", text: "the day's ruling" }];
+    const doc = buildChangelog(entries, decisions, opts());
+    // exactly one attachment, and it's in the newest same-date section
+    expect(doc.match(/the day's ruling/g)).toHaveLength(1);
+    const evening = doc.indexOf("evening commit");
+    const morning = doc.indexOf("morning commit");
+    const ruling = doc.indexOf("the day's ruling");
+    expect(evening).toBeGreaterThanOrEqual(0);
+    expect(ruling).toBeGreaterThan(evening);
+    expect(ruling).toBeLessThan(morning); // newest-first: evening section precedes morning
+  });
+
   it("routes an unmatched decision (no commit on that date) to the trailing section, dropping nothing", () => {
     const entries: ChangelogEntry[] = [{ shortHash: "c1", date: "2026-01-01", subject: "first", diff: null }];
     const decisions: DecisionEntry[] = [
