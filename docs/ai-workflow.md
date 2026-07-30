@@ -29,6 +29,11 @@ copy), so it's versioned with your repo and works for anyone who opens it in Cla
 `/event-modeling` takes an optional phase argument. With no argument it resumes wherever
 the previous session left off.
 
+Most phases run once per model, in roughly the order below — but `conform` is a **recurring**
+one, run again whenever the codebase has moved. [workflow.md](workflow.md) puts these phases
+in the context of a model's whole life, alongside the CLI commands (`em diff`, `em changelog`)
+that live between sessions.
+
 | Phase | What it does | What it leaves behind |
 |---|---|---|
 | `discover` | Steps 1–4 for a greenfield process: brainstorm past-tense events, storyboard them, find the commands and read models | A draft `.em` with the happy-path spine |
