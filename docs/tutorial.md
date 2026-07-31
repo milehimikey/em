@@ -400,3 +400,8 @@ genuinely missing, that same warning is how you find out before an engineer does
   resumable modeling session.
 - [examples/insurance-claim.em](../examples/insurance-claim.em) — a richer model: three
   personas, processor automations, a translation, and a multi-source read model.
+- [examples/timeline-rules.em](../examples/timeline-rules.em) — a small model built to show
+  the connection rules: a read model repeated four times with nothing joining the instances,
+  and a source event twelve slices away. Its companion
+  [timeline-rules-invalid.em](../examples/timeline-rules-invalid.em) collects the arrows
+  `em validate` rejects, one per rule.

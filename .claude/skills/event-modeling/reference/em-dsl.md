@@ -64,9 +64,10 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 - **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an
   already-declared read model — the forward-only device for a view that evolves as later events
   land. Instances are ONE logical view: the first declaration owns the `note` binding; each
-  instance's `from` lists only the NEW events landing at that point (not cumulative); instances are
-  linked left-to-right with a continuity arrow; a reaction (`from "View"`) reads the nearest
-  instance at-or-before its own slice. `again` with no earlier declaration is a validation error.
+  instance's `from` lists only the NEW events landing at that point (not cumulative); a reaction
+  (`from "View"`) reads the nearest instance at-or-before its own slice. Instances are NEVER
+  connected to one another — continuity is implied by the shared name, and the events reaching each
+  instance are what show the view changing. `again` with no earlier declaration is a validation error.
   Use `again` (not a plain repeated `view` name) whenever the view is referenced by a
   `from`/`arrow` — plain repeats are only warning-free while unreferenced.
 - **`note "path.md"`** on ANY element links a markdown doc. Relative to the `.em` file. Renders as
@@ -163,11 +164,12 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
   cumulative), or the event draws a duplicate arrow to the same read model at every repeat. (An
   event may still feed several *different* read models, once each.) When a repeated view **must be
   referenced** — e.g. a reaction reads it via `from` — declare its later instances with
-  `view X again` instead (see Clauses); instances resolve properly and draw continuity arrows.
+  `view X again` instead (see Clauses), which resolves each reference to the right instance.
 - **Keep arrows span-1: put each repeat right after its feeding event.** Place a read-model instance
-  immediately after the event that updates it, sourcing only that single adjacent event. A read
-  model far from its source events draws long arrows that cross the read-model row and read as
-  read→read (an Event Modeling violation) — repeat the read model next to each event instead.
+  immediately after the event that updates it, sourcing only that single adjacent event. The
+  renderer routes a long arrow around whatever is in its way rather than through it, so a distant
+  source is no longer misleading — but it still sweeps across the diagram and is harder to follow
+  than a short hop. Repeat the read model next to each event where you reasonably can.
 
 ### Slice-ordering gotchas (edge inference)
 
@@ -197,6 +199,12 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
    there), a reaction reading a view before any instance of it exists, or an explicit backward
    `arrow`.
 6. **`again` without an earlier declaration** — declare the view plainly the first time it appears.
+7. **Illegal connection** — an `arrow` joining kinds the patterns don't connect. Only
+   `ui -> command`, `command -> event`, `event -> view`, `view -> ui`, `view -> reaction`, and
+   `reaction -> command` are allowed. A command straight to a view is the CQRS violation (an event
+   has to sit between them); a view straight to a command needs a reaction between them; and two
+   instances of one view are never connected at all. Inferred edges are always legal, so this only
+   ever fires on a hand-written `arrow`.
 
 **Warnings (should fix):**
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and

@@ -69,11 +69,14 @@ slice "Catalog Updated" {
     expect(instances[1].again).toBe(true);
   });
 
-  it("draws forward continuity between instances and binds each from-source locally", () => {
+  it("never connects instances to one another, and binds each from-source locally", () => {
     const model = modelFrom(WITH_AGAIN);
     const es = semanticEdges(model);
     const [first, second] = model.byName.get("availability")!;
-    expect(edge(es, first.id, second.id)).toBe(true); // instance continuity, forward
+    // Repeated views are the same read model shown later on the timeline, not two things
+    // that feed each other: continuity is implied by the name, the events show the change.
+    expect(edge(es, first.id, second.id)).toBe(false);
+    expect(edge(es, second.id, first.id)).toBe(false);
     expect(edge(es, "stock_reserved", second.id)).toBe(true); // instance-local from
     expect(edge(es, "stock_reserved", first.id)).toBe(false); // NOT the earlier instance
   });

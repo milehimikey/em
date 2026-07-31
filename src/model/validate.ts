@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Event-modeling rule checks over the normalized model + grid.
 
-import { AUTOMATION_KINDS } from "../parser/ast.js";
+import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
 import { Element, NormalizedModel, normalizeName } from "./model.js";
 
@@ -202,6 +202,17 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
           line: a.line,
         });
       }
+      // Inferred edges are legal by construction; a hand-written arrow is the one way an
+      // illegal connection can enter a model, so check the kind pair against the patterns.
+      if (fromEl && toEl && !isLegalFlow(fromEl.kind, toEl.kind)) {
+        diags.push({
+          severity: "error",
+          message:
+            `arrow "${a.from}" -> "${a.to}" connects ${withArticle(fromEl.kind)} directly to ` +
+            `${withArticle(toEl.kind)}: ${flowGuidance(fromEl.kind, toEl.kind)}`,
+          line: a.line,
+        });
+      }
     }
     if (!a.fromId)
       diags.push({
@@ -246,6 +257,52 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
   }
 
   return diags;
+}
+
+const isAuto = (k: ElementKind) => AUTOMATION_KINDS.has(k);
+
+/** The only kind pairs a connection may take, per the four patterns: information enters the
+ *  system through a command and leaves through a read model, and nothing skips a step. */
+function isLegalFlow(from: ElementKind, to: ElementKind): boolean {
+  if (from === "ui") return to === "command"; // State Change
+  if (from === "command") return to === "event"; // State Change
+  if (from === "event") return to === "view"; // State View
+  if (from === "view") return to === "ui" || isAuto(to); // State View / Automation / Translation
+  if (isAuto(from)) return to === "command"; // reactions always go through a command
+  return false;
+}
+
+/** Why a given illegal pair is illegal, and what to put in the gap. */
+function flowGuidance(from: ElementKind, to: ElementKind): string {
+  if (from === "command" && to === "view")
+    return "an event has to sit between them (command -> event -> read model)";
+  if (from === "view" && to === "command")
+    return "a reaction has to sit between them (read model -> processor -> command), split across two slices";
+  if (from === "event" && to === "command")
+    return "project the event into a read model a reaction watches (event -> read model -> processor -> command)";
+  if (from === "event" && to === "event")
+    return "events never connect to events; each one is recorded by a command";
+  if (from === "view" && to === "view")
+    return "instances of one read model are never connected; repeat it with `view X again` and let its events show the change";
+  if (from === "command" && to === "command")
+    return "commands never chain; record the event, then react to it";
+  if (isAuto(from) && to === "event")
+    return "a reaction never records an event itself; route it through a command (reaction -> command -> event)";
+  if (to === "ui" && from !== "view")
+    return "a screen is fed by a read model (event -> read model -> ui)";
+  return (
+    "the patterns allow only ui -> command -> event -> read model -> ui, " +
+    "plus read model -> reaction -> command"
+  );
+}
+
+function kindLabel(kind: ElementKind): string {
+  return kind === "view" ? "read model" : kind === "ui" ? "screen" : kind;
+}
+
+function withArticle(kind: ElementKind): string {
+  const label = kindLabel(kind);
+  return `${/^[aeiou]/.test(label) ? "an" : "a"} ${label}`;
 }
 
 function isReferenced(model: NormalizedModel, key: string): boolean {

@@ -303,3 +303,91 @@ slice "S" {
     expect(gapDiags(src)).toHaveLength(0);
   });
 });
+
+describe("connection legality (the four patterns)", () => {
+  // em infers only legal connections from slice shape, so a hand-written `arrow` is the
+  // one way an illegal one can enter a model. See examples/timeline-rules-invalid.em.
+  const BASE = `
+persona Agent
+context Ticket
+slice "Open Ticket" {
+  ui Ticket Form @Agent
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Ticket Queue" {
+  view Ticket Queue from "Ticket Opened"
+  ui Queue Board @Agent
+}
+slice "Assign Ticket" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue After Assignment" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`;
+  const flowErrors = (arrow: string) =>
+    diagsFor(BASE + arrow).filter(
+      (d) => d.severity === "error" && d.message.includes("connects a"),
+    );
+
+  it("rejects a command wired straight to a read model — the CQRS violation", () => {
+    const [err] = flowErrors('arrow "Open Ticket" -> "Ticket Queue"');
+    expect(err.message).toContain("connects a command directly to a read model");
+    expect(err.message).toContain("command -> event -> read model");
+  });
+
+  it("rejects a read model wired straight to a command", () => {
+    const [err] = flowErrors('arrow "Ticket Queue" -> "Assign Ticket"');
+    expect(err.message).toContain("connects a read model directly to a command");
+    expect(err.message).toContain("read model -> processor -> command");
+  });
+
+  it("rejects an event wired straight to a command", () => {
+    const [err] = flowErrors('arrow "Ticket Opened" -> "Assign Ticket"');
+    expect(err.message).toContain("connects an event directly to a command");
+  });
+
+  it("rejects event -> event (Law 1) and read model -> read model", () => {
+    expect(flowErrors('arrow "Ticket Opened" -> "Ticket Assigned"')[0].message).toContain(
+      "events never connect to events",
+    );
+    expect(flowErrors('arrow "Ticket Queue" -> "Ticket Queue"')[0].message).toContain(
+      "instances of one read model are never connected",
+    );
+  });
+
+  it("allows every pair the four patterns do produce", () => {
+    const legal = [
+      'arrow "Ticket Form" -> "Open Ticket"', // ui -> command
+      'arrow "Open Ticket" -> "Ticket Opened"', // command -> event
+      'arrow "Ticket Opened" -> "Ticket Queue"', // event -> view
+      'arrow "Ticket Queue" -> "Queue Board"', // view -> ui
+    ];
+    for (const a of legal) expect(flowErrors(a)).toHaveLength(0);
+  });
+
+  it("allows read model -> reaction -> command across two slices", () => {
+    const src = `
+context Billing
+slice "Refund Requested" {
+  command Request Refund
+  event Refund Requested @Billing
+}
+slice "Refund Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+arrow "Refund Backlog" -> "Refund Gateway"
+arrow "Refund Gateway" -> "Issue Refund"
+`;
+    expect(
+      diagsFor(src).filter((d) => d.severity === "error" && d.message.includes("connects a")),
+    ).toHaveLength(0);
+  });
+});

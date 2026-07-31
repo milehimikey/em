@@ -16,9 +16,32 @@ run on every command that reads a model.
 | `view X again` with no earlier declaration of `X` | Declare the view plainly the first time it appears |
 | An `arrow` endpoint that matches no element | Fix the name |
 | An `arrow` that points backward in time | Restructure so the target comes later |
+| An `arrow` between element kinds the four patterns don't connect | Add the missing step — the message names it |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
+
+### Connection legality
+
+em infers a slice's arrows from its shape, and only ever infers legal ones, so a
+hand-written `arrow` is the single way an illegal connection can get into a model. Those are
+checked against the [four patterns](patterns.md): the only pairs allowed are
+`ui → command`, `command → event`, `event → read model`, `read model → ui`,
+`read model → reaction`, and `reaction → command`.
+
+Everything else is an error, reported with the step that's missing:
+
+```
+error:38 arrow "Open Ticket" -> "Ticket Queue" connects a command directly to a read
+         model: an event has to sit between them (command -> event -> read model)
+```
+
+That one is the CQRS violation — a write is only ever visible to a reader through the event
+it recorded. The same check catches `read model → command` (a reaction belongs between
+them), `event → command`, `event → event` (Law 1), and an arrow between two instances of one
+read model (see [timeline.md](timeline.md)).
+[examples/timeline-rules-invalid.em](../examples/timeline-rules-invalid.em) collects one of
+each; run `em validate` on it to see all five.
 
 ## Warnings
 
@@ -76,8 +99,10 @@ An `issue` warning never blocks by default, same as every other warning — `em 
 
 ## What the validator can't catch
 
-`em validate` does not flag a reaction wired straight to an event — a `translation` or
-`processor` sharing a slice with an `event` but no `command`. It only warns when a reaction
-shares a slice with a command. Reactions must always go through a command
-(`reaction → command → event`, split across two slices); enforce that by construction. The
-[patterns](patterns.md) doc covers why.
+Connection legality is checked on `arrow` statements, which is where an illegal connection
+can be written down. It can't be checked on slice *shape*, because shape is what em reads to
+infer arrows in the first place: a `translation` or `processor` sharing a slice with an
+`event` but no `command` is a reaction wired straight to an event, and nothing flags it. em
+only warns when a reaction shares a slice with a command. Reactions must always go through a
+command (`reaction → command → event`, split across two slices); enforce that by
+construction. The [patterns](patterns.md) doc covers why.

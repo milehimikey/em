@@ -14,7 +14,7 @@ import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path"
 import { Graphviz } from "@hpcc-js/wasm-graphviz";
 import { Resvg } from "@resvg/resvg-js";
 import { Element, NormalizedModel } from "../model/model.js";
-import { parseNodeRects } from "./svgGeometry.js";
+import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, buildIssueMarkers, appendNoteLegend } from "./drawNotes.js";
 
@@ -88,11 +88,13 @@ function withOverlays(
   hrefOf: (el: Element) => string,
 ): string {
   const rects = parseNodeRects(svg, new Set(model.byId.keys()));
-  const { defs, group } = buildEdgeOverlay(model, rects);
+  const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
 
-  let out = svg;
+  // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
+  // room before anything else measures or appends to the viewBox
+  let out = fitCanvas(svg, bbox);
   // arrowhead markers go just inside <svg …>
   out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}`);
   // edges go under the boxes: just before the first node group
