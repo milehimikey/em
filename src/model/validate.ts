@@ -188,6 +188,38 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
   }
 
+  // Every event must be read by something. Recording an event nothing projects is a write
+  // with no reader — the mirror of a command that records no event, and a warning for the
+  // same reason: a model in progress legitimately has a write slice whose read slice hasn't
+  // been added yet, and errors block rendering (which would break `em watch` mid-session).
+  const readEvents = new Set<string>();
+  for (const el of model.elements) {
+    if (el.kind !== "view") continue;
+    const from = el.from ?? [];
+    // A view with no `from` reads the events in its own slice (same rule the renderer uses).
+    if (from.length) for (const name of from) readEvents.add(normalizeName(name));
+    else
+      for (const e of model.slices[el.sliceIndex]?.elements ?? []) {
+        if (e.kind === "event") readEvents.add(normalizeName(e.name));
+      }
+  }
+  for (const a of model.arrows) {
+    const from = a.fromId ? model.byId.get(a.fromId) : undefined;
+    const to = a.toId ? model.byId.get(a.toId) : undefined;
+    if (from?.kind === "event" && to?.kind === "view") readEvents.add(normalizeName(from.name));
+  }
+  for (const el of model.elements) {
+    if (el.kind !== "event") continue;
+    if (readEvents.has(normalizeName(el.name))) continue;
+    diags.push({
+      severity: "warning",
+      message:
+        `event "${el.name}" is not read by any read model; project it into a view ` +
+        `(\`view X from "${el.name}"\`), or reconsider recording it`,
+      line: el.line,
+    });
+  }
+
   // Explicit arrow endpoints must resolve — and point forward.
   for (const a of model.arrows) {
     if (a.fromId && a.toId) {

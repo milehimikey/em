@@ -210,15 +210,19 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and
    `translation` are reactions; put the triggered command in the *next* slice.
 2. **Command without event** — every command should record at least one event.
-3. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
-4. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
-5. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
+3. **Event nobody reads** — the mirror of (2): recording an event no read model projects is a
+   write with no reader. Follow every write slice with the read slice that consumes its event.
+   Counts as read when a `view` names it in `from` (any `again` instance will do), when a
+   fieldless-`from` view sits in its slice, or via an explicit `event -> view` arrow.
+4. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
+5. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
+6. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
    clause. `em validate --list-issues` prints just these; `--fail-on-issues` (opt-in) makes CI
    fail while any remain open.
-6. **View field with no source** — a `view` field whose name matches no field on any instance
+7. **View field with no source** — a `view` field whose name matches no field on any instance
    of its source events. Only checked once BOTH the view and at least one source event declare
    `{ fields }`.
-7. **Event field not from a command** — an `event` field whose name matches no field on any
+8. **Event field not from a command** — an `event` field whose name matches no field on any
    command in the same slice. Only checked once BOTH the event and at least one same-slice
    command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
    once fields are written down, `em validate` checks that data flows forward consistently.

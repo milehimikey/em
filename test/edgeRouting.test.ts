@@ -143,7 +143,7 @@ describe("edge routing never crosses an unrelated box", () => {
   it("draws no arrow between instances of the repeated read model", async () => {
     const model = normalize(parse(readFileSync(EXAMPLE, "utf8")));
     const instances = model.byName.get("ticket queue")!;
-    expect(instances.length).toBe(4);
+    expect(instances.length).toBe(6);
     const ids = new Set(instances.map((i) => i.id));
     const between = semanticEdges(model).filter((e) => ids.has(e.from) && ids.has(e.to));
     expect(between).toEqual([]);

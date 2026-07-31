@@ -30,6 +30,11 @@ slice "Place Order" {
 A command may record several events in one slice; the renderer draws a fan from the command
 to each (never an event-to-event chain).
 
+Every event a command records should end up in a read model. An event nothing projects is a
+write nobody can see — there is no point recording it — so a State Change slice is only
+finished once the State View slice that consumes its event exists.
+[`em validate` warns](validation.md#both-ends-of-a-flow) while one dangles.
+
 ## State View
 
 Past events are projected into a read model that a screen displays. Read-only; nothing

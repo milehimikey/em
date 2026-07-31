@@ -19,9 +19,13 @@ function em(args: string[], cwd: string) {
   return { status: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
+// Genuinely clean: the event is read, so no "not read by any read model" warning either.
 const CLEAN = `slice "Place" {
   command Place Order
   event Order Placed
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
 }
 `;
 
@@ -31,9 +35,13 @@ const WARNING_ONLY = `slice "Place" {
 }
 `;
 
+// The open issue is the only diagnostic — the event is read (issue stays on line 2).
 const WITH_ISSUE = `slice "Place" {
   command Place Order issue "who validates the discount code?"
   event Order Placed
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
 }
 `;
 

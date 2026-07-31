@@ -49,6 +49,7 @@ each; run `em validate` on it to see all five.
 |---|---|
 | A `processor`/`translation` shares a slice with a command | Reactions trigger commands; put the triggered command in the next slice |
 | A command that records no event | Add the event, or reconsider the command |
+| An event no read model reads | Project it into a view, or reconsider recording it |
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
@@ -57,6 +58,22 @@ each; run `em validate` on it to see all five.
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
+
+### Both ends of a flow
+
+Two warnings guard the ends of the State Change → State View chain, and they mirror each
+other: **a command that records no event** is a write that changes nothing, and **an event no
+read model reads** is a write nobody can see. There is no point recording an event if nothing
+projects it, so a command whose event dangles is an unfinished slice — the read slice hasn't
+been written yet.
+
+An event counts as read when a `view` names it in `from`, when a `view` with no `from` sits in
+its slice, or when an explicit `arrow` points from it to a read model. Any instance of a
+repeated read model counts, so `view X again from "Event"` satisfies it.
+
+Both are warnings rather than errors on purpose. A model under construction spends most of its
+life with a write slice ahead of its read slice, and errors block rendering — `em watch` would
+stop redrawing mid-session exactly when you most want to see the diagram.
 
 ### Fields completeness
 

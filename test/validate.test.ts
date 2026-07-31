@@ -391,3 +391,122 @@ arrow "Refund Gateway" -> "Issue Refund"
     ).toHaveLength(0);
   });
 });
+
+describe("unread event warning", () => {
+  // The mirror of "command produces no event": recording an event nothing projects is a
+  // write with no reader. A warning, not an error — a model in progress legitimately has a
+  // write slice whose read slice hasn't been added yet, and errors block rendering.
+  const unread = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("not read by any read model"));
+
+  it("warns on an event no read model consumes, at the event's line", () => {
+    const diags = unread(`
+context Ticket
+slice "Open Ticket" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 5 });
+    expect(diags[0].message).toContain('event "Ticket Opened"');
+  });
+
+  it("stays quiet when a view names the event in `from`, from any later slice", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open Ticket" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a `view X again` instance as the reader", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a same-slice view with no `from` as the reader", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open And Read" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+  view Ticket Queue
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts an explicit event -> view arrow as the reader", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Board" {
+  view Ops Board from "Ticket Opened"
+}
+slice "Later" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Other Board" {
+  view Second Board from "Ticket Opened"
+}
+arrow "Ticket Assigned" -> "Second Board"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each unread event separately and leaves the read ones alone", () => {
+    const diags = unread(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Reply" {
+  command Reply
+  event Reply Sent @Ticket
+}
+slice "Resolve" {
+  command Resolve
+  event Ticket Resolved @Ticket
+}
+`);
+    expect(diags.map((d) => d.message)).toEqual([
+      expect.stringContaining('"Reply Sent"'),
+      expect.stringContaining('"Ticket Resolved"'),
+    ]);
+  });
+});
