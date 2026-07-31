@@ -510,3 +510,121 @@ slice "Resolve" {
     ]);
   });
 });
+
+describe("untriggered command warning", () => {
+  // The input-side mirror of the unread-event rule. Information enters the system through a
+  // command, and a command enters through a person on a screen or a reaction acting for them.
+  const untriggered = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("nothing that triggers it"));
+
+  it("warns on a command with no ui and no preceding reaction", () => {
+    const diags = untriggered(`
+context Ticket
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
+    expect(diags[0].message).toContain('command "Assign Ticket"');
+  });
+
+  it("stays quiet when a ui sits in the same slice, in any order", () => {
+    expect(
+      untriggered(`
+context Ticket
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+    expect(
+      untriggered(`
+context Ticket
+slice "Assign" {
+  command Assign Ticket
+  ui Queue Board @Agent
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a reaction in the previous slice — the Automation/Translation split", () => {
+    expect(
+      untriggered(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("does not count a reaction two slices back", () => {
+    expect(
+      untriggered(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Gap" {
+  view Something from "Refund Requested"
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+`),
+    ).toHaveLength(1);
+  });
+
+  it("counts an explicit ui -> command arrow", () => {
+    expect(
+      untriggered(`
+context Ticket
+slice "Board" {
+  view Queue from "Ticket Assigned"
+  ui Queue Board @Agent
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+arrow "Queue Board" -> "Assign Ticket"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each untriggered command separately", () => {
+    const diags = untriggered(`
+context Ticket
+slice "A" {
+  command One
+  event One Done @Ticket
+}
+slice "B" {
+  ui Screen @Agent
+  command Two
+  event Two Done @Ticket
+}
+slice "C" {
+  command Three
+  event Three Done @Ticket
+}
+`);
+    expect(diags.map((d) => d.message)).toEqual([
+      expect.stringContaining('"One"'),
+      expect.stringContaining('"Three"'),
+    ]);
+  });
+});

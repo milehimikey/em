@@ -32,6 +32,12 @@ an event directly.}}
 |-------|------|----------|--------------------|
 | {{field}} | {{Type}} | {{yes/no}} | {{constraints, formats, ranges}} |
 
+## Trigger
+<!-- What issues this slice's command. Required: a command nothing points at is a write nobody
+     can start. Either the screen the user acts on (a `ui` in this slice), or the reaction that
+     issues it (an automation/processor/translation in the PREVIOUS slice). -->
+**Triggered by:** {{screen `X` @Persona | processor `Y` in slice "Z"}}
+
 ## Event(s) Emitted
 <!-- The immutable facts recorded. List each event and its payload. -->
 **Event:** `{{Event Name}}` → context `{{Context}}`

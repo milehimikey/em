@@ -8,9 +8,11 @@ model "Timeline Rules"
 #      at each instance are what show the queue changing. A view->view arrow would
 #      run flat through the commands between them and read as command -> read model.
 #
-#   2. Every event is read by a read model. A command that records an event nothing
-#      projects is a write with no reader — there is no point recording it. Each
-#      write slice here is followed by the read slice that consumes its event.
+#   2. Every command is triggered, and every event is read. A command nothing points
+#      at is a write nobody can start; an event nothing projects is a write nobody can
+#      see. So each command carries the screen it is issued from (or, for "Issue Refund",
+#      the reaction in the slice before it), and each write slice is followed by the read
+#      slice that consumes its event. Both ends of every flow are joined up.
 #
 #   3. "Refund Backlog" is fed by an event eleven slices earlier. That arrow has to
 #      cross the whole Ticket lane to get there; the renderer threads it through the
@@ -36,11 +38,13 @@ slice "Ticket Queue" {
 }
 
 slice "Request Refund" {
+  ui Refund Form @Agent
   command Request Refund
   event Refund Requested @Billing
 }
 
 slice "Assign Ticket" {
+  ui Queue Board @Agent
   command Assign Ticket
   event Ticket Assigned @Ticket
 }
@@ -50,6 +54,7 @@ slice "Queue After Assignment" {
 }
 
 slice "Reply To Customer" {
+  ui Reply Composer @Agent
   command Reply To Customer
   event Reply Sent @Ticket
 }
@@ -59,6 +64,7 @@ slice "Queue After Reply" {
 }
 
 slice "Escalate Ticket" {
+  ui Queue Board @Agent
   command Escalate Ticket
   event Ticket Escalated @Ticket
 }
@@ -68,6 +74,7 @@ slice "Queue After Escalation" {
 }
 
 slice "Resolve Ticket" {
+  ui Queue Board @Agent
   command Resolve Ticket
   event Ticket Resolved @Ticket
 }
@@ -77,6 +84,7 @@ slice "Queue After Resolution" {
 }
 
 slice "Close Ticket" {
+  ui Queue Board @Agent
   command Close Ticket
   event Ticket Closed @Ticket
 }

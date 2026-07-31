@@ -188,6 +188,30 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
   }
 
+  // Something must trigger every command. Information enters the system through a command, and
+  // a command enters through a person on a screen or a reaction acting for them — one with
+  // neither is a write nobody can start, the input-side mirror of an event nobody reads.
+  model.slices.forEach((slice, i) => {
+    for (const cmd of slice.elements.filter((e) => e.kind === "command")) {
+      if (slice.elements.some((e) => e.kind === "ui")) continue; // State Change: ui -> command
+      // Automation/Translation: the reaction sits in the slice before its command.
+      const prev = model.slices[i - 1]?.elements ?? [];
+      if (prev.some((e) => AUTOMATION_KINDS.has(e.kind))) continue;
+      const arrowed = model.arrows.some((a) => {
+        const from = a.fromId ? model.byId.get(a.fromId) : undefined;
+        return a.toId === cmd.id && !!from && (from.kind === "ui" || AUTOMATION_KINDS.has(from.kind));
+      });
+      if (arrowed) continue;
+      diags.push({
+        severity: "warning",
+        message:
+          `command "${cmd.name}" has nothing that triggers it; add the screen it is issued ` +
+          `from (a \`ui\` in this slice) or the reaction that issues it (in the previous slice)`,
+        line: cmd.line,
+      });
+    }
+  });
+
   // Every event must be read by something. Recording an event nothing projects is a write
   // with no reader — the mirror of a command that records no event, and a warning for the
   // same reason: a model in progress legitimately has a write slice whose read slice hasn't

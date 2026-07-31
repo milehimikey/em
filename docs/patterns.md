@@ -30,10 +30,13 @@ slice "Place Order" {
 A command may record several events in one slice; the renderer draws a fan from the command
 to each (never an event-to-event chain).
 
-Every event a command records should end up in a read model. An event nothing projects is a
-write nobody can see — there is no point recording it — so a State Change slice is only
-finished once the State View slice that consumes its event exists.
-[`em validate` warns](validation.md#both-ends-of-a-flow) while one dangles.
+Both ends of the slice have to be joined up. Something must **trigger** the command — the `ui`
+it's issued from, or (in the Automation and Translation patterns) the reaction in the slice
+before it; a command nothing points at is a write nobody can start. And the event it records
+must end up in a **read model**; an event nothing projects is a write nobody can see. A State
+Change slice is only finished once both hold, which in practice means pairing it with the State
+View slice that consumes its event.
+[`em validate` warns](validation.md#both-ends-of-a-flow) on either gap.
 
 ## State View
 
@@ -99,8 +102,8 @@ slice "Confirm Delivery" {
   event Delivery Confirmed @Shipping
 }
 
-slice "Open Orders — delivered" {
-  view Open Orders again from "Delivery Confirmed"
+slice "Deliveries" {
+  view Deliveries from "Delivery Confirmed"
 }
 ```
 

@@ -57,10 +57,11 @@ validation rules) before doing real work — they are the source of truth. Templ
 - **Never connect two instances of one read model.** The repeat is a timeline device, not a flow:
   continuity is implied by the shared name, and the events arriving at each instance are what show
   it changing. An arrow between instances says the read model feeds itself, and is an error.
-- **Every event needs a reader.** A command slice isn't finished until the read slice that projects
-  its event exists — an event nothing shows is a write nobody can see. Write the write/read pair
-  together rather than sweeping up dangling events at the end. Reactions don't count; they read
-  views, not events.
+- **Join up both ends of every slice.** A command needs something that **triggers** it — the `ui`
+  it's issued from, or the reaction in the slice before it — and its event needs a **reader**. A
+  command nothing points at is a write nobody can start; an event nothing projects is a write
+  nobody can see. Write the trigger, the write, and the read together rather than sweeping up
+  dangling ends later. Reactions don't count as readers; they read views, not events.
 - **Only six connections are legal:** `ui → command`, `command → event`, `event → read model`,
   `read model → ui`, `read model → reaction`, `reaction → command`. Reaching for anything else —
   above all `command → read model` (the CQRS violation) or `read model → command` — means the model
@@ -129,7 +130,10 @@ phase applies to field tables, below.
    **callers** at each step instead; they become the inbound write translations and read
    translations (see `reference/methodology.md`).
 3. **Inputs (step 3).** For each event, find the **command** that causes it (imperative name).
-   Form `command → event` slices (State Change pattern).
+   Form `command → event` slices (State Change pattern). Every command needs a **trigger** in the
+   same breath: the screen the user issues it from (a `ui` in the slice), or — for the Automation
+   and Translation patterns — the reaction in the slice before it. A command nothing points at is
+   a write nobody can start. *"Who does this, and where are they when they do it?"*
 4. **Outputs (step 4).** Identify the **read models / views** consumers need and wire them with
    `from "Event"` (State View pattern). In a **headless/API** model there is no UI — a read model is
    consumed by an **external read translation** (the API query, triggers no command), and read
@@ -180,8 +184,9 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    event).
 2. **Elaborate scenarios — first pass (step 6).** For each slice, capture the happy-path
    Given/When/Then and the obvious invariants as short notes. (The full spec is the `slice` phase.)
-3. **Evaluate completeness (step 7).** Walk the model: every command emits an event, **every event
-   is read by a read model**, every view has a source, every UI is reachable, every connection is
+3. **Evaluate completeness (step 7).** Walk the model: **every command has something that triggers
+   it**, every command emits an event, **every event is read by a read model**, every view has a
+   source, every UI is reachable, every connection is
    one of the six legal pairs, and automations **and translations** split correctly (each reaction
    triggers a command — none wired straight to an event). Run `em validate` and resolve all errors
    and warnings — but check the reaction→command→event split by hand, since `em validate` does
@@ -267,6 +272,7 @@ rule (see `reference/em-dsl.md`) and proposing the fix. Apply fixes on agreement
 | Diagnostic | Fix |
 |---|---|
 | automation/translation shares a slice with a command | Split the command into the next slice |
+| **command has nothing that triggers it** | Add the `ui` it's issued from — or, if the system issues it, the reaction in the slice before it. Ask *"who does this, and where are they when they do it?"* |
 | read model has no source | Add the missing `from "Event"` |
 | command produces no event | Give the command its event, or drop the command |
 | **event is not read by any read model** | Add the read slice that projects it — but ask *who looks at this and what do they do with it* first. "Nobody" is a real answer, and then the question is why it's recorded at all |

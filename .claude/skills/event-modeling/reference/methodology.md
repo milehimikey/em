@@ -51,9 +51,12 @@ Every slice is exactly one of these. In `em`, each maps to a specific shape (see
 ### 1. State Change (Command pattern)
 **UI → Command → Event.** A user (or automation) submits a command; the system validates it
 against invariants and records one or more events.
-- **A State Change never travels alone.** Its event needs a read model that projects it, so the
-  unit of work is a State Change slice *plus* the State View slice that reads its event. Write the
-  pair together; a lone command slice leaves a write nobody can see, and `em validate` warns.
+- **A State Change never travels alone, and it's joined at both ends.** Something must *trigger*
+  the command — the `ui` it's issued from, or (patterns 3 and 4) the reaction in the slice before
+  it — and its event needs a read model that projects it. So the unit of work is a State Change
+  slice *plus* the State View slice that reads its event. Write them together; a command nothing
+  points at is a write nobody can start, an unread event is a write nobody can see, and
+  `em validate` warns on each.
 - `em` shape (one element per line — there is no one-line slice form):
   ```em
   slice "Do The Thing" {
@@ -231,6 +234,8 @@ dedicated `slice` phase writes the full rich spec (see `templates/slice.md`).
 
 ### Step 7 — Evaluate Completeness  *(model)*
 Walk the whole model with stakeholders and check for loose ends:
+- Every **command** has something that **triggers** it — a `ui` in its slice, or a reaction in the
+  slice before it. A command nothing points at is a write nobody can start. `em validate` warns.
 - Every **command** produces at least one **event**.
 - Every **view** has at least one source event.
 - Every **event** is **read by a read model** — a `view` naming it in `from` (any `again` instance
@@ -247,7 +252,8 @@ Walk the whole model with stakeholders and check for loose ends:
   (error) and unread events (warning), but it still does **not** catch a translation/automation that
   emits an event directly — verify the two-slice split by hand.
 - Prompts: *"Is there any event nobody reads — and if the business genuinely never looks at it, why
-  are we recording it? Any screen with no way in or out? Any command that records nothing? Any
+  are we recording it? Any command that just happens, with nobody and nothing asking for it? Any
+  screen with no way in or out? Any command that records nothing? Any
   external system we haven't translated? Any translation or automation that records an event instead
   of triggering a command?"*
 

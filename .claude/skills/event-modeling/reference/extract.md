@@ -70,7 +70,10 @@ it is fine to finish a round with `# TBD`s still parked.
   *actual* actors/callers and the *real* UI or API surfaces (headless systems: no
   `ui`/`persona` — use write/read translations per `em-dsl.md`). **First `em render` here.**
 - **R3 — Commands / inputs.** For each event, the request that actually produces it today
-  (imperative name). Unclear trigger → `# TBD`, not a plausible guess.
+  (imperative name), *and what triggers it* — the real screen, or the scheduler/listener that
+  fires it (model that as a reaction in the preceding slice, per R5). Unclear trigger → `# TBD`,
+  not a plausible guess; expect a *command has nothing that triggers it* warning until R5 fills
+  it in, and don't invent a screen to silence it.
 - **R4 — Read models / outputs.** The projections/queries the system actually serves; wire
   `from "Event"` (repeat read models span-1 per `em-dsl.md`, using `view X again` after the
   first). **Start running `em validate`** each round from here. Expect *event is not read by any

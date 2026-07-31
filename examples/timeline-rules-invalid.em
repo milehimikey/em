@@ -25,6 +25,7 @@ slice "Ticket Queue" {
 }
 
 slice "Assign Ticket" {
+  ui Queue Board Assign @Agent
   command Assign Ticket
   event Ticket Assigned @Ticket
 }

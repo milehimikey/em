@@ -42,9 +42,12 @@ describe("law 1: multi-event slices fan from the command, never event->event", (
 });
 
 describe("`view X again` instances", () => {
+  // Fully wired at both ends (a `ui` triggers each command, a view reads each event) so the
+  // only diagnostics this fixture can produce are the ones under test.
   const WITH_AGAIN = `
 context Inventory
 slice "Receive" {
+  ui Goods In @Clerk
   command Receive Stock
   event Stock Received @Inventory
 }
@@ -52,6 +55,7 @@ slice "Catalog" {
   view Availability from "Stock Received"
 }
 slice "Reserve" {
+  ui Order Desk @Clerk
   command Reserve Stock
   event Stock Reserved @Inventory
 }
@@ -196,6 +200,7 @@ arrow Second -> First
       diagsFor(`
 context C
 slice "A" {
+  ui Screen @User
   command Do
   event Done @C
 }

@@ -44,6 +44,7 @@ slice "View Open Orders" {
 }
 
 slice "Ship Order" {
+  ui Shipping Desk @Ops
   command Ship Order
   event Order Shipped @Order
 }
@@ -65,6 +66,7 @@ slice "View Open Orders" {
 }
 
 slice "Ship Order" {
+  ui Shipping Desk @Ops
   command Ship Order
   event Order Shipped @Order
 }

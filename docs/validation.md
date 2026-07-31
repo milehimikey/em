@@ -32,7 +32,7 @@ checked against the [four patterns](patterns.md): the only pairs allowed are
 Everything else is an error, reported with the step that's missing:
 
 ```
-error:38 arrow "Open Ticket" -> "Ticket Queue" connects a command directly to a read
+error:39 arrow "Open Ticket" -> "Ticket Queue" connects a command directly to a read
          model: an event has to sit between them (command -> event -> read model)
 ```
 
@@ -48,6 +48,7 @@ each; run `em validate` on it to see all five.
 | Rule | Fix |
 |---|---|
 | A `processor`/`translation` shares a slice with a command | Reactions trigger commands; put the triggered command in the next slice |
+| A command nothing triggers | Add the screen it's issued from, or the reaction that issues it |
 | A command that records no event | Add the event, or reconsider the command |
 | An event no read model reads | Project it into a view, or reconsider recording it |
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
@@ -61,19 +62,25 @@ doesn't exist.
 
 ### Both ends of a flow
 
-Two warnings guard the ends of the State Change → State View chain, and they mirror each
-other: **a command that records no event** is a write that changes nothing, and **an event no
-read model reads** is a write nobody can see. There is no point recording an event if nothing
-projects it, so a command whose event dangles is an unfinished slice — the read slice hasn't
-been written yet.
+Three warnings guard the ends of the chain that runs screen → command → event → read model.
+Read in order they say: something starts the write, the write records something, and someone
+reads it.
 
-An event counts as read when a `view` names it in `from`, when a `view` with no `from` sits in
-its slice, or when an explicit `arrow` points from it to a read model. Any instance of a
-repeated read model counts, so `view X again from "Event"` satisfies it.
+- **A command nothing triggers** is a write nobody can start. A command is issued by a person
+  on a screen or by a reaction acting on their behalf — it doesn't fire itself. It counts as
+  triggered when a `ui` sits in its slice, when an automation/processor/saga/translation sits
+  in the **previous** slice (the two-slice reaction split), or when an explicit `arrow` points
+  to it from a screen or reaction.
+- **A command that records no event** is a write that changes nothing.
+- **An event no read model reads** is a write nobody can see. There is no point recording a
+  fact nothing projects. It counts as read when a `view` names it in `from`, when a `view` with
+  no `from` sits in its slice, or when an explicit `arrow` points from it to a read model. Any
+  instance of a repeated read model counts, so `view X again from "Event"` satisfies it.
+  A reaction consuming it does **not** count — reactions read read models, not events.
 
-Both are warnings rather than errors on purpose. A model under construction spends most of its
-life with a write slice ahead of its read slice, and errors block rendering — `em watch` would
-stop redrawing mid-session exactly when you most want to see the diagram.
+All three are warnings rather than errors on purpose. A model under construction spends most of
+its life with one end of a flow ahead of the other, and errors block rendering — `em watch`
+would stop redrawing mid-session exactly when you most want to see the diagram.
 
 ### Fields completeness
 
