@@ -35,6 +35,11 @@ an event directly.}}
 ## Event(s) Emitted
 <!-- The immutable facts recorded. List each event and its payload. -->
 **Event:** `{{Event Name}}` → context `{{Context}}`
+**Read by:** {{which read model projects this event, and in which slice}}
+<!-- Required, not optional. Every event must be read by a read model — an event nothing
+     projects is a write nobody can see, and `em validate` warns on it. A reaction consuming
+     it does NOT count: reactions read views, not events. If the honest answer is "nothing
+     reads it", that's a question for the business, not a field to leave blank. -->
 
 | Field | Type | Immutable Fact? | Source / Notes |
 |-------|------|-----------------|----------------|

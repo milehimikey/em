@@ -72,8 +72,11 @@ it is fine to finish a round with `# TBD`s still parked.
 - **R3 — Commands / inputs.** For each event, the request that actually produces it today
   (imperative name). Unclear trigger → `# TBD`, not a plausible guess.
 - **R4 — Read models / outputs.** The projections/queries the system actually serves; wire
-  `from "Event"` (repeat read models span-1 per `em-dsl.md`). **Start running `em validate`**
-  each round from here.
+  `from "Event"` (repeat read models span-1 per `em-dsl.md`, using `view X again` after the
+  first). **Start running `em validate`** each round from here. Expect *event is not read by any
+  read model* warnings: real systems do record fire-and-forget events. In an as-is model that is
+  a **finding about the system**, not a modelling mistake — never invent a reader to silence it
+  (that would be desired state). Park it in the Decisions log and carry the warning.
 - **R5 — Boundaries & reactions.** Current automations and integrations as-is: schedulers,
   listeners, outbound syncs, inbound webhooks. Model each as a reaction with the two-slice
   `reaction → command → event` split and the slice-ordering rules in `em-dsl.md` — even when
@@ -103,8 +106,9 @@ one for a sprawling one. Record any deviation in the Decisions log.
 ## Completion & handoff
 
 Extraction is complete when: the model renders; `em validate` is clean (or remaining warnings
-are consciously accepted in the Decisions log); every unknown is a parked `# TBD`; and the
-user has confirmed the model reflects today's behavior. Then:
+are consciously accepted in the Decisions log — unread events in an as-is model are the usual
+accepted case, and each one is worth naming explicitly as a finding); every unknown is a parked
+`# TBD`; and the user has confirmed the model reflects today's behavior. Then:
 
 1. State file: set phase progress (extraction rounds checked), log the completion decision.
    Seed `README.md`'s **slice index** (every slice, pattern, status `none`).

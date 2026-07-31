@@ -182,7 +182,14 @@ itself. It issues a command like everyone else, so "Capture Payment" keeps its i
 whether a human or a machine is calling. (Putting the command in the processor's slice is a
 validation warning.)
 
-Close the loop with a receipt:
+Right now "Payment Captured" is a fact nobody looks at. Validate and em says so:
+
+```
+  warn :N event "Payment Captured" is not read by any read model
+```
+
+That's a real rule, not housekeeping: an event nothing projects is a write nobody can see, so
+there was no point recording it. Every event needs a read model. Close the loop with a receipt:
 
 ```em
 slice "Show Receipt" {

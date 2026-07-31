@@ -135,7 +135,9 @@ what every finding in the report will cite — file paths, not vibes.
 First `em validate <model-name>-asis.em`. `em diff` refuses when either side has validation
 *errors* (warnings are fine), so a scratch model that doesn't compile stops the run cold. The
 usual cause is a slice that depends on one you rewrote incompletely — a `view X again` whose
-first declaration you dropped, or an automation `from` a read model that no longer exists.
+first declaration you dropped, an automation `from` a read model that no longer exists, or an
+`arrow` you wrote joining kinds the patterns don't connect. (An unread event is only a *warning*,
+so it never blocks the diff — and in an as-is scratch model it's expected.)
 Seeding from the canonical model (step 2) prevents this; if it still fails, **fix the scratch
 model and report the failure as a tooling problem in the run metadata — never as drift.** A
 model you couldn't compile is an uncertainty about your own scratch file, not a finding

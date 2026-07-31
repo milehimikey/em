@@ -16,6 +16,20 @@ three ways:
 3. There is **no other way** for information to flow. Every box on the diagram is one of:
    UI screen, command, event, read model, or automation/processor.
 
+Concretely, that leaves exactly six legal connections, and `em` infers only these:
+`ui → command`, `command → event`, `event → read model`, `read model → ui`,
+`read model → reaction`, `reaction → command`. Every other pair is a rule violation, and an
+explicit `arrow` writing one is a validation error. The two worth naming, because they are the
+tempting shortcuts:
+
+- **`command → read model`** — the CQRS violation. A write is only ever visible to a reader
+  through the event it recorded. Put the event between them.
+- **`read model → command`** — reads never drive a write directly. A processor or translation
+  watches the read model and issues the command, across two slices.
+
+If you find yourself wanting an arrow the patterns don't allow, the model is missing an
+**element**, not an arrow.
+
 **Automations and translations are not exceptions to rule 1.** They are *reactions* — a processor
 or an adapter that wakes up, decides something must change, and **issues a command** to do it. They
 never record an event themselves. A reaction box always points at a **command** (in the next
@@ -37,7 +51,21 @@ Every slice is exactly one of these. In `em`, each maps to a specific shape (see
 ### 1. State Change (Command pattern)
 **UI → Command → Event.** A user (or automation) submits a command; the system validates it
 against invariants and records one or more events.
-- `em` shape: `slice { ui X @Persona  command Y  event Z @Context }`
+- **A State Change never travels alone.** Its event needs a read model that projects it, so the
+  unit of work is a State Change slice *plus* the State View slice that reads its event. Write the
+  pair together; a lone command slice leaves a write nobody can see, and `em validate` warns.
+- `em` shape (one element per line — there is no one-line slice form):
+  ```em
+  slice "Do The Thing" {
+    ui X @Persona
+    command Y
+    event Z @Context
+  }
+  slice "See The Result" {   # the State View slice that reads Z — pattern 2, but required here
+    view V from "Z"
+    ui Screen @Persona
+  }
+  ```
 - This is where **invariants** live — the command is rejected if a rule is violated.
 - Socratic prompts: *"What does the user do here? What request are they making? What must be
   true for it to succeed? What fact gets recorded when it does? What gets rejected and why?"*
@@ -55,19 +83,27 @@ displays. Read-only; changes no state.
 - **Repeat read models across the timeline.** A read model is drawn fresh in **every** slice where
   it is read — after the events that update it, before the actions that consume it — so the diagram
   shows state flowing left-to-right (the information-completeness staircase). The same read-model
-  name recurring is intentional and **renders cleanly**: `em validate` only warns about a duplicate
-  name that is *also referenced* by a `from`/`arrow` (it resolves to the first), so a repeated read
-  model that nothing references by name produces **no warning**. **Wire each event to a read model
+  name recurring is intentional and **renders cleanly**. Declare every instance after the first with
+  **`view V again from "..."`**: `again` instances are exempt from the duplicate-name warning even
+  when something references them, and each reference resolves to the right instance. (A plain repeat
+  only stays warning-free while nothing references it by name, and resolves to the *first*
+  declaration when something does.) **Wire each event to a read model
   exactly once:** a repeated instance's `from` lists only the **new** events since the previous
   instance (not cumulative) — otherwise an event draws a duplicate arrow to the same read model at
   every repeat. (An event may still feed several *different* read models, once each.)
+- **Instances are never connected to one another.** There is no arrow between two appearances of one
+  read model, and an explicit one is a validation error. The repeat is an ergonomic device for
+  showing the same read model at successive points in time — continuity is implied by the shared
+  name, and the events arriving at each instance are what show it changing. An arrow between them
+  would say the read model feeds itself.
 - **Place each repeat immediately after its feeding event (span-1).** The cleanest staircase puts a
   read-model instance right after each event that updates it, sourcing **only that one adjacent
   event** — every `event → read model` arrow is then short and forward-flowing. A read model sitting
   far from its source events (e.g. a "list/queue" read placed early but fed by late events) draws
-  long arrows that cross the read-model row and *look* like read→read connections — which Event
-  Modeling forbids. The fix is never a `view → view` edge; it's to repeat the read model next to each
-  event that feeds it.
+  long arrows that sweep across the diagram and are harder to follow than a short hop. (The renderer
+  routes them around intervening boxes rather than through them, so they no longer *look* like a
+  forbidden read→read link — but a short arrow still reads better.) The fix is never a `view → view`
+  edge; it's to repeat the read model next to each event that feeds it.
 - Socratic prompts: *"What does the consumer need to see to make their next decision? Which past
   events provide that information? Is this a screen or an API read? What's the freshness/consistency
   expectation?"*
@@ -76,10 +112,23 @@ displays. Read-only; changes no state.
 **Read Model → Processor → (next slice) Command → Event.** The system reacts on its own: a
 processor watches a read model (a "to-do list" of work) and **issues a command** — it never
 records an event directly.
-- `em` shape: **two slices.** First `slice { view "Todo" from "..."  processor P }`, then the
-  **next** `slice { command C  event E @Context }`. The processor band holds no event; the command
-  in the next slice produces it. Keeping the triggered command in the same slice as the processor
-  is a validation warning — always split it.
+- `em` shape: **two slices**, then the read slice that consumes the event — three in all:
+  ```em
+  slice "Todo" {
+    view Todo from "..."
+    processor P
+  }
+  slice "Do It" {           # the triggered command goes in the NEXT slice
+    command C
+    event E @Context
+  }
+  slice "Todo — done" {
+    view Todo again from "E"   # every event needs a reader; here it clears the to-do list
+  }
+  ```
+  The processor band holds no event; the command in the next slice produces it. Keeping the
+  triggered command in the same slice as the processor is a validation warning — always split it.
+  Forgetting the third slice leaves `E` unread, which is also a warning.
 - Socratic prompts: *"What should happen without a human? What condition triggers it? What work
   list does the processor watch? What command does it fire? What if it fails or retries?"*
 
@@ -92,9 +141,21 @@ trigger forms:
   from outside the model, so the translation has no internal `from`.
 - **Internally triggered** (reacting to the modeled system's own state, e.g. pushing data out):
   `read model → translation → command → event`. The translation reads a **view** via `from`.
-- `em` shape: **two slices**, exactly like an automation. First
-  `slice { [view "Source" from "..."]  translation T [from "Source"] }`, then the **next**
-  `slice { command C  event E @Context }`. The translation band never carries an event.
+- `em` shape: **two slices**, exactly like an automation, plus the read slice for the event:
+  ```em
+  slice "Boundary" {
+    view Source from "..."     # internally triggered only; omit for an external trigger
+    translation T from "Source"
+  }
+  slice "Record It" {
+    command C
+    event E @Context
+  }
+  slice "Source — recorded" {
+    view Source again from "E"   # every event needs a reader
+  }
+  ```
+  The translation band never carries an event.
 - Socratic prompts: *"What boundary are we crossing, and which way? What outside system or context
   feeds us (or do we feed)? In what format? How do we know its data is trustworthy/complete? What
   internal **command** does it trigger, and what event does that command record?"*
@@ -172,15 +233,23 @@ dedicated `slice` phase writes the full rich spec (see `templates/slice.md`).
 Walk the whole model with stakeholders and check for loose ends:
 - Every **command** produces at least one **event**.
 - Every **view** has at least one source event.
-- Every **event** is shown somewhere or consumed by something (no orphan facts).
+- Every **event** is **read by a read model** — a `view` naming it in `from` (any `again` instance
+  counts), or a `view` with no `from` sitting in its slice. A reaction consuming it does **not**
+  count: reactions read views, not events. An event nothing projects is a write nobody can see, so
+  there was no point recording it. `em validate` warns on each one.
 - Every **UI** is reachable and leads somewhere.
+- Every connection is one of the six legal pairs (`ui → command`, `command → event`,
+  `event → read model`, `read model → ui`, `read model → reaction`, `reaction → command`). No
+  arrow between two instances of one read model.
 - Automations **and** translations are split correctly (reaction → command → event, never a
   reaction wired straight to an event); translations cover every external input.
-- Run `em validate` and resolve all errors and warnings. Note: `em validate` does **not** catch a
-  translation/automation that emits an event directly — verify the two-slice split by hand.
-- Prompts: *"Is there any event nobody sees? Any screen with no way in or out? Any command that
-  records nothing? Any external system we haven't translated? Any translation or automation that
-  records an event instead of triggering a command?"*
+- Run `em validate` and resolve all errors and warnings. It now catches illegal `arrow` kind pairs
+  (error) and unread events (warning), but it still does **not** catch a translation/automation that
+  emits an event directly — verify the two-slice split by hand.
+- Prompts: *"Is there any event nobody reads — and if the business genuinely never looks at it, why
+  are we recording it? Any screen with no way in or out? Any command that records nothing? Any
+  external system we haven't translated? Any translation or automation that records an event instead
+  of triggering a command?"*
 
 ---
 

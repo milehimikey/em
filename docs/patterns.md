@@ -67,11 +67,18 @@ slice "Capture Payment" {
   command Capture Payment
   event Payment Captured @Payment
 }
+
+slice "Payments To Process — captured" {
+  view Payments To Process again from "Payment Captured"
+}
 ```
 
 Why two slices? Because the processor never records an event itself. It funnels its decision
 through a command like everyone else, so the command slice keeps its invariants no matter
 who's calling. Putting the command in the reaction's slice draws a validation warning.
+
+The third slice is the State View that reads `Payment Captured` — here it's the same to-do
+list, one payment shorter. Without it the event is unread and `em validate` warns.
 
 ## Translation
 
@@ -91,6 +98,10 @@ slice "Confirm Delivery" {
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
+
+slice "Open Orders — delivered" {
+  view Open Orders again from "Delivery Confirmed"
+}
 ```
 
 Internally triggered — the system pushes its own state outward, so the translation reads a
@@ -106,7 +117,15 @@ slice "Record Sync" {
   command Record Crm Sync
   event Quote Synced @Quote
 }
+
+slice "Accepted Quotes — synced" {
+  view Accepted Quotes again from "Quote Synced"
+}
 ```
+
+Both forms close with a State View slice, for the same reason as the Automation pattern: the
+command's event needs a reader. Note that a reaction reading the view doesn't satisfy that —
+reactions read read models, not events.
 
 Note that `em validate` warns when a reaction shares a slice with a command, but cannot
 catch a reaction wired straight to an event — keep the two-slice split by construction
