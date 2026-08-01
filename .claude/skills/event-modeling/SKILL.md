@@ -48,11 +48,31 @@ validation rules) before doing real work — they are the source of truth. Templ
   triggers **no** command — the analog of `view → ui`). **Repeat read models** across slices so the
   timeline flows left-to-right — put each repeat **right after the event that feeds it**, sourcing
   only that one adjacent event, so every arrow is short (a read model far from its source events
-  draws long arrows that look like a forbidden read→read link). Repeats render cleanly — em only
-  warns on a duplicate name that's *referenced* by `from`/`arrow`. Slice order matters: a reaction
-  must be directly followed by its command slice, and a read slice must not be immediately
+  draws a long arrow whose head lands columns away, making the *write* slice read as dangling —
+  keep a sub-flow that detours into another context together, not parked at the end of the model).
+  Declare every instance after the first with
+  **`view X again from "..."`** — `again` instances are exempt from the duplicate-name warning even
+  when referenced, and each reference resolves to the right instance. Slice order matters: a
+  reaction must be directly followed by its command slice, and a read slice must not be immediately
   followed by a command slice (see `em-dsl.md`).
   See `reference/methodology.md` (State View) and `reference/em-dsl.md`.
+- **Never connect two instances of one read model.** The repeat is a timeline device, not a flow:
+  continuity is implied by the shared name, and the events arriving at each instance are what show
+  it changing. An arrow between instances says the read model feeds itself, and is an error.
+- **Every slice is a COMPLETE pattern, never a half-slice.** A State Change is
+  `ui → command → event`; a State View is `event → read model → ui` (or `→ reaction`). So: a
+  command needs something that **triggers** it (the `ui` it's issued from, or the reaction in the
+  slice before it), its event needs a **reader**, and that read model needs a **consumer** of its
+  own. A command nothing points at is a write nobody can start; an event nothing projects is a
+  write nobody can see; a read model nothing displays is information dropped on the floor. Write
+  the whole chain together rather than sweeping up dangling ends later. Reactions don't count as
+  readers of *events* — they read views. **Every instance** of a repeated read model needs its own
+  consumer: if you repeat a view next to an event just to keep the arrow short, bring its screen
+  along, or don't add the instance.
+- **Only six connections are legal:** `ui → command`, `command → event`, `event → read model`,
+  `read model → ui`, `read model → reaction`, `reaction → command`. Reaching for anything else —
+  above all `command → read model` (the CQRS violation) or `read model → command` — means the model
+  is missing an **element**, not an arrow.
 - **Validate continuously.** Run `em validate` and fix errors/warnings as you go (see DSL ref).
 - **Save state at the end of every session** so work resumes cleanly.
 
@@ -117,12 +137,20 @@ phase applies to field tables, below.
    **callers** at each step instead; they become the inbound write translations and read
    translations (see `reference/methodology.md`).
 3. **Inputs (step 3).** For each event, find the **command** that causes it (imperative name).
-   Form `command → event` slices (State Change pattern).
+   Form `command → event` slices (State Change pattern). Every command needs a **trigger** in the
+   same breath: the screen the user issues it from (a `ui` in the slice), or — for the Automation
+   and Translation patterns — the reaction in the slice before it. A command nothing points at is
+   a write nobody can start. *"Who does this, and where are they when they do it?"*
 4. **Outputs (step 4).** Identify the **read models / views** consumers need and wire them with
-   `from "Event"` (State View pattern). In a **headless/API** model there is no UI — a read model is
+   `from "Event"` (State View pattern), each with the screen (or reaction) that consumes it — a
+   read model nothing displays is information dropped on the floor. In a **headless/API** model there is no UI — a read model is
    consumed by an **external read translation** (the API query, triggers no command), and read
-   models are **repeated** in each slice where they're read so the timeline flows (see
-   `reference/methodology.md`).
+   models are **repeated** in each slice where they're read (use `view X again` after the first) so
+   the timeline flows (see `reference/methodology.md`).
+   **Close the loop before leaving this step:** every event from step 3 must be read by at least one
+   read model. Walk the event list and ask, for each one, *"who looks at this, and what do they do
+   with it?"* An event with no answer is either missing its read model or shouldn't be recorded —
+   both are worth raising with the user rather than leaving dangling.
 
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
 decisions, open questions) and `README.md`'s slice index. Tell the user they can stop here and
@@ -164,12 +192,17 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    event).
 2. **Elaborate scenarios — first pass (step 6).** For each slice, capture the happy-path
    Given/When/Then and the obvious invariants as short notes. (The full spec is the `slice` phase.)
-3. **Evaluate completeness (step 7).** Walk the model: every command emits an event, every view
-   has a source, no orphan events, every UI is reachable, automations **and translations** split
-   correctly (each reaction triggers a command — none wired straight to an event). Run
-   `em validate` and resolve all errors and warnings — but check the reaction→command→event split
-   by hand, since `em validate` does **not** flag a translation/automation that emits an event
-   directly (see `reference/em-dsl.md`).
+3. **Evaluate completeness (step 7).** Walk the model: every slice is a **complete** pattern, not a
+   half-slice — **every command has something that triggers it**, every command emits an event,
+   **every event is read by a read model**, **every read model has a consumer**, every view has a
+   source, every UI is reachable, every connection is
+   one of the six legal pairs, and automations **and translations** split correctly (each reaction
+   triggers a command — none wired straight to an event). Run `em validate` and resolve all errors
+   and warnings — but check the reaction→command→event split by hand, since `em validate` does
+   **not** flag a translation/automation that emits an event directly (see `reference/em-dsl.md`).
+   For an unread event, don't just bolt on a view to silence the warning: ask the user who looks at
+   this fact and what they do with it. The honest answers are "here's the read model we missed" or
+   "nobody — so why are we recording it", and both improve the model.
 
 End of phase: render, update state, suggest `/event-modeling slice` to write implementation specs.
 
@@ -181,7 +214,9 @@ timeline). Check `README.md`'s slice index for what's already done.
 This is also where **branch / unhappy-path events** are discovered and added to the model — as a
 slice's alternate/error flows surface (a rejection, removal, cancellation, decline, expiry), add
 the corresponding event/slice to the `.em` and re-render. The happy-path spine from earlier
-phases is the starting point, not the finished event set.
+phases is the starting point, not the finished event set. **Every new event needs its reader too**
+— a rejection or cancellation that nothing projects will warn, and usually the missing piece is
+real (someone has to see that the request was declined).
 
 For each slice:
 1. Hold a Socratic deep-dive to fill every section of `templates/slice.md`: intent, trigger/actor,
@@ -241,8 +276,19 @@ editing of `live.html` is needed — the `?svg=` query picks the model.
 ## Phase: `validate`
 
 Run `em validate <model-name>.em` and walk through each diagnostic with the user, explaining the
-rule (see `reference/em-dsl.md`) and proposing the fix (e.g. split an automation's command into
-the next slice, add a missing `from`, give a command its event). Apply fixes on agreement.
+rule (see `reference/em-dsl.md`) and proposing the fix. Apply fixes on agreement. Common ones:
+
+| Diagnostic | Fix |
+|---|---|
+| automation/translation shares a slice with a command | Split the command into the next slice |
+| **command has nothing that triggers it** | Add the `ui` it's issued from — or, if the system issues it, the reaction in the slice before it. Ask *"who does this, and where are they when they do it?"* |
+| **read model has no consumer** | Add the screen that displays it, or the reaction that watches it. If it's a repeat added only to shorten an arrow and nothing looks at it there, drop the instance |
+| read model has no source | Add the missing `from "Event"` |
+| command produces no event | Give the command its event, or drop the command |
+| **event is not read by any read model** | Add the read slice that projects it — but ask *who looks at this and what do they do with it* first. "Nobody" is a real answer, and then the question is why it's recorded at all |
+| **illegal `arrow` kind pair** | Don't reroute it — the model is missing an element. `command → view` needs the event between them; `view → command` needs a reaction. Between two instances of one read model, just delete the arrow: the repeat needs no connection |
+| `view X again` with no earlier declaration | Declare the view plainly the first time it appears |
+| event feeding an earlier view instance | Add a `view X again` where the event lands and move the source there |
 
 For anything genuinely unresolved rather than a rule violation, prefer `issue "text"` on the
 relevant element over a `# TBD` comment — it shows up as a red marker on the rendered diagram and

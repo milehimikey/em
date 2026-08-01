@@ -182,7 +182,14 @@ itself. It issues a command like everyone else, so "Capture Payment" keeps its i
 whether a human or a machine is calling. (Putting the command in the processor's slice is a
 validation warning.)
 
-Close the loop with a receipt:
+Right now "Payment Captured" is a fact nobody looks at. Validate and em says so:
+
+```
+  warn :N event "Payment Captured" is not read by any read model
+```
+
+That's a real rule, not housekeeping: an event nothing projects is a write nobody can see, so
+there was no point recording it. Every event needs a read model. Close the loop with a receipt:
 
 ```em
 slice "Show Receipt" {
@@ -400,3 +407,8 @@ genuinely missing, that same warning is how you find out before an engineer does
   resumable modeling session.
 - [examples/insurance-claim.em](../examples/insurance-claim.em) — a richer model: three
   personas, processor automations, a translation, and a multi-source read model.
+- [examples/timeline-rules.em](../examples/timeline-rules.em) — a small model built to show
+  the connection rules: a read model repeated four times with nothing joining the instances,
+  and a source event twelve slices away. Its companion
+  [timeline-rules-invalid.em](../examples/timeline-rules-invalid.em) collects the arrows
+  `em validate` rejects, one per rule.

@@ -19,9 +19,16 @@ function em(args: string[], cwd: string) {
   return { status: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
+// Genuinely clean: the command is triggered and the event is read, so neither end-of-flow
+// warning fires either.
 const CLEAN = `slice "Place" {
+  ui Checkout @Customer
   command Place Order
   event Order Placed
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
+  ui Order List @Customer
 }
 `;
 
@@ -31,9 +38,16 @@ const WARNING_ONLY = `slice "Place" {
 }
 `;
 
+// The open issue is the only diagnostic. The `ui` sits after the command so the issue stays
+// on line 2, which the --list-issues assertion pins.
 const WITH_ISSUE = `slice "Place" {
   command Place Order issue "who validates the discount code?"
+  ui Checkout @Customer
   event Order Placed
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
+  ui Order List @Customer
 }
 `;
 

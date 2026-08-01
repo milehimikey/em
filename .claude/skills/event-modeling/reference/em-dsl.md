@@ -64,9 +64,10 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 - **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an
   already-declared read model — the forward-only device for a view that evolves as later events
   land. Instances are ONE logical view: the first declaration owns the `note` binding; each
-  instance's `from` lists only the NEW events landing at that point (not cumulative); instances are
-  linked left-to-right with a continuity arrow; a reaction (`from "View"`) reads the nearest
-  instance at-or-before its own slice. `again` with no earlier declaration is a validation error.
+  instance's `from` lists only the NEW events landing at that point (not cumulative); a reaction
+  (`from "View"`) reads the nearest instance at-or-before its own slice. Instances are NEVER
+  connected to one another — continuity is implied by the shared name, and the events reaching each
+  instance are what show the view changing. `again` with no earlier declaration is a validation error.
   Use `again` (not a plain repeated `view` name) whenever the view is referenced by a
   `from`/`arrow` — plain repeats are only warning-free while unreferenced.
 - **`note "path.md"`** on ANY element links a markdown doc. Relative to the `.em` file. Renders as
@@ -106,7 +107,7 @@ slice "Open Orders" {
   ui Order List @Customer
 }
 
-# 3. Automation: split across TWO slices
+# 3. Automation: split across TWO slices (plus the read slice that consumes the event)
 slice "Orders To Fulfill" {
   view Orders To Fulfill from "Order Placed"
   processor Fulfillment Service
@@ -114,6 +115,10 @@ slice "Orders To Fulfill" {
 slice "Ship Order" {            # the triggered command goes in the NEXT slice
   command Ship Order
   event Order Shipped @Shipping
+}
+slice "Open Orders — shipped" {
+  view Open Orders again from "Order Shipped"   # every event needs a reader
+  ui Order List @Customer                       # ...and every read model needs a consumer
 }
 
 # 4a. Translation (external trigger): external input -> translation -> command -> event
@@ -124,8 +129,17 @@ slice "Confirm Delivery" {            # the triggered command goes in the NEXT s
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
+slice "Open Orders — delivered" {
+  view Open Orders again from "Delivery Confirmed"
+  ui Order List @Customer
+}
 
 # 4b. Translation (internal trigger): read model -> translation -> command -> event
+slice "Accept Quote" {
+  ui Quote Screen @Customer     # every command needs a trigger: a ui, or a reaction before it
+  command Accept Quote
+  event Quote Accepted @Quote
+}
 slice "Quotes To Sync" {
   view Accepted Quotes from "Quote Accepted"
   translation CRM Sync                # reacts to our own state via the read model in this slice
@@ -134,40 +148,66 @@ slice "Record Sync" {
   command Record Crm Sync
   event Quote Synced @Quote
 }
+slice "Accepted Quotes — synced" {
+  view Accepted Quotes again from "Quote Synced"
+  ui Sync Status @Customer
+}
 ```
 
 A `translation` (like a `processor`) is a **reaction**: it triggers a command and never carries an
 `event` in its own slice. Same two-slice split as the Automation pattern above.
 
+Note the read slice closing each pattern: **every event must be read by some read model**
+(warning 4 below). A command slice is not finished until the slice that projects its event
+exists. Reactions don't count — they read *views*, not events.
+
 ### Headless / API systems (no UI) & repeated read models
 
 When the system is headless (no UI — clients call an API), drop `ui`/`persona` entirely:
 
+A slice body is always multi-line — there is **no one-line `slice "X" { … }` form**, and writing
+one is a parse error (`'slice' is not valid inside a slice`).
+
 ```em
 # Write: external translation -> command -> event (name the inbound adapter for the caller/role)
-slice "Create Quote (request)" { translation SalesRep BU Create Quote }
-slice "Create Quote"           { command Create Quote  event QuoteCreated @Quote }
+slice "Create Quote (request)" {
+  translation SalesRep BU Create Quote
+}
+slice "Create Quote" {
+  command Create Quote
+  event QuoteCreated @Quote
+}
 
-# Read: event(s) -> read model -> READ translation (the external caller's API query, replaces UI)
-slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation SalesRep BU Read Quote }
+# Read: event(s) -> read model -> READ translation (the external caller's API query, replaces UI).
+# This slice is also what makes QuoteCreated a *read* event — without it the model warns.
+slice "Read Quote — created" {
+  view Quote from "QuoteCreated"
+  translation SalesRep BU Read Quote
+}
 ```
 
 - A **read translation triggers no command** (it returns data outbound) — it is the headless analog
   of `view → ui`, *not* a reaction. Only *reaction* translations/processors trigger commands. A read
   slice has no `command` and no `event`, so `em validate` stays quiet about it.
-- **Repeat the read model** in every slice where it's read so the timeline flows left-to-right.
-  Recurring `view`/`translation` names **render cleanly and stay warning-free** as long as nothing
-  references the repeated name via `from`/`arrow` (the duplicate-name warning fires only for a
-  *referenced* duplicate, resolving to the first). **Wire each event to a read model exactly once:**
-  a repeated instance's `from` lists only the **new** events since the previous instance (not
-  cumulative), or the event draws a duplicate arrow to the same read model at every repeat. (An
-  event may still feed several *different* read models, once each.) When a repeated view **must be
-  referenced** — e.g. a reaction reads it via `from` — declare its later instances with
-  `view X again` instead (see Clauses); instances resolve properly and draw continuity arrows.
+- **Repeat the read model** in every slice where it's read so the timeline flows left-to-right, and
+  **prefer `view X again`** for every instance after the first (see Clauses). `again` instances are
+  exempt from the duplicate-name warning even when referenced, and each reference resolves to the
+  right instance — a plain repeat only stays warning-free while nothing references it by name, and
+  resolves to the *first* declaration when something does. **Wire each event to a read model exactly
+  once:** a repeated instance's `from` lists only the **new** events since the previous instance
+  (not cumulative), or the event draws a duplicate arrow to the same read model at every repeat. (An
+  event may still feed several *different* read models, once each.)
+- **Instances are never joined to one another.** No arrow between two instances of one read model,
+  ever — an explicit one is a validation error. The repeat is a timeline device: continuity is
+  implied by the shared name, and the events arriving at each instance are what show it changing.
 - **Keep arrows span-1: put each repeat right after its feeding event.** Place a read-model instance
-  immediately after the event that updates it, sourcing only that single adjacent event. A read
-  model far from its source events draws long arrows that cross the read-model row and read as
-  read→read (an Event Modeling violation) — repeat the read model next to each event instead.
+  immediately after the event that updates it, sourcing only that single adjacent event. The
+  renderer routes a long arrow *around* intervening boxes rather than through them, so it no longer
+  reads as a forbidden read→read link — but distance is still a real problem: the arrowhead lands
+  columns away from the event that produced it, so **the write slice reads as dangling**, as if
+  nothing consumed its event. You have to trace a line across the diagram to see the connection.
+  Keep the read model adjacent to its event, and keep a sub-flow that detours into another context
+  together rather than parking it at the end of the model.
 
 ### Slice-ordering gotchas (edge inference)
 
@@ -197,20 +237,33 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
    there), a reaction reading a view before any instance of it exists, or an explicit backward
    `arrow`.
 6. **`again` without an earlier declaration** — declare the view plainly the first time it appears.
+7. **Illegal connection** — an `arrow` joining kinds the patterns don't connect. Only
+   `ui -> command`, `command -> event`, `event -> view`, `view -> ui`, `view -> reaction`, and
+   `reaction -> command` are allowed. A command straight to a view is the CQRS violation (an event
+   has to sit between them); a view straight to a command needs a reaction between them; and two
+   instances of one view are never connected at all. Inferred edges are always legal, so this only
+   ever fires on a hand-written `arrow`.
 
 **Warnings (should fix):**
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and
    `translation` are reactions; put the triggered command in the *next* slice.
-2. **Command without event** — every command should record at least one event.
-3. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
-4. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
-5. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
+2. **Command with no trigger** — nothing issues it. A command needs a `ui` in its slice, or a
+   reaction (automation/processor/saga/translation) in the slice *before* it. The input-side mirror
+   of (4): a command nothing points at is a write nobody can start.
+3. **Command without event** — every command should record at least one event.
+4. **Event nobody reads** — the mirror of (3): recording an event no read model projects is a
+   write with no reader. Follow every write slice with the read slice that consumes its event.
+   Counts as read when a `view` names it in `from` (any `again` instance will do), when a
+   fieldless-`from` view sits in its slice, or via an explicit `event -> view` arrow.
+5. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
+6. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
+7. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
    clause. `em validate --list-issues` prints just these; `--fail-on-issues` (opt-in) makes CI
    fail while any remain open.
-6. **View field with no source** — a `view` field whose name matches no field on any instance
+8. **View field with no source** — a `view` field whose name matches no field on any instance
    of its source events. Only checked once BOTH the view and at least one source event declare
    `{ fields }`.
-7. **Event field not from a command** — an `event` field whose name matches no field on any
+9. **Event field not from a command** — an `event` field whose name matches no field on any
    command in the same slice. Only checked once BOTH the event and at least one same-slice
    command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
    once fields are written down, `em validate` checks that data flows forward consistently.
@@ -218,6 +271,20 @@ slice "Read Quote — created"   { view Quote from "QuoteCreated"  translation S
 **Design rules that keep models valid:**
 - One element per band per slice (multiple personas/contexts are fine — they're different rows).
 - Every `command` slice includes its `event`. Every `view` has a `from` source.
+- **Every `command` has a trigger.** A `ui` in its slice, or a reaction in the slice *before* it.
+  A command nothing points at is a write nobody can start.
+- **Every `event` has a reader.** A command slice isn't finished until the read slice that projects
+  its event exists. Reactions don't count — they read views, not events. Pair each write slice with
+  its read slice as you go rather than sweeping up dangling events at the end.
+- **Every `view` has a consumer.** A `ui` in its slice, a reaction watching it, or (headless) a read
+  translation. Every *instance* of a repeat, not just the last — a bare `view X again` slice is a
+  half-slice, not a State View.
+- **Only six connections are legal**, and only these are ever inferred:
+  `ui → command`, `command → event`, `event → view`, `view → ui`, `view → reaction`,
+  `reaction → command`. Anything else in an explicit `arrow` is an error — above all
+  `command → view` (the CQRS violation: an event has to sit between them) and `view → command`
+  (a reaction has to sit between them). If you reach for an arrow the patterns don't allow, the
+  model is missing an element, not an arrow.
 - Automations **and translations** are always two slices: the reaction (plus its read model, if
   internally triggered) in one slice, the triggered `command` + its `event` in the next. A
   translation/automation slice **never contains an `event`** — reactions trigger commands, not

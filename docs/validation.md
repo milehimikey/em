@@ -16,17 +16,43 @@ run on every command that reads a model.
 | `view X again` with no earlier declaration of `X` | Declare the view plainly the first time it appears |
 | An `arrow` endpoint that matches no element | Fix the name |
 | An `arrow` that points backward in time | Restructure so the target comes later |
+| An `arrow` between element kinds the four patterns don't connect | Add the missing step — the message names it |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
+
+### Connection legality
+
+em infers a slice's arrows from its shape, and only ever infers legal ones, so a
+hand-written `arrow` is the single way an illegal connection can get into a model. Those are
+checked against the [four patterns](patterns.md): the only pairs allowed are
+`ui → command`, `command → event`, `event → read model`, `read model → ui`,
+`read model → reaction`, and `reaction → command`.
+
+Everything else is an error, reported with the step that's missing:
+
+```
+error:39 arrow "Open Ticket" -> "Ticket Queue" connects a command directly to a read
+         model: an event has to sit between them (command -> event -> read model)
+```
+
+That one is the CQRS violation — a write is only ever visible to a reader through the event
+it recorded. The same check catches `read model → command` (a reaction belongs between
+them), `event → command`, `event → event` (Law 1), and an arrow between two instances of one
+read model (see [timeline.md](timeline.md)).
+[examples/timeline-rules-invalid.em](../examples/timeline-rules-invalid.em) collects one of
+each; run `em validate` on it to see all five.
 
 ## Warnings
 
 | Rule | Fix |
 |---|---|
 | A `processor`/`translation` shares a slice with a command | Reactions trigger commands; put the triggered command in the next slice |
+| A command nothing triggers | Add the screen it's issued from, or the reaction that issues it |
 | A command that records no event | Add the event, or reconsider the command |
+| An event no read model reads | Project it into a view, or reconsider recording it |
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
+| A read model nothing consumes | Add the screen that displays it or the reaction that watches it, or drop the instance |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
@@ -34,6 +60,39 @@ The timeline rules ("time flows left to right") are the Two Laws in action;
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
+
+### Both ends of a flow
+
+Four warnings guard the chain that runs screen → command → event → read model → screen. Read in
+order they say: something starts the write, the write records something, someone projects it, and
+someone looks at the projection. Every element in that chain has a link in and a link out, and
+each warning is one link missing.
+
+Put another way: they enforce that every slice is a **complete** instance of one of the
+[four patterns](patterns.md), not a half-slice. A State Change is `ui → command → event`; a State
+View is `event → read model → ui`. A slice holding only part of one is unfinished.
+
+- **A command nothing triggers** is a write nobody can start. A command is issued by a person
+  on a screen or by a reaction acting on their behalf — it doesn't fire itself. It counts as
+  triggered when a `ui` sits in its slice, when an automation/processor/saga/translation sits
+  in the **previous** slice (the two-slice reaction split), or when an explicit `arrow` points
+  to it from a screen or reaction.
+- **A command that records no event** is a write that changes nothing.
+- **An event no read model reads** is a write nobody can see. There is no point recording a
+  fact nothing projects. It counts as read when a `view` names it in `from`, when a `view` with
+  no `from` sits in its slice, or when an explicit `arrow` points from it to a read model. Any
+  instance of a repeated read model counts, so `view X again from "Event"` satisfies it.
+  A reaction consuming it does **not** count — reactions read read models, not events.
+- **A read model nothing consumes** is information projected out of the system and then dropped.
+  It counts as consumed when a `ui` sits in its slice (State View), when a reaction sits in its
+  slice or reads it by name from a later slice (Automation/Translation), or via an explicit
+  `arrow` out of it. In a headless model the consumer is a read translation. Each instance of a
+  repeated read model needs its own consumer: if you repeat a view next to an event purely to keep
+  the arrow short, bring its screen along, or don't add the instance.
+
+All four are warnings rather than errors on purpose. A model under construction spends most of
+its life with one end of a flow ahead of the other, and errors block rendering — `em watch`
+would stop redrawing mid-session exactly when you most want to see the diagram.
 
 ### Fields completeness
 
@@ -76,8 +135,10 @@ An `issue` warning never blocks by default, same as every other warning — `em 
 
 ## What the validator can't catch
 
-`em validate` does not flag a reaction wired straight to an event — a `translation` or
-`processor` sharing a slice with an `event` but no `command`. It only warns when a reaction
-shares a slice with a command. Reactions must always go through a command
-(`reaction → command → event`, split across two slices); enforce that by construction. The
-[patterns](patterns.md) doc covers why.
+Connection legality is checked on `arrow` statements, which is where an illegal connection
+can be written down. It can't be checked on slice *shape*, because shape is what em reads to
+infer arrows in the first place: a `translation` or `processor` sharing a slice with an
+`event` but no `command` is a reaction wired straight to an event, and nothing flags it. em
+only warns when a reaction shares a slice with a command. Reactions must always go through a
+command (`reaction → command → event`, split across two slices); enforce that by
+construction. The [patterns](patterns.md) doc covers why.

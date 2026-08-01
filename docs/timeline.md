@@ -44,6 +44,7 @@ slice "View Open Orders" {
 }
 
 slice "Ship Order" {
+  ui Shipping Desk @Ops
   command Ship Order
   event Order Shipped @Order
 }
@@ -65,6 +66,7 @@ slice "View Open Orders" {
 }
 
 slice "Ship Order" {
+  ui Shipping Desk @Ops
   command Ship Order
   event Order Shipped @Order
 }
@@ -76,10 +78,20 @@ slice "Track Fulfillment" {
 ```
 
 Instances declared with `again` are one logical read model. The first declaration owns the
-`note` doc; each instance lists only the new events that reach it there; instances are
-linked left-to-right with a continuity arrow; and a reaction (`processor … from "View"`)
-reads the nearest instance at or before its own slice. Using `again` on a view with no
-earlier declaration is an error — declare it plainly the first time.
+`note` doc; each instance lists only the new events that reach it there; and a reaction
+(`processor … from "View"`) reads the nearest instance at or before its own slice. Using
+`again` on a view with no earlier declaration is an error — declare it plainly the first
+time.
+
+Instances are **never** connected to one another. Repeating a view is an ergonomic device
+for showing the same read model at successive points in time: the continuity is implied by
+the shared name, and the events arriving at each instance are what show how the view
+changes. An arrow between two instances would say the read model feeds itself, and because
+commands and read models share the API lane, it would also be drawn straight through any
+command between them — reading as an illegal command → read model connection. Writing one by
+hand is a [validation error](validation.md#connection-legality);
+[examples/timeline-rules.em](../examples/timeline-rules.em) shows how the repeat is meant to
+look.
 
 Reactions obey the same law: a processor or translation may only read a view that already
 exists on the timeline at its slice.

@@ -75,20 +75,13 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
     }
   }
 
-  // Instance continuity: a `view X again` instance is the same logical read model reappearing
-  // further along the timeline — link it forward from its previous instance so the evolution
-  // reads left to right (the Event Modeling device that replaces backward arrows).
-  const instancesByLogical = new Map<string, typeof model.elements>();
-  for (const el of model.elements) {
-    if (el.kind !== "view") continue;
-    const list = instancesByLogical.get(el.logicalId) ?? [];
-    list.push(el);
-    instancesByLogical.set(el.logicalId, list);
-  }
-  for (const list of instancesByLogical.values()) {
-    const ordered = [...list].sort((a, b) => a.sliceIndex - b.sliceIndex);
-    for (let i = 1; i < ordered.length; i++) add(ordered[i - 1].id, ordered[i].id, "view");
-  }
+  // Note: instances of the same logical read model (`view X again`) are deliberately NOT
+  // connected to one another. Repeating a view is an ergonomic device for showing it at
+  // successive points on the timeline; continuity is implied by the shared name, and the
+  // inbound event arrows are what show how the view changes over time. A view->view arrow
+  // would be a modelling error — and, since commands and read models share the API lane,
+  // it also renders as a flat line through any command box between the two instances,
+  // reading as an illegal command->read-model connection.
 
   // Explicit arrows from the DSL.
   for (const a of model.arrows) {

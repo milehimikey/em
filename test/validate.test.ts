@@ -303,3 +303,438 @@ slice "S" {
     expect(gapDiags(src)).toHaveLength(0);
   });
 });
+
+describe("connection legality (the four patterns)", () => {
+  // em infers only legal connections from slice shape, so a hand-written `arrow` is the
+  // one way an illegal one can enter a model. See examples/timeline-rules-invalid.em.
+  const BASE = `
+persona Agent
+context Ticket
+slice "Open Ticket" {
+  ui Ticket Form @Agent
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Ticket Queue" {
+  view Ticket Queue from "Ticket Opened"
+  ui Queue Board @Agent
+}
+slice "Assign Ticket" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue After Assignment" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`;
+  const flowErrors = (arrow: string) =>
+    diagsFor(BASE + arrow).filter(
+      (d) => d.severity === "error" && d.message.includes("connects a"),
+    );
+
+  it("rejects a command wired straight to a read model — the CQRS violation", () => {
+    const [err] = flowErrors('arrow "Open Ticket" -> "Ticket Queue"');
+    expect(err.message).toContain("connects a command directly to a read model");
+    expect(err.message).toContain("command -> event -> read model");
+  });
+
+  it("rejects a read model wired straight to a command", () => {
+    const [err] = flowErrors('arrow "Ticket Queue" -> "Assign Ticket"');
+    expect(err.message).toContain("connects a read model directly to a command");
+    expect(err.message).toContain("read model -> processor -> command");
+  });
+
+  it("rejects an event wired straight to a command", () => {
+    const [err] = flowErrors('arrow "Ticket Opened" -> "Assign Ticket"');
+    expect(err.message).toContain("connects an event directly to a command");
+  });
+
+  it("rejects event -> event (Law 1) and read model -> read model", () => {
+    expect(flowErrors('arrow "Ticket Opened" -> "Ticket Assigned"')[0].message).toContain(
+      "events never connect to events",
+    );
+    expect(flowErrors('arrow "Ticket Queue" -> "Ticket Queue"')[0].message).toContain(
+      "instances of one read model are never connected",
+    );
+  });
+
+  it("allows every pair the four patterns do produce", () => {
+    const legal = [
+      'arrow "Ticket Form" -> "Open Ticket"', // ui -> command
+      'arrow "Open Ticket" -> "Ticket Opened"', // command -> event
+      'arrow "Ticket Opened" -> "Ticket Queue"', // event -> view
+      'arrow "Ticket Queue" -> "Queue Board"', // view -> ui
+    ];
+    for (const a of legal) expect(flowErrors(a)).toHaveLength(0);
+  });
+
+  it("allows read model -> reaction -> command across two slices", () => {
+    const src = `
+context Billing
+slice "Refund Requested" {
+  command Request Refund
+  event Refund Requested @Billing
+}
+slice "Refund Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+arrow "Refund Backlog" -> "Refund Gateway"
+arrow "Refund Gateway" -> "Issue Refund"
+`;
+    expect(
+      diagsFor(src).filter((d) => d.severity === "error" && d.message.includes("connects a")),
+    ).toHaveLength(0);
+  });
+});
+
+describe("unread event warning", () => {
+  // The mirror of "command produces no event": recording an event nothing projects is a
+  // write with no reader. A warning, not an error — a model in progress legitimately has a
+  // write slice whose read slice hasn't been added yet, and errors block rendering.
+  const unread = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("not read by any read model"));
+
+  it("warns on an event no read model consumes, at the event's line", () => {
+    const diags = unread(`
+context Ticket
+slice "Open Ticket" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 5 });
+    expect(diags[0].message).toContain('event "Ticket Opened"');
+  });
+
+  it("stays quiet when a view names the event in `from`, from any later slice", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open Ticket" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a `view X again` instance as the reader", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a same-slice view with no `from` as the reader", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open And Read" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+  view Ticket Queue
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts an explicit event -> view arrow as the reader", () => {
+    expect(
+      unread(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Board" {
+  view Ops Board from "Ticket Opened"
+}
+slice "Later" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Other Board" {
+  view Second Board from "Ticket Opened"
+}
+arrow "Ticket Assigned" -> "Second Board"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each unread event separately and leaves the read ones alone", () => {
+    const diags = unread(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Reply" {
+  command Reply
+  event Reply Sent @Ticket
+}
+slice "Resolve" {
+  command Resolve
+  event Ticket Resolved @Ticket
+}
+`);
+    expect(diags.map((d) => d.message)).toEqual([
+      expect.stringContaining('"Reply Sent"'),
+      expect.stringContaining('"Ticket Resolved"'),
+    ]);
+  });
+});
+
+describe("untriggered command warning", () => {
+  // The input-side mirror of the unread-event rule. Information enters the system through a
+  // command, and a command enters through a person on a screen or a reaction acting for them.
+  const untriggered = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("nothing that triggers it"));
+
+  it("warns on a command with no ui and no preceding reaction", () => {
+    const diags = untriggered(`
+context Ticket
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
+    expect(diags[0].message).toContain('command "Assign Ticket"');
+  });
+
+  it("stays quiet when a ui sits in the same slice, in any order", () => {
+    expect(
+      untriggered(`
+context Ticket
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+    expect(
+      untriggered(`
+context Ticket
+slice "Assign" {
+  command Assign Ticket
+  ui Queue Board @Agent
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a reaction in the previous slice — the Automation/Translation split", () => {
+    expect(
+      untriggered(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("does not count a reaction two slices back", () => {
+    expect(
+      untriggered(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Gap" {
+  view Something from "Refund Requested"
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+`),
+    ).toHaveLength(1);
+  });
+
+  it("counts an explicit ui -> command arrow", () => {
+    expect(
+      untriggered(`
+context Ticket
+slice "Board" {
+  view Queue from "Ticket Assigned"
+  ui Queue Board @Agent
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+arrow "Queue Board" -> "Assign Ticket"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each untriggered command separately", () => {
+    const diags = untriggered(`
+context Ticket
+slice "A" {
+  command One
+  event One Done @Ticket
+}
+slice "B" {
+  ui Screen @Agent
+  command Two
+  event Two Done @Ticket
+}
+slice "C" {
+  command Three
+  event Three Done @Ticket
+}
+`);
+    expect(diags.map((d) => d.message)).toEqual([
+      expect.stringContaining('"One"'),
+      expect.stringContaining('"Three"'),
+    ]);
+  });
+});
+
+describe("unconsumed read model warning", () => {
+  // A complete State View is event -> read model -> ui (or -> reaction). A view nothing
+  // displays or watches is the output-side half-slice.
+  const unconsumed = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("has no consumer"));
+
+  const WRITE = `
+context Ticket
+slice "Open" {
+  ui Ticket Form @Agent
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+`;
+
+  it("warns on a read model with no ui and no reaction", () => {
+    const diags = unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning" });
+    expect(diags[0].message).toContain('read model "Ticket Queue"');
+  });
+
+  it("stays quiet when a ui sits in the same slice", () => {
+    expect(
+      unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+  ui Queue Board @Agent
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("stays quiet when a reaction sits in the same slice — the Automation pattern", () => {
+    expect(
+      unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+  processor Auto Assign
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Queue Board @Agent
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a reaction reading it from a later slice, binding to the nearest instance", () => {
+    // The processor reads "Ticket Queue" from slice 4; that consumes the instance in slice 2,
+    // not some other one — same nearest-at-or-before rule the renderer uses.
+    const src = `${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "React" {
+  processor Auto Assign from "Ticket Queue"
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Queue Board @Agent
+}
+`;
+    expect(unconsumed(src)).toHaveLength(0);
+  });
+
+  it("counts an explicit view -> ui arrow", () => {
+    expect(
+      unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Board" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Board Two @Agent
+}
+arrow "Ticket Queue" -> "Queue Board"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each unconsumed instance of a repeated read model separately", () => {
+    const diags = unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`);
+    expect(diags).toHaveLength(2);
+  });
+});

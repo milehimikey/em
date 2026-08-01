@@ -73,16 +73,26 @@ advances: instead of pointing a late event backward at an early view (forbidden)
 reappears where the event lands.
 
 Instances are one logical view. The first declaration owns the `note` doc; each later
-instance lists only the new events that reach it at that point; instances are linked left to
-right with a continuity arrow; and a reaction reading the view connects to the nearest
-instance at or before its own slice. `again` on a name with no earlier declaration is a
-validation error, and `again` on anything but a `view` is a parse error.
+instance lists only the new events that reach it at that point; and a reaction reading the
+view connects to the nearest instance at or before its own slice. `again` on a name with no
+earlier declaration is a validation error, and `again` on anything but a `view` is a parse
+error.
+
+Instances are never connected to one another — continuity is implied by the shared name, and
+the events reaching each instance are what show the view changing over time. See
+[timeline.md](timeline.md).
 
 ### `arrow`
 
 `arrow A -> B` draws an explicit edge for anything the patterns don't infer, such as a read
 model feeding a second screen. Both endpoints must match an element name, and the arrow must
 point forward in time.
+
+An arrow is the one place an illegal connection can be written down, so the kinds it joins
+are checked against the four patterns: `ui → command`, `command → event`,
+`event → read model`, `read model → ui`, `read model → reaction`, `reaction → command`.
+Anything else — a command straight to a read model, an event straight to a command — is a
+[validation error](validation.md#connection-legality).
 
 ## Fields
 

@@ -46,6 +46,65 @@ export function parseNodeRects(svg: string, ids: Set<string>): Map<string, Rect>
   return rects;
 }
 
+/** A bounding box in the graph's own (post-transform) coordinate space. */
+export interface Box {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+const FIT_PAD = 10; // breathing room, and enough for an arrowhead at the boundary
+
+/**
+ * Grow the canvas so content drawn in graph space isn't clipped by the root viewBox.
+ * Edge detours can legitimately run outside the box grid Graphviz sized the canvas for
+ * (an arc under the bottom lane, say), and anything past the viewBox is simply lost.
+ */
+export function fitCanvas(svg: string, box: Box | null): string {
+  if (!box) return svg;
+  const vb = /viewBox="([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)"/.exec(svg);
+  const wpt = /width="([\d.eE+-]+)pt"/.exec(svg);
+  const hpt = /height="([\d.eE+-]+)pt"/.exec(svg);
+  if (!vb || !wpt || !hpt) return svg; // can't resize safely — leave it alone
+
+  // Graphviz wraps the graph in `transform="scale(sx sy) rotate(0) translate(tx ty)"`,
+  // applied right to left, so a graph-space point lands at scale * (p + translate).
+  const tf = /<g\b[^>]*class="graph"[^>]*transform="([^"]*)"/.exec(svg)?.[1] ?? "";
+  const sc = /scale\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(tf);
+  const tr = /translate\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(tf);
+  const [sx, sy] = sc ? [+sc[1], +sc[2]] : [1, 1];
+  const [tx, ty] = tr ? [+tr[1], +tr[2]] : [0, 0];
+
+  const minX = +vb[1];
+  const minY = +vb[2];
+  const vw = +vb[3];
+  const vh = +vb[4];
+  if (vw <= 0 || vh <= 0) return svg;
+
+  const x0 = Math.min(sx * (box.minX + tx), sx * (box.maxX + tx));
+  const x1 = Math.max(sx * (box.minX + tx), sx * (box.maxX + tx));
+  const y0 = Math.min(sy * (box.minY + ty), sy * (box.maxY + ty));
+  const y1 = Math.max(sy * (box.minY + ty), sy * (box.maxY + ty));
+
+  const left = Math.min(minX, Math.floor(x0 - FIT_PAD));
+  const top = Math.min(minY, Math.floor(y0 - FIT_PAD));
+  const right = Math.max(minX + vw, Math.ceil(x1 + FIT_PAD));
+  const bottom = Math.max(minY + vh, Math.ceil(y1 + FIT_PAD));
+  const nvw = right - left;
+  const nvh = bottom - top;
+  if (left === minX && top === minY && nvw === vw && nvh === vh) return svg;
+
+  return svg
+    .replace(wpt[0], `width="${round(+wpt[1] * (nvw / vw))}pt"`)
+    .replace(hpt[0], `height="${round(+hpt[1] * (nvh / vh))}pt"`)
+    .replace(vb[0], `viewBox="${round(left)} ${round(top)} ${round(nvw)} ${round(nvh)}"`);
+}
+
+function round(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
 function decode(s: string): string {
   return s
     .replace(/&lt;/g, "<")

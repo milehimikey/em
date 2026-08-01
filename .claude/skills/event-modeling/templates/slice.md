@@ -32,9 +32,20 @@ an event directly.}}
 |-------|------|----------|--------------------|
 | {{field}} | {{Type}} | {{yes/no}} | {{constraints, formats, ranges}} |
 
+## Trigger
+<!-- What issues this slice's command. Required: a command nothing points at is a write nobody
+     can start. Either the screen the user acts on (a `ui` in this slice), or the reaction that
+     issues it (an automation/processor/translation in the PREVIOUS slice). -->
+**Triggered by:** {{screen `X` @Persona | processor `Y` in slice "Z"}}
+
 ## Event(s) Emitted
 <!-- The immutable facts recorded. List each event and its payload. -->
 **Event:** `{{Event Name}}` → context `{{Context}}`
+**Read by:** {{which read model projects this event, and in which slice}}
+<!-- Required, not optional. Every event must be read by a read model — an event nothing
+     projects is a write nobody can see, and `em validate` warns on it. A reaction consuming
+     it does NOT count: reactions read views, not events. If the honest answer is "nothing
+     reads it", that's a question for the business, not a field to leave blank. -->
 
 | Field | Type | Immutable Fact? | Source / Notes |
 |-------|------|-----------------|----------------|
@@ -43,7 +54,10 @@ an event directly.}}
 ## Read Model / View
 <!-- For State View slices, and any read model this slice produces or feeds. -->
 - **View:** `{{View Name}}` built from events: {{"Event A", "Event B"}}
-- **Consumed by:** {{which UI screen or automation}}
+- **Consumed by:** {{which UI screen, reaction, or read translation}}
+<!-- "Consumed by" is required, not optional. A read model nothing displays or watches is
+     information projected out of the system and then dropped, and `em validate` warns. Every
+     instance of a repeated view needs its own consumer, not just the last one. -->
 - **Freshness / consistency expectation:** {{real-time | eventual | on-demand}}
 
 ## Invariants / Business Rules
