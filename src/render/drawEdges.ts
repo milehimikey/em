@@ -18,7 +18,6 @@ const MIN_BOW = 24;
 const MAX_BOW = 90;
 const SAME_ROW_EPS = 10; // |cy| difference under this counts as the same row
 const GUTTER = 14; // clearance left when detouring around a box
-const DETOUR_TRIES = 8; // how many times an over/under detour may widen before giving up
 const CORRIDOR_STEPS = 6; // heights probed across the gap between two rows
 
 export interface EdgeOverlay {
@@ -60,7 +59,23 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
       const blockers: Rect[] = [];
       for (const [id, r] of rects) if (id !== e.from && id !== e.to) blockers.push(r);
       const direct = curvePoints(f, t);
-      const pts = hits(direct, blockers).length ? detour(f, t, blockers) ?? direct : direct;
+      let pts = direct;
+      if (hits(direct, blockers).length) {
+        const routed = detour(f, t, blockers);
+        if (routed) {
+          pts = routed;
+        } else {
+          // Every detour still crosses something — draw the direct line rather than nothing,
+          // but say so: a silently-drawn blocked arrow is exactly the misreading this file
+          // exists to prevent.
+          const fromName = model.byId.get(e.from)?.name ?? e.from;
+          const toName = model.byId.get(e.to)?.name ?? e.to;
+          console.warn(
+            `  warn  no clear route for "${fromName}" -> "${toName}"; drawing it straight, ` +
+              `which may cross a box it doesn't connect to`,
+          );
+        }
+      }
       d = cubic(...pts);
     }
     colors.add(e.color);
@@ -198,10 +213,13 @@ function corridorRoute(f: Rect, t: Rect, boxes: Rect[]): Cubic | null {
   return null;
 }
 
-/** Arc over (dir -1) or under (dir 1) everything, widening past whatever it still hits. */
+/** Arc over (dir -1) or under (dir 1) everything, widening past whatever it still hits. Each
+ *  failed try pushes `y` beyond every box that blocked it, so a box can only ever be the one
+ *  that triggers a widen once — the box set is finite, so `boxes.length` widenings is always
+ *  enough to either clear everything or prove nothing more can be gained by widening further. */
 function routeAround(f: Rect, t: Rect, boxes: Rect[], dir: -1 | 1): Cubic | null {
   let y = dir < 0 ? Math.min(f.top, t.top) - GUTTER : Math.max(f.bottom, t.bottom) + GUTTER;
-  for (let i = 0; i < DETOUR_TRIES; i++) {
+  for (let i = 0; i < boxes.length + 1; i++) {
     const pts = flatRoute(f, t, y);
     const blocked = hits(pts, boxes);
     if (!blocked.length) return pts;
@@ -213,7 +231,9 @@ function routeAround(f: Rect, t: Rect, boxes: Rect[], dir: -1 | 1): Cubic | null
   return null;
 }
 
-/** Boxes whose interior the cubic passes through, found by sampling along it. */
+/** Boxes whose interior the cubic passes through, found by sampling along it. Approximate, not
+ *  exact: SAMPLES points along the curve, not a true curve/rectangle intersection — good enough
+ *  at these box sizes, matching this file's other approximations (see grow()'s comment). */
 function hits(p: Cubic, boxes: Rect[]): Rect[] {
   const [x0, y0, x1, y1, x2, y2, x3, y3] = p;
   const found = new Set<Rect>();
