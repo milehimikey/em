@@ -35,8 +35,8 @@ it's issued from, or (in the Automation and Translation patterns) the reaction i
 before it; a command nothing points at is a write nobody can start. And the event it records
 must end up in a **read model**; an event nothing projects is a write nobody can see. A State
 Change slice is only finished once both hold, which in practice means pairing it with the State
-View slice that consumes its event.
-[`em validate` warns](validation.md#both-ends-of-a-flow) on either gap.
+View slice that consumes its event — and that State View needs its own consumer in turn.
+[`em validate` warns](validation.md#both-ends-of-a-flow) on any of those gaps.
 
 ## State View
 
@@ -50,8 +50,15 @@ slice "Open Orders" {
 }
 ```
 
+The `ui` is not optional decoration: a read model nothing displays is information projected out
+of the system and then dropped. Every read model needs a consumer — a screen, a reaction that
+watches it, or (in a headless model) the read translation that serves it to a caller.
+
 When a read model keeps evolving as later events land, it reappears on the timeline with
-`view <Name> again` rather than pulling arrows backward — see [timeline.md](timeline.md).
+`view <Name> again` rather than pulling arrows backward — see [timeline.md](timeline.md). **Each
+instance is its own State View slice and needs its own consumer.** If you repeat a view next to
+an event purely to keep the arrow short, bring its screen along; if there is nothing to bring,
+the instance shouldn't be there.
 
 ## Automation
 

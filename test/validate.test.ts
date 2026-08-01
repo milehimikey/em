@@ -628,3 +628,113 @@ slice "C" {
     ]);
   });
 });
+
+describe("unconsumed read model warning", () => {
+  // A complete State View is event -> read model -> ui (or -> reaction). A view nothing
+  // displays or watches is the output-side half-slice.
+  const unconsumed = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("has no consumer"));
+
+  const WRITE = `
+context Ticket
+slice "Open" {
+  ui Ticket Form @Agent
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+`;
+
+  it("warns on a read model with no ui and no reaction", () => {
+    const diags = unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning" });
+    expect(diags[0].message).toContain('read model "Ticket Queue"');
+  });
+
+  it("stays quiet when a ui sits in the same slice", () => {
+    expect(
+      unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+  ui Queue Board @Agent
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("stays quiet when a reaction sits in the same slice — the Automation pattern", () => {
+    expect(
+      unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+  processor Auto Assign
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Queue Board @Agent
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts a reaction reading it from a later slice, binding to the nearest instance", () => {
+    // The processor reads "Ticket Queue" from slice 4; that consumes the instance in slice 2,
+    // not some other one — same nearest-at-or-before rule the renderer uses.
+    const src = `${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "React" {
+  processor Auto Assign from "Ticket Queue"
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Queue Board @Agent
+}
+`;
+    expect(unconsumed(src)).toHaveLength(0);
+  });
+
+  it("counts an explicit view -> ui arrow", () => {
+    expect(
+      unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Board" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Board Two @Agent
+}
+arrow "Ticket Queue" -> "Queue Board"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each unconsumed instance of a repeated read model separately", () => {
+    const diags = unconsumed(`${WRITE}slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`);
+    expect(diags).toHaveLength(2);
+  });
+});

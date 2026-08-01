@@ -130,6 +130,7 @@ records an event directly.
   }
   slice "Todo — done" {
     view Todo again from "E"   # every event needs a reader; here it clears the to-do list
+    ui Work Board @Persona     # ...and every read model needs a consumer
   }
   ```
   The processor band holds no event; the command in the next slice produces it. Keeping the
@@ -159,6 +160,7 @@ trigger forms:
   }
   slice "Source — recorded" {
     view Source again from "E"   # every event needs a reader
+    ui Status Screen @Persona    # ...and every read model needs a consumer
   }
   ```
   The translation band never carries an event.
@@ -240,7 +242,9 @@ Walk the whole model with stakeholders and check for loose ends:
 - Every **command** has something that **triggers** it — a `ui` in its slice, or a reaction in the
   slice before it. A command nothing points at is a write nobody can start. `em validate` warns.
 - Every **command** produces at least one **event**.
-- Every **view** has at least one source event.
+- Every **view** has at least one source event, **and a consumer** — a `ui`, a reaction watching it,
+  or (headless) a read translation. Every *instance* of a repeated view, not just the last one.
+  A read model nothing displays is information projected out and then dropped. `em validate` warns.
 - Every **event** is **read by a read model** — a `view` naming it in `from` (any `again` instance
   counts), or a `view` with no `from` sitting in its slice. A reaction consuming it does **not**
   count: reactions read views, not events. An event nothing projects is a write nobody can see, so

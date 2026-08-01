@@ -212,6 +212,43 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
   });
 
+  // Every read model must be consumed. A view nothing displays or watches is the output-side
+  // half-slice: information projected out of the system and then dropped on the floor. A
+  // complete State View is event -> read model -> ui (or -> reaction, the Automation pattern).
+  const consumedViews = new Set<string>();
+  for (const el of model.elements) {
+    // A reaction's `from` binds to the nearest instance at-or-before it, same as the renderer.
+    if (el.kind === "view") continue;
+    for (const name of el.from ?? []) {
+      const bucket = model.byName.get(normalizeName(name));
+      if (!bucket) continue;
+      const src =
+        bucket
+          .filter((x) => x.kind === "view" && x.sliceIndex <= el.sliceIndex)
+          .sort((a, b) => b.sliceIndex - a.sliceIndex)[0] ?? bucket.find((x) => x.kind === "view");
+      if (src) consumedViews.add(src.id);
+    }
+  }
+  for (const a of model.arrows) {
+    if (a.fromId && model.byId.get(a.fromId)?.kind === "view") consumedViews.add(a.fromId);
+  }
+  for (const slice of model.slices) {
+    const consumerInSlice = slice.elements.some(
+      (e) => e.kind === "ui" || AUTOMATION_KINDS.has(e.kind),
+    );
+    if (consumerInSlice) continue;
+    for (const view of slice.elements.filter((e) => e.kind === "view")) {
+      if (consumedViews.has(view.id)) continue;
+      diags.push({
+        severity: "warning",
+        message:
+          `read model "${view.name}" has no consumer; add the screen that displays it ` +
+          `(a \`ui\` in this slice) or the reaction that watches it — or drop this instance`,
+        line: view.line,
+      });
+    }
+  }
+
   // Every event must be read by something. Recording an event nothing projects is a write
   // with no reader — the mirror of a command that records no event, and a warning for the
   // same reason: a model in progress legitimately has a write slice whose read slice hasn't

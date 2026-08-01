@@ -28,6 +28,7 @@ const CLEAN = `slice "Place" {
 }
 slice "Open Orders" {
   view Open Orders from "Order Placed"
+  ui Order List @Customer
 }
 `;
 
@@ -46,6 +47,7 @@ const WITH_ISSUE = `slice "Place" {
 }
 slice "Open Orders" {
   view Open Orders from "Order Placed"
+  ui Order List @Customer
 }
 `;
 

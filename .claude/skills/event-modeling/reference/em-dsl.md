@@ -118,6 +118,7 @@ slice "Ship Order" {            # the triggered command goes in the NEXT slice
 }
 slice "Open Orders — shipped" {
   view Open Orders again from "Order Shipped"   # every event needs a reader
+  ui Order List @Customer                       # ...and every read model needs a consumer
 }
 
 # 4a. Translation (external trigger): external input -> translation -> command -> event
@@ -130,6 +131,7 @@ slice "Confirm Delivery" {            # the triggered command goes in the NEXT s
 }
 slice "Open Orders — delivered" {
   view Open Orders again from "Delivery Confirmed"
+  ui Order List @Customer
 }
 
 # 4b. Translation (internal trigger): read model -> translation -> command -> event
@@ -148,6 +150,7 @@ slice "Record Sync" {
 }
 slice "Accepted Quotes — synced" {
   view Accepted Quotes again from "Quote Synced"
+  ui Sync Status @Customer
 }
 ```
 
@@ -273,6 +276,9 @@ slice "Read Quote — created" {
 - **Every `event` has a reader.** A command slice isn't finished until the read slice that projects
   its event exists. Reactions don't count — they read views, not events. Pair each write slice with
   its read slice as you go rather than sweeping up dangling events at the end.
+- **Every `view` has a consumer.** A `ui` in its slice, a reaction watching it, or (headless) a read
+  translation. Every *instance* of a repeat, not just the last — a bare `view X again` slice is a
+  half-slice, not a State View.
 - **Only six connections are legal**, and only these are ever inferred:
   `ui → command`, `command → event`, `event → view`, `view → ui`, `view → reaction`,
   `reaction → command`. Anything else in an explicit `arrow` is an error — above all

@@ -32,6 +32,7 @@ slice "Assign Ticket" {
 
 slice "Queue After Assignment" {
   view Ticket Queue again from "Ticket Assigned"
+  ui Queue Board After Assign @Agent
 }
 
 # 1. A command straight to a read model. The CQRS violation: writes are only ever

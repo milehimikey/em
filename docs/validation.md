@@ -52,6 +52,7 @@ each; run `em validate` on it to see all five.
 | A command that records no event | Add the event, or reconsider the command |
 | An event no read model reads | Project it into a view, or reconsider recording it |
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
+| A read model nothing consumes | Add the screen that displays it or the reaction that watches it, or drop the instance |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
@@ -62,9 +63,14 @@ doesn't exist.
 
 ### Both ends of a flow
 
-Three warnings guard the ends of the chain that runs screen → command → event → read model.
-Read in order they say: something starts the write, the write records something, and someone
-reads it.
+Four warnings guard the chain that runs screen → command → event → read model → screen. Read in
+order they say: something starts the write, the write records something, someone projects it, and
+someone looks at the projection. Every element in that chain has a link in and a link out, and
+each warning is one link missing.
+
+Put another way: they enforce that every slice is a **complete** instance of one of the
+[four patterns](patterns.md), not a half-slice. A State Change is `ui → command → event`; a State
+View is `event → read model → ui`. A slice holding only part of one is unfinished.
 
 - **A command nothing triggers** is a write nobody can start. A command is issued by a person
   on a screen or by a reaction acting on their behalf — it doesn't fire itself. It counts as
@@ -77,8 +83,14 @@ reads it.
   no `from` sits in its slice, or when an explicit `arrow` points from it to a read model. Any
   instance of a repeated read model counts, so `view X again from "Event"` satisfies it.
   A reaction consuming it does **not** count — reactions read read models, not events.
+- **A read model nothing consumes** is information projected out of the system and then dropped.
+  It counts as consumed when a `ui` sits in its slice (State View), when a reaction sits in its
+  slice or reads it by name from a later slice (Automation/Translation), or via an explicit
+  `arrow` out of it. In a headless model the consumer is a read translation. Each instance of a
+  repeated read model needs its own consumer: if you repeat a view next to an event purely to keep
+  the arrow short, bring its screen along, or don't add the instance.
 
-All three are warnings rather than errors on purpose. A model under construction spends most of
+All four are warnings rather than errors on purpose. A model under construction spends most of
 its life with one end of a flow ahead of the other, and errors block rendering — `em watch`
 would stop redrawing mid-session exactly when you most want to see the diagram.
 

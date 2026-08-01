@@ -53,6 +53,7 @@ slice "Receive" {
 }
 slice "Catalog" {
   view Availability from "Stock Received"
+  ui Stock Screen @Clerk
 }
 slice "Reserve" {
   ui Order Desk @Clerk
@@ -61,6 +62,7 @@ slice "Reserve" {
 }
 slice "Catalog Updated" {
   view Availability again from "Stock Reserved"
+  ui Stock Screen @Clerk
 }
 `;
 
@@ -206,6 +208,7 @@ slice "A" {
 }
 slice "V" {
   view Ledger from "Done"
+  ui Ledger Screen @User
 }
 `),
     ).toHaveLength(0);
