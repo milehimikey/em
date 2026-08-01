@@ -48,7 +48,9 @@ validation rules) before doing real work — they are the source of truth. Templ
   triggers **no** command — the analog of `view → ui`). **Repeat read models** across slices so the
   timeline flows left-to-right — put each repeat **right after the event that feeds it**, sourcing
   only that one adjacent event, so every arrow is short (a read model far from its source events
-  draws a long sweeping arrow that's harder to follow). Declare every instance after the first with
+  draws a long arrow whose head lands columns away, making the *write* slice read as dangling —
+  keep a sub-flow that detours into another context together, not parked at the end of the model).
+  Declare every instance after the first with
   **`view X again from "..."`** — `again` instances are exempt from the duplicate-name warning even
   when referenced, and each reference resolves to the right instance. Slice order matters: a
   reaction must be directly followed by its command slice, and a read slice must not be immediately

@@ -14,9 +14,10 @@ model "Timeline Rules"
 #      the reaction in the slice before it), and each write slice is followed by the read
 #      slice that consumes its event. Both ends of every flow are joined up.
 #
-#   3. "Refund Backlog" is fed by an event eleven slices earlier. That arrow has to
-#      cross the whole Ticket lane to get there; the renderer threads it through the
-#      channel between the lanes rather than letting it clip any box on the way.
+#   3. Every arrow spans one slice. A read model goes directly after the event that
+#      feeds it, so you can see the whole flow without tracing a line across the
+#      diagram. The refund detour (slices 9-12) stays together for the same reason
+#      rather than being parked at the end.
 #
 #   4. Every connection here is one of the four patterns. See timeline-rules-invalid.em
 #      for the arrows `em validate` rejects, and why.
@@ -35,12 +36,6 @@ slice "Open Ticket" {
 slice "Ticket Queue" {
   view Ticket Queue from "Ticket Opened"
   ui Queue Board @Agent
-}
-
-slice "Request Refund" {
-  ui Refund Form @Agent
-  command Request Refund
-  event Refund Requested @Billing
 }
 
 slice "Assign Ticket" {
@@ -73,6 +68,32 @@ slice "Queue After Escalation" {
   view Ticket Queue again from "Ticket Escalated"
 }
 
+# The refund detour. It crosses into the Billing context and back, and it is kept
+# adjacent to the ticket flow rather than parked at the end of the model — a read
+# model far from its event draws a long arrow that reads as a dangling slice.
+slice "Request Refund" {
+  ui Refund Form @Agent
+  command Request Refund
+  event Refund Requested @Billing
+}
+
+slice "Refund Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+
+# A reaction never records an event itself: it triggers a command, in the next slice,
+# and that command records the event.
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+
+# ...and the backlog clears, which is what reads the event the refund recorded.
+slice "Backlog After Refund" {
+  view Refund Backlog again from "Refund Issued"
+}
+
 slice "Resolve Ticket" {
   ui Queue Board @Agent
   command Resolve Ticket
@@ -92,23 +113,4 @@ slice "Close Ticket" {
 slice "Queue After Close" {
   view Ticket Queue again from "Ticket Closed"
   ui Queue Board Final @Agent
-}
-
-# The refund side. This read model reaches back across the whole Ticket lane to the
-# event in slice 3 — the long span that exercises obstacle-aware routing.
-slice "Refund Backlog" {
-  view Refund Backlog from "Refund Requested"
-  processor Refund Gateway
-}
-
-# A reaction never records an event itself: it triggers a command, in the next slice,
-# and that command records the event.
-slice "Issue Refund" {
-  command Issue Refund
-  event Refund Issued @Billing
-}
-
-# ...and the backlog clears, which is what reads the event the refund recorded.
-slice "Backlog After Refund" {
-  view Refund Backlog again from "Refund Issued"
 }

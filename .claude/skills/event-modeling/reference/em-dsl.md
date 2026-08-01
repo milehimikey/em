@@ -199,9 +199,12 @@ slice "Read Quote — created" {
   implied by the shared name, and the events arriving at each instance are what show it changing.
 - **Keep arrows span-1: put each repeat right after its feeding event.** Place a read-model instance
   immediately after the event that updates it, sourcing only that single adjacent event. The
-  renderer routes a long arrow around whatever is in its way rather than through it, so a distant
-  source is no longer misleading — but it still sweeps across the diagram and is harder to follow
-  than a short hop. Repeat the read model next to each event where you reasonably can.
+  renderer routes a long arrow *around* intervening boxes rather than through them, so it no longer
+  reads as a forbidden read→read link — but distance is still a real problem: the arrowhead lands
+  columns away from the event that produced it, so **the write slice reads as dangling**, as if
+  nothing consumed its event. You have to trace a line across the diagram to see the connection.
+  Keep the read model adjacent to its event, and keep a sub-flow that detours into another context
+  together rather than parking it at the end of the model.
 
 ### Slice-ordering gotchas (edge inference)
 

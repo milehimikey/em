@@ -16,9 +16,52 @@ import { parse } from "../src/parser/parser.js";
 import { semanticEdges } from "../src/model/edges.js";
 
 const EXAMPLE = "examples/timeline-rules.em";
+const exampleSrc = () => readFileSync(EXAMPLE, "utf8");
 
-async function renderExample(): Promise<string> {
-  const { dot, model } = compile(readFileSync(EXAMPLE, "utf8"));
+// A deliberately awkward layout, which the shipped example is not: the read model sits six
+// slices from the event that feeds it, in a different context lane, so the direct curve
+// between them runs straight through the Ticket lane. Real models should keep arrows span-1
+// (see docs/timeline.md) — this exists purely to give the router something to route around.
+const OBSTRUCTED = `model "Obstructed"
+persona Agent
+context Ticket
+context Billing
+slice "Request Refund" {
+  ui Refund Form @Agent
+  command Request Refund
+  event Refund Requested @Billing
+}
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue A" {
+  view Ticket Queue from "Ticket Assigned"
+}
+slice "Reply" {
+  ui Reply Composer @Agent
+  command Reply To Customer
+  event Reply Sent @Ticket
+}
+slice "Queue B" {
+  view Ticket Queue again from "Reply Sent"
+}
+slice "Close" {
+  ui Queue Board @Agent
+  command Close Ticket
+  event Ticket Closed @Ticket
+}
+slice "Queue C" {
+  view Ticket Queue again from "Ticket Closed"
+}
+slice "Refund Backlog" {
+  view Refund Backlog from "Refund Requested"
+}
+`;
+
+async function renderSource(src: string): Promise<string> {
+  const { dot, model } = compile(src);
   const dir = mkdtempSync(join(tmpdir(), "em-routing-"));
   try {
     const out = join(dir, "out.svg");
@@ -74,36 +117,44 @@ const touching = (pts: [number, number][], rects: Map<string, Rect>) => {
   return ids;
 };
 
-describe("edge routing never crosses an unrelated box", () => {
-  it("draws every arrow in the example clear of every box it doesn't connect", async () => {
-    const svg = await renderExample();
-    const model = normalize(parse(readFileSync(EXAMPLE, "utf8")));
-    const rects = parseNodeRects(svg, new Set(model.byId.keys()));
-    const group = /<g class="em-edges">([\s\S]*?)<\/g>/.exec(svg)![1];
-    const ds = [...group.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+/** Every box the drawn overlay passes through but doesn't connect. */
+function crossingsIn(svg: string, src: string): string[] {
+  const model = normalize(parse(src));
+  const rects = parseNodeRects(svg, new Set(model.byId.keys()));
+  const group = /<g class="em-edges">([\s\S]*?)<\/g>/.exec(svg)![1];
+  const ds = [...group.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+  expect(ds.length).toBe(semanticEdges(model).length);
 
-    expect(ds.length).toBe(semanticEdges(model).length);
-
-    const crossings: string[] = [];
-    for (const d of ds) {
-      const pts = samplePath(d);
-      const skip = touching(pts, rects);
-      for (const [id, r] of rects) {
-        if (skip.has(id)) continue;
-        if (pts.some(([x, y]) => inside(x, y, r))) {
-          crossings.push(`${model.byId.get(id)!.name} (${model.byId.get(id)!.kind})`);
-        }
+  const out: string[] = [];
+  for (const d of ds) {
+    const pts = samplePath(d);
+    const skip = touching(pts, rects);
+    for (const [id, r] of rects) {
+      if (skip.has(id)) continue;
+      if (pts.some(([x, y]) => inside(x, y, r))) {
+        out.push(`${model.byId.get(id)!.name} (${model.byId.get(id)!.kind})`);
       }
     }
-    expect(crossings).toEqual([]);
+  }
+  return out;
+}
+
+describe("edge routing never crosses an unrelated box", () => {
+  it("draws every arrow in the shipped example clear of every box it doesn't connect", async () => {
+    const src = exampleSrc();
+    expect(crossingsIn(await renderSource(src), src)).toEqual([]);
   });
 
-  it("still has an obstruction worth routing around — the fixture keeps its teeth", async () => {
-    // Refund Backlog reads an event twelve slices back, across the whole Ticket lane.
-    // A straight run between the two centres hits boxes, so the clean result above is
-    // the router working, not the layout happening to be easy.
-    const svg = await renderExample();
-    const model = normalize(parse(readFileSync(EXAMPLE, "utf8")));
+  it("routes around an obstruction instead of through it", async () => {
+    const svg = await renderSource(OBSTRUCTED);
+    expect(crossingsIn(svg, OBSTRUCTED)).toEqual([]);
+  });
+
+  it("the obstructed fixture keeps its teeth — a direct run really would hit boxes", async () => {
+    // Guards the test above: without this, a layout that happened to be easy would pass
+    // and the router could regress unnoticed.
+    const svg = await renderSource(OBSTRUCTED);
+    const model = normalize(parse(OBSTRUCTED));
     const rects = parseNodeRects(svg, new Set(model.byId.keys()));
     const from = model.byName.get("refund requested")![0];
     const to = model.byName.get("refund backlog")![0];
@@ -121,8 +172,19 @@ describe("edge routing never crosses an unrelated box", () => {
     expect(blocked.length).toBeGreaterThan(0);
   });
 
+  it("keeps every arrow in the shipped example span-1, so no slice reads as dangling", () => {
+    // A read model far from its event draws a long arrow whose arrowhead lands off-screen
+    // from the slice that produced it — the slice looks unconnected even though it isn't.
+    const model = normalize(parse(exampleSrc()));
+    const long = semanticEdges(model)
+      .map((e) => ({ a: model.byId.get(e.from)!, b: model.byId.get(e.to)! }))
+      .filter(({ a, b }) => Math.abs(b.sliceIndex - a.sliceIndex) > 1)
+      .map(({ a, b }) => `${a.name} -> ${b.name}`);
+    expect(long).toEqual([]);
+  });
+
   it("grows the canvas so a detour outside the box grid isn't clipped", async () => {
-    const svg = await renderExample();
+    const svg = await renderSource(OBSTRUCTED);
     const vb = /viewBox="([\d.eE+-]+) ([\d.eE+-]+) ([\d.eE+-]+) ([\d.eE+-]+)"/.exec(svg)!;
     const [minX, minY, vw, vh] = vb.slice(1).map(Number);
     const tf = /<g\b[^>]*class="graph"[^>]*transform="([^"]*)"/.exec(svg)![1];

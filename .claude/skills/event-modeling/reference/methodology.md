@@ -103,10 +103,13 @@ displays. Read-only; changes no state.
   read-model instance right after each event that updates it, sourcing **only that one adjacent
   event** — every `event → read model` arrow is then short and forward-flowing. A read model sitting
   far from its source events (e.g. a "list/queue" read placed early but fed by late events) draws
-  long arrows that sweep across the diagram and are harder to follow than a short hop. (The renderer
-  routes them around intervening boxes rather than through them, so they no longer *look* like a
-  forbidden read→read link — but a short arrow still reads better.) The fix is never a `view → view`
-  edge; it's to repeat the read model next to each event that feeds it.
+  long arrows that sweep across the diagram. The renderer routes them *around* intervening boxes
+  rather than through them, so they no longer *look* like a forbidden read→read link — but the
+  distance itself is the problem: the arrowhead lands columns away from the event that produced it,
+  so **the write slice reads as dangling**, as if nothing consumed its event. A reader has to trace
+  the line across the diagram to see otherwise. The fix is never a `view → view` edge; it's to
+  repeat the read model next to each event that feeds it, and to keep a sub-flow that detours into
+  another context together rather than parking it at the end of the model.
 - Socratic prompts: *"What does the consumer need to see to make their next decision? Which past
   events provide that information? Is this a screen or an API read? What's the freshness/consistency
   expectation?"*
