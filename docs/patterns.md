@@ -52,7 +52,7 @@ slice "Open Orders" {
 
 The `ui` is not optional decoration: a read model nothing displays is information projected out
 of the system and then dropped. Every read model needs a consumer — a screen, a reaction that
-watches it, or (in a headless model) the read translation that serves it to a caller.
+watches it, or (in a headless model) the `ui` tagged to the API-caller persona.
 
 When a read model keeps evolving as later events land, it reappears on the timeline with
 `view <Name> again` rather than pulling arrows backward — see [timeline.md](timeline.md). **Each
@@ -80,6 +80,7 @@ slice "Capture Payment" {
 
 slice "Payments To Process — captured" {
   view Payments To Process again from "Payment Captured"
+  ui Payments Queue @Ops
 }
 ```
 
@@ -111,6 +112,7 @@ slice "Confirm Delivery" {
 
 slice "Deliveries" {
   view Deliveries from "Delivery Confirmed"
+  ui Delivery Board @Ops
 }
 ```
 
@@ -130,6 +132,7 @@ slice "Record Sync" {
 
 slice "Accepted Quotes — synced" {
   view Accepted Quotes again from "Quote Synced"
+  ui Sync Status @Customer
 }
 ```
 
@@ -143,9 +146,31 @@ catch a reaction wired straight to an event — keep the two-slice split by cons
 
 ## Headless systems
 
-When there is no UI — clients call an API — drop `ui` and `persona` entirely. Writes become
-`translation → command → event`, with the inbound translation named for the caller. Reads
-become `read model → translation`, where the read translation is the API query: it returns
-data outbound and triggers no command, making it the headless analog of `view → ui`, not a
-reaction. The [em-with-ai repository](https://github.com/milehimikey/em-with-ai) is a full
-worked example of a headless model.
+A headless system (no screens — clients call an API) still uses `ui` and `persona`. A slice is
+trigger → command → event read vertically, so the trigger belongs *in* the slice, not split into
+one of its own. Declare a persona per external caller/role and treat its `ui` boxes as API calls
+instead of shipped screens — the same State Change and State View patterns above, no new shape:
+
+```em
+persona IntegratorAPI
+
+slice "Create Quote" {
+  ui Create Quote @IntegratorAPI
+  command Create Quote
+  event QuoteCreated @Quote
+}
+
+slice "Read Quote — created" {
+  view Quote from "QuoteCreated"
+  ui Read Quote @IntegratorAPI
+}
+```
+
+`translation` stays reserved for genuine reactions and real external-system boundaries (the
+Automation and Translation patterns above, unchanged) — not for modeling a synchronous
+request/response API call. Internal-only commands and views with no public route carry no `ui`
+at all; they follow the ordinary Automation pattern instead.
+[examples/headless-api.em](../examples/headless-api.em) is a runnable model exercising all of
+this: an API-triggered State Change and State View, a fully internal Automation (no `ui`), and a
+Translation crossing a real external boundary. The
+[em-with-ai repository](https://github.com/milehimikey/em-with-ai) is a larger worked example.

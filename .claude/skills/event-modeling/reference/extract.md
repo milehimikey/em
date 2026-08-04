@@ -67,8 +67,9 @@ it is fine to finish a round with `# TBD`s still parked.
 - **R1 — Candidate events.** Extract (event-driven) or synthesize (procedural) the past-tense
   facts; apply the event test; user confirms/renames/rejects. Ambiguous candidates → `# TBD`.
 - **R2 — Timeline order.** Order the confirmed events into the as-is narrative. Identify the
-  *actual* actors/callers and the *real* UI or API surfaces (headless systems: no
-  `ui`/`persona` — use write/read translations per `em-dsl.md`). **First `em render` here.**
+  *actual* actors/callers and the *real* UI or API surfaces (headless systems: still `ui`/`persona`
+  — one persona per caller/role, its `ui` boxes are the API calls, per `em-dsl.md`). **First
+  `em render` here.**
 - **R3 — Commands / inputs.** For each event, the request that actually produces it today
   (imperative name), *and what triggers it* — the real screen, or the scheduler/listener that
   fires it (model that as a reaction in the preceding slice, per R5). Unclear trigger → `# TBD`,

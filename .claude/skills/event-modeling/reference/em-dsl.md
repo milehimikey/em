@@ -161,38 +161,42 @@ Note the read slice closing each pattern: **every event must be read by some rea
 (warning 4 below). A command slice is not finished until the slice that projects its event
 exists. Reactions don't count — they read *views*, not events.
 
-### Headless / API systems (no UI) & repeated read models
+### Headless / API systems & repeated read models
 
-When the system is headless (no UI — clients call an API), drop `ui`/`persona` entirely:
-
-A slice body is always multi-line — there is **no one-line `slice "X" { … }` form**, and writing
-one is a parse error (`'slice' is not valid inside a slice`).
+A headless system (no screens — clients call an API) still uses `ui`/`persona`: a slice **is**
+trigger → command → event, read vertically, so the trigger belongs *in* the slice, never split into
+one of its own. Declare a persona per external caller/role and treat its `ui` boxes as API calls
+instead of shipped screens — same two patterns (State Change, State View) as any other slice, no new
+shape:
 
 ```em
-# Write: external translation -> command -> event (name the inbound adapter for the caller/role)
-slice "Create Quote (request)" {
-  translation SalesRep BU Create Quote
-}
+persona IntegratorAPI   # API-flagged lane: its `ui` boxes are API calls, not shipped screens
+
 slice "Create Quote" {
+  ui Create Quote @IntegratorAPI
   command Create Quote
   event QuoteCreated @Quote
 }
 
-# Read: event(s) -> read model -> READ translation (the external caller's API query, replaces UI).
-# This slice is also what makes QuoteCreated a *read* event — without it the model warns.
 slice "Read Quote — created" {
   view Quote from "QuoteCreated"
-  translation SalesRep BU Read Quote
+  ui Read Quote @IntegratorAPI
 }
 ```
 
-- A **read translation triggers no command** (it returns data outbound) — it is the headless analog
-  of `view → ui`, *not* a reaction. Only *reaction* translations/processors trigger commands. A read
-  slice has no `command` and no `event`, so `em validate` stays quiet about it.
+- **`translation` stays reserved for genuine reactions and real external-system boundaries** — an
+  internal automation, or a webhook/adapter crossing into another system (see the Automation and
+  4a/4b Translation examples above, unchanged). It is **not** how you model a synchronous
+  request/response API call — that's Pattern 1 (State Change) with an API persona, exactly like the
+  `Create Quote` slice above.
+- **Internal-only commands and views (no public route) carry no `ui` at all.** They follow the
+  ordinary Automation pattern already documented: the reaction sits in the previous slice, and an
+  internal-only read model is consumed by that reaction, not by a screen or an API query.
 - **Repeat the read model** in every slice where it's read so the timeline flows left-to-right, and
-  **prefer `view X again`** for every instance after the first (see Clauses). `again` instances are
-  exempt from the duplicate-name warning even when referenced, and each reference resolves to the
-  right instance — a plain repeat only stays warning-free while nothing references it by name, and
+  **prefer `view X again`** for every instance after the first (see Clauses) — **each instance
+  carries its own consumer** (the `ui` that reads it, or a reaction), not just the last one. `again`
+  instances are exempt from the duplicate-name warning even when referenced, and each reference
+  resolves to the right instance — a plain repeat only stays warning-free while nothing references it by name, and
   resolves to the *first* declaration when something does. **Wire each event to a read model exactly
   once:** a repeated instance's `from` lists only the **new** events since the previous instance
   (not cumulative), or the event draws a duplicate arrow to the same read model at every repeat. (An
@@ -215,9 +219,10 @@ slice "Read Quote — created" {
 - A **reaction** (`processor`/`translation` that triggers a command) wires to the command in the
   **immediately next** slice. So a reaction slice must be *directly* followed by its command slice —
   don't insert a read slice between them.
-- A **read** slice (read model → read translation, no command) must **not** be immediately followed
-  by a `command` slice, or the read translation will be mis-wired to that command. Put reads after a
-  command+event slice, or before another read / a reaction / an inbound `(request)` slice.
+- A read slice whose consumer is a **reaction** (`view` + `processor`/`translation`, no command in
+  the same slice) must **not** be immediately followed by a `command` slice, or the reaction will be
+  mis-wired to that command. Put it after a command+event slice, or before another read/reaction
+  slice instead. (A `ui`-consumed read slice has no such risk — `ui` never wires as a reaction.)
 - A read model fed by an early event (e.g. a queue or to-do view) can't always sit directly after
   its source event when a reaction must immediately precede its command slice — placing the read
   later, in narrative order with a longer arrow, is the correct trade-off, not something to force-fix.
