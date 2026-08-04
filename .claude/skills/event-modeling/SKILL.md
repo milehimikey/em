@@ -42,11 +42,14 @@ validation rules) before doing real work — they are the source of truth. Templ
   and show the user what changed. Encourage running the live view (`watch`) so a team can follow.
 - **Keep the `.em` structural; put depth in `note` docs.** The diagram holds flow; invariants,
   fields, and scenarios live in `slices/*.md` linked via `note "slices/<name>.md"`.
-- **No UI in headless/API models.** If the system is headless (clients call an API, not screens),
-  use no `ui`/`persona`: writes are `external translation → command → event` (name the inbound
-  adapter for the caller/role); reads are `read model → read translation` (an API query that
-  triggers **no** command — the analog of `view → ui`). **Repeat read models** across slices so the
-  timeline flows left-to-right — put each repeat **right after the event that feeds it**, sourcing
+- **Headless/API models still use `ui`.** If the system is headless (clients call an API, not
+  screens), declare a persona per external caller/role (e.g. `IntegratorAPI`) and treat its `ui`
+  boxes as API calls, not screens: writes are `ui → command → event` and reads are
+  `read model → ui`, exactly like any other State Change/State View slice — no separate trigger
+  slice. `translation` stays reserved for genuine reactions and real external-system boundaries,
+  not a synchronous request/response call. Internal-only commands/views with no public route carry
+  no `ui` at all — they follow the ordinary Automation pattern instead. **Repeat read models**
+  across slices so the timeline flows left-to-right — put each repeat **right after the event that feeds it**, sourcing
   only that one adjacent event, so every arrow is short (a read model far from its source events
   draws a long arrow whose head lands columns away, making the *write* slice read as dangling —
   keep a sub-flow that detours into another context together, not parked at the end of the model).
@@ -133,9 +136,9 @@ phase applies to field tables, below.
    they aren't re-proposed later. Capture the survivors as a flat list.
 2. **Plot / storyboard (step 2).** Order the events into the narrative. Identify **personas**
    (actors) and the **UI** screens at each step. Add `persona` declarations and `ui` elements.
-   In a **headless/API** model there are no personas or screens — identify the external
-   **callers** at each step instead; they become the inbound write translations and read
-   translations (see `reference/methodology.md`).
+   In a **headless/API** model there are no human personas or screens — identify the external
+   **callers** at each step instead; declare one persona per caller/role, and its `ui` boxes are
+   the API calls (see `reference/methodology.md`).
 3. **Inputs (step 3).** For each event, find the **command** that causes it (imperative name).
    Form `command → event` slices (State Change pattern). Every command needs a **trigger** in the
    same breath: the screen the user issues it from (a `ui` in the slice), or — for the Automation
@@ -143,10 +146,10 @@ phase applies to field tables, below.
    a write nobody can start. *"Who does this, and where are they when they do it?"*
 4. **Outputs (step 4).** Identify the **read models / views** consumers need and wire them with
    `from "Event"` (State View pattern), each with the screen (or reaction) that consumes it — a
-   read model nothing displays is information dropped on the floor. In a **headless/API** model there is no UI — a read model is
-   consumed by an **external read translation** (the API query, triggers no command), and read
-   models are **repeated** in each slice where they're read (use `view X again` after the first) so
-   the timeline flows (see `reference/methodology.md`).
+   read model nothing displays is information dropped on the floor. In a **headless/API** model
+   the consumer is the caller persona's `ui` (the API query) — same as any screen. Read models are
+   **repeated** in each slice where they're read (use `view X again` after the first, each instance
+   with its own consumer) so the timeline flows (see `reference/methodology.md`).
    **Close the loop before leaving this step:** every event from step 3 must be read by at least one
    read model. Walk the event list and ask, for each one, *"who looks at this, and what do they do
    with it?"* An event with no answer is either missing its read model or shouldn't be recorded —

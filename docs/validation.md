@@ -86,9 +86,10 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
 - **A read model nothing consumes** is information projected out of the system and then dropped.
   It counts as consumed when a `ui` sits in its slice (State View), when a reaction sits in its
   slice or reads it by name from a later slice (Automation/Translation), or via an explicit
-  `arrow` out of it. In a headless model the consumer is a read translation. Each instance of a
-  repeated read model needs its own consumer: if you repeat a view next to an event purely to keep
-  the arrow short, bring its screen along, or don't add the instance.
+  `arrow` out of it. In a headless model the consumer is the `ui` tagged to the API-caller
+  persona — same rule, no special case. Each instance of a repeated read model needs its own
+  consumer: if you repeat a view next to an event purely to keep the arrow short, bring its screen
+  along, or don't add the instance.
 
 All four are warnings rather than errors on purpose. A model under construction spends most of
 its life with one end of a flow ahead of the other, and errors block rendering — `em watch`

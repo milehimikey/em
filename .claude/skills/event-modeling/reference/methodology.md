@@ -77,12 +77,11 @@ against invariants and records one or more events.
 **Event(s) → Read Model → UI.** Past events are projected into a read model that a screen
 displays. Read-only; changes no state.
 - `em` shape: `slice { view V from "Event A", "Event B"  ui Screen @Persona }`
-- **Headless / API systems (no UI):** when there is no UI, a read model is consumed by an
-  **external caller querying the API**, modeled as a **read translation** — the outbound analog of
-  `→ ui`. Shape: `slice { view V from "..."  translation <Caller> Read <V> }`. A read translation
-  **triggers no command** (it returns data); it is *not* a reaction, so the
-  `reaction → command → event` rule does **not** apply to it. (Contrast: a *reaction* translation in
-  pattern 4 triggers a command.)
+- **Headless / API systems:** still use `ui`/`persona` — declare a persona per external
+  caller/role (e.g. `IntegratorAPI`) and treat its `ui` boxes as API calls, not screens. Shape:
+  `slice { view V from "..."  ui Read V @IntegratorAPI }`, same as any State View slice.
+  `translation` stays reserved for genuine reactions/external-system boundaries (pattern 4), not
+  for a synchronous request/response API call.
 - **Repeat read models across the timeline.** A read model is drawn fresh in **every** slice where
   it is read — after the events that update it, before the actions that consume it — so the diagram
   shows state flowing left-to-right (the information-completeness staircase). The same read-model
@@ -242,8 +241,9 @@ Walk the whole model with stakeholders and check for loose ends:
 - Every **command** has something that **triggers** it — a `ui` in its slice, or a reaction in the
   slice before it. A command nothing points at is a write nobody can start. `em validate` warns.
 - Every **command** produces at least one **event**.
-- Every **view** has at least one source event, **and a consumer** — a `ui`, a reaction watching it,
-  or (headless) a read translation. Every *instance* of a repeated view, not just the last one.
+- Every **view** has at least one source event, **and a consumer** — a `ui` (headless: the `ui`
+  tagged to the API-caller persona), or a reaction watching it. Every *instance* of a repeated
+  view, not just the last one.
   A read model nothing displays is information projected out and then dropped. `em validate` warns.
 - Every **event** is **read by a read model** — a `view` naming it in `from` (any `again` instance
   counts), or a `view` with no `from` sitting in its slice. A reaction consuming it does **not**

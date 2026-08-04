@@ -396,7 +396,7 @@ genuinely missing, that same warning is how you find out before an engineer does
 ## Where to go next
 
 - [patterns.md](patterns.md) — the Translation pattern this tutorial skipped, and modeling
-  headless/API systems with no UI at all.
+  headless/API systems with a caller persona instead of screens.
 - [timeline.md](timeline.md) — the Two Laws of the Timeline, and `view … again` for read
   models that keep evolving.
 - [dsl.md](dsl.md) — the full DSL reference, including explicit `arrow`s.
