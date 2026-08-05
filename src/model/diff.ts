@@ -10,12 +10,15 @@
 // reported once, not as add+remove.
 
 import { computeRefs } from "../emit/json.js";
-import { Element, NormalizedModel, normalizeName } from "./model.js";
+import { Element, NormalizedModel, Slice, normalizeName } from "./model.js";
 import { ElementKind } from "../parser/ast.js";
 
 export type ChangeType =
   | "slice-added"
   | "slice-removed"
+  | "source-added"
+  | "source-removed"
+  | "source-changed"
   | "element-added"
   | "element-removed"
   | "element-moved"
@@ -49,6 +52,8 @@ export interface ChangeEntry {
   oldType?: string | null;
   newType?: string | null;
   source?: string;
+  oldSource?: string;
+  newSource?: string;
   oldNote?: string;
   newNote?: string;
   oldText?: string;
@@ -70,6 +75,7 @@ export interface ChangeEntry {
 export interface DiffCounts {
   slicesAdded: number;
   slicesRemoved: number;
+  sourceChanges: number;
   elementsAdded: number;
   elementsRemoved: number;
   elementsMoved: number;
@@ -99,6 +105,7 @@ function emptyCounts(): DiffCounts {
   return {
     slicesAdded: 0,
     slicesRemoved: 0,
+    sourceChanges: 0,
     elementsAdded: 0,
     elementsRemoved: 0,
     elementsMoved: 0,
@@ -135,6 +142,13 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
 
   const oldSliceKeySet = new Set(oldRefs.sliceKeys);
   const newSliceKeySet = new Set(newRefs.sliceKeys);
+
+  // Slice key -> old Slice, for diffing `source` on slices that survive
+  // (i.e. aren't themselves added/removed) between the two models.
+  const oldSliceByKey = new Map<string, Slice>();
+  oldModel.slices.forEach((slice, i) => {
+    oldSliceByKey.set(oldRefs.sliceKeys[i], slice);
+  });
 
   // Whole-model ref indexes (not just surviving slices) — move detection and
   // matched-pair diffing both need to see every element on both sides.
@@ -206,6 +220,8 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
     if (sliceIsNew) {
       changes.push({ type: "slice-added", name: slice.name });
       counts.slicesAdded++;
+    } else {
+      pushSliceChanges(changes, counts, oldSliceByKey.get(sliceKey)!, slice);
     }
     for (const el of slice.elements) {
       const ref = newRefs.refById.get(el.id)!;
@@ -276,6 +292,29 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
   }
 
   return { changes, removals, counts };
+}
+
+/** Diff a surviving slice's `source` clause (added/removed/changed), same lifecycle shape as note. */
+function pushSliceChanges(
+  changes: ChangeEntry[],
+  counts: DiffCounts,
+  oldSlice: Slice,
+  newSlice: Slice,
+): void {
+  if (oldSlice.source === newSlice.source) return;
+  if (!oldSlice.source && newSlice.source) {
+    changes.push({ type: "source-added", sliceName: newSlice.name, newSource: newSlice.source });
+  } else if (oldSlice.source && !newSlice.source) {
+    changes.push({ type: "source-removed", sliceName: newSlice.name, oldSource: oldSlice.source });
+  } else {
+    changes.push({
+      type: "source-changed",
+      sliceName: newSlice.name,
+      oldSource: oldSlice.source,
+      newSource: newSlice.source,
+    });
+  }
+  counts.sourceChanges++;
 }
 
 /** Diff field/from/note/issue changes for an element present on both sides (same ref). */
@@ -445,6 +484,7 @@ function formatSummary(c: DiffCounts): string {
   };
   push(c.slicesAdded, "slice added", "slices added");
   push(c.slicesRemoved, "slice removed", "slices removed");
+  push(c.sourceChanges, "source change", "source changes");
   push(c.elementsAdded, "element added", "elements added");
   push(c.elementsRemoved, "element removed", "elements removed");
   push(c.elementsMoved, "element moved", "elements moved");
@@ -475,6 +515,12 @@ function formatEntry(e: ChangeEntry): string {
       return `+ slice "${e.name}"`;
     case "slice-removed":
       return `- slice "${e.name}"`;
+    case "source-added":
+      return `~ source added on slice "${e.sliceName}": "${e.newSource}"`;
+    case "source-removed":
+      return `~ source removed from slice "${e.sliceName}": "${e.oldSource}"`;
+    case "source-changed":
+      return `~ source changed on slice "${e.sliceName}": "${e.oldSource}" -> "${e.newSource}"`;
     case "element-added":
       return `+ ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
     case "element-removed":

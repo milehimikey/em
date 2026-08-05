@@ -11,7 +11,7 @@ model "Name"                     # diagram title
 persona Name                     # a UI swimlane row (one per actor)
 context Name                     # an event swimlane row (one per bounded context)
 
-slice "Name" {                   # one column; time runs left -> right
+slice "Name" [source "url"] {    # one column; time runs left -> right; source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row
   command Free Text              # state-changing request
   view Free Text from "Event A", "Event B"    # read model fed by event(s)
@@ -170,6 +170,27 @@ an accepted divergence should never block a build. `em diff --json` also carries
 annotation forward: a structural change or removal involving an annotated element's
 `acceptedDivergence` field is non-null, citing the reason rather than hiding the finding — see
 [cli.md](cli.md).
+
+## Slice provenance
+
+A slice can carry `source "url"` on its header line, before or after the quoted name:
+
+```
+slice "Checkout" source "https://linear.app/team/issue/MIL-60" {
+  ui   Checkout Page @Customer
+  command Submit Order
+  event Order Submitted
+}
+```
+
+This is the only slice-level clause — everything above (`note`, `issue`, `divergence`, `from`,
+`{ fields }`, `@Tag`, `again`) is per-element. `source` links a slice back to the ticket or
+conversation it traces to, so an intake loop (requirement → model → slice → spec → PR) stays
+machine-traversable through `em export` (`model.slices[].source`) instead of relying on prose
+in slice docs. It's purely metadata: no visual marker, no legend entry, and `em validate`
+doesn't require or check it. Optional — omit it and the field exports as `null`.
+
+Don't confuse this with an element's `note "path.md"`, which links a markdown file, not a URL.
 
 ## Colors
 

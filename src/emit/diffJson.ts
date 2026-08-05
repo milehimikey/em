@@ -45,6 +45,8 @@ function serializeEntry(e: ChangeEntry): SerializedEntry {
     oldType: e.oldType ?? null,
     newType: e.newType ?? null,
     source: e.source ?? null,
+    oldSource: e.oldSource ?? null,
+    newSource: e.newSource ?? null,
     oldNote: e.oldNote ?? null,
     newNote: e.newNote ?? null,
     oldText: e.oldText ?? null,

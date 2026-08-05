@@ -38,6 +38,8 @@ export interface Element {
 export interface Slice {
   name: string;
   index: number;
+  /** `source "url"` — link to the ticket/conversation this slice traces back to. */
+  source?: string;
   elements: Element[];
   line: number;
 }
@@ -84,6 +86,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
     const slice: Slice = {
       name: sliceNode.name,
       index: sliceIndex,
+      source: sliceNode.source,
       elements: [],
       line: sliceNode.line,
     };

@@ -121,6 +121,10 @@ export function buildExport(
         key: sliceKeys[sliceIndex],
         name: slice.name,
         index: slice.index,
+        // Link to the ticket/conversation this slice traces back to (MIL-69).
+        // Distinct from the document's top-level `source` (the .em file's own
+        // path/sha256 provenance) — same key name, different scope.
+        source: slice.source ?? null,
         line: slice.line,
         elements: slice.elements.map((el) => ({
           ref: refById.get(el.id)!,

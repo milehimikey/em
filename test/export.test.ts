@@ -46,7 +46,7 @@ describe("schema shape", () => {
     expect(doc.model.slices[0].elements.length).toBeGreaterThan(0);
   });
 
-  it("gives every slice a key/name/index/line and every element a ref/kind/name/line", () => {
+  it("gives every slice a key/name/index/line/source and every element a ref/kind/name/line", () => {
     const doc = docOf(`
 slice "Submit Order" {
   command Submit Order
@@ -54,7 +54,7 @@ slice "Submit Order" {
 }
 `);
     const slice = doc.model.slices[0];
-    expect(slice).toMatchObject({ key: "submit-order", name: "Submit Order", index: 0 });
+    expect(slice).toMatchObject({ key: "submit-order", name: "Submit Order", index: 0, source: null });
     expect(typeof slice.line).toBe("number");
     expect(slice.elements[0]).toMatchObject({
       ref: "submit-order/command.submit-order",
@@ -97,6 +97,35 @@ describe("nullable fields are explicit null, not omitted", () => {
     expect(el.again).toBe(false);
     expect("fields" in el).toBe(true); // key present with null, not sniffed via absence
     expect("divergence" in el).toBe(true);
+  });
+
+  it("emits null for a slice's source when absent", () => {
+    const doc = docOf(`slice "S" {\n  command Do Thing\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.source).toBeNull();
+    expect("source" in slice).toBe(true); // key present with null, not sniffed via absence
+  });
+});
+
+describe("slice `source` round-trip (MIL-69)", () => {
+  it("round-trips a populated slice source", () => {
+    const doc = docOf(`
+slice "Checkout" source "https://linear.app/team/issue/MIL-60" {
+  command Submit Order
+}
+`);
+    expect(doc.model.slices[0].source).toBe("https://linear.app/team/issue/MIL-60");
+  });
+
+  it("is independent of the top-level document `source` (file provenance, different shape/scope)", () => {
+    const doc = docOf(`
+slice "Checkout" source "https://linear.app/team/issue/MIL-60" {
+  command Submit Order
+}
+`);
+    expect(doc.source).toMatchObject({ path: "model.em" });
+    expect(doc.source.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(doc.model.slices[0].source).toBe("https://linear.app/team/issue/MIL-60");
   });
 });
 

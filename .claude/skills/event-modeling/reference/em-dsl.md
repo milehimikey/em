@@ -36,7 +36,7 @@ model "Name"                     # diagram title
 persona Name                     # a UI swimlane row (actor)
 context Name                     # an event swimlane row (bounded context / aggregate)
 
-slice "Name" {                   # one vertical time step (a column)
+slice "Name" [source "url"] {    # one vertical time step (a column); source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row (defaults to first/"User")
   command Free Text              # state-changing request (API band)
   view Free Text from "Event A", "Event B"   # read model fed by event(s)
@@ -89,6 +89,12 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
   one-per-line. Types are free text (no semantic checking). Keep these light; full field specs
   with rules live in the slice doc.
 - **Comments:** `# ...` anywhere outside quotes (full-line or trailing).
+- **`source "url"` on a slice header** (the only slice-level clause — everything above is
+  per-element) links the slice back to the ticket/conversation it traces to, e.g.
+  `slice "Checkout" source "https://linear.app/team/issue/MIL-60" { ... }`. Exports as
+  `model.slices[].source` via `em export`, so an intake loop stays machine-traversable instead
+  of relying on prose. Purely metadata — no visual marker, not validated. Don't confuse it with
+  an element's `note "path.md"` (a markdown file link, not a URL).
 
 ### Swimlane band order (top → bottom)
 Header row → **Automation** (only if used) → **persona** rows (in declared order) → **API**

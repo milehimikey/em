@@ -331,4 +331,43 @@ slice "X" { # open
   it("rejects an @tag on a command", () => {
     expect(() => parse(`slice "X" {\n  command Do @Nope\n}`)).toThrow(ParseError);
   });
+
+  describe("slice `source` clause (MIL-69)", () => {
+    it("parses a `source` clause on the slice header and keeps it out of the name", () => {
+      const ast = parse(`
+slice "Checkout" source "https://linear.app/team/issue/MIL-60" {
+  command Submit Order
+}
+`);
+      expect(ast.slices[0]).toMatchObject({
+        name: "Checkout",
+        source: "https://linear.app/team/issue/MIL-60",
+      });
+    });
+
+    it("leaves `source` undefined when absent", () => {
+      const ast = parse(`slice "S" {\n  command Do Thing\n}`);
+      expect(ast.slices[0].source).toBeUndefined();
+    });
+
+    it("does not false-match `source` appearing inside the slice name itself", () => {
+      const ast = parse(`slice "Data Source" {\n  command Do Thing\n}`);
+      expect(ast.slices[0].name).toBe("Data Source");
+      expect(ast.slices[0].source).toBeUndefined();
+    });
+
+    it("parses `source` when it precedes the slice name", () => {
+      const ast = parse(`slice source "https://linear.app/team/issue/MIL-61" "Checkout" {\n  command Submit Order\n}`);
+      expect(ast.slices[0]).toMatchObject({
+        name: "Checkout",
+        source: "https://linear.app/team/issue/MIL-61",
+      });
+    });
+
+    it("rejects a slice left with no name after `source` is stripped out", () => {
+      expect(() => parse(`slice source "https://x" {\n  command Do Thing\n}`)).toThrow(
+        /slice requires a name/,
+      );
+    });
+  });
 });

@@ -436,6 +436,51 @@ describe("accepted divergence", () => {
   });
 });
 
+describe("slice source change (MIL-69)", () => {
+  it("reports a source added/removed/changed on a surviving slice", () => {
+    const added = diffOf(
+      `slice "Checkout" {\n  command Submit Order\n}`,
+      `slice "Checkout" source "https://linear.app/team/issue/MIL-60" {\n  command Submit Order\n}`,
+    );
+    expect(added.changes).toEqual([
+      { type: "source-added", sliceName: "Checkout", newSource: "https://linear.app/team/issue/MIL-60" },
+    ]);
+    expect(added.counts.sourceChanges).toBe(1);
+
+    const changed = diffOf(
+      `slice "Checkout" source "https://linear.app/team/issue/MIL-60" {\n  command Submit Order\n}`,
+      `slice "Checkout" source "https://linear.app/team/issue/MIL-61" {\n  command Submit Order\n}`,
+    );
+    expect(changed.changes).toEqual([
+      {
+        type: "source-changed",
+        sliceName: "Checkout",
+        oldSource: "https://linear.app/team/issue/MIL-60",
+        newSource: "https://linear.app/team/issue/MIL-61",
+      },
+    ]);
+    expect(changed.counts.sourceChanges).toBe(1);
+
+    const removed = diffOf(
+      `slice "Checkout" source "https://linear.app/team/issue/MIL-60" {\n  command Submit Order\n}`,
+      `slice "Checkout" {\n  command Submit Order\n}`,
+    );
+    expect(removed.changes).toEqual([
+      { type: "source-removed", sliceName: "Checkout", oldSource: "https://linear.app/team/issue/MIL-60" },
+    ]);
+    expect(removed.counts.sourceChanges).toBe(1);
+  });
+
+  it("does not report a source change for a brand-new slice (it's implied by slice-added)", () => {
+    const diff = diffOf(
+      `slice "Checkout" {\n  command Submit Order\n}`,
+      `slice "Checkout" {\n  command Submit Order\n}\nslice "Fulfillment" source "https://linear.app/team/issue/MIL-61" {\n  command Ship Order\n}`,
+    );
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Fulfillment" }]);
+    expect(diff.counts.sourceChanges).toBe(0);
+  });
+});
+
 describe("arrow add/remove", () => {
   const base = `
 slice "Submit" {

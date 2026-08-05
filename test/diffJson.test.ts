@@ -28,6 +28,7 @@ function emptyCounts(): DiffCounts {
   return {
     slicesAdded: 0,
     slicesRemoved: 0,
+    sourceChanges: 0,
     elementsAdded: 0,
     elementsRemoved: 0,
     elementsMoved: 0,
@@ -55,6 +56,8 @@ const OPTIONAL_FIELDS = [
   "oldType",
   "newType",
   "source",
+  "oldSource",
+  "newSource",
   "oldNote",
   "newNote",
   "oldText",
@@ -148,11 +151,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 14 counters", () => {
+  it("passes DiffCounts through as-is, all 15 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(14);
+    expect(Object.keys(doc.counts)).toHaveLength(15);
   });
 });
 
@@ -189,6 +192,36 @@ describe("one correctly-serialized entry per ChangeType", () => {
     "slice-removed": {
       entry: { type: "slice-removed", name: "Legacy" },
       expected: expectedEntry({ type: "slice-removed", name: "Legacy" }),
+    },
+    "source-added": {
+      entry: { type: "source-added", sliceName: "Checkout", newSource: "https://linear.app/team/issue/MIL-60" },
+      expected: expectedEntry({
+        type: "source-added",
+        sliceName: "Checkout",
+        newSource: "https://linear.app/team/issue/MIL-60",
+      }),
+    },
+    "source-removed": {
+      entry: { type: "source-removed", sliceName: "Checkout", oldSource: "https://linear.app/team/issue/MIL-60" },
+      expected: expectedEntry({
+        type: "source-removed",
+        sliceName: "Checkout",
+        oldSource: "https://linear.app/team/issue/MIL-60",
+      }),
+    },
+    "source-changed": {
+      entry: {
+        type: "source-changed",
+        sliceName: "Checkout",
+        oldSource: "https://linear.app/team/issue/MIL-60",
+        newSource: "https://linear.app/team/issue/MIL-61",
+      },
+      expected: expectedEntry({
+        type: "source-changed",
+        sliceName: "Checkout",
+        oldSource: "https://linear.app/team/issue/MIL-60",
+        newSource: "https://linear.app/team/issue/MIL-61",
+      }),
     },
     "element-added": {
       entry: { type: "element-added", kind: "event", name: "Discount Applied", sliceName: "Checkout" },
@@ -371,7 +404,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
   // missing a key, and a stale one makes it an excess key. Both are errors.
   // This runtime assertion just pins the count for anyone reading the suite.
   it("covers every declared ChangeType exactly once", () => {
-    expect(Object.keys(cases)).toHaveLength(18);
+    expect(Object.keys(cases)).toHaveLength(21);
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 
