@@ -8,8 +8,10 @@ for model-versus-code drift, `em changelog`, accepted-divergence annotations (`d
 a ratified model-vs-code deviation stops re-firing as drift, provenance links from a slice back
 to its ticket (`source`), a lightweight usage-data convention (skill Usage log —
 [usage-data.md](usage-data.md)) so the next roadmap pass has real signal instead of guesswork,
-and a `public` marker on events for integration-surface promotion (contract generators can now
-tell a published event from an internal-only fact). [workflow.md](workflow.md) is the resulting
+a `public` marker on events for integration-surface promotion (contract generators can now
+tell a published event from an internal-only fact), and stakeholder review mode — a slice-by-
+slice storyboard walkthrough in the live viewer (`em watch --serve`'s "Review mode"), with
+red notes captured live during the session. [workflow.md](workflow.md) is the resulting
 picture.
 
 **Modeling and rendering**
@@ -39,7 +41,6 @@ that needs to browse models outside git:
 
 - A static catalog site rendered from git history (git stays the only history store).
 - An MCP server over `em export`, for agent surfaces beyond Claude Code.
-- A stakeholder walkthrough mode — stepping a model slice by slice in a review session.
 - A glossary export, with cross-model consistency checks on shared terms.
 
 Have a case for one of these, or something missing? Open an issue — a concrete use case is

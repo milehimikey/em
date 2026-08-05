@@ -178,6 +178,14 @@ async function serveStatic(
 // Served viewer page. Same double-buffered, no-flicker swap as the static
 // live.html fallback, but driven by SSE push instead of a poll loop — the
 // browser reloads only when the server says the SVG actually changed.
+//
+// Also carries stakeholder review mode: a Prev/Next storyboard that highlights
+// and pans/zooms to one slice at a time, reading the `data-slice`
+// attributes/`<metadata id="em-slices">` that src/render/sliceOverlay.ts
+// embeds in every rendered SVG. Review-mode state (`reviewMode`/`activeSlice`)
+// deliberately lives outside reload()'s closure and is re-applied after every
+// SSE-triggered swap — a facilitator hand-editing an `issue "..."` clause live
+// during a session should see it appear without losing their place.
 const VIEWER_HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -193,6 +201,26 @@ const VIEWER_HTML = `<!doctype html>
     header .dot { width: 9px; height: 9px; border-radius: 50%; background: #34c759; transition: background .3s; }
     header .dot.stale { background: #f0a020; }
     header .stamp { margin-left: auto; opacity: .7; font-variant-numeric: tabular-nums; }
+    .btn {
+      background: #3b4754; color: #fff; border: 0; border-radius: 4px;
+      padding: .3rem .7rem; font-size: 13px; cursor: pointer; font-family: inherit;
+    }
+    .btn:hover { background: #4b5763; }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .btn.active { background: #2f6fed; }
+    #storyboard {
+      display: flex; align-items: center; gap: .5rem; padding: .4rem .9rem;
+      background: #e8eaed; border-bottom: 1px solid #d0d3d7;
+    }
+    #storyboard[hidden] { display: none; }
+    #storyboard .nav { background: none; border: 0; font-size: 18px; line-height: 1; cursor: pointer; color: #3b4754; padding: 0 .3rem; }
+    #storyboard .nav:disabled { opacity: .3; cursor: default; }
+    #filmstrip { display: flex; gap: .35rem; overflow-x: auto; }
+    #filmstrip .slice {
+      padding: .25rem .6rem; border-radius: 12px; background: #fff; border: 1px solid #d0d3d7;
+      font-size: 12px; white-space: nowrap; cursor: pointer; color: #3b4754; font-family: inherit;
+    }
+    #filmstrip .slice.active { background: #2f6fed; border-color: #2f6fed; color: #fff; font-weight: 600; }
     #stage { padding: 1rem; }
     object { width: 100%; height: calc(100vh - 60px); border: 0; }
   </style>
@@ -201,8 +229,14 @@ const VIEWER_HTML = `<!doctype html>
   <header>
     <span class="dot" id="dot"></span>
     <span>Event Model — live (push)</span>
+    <button class="btn" id="reviewToggle" title="Step through one slice at a time">Review mode</button>
     <span class="stamp" id="stamp">connecting…</span>
   </header>
+  <nav id="storyboard" hidden>
+    <button class="nav" id="prevSlice" aria-label="Previous slice">‹</button>
+    <div id="filmstrip"></div>
+    <button class="nav" id="nextSlice" aria-label="Next slice">›</button>
+  </nav>
   <div id="stage">
     <object id="svg" type="image/svg+xml"></object>
   </div>
@@ -213,7 +247,20 @@ const VIEWER_HTML = `<!doctype html>
     const stage = document.getElementById("stage");
     const stamp = document.getElementById("stamp");
     const dot = document.getElementById("dot");
+    const reviewToggle = document.getElementById("reviewToggle");
+    const storyboard = document.getElementById("storyboard");
+    const filmstrip = document.getElementById("filmstrip");
+    const prevBtn = document.getElementById("prevSlice");
+    const nextBtn = document.getElementById("nextSlice");
     let current = document.getElementById("svg");
+
+    // --- storyboard state: outside reload()'s closure on purpose, see the
+    // file-level comment above — an SSE reload must not reset these. ---
+    let reviewMode = false;
+    let activeSlice = null; // slice index, or null for "show all"
+    let slices = []; // [{index, name, x0, x1}], from this load's <metadata>
+    let rowLabels = null; // {x0, x1} | null, the swimlane label column's range
+    let naturalViewBox = null; // this load's pre-zoom viewBox, cached once per load
 
     // Double-buffer: load into a hidden <object>, swap on load, so the shared
     // screen never flashes white during a reload. Keep <object> (not <img>) so
@@ -228,9 +275,117 @@ const VIEWER_HTML = `<!doctype html>
         current = next;
         stamp.textContent = new Date().toLocaleTimeString();
         dot.classList.remove("stale");
+        onSvgLoaded();
       }, { once: true });
       next.setAttribute("data", SVG_FILE + "?t=" + Date.now());
     }
+
+    function readSliceMeta(doc) {
+      const el = doc.getElementById("em-slices");
+      if (!el) return null;
+      try { return JSON.parse(el.textContent); } catch { return null; }
+    }
+
+    // The currently-loaded SVG's own document + root element, or null before
+    // the first load / if the served file isn't a well-formed SVG.
+    function currentSvgDoc() {
+      const doc = current.contentDocument;
+      const svgRoot = doc && doc.querySelector("svg");
+      return doc && svgRoot ? { doc, svgRoot } : null;
+    }
+
+    // Re-read this load's slice metadata + natural viewBox, then reapply
+    // whatever storyboard state was already in effect (a fresh SSE push mid-
+    // review shouldn't reset the facilitator's position).
+    function onSvgLoaded() {
+      const loaded = currentSvgDoc();
+      if (!loaded) return;
+
+      naturalViewBox = loaded.svgRoot.getAttribute("viewBox");
+      const meta = readSliceMeta(loaded.doc);
+      slices = (meta && meta.slices) || [];
+      rowLabels = (meta && meta.rowLabels) || null;
+      // The model may have changed shape (slice added/removed) between loads.
+      if (activeSlice !== null && !slices.some((s) => s.index === activeSlice)) {
+        activeSlice = slices.length ? slices[0].index : null;
+      }
+      render();
+    }
+
+    // Apply reviewMode/activeSlice to the currently-loaded SVG + the control bar.
+    // Safe to call directly from UI handlers (Prev/Next/toggle/arrow keys) — it
+    // never re-reads metadata, just re-applies the cached state.
+    function render() {
+      storyboard.hidden = slices.length === 0;
+      reviewToggle.classList.toggle("active", reviewMode);
+      reviewToggle.disabled = slices.length === 0;
+      renderFilmstrip();
+
+      const loaded = currentSvgDoc();
+      if (!loaded) return;
+      const { doc, svgRoot } = loaded;
+
+      doc.querySelectorAll("[data-slice]").forEach((node) => {
+        const dim = reviewMode && activeSlice !== null &&
+          Number(node.getAttribute("data-slice")) !== activeSlice;
+        node.classList.toggle("em-slice-dim", dim);
+      });
+
+      if (!naturalViewBox) return;
+      if (!reviewMode || activeSlice === null) {
+        svgRoot.setAttribute("viewBox", naturalViewBox);
+        return;
+      }
+      const slice = slices.find((s) => s.index === activeSlice);
+      if (!slice) return;
+      const [nx, ny, nw, nh] = naturalViewBox.split(/\\s+/).map(Number);
+      const PAD = 24; // breathing room around the framed slice
+      let x0 = rowLabels ? Math.min(rowLabels.x0, slice.x0) : slice.x0;
+      let x1 = slice.x1;
+      x0 = Math.max(nx, x0 - PAD);
+      x1 = Math.min(nx + nw, x1 + PAD);
+      svgRoot.setAttribute("viewBox", x0 + " " + ny + " " + Math.max(1, x1 - x0) + " " + nh);
+    }
+
+    function renderFilmstrip() {
+      filmstrip.innerHTML = "";
+      for (const s of slices) {
+        const b = document.createElement("button");
+        b.className = "slice" + (s.index === activeSlice ? " active" : "");
+        b.textContent = s.name;
+        b.addEventListener("click", () => goTo(s.index));
+        filmstrip.appendChild(b);
+      }
+      const first = slices[0], last = slices[slices.length - 1];
+      prevBtn.disabled = activeSlice === null || !first || activeSlice <= first.index;
+      nextBtn.disabled = activeSlice === null || !last || activeSlice >= last.index;
+    }
+
+    function goTo(index) {
+      activeSlice = index;
+      render();
+    }
+
+    function step(delta) {
+      if (!slices.length) return;
+      if (activeSlice === null) { goTo(slices[0].index); return; }
+      const i = slices.findIndex((s) => s.index === activeSlice);
+      const next = slices[Math.min(slices.length - 1, Math.max(0, i + delta))];
+      if (next) goTo(next.index);
+    }
+
+    reviewToggle.addEventListener("click", () => {
+      reviewMode = !reviewMode;
+      if (reviewMode && activeSlice === null && slices.length) activeSlice = slices[0].index;
+      render();
+    });
+    prevBtn.addEventListener("click", () => step(-1));
+    nextBtn.addEventListener("click", () => step(1));
+    document.addEventListener("keydown", (e) => {
+      if (!reviewMode) return;
+      if (e.key === "ArrowLeft") step(-1);
+      else if (e.key === "ArrowRight") step(1);
+    });
 
     reload();
 

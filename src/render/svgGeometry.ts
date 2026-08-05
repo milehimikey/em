@@ -15,8 +15,11 @@ export interface Rect {
   cy: number;
 }
 
-const NODE_GROUP = /<g\b[^>]*class="node"[^>]*>([\s\S]*?)<\/g>/g;
-const TITLE = /<title>([\s\S]*?)<\/title>/;
+// Exported: sliceOverlay.ts is a second consumer, tagging/reading these same
+// node groups for the storyboard viewer's slice overlay — share the pattern
+// rather than let it drift into a second copy.
+export const NODE_GROUP = /<g\b[^>]*class="node"[^>]*>([\s\S]*?)<\/g>/g;
+export const TITLE = /<title>([\s\S]*?)<\/title>/;
 const SHAPE = /<(?:polygon|path)\b[^>]*\b(?:points|d)="([^"]*)"/;
 const NUM = /-?\d*\.?\d+(?:e-?\d+)?/gi;
 
@@ -105,7 +108,9 @@ function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-function decode(s: string): string {
+/** Decode the handful of entities Graphviz emits in `<title>` text. Shared with
+ *  sliceOverlay.ts, which also needs to recover an element id from a title. */
+export function decode(s: string): string {
   return s
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

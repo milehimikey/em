@@ -12,11 +12,11 @@ const EXAMPLE = "examples/order-fulfillment.em";
 
 describe("end-to-end render", () => {
   it("produces a self-contained SVG with edges, notes, legend and fields", async () => {
-    const { dot, model } = compile(readFileSync(EXAMPLE, "utf8"));
+    const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
     const dir = mkdtempSync(join(tmpdir(), "em-e2e-"));
     try {
       const out = join(dir, "out.svg");
-      await renderDot(dot, model, out, "svg", dirname(EXAMPLE));
+      await renderDot(dot, model, grid, out, "svg", dirname(EXAMPLE));
       const svg = readFileSync(out, "utf8");
 
       expect(svg).toMatch(/<svg\b/);
@@ -33,11 +33,11 @@ describe("end-to-end render", () => {
   });
 
   it("rasterizes to PNG in-process", async () => {
-    const { dot, model } = compile(readFileSync(EXAMPLE, "utf8"));
+    const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
     const dir = mkdtempSync(join(tmpdir(), "em-e2e-"));
     try {
       const out = join(dir, "out.png");
-      await renderDot(dot, model, out, "png", dirname(EXAMPLE));
+      await renderDot(dot, model, grid, out, "png", dirname(EXAMPLE));
       const png = readFileSync(out);
       expect(png.length).toBeGreaterThan(1000);
       // PNG magic number

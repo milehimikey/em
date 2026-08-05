@@ -11,6 +11,7 @@ Keep it current at the end of every working session.
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}
 - **Last conformance:** {{YYYY-MM-DD @ <target-repo revision> — report: conformance/<date>-report.md | never}}
+- **Last stakeholder review:** {{YYYY-MM-DD — attendees: see Participants | never}}
 
 ## Session inputs
 - **Scope line:** {{one-line description of what's in/out of bounds for this model}}
@@ -52,7 +53,7 @@ Keep it current at the end of every working session.
      One line per session: phase(s) touched, and validate diagnostic *categories* hit (the rule
      name from docs/validation.md's tables, e.g. "read model nothing consumes" — never the full
      instance message or any domain content). Append, never edit past entries. -->
-- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | conform | validate | watch, ...}} — validate: {{diagnostic category (docs/usage-data.md#categories), ... | none}}
+- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | conform | review | validate | watch, ...}} — validate: {{diagnostic category (docs/usage-data.md#categories), ... | none}}
 
 ## Open questions / parking lot
 <!-- Unresolved items to bring back to the user. Never guess these. Metadata is optional and
