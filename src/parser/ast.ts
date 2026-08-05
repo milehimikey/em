@@ -47,6 +47,9 @@ export interface ElementNode {
   fields?: Field[];
   /** view-only: a later timeline instance of an already-declared read model. */
   again?: boolean;
+  /** `public` — event-only: marks this event as part of the published integration
+   *  surface, as opposed to an internal-only fact. */
+  public?: boolean;
   line: number;
 }
 

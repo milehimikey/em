@@ -783,3 +783,20 @@ slice "Queue Again" {
     expect(diags).toHaveLength(2);
   });
 });
+
+describe("`public` marker raises no diagnostic", () => {
+  it("produces no diagnostics for an event marked public", () => {
+    const diags = diagsFor(`
+slice "Place" {
+  ui New Order @Customer
+  command Place Order
+  event Order Placed @Order public
+}
+slice "Catalog" {
+  view Orders from "Order Placed"
+  ui Order List @Customer
+}
+`);
+    expect(diags).toHaveLength(0);
+  });
+});

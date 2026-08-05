@@ -24,7 +24,7 @@ export const GENERATOR_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8"),
 ).version;
 
-export const SCHEMA_VERSION = "1.1";
+export const SCHEMA_VERSION = "1.2";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -139,6 +139,7 @@ export function buildExport(
           persona: el.persona ?? null,
           context: el.context ?? null,
           again: el.again === true,
+          public: el.public === true,
           logicalRef:
             el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
         })),

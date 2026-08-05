@@ -76,12 +76,14 @@ honest.
 |---|---|
 | `--list-issues` | Print only the open `issue "text"` diagnostics (slice, element, line, text) instead of the full diagnostic list |
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
+| `--list-public` | Print only events marked `public` (slice, name, line) — an integration-surface audit, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 
 ```bash
 em validate model.em                          # full diagnostics; exits non-zero only on errors
 em validate model.em --list-issues             # just the open `issue` clauses, for a quick sweep
 em validate model.em --list-divergences        # just the accepted `divergence` clauses, for an audit
+em validate model.em --list-public             # just the events marked `public`, for an audit
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
 ```
 
@@ -106,7 +108,7 @@ em export model.em -o model.json      # write to a file
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.1"`):
+**Schema summary** (`schemaVersion: "1.2"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -120,10 +122,13 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
-    `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, and
-    `logicalRef`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
+    `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, `public`,
+    and `logicalRef`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
     annotation — a reasoned, ratified deviation between this element and its implementation;
-    `null` when the element carries none.
+    `null` when the element carries none. `public` (added in schema `1.2`) is `true` when the
+    event carries the `public` clause — part of the model's published integration surface —
+    and `false` for every other element (including non-public events); see
+    [dsl.md](dsl.md#integration-surface).
     Fields that don't apply to a given element are emitted as explicit `null` (not omitted),
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
@@ -149,11 +154,11 @@ See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step a
 
 Compares two models structurally and prints a rollup summary plus one line per change —
 slices and elements added/removed/moved, a slice's `source` added/removed/changed,
-field/`from`/note changes, and issue lifecycle (opened, resolved, text changed). It's the
-semantic counterpart to `git diff` on a `.em`
-file: raw `git diff` shows line hunks; `em diff` groups them into what actually happened to
-the model, and — crucially — collapses a cross-slice move into one `moved:` line instead of
-a delete-hunk-plus-add-hunk in two different places.
+field/`from`/note changes, issue lifecycle (opened, resolved, text changed), and an event's
+integration-surface promotion/demotion (`public` marked/unmarked). It's the semantic
+counterpart to `git diff` on a `.em` file: raw `git diff` shows line hunks; `em diff` groups
+them into what actually happened to the model, and — crucially — collapses a cross-slice move
+into one `moved:` line instead of a delete-hunk-plus-add-hunk in two different places.
 
 When a change or removal involves an element the **old** side annotates with `divergence
 "text"`, the entry is additionally tagged with that text — see "Accepted divergence" below.
@@ -199,6 +204,13 @@ element reads as a remove + an add (or as a move, if the same name reappears in 
 slice). This is intentional — a rename genuinely is a change to the model's ubiquitous
 language, and `em diff` surfacing it as one is the honest read, not a bug to fix later.
 
+**Integration-surface promotion/demotion** (`event-marked-public`/`event-unmarked-public`,
+added in schema `1.2`). When an event's `public` clause (see
+[dsl.md](dsl.md#integration-surface)) is added or removed between the two sides, `em diff`
+reports it as `event marked public` / `event unmarked public` — its own change type, not
+lumped in with a generic field change, since a contract consumer needs to know exactly when
+an event enters or leaves the published surface.
+
 Example output:
 
 ```
@@ -214,7 +226,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.1"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.2"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -224,9 +236,9 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 15 counters the text rollup line summarizes (`slicesAdded`,
+- `counts` — the same 17 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
-  …), as-is.
+  `eventsMarkedPublic`, `eventsUnmarkedPublic`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:

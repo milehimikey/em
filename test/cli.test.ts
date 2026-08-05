@@ -69,6 +69,22 @@ slice "Retire" {
 }
 `;
 
+// One event marked public, one not — the only diagnostic-free way to check --list-public
+// prints just the public one.
+const WITH_PUBLIC = `slice "Place" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Order public
+}
+slice "Retry" {
+  event Internal Retry @Order
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed", "Internal Retry"
+  ui Order List @Customer
+}
+`;
+
 let dir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-cli-"));
@@ -77,6 +93,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "issue.em"), WITH_ISSUE);
   writeFileSync(join(dir, "error.em"), WITH_ERROR);
   writeFileSync(join(dir, "divergence.em"), WITH_DIVERGENCE);
+  writeFileSync(join(dir, "public.em"), WITH_PUBLIC);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -86,14 +103,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.1");
+    expect(doc.schemaVersion).toBe("1.2");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.1");
+    expect(doc.schemaVersion).toBe("1.2");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -157,12 +174,32 @@ describe("em validate --list-divergences (CLI)", () => {
   });
 });
 
+describe("em validate --list-public (CLI)", () => {
+  it("--list-public prints slice, name, and line per public event, excluding non-public ones", () => {
+    const r = em(["validate", "--list-public", "public.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/public :4 slice "Place" event "Order Placed"/);
+    expect(r.stdout).not.toContain("Internal Retry");
+  });
+
+  it("--list-public reports when there are none", () => {
+    const r = em(["validate", "--list-public", "clean.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("no public events");
+  });
+
+  it("--list-public never affects the exit code", () => {
+    expect(em(["validate", "--list-public", "public.em"], dir).status).toBe(0);
+    expect(em(["validate", "--list-public", "clean.em"], dir).status).toBe(0);
+  });
+});
+
 describe("em diff --json (CLI)", () => {
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
-    expect(doc.diffSchemaVersion).toBe("1.1");
+    expect(doc.diffSchemaVersion).toBe("1.2");
     expect(doc.identical).toBe(false);
     expect(r.stderr).toContain("produces no event");
   });

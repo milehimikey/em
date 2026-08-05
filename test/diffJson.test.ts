@@ -38,6 +38,8 @@ function emptyCounts(): DiffCounts {
     issuesOpened: 0,
     issuesResolved: 0,
     issuesChanged: 0,
+    eventsMarkedPublic: 0,
+    eventsUnmarkedPublic: 0,
     arrowsAdded: 0,
     arrowsRemoved: 0,
     acceptedDivergences: 0,
@@ -151,11 +153,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 15 counters", () => {
+  it("passes DiffCounts through as-is, all 17 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(15);
+    expect(Object.keys(doc.counts)).toHaveLength(17);
   });
 });
 
@@ -389,6 +391,24 @@ describe("one correctly-serialized entry per ChangeType", () => {
         newText: "v2 question",
       }),
     },
+    "event-marked-public": {
+      entry: { type: "event-marked-public", kind: "event", name: "Order Placed", sliceName: "Place Order" },
+      expected: expectedEntry({
+        type: "event-marked-public",
+        kind: "event",
+        name: "Order Placed",
+        sliceName: "Place Order",
+      }),
+    },
+    "event-unmarked-public": {
+      entry: { type: "event-unmarked-public", kind: "event", name: "Order Placed", sliceName: "Place Order" },
+      expected: expectedEntry({
+        type: "event-unmarked-public",
+        kind: "event",
+        name: "Order Placed",
+        sliceName: "Place Order",
+      }),
+    },
     "arrow-added": {
       entry: { type: "arrow-added", from: "Orders", to: "Screen" },
       expected: expectedEntry({ type: "arrow-added", from: "Orders", to: "Screen" }),
@@ -404,7 +424,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
   // missing a key, and a stale one makes it an excess key. Both are errors.
   // This runtime assertion just pins the count for anyone reading the suite.
   it("covers every declared ChangeType exactly once", () => {
-    expect(Object.keys(cases)).toHaveLength(21);
+    expect(Object.keys(cases)).toHaveLength(23);
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 

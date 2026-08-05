@@ -31,6 +31,8 @@ export interface Element {
   line: number;
   /** view-only: marks a later timeline instance of an already-declared read model. */
   again?: boolean;
+  /** event-only: marks this event as part of the published integration surface. */
+  public?: boolean;
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -96,6 +98,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         id: makeId(el.name),
         logicalId: "",
         again: el.again,
+        public: el.public,
         kind: el.kind,
         name: el.name,
         sliceIndex,

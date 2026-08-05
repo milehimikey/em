@@ -355,6 +355,35 @@ describe("issue lifecycle", () => {
   });
 });
 
+describe("integration-surface promotion/demotion", () => {
+  it("reports an event promoted to public", () => {
+    const OLD = `slice "S" {\n  event Order Placed @Order\n}`;
+    const NEW = `slice "S" {\n  event Order Placed @Order public\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "event-marked-public", kind: "event", name: "Order Placed", sliceName: "S" },
+    ]);
+    expect(diff.counts.eventsMarkedPublic).toBe(1);
+    expect(formatModelDiff(diff)).toContain("event marked public:");
+  });
+
+  it("reports an event demoted from public", () => {
+    const OLD = `slice "S" {\n  event Order Placed @Order public\n}`;
+    const NEW = `slice "S" {\n  event Order Placed @Order\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      { type: "event-unmarked-public", kind: "event", name: "Order Placed", sliceName: "S" },
+    ]);
+    expect(diff.counts.eventsUnmarkedPublic).toBe(1);
+    expect(formatModelDiff(diff)).toContain("event unmarked public:");
+  });
+
+  it("reports nothing when the public marker is unchanged", () => {
+    const src = `slice "S" {\n  event Order Placed @Order public\n}`;
+    expect(diffOf(src, src).changes).toEqual([]);
+  });
+});
+
 describe("note change", () => {
   it("reports a note added/removed/changed", () => {
     const added = diffOf(

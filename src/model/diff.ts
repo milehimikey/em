@@ -33,6 +33,8 @@ export type ChangeType =
   | "issue-opened"
   | "issue-resolved"
   | "issue-changed"
+  | "event-marked-public"
+  | "event-unmarked-public"
   | "arrow-added"
   | "arrow-removed";
 
@@ -85,6 +87,8 @@ export interface DiffCounts {
   issuesOpened: number;
   issuesResolved: number;
   issuesChanged: number;
+  eventsMarkedPublic: number;
+  eventsUnmarkedPublic: number;
   arrowsAdded: number;
   arrowsRemoved: number;
   /** Changes/removals whose `acceptedDivergence` is non-null — cited, not subtracted, from
@@ -115,6 +119,8 @@ function emptyCounts(): DiffCounts {
     issuesOpened: 0,
     issuesResolved: 0,
     issuesChanged: 0,
+    eventsMarkedPublic: 0,
+    eventsUnmarkedPublic: 0,
     arrowsAdded: 0,
     arrowsRemoved: 0,
     acceptedDivergences: 0,
@@ -470,6 +476,19 @@ function pushElementChanges(
       counts.issuesChanged++;
     }
   }
+
+  // Integration-surface promotion/demotion: only ever set for `event` elements
+  // (parse-gated), but checked the same generic way as the other lifecycle
+  // fields above — no kind special-casing needed.
+  if (oldEl.public !== newEl.public) {
+    if (newEl.public) {
+      changes.push({ type: "event-marked-public", kind: newEl.kind, name: newEl.name, sliceName });
+      counts.eventsMarkedPublic++;
+    } else {
+      changes.push({ type: "event-unmarked-public", kind: newEl.kind, name: newEl.name, sliceName });
+      counts.eventsUnmarkedPublic++;
+    }
+  }
 }
 
 export function hasChanges(diff: ModelDiff): boolean {
@@ -494,6 +513,8 @@ function formatSummary(c: DiffCounts): string {
   push(c.issuesOpened, "issue opened", "issues opened");
   push(c.issuesResolved, "issue resolved", "issues resolved");
   push(c.issuesChanged, "issue text change", "issue text changes");
+  push(c.eventsMarkedPublic, "event marked public", "events marked public");
+  push(c.eventsUnmarkedPublic, "event unmarked public", "events unmarked public");
   push(c.arrowsAdded, "arrow added", "arrows added");
   push(c.arrowsRemoved, "arrow removed", "arrows removed");
   push(c.acceptedDivergences, "accepted divergence", "accepted divergences");
@@ -549,6 +570,10 @@ function formatEntry(e: ChangeEntry): string {
       return `issue resolved: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}"${divergenceSuffix(e)}`;
     case "issue-changed":
       return `issue text changed: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}" -> "${e.newText}"${divergenceSuffix(e)}`;
+    case "event-marked-public":
+      return `event marked public: ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+    case "event-unmarked-public":
+      return `event unmarked public: ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
     case "arrow-added":
       return `+ arrow "${e.from}" -> "${e.to}"`;
     case "arrow-removed":

@@ -16,6 +16,7 @@ slice "Name" [source "url"] {    # one column; time runs left -> right; source i
   command Free Text              # state-changing request
   view Free Text from "Event A", "Event B"    # read model fed by event(s)
   event Free Text @Context       # recorded fact; @Context picks its row
+  event Free Text @Context public   # marks it part of the public integration surface
   processor Free Text from "View"             # automation reacting to a read model
 }
 
@@ -34,7 +35,7 @@ same element kind.
 | `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `{ fields }` |
 | `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `{ fields }` |
 | `view` | API | read model / projection | — | `from`, `again`, `note`, `issue`, `{ fields }` |
-| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `{ fields }` |
+| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `public`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `{ fields }` |
 
 ### Swimlane bands, top to bottom
@@ -191,6 +192,33 @@ in slice docs. It's purely metadata: no visual marker, no legend entry, and `em 
 doesn't require or check it. Optional — omit it and the field exports as `null`.
 
 Don't confuse this with an element's `note "path.md"`, which links a markdown file, not a URL.
+
+## Integration surface
+
+An `event` can carry a trailing `public` clause, marking it as part of the model's published
+integration surface — as opposed to an internal-only fact that only this context cares about.
+It carries no free text and no diagram marker (unlike `note`/`issue`): it's a plain structural
+flag, the same posture as `again`, not an annotation.
+
+```
+event Order Placed @Order public          # tag then public — public trails everything
+event Order Placed public @Order          # or public before the tag — also valid
+event Internal Retry Scheduled @Order      # no `public` — stays an internal-only fact
+```
+
+`public` is only valid on `event`; writing it on any other element kind is a parse error. It's
+written as the model's *last* token on the line, optionally right before a trailing `@Context`
+tag — either order works, since `public` is stripped before `@Tag` is matched. Written anywhere
+else on the line, a bare `public` isn't recognized as the clause and folds into the free-text
+name instead, the same as any other unrecognized trailing word.
+
+`em export` carries the flag forward as `public: true`/`false` on every event — the field a
+downstream contract generator (e.g. an AsyncAPI generator) filters on to promote only the
+events actually meant for consumers, instead of every context event by default. `em diff`
+tracks an event flipping public↔private as its own change (`event marked public` / `event
+unmarked public`), so a promotion or demotion to the integration surface is a visible,
+diffable event, not something that quietly changes underneath a downstream contract. See
+[cli.md](cli.md) for both.
 
 ## Colors
 
