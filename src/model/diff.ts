@@ -55,6 +55,16 @@ export interface ChangeEntry {
   newText?: string;
   from?: string;
   to?: string;
+  /**
+   * The canonical (old-side) element's `divergence` annotation, when this change/removal
+   * involves an element that carries one — not a suppression, a citation: the finding is
+   * still reported in full, annotated with the reasoned, ratified deviation a consumer (e.g.
+   * the conform loop) can use to classify it as accepted rather than real drift. `null` when
+   * the involved element (if any) carries no annotation, or when the change type has no
+   * single canonical-side element to check (`slice-added/removed`, `arrow-added/removed`,
+   * `element-added`, `element-moved` — out of scope for v1, see model.ts's `divergence` doc).
+   */
+  acceptedDivergence?: string | null;
 }
 
 export interface DiffCounts {
@@ -71,6 +81,10 @@ export interface DiffCounts {
   issuesChanged: number;
   arrowsAdded: number;
   arrowsRemoved: number;
+  /** Changes/removals whose `acceptedDivergence` is non-null — cited, not subtracted, from
+   *  the other counts above (an element-removed with an accepted divergence still counts
+   *  toward `elementsRemoved` too; this is a cross-cutting tally, not a separate bucket). */
+  acceptedDivergences: number;
 }
 
 export interface ModelDiff {
@@ -96,7 +110,15 @@ function emptyCounts(): DiffCounts {
     issuesChanged: 0,
     arrowsAdded: 0,
     arrowsRemoved: 0,
+    acceptedDivergences: 0,
   };
+}
+
+/** Push `acceptedDivergence` onto an entry and tally it, when the canonical element carries one. */
+function annotate(entry: ChangeEntry, counts: DiffCounts, divergence: string | undefined): ChangeEntry {
+  entry.acceptedDivergence = divergence ?? null;
+  if (divergence) counts.acceptedDivergences++;
+  return entry;
 }
 
 interface RefEntry {
@@ -233,7 +255,13 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
       if (newElByRef.has(ref)) continue; // matched pair, already diffed above
       if (movedOldRefs.has(ref)) continue; // reported as "moved:" already
       if (!sliceIsRemoved) {
-        removals.push({ type: "element-removed", kind: el.kind, name: el.name, sliceName: slice.name });
+        removals.push(
+          annotate(
+            { type: "element-removed", kind: el.kind, name: el.name, sliceName: slice.name },
+            counts,
+            el.divergence,
+          ),
+        );
         counts.elementsRemoved++;
       }
     }
@@ -261,44 +289,67 @@ function pushElementChanges(
   const oldFields = new Map((oldEl.fields ?? []).map((f) => [normalizeName(f.name), f]));
   const newFields = new Map((newEl.fields ?? []).map((f) => [normalizeName(f.name), f]));
 
+  // Every entry below reports on `oldEl`/`newEl` — the same matched-pair element on both
+  // sides — so any of them may carry the canonical (`oldEl`) side's accepted-divergence
+  // annotation, cited via `annotate()` alongside the finding, not in place of it.
+  const div = oldEl.divergence;
+
   for (const [key, f] of newFields) {
     if (!oldFields.has(key)) {
-      changes.push({
-        type: "field-added",
-        kind: newEl.kind,
-        name: newEl.name,
-        sliceName,
-        field: f.name,
-        fieldType: f.type ?? null,
-      });
+      changes.push(
+        annotate(
+          {
+            type: "field-added",
+            kind: newEl.kind,
+            name: newEl.name,
+            sliceName,
+            field: f.name,
+            fieldType: f.type ?? null,
+          },
+          counts,
+          div,
+        ),
+      );
       counts.fieldChanges++;
     }
   }
   for (const [key, f] of oldFields) {
     if (!newFields.has(key)) {
-      changes.push({
-        type: "field-removed",
-        kind: newEl.kind,
-        name: newEl.name,
-        sliceName,
-        field: f.name,
-        fieldType: f.type ?? null,
-      });
+      changes.push(
+        annotate(
+          {
+            type: "field-removed",
+            kind: newEl.kind,
+            name: newEl.name,
+            sliceName,
+            field: f.name,
+            fieldType: f.type ?? null,
+          },
+          counts,
+          div,
+        ),
+      );
       counts.fieldChanges++;
     }
   }
   for (const [key, newF] of newFields) {
     const oldF = oldFields.get(key);
     if (oldF && (oldF.type ?? null) !== (newF.type ?? null)) {
-      changes.push({
-        type: "field-changed",
-        kind: newEl.kind,
-        name: newEl.name,
-        sliceName,
-        field: newF.name,
-        oldType: oldF.type ?? null,
-        newType: newF.type ?? null,
-      });
+      changes.push(
+        annotate(
+          {
+            type: "field-changed",
+            kind: newEl.kind,
+            name: newEl.name,
+            sliceName,
+            field: newF.name,
+            oldType: oldF.type ?? null,
+            newType: newF.type ?? null,
+          },
+          counts,
+          div,
+        ),
+      );
       counts.fieldChanges++;
     }
   }
@@ -309,31 +360,41 @@ function pushElementChanges(
   const newFromSet = new Set(newFrom.map(normalizeName));
   for (const n of newFrom) {
     if (!oldFromSet.has(normalizeName(n))) {
-      changes.push({ type: "from-added", kind: newEl.kind, name: newEl.name, sliceName, source: n });
+      changes.push(annotate({ type: "from-added", kind: newEl.kind, name: newEl.name, sliceName, source: n }, counts, div));
       counts.fromChanges++;
     }
   }
   for (const n of oldFrom) {
     if (!newFromSet.has(normalizeName(n))) {
-      changes.push({ type: "from-removed", kind: newEl.kind, name: newEl.name, sliceName, source: n });
+      changes.push(annotate({ type: "from-removed", kind: newEl.kind, name: newEl.name, sliceName, source: n }, counts, div));
       counts.fromChanges++;
     }
   }
 
   if (oldEl.note !== newEl.note) {
     if (!oldEl.note && newEl.note) {
-      changes.push({ type: "note-added", kind: newEl.kind, name: newEl.name, sliceName, newNote: newEl.note });
+      changes.push(
+        annotate({ type: "note-added", kind: newEl.kind, name: newEl.name, sliceName, newNote: newEl.note }, counts, div),
+      );
     } else if (oldEl.note && !newEl.note) {
-      changes.push({ type: "note-removed", kind: newEl.kind, name: newEl.name, sliceName, oldNote: oldEl.note });
+      changes.push(
+        annotate({ type: "note-removed", kind: newEl.kind, name: newEl.name, sliceName, oldNote: oldEl.note }, counts, div),
+      );
     } else {
-      changes.push({
-        type: "note-changed",
-        kind: newEl.kind,
-        name: newEl.name,
-        sliceName,
-        oldNote: oldEl.note,
-        newNote: newEl.note,
-      });
+      changes.push(
+        annotate(
+          {
+            type: "note-changed",
+            kind: newEl.kind,
+            name: newEl.name,
+            sliceName,
+            oldNote: oldEl.note,
+            newNote: newEl.note,
+          },
+          counts,
+          div,
+        ),
+      );
     }
     counts.noteChanges++;
   }
@@ -343,20 +404,30 @@ function pushElementChanges(
   // not lumped in as a generic "removed".
   if (oldEl.issue !== newEl.issue) {
     if (!oldEl.issue && newEl.issue) {
-      changes.push({ type: "issue-opened", kind: newEl.kind, name: newEl.name, sliceName, newText: newEl.issue });
+      changes.push(
+        annotate({ type: "issue-opened", kind: newEl.kind, name: newEl.name, sliceName, newText: newEl.issue }, counts, div),
+      );
       counts.issuesOpened++;
     } else if (oldEl.issue && !newEl.issue) {
-      changes.push({ type: "issue-resolved", kind: newEl.kind, name: newEl.name, sliceName, oldText: oldEl.issue });
+      changes.push(
+        annotate({ type: "issue-resolved", kind: newEl.kind, name: newEl.name, sliceName, oldText: oldEl.issue }, counts, div),
+      );
       counts.issuesResolved++;
     } else {
-      changes.push({
-        type: "issue-changed",
-        kind: newEl.kind,
-        name: newEl.name,
-        sliceName,
-        oldText: oldEl.issue,
-        newText: newEl.issue,
-      });
+      changes.push(
+        annotate(
+          {
+            type: "issue-changed",
+            kind: newEl.kind,
+            name: newEl.name,
+            sliceName,
+            oldText: oldEl.issue,
+            newText: newEl.issue,
+          },
+          counts,
+          div,
+        ),
+      );
       counts.issuesChanged++;
     }
   }
@@ -385,11 +456,17 @@ function formatSummary(c: DiffCounts): string {
   push(c.issuesChanged, "issue text change", "issue text changes");
   push(c.arrowsAdded, "arrow added", "arrows added");
   push(c.arrowsRemoved, "arrow removed", "arrows removed");
+  push(c.acceptedDivergences, "accepted divergence", "accepted divergences");
   return parts.length === 0 ? "no structural changes" : parts.join(", ");
 }
 
 function typeLabel(t: string | null | undefined): string {
   return t ?? "(untyped)";
+}
+
+/** Appended to a formatted line when the entry cites a canonical `divergence` annotation. */
+function divergenceSuffix(e: ChangeEntry): string {
+  return e.acceptedDivergence ? ` [accepted divergence: "${e.acceptedDivergence}"]` : "";
 }
 
 function formatEntry(e: ChangeEntry): string {
@@ -401,31 +478,31 @@ function formatEntry(e: ChangeEntry): string {
     case "element-added":
       return `+ ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
     case "element-removed":
-      return `- ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `- ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "element-moved":
       return `moved: ${e.kind} "${e.name}" (slice "${e.fromSlice}" -> slice "${e.toSlice}")`;
     case "field-added":
-      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} added to ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} added to ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "field-removed":
-      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} removed from ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} removed from ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "field-changed":
-      return `~ field "${e.field}" type changed on ${e.kind} "${e.name}" (slice "${e.sliceName}"): ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}`;
+      return `~ field "${e.field}" type changed on ${e.kind} "${e.name}" (slice "${e.sliceName}"): ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}${divergenceSuffix(e)}`;
     case "from-added":
-      return `~ from "${e.source}" added on ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `~ from "${e.source}" added on ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "from-removed":
-      return `~ from "${e.source}" removed from ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `~ from "${e.source}" removed from ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "note-added":
-      return `~ note added on ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.newNote}"`;
+      return `~ note added on ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.newNote}"${divergenceSuffix(e)}`;
     case "note-removed":
-      return `~ note removed from ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldNote}"`;
+      return `~ note removed from ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldNote}"${divergenceSuffix(e)}`;
     case "note-changed":
-      return `~ note changed on ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldNote}" -> "${e.newNote}"`;
+      return `~ note changed on ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldNote}" -> "${e.newNote}"${divergenceSuffix(e)}`;
     case "issue-opened":
-      return `issue opened: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.newText}"`;
+      return `issue opened: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.newText}"${divergenceSuffix(e)}`;
     case "issue-resolved":
-      return `issue resolved: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}"`;
+      return `issue resolved: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}"${divergenceSuffix(e)}`;
     case "issue-changed":
-      return `issue text changed: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}" -> "${e.newText}"`;
+      return `issue text changed: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}" -> "${e.newText}"${divergenceSuffix(e)}`;
     case "arrow-added":
       return `+ arrow "${e.from}" -> "${e.to}"`;
     case "arrow-removed":

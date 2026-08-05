@@ -57,6 +57,18 @@ const WITH_ERROR = `slice "Read" {
 }
 `;
 
+// The accepted divergence is the only annotation. Line 6 (the view, in its own slice so it
+// doesn't collide with the command in the api/view lane) is pinned by the --list-divergences
+// assertion, same convention as WITH_ISSUE above.
+const WITH_DIVERGENCE = `slice "Place" {
+  command Place Order
+  event Order Placed
+}
+slice "Retire" {
+  view Retired Orders from "Order Placed" divergence "tracking token covers idempotency"
+}
+`;
+
 let dir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-cli-"));
@@ -64,6 +76,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "warn.em"), WARNING_ONLY);
   writeFileSync(join(dir, "issue.em"), WITH_ISSUE);
   writeFileSync(join(dir, "error.em"), WITH_ERROR);
+  writeFileSync(join(dir, "divergence.em"), WITH_DIVERGENCE);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -73,14 +86,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -118,12 +131,38 @@ describe("em validate --list-issues / --fail-on-issues (CLI)", () => {
   });
 });
 
+describe("em validate --list-divergences (CLI)", () => {
+  it("prints slice, element, line, and text per accepted divergence", () => {
+    const r = em(["validate", "--list-divergences", "divergence.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(
+      /divergence :6 slice "Retire" view "Retired Orders": tracking token covers idempotency/,
+    );
+  });
+
+  it("reports when there are none", () => {
+    const r = em(["validate", "--list-divergences", "clean.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("no accepted divergences");
+  });
+
+  it("never fails the build, unlike --fail-on-issues — there is no --fail-on-divergences", () => {
+    expect(em(["validate", "--list-divergences", "divergence.em"], dir).status).toBe(0);
+  });
+
+  it("on a model with errors still prints the errors before exiting 1", () => {
+    const r = em(["validate", "--list-divergences", "error.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('unknown event "No Such Event"');
+  });
+});
+
 describe("em diff --json (CLI)", () => {
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
-    expect(doc.diffSchemaVersion).toBe("1.0");
+    expect(doc.diffSchemaVersion).toBe("1.1");
     expect(doc.identical).toBe(false);
     expect(r.stderr).toContain("produces no event");
   });

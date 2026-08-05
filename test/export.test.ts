@@ -28,7 +28,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -83,18 +83,20 @@ arrow "Orders" -> "Screen"
 });
 
 describe("nullable fields are explicit null, not omitted", () => {
-  it("emits null for fields/note/issue/from/persona/context/logicalRef when absent", () => {
+  it("emits null for fields/note/issue/divergence/from/persona/context/logicalRef when absent", () => {
     const doc = docOf(`slice "S" {\n  command Do Thing\n}`);
     const el = doc.model.slices[0].elements[0];
     expect(el.fields).toBeNull();
     expect(el.note).toBeNull();
     expect(el.issue).toBeNull();
+    expect(el.divergence).toBeNull();
     expect(el.from).toBeNull();
     expect(el.persona).toBeNull();
     expect(el.context).toBeNull();
     expect(el.logicalRef).toBeNull();
     expect(el.again).toBe(false);
     expect("fields" in el).toBe(true); // key present with null, not sniffed via absence
+    expect("divergence" in el).toBe(true);
   });
 });
 
@@ -123,6 +125,12 @@ slice "Catalog" {
       { name: "sku", type: null },
       { name: "qty", type: "Int" },
     ]);
+  });
+
+  it("round-trips a divergence annotation", () => {
+    const doc = docOf(`slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done" divergence "tracking token covers idempotency"\n}`);
+    const view = doc.model.slices[0].elements[2];
+    expect(view.divergence).toBe("tracking token covers idempotency");
   });
 
   it("resolves a view's `from` to both the name and its ref", () => {

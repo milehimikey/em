@@ -19,6 +19,7 @@ em watch  <file> -o out.svg    # re-render on every save (file-based)
 em watch  <file> -o out.svg --serve   # + localhost live viewer, instant SSE push-reload (--port N)
 em validate <file>             # check event-modeling rules; exit 0 if only warnings/clean
 em validate <file> --list-issues       # print only open `issue "..."` clauses (slice, element, line, text)
+em validate <file> --list-divergences  # print only `divergence "..."` clauses (slice, element, line, text)
 em validate <file> --fail-on-issues    # opt-in CI gate: exit non-zero while any issue remains open
 ```
 
@@ -50,11 +51,11 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 ### Element kinds (8 keywords, nothing else)
 | Keyword | Band | Meaning | Tag | Extra clauses |
 |---|---|---|---|---|
-| `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `{ fields }` |
-| `command` | API | state-changing request | — | `note`, `issue`, `{ fields }` |
-| `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `{ fields }` |
-| `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `{ fields }` |
+| `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
+| `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `{ fields }` |
+| `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `{ fields }` |
+| `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
 - **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a row.
@@ -77,6 +78,13 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
   on one element) plus a legend entry; `em validate` warns on every open issue. **Prefer this
   over a `# TBD` comment for anything that should show up on the rendered diagram** — `# TBD` is
   invisible once rendered, `issue` isn't.
+- **`divergence "text"`** on ANY element records a reasoned, ratified deviation between this
+  element and its implementation — the *resolved* sibling of `issue` (lint-suppression-with-
+  rationale for the `conform` phase). Renders as a teal corner marker (bottom-right — distinct
+  from `note`'s top-right and `issue`'s top-left, so all three can coexist) plus a legend entry.
+  Raises **no** `em validate` warning by design; use `--list-divergences` to audit. `em diff
+  --json` carries it forward as `acceptedDivergence` on the affected change/removal entry, so
+  `conform` can cite an already-ratified deviation instead of re-flagging it as drift every run.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking). Keep these light; full field specs
   with rules live in the slice doc.
@@ -272,6 +280,10 @@ slice "Read Quote — created" {
    command in the same slice. Only checked once BOTH the event and at least one same-slice
    command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
    once fields are written down, `em validate` checks that data flows forward consistently.
+
+`divergence "text"` is deliberately NOT in this list — it raises no warning at all, since it
+records a deviation already reasoned through and accepted, not something to fix. Use
+`em validate --list-divergences` to audit them on demand.
 
 **Design rules that keep models valid:**
 - One element per band per slice (multiple personas/contexts are fine — they're different rows).

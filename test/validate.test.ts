@@ -73,6 +73,51 @@ slice "S" {
   });
 });
 
+describe("`divergence` — the accepted, resolved sibling of `issue`", () => {
+  // The entire point of the annotation is that it stops re-firing on every run — a
+  // warning here would defeat that, so this locks in the intentional asymmetry with
+  // `issue` (which always warns). See src/model/validate.ts's comment next to the
+  // `issue` warning block for why.
+  it("emits NO diagnostic at all for an element with a divergence annotation", () => {
+    const diags = diagsFor(`
+slice "Emit" {
+  event Thing Done
+}
+slice "S" {
+  view Retired Things from "Thing Done" divergence "tracking token covers idempotency"
+  ui Retired List @Customer
+}
+`);
+    expect(diags).toEqual([]);
+  });
+
+  it("still emits no divergence-related diagnostic even alongside an open `issue` on the same element", () => {
+    const diags = diagsFor(`
+slice "Emit" {
+  event Thing Done
+}
+slice "S" {
+  view Retired Things from "Thing Done" issue "still true post-migration?" divergence "known idiom"
+}
+`);
+    // Only the `issue` warning fires; nothing about `divergence` is ever reported.
+    expect(diags.filter((d) => d.message.includes("divergence"))).toEqual([]);
+    expect(diags.some((d) => d.message.startsWith("open issue on"))).toBe(true);
+  });
+
+  it("normalize() copies `divergence` from the AST onto the model element", () => {
+    const model = modelFrom(`slice "S" {\n  event E divergence "known idiom"\n}`);
+    const el = model.byName.get("e")![0];
+    expect(el.divergence).toBe("known idiom");
+  });
+
+  it("leaves `divergence` undefined on elements without one", () => {
+    const model = modelFrom(`slice "S" {\n  event E\n}`);
+    const el = model.byName.get("e")![0];
+    expect(el.divergence).toBeUndefined();
+  });
+});
+
 describe("fields-completeness warnings", () => {
   const gapDiags = (src: string) =>
     diagsFor(src).filter(

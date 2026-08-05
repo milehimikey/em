@@ -4,9 +4,10 @@ Directions under consideration, in rough priority order. Nothing here is a commi
 
 Recently shipped, for context on where things are heading: open questions as diagram-visible
 red notes (`issue`), JSON export with stable refs, structural `em diff`, the `conform` phase
-for model-versus-code drift, `em changelog`, and a lightweight usage-data convention (skill
-Usage log — [usage-data.md](usage-data.md)) so the next roadmap pass has real signal instead of
-guesswork. [workflow.md](workflow.md) is the resulting picture.
+for model-versus-code drift, `em changelog`, accepted-divergence annotations (`divergence`) so
+a ratified model-vs-code deviation stops re-firing as drift, and a lightweight usage-data
+convention (skill Usage log — [usage-data.md](usage-data.md)) so the next roadmap pass has real
+signal instead of guesswork. [workflow.md](workflow.md) is the resulting picture.
 
 **Modeling and rendering**
 
@@ -26,8 +27,6 @@ guesswork. [workflow.md](workflow.md) is the resulting picture.
 - **Export refs on diff entries** so a `em diff --json` entry joins directly to an
   `em export` document without re-deriving slugs
   ([#40](https://github.com/milehimikey/em/issues/40)).
-- **Accepted-divergence annotations** — a way to record a deliberate, reasoned deviation
-  between model and code so it stops being re-reported as drift on every run.
 
 **Bigger, and deliberately waiting for a reason**
 

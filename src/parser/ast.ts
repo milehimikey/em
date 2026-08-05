@@ -39,6 +39,10 @@ export interface ElementNode {
   note?: string;
   /** `issue "text"` — an open question, flagged red on the diagram until resolved. */
   issue?: string;
+  /** `divergence "text"` — a reasoned, ratified deviation between this element and its
+   *  implementation. Distinct from `issue`: this is the *resolved* state (lint-suppression-
+   *  with-rationale for conformance), not an open question. */
+  divergence?: string;
   /** Data attributes declared in a `{ … }` block on the element. */
   fields?: Field[];
   /** view-only: a later timeline instance of an already-declared read model. */

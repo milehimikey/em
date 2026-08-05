@@ -16,7 +16,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { Element, NormalizedModel } from "../model/model.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
-import { buildNoteMarkers, buildIssueMarkers, appendNoteLegend } from "./drawNotes.js";
+import { buildNoteMarkers, buildIssueMarkers, buildDivergenceMarkers, appendNoteLegend } from "./drawNotes.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -91,6 +91,7 @@ function withOverlays(
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
+  const divergences = buildDivergenceMarkers(model, rects);
 
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
   // room before anything else measures or appends to the viewBox
@@ -101,10 +102,10 @@ function withOverlays(
   const nodeAt = out.search(/<g\b[^>]*class="node"[^>]*>/);
   if (nodeAt >= 0) out = out.slice(0, nodeAt) + group + out.slice(nodeAt);
   else out = out.replace(/<\/svg>/, `${group}</svg>`);
-  // note/issue markers go on top of the boxes — inside the graph transform group
-  // (so they share the box coordinate space) but after every node, as the last
+  // note/issue/divergence markers go on top of the boxes — inside the graph transform
+  // group (so they share the box coordinate space) but after every node, as the last
   // children of that group, making them the topmost clickable layer.
-  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}$1$2`);
+  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}${divergences}$1$2`);
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
   return out;

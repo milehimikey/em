@@ -2,7 +2,12 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
-import { buildNoteMarkers, buildIssueMarkers, appendNoteLegend } from "../src/render/drawNotes.js";
+import {
+  buildNoteMarkers,
+  buildIssueMarkers,
+  buildDivergenceMarkers,
+  appendNoteLegend,
+} from "../src/render/drawNotes.js";
 import { Rect } from "../src/render/svgGeometry.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
@@ -127,6 +132,72 @@ slice "S" {
   });
 });
 
+describe("buildDivergenceMarkers", () => {
+  it("emits a teal corner marker at the box's bottom-right for a diverged element", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed divergence "tracking token covers idempotency"
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const group = buildDivergenceMarkers(model, new Map([[id, box(100, 100)]]));
+
+    // anchored near the box's bottom-right corner (right=150, bottom=120), inset by 5
+    expect(group).toContain("145,115");
+    // teal fill, not the note amber or issue red
+    expect(group).toContain("#26A69A");
+    expect(group).not.toContain("#F4C430");
+    expect(group).not.toContain("#E53935");
+    // carries a footnote number
+    expect(group).toContain(">1</text>");
+    // no anchor — nothing to link to; a tooltip carries the text instead
+    expect(group).not.toContain("<a");
+    expect(group).toContain("<title>1. tracking token covers idempotency</title>");
+  });
+
+  it("emits nothing for an element without a divergence", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const group = buildDivergenceMarkers(model, new Map([[id, box(100, 100)]]));
+    expect(group).not.toContain("<path");
+  });
+
+  it("xml-escapes the tooltip text", () => {
+    const model = modelFrom(`
+slice "S" {
+  event E divergence "a & b?"
+}
+`);
+    const id = model.byName.get("e")![0].id;
+    const group = buildDivergenceMarkers(model, new Map([[id, box(0, 0)]]));
+    expect(group).toContain("a &amp; b?");
+  });
+
+  it("an element with a note, an issue, and a divergence gets all three markers, on non-overlapping corners", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed note "notes/order-placed.md" issue "does this fire before payment?" divergence "known idiom"
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const rects = new Map([[id, box(100, 100)]]);
+    const notes = buildNoteMarkers(model, rects);
+    const issues = buildIssueMarkers(model, rects);
+    const divergences = buildDivergenceMarkers(model, rects);
+
+    expect(notes).toContain("145,85"); // top-right
+    expect(issues).toContain("55,85"); // top-left
+    expect(divergences).toContain("145,115"); // bottom-right
+    expect(notes).toContain("#F4C430");
+    expect(issues).toContain("#E53935");
+    expect(divergences).toContain("#26A69A");
+  });
+});
+
 describe("appendNoteLegend", () => {
   const fakeSvg = (w: number, h: number) =>
     `<svg width="${w}pt" height="${h}pt"\n viewBox="0.00 0.00 ${w}.00 ${h}.00" ` +
@@ -186,5 +257,34 @@ slice "S" {
     expect(out).toContain("Issues");
     expect(out).toContain("unresolved question");
     expect(out).not.toContain(">Notes<");
+  });
+
+  it("adds an Accepted Divergences section with the full text, distinct from Notes/Issues", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed note "notes/order-placed.md"
+  command Place Order issue "who validates the discount code?"
+  view Retired Things divergence "tracking token covers idempotency"
+}
+`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    expect(out).toContain("Notes");
+    expect(out).toContain("Issues");
+    expect(out).toContain("Accepted Divergences");
+    expect(out).toContain("Retired Things");
+    expect(out).toContain("tracking token covers idempotency");
+    // divergence heading/number rendered in the teal tone, not note amber or issue red
+    expect(out).toContain("#00695C");
+  });
+
+  it("grows the canvas for divergence-only models (no notes/issues present)", () => {
+    const model = modelFrom(`slice "S" {\n  view Retired Things divergence "known idiom"\n}`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    const newH = Number(/height="([\d.]+)pt"/.exec(out)![1]);
+    expect(newH).toBeGreaterThan(200);
+    expect(out).toContain("Accepted Divergences");
+    expect(out).toContain("known idiom");
+    expect(out).not.toContain(">Notes<");
+    expect(out).not.toContain(">Issues<");
   });
 });

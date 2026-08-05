@@ -1,11 +1,11 @@
 model "Clauses After Fields"
 
-# A small model whose only job is to prove that `note`, `issue`, `from`, `@Tag`,
-# and `again` all parse correctly when written AFTER an inline `{ fields }`
-# block, not just before it — the bug fixed by MIL-65/MIL-74. Every clause
-# below trails a fields block; compare order-fulfillment.em, which places the
-# same clauses BEFORE the fields block. Both orders are valid and render
-# identically — that's the point.
+# A small model whose only job is to prove that `note`, `issue`, `divergence`,
+# `from`, `@Tag`, and `again` all parse correctly when written AFTER an inline
+# `{ fields }` block, not just before it — the bug fixed by MIL-65/MIL-74.
+# Every clause below trails a fields block; compare order-fulfillment.em,
+# which places the same clauses BEFORE the fields block. Both orders are
+# valid and render identically — that's the point.
 
 persona Customer
 
@@ -29,8 +29,9 @@ slice "Cancel Order" {
 }
 
 # `again` trailing the fields block, same as `from` above — a later instance
-# of the read model declared purely with trailing clauses.
+# of the read model declared purely with trailing clauses. `divergence` trails
+# too, proving it parses in the same trailing position as `issue`/`note`.
 slice "View Open Orders — cancelled" {
-  view Open Orders { orderId, total: Money, status } again from "Order Cancelled"
+  view Open Orders { orderId, total: Money, status } again from "Order Cancelled" divergence "cancelled orders stay in the same projection rather than a separate 'Cancelled Orders' view — status field already distinguishes them"
   ui Order List @Customer
 }

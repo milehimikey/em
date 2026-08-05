@@ -134,6 +134,12 @@ An `issue` warning never blocks by default, same as every other warning — `em 
 `em validate --fail-on-issues` (opt-in) to make CI fail while any remain — see
 [cli.md](cli.md).
 
+`divergence "text"` (see [dsl.md](dsl.md#accepted-divergence)) deliberately raises **no**
+warning — unlike `issue`, it records a deviation that's already been reasoned about and
+ratified, and the entire point of the annotation is that it stops re-firing on every run. Use
+`em validate --list-divergences` to audit them on demand; there's no `--fail-on` flag for it
+since an accepted divergence should never fail a build.
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection

@@ -205,17 +205,17 @@ function parseElement(
 }
 
 /**
- * Pulls `note`/`issue`/`from`/`@Tag`/`again` clauses out of `raw`, applying
- * each to `node` and returning whatever text is left (the element's name,
- * when called on the text before a `{ … }` block — otherwise anything
- * unrecognized).
+ * Pulls `note`/`issue`/`divergence`/`from`/`@Tag`/`again` clauses out of
+ * `raw`, applying each to `node` and returning whatever text is left (the
+ * element's name, when called on the text before a `{ … }` block —
+ * otherwise anything unrecognized).
  *
  * Shared by `parseElement` (clauses before an inline field block, or on an
  * element with no field block at all) and the field-block handling in
  * `parse()` (clauses trailing a `{ … }` block's closing `}`, inline or
  * multi-line) — trailing clauses are matched the same way as leading ones so
- * `note`/`issue`/etc. are never silently dropped just because they come
- * after the fields.
+ * `note`/`issue`/`divergence`/etc. are never silently dropped just because
+ * they come after the fields.
  */
 function extractClauses(
   node: ElementNode,
@@ -239,6 +239,18 @@ function extractClauses(
   if (issueMatch && issueMatch.index !== undefined) {
     node.issue = issueMatch[1];
     rest = (rest.slice(0, issueMatch.index) + rest.slice(issueMatch.index + issueMatch[0].length)).trim();
+  }
+
+  // `divergence "text"` clause (valid on any element): a reasoned, ratified
+  // deviation between this element and its implementation — the *resolved*
+  // sibling of `issue`'s open question. Extracted the same way, before
+  // `from`, for the same reason.
+  const divergenceMatch = rest.match(/(?:^|\s)divergence\s+"([^"]*)"/i);
+  if (divergenceMatch && divergenceMatch.index !== undefined) {
+    node.divergence = divergenceMatch[1];
+    rest = (
+      rest.slice(0, divergenceMatch.index) + rest.slice(divergenceMatch.index + divergenceMatch[0].length)
+    ).trim();
   }
 
   // `from "A", "B"` clause (view only, but parsed wherever present).

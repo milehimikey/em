@@ -87,7 +87,13 @@ slice "Checkout" {
   it("reports the removed element symmetrically", () => {
     const diff = diffOf(NEW, OLD);
     expect(diff.removals).toEqual([
-      { type: "element-removed", kind: "event", name: "Discount Applied", sliceName: "Checkout" },
+      {
+        type: "element-removed",
+        kind: "event",
+        name: "Discount Applied",
+        sliceName: "Checkout",
+        acceptedDivergence: null,
+      },
     ]);
     expect(diff.counts.elementsRemoved).toBe(1);
   });
@@ -300,7 +306,14 @@ describe("issue lifecycle", () => {
     const NEW = `slice "S" {\n  command Do Thing issue "who approves?"\n}`;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "issue-opened", kind: "command", name: "Do Thing", sliceName: "S", newText: "who approves?" },
+      {
+        type: "issue-opened",
+        kind: "command",
+        name: "Do Thing",
+        sliceName: "S",
+        newText: "who approves?",
+        acceptedDivergence: null,
+      },
     ]);
     expect(diff.counts.issuesOpened).toBe(1);
   });
@@ -310,7 +323,14 @@ describe("issue lifecycle", () => {
     const NEW = `slice "S" {\n  command Do Thing\n}`;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "issue-resolved", kind: "command", name: "Do Thing", sliceName: "S", oldText: "who approves?" },
+      {
+        type: "issue-resolved",
+        kind: "command",
+        name: "Do Thing",
+        sliceName: "S",
+        oldText: "who approves?",
+        acceptedDivergence: null,
+      },
     ]);
     expect(diff.counts.issuesResolved).toBe(1);
     expect(formatModelDiff(diff)).toContain("issue resolved:");
@@ -328,6 +348,7 @@ describe("issue lifecycle", () => {
         sliceName: "S",
         oldText: "v1 question",
         newText: "v2 question",
+        acceptedDivergence: null,
       },
     ]);
     expect(diff.counts.issuesChanged).toBe(1);
@@ -341,7 +362,14 @@ describe("note change", () => {
       `slice "S" {\n  event Thing Happened note "docs/thing.md"\n}`,
     );
     expect(added.changes).toEqual([
-      { type: "note-added", kind: "event", name: "Thing Happened", sliceName: "S", newNote: "docs/thing.md" },
+      {
+        type: "note-added",
+        kind: "event",
+        name: "Thing Happened",
+        sliceName: "S",
+        newNote: "docs/thing.md",
+        acceptedDivergence: null,
+      },
     ]);
 
     const changed = diffOf(
@@ -356,9 +384,55 @@ describe("note change", () => {
         sliceName: "S",
         oldNote: "docs/thing.md",
         newNote: "docs/thing-v2.md",
+        acceptedDivergence: null,
       },
     ]);
     expect(changed.counts.noteChanges).toBe(1);
+  });
+});
+
+describe("accepted divergence", () => {
+  it("attaches the canonical element's divergence annotation to its element-removed entry", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done" divergence "tracking token covers idempotency"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n  event Thing Done\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.removals).toEqual([
+      {
+        type: "element-removed",
+        kind: "view",
+        name: "Retired Things",
+        sliceName: "S",
+        acceptedDivergence: "tracking token covers idempotency",
+      },
+    ]);
+    expect(diff.counts.acceptedDivergences).toBe(1);
+    expect(diff.counts.elementsRemoved).toBe(1);
+    expect(formatModelDiff(diff)).toContain('[accepted divergence: "tracking token covers idempotency"]');
+  });
+
+  it("is null on an element-removed entry when the element carries no divergence annotation", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n  event Thing Done\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.removals[0]).toMatchObject({ type: "element-removed", acceptedDivergence: null });
+    expect(diff.counts.acceptedDivergences).toBe(0);
+  });
+
+  it("also annotates a matched-pair change (e.g. field-added) on a diverged element", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done" divergence "known idiom"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done" divergence "known idiom" {\n    productId: UUID\n  }\n}`;
+    const diff = diffOf(OLD, NEW);
+    const fieldAdded = diff.changes.find((c) => c.type === "field-added") as ChangeEntry;
+    expect(fieldAdded).toMatchObject({ field: "productId", acceptedDivergence: "known idiom" });
+    expect(diff.counts.acceptedDivergences).toBe(1);
+  });
+
+  it("never suppresses the finding or changes hasChanges()/--exit-code semantics", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done" divergence "known idiom"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n  event Thing Done\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.removals).toHaveLength(1);
+    expect(hasChanges(diff)).toBe(true);
   });
 });
 
@@ -472,7 +546,13 @@ describe("renames are out of scope (deliberate)", () => {
       { type: "element-added", kind: "command", name: "Place Order", sliceName: "S" },
     ]);
     expect(diff.removals).toEqual([
-      { type: "element-removed", kind: "command", name: "Submit Order", sliceName: "S" },
+      {
+        type: "element-removed",
+        kind: "command",
+        name: "Submit Order",
+        sliceName: "S",
+        acceptedDivergence: null,
+      },
     ]);
   });
 });

@@ -39,6 +39,7 @@ function emptyCounts(): DiffCounts {
     issuesChanged: 0,
     arrowsAdded: 0,
     arrowsRemoved: 0,
+    acceptedDivergences: 0,
   };
 }
 
@@ -60,6 +61,7 @@ const OPTIONAL_FIELDS = [
   "newText",
   "from",
   "to",
+  "acceptedDivergence",
 ] as const;
 
 /** Expand a partial entry into the full explicit-null shape the serializer should produce. */
@@ -146,11 +148,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 13 counters", () => {
+  it("passes DiffCounts through as-is, all 14 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(13);
+    expect(Object.keys(doc.counts)).toHaveLength(14);
   });
 });
 
@@ -386,6 +388,29 @@ describe("one correctly-serialized entry per ChangeType", () => {
       expect(Object.keys(doc.removals[0])).toEqual(["type", ...OPTIONAL_FIELDS]);
     });
   }
+});
+
+describe("accepted divergence", () => {
+  it("carries the canonical element's divergence annotation on a real element-removed entry", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done" divergence "processor tracking token covers idempotency; no view needed"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n  event Thing Done\n}`;
+    const diff = diffOf(OLD, NEW);
+    const doc = docFor(diff);
+    const removed = doc.removals.find((e: ChangeEntry) => e.type === "element-removed");
+    expect(removed.acceptedDivergence).toBe(
+      "processor tracking token covers idempotency; no view needed",
+    );
+    expect(doc.counts.acceptedDivergences).toBe(1);
+  });
+
+  it("is null when the removed element carries no divergence annotation", () => {
+    const OLD = `slice "S" {\n  command Do Thing\n  event Thing Done\n  view Retired Things from "Thing Done"\n}`;
+    const NEW = `slice "S" {\n  command Do Thing\n  event Thing Done\n}`;
+    const doc = docFor(diffOf(OLD, NEW));
+    const removed = doc.removals.find((e: ChangeEntry) => e.type === "element-removed");
+    expect(removed.acceptedDivergence).toBeNull();
+    expect(doc.counts.acceptedDivergences).toBe(0);
+  });
 });
 
 describe("changes/removals ordering", () => {

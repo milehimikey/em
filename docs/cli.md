@@ -75,11 +75,13 @@ honest.
 | Flag | Effect |
 |---|---|
 | `--list-issues` | Print only the open `issue "text"` diagnostics (slice, element, line, text) instead of the full diagnostic list |
+| `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 
 ```bash
 em validate model.em                          # full diagnostics; exits non-zero only on errors
 em validate model.em --list-issues             # just the open `issue` clauses, for a quick sweep
+em validate model.em --list-divergences        # just the accepted `divergence` clauses, for an audit
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
 ```
 
@@ -104,7 +106,7 @@ em export model.em -o model.json      # write to a file
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.0"`):
+**Schema summary** (`schemaVersion: "1.1"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line.
@@ -114,7 +116,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     `elements`. Elements appear only inside their slice, not flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
-    `fields`, `note`, `issue`, `from`, `persona`, `context`, `again`, and `logicalRef`.
+    `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, and
+    `logicalRef`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
+    annotation — a reasoned, ratified deviation between this element and its implementation;
+    `null` when the element carries none.
     Fields that don't apply to a given element are emitted as explicit `null` (not omitted),
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
@@ -144,6 +149,12 @@ slices and elements added/removed/moved, field/`from`/note changes, and issue li
 file: raw `git diff` shows line hunks; `em diff` groups them into what actually happened to
 the model, and — crucially — collapses a cross-slice move into one `moved:` line instead of
 a delete-hunk-plus-add-hunk in two different places.
+
+When a change or removal involves an element the **old** side annotates with `divergence
+"text"`, the entry is additionally tagged with that text — see "Accepted divergence" below.
+This never suppresses the finding: `em diff` still reports the true structural state, it just
+cites the reason a consumer (like the `conform` skill phase, see [ai-workflow.md](ai-workflow.md))
+can use to classify it as accepted rather than fresh drift.
 
 Two forms:
 
@@ -198,7 +209,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.0"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.1"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -208,8 +219,8 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 13 counters the text rollup line summarizes (`slicesAdded`,
-  `elementsMoved`, `fieldChanges`, `issuesResolved`, …), as-is.
+- `counts` — the same 14 counters the text rollup line summarizes (`slicesAdded`,
+  `elementsMoved`, `fieldChanges`, `issuesResolved`, `acceptedDivergences`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:
@@ -221,10 +232,23 @@ Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rathe
 
 Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `sliceName`,
 `fromSlice`, `toSlice`, `field`, `fieldType`, `oldType`, `newType`, `source`, `oldNote`,
-`newNote`, `oldText`, `newText`, `from`, `to`) — explicit `null` when unused by that entry's
-`type`, never omitted, so a typed consumer can destructure without sniffing for key
-presence (same convention as `em export`). Output is byte-deterministic for the same two
-inputs.
+`newNote`, `oldText`, `newText`, `from`, `to`, `acceptedDivergence`) — explicit `null` when
+unused by that entry's `type`, never omitted, so a typed consumer can destructure without
+sniffing for key presence (same convention as `em export`). Output is byte-deterministic for
+the same two inputs.
+
+**Accepted divergence** (`acceptedDivergence`, added in schema `1.1`): non-null when the
+**old**-side (canonical) element behind this entry carries a `divergence "text"` annotation —
+the same text, cited rather than hidden. Applies to `element-removed` entries and to every
+matched-pair change on an annotated element (`field-*`, `from-*`, `note-*`, `issue-*`); `null`
+for `slice-added`/`slice-removed`, `arrow-added`/`arrow-removed`, `element-added`, and
+`element-moved`, where there's no single canonical-side element to check. `counts.
+acceptedDivergences` tallies how many changes/removals carry a non-null value — a
+cross-cutting count, not a separate bucket (an annotated `element-removed` still counts
+toward `elementsRemoved` too). This never changes `identical` or `--exit-code`: `em diff`
+reports the true structural state regardless of annotation; classifying an annotated finding
+as "not real drift" is the consumer's job (see the `conform` skill phase in
+[ai-workflow.md](ai-workflow.md)), not `em diff`'s.
 
 Entries identify elements by display name (`name`, `sliceName`), not by the `em export`
 `ref`/slice `key` the diff actually matched on — joining a diff entry back to an `em export`
