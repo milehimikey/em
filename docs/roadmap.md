@@ -4,8 +4,9 @@ Directions under consideration, in rough priority order. Nothing here is a commi
 
 Recently shipped, for context on where things are heading: open questions as diagram-visible
 red notes (`issue`), JSON export with stable refs, structural `em diff`, the `conform` phase
-for model-versus-code drift, and `em changelog`. [workflow.md](workflow.md) is the resulting
-picture.
+for model-versus-code drift, `em changelog`, and a lightweight usage-data convention (skill
+Usage log — [usage-data.md](usage-data.md)) so the next roadmap pass has real signal instead of
+guesswork. [workflow.md](workflow.md) is the resulting picture.
 
 **Modeling and rendering**
 

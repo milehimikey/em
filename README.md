@@ -92,6 +92,7 @@ built this way.
 | [docs/timeline.md](docs/timeline.md) | The Two Laws of the Timeline |
 | [docs/ai-workflow.md](docs/ai-workflow.md) | The Claude Code skill: install, phases, artifacts |
 | [docs/dependencies.md](docs/dependencies.md) | What's bundled vs. what needs a system install |
+| [docs/usage-data.md](docs/usage-data.md) | What usage data em captures, and how to roll it up for a retro |
 | [docs/architecture.md](docs/architecture.md) | How rendering works; why Graphviz, not PlantUML |
 | [docs/roadmap.md](docs/roadmap.md) | What's planned |
 

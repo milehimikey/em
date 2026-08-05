@@ -57,8 +57,10 @@ that live between sessions.
   conformance/<date>-report.md  # conform-phase drift reports (advisory)
 ```
 
-The `.event-modeling.md` state file records the current phase, decisions made, and open
-questions, so you can stop mid-session and pick up in a fresh conversation days later.
+The `.event-modeling.md` state file records the current phase, decisions made, open questions,
+and a Usage log (phases touched, validate diagnostic categories hit — see
+[usage-data.md](usage-data.md)), so you can stop mid-session and pick up in a fresh conversation
+days later.
 
 ## A complete worked example
 

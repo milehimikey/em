@@ -19,6 +19,7 @@ check the model against the code that implements it.
 | Feed a model to other tooling (JSON export, structural diff) | [cli.md](cli.md#em-export-file) |
 | Validate models in CI, or run conformance on a schedule | [ci.md](ci.md) |
 | Know what's bundled vs. what needs a system install | [dependencies.md](dependencies.md) |
+| See what usage data em captures, and how to roll it up for a retro | [usage-data.md](usage-data.md) |
 | Understand how rendering works under the hood | [architecture.md](architecture.md) |
 | See what's planned | [roadmap.md](roadmap.md) |
 

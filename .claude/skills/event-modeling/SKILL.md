@@ -77,7 +77,11 @@ validation rules) before doing real work — they are the source of truth. Templ
   above all `command → read model` (the CQRS violation) or `read model → command` — means the model
   is missing an **element**, not an arrow.
 - **Validate continuously.** Run `em validate` and fix errors/warnings as you go (see DSL ref).
-- **Save state at the end of every session** so work resumes cleanly.
+- **Save state at the end of every session** so work resumes cleanly. Also append one line to
+  the Usage log: the phase(s) touched and the `em validate` diagnostic *categories* that fired
+  (rule name only, e.g. "read model nothing consumes" — never the full message or domain
+  content). This is the team's only usage signal today (`docs/usage-data.md`) — keep it cheap
+  and habitual, not a task to skip.
 
 ## Preconditions (run first)
 
@@ -318,4 +322,5 @@ em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-rel
 ```
 
 Always finish a working session by: re-rendering, running `em validate`, and updating
-`.event-modeling.md` with the current phase/step, decisions, and open questions.
+`.event-modeling.md` with the current phase/step, decisions, open questions, and a Usage log
+entry (phases touched + validate diagnostic categories hit).
