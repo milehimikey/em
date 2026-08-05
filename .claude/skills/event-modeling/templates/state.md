@@ -52,7 +52,7 @@ Keep it current at the end of every working session.
      One line per session: phase(s) touched, and validate diagnostic *categories* hit (the rule
      name from docs/validation.md's tables, e.g. "read model nothing consumes" — never the full
      instance message or any domain content). Append, never edit past entries. -->
-- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | conform | validate, ...}} — validate: {{diagnostic category, ... | none}}
+- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | conform | validate | watch, ...}} — validate: {{diagnostic category (docs/usage-data.md#categories), ... | none}}
 
 ## Open questions / parking lot
 <!-- Unresolved items to bring back to the user. Never guess these. Metadata is optional and

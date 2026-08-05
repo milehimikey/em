@@ -20,12 +20,58 @@ current phase, decisions made, and open questions. It now also gets a **Usage lo
 One line per session. Two things per line:
 
 - **Phase(s) touched** — `discover`, `extract`, `model`, `slice`, `conform`, `validate`, `watch`.
-- **Validate diagnostic categories hit** — the *rule name* from the tables in
-  [validation.md](validation.md#warnings) (e.g. "command nothing triggers"), not the full
-  instance message. `none` if `em validate` came back clean.
+- **Validate diagnostic categories hit** — one of the fixed strings in
+  [Categories](#categories) below, not the full instance message. `none` if `em validate` came
+  back clean.
 
 That's it. No message text, no field names, no slice content, no participant names beyond
 what's already in the state file's Participants/Decisions sections you already choose to commit.
+
+## Categories
+
+`em validate`'s `Diagnostic` type carries only `{severity, message, line}` — there's no
+structured category field to copy from, and the runtime message text doesn't match
+[validation.md](validation.md)'s table wording verbatim (it's generated per-instance, with
+element names interpolated in). Logging the raw message would also risk leaking domain
+content the rest of this convention deliberately excludes.
+
+So the category is a fixed vocabulary instead: the strings below, one per row of
+[validation.md](validation.md)'s Errors and Warnings tables, article stripped and lowercased.
+**Use one of these exact strings** — a session that writes "read model with no source" and
+another that writes "read model has no source" for the same rule silently splits one count
+into two in the aggregation recipe below.
+
+**Warnings**
+
+| Category |
+|---|
+| reaction shares slice with command |
+| command nothing triggers |
+| command produces no event |
+| event not read by any read model |
+| read model has no source |
+| read model has no consumer |
+| duplicate name referenced |
+| open issue |
+| view field no source |
+| event field not provided by command |
+
+**Errors**
+
+| Category |
+|---|
+| same-band collision |
+| view references unknown event |
+| event feeds earlier view instance |
+| reaction references unknown read model |
+| reaction reads view before it exists |
+| view again with no earlier declaration |
+| arrow endpoint unresolved |
+| arrow points backward |
+| illegal connection |
+
+If a genuinely new rule shows up that doesn't fit, add its category here first — don't
+freelance a new string in a state file.
 
 ## Why this shape, not CLI telemetry
 
@@ -63,6 +109,11 @@ find . -name '.event-modeling.md' -exec grep -h '^- .*validate:' {} + \
   | awk '{$1=$1;print}' | grep -v '^none$' | sort | uniq -c | sort -rn
 ```
 
+(Both lines split on the em dash, `—`, so they need a UTF-8 locale — the default on macOS and
+most CI images. Under `LC_ALL=C` the split can misbehave; run `export LC_ALL=en_US.UTF-8`
+first if that's the environment.)
+
 That's the raw material for the next roadmap engagement's facilitation and CI-urgency calls —
 which skill phases the team actually spends time in, and which validate warnings recur often
-enough to be worth designing around, instead of guessing from the code.
+enough to be worth designing around, instead of guessing from the code. Counts are only as
+clean as entries sticking to the fixed [Categories](#categories) list above.
