@@ -58,6 +58,15 @@ Mixed systems happen: pick the dominant mode, note the exception areas in the st
   implies several events. Apply the event filter hard here — procedural systems are where
   derived values and activity records masquerade as facts.
 
+Before minting a new candidate event/command/view name, check whether sibling `.em` models
+already exist in the repo. If they do, run `em glossary <this-model>.em <sibling>.em ...` (or
+`--json` it) as a fuzzy-name-matching aid: it surfaces the same normalized term used with a
+different kind or a different field type across models. A hit there usually means the
+extracted system already has an established name/kind elsewhere — prefer that over minting a
+near-duplicate synonym (e.g. "Order Confirmed" vs. an existing "Order Confirmation"). This is
+informational judgment, not a gate: `em glossary` only flags conflicts, it doesn't resolve
+them.
+
 ## The confirm-and-clarify loop (~7 rounds)
 
 One concern per round. After every round: mirror what you extracted back to the user, update

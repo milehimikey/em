@@ -16,6 +16,17 @@ import { buildExport } from "./emit/json.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
 import { planDiffArgs, resolveRevision } from "./cli/diff-inputs.js";
+import {
+  buildGlossary,
+  detectKindConflicts,
+  detectFieldTypeConflicts,
+  hasConflicts,
+  formatGlossarySummary,
+  formatConflictLine,
+  GlossaryModelInput,
+} from "./model/glossary.js";
+import { buildGlossaryJson, GlossaryFileSide } from "./emit/glossaryJson.js";
+import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
 import { STARTER_EM } from "./templates.js";
@@ -139,6 +150,69 @@ program
       const newSource = plan.to ? readAtRevision(plan.file, plan.to) : readFileOrExit(plan.file);
       const newLabel = plan.to ? `${plan.file}@${plan.to}` : plan.file;
       runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json);
+    },
+  );
+
+program
+  .command("glossary")
+  .description("cross-model glossary of terms, with consistency checks across models (see docs/cli.md)")
+  .argument("<files...>", "input .em files")
+  .option("--json", "print the full glossary document instead of the text report")
+  .option("-o, --out <path>", "write the JSON document to a file instead of stdout (requires --json)")
+  .option("--list-conflicts", "print only the conflict lines, no summary")
+  .option(
+    "--fail-on-conflicts",
+    "exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)",
+  )
+  .action(
+    (
+      files: string[],
+      opts: { json?: boolean; out?: string; listConflicts?: boolean; failOnConflicts?: boolean },
+    ) => {
+      const plan = planGlossaryArgs(opts);
+      if ("error" in plan) {
+        console.error(plan.error);
+        process.exit(1);
+      }
+
+      const inputs: GlossaryModelInput[] = [];
+      const sources: GlossaryFileSide[] = [];
+      let anyErrors = false;
+      for (const file of files) {
+        const source = readFileOrExit(file);
+        const result = compileSource(source, file);
+        printDiagnosticsFor(file, result.diagnostics);
+        if (hasErrors(result.diagnostics)) anyErrors = true;
+        inputs.push({ label: file, model: result.model });
+        sources.push({ label: file, source });
+      }
+      if (anyErrors) {
+        console.error("not building glossary: fix the errors above");
+        process.exit(1);
+      }
+
+      const glossary = buildGlossary(inputs);
+      const conflicts = [...detectKindConflicts(glossary), ...detectFieldTypeConflicts(glossary)];
+
+      if (opts.json) {
+        const json = buildGlossaryJson(glossary, conflicts, sources);
+        if (opts.out) {
+          writeFileSync(opts.out, json + "\n");
+          console.log(`wrote ${opts.out}`);
+        } else {
+          process.stdout.write(json + "\n");
+        }
+      } else if (opts.listConflicts) {
+        if (conflicts.length === 0) console.log("no conflicts");
+        else for (const c of conflicts) console.log(`  ${formatConflictLine(c)}`);
+      } else {
+        console.log(formatGlossarySummary(glossary, conflicts));
+      }
+
+      // Same rationale as em diff's --exit-code: set the code rather than
+      // process.exit() so stdout to a pipe (a large --json -o document) can't
+      // be truncated.
+      if (opts.failOnConflicts && hasConflicts(conflicts)) process.exitCode = 1;
     },
   );
 
@@ -308,7 +382,8 @@ function compileFile(file: string, opts: CompileOptions = {}) {
   }
 }
 
-/** Read a file's text, or exit with a clear error — used by `em diff`'s two-file form. */
+/** Read a file's text, or exit with a clear error — shared by `em diff` (both forms) and
+ *  `em glossary`, which each read one or more plain `.em` files off disk before compiling. */
 function readFileOrExit(file: string): string {
   try {
     return readFileSync(file, "utf8");
@@ -498,6 +573,17 @@ function printDiagnostics(diags: Diagnostic[]): void {
   if (diags.length === 0) return;
   for (const d of diags) {
     const line = formatDiagnostic(d);
+    if (d.severity === "error") console.error(line);
+    else console.warn(line);
+  }
+}
+
+/** Same as printDiagnostics, prefixed with the file each diagnostic came from —
+ *  worth doing once N input files can be more than the two `em diff` compares,
+ *  where ambiguity about which side a diagnostic belongs to gets materially worse. */
+function printDiagnosticsFor(file: string, diags: Diagnostic[]): void {
+  for (const d of diags) {
+    const line = `${file}: ${formatDiagnostic(d)}`;
     if (d.severity === "error") console.error(line);
     else console.warn(line);
   }
