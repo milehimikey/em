@@ -47,6 +47,13 @@ Keep it current at the end of every working session.
      attribute each entry to the participant who made the call (see Participants above). -->
 - {{YYYY-MM-DD}}: {{decision}} — {{why}} — by {{participant, if a live workshop}}
 
+## Usage log
+<!-- The team's only usage signal today (see docs/usage-data.md) — cheap and coarse on purpose.
+     One line per session: phase(s) touched, and validate diagnostic *categories* hit (the rule
+     name from docs/validation.md's tables, e.g. "read model nothing consumes" — never the full
+     instance message or any domain content). Append, never edit past entries. -->
+- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | conform | validate, ...}} — validate: {{diagnostic category, ... | none}}
+
 ## Open questions / parking lot
 <!-- Unresolved items to bring back to the user. Never guess these. Metadata is optional and
      flat — add only what's known: source (ticket/conversation that spawned it), blocked on
