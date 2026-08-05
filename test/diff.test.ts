@@ -630,3 +630,72 @@ describe("renames are out of scope (deliberate)", () => {
     ]);
   });
 });
+
+describe("declared `type` add/remove/field changes (MIL-64)", () => {
+  it("reports a type added", () => {
+    const diff = diffOf(``, `type Money { amount: int }`);
+    expect(diff.changes).toEqual([{ type: "type-added", name: "Money" }]);
+    expect(diff.counts.typesAdded).toBe(1);
+  });
+
+  it("reports a type removed symmetrically", () => {
+    const diff = diffOf(`type Money { amount: int }`, ``);
+    expect(diff.removals).toEqual([{ type: "type-removed", name: "Money" }]);
+    expect(diff.counts.typesRemoved).toBe(1);
+  });
+
+  it("reports field added/removed/type-changed on a surviving type", () => {
+    const OLD = `type QuoteAcceptedLine {\n  lineId: UUID\n  quantity: int\n  memo: Text\n}`;
+    const NEW = `type QuoteAcceptedLine {\n  lineId: UUID\n  quantity: Decimal\n  netUnitPrice: Money\n}`;
+    const diff = diffOf(OLD, NEW);
+    const types = diff.changes.map((c) => c.type);
+    expect(types).toEqual(
+      expect.arrayContaining(["type-field-added", "type-field-removed", "type-field-changed"]),
+    );
+    const added = diff.changes.find((c) => c.type === "type-field-added") as ChangeEntry;
+    expect(added).toMatchObject({ name: "QuoteAcceptedLine", field: "netUnitPrice", fieldType: "Money" });
+    const removed = diff.changes.find((c) => c.type === "type-field-removed") as ChangeEntry;
+    expect(removed).toMatchObject({ name: "QuoteAcceptedLine", field: "memo", fieldType: "Text" });
+    const changed = diff.changes.find((c) => c.type === "type-field-changed") as ChangeEntry;
+    expect(changed).toMatchObject({
+      name: "QuoteAcceptedLine",
+      field: "quantity",
+      oldType: "int",
+      newType: "Decimal",
+    });
+    expect(diff.counts.typeFieldChanges).toBe(3);
+  });
+
+  it("reports no change for an untouched type nested inside another declared type", () => {
+    const src = `type Address { line1: String }\ntype Order { billing: Address }`;
+    const diff = diffOf(src, src);
+    expect(diff.changes).toEqual([]);
+    expect(diff.removals).toEqual([]);
+  });
+
+  it("a type rename reads as remove+add, same convention as elements", () => {
+    const OLD = `type Money { amount: int }`;
+    const NEW = `type Currency { amount: int }`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([{ type: "type-added", name: "Currency" }]);
+    expect(diff.removals).toEqual([{ type: "type-removed", name: "Money" }]);
+  });
+
+  it("includes type counters in the summary rollup line", () => {
+    const report = reportOf(``, `type Money { amount: int }`);
+    expect(report.split("\n")[0]).toBe("1 type added");
+  });
+
+  it("formats type-added/removed/field-* lines", () => {
+    const added = formatModelDiff(diffOf(``, `type Money { amount: int }`));
+    expect(added).toContain('+ type "Money"');
+
+    const removed = formatModelDiff(diffOf(`type Money { amount: int }`, ``));
+    expect(removed).toContain('- type "Money"');
+
+    const fieldChanged = formatModelDiff(
+      diffOf(`type Money { amount: int }`, `type Money { amount: Decimal }`),
+    );
+    expect(fieldChanged).toContain('~ field "amount" type changed on type "Money": int -> Decimal');
+  });
+});

@@ -10,7 +10,7 @@
 // reported once, not as add+remove.
 
 import { computeRefs } from "../emit/json.js";
-import { Element, NormalizedModel, Slice, normalizeName } from "./model.js";
+import { Element, NormalizedModel, Slice, TypeDecl, normalizeName } from "./model.js";
 import { ElementKind } from "../parser/ast.js";
 
 export type ChangeType =
@@ -36,7 +36,12 @@ export type ChangeType =
   | "event-marked-public"
   | "event-unmarked-public"
   | "arrow-added"
-  | "arrow-removed";
+  | "arrow-removed"
+  | "type-added"
+  | "type-removed"
+  | "type-field-added"
+  | "type-field-removed"
+  | "type-field-changed";
 
 /**
  * One reported change. Not every field applies to every `type` — see
@@ -95,6 +100,11 @@ export interface DiffCounts {
    *  the other counts above (an element-removed with an accepted divergence still counts
    *  toward `elementsRemoved` too; this is a cross-cutting tally, not a separate bucket). */
   acceptedDivergences: number;
+  /** Declared `type` (MIL-64) additions/removals and field changes on surviving types. No
+   *  move detection — types aren't slice-scoped, so there's nothing to move between. */
+  typesAdded: number;
+  typesRemoved: number;
+  typeFieldChanges: number;
 }
 
 export interface ModelDiff {
@@ -124,6 +134,9 @@ function emptyCounts(): DiffCounts {
     arrowsAdded: 0,
     arrowsRemoved: 0,
     acceptedDivergences: 0,
+    typesAdded: 0,
+    typesRemoved: 0,
+    typeFieldChanges: 0,
   };
 }
 
@@ -297,6 +310,31 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
     }
   }
 
+  // --- declared types (MIL-64): identity is export ref, same as elements — no slice
+  // scoping and no move detection (types aren't slice-scoped, so there's nothing to move
+  // between). A rename reads as remove+add, same convention as elements.
+  const oldTypeByRef = new Map<string, TypeDecl>();
+  oldModel.types.forEach((t, i) => oldTypeByRef.set(oldRefs.refByTypeId.get(t.id) ?? String(i), t));
+  const newTypeByRef = new Map<string, TypeDecl>();
+  newModel.types.forEach((t, i) => newTypeByRef.set(newRefs.refByTypeId.get(t.id) ?? String(i), t));
+
+  for (const t of newModel.types) {
+    const ref = newRefs.refByTypeId.get(t.id)!;
+    const oldType = oldTypeByRef.get(ref);
+    if (oldType) {
+      pushTypeFieldChanges(changes, counts, oldType, t);
+    } else {
+      changes.push({ type: "type-added", name: t.name });
+      counts.typesAdded++;
+    }
+  }
+  for (const t of oldModel.types) {
+    const ref = oldRefs.refByTypeId.get(t.id)!;
+    if (newTypeByRef.has(ref)) continue; // matched pair, already diffed above
+    removals.push({ type: "type-removed", name: t.name });
+    counts.typesRemoved++;
+  }
+
   return { changes, removals, counts };
 }
 
@@ -321,6 +359,45 @@ function pushSliceChanges(
     });
   }
   counts.sourceChanges++;
+}
+
+/** Diff a declared type's own fields for a type present on both sides (same ref) — a fields-
+ *  only subset of `pushElementChanges()` below, since a `type` declaration has no slice, from,
+ *  note, issue, public, or divergence dimension to diff. */
+function pushTypeFieldChanges(
+  changes: ChangeEntry[],
+  counts: DiffCounts,
+  oldType: TypeDecl,
+  newType: TypeDecl,
+): void {
+  const oldFields = new Map(oldType.fields.map((f) => [normalizeName(f.name), f]));
+  const newFields = new Map(newType.fields.map((f) => [normalizeName(f.name), f]));
+
+  for (const [key, f] of newFields) {
+    if (!oldFields.has(key)) {
+      changes.push({ type: "type-field-added", name: newType.name, field: f.name, fieldType: f.type ?? null });
+      counts.typeFieldChanges++;
+    }
+  }
+  for (const [key, f] of oldFields) {
+    if (!newFields.has(key)) {
+      changes.push({ type: "type-field-removed", name: newType.name, field: f.name, fieldType: f.type ?? null });
+      counts.typeFieldChanges++;
+    }
+  }
+  for (const [key, newF] of newFields) {
+    const oldF = oldFields.get(key);
+    if (oldF && (oldF.type ?? null) !== (newF.type ?? null)) {
+      changes.push({
+        type: "type-field-changed",
+        name: newType.name,
+        field: newF.name,
+        oldType: oldF.type ?? null,
+        newType: newF.type ?? null,
+      });
+      counts.typeFieldChanges++;
+    }
+  }
 }
 
 /** Diff field/from/note/issue changes for an element present on both sides (same ref). */
@@ -517,6 +594,9 @@ function formatSummary(c: DiffCounts): string {
   push(c.eventsUnmarkedPublic, "event unmarked public", "events unmarked public");
   push(c.arrowsAdded, "arrow added", "arrows added");
   push(c.arrowsRemoved, "arrow removed", "arrows removed");
+  push(c.typesAdded, "type added", "types added");
+  push(c.typesRemoved, "type removed", "types removed");
+  push(c.typeFieldChanges, "type field change", "type field changes");
   push(c.acceptedDivergences, "accepted divergence", "accepted divergences");
   return parts.length === 0 ? "no structural changes" : parts.join(", ");
 }
@@ -578,6 +658,16 @@ function formatEntry(e: ChangeEntry): string {
       return `+ arrow "${e.from}" -> "${e.to}"`;
     case "arrow-removed":
       return `- arrow "${e.from}" -> "${e.to}"`;
+    case "type-added":
+      return `+ type "${e.name}"`;
+    case "type-removed":
+      return `- type "${e.name}"`;
+    case "type-field-added":
+      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} added to type "${e.name}"`;
+    case "type-field-removed":
+      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} removed from type "${e.name}"`;
+    case "type-field-changed":
+      return `~ field "${e.field}" type changed on type "${e.name}": ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}`;
   }
 }
 

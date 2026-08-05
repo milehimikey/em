@@ -121,6 +121,56 @@ Once two connected elements both declare fields, `em validate` traces them — a
 with no matching source-event field, or an event field no same-slice command provides, gets
 a warning. See [validation.md](validation.md).
 
+## Named types
+
+A top-level `type Name { field: Type, ... }` declaration names a reusable structured shape —
+the one exception to "types are free text with no semantic checking" above. Declare it once,
+then reference it from any field anywhere in the model, bare for a single nested object or
+`Name[]` for an array of it:
+
+```
+type QuoteAcceptedLine {
+  lineId: UUID
+  productId: UUID
+  quantity: int
+  unitPrice: Money
+  discountIds: UUID[]
+}
+
+slice "Accept Quote" {
+  command Accept Quote
+  event Quote Accepted {
+    quoteId: UUID
+    lines: QuoteAcceptedLine[]
+  }
+}
+```
+
+`type` declarations take no clauses in v1 — just a name and a `{ fields }` block — and may
+appear anywhere at the top level, in any order relative to `persona`/`context`/`slice`.
+
+**Resolution is opportunistic, not a closed world.** A field's type string resolves to a
+structured reference only when it names a declared type (bare or `[]`-suffixed), matched
+case- and whitespace-insensitively the same way element names are. Every other type string —
+`Money`, `UUID`, `List<LineItem>`, anything undeclared — stays exactly as free-text and
+unchecked as it always has been. There's no primitive whitelist and no "unknown type" error:
+a model that declares no `type` blocks sees zero behavior change.
+
+**Recursion is allowed as a DAG; a bare cycle is rejected.** A declared type may reference
+another declared type, including transitively (`Order` referencing `Address` twice is a
+legitimate diamond, not a problem). But a type nesting itself with no array to terminate it —
+`type Node { child: Node }` — can never be satisfied and is a validation error. The same shape
+through an array, `type Node { children: Node[] }`, is legal: the array can terminate at
+runtime (empty array), which is exactly how tree-shaped data (categories, org charts, comment
+threads, bills of materials) gets expressed. See [validation.md](validation.md).
+
+`em export` carries every declared type under `model.types[]`, each with its own stable `ref`
+(`types/<slug>`), and adds an additive `typeRef` key to every field — on both a declared
+type's own fields and ordinary element fields — resolving to `{ name, ref, array }` when the
+field's type names a declared type, `null` otherwise. `em diff` tracks types being
+added/removed and their fields changing, the same shape as element field changes. See
+[cli.md](cli.md).
+
 ## Notes
 
 Any element can carry `note "path.md"`. The prose lives in the markdown file, keeping the

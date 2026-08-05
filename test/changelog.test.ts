@@ -39,6 +39,9 @@ const EMPTY_COUNTS = {
   arrowsAdded: 0,
   arrowsRemoved: 0,
   acceptedDivergences: 0,
+  typesAdded: 0,
+  typesRemoved: 0,
+  typeFieldChanges: 0,
 };
 
 /** A no-op diff: identical model on both sides, so `hasChanges()` is false. */

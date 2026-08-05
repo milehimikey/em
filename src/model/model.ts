@@ -5,6 +5,22 @@
 import { AUTOMATION_KINDS, ElementKind, Field, ModelNode } from "../parser/ast.js";
 import { dedupe, slug } from "../util/slug.js";
 
+/** A declared named type (`type Name { … }`) — its own top-level namespace, separate from
+ *  elements (a type and an element may share a name without colliding). */
+export interface TypeDecl {
+  id: string;
+  name: string;
+  fields: Field[];
+  line: number;
+}
+
+/** A field's type string resolved to a declared type, when it names one. */
+export interface TypeRef {
+  typeDecl: TypeDecl;
+  /** True when the field's type is `Name[]` (an array of the referenced type) rather than bare. */
+  array: boolean;
+}
+
 export const DEFAULT_PERSONA = "User";
 export const DEFAULT_CONTEXT = "Domain";
 
@@ -65,6 +81,11 @@ export interface NormalizedModel {
   /** Normalized display name -> elements with that name (across slices). */
   byName: Map<string, Element[]>;
   arrows: ResolvedArrow[];
+  /** Declared named types (`type Name { … }`), in document order. */
+  types: TypeDecl[];
+  /** Normalized name -> first-declared TypeDecl (references resolve to the first occurrence,
+   *  same convention as `byName`). */
+  typesByName: Map<string, TypeDecl>;
 }
 
 export function normalizeName(name: string): string {
@@ -83,6 +104,23 @@ export function normalize(ast: ModelNode): NormalizedModel {
   let hasAutomation = false;
 
   const makeId = (name: string): string => dedupe(slug(name), usedIds, "_");
+
+  // Types are their own namespace: a separate id set so a type and an element may
+  // legitimately share a name/slug without colliding (their ids are never compared
+  // against each other, only used as map keys within their own registry).
+  const usedTypeIds = new Set<string>();
+  const makeTypeId = (name: string): string => dedupe(slug(name), usedTypeIds, "_");
+  const types: TypeDecl[] = ast.types.map((t) => ({
+    id: makeTypeId(t.name),
+    name: t.name,
+    fields: t.fields,
+    line: t.line,
+  }));
+  const typesByName = new Map<string, TypeDecl>();
+  for (const t of types) {
+    const key = normalizeName(t.name);
+    if (!typesByName.has(key)) typesByName.set(key, t); // first declaration wins
+  }
 
   ast.slices.forEach((sliceNode, sliceIndex) => {
     const slice: Slice = {
@@ -163,7 +201,30 @@ export function normalize(ast: ModelNode): NormalizedModel {
     byId,
     byName,
     arrows,
+    types,
+    typesByName,
   };
+}
+
+/**
+ * Resolve a field's raw type string to a declared type, when it names one — bare (`Name`) or
+ * as an array (`Name[]`), matched case/whitespace-insensitively via `normalizeName`. Every
+ * other type string (`Money`, `UUID`, `List<LineItem>`, anything undeclared) resolves to
+ * `null` and stays exactly as free-text/unchecked as it is today — there is no primitive
+ * whitelist, only opportunistic resolution against whatever `type` blocks the model declares.
+ * Shared by `validate.ts` (cycle detection) and `emit/json.ts` (`typeRef` export).
+ */
+export function resolveTypeRef(
+  typeStr: string | undefined,
+  typesByName: Map<string, TypeDecl>,
+): TypeRef | null {
+  if (!typeStr) return null;
+  const trimmed = typeStr.trim();
+  const array = trimmed.endsWith("[]");
+  const base = (array ? trimmed.slice(0, -2) : trimmed).trim();
+  if (!base) return null;
+  const typeDecl = typesByName.get(normalizeName(base));
+  return typeDecl ? { typeDecl, array } : null;
 }
 
 /** Resolve an arrow endpoint (given by display name) to an element id. */

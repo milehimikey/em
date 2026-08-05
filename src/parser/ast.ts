@@ -67,6 +67,16 @@ export interface ArrowNode {
   line: number;
 }
 
+/** A named, reusable structured type, e.g. `type Money { amount: int, currency: String }`.
+ *  Declared at top level; referenced from any field's type string elsewhere in the model
+ *  (bare = nested object, `Name[]` = array of it). Supports no clauses in v1 — just a name
+ *  and a `{ fields }` block. */
+export interface TypeDeclNode {
+  name: string;
+  fields: Field[];
+  line: number;
+}
+
 export interface ModelNode {
   name: string;
   /** Declared persona lanes, in order. */
@@ -76,4 +86,6 @@ export interface ModelNode {
   slices: SliceNode[];
   /** Explicit top-level arrows (e.g. read-model feedback to a UI). */
   arrows: ArrowNode[];
+  /** Named structured type declarations, in document order. */
+  types: TypeDeclNode[];
 }

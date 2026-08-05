@@ -10,6 +10,14 @@ context Order
 context Payment
 context Shipping
 
+# A named type (MIL-64): declared once, referenced below as an array (`OrderLine[]`) from
+# both the command that accepts it and the event that records it.
+type OrderLine {
+  productId: UUID
+  quantity: int
+  unitPrice: Money
+}
+
 # --- Input: browse + add to cart ---
 slice "Browse Catalog" {
   ui Product Catalog @Shopper
@@ -26,8 +34,13 @@ slice "View Cart" {
 # --- Input: checkout ---
 slice "Checkout" {
   ui Checkout Form @Shopper
-  command Place Order
-  event Order Placed @Order
+  command Place Order {
+    customerId: UUID
+    lines: OrderLine[]
+  }
+  event Order Placed @Order {
+    lines: OrderLine[]
+  }
 }
 
 # --- Output: order confirmation ---

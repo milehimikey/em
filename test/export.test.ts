@@ -28,7 +28,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.2");
+    expect(doc.schemaVersion).toBe("1.3");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -166,8 +166,8 @@ slice "Catalog" {
     expect(event.note).toBe("notes/stock.md");
     expect(event.issue).toBe("still open?");
     expect(event.fields).toEqual([
-      { name: "sku", type: null },
-      { name: "qty", type: "Int" },
+      { name: "sku", type: null, typeRef: null },
+      { name: "qty", type: "Int", typeRef: null },
     ]);
   });
 
@@ -296,6 +296,96 @@ slice "S" {
         (d: any) => d.severity === "warning" && /duplicate command "Repeat"/.test(d.message),
       ),
     ).toBe(true);
+  });
+
+  it("suffixes a duplicate type name and warns", () => {
+    const doc = docOf(`
+type Money { amount: int }
+type Money { cents: long }
+`);
+    expect(doc.model.types.map((t: any) => t.ref)).toEqual(["types/money", "types/money~2"]);
+    expect(
+      doc.diagnostics.some(
+        (d: any) => d.severity === "warning" && /duplicate type "Money"/.test(d.message),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("declared `type` export (MIL-64)", () => {
+  const SRC = `
+type QuoteAcceptedLine {
+  lineId: UUID
+  unitPrice: Money
+  discountIds: UUID[]
+}
+slice "Accept" {
+  command Accept Quote
+  event Quote Accepted {
+    quoteId: UUID
+    lines: QuoteAcceptedLine[]
+    winner: QuoteAcceptedLine
+  }
+}
+`;
+
+  it("lists every declared type under model.types with a stable ref, name, line, and fields", () => {
+    const doc = docOf(SRC);
+    expect(doc.model.types).toHaveLength(1);
+    const t = doc.model.types[0];
+    expect(t.ref).toBe("types/quoteacceptedline");
+    expect(t.name).toBe("QuoteAcceptedLine");
+    expect(typeof t.line).toBe("number");
+    expect(t.fields).toEqual([
+      { name: "lineId", type: "UUID", typeRef: null },
+      { name: "unitPrice", type: "Money", typeRef: null },
+      { name: "discountIds", type: "UUID[]", typeRef: null },
+    ]);
+  });
+
+  it("resolves typeRef on an ordinary element field referencing a declared type, bare and array", () => {
+    const doc = docOf(SRC);
+    const eventFields = doc.model.slices[0].elements[1].fields;
+    expect(eventFields).toEqual([
+      { name: "quoteId", type: "UUID", typeRef: null },
+      {
+        name: "lines",
+        type: "QuoteAcceptedLine[]",
+        typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: true },
+      },
+      {
+        name: "winner",
+        type: "QuoteAcceptedLine",
+        typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: false },
+      },
+    ]);
+  });
+
+  it("resolves typeRef on a declared type's own field referencing another declared type (nesting)", () => {
+    const doc = docOf(`
+type Address { line1: String }
+type Order { billing: Address }
+`);
+    const order = doc.model.types.find((t: any) => t.name === "Order");
+    expect(order.fields).toEqual([
+      {
+        name: "billing",
+        type: "Address",
+        typeRef: { name: "Address", ref: "types/address", array: false },
+      },
+    ]);
+  });
+
+  it("emits types: [] and every field's typeRef: null for a model with no `type` declarations", () => {
+    const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
+    expect(doc.model.types).toEqual([]);
+    expect(doc.model.slices[0].elements[0].fields).toEqual([
+      { name: "a", type: "Money", typeRef: null },
+    ]);
+  });
+
+  it("bumps schemaVersion to 1.3, additive over 1.2", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.3");
   });
 });
 

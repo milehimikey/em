@@ -14,6 +14,7 @@
 //     automation|processor|saga|translation <free text>
 //   }
 //   arrow <From Element> -> <To Element>
+//   type "Name" { field: Type, ... }
 
 import {
   ArrowNode,
@@ -22,6 +23,7 @@ import {
   Field,
   ModelNode,
   SliceNode,
+  TypeDeclNode,
 } from "./ast.js";
 import { splitQuotedList, stripComment, unquote } from "./lexer.js";
 
@@ -50,22 +52,30 @@ export function parse(source: string): ModelNode {
     contexts: [],
     slices: [],
     arrows: [],
+    types: [],
   };
 
   const rawLines = source.split(/\r?\n/);
   let currentSlice: SliceNode | null = null;
   let currentElement: ElementNode | null = null; // open `{ … }` field block
+  let currentTypeDecl: TypeDeclNode | null = null; // open `type Name { … }` block
 
   for (let i = 0; i < rawLines.length; i++) {
     const lineNo = i + 1;
     const line = stripComment(rawLines[i]).trim();
     if (line.length === 0) continue;
 
-    // End of a block: an element's field block closes before its slice.
+    // End of a block: an element's field block closes before its slice, and a
+    // top-level `type` block closes on its own (it has no enclosing container).
     // A multi-line field block's closing line may itself carry trailing
     // clauses, e.g. `}  note "slices/x.md"` — extract those before dropping
-    // the open element.
-    if (line === "}" || (currentElement && line.startsWith("}"))) {
+    // the open element. A `type` block supports no clauses at all, so any
+    // trailing text after its `}` is a hard parse error.
+    if (
+      line === "}" ||
+      (currentElement && line.startsWith("}")) ||
+      (currentTypeDecl && line.startsWith("}"))
+    ) {
       if (currentElement) {
         const trailing = line.slice(1).trim();
         if (trailing) {
@@ -80,6 +90,18 @@ export function parse(source: string): ModelNode {
         currentElement = null;
         continue;
       }
+      if (currentTypeDecl) {
+        const trailing = line.slice(1).trim();
+        if (trailing) {
+          throw new ParseError(
+            `unrecognized trailing text after '}': '${trailing}' (type declarations support no clauses)`,
+            lineNo,
+          );
+        }
+        model.types.push(currentTypeDecl);
+        currentTypeDecl = null;
+        continue;
+      }
       if (currentSlice) {
         model.slices.push(currentSlice);
         currentSlice = null;
@@ -90,10 +112,13 @@ export function parse(source: string): ModelNode {
 
     // Inside an open field block: each line is a field declaration.
     if (currentElement) {
-      for (const spec of line.split(",")) {
-        const f = parseFieldSpec(spec);
-        if (f) (currentElement.fields ??= []).push(f);
-      }
+      for (const f of parseInlineFields(line)) (currentElement.fields ??= []).push(f);
+      continue;
+    }
+
+    // Inside an open `type` block: each line is a field declaration too.
+    if (currentTypeDecl) {
+      currentTypeDecl.fields.push(...parseInlineFields(line));
       continue;
     }
 
@@ -117,10 +142,7 @@ export function parse(source: string): ModelNode {
         const after = remainder.slice(braceAt + 1);
         const closeAt = after.indexOf("}");
         const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
-        for (const spec of inner.split(",")) {
-          const f = parseFieldSpec(spec);
-          if (f) el.fields.push(f);
-        }
+        el.fields.push(...parseInlineFields(inner));
         if (closeAt < 0) {
           currentElement = el; // block stays open across lines
         } else {
@@ -184,6 +206,30 @@ export function parse(source: string): ModelNode {
       case "arrow":
         model.arrows.push(parseArrow(remainder, lineNo));
         break;
+      case "type": {
+        const braceAt = remainder.indexOf("{");
+        if (braceAt < 0) throw new ParseError("type must open a block with '{'", lineNo);
+        const name = unquote(remainder.slice(0, braceAt).trim());
+        if (!name) throw new ParseError("type requires a name", lineNo);
+        const decl: TypeDeclNode = { name, fields: [], line: lineNo };
+        const after = remainder.slice(braceAt + 1);
+        const closeAt = after.indexOf("}");
+        const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
+        decl.fields.push(...parseInlineFields(inner));
+        if (closeAt < 0) {
+          currentTypeDecl = decl; // block stays open across lines
+        } else {
+          const trailing = after.slice(closeAt + 1).trim();
+          if (trailing) {
+            throw new ParseError(
+              `unrecognized trailing text after '{ … }' block: '${trailing}' (type declarations support no clauses)`,
+              lineNo,
+            );
+          }
+          model.types.push(decl);
+        }
+        break;
+      }
       default:
         throw new ParseError(`unknown keyword '${keyword}'`, lineNo);
     }
@@ -193,6 +239,12 @@ export function parse(source: string): ModelNode {
     throw new ParseError(
       `field block for "${currentElement.name}" is missing a closing '}'`,
       currentElement.line,
+    );
+  }
+  if (currentTypeDecl) {
+    throw new ParseError(
+      `type "${currentTypeDecl.name}" is missing a closing '}'`,
+      currentTypeDecl.line,
     );
   }
   if (currentSlice) {
@@ -332,6 +384,18 @@ function parseFieldSpec(raw: string): Field | null {
   }
   const name = unquote(s);
   return name ? { name } : null;
+}
+
+/** Parse comma-separated field specs from the inner text of a `{ … }` block (or a single
+ *  line inside an already-open one). Shared by element field blocks and `type` blocks —
+ *  every field-bearing `{ … }` block in the grammar splits and parses fields the same way. */
+function parseInlineFields(inner: string): Field[] {
+  const fields: Field[] = [];
+  for (const spec of inner.split(",")) {
+    const f = parseFieldSpec(spec);
+    if (f) fields.push(f);
+  }
+  return fields;
 }
 
 function parseArrow(raw: string, line: number): ArrowNode {

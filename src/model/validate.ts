@@ -3,7 +3,7 @@
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
-import { Element, NormalizedModel, normalizeName } from "./model.js";
+import { Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
 
 export type Severity = "error" | "warning";
 
@@ -355,7 +355,86 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
   }
 
+  // Duplicate `type` names always warn, unconditionally — unlike the element check above,
+  // there's no legitimate unreferenced-duplicate case for a named type: any field anywhere
+  // that resolves that name is ambiguous about which declaration it means, whether or not
+  // anything happens to reference it *today*.
+  const typesByNormalizedName = new Map<string, TypeDecl[]>();
+  for (const t of model.types) {
+    const key = normalizeName(t.name);
+    const bucket = typesByNormalizedName.get(key);
+    if (bucket) bucket.push(t);
+    else typesByNormalizedName.set(key, [t]);
+  }
+  for (const decls of typesByNormalizedName.values()) {
+    if (decls.length > 1) {
+      diags.push({
+        severity: "warning",
+        message: `type "${decls[0].name}" is defined ${decls.length} times; references resolve to the first occurrence`,
+        line: decls[0].line,
+      });
+    }
+  }
+
+  // Cyclic type references: recursion through declared types is allowed as a DAG (e.g. a
+  // shared `Address` referenced twice is fine), but a cycle — a type transitively nesting
+  // itself with no array to terminate it at runtime — can never be satisfied and is an error.
+  for (const cycle of findTypeCycles(model)) {
+    diags.push({
+      severity: "error",
+      message: `type "${cycle.path[0]}" has a cyclic reference: ${cycle.path.join(" -> ")}`,
+      line: cycle.line,
+    });
+  }
+
   return diags;
+}
+
+/**
+ * DFS with 3-color marking (white/gray/black) over the type-reference graph: an edge A -> B
+ * exists when A has a *bare* (non-array) field resolving to B. Array-typed self/mutual
+ * references (`children: TreeNode[]`) are deliberately not graph edges — an array can
+ * terminate at runtime (empty array), so it can express legitimate recursive/tree shapes
+ * (categories, org charts, comment threads, BOMs); only an unconditional bare self-nesting is
+ * structurally impossible and gets rejected. Returns one entry per cycle found, each already
+ * a JS closed loop that will not be re-reported when reached again through another path
+ * (DFS invariant: a node is colored black once fully explored and never re-explored).
+ */
+function findTypeCycles(model: NormalizedModel): { path: string[]; line: number }[] {
+  const color = new Map<string, 0 | 1 | 2>(); // 0 = white, 1 = gray (on stack), 2 = black (done)
+  const cycles: { path: string[]; line: number }[] = [];
+  const stack: TypeDecl[] = [];
+
+  const dependenciesOf = (t: TypeDecl): TypeDecl[] =>
+    t.fields
+      .map((f) => resolveTypeRef(f.type, model.typesByName))
+      .filter((r): r is NonNullable<typeof r> => r !== null && !r.array)
+      .map((r) => r.typeDecl);
+
+  function visit(t: TypeDecl): void {
+    color.set(t.id, 1);
+    stack.push(t);
+    for (const dep of dependenciesOf(t)) {
+      const c = color.get(dep.id) ?? 0;
+      if (c === 0) {
+        visit(dep);
+      } else if (c === 1) {
+        const idx = stack.findIndex((s) => s.id === dep.id);
+        cycles.push({
+          path: [...stack.slice(idx).map((s) => s.name), dep.name],
+          line: stack[idx].line,
+        });
+      }
+      // c === 2 (black): already fully explored via another path — not a new cycle.
+    }
+    stack.pop();
+    color.set(t.id, 2);
+  }
+
+  for (const t of model.types) {
+    if ((color.get(t.id) ?? 0) === 0) visit(t);
+  }
+  return cycles;
 }
 
 const isAuto = (k: ElementKind) => AUTOMATION_KINDS.has(k);

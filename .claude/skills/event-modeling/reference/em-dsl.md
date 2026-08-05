@@ -47,6 +47,8 @@ slice "Name" [source "url"] {    # one vertical time step (a column); source is 
 }
 
 arrow From Element -> To Element    # explicit cross-slice edge (overrides inferred flow)
+
+type Name { field: Type, ... }      # named structured type, reusable from any field (see Named types)
 ```
 
 ### Element kinds (8 keywords, nothing else)
@@ -94,8 +96,9 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
   `em diff` reports a flip as `event marked public`/`event unmarked public`;
   `em validate --list-public` audits which events are public.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
-  one-per-line. Types are free text (no semantic checking). Keep these light; full field specs
-  with rules live in the slice doc.
+  one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
+  declared `type` (see Named types below), in which case it resolves to a structured
+  reference. Keep these light; full field specs with rules live in the slice doc.
 - **Comments:** `# ...` anywhere outside quotes (full-line or trailing).
 - **`source "url"` on a slice header** (the only slice-level clause — everything above is
   per-element) links the slice back to the ticket/conversation it traces to, e.g.
@@ -103,6 +106,24 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
   `model.slices[].source` via `em export`, so an intake loop stays machine-traversable instead
   of relying on prose. Purely metadata — no visual marker, not validated. Don't confuse it with
   an element's `note "path.md"` (a markdown file link, not a URL).
+
+### Named types
+
+`type Name { field: Type, ... }` declares a reusable structured shape at the top level (any
+order relative to `persona`/`context`/`slice`, no clauses). Reference it from any field
+anywhere — bare (`winner: QuoteAcceptedLine`) for a nested object, `Name[]` for an array
+(`lines: QuoteAcceptedLine[]`). Resolution is opportunistic: a type string only becomes a
+structured reference when it names a declared type (case/whitespace-insensitive match); every
+other type string stays free text exactly as before, so declaring no `type` blocks changes
+nothing. Recursion between declared types is allowed as a DAG (e.g. a diamond shape like
+`Order` referencing `Address` twice) — a bare/singular self- or mutual-cycle
+(`type Node { child: Node }`) is a validation error, but the same shape through an array
+(`type Node { children: Node[] }`) is legal since the array can terminate at runtime; this is
+how tree/recursive data (categories, org charts, comment threads, BOMs) gets expressed.
+`em export` lists every declared type under `model.types[]` (stable `ref`, e.g.
+`types/quote-accepted-line`) and adds an additive `typeRef` key to every field (declared-type
+fields and ordinary element fields alike) — `{ name, ref, array }` when resolved, `null`
+otherwise. `em diff` tracks types added/removed and field changes on surviving types.
 
 ### Swimlane band order (top → bottom)
 Header row → **Automation** (only if used) → **persona** rows (in declared order) → **API**
@@ -270,6 +291,10 @@ slice "Read Quote — created" {
    has to sit between them); a view straight to a command needs a reaction between them; and two
    instances of one view are never connected at all. Inferred edges are always legal, so this only
    ever fires on a hand-written `arrow`.
+8. **Cyclic type reference** — a declared `type` nesting itself with no array to terminate it
+   (`type Node { child: Node }`, or the same shape across several types). Break the cycle, or
+   route the self/mutual reference through an array (`children: Node[]`) if the data is
+   genuinely tree-shaped.
 
 **Warnings (should fix):**
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and
@@ -284,6 +309,8 @@ slice "Read Quote — created" {
    fieldless-`from` view sits in its slice, or via an explicit `event -> view` arrow.
 5. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
 6. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
+   (A duplicate `type` name always warns, unlike a duplicate element name — there's no
+   legitimate unreferenced-duplicate case for a named type.)
 7. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
    clause. `em validate --list-issues` prints just these; `--fail-on-issues` (opt-in) makes CI
    fail while any remain open.
