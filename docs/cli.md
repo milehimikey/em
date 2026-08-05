@@ -108,13 +108,17 @@ em export model.em -o model.json      # write to a file
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.2"`):
+**Schema summary** (`schemaVersion: "1.3"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `slices`, `arrows`.
+- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`.
+  - `types` (added in schema `1.3`) lists every declared named type (see
+    [dsl.md](dsl.md#named-types)), independent of the slice timeline. Each has a stable `ref`
+    (`types/<slug(name)>`, suffixed `~2`, `~3`, … — plus a warning diagnostic — on a name
+    collision), `name`, `line`, and `fields` in declaration order.
   - Each **slice** has a stable `key` (`slug(name)`, with a `~2`, `~3`, … suffix — and a
     warning diagnostic — if two slices share a name), plus `name`, `index`, `line`, `source`
     (the slice's `source "url"` clause — a link to the ticket/conversation it traces back to,
@@ -133,6 +137,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
     timeline instance of a `view … again` read model; `null` for everything else.
+  - Each **field** — on both a declared type's own `fields` and an element's `fields` — has
+    `name`, `type` (the raw type string, unchanged), and `typeRef` (added in schema `1.3`):
+    `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`
+    otherwise. See [dsl.md](dsl.md#named-types).
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
 - `diagnostics` — every diagnostic `em validate` would print (severity, message, line),
   plus any export-only ref-collision warnings.
@@ -154,11 +162,13 @@ See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step a
 
 Compares two models structurally and prints a rollup summary plus one line per change —
 slices and elements added/removed/moved, a slice's `source` added/removed/changed,
-field/`from`/note changes, issue lifecycle (opened, resolved, text changed), and an event's
-integration-surface promotion/demotion (`public` marked/unmarked). It's the semantic
-counterpart to `git diff` on a `.em` file: raw `git diff` shows line hunks; `em diff` groups
-them into what actually happened to the model, and — crucially — collapses a cross-slice move
-into one `moved:` line instead of a delete-hunk-plus-add-hunk in two different places.
+field/`from`/note changes, issue lifecycle (opened, resolved, text changed), an event's
+integration-surface promotion/demotion (`public` marked/unmarked), and declared types
+added/removed along with their own field changes (see [dsl.md](dsl.md#named-types)). It's the
+semantic counterpart to `git diff` on a `.em` file: raw `git diff` shows line hunks; `em diff`
+groups them into what actually happened to the model, and — crucially — collapses a
+cross-slice move into one `moved:` line instead of a delete-hunk-plus-add-hunk in two
+different places.
 
 When a change or removal involves an element the **old** side annotates with `divergence
 "text"`, the entry is additionally tagged with that text — see "Accepted divergence" below.
@@ -211,6 +221,14 @@ reports it as `event marked public` / `event unmarked public` — its own change
 lumped in with a generic field change, since a contract consumer needs to know exactly when
 an event enters or leaves the published surface.
 
+**Declared types** (`type-added`/`type-removed`/`type-field-added`/`type-field-removed`/
+`type-field-changed`, added in schema `1.3`). Types are matched by their `em export` `ref`,
+same identity scheme as elements — but with no slice scoping and no move detection, since a
+`type` declaration isn't slice-scoped. A type rename reads as remove+add, the same convention
+as an element rename. A surviving type's own field changes are reported the same shape as an
+element's field changes (`type-field-added`/`-removed`/`-changed`), just without the
+slice/from/note/issue/public dimensions a `type` declaration doesn't have.
+
 Example output:
 
 ```
@@ -226,7 +244,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.2"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.3"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -236,9 +254,10 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 17 counters the text rollup line summarizes (`slicesAdded`,
+- `counts` — the same 20 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
-  `eventsMarkedPublic`, `eventsUnmarkedPublic`, …), as-is.
+  `eventsMarkedPublic`, `eventsUnmarkedPublic`, `typesAdded`, `typesRemoved`,
+  `typeFieldChanges`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:

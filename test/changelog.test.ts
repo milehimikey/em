@@ -34,9 +34,14 @@ const EMPTY_COUNTS = {
   issuesOpened: 0,
   issuesResolved: 0,
   issuesChanged: 0,
+  eventsMarkedPublic: 0,
+  eventsUnmarkedPublic: 0,
   arrowsAdded: 0,
   arrowsRemoved: 0,
   acceptedDivergences: 0,
+  typesAdded: 0,
+  typesRemoved: 0,
+  typeFieldChanges: 0,
 };
 
 /** A no-op diff: identical model on both sides, so `hasChanges()` is false. */

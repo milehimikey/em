@@ -458,4 +458,99 @@ slice "Checkout" source "https://linear.app/team/issue/MIL-60" {
       );
     });
   });
+
+  describe("`type` declarations (MIL-64)", () => {
+    it("parses a multi-line `type Name { … }` block", () => {
+      const ast = parse(`
+type QuoteAcceptedLine {
+  lineId: UUID
+  quantity: int
+  discountIds: UUID[]
+}
+`);
+      expect(ast.types).toHaveLength(1);
+      expect(ast.types[0]).toMatchObject({
+        name: "QuoteAcceptedLine",
+        fields: [
+          { name: "lineId", type: "UUID" },
+          { name: "quantity", type: "int" },
+          { name: "discountIds", type: "UUID[]" },
+        ],
+      });
+    });
+
+    it("parses an inline `type Name { a: T, b: U }` block", () => {
+      const ast = parse(`type Money { amount: int, currency: String }`);
+      expect(ast.types[0]).toMatchObject({
+        name: "Money",
+        fields: [
+          { name: "amount", type: "int" },
+          { name: "currency", type: "String" },
+        ],
+      });
+    });
+
+    it("parses a `type` block with no fields", () => {
+      const ast = parse(`type Empty {}`);
+      expect(ast.types[0]).toMatchObject({ name: "Empty", fields: [] });
+    });
+
+    it("rejects a `type` with no name", () => {
+      expect(() => parse(`type { a: UUID }`)).toThrow(/type requires a name/);
+    });
+
+    it("rejects a `type` with no opening brace", () => {
+      expect(() => parse(`type QuoteAcceptedLine`)).toThrow(
+        /type must open a block with '\{'/,
+      );
+    });
+
+    it("rejects an unclosed `type` block", () => {
+      expect(() => parse(`type QuoteAcceptedLine {\n  lineId: UUID`)).toThrow(
+        /type "QuoteAcceptedLine" is missing a closing/,
+      );
+    });
+
+    it("rejects trailing text after an inline `type` block's closing brace", () => {
+      expect(() => parse(`type Money { amount: int } bogus`)).toThrow(
+        /unrecognized trailing text.*type declarations support no clauses/,
+      );
+    });
+
+    it("rejects trailing text after a multi-line `type` block's closing brace", () => {
+      expect(() =>
+        parse(`type Money {\n  amount: int\n} bogus`),
+      ).toThrow(/unrecognized trailing text.*type declarations support no clauses/);
+    });
+
+    it("rejects `type` used inside a slice", () => {
+      expect(() =>
+        parse(`slice "S" {\n  type Money { amount: int }\n}`),
+      ).toThrow(/not valid inside a slice/);
+    });
+
+    it("preserves document order across multiple `type` declarations", () => {
+      const ast = parse(`
+type Money { amount: int }
+type Address { line1: String }
+`);
+      expect(ast.types.map((t) => t.name)).toEqual(["Money", "Address"]);
+    });
+
+    it("lets a field elsewhere reference a declared type by name, bare or as an array", () => {
+      const ast = parse(`
+type QuoteAcceptedLine { lineId: UUID }
+slice "S" {
+  event Quote Accepted {
+    lines: QuoteAcceptedLine[]
+    winner: QuoteAcceptedLine
+  }
+}
+`);
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "lines", type: "QuoteAcceptedLine[]" },
+        { name: "winner", type: "QuoteAcceptedLine" },
+      ]);
+    });
+  });
 });

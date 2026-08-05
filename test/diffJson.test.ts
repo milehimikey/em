@@ -43,6 +43,9 @@ function emptyCounts(): DiffCounts {
     arrowsAdded: 0,
     arrowsRemoved: 0,
     acceptedDivergences: 0,
+    typesAdded: 0,
+    typesRemoved: 0,
+    typeFieldChanges: 0,
   };
 }
 
@@ -153,11 +156,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 17 counters", () => {
+  it("passes DiffCounts through as-is, all 20 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(17);
+    expect(Object.keys(doc.counts)).toHaveLength(20);
   });
 });
 
@@ -417,6 +420,48 @@ describe("one correctly-serialized entry per ChangeType", () => {
       entry: { type: "arrow-removed", from: "Orders", to: "Screen" },
       expected: expectedEntry({ type: "arrow-removed", from: "Orders", to: "Screen" }),
     },
+    "type-added": {
+      entry: { type: "type-added", name: "QuoteAcceptedLine" },
+      expected: expectedEntry({ type: "type-added", name: "QuoteAcceptedLine" }),
+    },
+    "type-removed": {
+      entry: { type: "type-removed", name: "QuoteAcceptedLine" },
+      expected: expectedEntry({ type: "type-removed", name: "QuoteAcceptedLine" }),
+    },
+    "type-field-added": {
+      entry: { type: "type-field-added", name: "QuoteAcceptedLine", field: "discountIds", fieldType: "UUID[]" },
+      expected: expectedEntry({
+        type: "type-field-added",
+        name: "QuoteAcceptedLine",
+        field: "discountIds",
+        fieldType: "UUID[]",
+      }),
+    },
+    "type-field-removed": {
+      entry: { type: "type-field-removed", name: "QuoteAcceptedLine", field: "memo", fieldType: "String" },
+      expected: expectedEntry({
+        type: "type-field-removed",
+        name: "QuoteAcceptedLine",
+        field: "memo",
+        fieldType: "String",
+      }),
+    },
+    "type-field-changed": {
+      entry: {
+        type: "type-field-changed",
+        name: "QuoteAcceptedLine",
+        field: "quantity",
+        oldType: "int",
+        newType: "Decimal",
+      },
+      expected: expectedEntry({
+        type: "type-field-changed",
+        name: "QuoteAcceptedLine",
+        field: "quantity",
+        oldType: "int",
+        newType: "Decimal",
+      }),
+    },
   };
 
   // `cases` is keyed by ChangeType, so coverage is enforced by the compiler
@@ -424,7 +469,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
   // missing a key, and a stale one makes it an excess key. Both are errors.
   // This runtime assertion just pins the count for anyone reading the suite.
   it("covers every declared ChangeType exactly once", () => {
-    expect(Object.keys(cases)).toHaveLength(23);
+    expect(Object.keys(cases)).toHaveLength(28);
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 

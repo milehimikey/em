@@ -800,3 +800,86 @@ slice "Catalog" {
     expect(diags).toHaveLength(0);
   });
 });
+
+describe("declared `type` validation (MIL-64)", () => {
+  it("rejects a direct bare self-cycle", () => {
+    const diags = diagsFor(`type A { child: A }`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "error" });
+    expect(diags[0].message).toBe('type "A" has a cyclic reference: A -> A');
+  });
+
+  it("allows the same self-referential shape through an array field (recursion terminates at runtime)", () => {
+    const diags = diagsFor(`type TreeNode { children: TreeNode[] }`);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("rejects a 2-hop cycle", () => {
+    const diags = diagsFor(`
+type A { b: B }
+type B { a: A }
+`);
+    const cycleErrors = diags.filter((d) => d.message.includes("cyclic reference"));
+    expect(cycleErrors).toHaveLength(1);
+    expect(cycleErrors[0].severity).toBe("error");
+    expect(cycleErrors[0].message).toBe('type "A" has a cyclic reference: A -> B -> A');
+  });
+
+  it("rejects a 3-hop cycle", () => {
+    const diags = diagsFor(`
+type A { b: B }
+type B { c: C }
+type C { a: A }
+`);
+    const cycleErrors = diags.filter((d) => d.message.includes("cyclic reference"));
+    expect(cycleErrors).toHaveLength(1);
+    expect(cycleErrors[0].message).toBe('type "A" has a cyclic reference: A -> B -> C -> A');
+  });
+
+  it("allows a legitimate DAG diamond — a type referenced twice by another type is not a cycle", () => {
+    const diags = diagsFor(`
+type Order { billing: Address, shipping: Address }
+type Address { line1: String }
+`);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("cites the cycle's line at the first type in the reported path", () => {
+    const diags = diagsFor(`
+type A { b: B }
+type B { a: A }
+`);
+    const cycleError = diags.find((d) => d.message.includes("cyclic reference"))!;
+    expect(cycleError.line).toBe(2); // `type A { b: B }` is on line 2 (leading blank line)
+  });
+
+  it("warns on a duplicate type name unconditionally, even when never referenced by any field", () => {
+    const diags = diagsFor(`
+type Money { amount: int }
+type Money { cents: long }
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning" });
+    expect(diags[0].message).toBe(
+      'type "Money" is defined 2 times; references resolve to the first occurrence',
+    );
+  });
+
+  it("raises no type-related diagnostic for a model whose fields reference a declared type, bare or as an array", () => {
+    const diags = diagsFor(`
+type QuoteAcceptedLine { lineId: UUID }
+slice "S" {
+  ui Quote Screen @Sales
+  command Accept Quote
+  event Quote Accepted {
+    lines: QuoteAcceptedLine[]
+  }
+}
+slice "Confirm" {
+  view Accepted Quotes from "Quote Accepted"
+  ui Confirmation @Sales
+}
+`);
+    expect(diags.filter((d) => d.message.includes("type "))).toHaveLength(0);
+  });
+});
