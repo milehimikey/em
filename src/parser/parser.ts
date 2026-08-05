@@ -62,8 +62,21 @@ export function parse(source: string): ModelNode {
     if (line.length === 0) continue;
 
     // End of a block: an element's field block closes before its slice.
-    if (line === "}") {
+    // A multi-line field block's closing line may itself carry trailing
+    // clauses, e.g. `}  note "slices/x.md"` — extract those before dropping
+    // the open element.
+    if (line === "}" || (currentElement && line.startsWith("}"))) {
       if (currentElement) {
+        const trailing = line.slice(1).trim();
+        if (trailing) {
+          const leftover = extractClauses(currentElement, trailing, lineNo);
+          if (leftover) {
+            throw new ParseError(
+              `unrecognized trailing text after '}': '${leftover}'`,
+              lineNo,
+            );
+          }
+        }
         currentElement = null;
         continue;
       }
@@ -108,7 +121,24 @@ export function parse(source: string): ModelNode {
           const f = parseFieldSpec(spec);
           if (f) el.fields.push(f);
         }
-        if (closeAt < 0) currentElement = el; // block stays open across lines
+        if (closeAt < 0) {
+          currentElement = el; // block stays open across lines
+        } else {
+          // Clauses may trail the closing brace on the same line, e.g.
+          // `event X { a: UUID } issue "..."` — without this, `note`,
+          // `issue`, `from`, `@Tag`, and `again` written after an inline
+          // fields block were silently discarded (MIL-65, MIL-74).
+          const trailing = after.slice(closeAt + 1).trim();
+          if (trailing) {
+            const leftover = extractClauses(el, trailing, lineNo);
+            if (leftover) {
+              throw new ParseError(
+                `unrecognized trailing text after '{ … }' block: '${leftover}'`,
+                lineNo,
+              );
+            }
+          }
+        }
         continue;
       }
       currentSlice.elements.push(
@@ -167,12 +197,36 @@ function parseElement(
   raw: string,
   line: number,
 ): ElementNode {
-  let rest = raw;
   const node: ElementNode = { kind, name: "", line };
+  const rest = extractClauses(node, raw, line);
+  node.name = unquote(rest);
+  if (!node.name) throw new ParseError(`${kind} requires a name`, line);
+  return node;
+}
+
+/**
+ * Pulls `note`/`issue`/`from`/`@Tag`/`again` clauses out of `raw`, applying
+ * each to `node` and returning whatever text is left (the element's name,
+ * when called on the text before a `{ … }` block — otherwise anything
+ * unrecognized).
+ *
+ * Shared by `parseElement` (clauses before an inline field block, or on an
+ * element with no field block at all) and the field-block handling in
+ * `parse()` (clauses trailing a `{ … }` block's closing `}`, inline or
+ * multi-line) — trailing clauses are matched the same way as leading ones so
+ * `note`/`issue`/etc. are never silently dropped just because they come
+ * after the fields.
+ */
+function extractClauses(
+  node: ElementNode,
+  raw: string,
+  line: number,
+): string {
+  let rest = raw;
 
   // `note "path.md"` clause (valid on any element). Pulled off first because
   // the `from` clause below greedily consumes to end-of-line.
-  const noteMatch = rest.match(/\snote\s+"([^"]*)"/i);
+  const noteMatch = rest.match(/(?:^|\s)note\s+"([^"]*)"/i);
   if (noteMatch && noteMatch.index !== undefined) {
     node.note = noteMatch[1];
     rest = (rest.slice(0, noteMatch.index) + rest.slice(noteMatch.index + noteMatch[0].length)).trim();
@@ -181,14 +235,14 @@ function parseElement(
   // `issue "text"` clause (valid on any element): an open question flagged red on
   // the diagram, distinct from `note`'s file link. Extracted the same way, before
   // `from`, for the same reason.
-  const issueMatch = rest.match(/\sissue\s+"([^"]*)"/i);
+  const issueMatch = rest.match(/(?:^|\s)issue\s+"([^"]*)"/i);
   if (issueMatch && issueMatch.index !== undefined) {
     node.issue = issueMatch[1];
     rest = (rest.slice(0, issueMatch.index) + rest.slice(issueMatch.index + issueMatch[0].length)).trim();
   }
 
   // `from "A", "B"` clause (view only, but parsed wherever present).
-  const fromMatch = rest.match(/\sfrom\s+(.+)$/i);
+  const fromMatch = rest.match(/(?:^|\s)from\s+(.+)$/i);
   if (fromMatch && fromMatch.index !== undefined) {
     node.from = splitQuotedList(fromMatch[1]);
     rest = rest.slice(0, fromMatch.index).trim();
@@ -198,8 +252,8 @@ function parseElement(
   const tagMatch = rest.match(/(?:^|\s)@(\S+)\s*$/);
   if (tagMatch && tagMatch.index !== undefined) {
     const tag = tagMatch[1];
-    if (kind === "ui") node.persona = tag;
-    else if (kind === "event") node.context = tag;
+    if (node.kind === "ui") node.persona = tag;
+    else if (node.kind === "event") node.context = tag;
     else
       throw new ParseError(
         `'@${tag}' tag is only valid on ui (persona) or event (context)`,
@@ -212,15 +266,13 @@ function parseElement(
   // the Event Modeling device for keeping arrows forward as a view evolves.
   const againMatch = rest.match(/(?:^|\s)again$/i);
   if (againMatch && againMatch.index !== undefined) {
-    if (kind !== "view")
+    if (node.kind !== "view")
       throw new ParseError("`again` is only valid on view — read models are the only elements that reappear along the timeline", line);
     node.again = true;
     rest = rest.slice(0, againMatch.index).trim();
   }
 
-  node.name = unquote(rest);
-  if (!node.name) throw new ParseError(`${kind} requires a name`, line);
-  return node;
+  return rest;
 }
 
 /** Parse one field spec: `name` or `name: Type`. Returns null for blanks. */

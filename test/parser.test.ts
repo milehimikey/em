@@ -170,6 +170,59 @@ slice "S" {
     });
   });
 
+  it("parses clauses trailing an inline `{ … }` field block (MIL-65, MIL-74)", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed { orderId: UUID } issue "tax handling?"
+  command Place Order { customerId } note "notes/place-order.md"
+  view Open Orders { orderId } from "Order Placed"
+  ui Catalog { itemCount } @Customer
+}
+`);
+    const [evt, cmd, view, ui] = ast.slices[0].elements;
+    expect(evt).toMatchObject({
+      name: "Order Placed",
+      issue: "tax handling?",
+      fields: [{ name: "orderId", type: "UUID" }],
+    });
+    expect(cmd).toMatchObject({
+      name: "Place Order",
+      note: "notes/place-order.md",
+      fields: [{ name: "customerId" }],
+    });
+    expect(view).toMatchObject({
+      name: "Open Orders",
+      from: ["Order Placed"],
+      fields: [{ name: "orderId" }],
+    });
+    expect(ui).toMatchObject({
+      name: "Catalog",
+      persona: "Customer",
+      fields: [{ name: "itemCount" }],
+    });
+  });
+
+  it("parses clauses trailing a multi-line `{ … }` field block's closing line", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed {
+    orderId
+  } issue "tax handling?"
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Order Placed",
+      issue: "tax handling?",
+      fields: [{ name: "orderId" }],
+    });
+  });
+
+  it("rejects unrecognized trailing text after a `{ … }` field block instead of silently dropping it", () => {
+    expect(() =>
+      parse(`slice "S" {\n  command Place Order { customerId } bogus clause\n}`),
+    ).toThrow(/unrecognized trailing text/);
+  });
+
   it("rejects an unclosed field block", () => {
     expect(() => parse(`slice "S" {\n  event E {\n    a`)).toThrow(
       /field block .* missing a closing/,
