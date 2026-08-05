@@ -85,6 +85,29 @@ slice "Open Orders" {
 }
 `;
 
+// `em glossary` fixtures: "Order Confirmed" as an event with an untriaged `total: Money`
+// field. Deliberately has one incidental warning (no view reads this event) so tests can
+// confirm it's routed to stderr, prefixed with the file, while stdout stays clean.
+const GLOSSARY_A = `slice "Submit" {
+  event Order Confirmed { total: Money }
+}
+`;
+
+// Same term, same kind, same field type as GLOSSARY_A — pairs with it to exercise the
+// "no conflicts" text/JSON/--list-conflicts/--fail-on-conflicts paths.
+const GLOSSARY_B_CLEAN = `slice "Confirm" {
+  event Order Confirmed { total: Money }
+}
+`;
+
+// Same term as GLOSSARY_A, but a different kind (view, not event) and a different field
+// type (number, not Money) — pairs with it to exercise both conflict rules.
+const GLOSSARY_B_CONFLICT = `slice "Confirm" {
+  event Invoice Issued
+  view Order Confirmed from "Invoice Issued" { total: number }
+}
+`;
+
 let dir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-cli-"));
@@ -94,6 +117,9 @@ beforeAll(() => {
   writeFileSync(join(dir, "error.em"), WITH_ERROR);
   writeFileSync(join(dir, "divergence.em"), WITH_DIVERGENCE);
   writeFileSync(join(dir, "public.em"), WITH_PUBLIC);
+  writeFileSync(join(dir, "glossary-a.em"), GLOSSARY_A);
+  writeFileSync(join(dir, "glossary-b-clean.em"), GLOSSARY_B_CLEAN);
+  writeFileSync(join(dir, "glossary-b-conflict.em"), GLOSSARY_B_CONFLICT);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -454,5 +480,82 @@ describe("em changelog follows renames (CLI, real git repo)", () => {
     expect(r.stdout).toContain('+ slice "Cancel"');
     // A pure rename changes nothing structurally — its section is omitted.
     expect(r.stdout).not.toContain("rename model file");
+  });
+});
+
+describe("em glossary (CLI)", () => {
+  it("reports scale and 'no conflicts' in the default text report when models agree", () => {
+    const r = em(["glossary", "glossary-a.em", "glossary-b-clean.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^2 models, \d+ terms?, 0 conflicts/);
+    expect(r.stdout).toContain("no conflicts");
+  });
+
+  it("reports kind and field-type conflicts in the default text report", () => {
+    const r = em(["glossary", "glossary-a.em", "glossary-b-conflict.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(
+      /kind-conflict "Order Confirmed": event in .*glossary-a\.em:2 \(slice "Submit"\), view in .*glossary-b-conflict\.em:3 \(slice "Confirm"\)/,
+    );
+    expect(r.stdout).toMatch(
+      /field-type-conflict "total": Money on event "Order Confirmed" in .*glossary-a\.em:2, number on view "Order Confirmed" in .*glossary-b-conflict\.em:3/,
+    );
+  });
+
+  it("--list-conflicts prints only the conflict lines, no scale summary", () => {
+    const r = em(["glossary", "glossary-a.em", "glossary-b-conflict.em", "--list-conflicts"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/models?,.*terms?,.*conflicts?/);
+    expect(r.stdout).toContain("kind-conflict");
+    expect(r.stdout).toContain("field-type-conflict");
+  });
+
+  it("--list-conflicts reports when there are none", () => {
+    const r = em(["glossary", "glossary-a.em", "glossary-b-clean.em", "--list-conflicts"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("no conflicts");
+  });
+
+  it("--json prints a schema-versioned document; stdout stays clean JSON despite warnings on stderr", () => {
+    const r = em(["glossary", "glossary-a.em", "glossary-b-conflict.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
+    expect(doc.glossarySchemaVersion).toBe("1.0");
+    expect(doc.conflicts).toHaveLength(2);
+    expect(r.stderr).toContain("not read by any read model");
+  });
+
+  it("-o without --json is a usage error", () => {
+    const r = em(["glossary", "glossary-a.em", "-o", "out.json"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("-o requires --json");
+  });
+
+  it("-o with --json writes the file and confirms on stdout", () => {
+    const r = em(
+      ["glossary", "glossary-a.em", "glossary-b-conflict.em", "--json", "-o", "glossary-out.json"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote glossary-out.json");
+    const doc = JSON.parse(readFileSync(join(dir, "glossary-out.json"), "utf8"));
+    expect(doc.glossarySchemaVersion).toBe("1.0");
+  });
+
+  it("--fail-on-conflicts exits 1 only when conflicts exist", () => {
+    expect(
+      em(["glossary", "glossary-a.em", "glossary-b-conflict.em", "--fail-on-conflicts"], dir).status,
+    ).toBe(1);
+    expect(
+      em(["glossary", "glossary-a.em", "glossary-b-clean.em", "--fail-on-conflicts"], dir).status,
+    ).toBe(0);
+  });
+
+  it("refuses on errors with a non-zero exit, prefixed with the offending file", () => {
+    const r = em(["glossary", "glossary-a.em", "error.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not building glossary");
+    expect(r.stderr).toContain("error.em:");
+    expect(r.stderr).toContain('unknown event "No Such Event"');
   });
 });

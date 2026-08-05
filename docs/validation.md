@@ -149,3 +149,7 @@ infer arrows in the first place: a `translation` or `processor` sharing a slice 
 only warns when a reaction shares a slice with a command. Reactions must always go through a
 command (`reaction → command → event`, split across two slices); enforce that by
 construction. The [patterns](patterns.md) doc covers why.
+
+`em validate` is also single-model by design: a name reused across kinds *within* one file is
+flagged ("ambiguous names", above), but the same term used inconsistently *across* files is
+not — that's `em glossary`'s job, not the validator's (see [cli.md](cli.md#em-glossary-files)).

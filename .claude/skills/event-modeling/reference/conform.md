@@ -121,9 +121,13 @@ For each slice in scope:
    this phase exists to avoid. It also keeps the scratch model compilable (see step 3). Within
    the slices you do rewrite, **reuse the canonical model's slice and element names wherever
    the code genuinely matches them** — the canonical model is the vocabulary anchor. Give a
-   new name only to code behavior the model doesn't cover at all. Record the mapping decision
-   for every element you name this way (e.g. `CartItemAdded` code class ↔ `"Cart Item Added"`
-   model event) so it's auditable, not a silent judgment call. **Match the canonical model's field granularity:** declare `{ fields }`
+   new name only to code behavior the model doesn't cover at all. When you do need a new name,
+   check `em glossary` across sibling `.em` models first (same aid the `extract` phase uses) —
+   if the term already exists elsewhere under a different kind or spelling, that's a signal to
+   reuse the established name rather than mint another synonym for the same concept. Record the
+   mapping decision for every element you name this way (e.g. `CartItemAdded` code class ↔
+   `"Cart Item Added"` model event) so it's auditable, not a silent judgment call. **Match the
+   canonical model's field granularity:** declare `{ fields }`
    in the scratch model only where the canonical model declares them (if the canonical model
    puts fields on commands but not events, so does the scratch model — writing code-derived
    event fields there would flood the diff with `field-added` noise). Schema claims at finer
