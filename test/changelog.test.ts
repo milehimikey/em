@@ -35,6 +35,7 @@ const EMPTY_COUNTS = {
   issuesChanged: 0,
   arrowsAdded: 0,
   arrowsRemoved: 0,
+  acceptedDivergences: 0,
 };
 
 /** A no-op diff: identical model on both sides, so `hasChanges()` is false. */
