@@ -113,6 +113,54 @@ slice "S" {
     expect(ast.slices[0].elements[0].issue).toBeUndefined();
   });
 
+  it("parses a `divergence` clause and keeps it out of the name", () => {
+    const ast = parse(`
+slice "S" {
+  view Retired Things from "Thing Done" divergence "tracking token covers idempotency"
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Retired Things",
+      divergence: "tracking token covers idempotency",
+    });
+  });
+
+  it("coexists `divergence` with `note`, `issue`, `from`, and a field block on the same element", () => {
+    const ast = parse(`
+slice "S" {
+  view Retired Things note "notes/retired.md" issue "still true post-migration?" divergence "known idiom" from "Thing Done" {
+    productId
+  }
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Retired Things",
+      note: "notes/retired.md",
+      issue: "still true post-migration?",
+      divergence: "known idiom",
+      from: ["Thing Done"],
+      fields: [{ name: "productId" }],
+    });
+  });
+
+  it("strips `divergence` before the `from` clause without swallowing it", () => {
+    const ast = parse(`
+slice "S" {
+  view Retired Things divergence "known idiom" from "Thing Done", "Other Thing Done"
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Retired Things",
+      divergence: "known idiom",
+      from: ["Thing Done", "Other Thing Done"],
+    });
+  });
+
+  it("leaves `divergence` undefined when absent", () => {
+    const ast = parse(`slice "S" {\n  command Do Thing\n}`);
+    expect(ast.slices[0].elements[0].divergence).toBeUndefined();
+  });
+
   it("strips `note` before the `from` clause without swallowing it", () => {
     const ast = parse(`
 slice "S" {
@@ -214,6 +262,32 @@ slice "S" {
       name: "Order Placed",
       issue: "tax handling?",
       fields: [{ name: "orderId" }],
+    });
+  });
+
+  it("parses `divergence` trailing a `{ … }` field block, inline or multi-line", () => {
+    const inline = parse(`
+slice "S" {
+  view Retired Things { productId } divergence "known idiom"
+}
+`);
+    expect(inline.slices[0].elements[0]).toMatchObject({
+      name: "Retired Things",
+      divergence: "known idiom",
+      fields: [{ name: "productId" }],
+    });
+
+    const multiLine = parse(`
+slice "S" {
+  view Retired Things {
+    productId
+  } divergence "known idiom"
+}
+`);
+    expect(multiLine.slices[0].elements[0]).toMatchObject({
+      name: "Retired Things",
+      divergence: "known idiom",
+      fields: [{ name: "productId" }],
     });
   });
 

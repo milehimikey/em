@@ -102,7 +102,16 @@ For each slice in scope:
      materialized projection in code — a direct event handler with criteria-sourced state is
      the same pattern expressed in the code idiom (extract.md's R5 reaction rules). That is
      NOT structural drift; note the idiom in the evidence log instead of reporting the view
-     as missing.
+     as missing. This is the *general*, idiom-level version of the next bullet — prefer citing
+     an actual `divergence` annotation when the element carries one; fall back to this idiom
+     note only when it doesn't.
+   - **Accepted divergences:** before treating any finding as drift, check whether the
+     relevant canonical element already carries a `divergence "..."` annotation (visible in
+     the `.em`, in `em export --json`'s `divergence` field, or — for a structural finding — as
+     the `acceptedDivergence` field already attached to that `em diff --json` entry, see step
+     3). If it does, this is not a fresh finding to litigate: classify it as **Accepted
+     divergence** (step 4) and cite the annotation text as the evidence. This is the specific,
+     per-element, ratified counterpart to the idiom-level bullet above.
 3. Write what you found into the scratch model (`<model-name>-asis.em`, see below). **Seed the
    scratch model as a copy of the canonical `.em` and replace only the in-scope slices** with
    the as-is picture, leaving out-of-scope slices byte-identical. This is not an optimization:
@@ -147,7 +156,10 @@ Then run `em diff <model-name>.em <model-name>-asis.em --json`. `em`, not you, d
 structurally differs — don't re-derive by eye what the tool already computed. Parse the JSON
 (`docs/cli.md`'s diff section documents the envelope: `diffSchemaVersion`, `counts`, `changes`,
 `removals`, every optional `ChangeEntry` field explicit-`null` when unused) and use it as the
-structural-surface findings directly.
+structural-surface findings directly. Check each entry's `acceptedDivergence` field first: a
+non-null value means `em` itself already found a `divergence` annotation on the canonical
+element behind this entry — that finding is Accepted divergence (step 4), not something to
+re-litigate.
 
 ### 4. Classify
 
@@ -157,6 +169,11 @@ step 2 — sorts into exactly one class:
 - **Real drift** — code evidence contradicts the model or doc.
 - **Model gap** — code evidence shows behavior neither the model nor the doc covers.
 - **Internal inconsistency** — the doc and the `.em` disagree with each other (surface 3 only).
+- **Accepted divergence** — the relevant canonical element carries a `divergence "..."`
+  annotation (cited directly from a structural entry's `acceptedDivergence` field, or from the
+  `.em`/`em export` for a spec/internal finding). This is what the annotation is *for*: a
+  reasoned, ratified deviation stops being re-reported as drift on every run. Cite the
+  annotation text, not fresh judgment — that judgment already happened when it was written.
 - **Extraction uncertainty** — no evidence either way. Never reported as drift or a gap.
 
 Every classification must cite the evidence recorded in step 2 (or the `em diff` entry, for
@@ -169,7 +186,9 @@ Write `conformance/<YYYY-MM-DD>-report.md` in the model directory, from
 ready-to-apply red note — `issue "conformance: <text>"` on the right element, written out in
 the report exactly as it should be pasted into the `.em` — when a model-side marker is the
 right fix; when the fix is purely doc wording (or the finding is an internal inconsistency
-with no clear side to flag), omit the red note and say why instead. **You never edit the
+with no clear side to flag), omit the red note and say why instead. **Never propose a red note
+for a finding already classified Accepted divergence** — report it (so the annotation itself
+stays auditable) but don't ask the user to ratify what's already ratified. **You never edit the
 canonical model or a slice doc unprompted** — walk the report with the user, apply only the
 proposals they approve, then re-render and `em validate`.
 
@@ -228,3 +247,7 @@ whatever cadence the user wants (see `docs/ci.md` for a scheduled-run recipe).
 - **Re-deriving what `em diff` already decided** — once you have the JSON, use it; don't
   eyeball the two `.em` files yourself looking for structural differences the tool already
   computed for you.
+- **Re-litigating an accepted divergence** — a non-null `acceptedDivergence` on a diff entry
+  (or a `divergence` annotation on the element behind a spec/internal finding) means this exact
+  question was already reasoned through and ratified. Classify it as Accepted divergence and
+  cite the annotation; don't propose a new red note or re-open the judgment call from scratch.

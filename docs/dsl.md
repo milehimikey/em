@@ -149,6 +149,28 @@ question that's still open. `em validate` emits a warning for every element with
 useful for a quick open-questions sweep or a CI check (`--fail-on-issues`, opt-in — see
 [cli.md](cli.md)).
 
+## Accepted divergence
+
+Any element can also carry `divergence "text"` — a reasoned, ratified deviation between this
+element and its implementation, recorded on the model instead of only in prose. It's the
+*resolved* sibling of `issue`: where `issue` flags a question still open, `divergence` records
+one that's already been answered and accepted (lint-suppression-with-rationale for the
+conformance loop — see [ai-workflow.md](ai-workflow.md) for the `conform` phase). The box gets
+a small numbered folded-corner marker in its bottom-right corner, teal instead of `issue`'s red
+or `note`'s amber, with a tooltip carrying the full text; the legend below the diagram lists
+every accepted divergence in its own "Accepted Divergences" section. An element can carry a
+note, an issue, and a divergence all at once — the markers occupy three different corners, so
+none of them overlap.
+
+Unlike `issue`, `divergence` raises **no** warning from `em validate` — recording it is the
+point of not having it re-reported as drift on every run (see
+[validation.md](validation.md)). `em validate --list-divergences` lists every accepted
+divergence for auditing (slice, element, line, text); there's no `--fail-on` counterpart since
+an accepted divergence should never block a build. `em diff --json` also carries the
+annotation forward: a structural change or removal involving an annotated element's
+`acceptedDivergence` field is non-null, citing the reason rather than hiding the finding — see
+[cli.md](cli.md).
+
 ## Colors
 
 For orientation when reading a render: UI boxes are white, commands blue, events

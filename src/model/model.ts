@@ -22,6 +22,9 @@ export interface Element {
   note?: string;
   /** Open question text, flagged red on the diagram until resolved. */
   issue?: string;
+  /** Reasoned, ratified deviation between this element and its implementation — the
+   *  resolved sibling of `issue` (lint-suppression-with-rationale for conformance). */
+  divergence?: string;
   /** Data attributes declared on the element. */
   fields?: Field[];
   sliceIndex: number;
@@ -97,6 +100,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         from: el.from,
         note: el.note,
         issue: el.issue,
+        divergence: el.divergence,
         fields: el.fields,
       };
 

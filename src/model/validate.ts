@@ -333,6 +333,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
   }
 
+  // `divergence "text"` deliberately raises NO diagnostic — unlike `issue`, it records a
+  // deviation that's already been reasoned about and accepted, not an open question. The
+  // entire point of the annotation is that it stops re-firing as a warning (or as conform-loop
+  // drift) on every run; a warning here would defeat that. Use `em validate --list-divergences`
+  // to audit them on demand instead.
+
   // Ambiguous names (used by arrows / view sources) get a heads-up.
   for (const [key, els] of model.byName) {
     // Later \`again\` instances of a view are the SAME logical read model reappearing on the

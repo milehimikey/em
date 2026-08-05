@@ -16,11 +16,11 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 
 ## Summary
 
-| Surface | Real drift | Model gap | Internal inconsistency | Uncertainty |
-|---|---|---|---|---|
-| Structural | {{n}} | {{n}} | — | {{n}} |
-| Spec | {{n}} | {{n}} | — | {{n}} |
-| Internal | — | — | {{n}} | {{n}} |
+| Surface | Real drift | Model gap | Internal inconsistency | Accepted divergence | Uncertainty |
+|---|---|---|---|---|---|
+| Structural | {{n}} | {{n}} | — | {{n}} | {{n}} |
+| Spec | {{n}} | {{n}} | — | {{n}} | {{n}} |
+| Internal | — | — | {{n}} | {{n}} | {{n}} |
 
 {{One or two sentences: overall read — clean, mostly clean with N items, or notably drifted.}}
 
@@ -32,12 +32,14 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 ### {{n}}. {{Short finding title}}
 
 - **Surface:** {{structural | spec | internal}}
-- **Classification:** {{real drift | model gap | internal inconsistency}}
+- **Classification:** {{real drift | model gap | internal inconsistency | accepted divergence}}
 - **Slice:** {{slice name}}
-- **Evidence:** {{file path(s) and line/symbol, or the `em diff --json` entry (type + name)}}
+- **Evidence:** {{file path(s) and line/symbol, or the `em diff --json` entry (type + name) —
+  for accepted divergence, the `divergence "..."` annotation text itself}}
 - **Claim:** {{what the model/doc says vs. what the code/doc shows — the actual disagreement}}
 - **Proposed red note:** `issue "conformance: {{text}}"` on {{element}} (slice "{{slice}}")
   <!-- Omit this line entirely for internal-inconsistency findings with no clear side to flag,
+       for any accepted-divergence finding (already ratified — don't propose re-ratifying it),
        or when the finding doesn't warrant a red note (say why instead). -->
 
 ## Scenario / invariant coverage

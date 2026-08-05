@@ -224,23 +224,30 @@ program
   .argument("<file>", "input .em file")
   .option("--list-issues", "print only open `issue` diagnostics (slice, element, line, text)")
   .option(
+    "--list-divergences",
+    "print only accepted-divergence annotations (slice, element, line, text) — never fails the build",
+  )
+  .option(
     "--fail-on-issues",
     "exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)",
   )
-  .action((file: string, opts: { listIssues?: boolean; failOnIssues?: boolean }) => {
-    const { model, diagnostics } = compileFile(file);
-    if (opts.listIssues) {
-      printIssues(model);
-      // Errors still fail the run below — surface them rather than exiting
-      // non-zero with nothing but the issue list on screen.
-      printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
-    } else {
-      printDiagnostics(diagnostics);
-      if (diagnostics.length === 0) console.log("ok — no issues");
-    }
-    if (hasErrors(diagnostics)) process.exit(1);
-    if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
-  });
+  .action(
+    (file: string, opts: { listIssues?: boolean; listDivergences?: boolean; failOnIssues?: boolean }) => {
+      const { model, diagnostics } = compileFile(file);
+      if (opts.listIssues || opts.listDivergences) {
+        if (opts.listIssues) printIssues(model);
+        if (opts.listDivergences) printDivergences(model);
+        // Errors still fail the run below — surface them rather than exiting
+        // non-zero with nothing but the list on screen.
+        printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
+      } else {
+        printDiagnostics(diagnostics);
+        if (diagnostics.length === 0) console.log("ok — no issues");
+      }
+      if (hasErrors(diagnostics)) process.exit(1);
+      if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
+    },
+  );
 
 const skill = program
   .command("skill")
@@ -448,6 +455,21 @@ function printIssues(model: NormalizedModel): void {
   for (const el of withIssues) {
     const slice = model.slices[el.sliceIndex];
     console.log(`  issue :${el.line} slice "${slice.name}" ${el.kind} "${el.name}": ${el.issue}`);
+  }
+}
+
+/** Print only `divergence "text"` annotations: slice, element, line, text — for auditing.
+ *  Unlike `printIssues`, nothing checks this list to decide an exit code — accepted
+ *  divergences never fail a build. */
+function printDivergences(model: NormalizedModel): void {
+  const diverged = model.elements.filter((el) => el.divergence);
+  if (diverged.length === 0) {
+    console.log("no accepted divergences");
+    return;
+  }
+  for (const el of diverged) {
+    const slice = model.slices[el.sliceIndex];
+    console.log(`  divergence :${el.line} slice "${slice.name}" ${el.kind} "${el.name}": ${el.divergence}`);
   }
 }
 
