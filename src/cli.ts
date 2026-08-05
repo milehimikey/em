@@ -228,15 +228,23 @@ program
     "print only accepted-divergence annotations (slice, element, line, text) — never fails the build",
   )
   .option(
+    "--list-public",
+    "print only events marked `public` (slice, name, line) — an integration-surface audit, never fails the build",
+  )
+  .option(
     "--fail-on-issues",
     "exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)",
   )
   .action(
-    (file: string, opts: { listIssues?: boolean; listDivergences?: boolean; failOnIssues?: boolean }) => {
+    (
+      file: string,
+      opts: { listIssues?: boolean; listDivergences?: boolean; listPublic?: boolean; failOnIssues?: boolean },
+    ) => {
       const { model, diagnostics } = compileFile(file);
-      if (opts.listIssues || opts.listDivergences) {
+      if (opts.listIssues || opts.listDivergences || opts.listPublic) {
         if (opts.listIssues) printIssues(model);
         if (opts.listDivergences) printDivergences(model);
+        if (opts.listPublic) printPublicEvents(model);
         // Errors still fail the run below — surface them rather than exiting
         // non-zero with nothing but the list on screen.
         printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
@@ -470,6 +478,19 @@ function printDivergences(model: NormalizedModel): void {
   for (const el of diverged) {
     const slice = model.slices[el.sliceIndex];
     console.log(`  divergence :${el.line} slice "${slice.name}" ${el.kind} "${el.name}": ${el.divergence}`);
+  }
+}
+
+/** Print only events marked `public`: slice, name, line — for an integration-surface audit. */
+function printPublicEvents(model: NormalizedModel): void {
+  const pub = model.elements.filter((el) => el.kind === "event" && el.public);
+  if (pub.length === 0) {
+    console.log("no public events");
+    return;
+  }
+  for (const el of pub) {
+    const slice = model.slices[el.sliceIndex];
+    console.log(`  public :${el.line} slice "${slice.name}" event "${el.name}"`);
   }
 }
 

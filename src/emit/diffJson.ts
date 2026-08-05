@@ -10,7 +10,7 @@ import { ChangeEntry, ChangeType, ModelDiff, hasChanges } from "../model/diff.js
 import { Diagnostic } from "../model/validate.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
-export const DIFF_SCHEMA_VERSION = "1.1";
+export const DIFF_SCHEMA_VERSION = "1.2";
 
 /** One side of the diff: what it was called, its source text, and its warnings. */
 export interface DiffSide {

@@ -5,9 +5,12 @@ Directions under consideration, in rough priority order. Nothing here is a commi
 Recently shipped, for context on where things are heading: open questions as diagram-visible
 red notes (`issue`), JSON export with stable refs, structural `em diff`, the `conform` phase
 for model-versus-code drift, `em changelog`, accepted-divergence annotations (`divergence`) so
-a ratified model-vs-code deviation stops re-firing as drift, and a lightweight usage-data
-convention (skill Usage log — [usage-data.md](usage-data.md)) so the next roadmap pass has real
-signal instead of guesswork. [workflow.md](workflow.md) is the resulting picture.
+a ratified model-vs-code deviation stops re-firing as drift, provenance links from a slice back
+to its ticket (`source`), a lightweight usage-data convention (skill Usage log —
+[usage-data.md](usage-data.md)) so the next roadmap pass has real signal instead of guesswork,
+and a `public` marker on events for integration-surface promotion (contract generators can now
+tell a published event from an internal-only fact). [workflow.md](workflow.md) is the resulting
+picture.
 
 **Modeling and rendering**
 

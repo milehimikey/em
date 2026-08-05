@@ -161,6 +161,94 @@ slice "S" {
     expect(ast.slices[0].elements[0].divergence).toBeUndefined();
   });
 
+  it("parses a `public` clause on an event and keeps it out of the name", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed @Order public
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Order Placed",
+      context: "Order",
+      public: true,
+    });
+  });
+
+  it("rejects `public` on a non-event kind", () => {
+    expect(() => parse(`slice "S" {\n  command Do Thing public\n}`)).toThrow(
+      /`public` is only valid on event/,
+    );
+    expect(() => parse(`slice "S" {\n  ui Catalog public @Customer\n}`)).toThrow(
+      /`public` is only valid on event/,
+    );
+    expect(() => parse(`slice "S" {\n  view Open Orders public\n}`)).toThrow(
+      /`public` is only valid on event/,
+    );
+  });
+
+  it("coexists `public` with `note`, `issue`, and `@Context` on the same element", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed note "notes/order.md" issue "still open?" @Order public
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Order Placed",
+      note: "notes/order.md",
+      issue: "still open?",
+      context: "Order",
+      public: true,
+    });
+  });
+
+  it("also accepts `public` written before `@Context` instead of after", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed public @Order
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Order Placed",
+      context: "Order",
+      public: true,
+    });
+  });
+
+  it("leaves a bare `public` that isn't trailing (or right before `@Tag`) as part of the name", () => {
+    const ast = parse(`slice "S" {\n  event Made Public Somehow\n}`);
+    expect(ast.slices[0].elements[0].name).toBe("Made Public Somehow");
+    expect(ast.slices[0].elements[0].public).toBeUndefined();
+  });
+
+  it("parses `public` trailing an inline `{ … }` field block", () => {
+    const ast = parse(`slice "S" {\n  event Order Placed { orderId: UUID } public\n}`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Order Placed",
+      public: true,
+      fields: [{ name: "orderId", type: "UUID" }],
+    });
+  });
+
+  it("parses `public` trailing a multi-line `{ … }` field block's closing line", () => {
+    const ast = parse(`
+slice "S" {
+  event Order Placed {
+    orderId
+  } public
+}
+`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Order Placed",
+      public: true,
+      fields: [{ name: "orderId" }],
+    });
+  });
+
+  it("leaves `public` undefined when absent", () => {
+    const ast = parse(`slice "S" {\n  event Order Placed\n}`);
+    expect(ast.slices[0].elements[0].public).toBeUndefined();
+  });
+
   it("strips `note` before the `from` clause without swallowing it", () => {
     const ast = parse(`
 slice "S" {

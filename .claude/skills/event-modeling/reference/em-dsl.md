@@ -20,6 +20,7 @@ em watch  <file> -o out.svg --serve   # + localhost live viewer, instant SSE pus
 em validate <file>             # check event-modeling rules; exit 0 if only warnings/clean
 em validate <file> --list-issues       # print only open `issue "..."` clauses (slice, element, line, text)
 em validate <file> --list-divergences  # print only `divergence "..."` clauses (slice, element, line, text)
+em validate <file> --list-public       # print only events marked `public` (slice, name, line)
 em validate <file> --fail-on-issues    # opt-in CI gate: exit non-zero while any issue remains open
 ```
 
@@ -54,7 +55,7 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `{ fields }` |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
@@ -85,6 +86,13 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
   Raises **no** `em validate` warning by design; use `--list-divergences` to audit. `em diff
   --json` carries it forward as `acceptedDivergence` on the affected change/removal entry, so
   `conform` can cite an already-ratified deviation instead of re-flagging it as drift every run.
+- **`public`** (events only): marks this event as part of the published integration surface
+  (e.g. an AsyncAPI contract), as opposed to an internal-only fact. Plain structural flag, no
+  free text and no diagram marker (same posture as `again`). Write it as the last token on the
+  line, optionally right before a trailing `@Context` — `event X @Context public` or
+  `event X public @Context` both work. `em export` carries it as `public: true`/`false`;
+  `em diff` reports a flip as `event marked public`/`event unmarked public`;
+  `em validate --list-public` audits which events are public.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking). Keep these light; full field specs
   with rules live in the slice doc.

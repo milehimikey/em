@@ -28,7 +28,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.1");
+    expect(doc.schemaVersion).toBe("1.2");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -95,6 +95,7 @@ describe("nullable fields are explicit null, not omitted", () => {
     expect(el.context).toBeNull();
     expect(el.logicalRef).toBeNull();
     expect(el.again).toBe(false);
+    expect(el.public).toBe(false);
     expect("fields" in el).toBe(true); // key present with null, not sniffed via absence
     expect("divergence" in el).toBe(true);
   });
@@ -126,6 +127,20 @@ slice "Checkout" source "https://linear.app/team/issue/MIL-60" {
     expect(doc.source).toMatchObject({ path: "model.em" });
     expect(doc.source.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(doc.model.slices[0].source).toBe("https://linear.app/team/issue/MIL-60");
+  });
+});
+
+describe("`public` round-trip", () => {
+  it("exports `public: true` for an event marked public, `false` otherwise", () => {
+    const doc = docOf(`
+slice "S" {
+  event Order Placed @Order public
+  event Internal Retry @Order
+}
+`);
+    const [pub, internal] = doc.model.slices[0].elements;
+    expect(pub.public).toBe(true);
+    expect(internal.public).toBe(false);
   });
 });
 

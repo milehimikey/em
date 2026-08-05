@@ -10,7 +10,7 @@
 //     ui    <free text> [@Persona]
 //     command <free text>
 //     view  <free text> [from "Event"[, "Event2" ...]]
-//     event <free text> [@Context]
+//     event <free text> [@Context] [public]
 //     automation|processor|saga|translation <free text>
 //   }
 //   arrow <From Element> -> <To Element>
@@ -219,8 +219,8 @@ function parseElement(
 }
 
 /**
- * Pulls `note`/`issue`/`divergence`/`from`/`@Tag`/`again` clauses out of
- * `raw`, applying each to `node` and returning whatever text is left (the
+ * Pulls `note`/`issue`/`divergence`/`from`/`public`/`@Tag`/`again` clauses out
+ * of `raw`, applying each to `node` and returning whatever text is left (the
  * element's name, when called on the text before a `{ … }` block —
  * otherwise anything unrecognized).
  *
@@ -272,6 +272,25 @@ function extractClauses(
   if (fromMatch && fromMatch.index !== undefined) {
     node.from = splitQuotedList(fromMatch[1]);
     rest = rest.slice(0, fromMatch.index).trim();
+  }
+
+  // `public` clause (event only): marks this event as part of the published
+  // integration surface (e.g. an AsyncAPI contract), as opposed to an internal-only
+  // fact. Checked here, before `@Tag`, so `public` may be written either as the true
+  // last token (`event X @Context public`) or immediately before a trailing `@Tag`
+  // (`event X public @Context`) — either way `@Context` ends up the trailing-most
+  // token once `public` is excised, which is what the `@Tag` block below requires.
+  // Anywhere else in the line, a bare `public` is left alone and folds into the free-
+  // text name, same as any other unrecognized word (matching `again`'s discipline).
+  const publicMatch = rest.match(/(?:^|\s)public(?=\s+@\S+\s*$|\s*$)/i);
+  if (publicMatch && publicMatch.index !== undefined) {
+    if (node.kind !== "event")
+      throw new ParseError(
+        "`public` is only valid on event — only recorded facts are promoted to the integration surface",
+        line,
+      );
+    node.public = true;
+    rest = (rest.slice(0, publicMatch.index) + rest.slice(publicMatch.index + publicMatch[0].length)).trim();
   }
 
   // Trailing `@Tag` (persona for ui, context for event).
