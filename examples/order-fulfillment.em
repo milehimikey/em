@@ -7,7 +7,9 @@ context Order
 context Payment
 
 # --- Command pattern: UI -> command -> event ---
-slice "Browse Catalog" {
+# `source` (optional, slice-level only) links a slice back to the ticket/conversation it
+# traces to — machine-traversable via `em export`'s `model.slices[].source` (MIL-69).
+slice "Browse Catalog" source "https://linear.app/team/issue/MIL-60" {
   ui Product Catalog @Customer
   command Place Order {
     customerId

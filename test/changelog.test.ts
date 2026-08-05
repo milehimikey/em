@@ -24,6 +24,7 @@ const diffOf = (oldSrc: string, newSrc: string) => diffModels(modelOf(oldSrc), m
 const EMPTY_COUNTS = {
   slicesAdded: 0,
   slicesRemoved: 0,
+  sourceChanges: 0,
   elementsAdded: 0,
   elementsRemoved: 0,
   elementsMoved: 0,

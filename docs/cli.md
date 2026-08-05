@@ -109,11 +109,15 @@ the source text, so a consumer can tell whether an export is stale without re-ru
 **Schema summary** (`schemaVersion: "1.1"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
-- `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line.
+- `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
+  the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
+  `source`, below: same key name, different scope and shape.)
 - `model` — `name`, `personas`, `contexts`, `hasAutomation`, `slices`, `arrows`.
   - Each **slice** has a stable `key` (`slug(name)`, with a `~2`, `~3`, … suffix — and a
-    warning diagnostic — if two slices share a name), plus `name`, `index`, `line`, and its
-    `elements`. Elements appear only inside their slice, not flattened at `model.elements`.
+    warning diagnostic — if two slices share a name), plus `name`, `index`, `line`, `source`
+    (the slice's `source "url"` clause — a link to the ticket/conversation it traces back to,
+    or `null` if absent), and its `elements`. Elements appear only inside their slice, not
+    flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
     `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, and
@@ -144,8 +148,9 @@ See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step a
 ## `em diff <old> <new>`
 
 Compares two models structurally and prints a rollup summary plus one line per change —
-slices and elements added/removed/moved, field/`from`/note changes, and issue lifecycle
-(opened, resolved, text changed). It's the semantic counterpart to `git diff` on a `.em`
+slices and elements added/removed/moved, a slice's `source` added/removed/changed,
+field/`from`/note changes, and issue lifecycle (opened, resolved, text changed). It's the
+semantic counterpart to `git diff` on a `.em`
 file: raw `git diff` shows line hunks; `em diff` groups them into what actually happened to
 the model, and — crucially — collapses a cross-slice move into one `moved:` line instead of
 a delete-hunk-plus-add-hunk in two different places.
@@ -219,8 +224,9 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 14 counters the text rollup line summarizes (`slicesAdded`,
-  `elementsMoved`, `fieldChanges`, `issuesResolved`, `acceptedDivergences`, …), as-is.
+- `counts` — the same 15 counters the text rollup line summarizes (`slicesAdded`,
+  `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
+  …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:

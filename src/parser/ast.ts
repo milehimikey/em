@@ -52,6 +52,8 @@ export interface ElementNode {
 
 export interface SliceNode {
   name: string;
+  /** `source "url"` — link to the ticket/conversation this slice traces back to. */
+  source?: string;
   elements: ElementNode[];
   line: number;
 }

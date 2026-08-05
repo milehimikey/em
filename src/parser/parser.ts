@@ -6,7 +6,7 @@
 //   model "Name"
 //   persona Name
 //   context Name
-//   slice "Name" {
+//   slice "Name" [source "url"] {
 //     ui    <free text> [@Persona]
 //     command <free text>
 //     view  <free text> [from "Event"[, "Event2" ...]]
@@ -162,9 +162,23 @@ export function parse(source: string): ModelNode {
         const open = remainder.lastIndexOf("{");
         if (open < 0)
           throw new ParseError("slice must open a block with '{'", lineNo);
-        const name = unquote(remainder.slice(0, open).trim());
-        if (!name) throw new ParseError("slice requires a name", lineNo);
-        currentSlice = { name, elements: [], line: lineNo };
+        let header = remainder.slice(0, open).trim();
+
+        const node: SliceNode = { name: "", elements: [], line: lineNo };
+
+        // `source "url"` clause (valid on any slice, order-independent relative
+        // to the name): a link to the ticket/conversation this slice traces
+        // back to, so the intake-loop audit chain is machine-traversable
+        // through `em export` instead of living only in prose (MIL-69).
+        const sourceMatch = header.match(/(?:^|\s)source\s+"([^"]*)"/i);
+        if (sourceMatch && sourceMatch.index !== undefined) {
+          node.source = sourceMatch[1];
+          header = (header.slice(0, sourceMatch.index) + header.slice(sourceMatch.index + sourceMatch[0].length)).trim();
+        }
+
+        node.name = unquote(header);
+        if (!node.name) throw new ParseError("slice requires a name", lineNo);
+        currentSlice = node;
         break;
       }
       case "arrow":
