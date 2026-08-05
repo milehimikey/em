@@ -382,7 +382,8 @@ function compileFile(file: string, opts: CompileOptions = {}) {
   }
 }
 
-/** Read a file's text, or exit with a clear error — used by `em diff`'s two-file form. */
+/** Read a file's text, or exit with a clear error — shared by `em diff` (both forms) and
+ *  `em glossary`, which each read one or more plain `.em` files off disk before compiling. */
 function readFileOrExit(file: string): string {
   try {
     return readFileSync(file, "utf8");

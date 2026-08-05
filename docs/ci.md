@@ -100,6 +100,20 @@ schema.
 gate — one JSON document on stdout, exit 1 when the model actually changed. See
 [cli.md](cli.md#em-diff-old-new).
 
+When a repo holds more than one `.em` model, `em glossary <files...> --fail-on-conflicts`
+adds a vocabulary-consistency gate the same way: opt-in, off by default, exits non-zero only
+when the same term is used inconsistently across models (a different element kind, or a
+different field type). Add it as its own step once changed-files detection covers every
+`.em` file in the repo, not just the ones a PR touched — a conflict can be introduced by
+either side of a rename, so scoping the check to the diff alone can miss it:
+
+```yaml
+      - name: Check glossary consistency across models
+        run: npx @milehimikey/em glossary $(git ls-files '*.em') --fail-on-conflicts
+```
+
+See [cli.md](cli.md#em-glossary-files) for the conflict rules and the `--json` schema.
+
 ## Conformance cadence (advisory)
 
 Once a model's slices are `implemented`, the bundled skill's `conform` phase can check the

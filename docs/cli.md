@@ -350,7 +350,12 @@ document, so the schemas evolve independently):
   where each occurrence is just `{ model }` (collected for completeness; never
   conflict-checked in v1).
 - `conflicts` — `{ type: "kind-conflict" | "field-type-conflict", term, occurrences }`,
-  same occurrence shapes as above, restricted to the models actually in conflict.
+  same occurrence shapes as above. `occurrences` is every occurrence of the term across
+  *all* input models that declare it, not filtered down to the disagreeing subset — with
+  3+ models, a conflict's `occurrences` array includes entries that agree with each other
+  alongside the one(s) that don't (same "every occurrence" convention the text report's
+  `formatConflictLine` already uses). Cross-reference `kind`/`type` per occurrence to see
+  which side(s) actually disagree.
 
 Every array is sorted by normalized key, so output is deterministic for the same set of
 inputs in the same order.
