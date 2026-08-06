@@ -382,9 +382,10 @@ inputs in the same order.
 
 ## `em catalog <files...>`
 
-Generates a browsable static HTML site over one or more models — an index page listing
-every model and its slices, plus a per-slice detail page (diagram, elements, and its
-`slices/<slice-name>.md` design doc rendered as HTML, if one exists). Git stays the only
+Generates a browsable static HTML site over one or more models — an index page with each
+model's diagram embedded inline plus a table of its slices, and a per-slice detail page
+(diagram, elements, and its `slices/<slice-name>.md` design doc rendered as HTML, if one
+exists). Git stays the only
 history store: the catalog is regenerated from the current `.em` file(s) each run, never a
 new place data lives. This is the presentation layer the roadmap held back until there was
 a concrete reason for it — more models than a repo can comfortably hold, or a non-engineer

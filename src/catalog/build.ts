@@ -122,7 +122,7 @@ export async function buildCatalog(
     modelSummaries.push({ key: modelKey, name: model.name, file, diagramFile, slices: sliceSummaries });
   }
 
-  const indexHtml = renderIndexPage(modelSummaries, title);
+  const indexHtml = renderIndexPage(modelSummaries, title, format);
   await writeFile(join(outDir, "index.html"), indexHtml, "utf8");
 
   return { models: modelSummaries.length, slices: sliceCount, diagnostics };

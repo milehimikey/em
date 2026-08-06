@@ -34,14 +34,24 @@ describe("renderIndexPage", () => {
         ],
       },
     ];
-    const html = renderIndexPage(models, "My Catalog");
+    const html = renderIndexPage(models, "My Catalog", "svg");
 
     expect(html).toContain("Checkout &amp; Payments"); // escaped name
     expect(html).toContain("checkout/slices/place-order.html");
     expect(html).toContain("State Change");
     expect(html).toContain("ready-to-implement");
     expect(html).toContain("no doc");
-    expect(html).toContain("checkout/diagram.svg");
+    // the diagram is embedded directly, not just linked
+    expect(html).toContain('<object class="diagram" type="image/svg+xml" data="checkout/diagram.svg">');
+    expect(html).toContain('href="checkout/diagram.svg">open diagram full-size</a>');
+  });
+
+  it("embeds a png diagram with the right MIME type", () => {
+    const models: CatalogModelSummary[] = [
+      { key: "checkout", name: "Checkout", file: "checkout.em", diagramFile: "diagram.png", slices: [] },
+    ];
+    const html = renderIndexPage(models, "My Catalog", "png");
+    expect(html).toContain('type="image/png" data="checkout/diagram.png"');
   });
 });
 
@@ -129,7 +139,7 @@ describe("renderSlicePage", () => {
 
 describe("layout's home link", () => {
   it("index page links home to a same-directory relative path, not an absolute one", () => {
-    const html = renderIndexPage([], "My Catalog");
+    const html = renderIndexPage([], "My Catalog", "svg");
     expect(html).toContain('href="index.html"');
     expect(html).not.toContain('href="/"');
   });

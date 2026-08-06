@@ -61,6 +61,8 @@ describe("buildCatalog", () => {
     expect(index).toContain("Open Orders");
     expect(index).toContain("State Change");
     expect(index).toContain("State View");
+    // the diagram is embedded on the index page itself, not just linked
+    expect(index).toContain('<object class="diagram" type="image/svg+xml" data="model/diagram.svg">');
     expect(index).toContain("reviewed");
     expect(index).toContain("no doc");
 

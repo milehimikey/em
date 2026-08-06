@@ -99,7 +99,7 @@ ${bodyHtml}
 `;
 }
 
-export function renderIndexPage(models: CatalogModelSummary[], title: string): string {
+export function renderIndexPage(models: CatalogModelSummary[], title: string, format: "svg" | "png"): string {
   const sections = models
     .map((m) => {
       const rows = m.slices
@@ -111,9 +111,11 @@ export function renderIndexPage(models: CatalogModelSummary[], title: string): s
       </tr>`,
         )
         .join("\n");
+      const diagramHref = `${escapeHtml(m.key)}/${escapeHtml(m.diagramFile)}`;
       return `    <section>
       <h2>${escapeHtml(m.name)}</h2>
-      <p><a href="${escapeHtml(m.key)}/${escapeHtml(m.diagramFile)}">diagram</a> · ${m.slices.length} slice${m.slices.length === 1 ? "" : "s"} · <code>${escapeHtml(m.file)}</code></p>
+      <p>${m.slices.length} slice${m.slices.length === 1 ? "" : "s"} · <code>${escapeHtml(m.file)}</code> · <a href="${diagramHref}">open diagram full-size</a></p>
+      <object class="diagram" type="${diagramMimeType(format)}" data="${diagramHref}"></object>
       <table>
         <thead><tr><th>Slice</th><th>Pattern</th><th>Status</th></tr></thead>
         <tbody>
