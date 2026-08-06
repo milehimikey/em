@@ -61,11 +61,11 @@ slice "Refund Backlog" {
 `;
 
 async function renderSource(src: string): Promise<string> {
-  const { dot, model } = compile(src);
+  const { dot, model, grid } = compile(src);
   const dir = mkdtempSync(join(tmpdir(), "em-routing-"));
   try {
     const out = join(dir, "out.svg");
-    await renderDot(dot, model, out, "svg", dirname(EXAMPLE));
+    await renderDot(dot, model, grid, out, "svg", dirname(EXAMPLE));
     return readFileSync(out, "utf8");
   } finally {
     rmSync(dir, { recursive: true, force: true });

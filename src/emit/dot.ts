@@ -150,7 +150,10 @@ function columnChain(grid: Grid, col: number): string {
   return ids.join(" -> ");
 }
 
-function rowLabelId(r: number): string {
+/** Node id of a row's swimlane label (leftmost column). Shared with the renderer
+ *  so it can read the label column's rect for the storyboard viewer's slice
+ *  overlay — see src/render/sliceOverlay.ts. */
+export function rowLabelId(r: number): string {
   return `__row_${r}`;
 }
 

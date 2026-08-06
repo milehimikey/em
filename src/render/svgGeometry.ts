@@ -15,8 +15,11 @@ export interface Rect {
   cy: number;
 }
 
-const NODE_GROUP = /<g\b[^>]*class="node"[^>]*>([\s\S]*?)<\/g>/g;
-const TITLE = /<title>([\s\S]*?)<\/title>/;
+// Exported: sliceOverlay.ts is a second consumer, tagging/reading these same
+// node groups for the storyboard viewer's slice overlay — share the pattern
+// rather than let it drift into a second copy.
+export const NODE_GROUP = /<g\b[^>]*class="node"[^>]*>([\s\S]*?)<\/g>/g;
+export const TITLE = /<title>([\s\S]*?)<\/title>/;
 const SHAPE = /<(?:polygon|path)\b[^>]*\b(?:points|d)="([^"]*)"/;
 const NUM = /-?\d*\.?\d+(?:e-?\d+)?/gi;
 
@@ -54,6 +57,37 @@ export interface Box {
   maxY: number;
 }
 
+/** scale/translate read from the graph's own transform, and the root-space
+ *  conversion it implies — see readGraphTransform() for where this comes from. */
+export interface GraphTransform {
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+  /** Convert a graph-space (pre-transform) point — e.g. a rect from
+   *  parseNodeRects(), or a raw `<text>` x/y — into root/viewBox space. */
+  toRoot(x: number, y: number): { x: number; y: number };
+}
+
+/**
+ * Graphviz wraps the graph in `transform="scale(sx sy) rotate(0) translate(tx ty)"`,
+ * applied right to left, so a graph-space point lands at `scale * (p + translate)`.
+ * Anything computed from parseNodeRects()'s box coordinates (or a `<text>` element's
+ * raw x/y) is in that same pre-transform graph space — it must go through
+ * `toRoot()` before it's valid as a viewBox coordinate or compared against one.
+ * Defaults to the identity transform (scale 1, translate 0) if the graph group or
+ * its transform attribute isn't present, matching what Graphviz emits when neither
+ * scaling nor an offset was needed.
+ */
+export function readGraphTransform(svg: string): GraphTransform {
+  const tf = /<g\b[^>]*class="graph"[^>]*transform="([^"]*)"/.exec(svg)?.[1] ?? "";
+  const sc = /scale\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(tf);
+  const tr = /translate\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(tf);
+  const [sx, sy] = sc ? [+sc[1], +sc[2]] : [1, 1];
+  const [tx, ty] = tr ? [+tr[1], +tr[2]] : [0, 0];
+  return { sx, sy, tx, ty, toRoot: (x, y) => ({ x: sx * (x + tx), y: sy * (y + ty) }) };
+}
+
 const FIT_PAD = 10; // breathing room, and enough for an arrowhead at the boundary
 
 /**
@@ -68,13 +102,7 @@ export function fitCanvas(svg: string, box: Box | null): string {
   const hpt = /height="([\d.eE+-]+)pt"/.exec(svg);
   if (!vb || !wpt || !hpt) return svg; // can't resize safely — leave it alone
 
-  // Graphviz wraps the graph in `transform="scale(sx sy) rotate(0) translate(tx ty)"`,
-  // applied right to left, so a graph-space point lands at scale * (p + translate).
-  const tf = /<g\b[^>]*class="graph"[^>]*transform="([^"]*)"/.exec(svg)?.[1] ?? "";
-  const sc = /scale\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(tf);
-  const tr = /translate\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(tf);
-  const [sx, sy] = sc ? [+sc[1], +sc[2]] : [1, 1];
-  const [tx, ty] = tr ? [+tr[1], +tr[2]] : [0, 0];
+  const { toRoot } = readGraphTransform(svg);
 
   const minX = +vb[1];
   const minY = +vb[2];
@@ -82,10 +110,12 @@ export function fitCanvas(svg: string, box: Box | null): string {
   const vh = +vb[4];
   if (vw <= 0 || vh <= 0) return svg;
 
-  const x0 = Math.min(sx * (box.minX + tx), sx * (box.maxX + tx));
-  const x1 = Math.max(sx * (box.minX + tx), sx * (box.maxX + tx));
-  const y0 = Math.min(sy * (box.minY + ty), sy * (box.maxY + ty));
-  const y1 = Math.max(sy * (box.minY + ty), sy * (box.maxY + ty));
+  const corner0 = toRoot(box.minX, box.minY);
+  const corner1 = toRoot(box.maxX, box.maxY);
+  const x0 = Math.min(corner0.x, corner1.x);
+  const x1 = Math.max(corner0.x, corner1.x);
+  const y0 = Math.min(corner0.y, corner1.y);
+  const y1 = Math.max(corner0.y, corner1.y);
 
   const left = Math.min(minX, Math.floor(x0 - FIT_PAD));
   const top = Math.min(minY, Math.floor(y0 - FIT_PAD));
@@ -105,7 +135,9 @@ function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-function decode(s: string): string {
+/** Decode the handful of entities Graphviz emits in `<title>` text. Shared with
+ *  sliceOverlay.ts, which also needs to recover an element id from a title. */
+export function decode(s: string): string {
   return s
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
