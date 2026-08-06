@@ -70,7 +70,7 @@ program
   .option("--emit-dot", "print the generated DOT instead of rendering")
   .option("--keep-empty-lanes", "keep the API lane even when empty")
   .action(async (file: string, opts) => {
-    const { dot, model, diagnostics } = compileFile(file, {
+    const { dot, model, grid, diagnostics } = compileFile(file, {
       keepEmptyLanes: opts.keepEmptyLanes,
     });
     printDiagnostics(diagnostics);
@@ -93,7 +93,7 @@ program
 
     const out = opts.out ?? defaultOut(file, opts.format ?? "svg");
     const fmt = opts.format ?? formatFromPath(out);
-    await renderDot(dot, model, out, fmt, dirname(file));
+    await renderDot(dot, model, grid, out, fmt, dirname(file));
     console.log(`rendered ${out}`);
   });
 
@@ -240,11 +240,11 @@ program
       const inputs: CatalogModelInput[] = [];
       let anyErrors = false;
       for (const file of files) {
-        const { dot, model, diagnostics } = compileFile(file, { keepEmptyLanes: opts.keepEmptyLanes });
+        const { dot, model, grid, diagnostics } = compileFile(file, { keepEmptyLanes: opts.keepEmptyLanes });
         printDiagnosticsFor(file, diagnostics);
         warnMissingNotes(file, model);
         if (hasErrors(diagnostics)) anyErrors = true;
-        inputs.push({ file, model, dot });
+        inputs.push({ file, model, grid, dot });
       }
       if (anyErrors) {
         console.error("not building catalog: fix the errors above");
@@ -300,7 +300,7 @@ program
     const build = async () => {
       const started = Date.now();
       try {
-        const { dot, model, diagnostics } = compileFile(file, {
+        const { dot, model, grid, diagnostics } = compileFile(file, {
           keepEmptyLanes: opts.keepEmptyLanes,
         });
         printDiagnostics(diagnostics);
@@ -309,7 +309,7 @@ program
           console.error("skipped render (errors above)");
           return;
         }
-        await renderDot(dot, model, out, fmt, dirname(file));
+        await renderDot(dot, model, grid, out, fmt, dirname(file));
         console.log(`rendered ${out} (${Date.now() - started}ms)`);
         server?.notify();
       } catch (e) {

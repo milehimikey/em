@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
+import { Grid } from "../layout/grid.js";
 import { renderDot } from "../render/render.js";
 import { computeRefs } from "../emit/json.js";
 import { Diagnostic } from "../model/validate.js";
@@ -26,6 +27,7 @@ export interface CatalogModelInput {
   /** The .em file as given on the command line — used for the doc-discovery path and display. */
   file: string;
   model: NormalizedModel;
+  grid: Grid;
   dot: string;
 }
 
@@ -60,7 +62,7 @@ export async function buildCatalog(
   const diagnostics: { file: string; diagnostics: Diagnostic[] }[] = [];
   let sliceCount = 0;
 
-  for (const { file, model, dot } of inputs) {
+  for (const { file, model, grid, dot } of inputs) {
     const modelKey = dedupe(kebabSlug(basename(file, extname(file))), usedModelKeys, "~");
     const modelDir = join(outDir, modelKey);
     const slicesDir = join(modelDir, "slices");
@@ -69,7 +71,7 @@ export async function buildCatalog(
     const diagramFile = `diagram.${format}`;
     // baseDir = dirname(file), same as `em render`/`em watch` — this is why note hrefs
     // embedded in the diagram still resolve correctly from the catalog's output location.
-    await renderDot(dot, model, join(modelDir, diagramFile), format, dirname(file));
+    await renderDot(dot, model, grid, join(modelDir, diagramFile), format, dirname(file));
 
     const refs = computeRefs(model);
     if (refs.diagnostics.length > 0) diagnostics.push({ file, diagnostics: refs.diagnostics });

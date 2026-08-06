@@ -35,12 +35,41 @@ describe("live server", () => {
     expect(body).toContain("__events");
   });
 
+  it("serves the storyboard/review-mode controls and slice-metadata handling", async () => {
+    const res = await fetch(`${base}/`);
+    const body = await res.text();
+    // control bar + interaction
+    expect(body).toContain('id="reviewToggle"');
+    expect(body).toContain('id="storyboard"');
+    expect(body).toContain('id="filmstrip"');
+    expect(body).toContain('id="prevSlice"');
+    expect(body).toContain('id="nextSlice"');
+    expect(body).toContain("ArrowLeft");
+    expect(body).toContain("ArrowRight");
+    // reads what sliceOverlay.ts embeds in the SVG
+    expect(body).toContain('getElementById("em-slices")');
+    expect(body).toContain("data-slice");
+    // state lives outside reload()'s closure — see the file's header comment —
+    // so an SSE-triggered reload re-applies it instead of resetting to slice 0
+    expect(body).toContain("onSvgLoaded()");
+  });
+
   it("serves a model file with no-store caching and the right type", async () => {
     const res = await fetch(`${base}/model.svg`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/image\/svg\+xml/);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.text()).toContain("<svg>");
+  });
+
+  it("serves a slice-tagged SVG (data-slice + <metadata id=\"em-slices\">) byte-for-byte, unmangled", async () => {
+    const tagged =
+      '<svg viewBox="0 0 100 100"><metadata id="em-slices">{"slices":[{"index":0,"name":"S","x0":0,"x1":100}],"rowLabels":null}</metadata>' +
+      '<g data-slice="0" class="node"><title>place_order</title></g></svg>';
+    writeFileSync(join(dir, "tagged.svg"), tagged);
+    const res = await fetch(`${base}/tagged.svg`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(tagged);
   });
 
   it("404s a file that isn't there", async () => {

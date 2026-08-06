@@ -14,9 +14,11 @@ import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path"
 import { Graphviz } from "@hpcc-js/wasm-graphviz";
 import { Resvg } from "@resvg/resvg-js";
 import { Element, NormalizedModel } from "../model/model.js";
+import { Grid } from "../layout/grid.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, buildIssueMarkers, buildDivergenceMarkers, appendNoteLegend } from "./drawNotes.js";
+import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -34,6 +36,7 @@ export function formatFromPath(outPath: string, fallback = "svg"): string {
 export async function renderDot(
   dot: string,
   model: NormalizedModel,
+  grid: Grid,
   outPath: string,
   format = formatFromPath(outPath),
   baseDir = process.cwd(),
@@ -44,7 +47,7 @@ export async function renderDot(
   const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
 
   const gv = await graphviz();
-  const svg = withOverlays(gv.layout(dot, "svg", "dot"), model, hrefOf);
+  const svg = withOverlays(gv.layout(dot, "svg", "dot"), model, grid, hrefOf);
 
   if (format === "svg") {
     await writeFile(outPath, svg, "utf8");
@@ -85,9 +88,10 @@ export function noteHref(note: string, baseDir: string, outDir: string): string 
 function withOverlays(
   svg: string,
   model: NormalizedModel,
+  grid: Grid,
   hrefOf: (el: Element) => string,
 ): string {
-  const rects = parseNodeRects(svg, new Set(model.byId.keys()));
+  const rects = parseNodeRects(svg, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
@@ -96,8 +100,13 @@ function withOverlays(
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
   // room before anything else measures or appends to the viewBox
   let out = fitCanvas(svg, bbox);
-  // arrowhead markers go just inside <svg …>
-  out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}`);
+  // tag each element's node group with data-slice="<index>" so the storyboard
+  // viewer (`em watch --serve`) can highlight/zoom to one slice at a time
+  // client-side, purely from what's already in the SVG.
+  out = tagSliceAttrs(out, model);
+  const sliceOverlay = buildSliceOverlay(out, grid, rects);
+  // arrowhead markers + slice metadata/style go just inside <svg …>
+  out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}${sliceOverlay}`);
   // edges go under the boxes: just before the first node group
   const nodeAt = out.search(/<g\b[^>]*class="node"[^>]*>/);
   if (nodeAt >= 0) out = out.slice(0, nodeAt) + group + out.slice(nodeAt);

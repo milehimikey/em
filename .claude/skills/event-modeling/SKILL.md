@@ -280,6 +280,37 @@ appear the moment you save, with no idle churn between edits.
 `live.html?svg=<model-name>.svg` in a browser. It polls every ~2s and reloads without flicker. No
 editing of `live.html` is needed — the `?svg=` query picks the model.
 
+## Phase: `review` — stakeholder walkthrough
+
+Goal: step a real stakeholder review session through the model slice by slice, one slice
+spotlighted at a time, with any open questions the room raises captured live as `issue "..."`
+red notes.
+
+**Trigger: a real stakeholder review session is on the calendar — a scheduled use, not
+speculation.** Don't propose this phase proactively; it exists for facilitated reviews with
+non-engineer stakeholders in the room, not routine model editing.
+
+Start the same live server as `watch`: `em watch <model-name>.em -o <model-name>.svg --serve`
+(run_in_background). Open the printed URL, click **Review mode** in the header, and share the
+screen. Use Prev/Next (or the left/right arrow keys) to step through slices in declaration
+order — each one pans/zooms into view with everything else dimmed, so the room's attention
+tracks one slice at a time.
+
+**Live capture:** when a stakeholder raises something unresolved, add `issue "..."` to the
+relevant element in the `.em` file and save — exactly the same mechanism as any other issue
+(see `validate` below). The browser updates over the existing SSE push within moments, without
+losing the current slice or resetting review mode.
+
+Wrap-up: run `em validate --list-issues` to sweep everything captured during the session and
+walk each one with the user, same as any open issue. Update the state file's Participants
+section with who attended, and set a `Last stakeholder review:` marker (mirrors `Last
+conformance:`).
+
+End of phase: state file's `Last stakeholder review:` marker updated, every issue captured
+live triaged (resolved on the spot, moved to Open questions / parking lot, or left open on
+purpose). Review doesn't chain to another phase — it's a recurring, scheduled activity like
+`conform`, not a step in the discover → model → slice sequence.
+
 ## Phase: `validate`
 
 Run `em validate <model-name>.em` and walk through each diagnostic with the user, explaining the
@@ -319,6 +350,7 @@ em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
 em watch <name>.em -o <name>.svg           # re-render on save (run in background)
 em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-reload (--port N)
+                                            #   click "Review mode" for a slice-by-slice storyboard walkthrough
 ```
 
 Always finish a working session by: re-rendering, running `em validate`, and updating

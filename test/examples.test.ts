@@ -30,14 +30,14 @@ describe("examples/*.em render cleanly", () => {
     it(`${file} parses, validates without errors, and renders to a well-formed SVG`, async () => {
       const path = join(EXAMPLES_DIR, file);
       const source = readFileSync(path, "utf8");
-      const { dot, model, diagnostics } = compile(source); // throws ParseError on bad syntax
+      const { dot, model, grid, diagnostics } = compile(source); // throws ParseError on bad syntax
 
       expect(hasErrors(diagnostics)).toBe(false);
 
       const dir = mkdtempSync(join(tmpdir(), "em-examples-"));
       try {
         const out = join(dir, "out.svg");
-        await renderDot(dot, model, out, "svg", EXAMPLES_DIR);
+        await renderDot(dot, model, grid, out, "svg", EXAMPLES_DIR);
         const svg = readFileSync(out, "utf8");
         expect(svg).toMatch(/<svg\b/);
         expect(svg.trim().endsWith("</svg>")).toBe(true);
