@@ -9,6 +9,7 @@
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
+| `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 
@@ -378,6 +379,69 @@ document, so the schemas evolve independently):
 
 Every array is sorted by normalized key, so output is deterministic for the same set of
 inputs in the same order.
+
+## `em catalog <files...>`
+
+Generates a browsable static HTML site over one or more models — an index page listing
+every model and its slices, plus a per-slice detail page (diagram, elements, and its
+`slices/<slice-name>.md` design doc rendered as HTML, if one exists). Git stays the only
+history store: the catalog is regenerated from the current `.em` file(s) each run, never a
+new place data lives. This is the presentation layer the roadmap held back until there was
+a concrete reason for it — more models than a repo can comfortably hold, or a non-engineer
+audience that needs to browse models outside git (see [roadmap.md](roadmap.md)).
+
+Every input file must compile without errors, same convention as `em glossary`/`em diff`:
+`em catalog` refuses and prints each offending file's diagnostics, prefixed with its path,
+if any file has one.
+
+Output layout, one directory per input model so slice keys from different files never
+collide even without a cross-file dedup pass:
+
+```
+<outDir>/
+  index.html
+  <model-key>/
+    diagram.svg              (or .png, via -T)
+    slices/
+      <slice-key>.html
+```
+
+`<model-key>` and `<slice-key>` are the same kebab-case, `~2`/`~3`-deduped identity scheme
+`em export` uses (`model-key` from the file's basename, `slice-key` from `em export`'s own
+slice key) — stable, collision-safe, and consistent across commands.
+
+**Slice docs.** A slice's design doc is looked up deterministically at
+`slices/<kebab-slug-of-slice-name>.md`, next to the `.em` file — the same path the
+`event-modeling` skill's `slice` phase writes to. This is *not* the same thing as an
+element's `note` clause (which annotates one diagram element, not a whole slice) — the two
+are never conflated. Three outcomes, shown as the page/table's Status:
+
+- No doc at that path → `no doc`; the page still shows the AST-derived facts (pattern,
+  elements, fields), since those never depend on the doc.
+- Doc exists but has no recognizable `- **Status:** ...` line (a freeform doc, not the
+  template) → `unknown`; the doc's content still renders as HTML.
+- Doc matches the template → the Status value shown verbatim (`draft`, `reviewed`,
+  `ready-to-implement`, `implemented`, …).
+
+**Pattern.** Since a slice's pattern (State Change / State View / Automation /
+Translation) isn't stored anywhere, `em catalog` derives it from the slice's element kinds
+(see [patterns.md](patterns.md)). One known simplification: Automation and Translation
+each span two slices in the model, and the second one (a bare `command`+`event` pair) has
+the same kind-signature as a State Change slice — it's classified as State Change, since
+classification looks at one slice at a time. This is intentional, not a defect.
+
+| Flag | Effect |
+|---|---|
+| `-o, --out <dir>` | Output directory (default `catalog`) |
+| `-T, --format <fmt>` | Diagram format embedded in the catalog — `svg` or `png` only (default `svg`); pdf isn't browser-embeddable, so it's out of scope here |
+| `--title <text>` | Catalog site title (default `Event Model Catalog`) |
+| `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
+
+```bash
+em catalog model.em                              # -> catalog/
+em catalog checkout.em billing.em -o site         # multiple models, one site
+em catalog model.em -T png --title "Order System"
+```
 
 ## `em changelog <file>`
 

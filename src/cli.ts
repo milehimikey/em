@@ -27,6 +27,8 @@ import {
 } from "./model/glossary.js";
 import { buildGlossaryJson, GlossaryFileSide } from "./emit/glossaryJson.js";
 import { planGlossaryArgs } from "./cli/glossary-inputs.js";
+import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
+import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
 import { STARTER_EM } from "./templates.js";
@@ -213,6 +215,47 @@ program
       // process.exit() so stdout to a pipe (a large --json -o document) can't
       // be truncated.
       if (opts.failOnConflicts && hasConflicts(conflicts)) process.exitCode = 1;
+    },
+  );
+
+program
+  .command("catalog")
+  .description("generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)")
+  .argument("<files...>", "input .em files")
+  .option("-o, --out <dir>", "output directory", "catalog")
+  .option("-T, --format <fmt>", "diagram format embedded in the catalog (svg or png)", "svg")
+  .option("--title <text>", "catalog site title", "Event Model Catalog")
+  .option("--keep-empty-lanes", "keep the API lane even when empty")
+  .action(
+    async (
+      files: string[],
+      opts: { out: string; format: string; title: string; keepEmptyLanes?: boolean },
+    ) => {
+      const plan = planCatalogArgs(opts);
+      if ("error" in plan) {
+        console.error(plan.error);
+        process.exit(1);
+      }
+
+      const inputs: CatalogModelInput[] = [];
+      let anyErrors = false;
+      for (const file of files) {
+        const { dot, model, diagnostics } = compileFile(file, { keepEmptyLanes: opts.keepEmptyLanes });
+        printDiagnosticsFor(file, diagnostics);
+        warnMissingNotes(file, model);
+        if (hasErrors(diagnostics)) anyErrors = true;
+        inputs.push({ file, model, dot });
+      }
+      if (anyErrors) {
+        console.error("not building catalog: fix the errors above");
+        process.exit(1);
+      }
+
+      const result = await buildCatalog(inputs, { outDir: opts.out, format: plan.format, title: opts.title });
+      for (const d of result.diagnostics) printDiagnosticsFor(d.file, d.diagnostics);
+      const modelWord = result.models === 1 ? "model" : "models";
+      const sliceWord = result.slices === 1 ? "slice" : "slices";
+      console.log(`wrote ${opts.out}/ (${result.models} ${modelWord}, ${result.slices} ${sliceWord})`);
     },
   );
 

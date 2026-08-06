@@ -5,7 +5,7 @@
 // functions (which test/export.test.ts and test/validate.test.ts cover).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,6 +85,21 @@ slice "Open Orders" {
 }
 `;
 
+// `em catalog` fixture: two slices sharing a name, to exercise computeRefs's ref-collision
+// warning surfacing through the catalog command (see test/catalog.e2e.test.ts for the
+// build-level coverage of the same scenario).
+const CATALOG_DUPLICATE_SLICE_NAMES = `slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed
+}
+slice "Place Order" {
+  ui Retry Checkout @Customer
+  command Retry Order
+  event Order Retried
+}
+`;
+
 // `em glossary` fixtures: "Order Confirmed" as an event with an untriaged `total: Money`
 // field. Deliberately has one incidental warning (no view reads this event) so tests can
 // confirm it's routed to stderr, prefixed with the file, while stdout stays clean.
@@ -120,6 +135,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "glossary-a.em"), GLOSSARY_A);
   writeFileSync(join(dir, "glossary-b-clean.em"), GLOSSARY_B_CLEAN);
   writeFileSync(join(dir, "glossary-b-conflict.em"), GLOSSARY_B_CONFLICT);
+  writeFileSync(join(dir, "catalog-duplicate.em"), CATALOG_DUPLICATE_SLICE_NAMES);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -557,5 +573,48 @@ describe("em glossary (CLI)", () => {
     expect(r.stderr).toContain("not building glossary");
     expect(r.stderr).toContain("error.em:");
     expect(r.stderr).toContain('unknown event "No Such Event"');
+  });
+});
+
+describe("em catalog (CLI)", () => {
+  it("writes an index + per-model diagram + slice pages, and reports counts on stdout", () => {
+    const r = em(["catalog", "clean.em", "-o", "catalog-out"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote catalog-out/ (1 model, 2 slices)");
+    expect(existsSync(join(dir, "catalog-out", "index.html"))).toBe(true);
+    expect(existsSync(join(dir, "catalog-out", "clean", "diagram.svg"))).toBe(true);
+  });
+
+  it("accepts multiple files, one output directory per model, plural counts on stdout", () => {
+    const r = em(["catalog", "clean.em", "glossary-a.em", "-o", "catalog-multi"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^wrote catalog-multi\/ \(2 models, \d+ slices\)/);
+    expect(existsSync(join(dir, "catalog-multi", "clean", "diagram.svg"))).toBe(true);
+    expect(existsSync(join(dir, "catalog-multi", "glossary-a", "diagram.svg"))).toBe(true);
+  });
+
+  it("refuses on a missing file with a clear, non-zero-exit error", () => {
+    const r = em(["catalog", "does-not-exist.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("cannot read does-not-exist.em");
+  });
+
+  it("refuses on validation errors with a non-zero exit", () => {
+    const r = em(["catalog", "error.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not building catalog");
+  });
+
+  it("rejects an unsupported --format before touching any file", () => {
+    const r = em(["catalog", "clean.em", "-T", "pdf"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("unsupported --format 'pdf'");
+  });
+
+  it("surfaces ref-collision warnings (duplicate slice names) on stderr, prefixed with the file", () => {
+    const r = em(["catalog", "catalog-duplicate.em", "-o", "catalog-dup"], dir);
+    expect(r.status).toBe(0); // a collision is a warning, not an error — the build still succeeds
+    expect(r.stderr).toContain("catalog-duplicate.em:");
+    expect(r.stderr).toContain('duplicate slice name "Place Order"');
   });
 });
