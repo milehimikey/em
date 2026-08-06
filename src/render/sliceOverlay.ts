@@ -26,7 +26,7 @@
 import { NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId } from "../layout/grid.js";
 import { rowLabelId } from "../emit/dot.js";
-import { decode, NODE_GROUP, TITLE, Rect } from "./svgGeometry.js";
+import { decode, readGraphTransform, NODE_GROUP, TITLE, Rect } from "./svgGeometry.js";
 
 const TEXT = /<text\b([^>]*)>([^<]*)<\/text>/;
 
@@ -59,17 +59,27 @@ interface SliceRange {
  *  just inside the root `<svg>`. `svg` is scanned (post-fitCanvas/tagSliceAttrs is
  *  fine — neither touches `<text>` elements) for the row-label column's x-range.
  *  Returns "" if no slice has a rect — the model is empty, or the SVG shape wasn't
- *  what parseNodeRects expected. */
+ *  what parseNodeRects expected.
+ *
+ *  rects (from parseNodeRects) and the row-label `<text>` x positions scanned below
+ *  are both in graph-space — the coordinate system *inside* Graphviz's
+ *  `<g class="graph" transform="scale(...) translate(...)">` wrapper — not the root
+ *  SVG/viewBox space the served viewer sets `viewBox` in. Every x0/x1 here goes
+ *  through readGraphTransform()'s toRoot() before it's embedded, the same
+ *  conversion fitCanvas() applies to the edge-detour bbox for the same reason. */
 export function buildSliceOverlay(svg: string, grid: Grid, rects: Map<string, Rect>): string {
+  const transform = readGraphTransform(svg);
+  const toRootX = (x: number): number => transform.toRoot(x, 0).x;
+
   const slices: SliceRange[] = [];
   for (let c = 0; c < grid.cols; c++) {
     const r = rects.get(headerCellId(c));
     if (!r) continue;
-    slices.push({ index: c, name: grid.sliceNames[c], x0: r.left, x1: r.right });
+    slices.push({ index: c, name: grid.sliceNames[c], x0: toRootX(r.left), x1: toRootX(r.right) });
   }
   if (slices.length === 0) return "";
 
-  const rowLabels = rowLabelXRange(svg, grid.rows.length);
+  const rowLabels = rowLabelXRange(svg, grid.rows.length, toRootX);
   const payload = { slices, rowLabels };
   const metadata = `<metadata id="em-slices">${escXml(JSON.stringify(payload))}</metadata>`;
   const style = `<style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>`;
@@ -77,9 +87,15 @@ export function buildSliceOverlay(svg: string, grid: Grid, rects: Map<string, Re
 }
 
 /** Estimate the row-label column's x-range from its `<text>` elements — see the
- *  file header comment for why this can't go through parseNodeRects. Returns
- *  null if no row label rendered any text (e.g. an empty model). */
-function rowLabelXRange(svg: string, rowCount: number): { x0: number; x1: number } | null {
+ *  file header comment for why this can't go through parseNodeRects. `toRootX`
+ *  converts the graph-space text position (and the estimated half-width around
+ *  it) into root/viewBox space — see buildSliceOverlay's comment. Returns null
+ *  if no row label rendered any text (e.g. an empty model). */
+function rowLabelXRange(
+  svg: string,
+  rowCount: number,
+  toRootX: (x: number) => number,
+): { x0: number; x1: number } | null {
   let range: { x0: number; x1: number } | null = null;
   for (let r = 0; r < rowCount; r++) {
     // Scoped to this row's own node group (up to its closing </g>) rather than a
@@ -93,8 +109,8 @@ function rowLabelXRange(svg: string, rowCount: number): { x0: number; x1: number
     if (Number.isNaN(x)) continue;
     const fontSize = +(attr(m[1], "font-size") ?? 10);
     const halfWidth = (decode(m[2]).length * fontSize) / 2 + 4; // + a little breathing room
-    const x0 = x - halfWidth;
-    const x1 = x + halfWidth;
+    const x0 = toRootX(x - halfWidth);
+    const x1 = toRootX(x + halfWidth);
     range = range ? { x0: Math.min(range.x0, x0), x1: Math.max(range.x1, x1) } : { x0, x1 };
   }
   return range;

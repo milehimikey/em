@@ -100,4 +100,32 @@ describe("buildSliceOverlay", () => {
     const out = buildSliceOverlay("<svg></svg>", grid, new Map());
     expect(out).toBe("");
   });
+
+  it("converts graph-space rects through the graph's own scale/translate before embedding them", () => {
+    // Real Graphviz output always carries a transform (even just its default
+    // ~4pt margin translate) on <g class="graph"> — SVG's fixture above has none,
+    // which silently exercises only the sx=1/tx=0 identity case. rects from
+    // parseNodeRects() are graph-space (pre-transform); embedding them as-is
+    // would hand the viewer root-space viewBox math in the wrong coordinate
+    // system. scale(2 1) here exaggerates the effect so a regression to "use the
+    // raw rect" fails loudly rather than by an easy-to-miss +4.
+    const TRANSFORMED = SVG.replace(
+      '<g class="graph">',
+      '<g class="graph" transform="scale(2 1) rotate(0) translate(4 4)">',
+    );
+    const { model, grid } = build();
+    const rects = parseNodeRects(TRANSFORMED, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
+    const out = buildSliceOverlay(TRANSFORMED, grid, rects);
+    const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
+    const payload = JSON.parse(json);
+
+    // toRoot(x) = sx * (x + tx) = 2 * (x + 4)
+    expect(payload.slices).toEqual([
+      { index: 0, name: "Place Order", x0: 8, x1: 208 }, // 2*(0+4), 2*(100+4)
+      { index: 1, name: "Ship Order", x0: 248, x1: 448 }, // 2*(120+4), 2*(220+4)
+    ]);
+    // Row-label range shifts/scales the same way as the untransformed-fixture
+    // test's {x0: -94, x1: 59}: 2*(-94+4)=-180, 2*(59+4)=126.
+    expect(payload.rowLabels).toEqual({ x0: -180, x1: 126 });
+  });
 });
