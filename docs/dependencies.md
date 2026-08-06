@@ -12,6 +12,9 @@
   a Rust SVG renderer with prebuilt native binaries shipped as platform-specific optional
   dependencies (npm installs only the one matching your OS/arch). No `librsvg` required for
   PNG.
+- **Markdown rendering** — [`marked`](https://www.npmjs.com/package/marked), pure JS with no
+  transitive dependencies. Used only by `em catalog` to render a slice's design doc
+  (`slices/<name>.md`) to HTML for the per-slice page.
 
 These are regular `dependencies`, so a global install pulls them automatically.
 

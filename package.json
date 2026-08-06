@@ -52,7 +52,8 @@
     "@hpcc-js/wasm-graphviz": "^1.22.0",
     "@resvg/resvg-js": "^2.6.2",
     "chokidar": "^3.6.0",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "marked": "^18.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

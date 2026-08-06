@@ -8,6 +8,11 @@ dist/
 !examples/*.svg
 !examples/*.png
 
+# em catalog's default --out directory (index.html + per-slice pages aren't
+# covered by the *.svg/*.png rules above, since it's a whole site, not a
+# single rendered image)
+catalog/
+
 # Local Claude Code permission config — never committed, never published
 .claude/settings.local.json
 
