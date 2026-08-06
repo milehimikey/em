@@ -9,13 +9,15 @@
 //       diagram.svg (or .png)
 //       slices/
 //         <slice-key>.html
+//         <slice-key>.svg   (author-provided snippet, copied in; or cropped on the fly)
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { Grid } from "../layout/grid.js";
-import { renderDot } from "../render/render.js";
+import { layoutDot, composeSvg, writeRendered } from "../render/render.js";
+import { cropToSlice } from "../render/sliceOverlay.js";
 import { computeRefs } from "../emit/json.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
@@ -71,11 +73,18 @@ export async function buildCatalog(
     const diagramFile = `diagram.${format}`;
     // baseDir = dirname(file), same as `em render`/`em watch` — this is why note hrefs
     // embedded in the diagram still resolve correctly from the catalog's output location.
-    await renderDot(dot, model, grid, join(modelDir, diagramFile), format, dirname(file));
+    const raw = await layoutDot(dot);
+    const mainSvg = composeSvg(raw, model, grid, dirname(file), modelDir);
+    await writeRendered(mainSvg, join(modelDir, diagramFile), format);
 
     const refs = computeRefs(model);
     if (refs.diagnostics.length > 0) diagnostics.push({ file, diagnostics: refs.diagnostics });
     const sliceSummaries: CatalogSliceSummary[] = [];
+
+    // Composed lazily (only if at least one slice has no author-provided snippet) and
+    // memoized across the loop below — one recompose (correct note hrefs for slicesDir,
+    // not modelDir) serves every on-the-fly crop for this model.
+    let sliceSvgForCrop: string | undefined;
 
     for (let i = 0; i < model.slices.length; i++) {
       const slice = model.slices[i];
@@ -92,6 +101,21 @@ export async function buildCatalog(
       const docPath = join(dirname(file), docRelPath);
       const doc = existsSync(docPath) ? parseSliceDoc(readFileSync(docPath, "utf8")) : null;
 
+      // Same sibling-file convention as the doc lookup above, one extension over: a
+      // slice diagram authored by `em render --slice` (per the event-modeling skill) is
+      // copied in as-is so the catalog stays self-contained; otherwise crop the full
+      // diagram on the fly, written only into the catalog's own output tree — `em
+      // catalog` never writes back into the source tree.
+      const sliceSvgSrcPath = join(dirname(file), "slices", `${sliceKey}.svg`);
+      const sliceDiagramFile = `${sliceKey}.svg`;
+      if (existsSync(sliceSvgSrcPath)) {
+        await copyFile(sliceSvgSrcPath, join(slicesDir, sliceDiagramFile));
+      } else {
+        sliceSvgForCrop ??= composeSvg(raw, model, grid, dirname(file), slicesDir);
+        const cropped = cropToSlice(sliceSvgForCrop, grid, slice.index);
+        await writeFile(join(slicesDir, sliceDiagramFile), cropped, "utf8");
+      }
+
       const elementRefs = new Map<string, string>();
       for (const el of slice.elements) {
         const ref = refs.refById.get(el.id);
@@ -101,7 +125,7 @@ export async function buildCatalog(
       const page = renderSlicePage({
         modelName: model.name,
         diagramFile: `../${diagramFile}`,
-        format,
+        sliceDiagramFile,
         slice,
         sliceKey,
         pattern,

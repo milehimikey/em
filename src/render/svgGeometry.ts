@@ -21,7 +21,9 @@ export interface Rect {
 export const NODE_GROUP = /<g\b[^>]*class="node"[^>]*>([\s\S]*?)<\/g>/g;
 export const TITLE = /<title>([\s\S]*?)<\/title>/;
 const SHAPE = /<(?:polygon|path)\b[^>]*\b(?:points|d)="([^"]*)"/;
-const NUM = /-?\d*\.?\d+(?:e-?\d+)?/gi;
+// Exported: cropToSlice (sliceOverlay.ts) reuses this to pull x-coordinates out of an
+// edge path's own `d` attribute, so its bounding box can be compared against the crop.
+export const NUM = /-?\d*\.?\d+(?:e-?\d+)?/gi;
 
 /** Map each requested node id to its rectangle in SVG coordinates. */
 export function parseNodeRects(svg: string, ids: Set<string>): Map<string, Rect> {
@@ -129,6 +131,46 @@ export function fitCanvas(svg: string, box: Box | null): string {
     .replace(wpt[0], `width="${round(+wpt[1] * (nvw / vw))}pt"`)
     .replace(hpt[0], `height="${round(+hpt[1] * (nvh / vh))}pt"`)
     .replace(vb[0], `viewBox="${round(left)} ${round(top)} ${round(nvw)} ${round(nvh)}"`);
+}
+
+/** A root/viewBox-space horizontal range — e.g. a slice's x-extent, already run
+ *  through readGraphTransform()'s toRoot(). */
+export interface XRange {
+  x0: number;
+  x1: number;
+}
+
+const CROP_PAD = 24; // matches serve.ts's live-viewer slice-pan PAD — same visual
+                      // framing whether the crop is done live (viewBox swap) or here (baked)
+
+/**
+ * Shrink the canvas to a root-space x-range, leaving the existing top/bottom (full
+ * vertical extent) untouched — the shrink-only mirror of fitCanvas's grow-only viewBox
+ * surgery. Unlike fitCanvas, `range` is already root/viewBox space (callers run
+ * graph-space rects through readGraphTransform().toRoot() first, the same conversion
+ * fitCanvas applies to its own box argument), so no transform happens here.
+ */
+export function cropCanvas(svg: string, range: XRange): string {
+  const vb = /viewBox="([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)"/.exec(svg);
+  const wpt = /width="([\d.eE+-]+)pt"/.exec(svg);
+  const hpt = /height="([\d.eE+-]+)pt"/.exec(svg);
+  if (!vb || !wpt || !hpt) return svg; // can't resize safely — leave it alone
+
+  const minX = +vb[1];
+  const minY = +vb[2];
+  const vw = +vb[3];
+  const vh = +vb[4];
+  if (vw <= 0 || vh <= 0) return svg;
+
+  // clamp to the existing viewBox — this only ever shrinks, never grows past what's there
+  const left = Math.max(minX, Math.floor(range.x0 - CROP_PAD));
+  const right = Math.min(minX + vw, Math.ceil(range.x1 + CROP_PAD));
+  const nvw = Math.max(1, right - left);
+  if (left === minX && nvw === vw) return svg;
+
+  return svg
+    .replace(wpt[0], `width="${round(+wpt[1] * (nvw / vw))}pt"`)
+    .replace(vb[0], `viewBox="${round(left)} ${round(minY)} ${round(nvw)} ${round(vh)}"`);
 }
 
 function round(v: number): number {

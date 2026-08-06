@@ -82,6 +82,7 @@ function layout(title: string, bodyHtml: string, homeHref: string): string {
     .status { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: 12px; background: #e4e7eb; }
     .pattern { font-size: 12px; color: #52606d; }
     object.diagram { width: 100%; border: 1px solid #ddd; margin: 1rem 0; }
+    .full-diagram-link { margin: -.5rem 0 1rem; font-size: 13px; }
     .doc { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #ddd; }
     .doc h1 { font-size: 1.3rem; }
     .doc h2 { font-size: 1.05rem; }
@@ -136,10 +137,15 @@ ${sections}`,
 
 export interface SlicePageArgs {
   modelName: string;
-  /** Diagram path relative to this page (which lives in <outDir>/<model-key>/slices/). */
+  /** Full model diagram path relative to this page (which lives in
+   *  <outDir>/<model-key>/slices/) — shown as a secondary "view full diagram" link
+   *  (a plain anchor, not an embed, so no MIME type is needed here). */
   diagramFile: string;
-  /** Format of the file at `diagramFile` — picks the `<object>`'s MIME type. */
-  format: "svg" | "png";
+  /** This slice's own cropped/authored diagram snippet, relative to this page (same
+   *  directory) — always svg, regardless of `format` (the main diagram's chosen
+   *  format), since the snippet is either a hand-authored .svg or a string-based crop
+   *  of the composed SVG; neither can produce a PNG. Shown as the page's primary diagram. */
+  sliceDiagramFile: string;
   slice: Slice;
   sliceKey: string;
   pattern: SlicePattern;
@@ -192,7 +198,7 @@ ${rows}
 }
 
 export function renderSlicePage(args: SlicePageArgs): string {
-  const { modelName, diagramFile, format, slice, pattern, elementRefs, doc, docExpectedPath } = args;
+  const { modelName, diagramFile, sliceDiagramFile, slice, pattern, elementRefs, doc, docExpectedPath } = args;
 
   const docSection = doc
     ? `    <div class="doc">${doc.html}</div>`
@@ -203,7 +209,8 @@ export function renderSlicePage(args: SlicePageArgs): string {
     `    <p><a href="../../index.html">&larr; ${escapeHtml(modelName)}</a></p>
     <h1>${escapeHtml(slice.name)}</h1>
     <p class="pattern">${escapeHtml(slicePatternLabel(pattern))} · <span class="status">${escapeHtml(statusLabel(!!doc, doc?.status ?? null))}</span></p>
-    <object class="diagram" type="${diagramMimeType(format)}" data="${escapeHtml(diagramFile)}"></object>
+    <object class="diagram" type="image/svg+xml" data="${escapeHtml(sliceDiagramFile)}"></object>
+    <p class="full-diagram-link"><a href="${escapeHtml(diagramFile)}">View full model diagram &rarr;</a></p>
 ${renderElementsTable(slice, elementRefs)}
 ${docSection}`,
     "../../index.html",

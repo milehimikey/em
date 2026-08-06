@@ -26,7 +26,16 @@
 import { NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId } from "../layout/grid.js";
 import { rowLabelId } from "../emit/dot.js";
-import { decode, readGraphTransform, NODE_GROUP, TITLE, Rect } from "./svgGeometry.js";
+import {
+  decode,
+  readGraphTransform,
+  parseNodeRects,
+  cropCanvas,
+  NODE_GROUP,
+  TITLE,
+  NUM,
+  Rect,
+} from "./svgGeometry.js";
 
 const TEXT = /<text\b([^>]*)>([^<]*)<\/text>/;
 
@@ -84,6 +93,110 @@ export function buildSliceOverlay(svg: string, grid: Grid, rects: Map<string, Re
   const metadata = `<metadata id="em-slices">${escXml(JSON.stringify(payload))}</metadata>`;
   const style = `<style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>`;
   return metadata + style;
+}
+
+/**
+ * Crop an already-composed full-model SVG down to one slice's own column, for
+ * embedding as a standalone slice-scoped diagram (`em render --slice`, `em catalog`'s
+ * per-slice pages).
+ *
+ * The slice's own x-range comes from its header-cell rect (see the file header
+ * comment for why). Row/swimlane labels live in a single dedicated gutter column at
+ * the far left of the *whole* model (see relocateRowLabels) — unioning the crop with
+ * their real position, the way the live storyboard viewer's client-side pan does,
+ * would drag every slice but the first few all the way back to column 0, making the
+ * "crop" barely narrower than the full diagram. So labels are relocated to sit
+ * snugly against this slice's own left edge first, and *that* local position is what
+ * gets unioned into the crop range — every slice gets an equally narrow snippet,
+ * with its own swimlane labels in frame.
+ *
+ * Returns `svg` unchanged if the requested slice has no rect (out-of-range index, or
+ * an SVG shape parseNodeRects didn't expect).
+ */
+export function cropToSlice(svg: string, grid: Grid, sliceIndex: number): string {
+  const rects = parseNodeRects(svg, new Set([headerCellId(sliceIndex)]));
+  const r = rects.get(headerCellId(sliceIndex));
+  if (!r) return svg;
+
+  const relocated = relocateRowLabels(svg, grid.rows.length, r.left);
+  const transform = readGraphTransform(relocated);
+  const toRootX = (x: number): number => transform.toRoot(x, 0).x;
+
+  let x0 = toRootX(r.left);
+  let x1 = toRootX(r.right);
+  const labels = rowLabelXRange(relocated, grid.rows.length, toRootX);
+  if (labels) {
+    x0 = Math.min(x0, labels.x0);
+    x1 = Math.max(x1, labels.x1);
+  }
+  return dropOffscreenEdges(cropCanvas(relocated, { x0, x1 }), toRootX);
+}
+
+const LABEL_GAP = 12; // graph-space gap between a relocated label's right edge and the slice's own left edge
+
+/**
+ * Move every row's label `<text>` (graph-space, still text-anchor="middle") to sit
+ * just left of `leftGraphX` — this slice's own header-cell left edge — instead of
+ * its original position in the model-wide label gutter. Each row keeps its own
+ * halfWidth (same character-count/font-size estimate rowLabelXRange uses), so a
+ * "Fulfillment Board"-length label still gets enough room, right-aligned with a
+ * `LABEL_GAP` breathing space before the slice starts. Rows with no label text
+ * (the header row) or no rect (shouldn't happen, but matches this file's other
+ * defensive misses) are left untouched.
+ */
+function relocateRowLabels(svg: string, rowCount: number, leftGraphX: number): string {
+  let out = svg;
+  for (let r = 0; r < rowCount; r++) {
+    const re = new RegExp(`(<title>${rowLabelId(r)}<\\/title>)([\\s\\S]*?)(<\\/g>)`);
+    const m = re.exec(out);
+    if (!m) continue;
+    const textM = TEXT.exec(m[2]);
+    if (!textM) continue; // header row's label is "" — plaintext emits no <text> at all
+    const fontSize = +(attr(textM[1], "font-size") ?? 10);
+    const halfWidth = (decode(textM[2]).length * fontSize) / 2 + 4;
+    const newX = leftGraphX - LABEL_GAP - halfWidth;
+    if (!/\bx="(-?[\d.]+)"/.test(textM[1])) continue; // no x to relocate — leave as-is
+    const newText = textM[0].replace(/\bx="(-?[\d.]+)"/, `x="${newX}"`);
+    const newBody = m[2].slice(0, textM.index) + newText + m[2].slice(textM.index + textM[0].length);
+    out = out.slice(0, m.index) + m[1] + newBody + m[3] + out.slice(m.index + m[0].length);
+  }
+  return out;
+}
+
+/**
+ * Drop every `em-edges` path whose bounding box falls entirely outside the (already
+ * cropped) viewBox — edges are drawn for the whole model, not just the slice being
+ * cropped to, so a cross-slice arrow many columns away from this one is common (see
+ * cropToSlice's callers) and, left in, is pure dead weight in an already-cropped file.
+ * Worse than dead weight, in fact: a `marker-end` arrowhead anchored entirely outside
+ * the canvas crashes resvg's in-process PNG rasterizer (a native panic, not a
+ * catchable JS exception) — see the regression test for the concrete repro. A path
+ * only *partially* outside the crop (the "truncated at the boundary" case the ticket
+ * accepts) is left alone; only ones with zero overlap are removed.
+ *
+ * Returns `svg` unchanged if its viewBox can't be parsed (defensive, matches
+ * cropCanvas's own guard).
+ */
+function dropOffscreenEdges(svg: string, toRootX: (x: number) => number): string {
+  const vb = /viewBox="([\d.eE+-]+)\s+[\d.eE+-]+\s+([\d.eE+-]+)\s+[\d.eE+-]+"/.exec(svg);
+  if (!vb) return svg;
+  const visibleLeft = +vb[1];
+  const visibleRight = visibleLeft + +vb[2];
+
+  return svg.replace(/<g class="em-edges">([\s\S]*?)<\/g>/, (_whole, body: string) => {
+    const paths = body.match(/<path\b[^>]*\/>/g) ?? [];
+    const kept = paths.filter((path: string) => {
+      const d = /\bd="([^"]*)"/.exec(path)?.[1] ?? "";
+      const nums = (d.match(NUM) ?? []).map(Number);
+      const xs: number[] = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) xs.push(toRootX(nums[i]));
+      if (xs.length === 0) return true; // unparseable — keep it, don't silently drop
+      const left = Math.min(...xs);
+      const right = Math.max(...xs);
+      return right >= visibleLeft && left <= visibleRight; // any overlap at all
+    });
+    return `<g class="em-edges">${kept.join("")}</g>`;
+  });
 }
 
 /** Estimate the row-label column's x-range from its `<text>` elements — see the

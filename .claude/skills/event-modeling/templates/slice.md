@@ -3,9 +3,14 @@ Rich slice design document. One per slice, stored in <model>/slices/<slice-name>
 linked from the .em model with:  note "slices/<slice-name>.md"  on the slice's defining element.
 Fill every section through Socratic questioning. Leave "Open Questions" rather than guessing.
 Replace the bracketed placeholders; delete guidance comments before finishing.
+
+The diagram below is generated, not hand-drawn: `em render <model>.em --slice "{{Slice Name}}"
+-o slices/{{slice-name}}.svg` (kebab-case the slice name to match this doc's own filename).
 -->
 
 # Slice: {{Slice Name}}
+
+![Diagram](./{{slice-name}}.svg)
 
 - **Pattern:** {{State Change | State View | Automation | Translation}}
 - **Swimlane:** {{Persona/Actor}} → {{Context/Aggregate}}

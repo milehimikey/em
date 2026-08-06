@@ -74,7 +74,7 @@ describe("renderSlicePage", () => {
     const html = renderSlicePage({
       modelName: "Checkout",
       diagramFile: "../diagram.svg",
-      format: "svg",
+      sliceDiagramFile: "place-order.svg",
       slice,
       sliceKey: "place-order",
       pattern: "state-change",
@@ -83,7 +83,10 @@ describe("renderSlicePage", () => {
       docExpectedPath: "slices/place-order.md",
     });
 
-    expect(html).toContain('data="../diagram.svg"');
+    // the slice's own snippet is the primary embed
+    expect(html).toContain('<object class="diagram" type="image/svg+xml" data="place-order.svg">');
+    // the full model diagram is a secondary link, not embedded
+    expect(html).toContain('href="../diagram.svg">View full model diagram');
     expect(html).toContain("Place Order");
     expect(html).toContain("total: Money");
     expect(html).toContain("needs currency?");
@@ -101,7 +104,7 @@ describe("renderSlicePage", () => {
     const html = renderSlicePage({
       modelName: "Checkout",
       diagramFile: "../diagram.svg",
-      format: "svg",
+      sliceDiagramFile: "place-order.svg",
       slice,
       sliceKey: "place-order",
       pattern: "state-change",
@@ -115,7 +118,7 @@ describe("renderSlicePage", () => {
     expect(html).toContain("Checkout"); // element table still renders from the AST alone
   });
 
-  it("declares the diagram's actual MIME type — image/png for a png diagram, not svg", () => {
+  it("always embeds the slice snippet as svg, even when the main diagram is png", () => {
     const { model } = compile(`slice "Place Order" {
   ui Checkout @Customer
   command Place Order
@@ -123,8 +126,8 @@ describe("renderSlicePage", () => {
 }`);
     const html = renderSlicePage({
       modelName: "Checkout",
-      diagramFile: "../diagram.png",
-      format: "png",
+      diagramFile: "../diagram.png", // the main diagram's own format, irrelevant to the snippet
+      sliceDiagramFile: "place-order.svg",
       slice: model.slices[0],
       sliceKey: "place-order",
       pattern: "state-change",
@@ -132,8 +135,9 @@ describe("renderSlicePage", () => {
       doc: null,
       docExpectedPath: "slices/place-order.md",
     });
-    expect(html).toContain('type="image/png"');
-    expect(html).not.toContain('type="image/svg+xml"');
+    expect(html).toContain('type="image/svg+xml" data="place-order.svg"');
+    // the full-diagram link is a plain anchor — no MIME type attached to it
+    expect(html).toContain('href="../diagram.png">View full model diagram');
   });
 });
 
@@ -153,7 +157,7 @@ describe("layout's home link", () => {
     const html = renderSlicePage({
       modelName: "Checkout",
       diagramFile: "../diagram.svg",
-      format: "svg",
+      sliceDiagramFile: "place-order.svg",
       slice: model.slices[0],
       sliceKey: "place-order",
       pattern: "state-change",

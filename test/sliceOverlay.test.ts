@@ -4,7 +4,7 @@ import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
 import { layout } from "../src/layout/grid.js";
 import { parseNodeRects } from "../src/render/svgGeometry.js";
-import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "../src/render/sliceOverlay.js";
+import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay, cropToSlice } from "../src/render/sliceOverlay.js";
 
 // Two slices, three bands (ui/api/event) — enough to exercise element tagging
 // across slices, header-cell ranges, and a multi-row swimlane label range.
@@ -127,5 +127,48 @@ describe("buildSliceOverlay", () => {
     // Row-label range shifts/scales the same way as the untransformed-fixture
     // test's {x0: -94, x1: 59}: 2*(-94+4)=-180, 2*(59+4)=126.
     expect(payload.rowLabels).toEqual({ x0: -180, x1: 126 });
+  });
+});
+
+// Same fixture as above, plus the root viewBox/width/height cropCanvas needs —
+// generous enough to contain every element/header-cell/row-label coordinate above.
+const CROPPABLE_SVG = SVG.replace(
+  "<svg>",
+  '<svg viewBox="-150 -250 400 260" width="400pt" height="260pt">',
+);
+
+describe("cropToSlice", () => {
+  it("crops to a slice's header-cell x-range, unioned with its LOCALLY-relocated row labels, leaving y untouched", () => {
+    const { grid } = build();
+    const out = cropToSlice(CROPPABLE_SVG, grid, 0);
+    // Row labels are relocated to sit just left of slice 0's header cell (x=[0,100])
+    // before the union — NOT unioned with their original far-away position (see
+    // relocateRowLabels; that would drag every slice back to the label gutter).
+    // "Customer" (halfWidth 44) relocates to x=0-12-44=-56, giving [-100,-12]; that's
+    // the widest of the three relocated rows, so it sets the union's left bound.
+    // Union with the header cell [0,100] is [-100,100], padded by CROP_PAD=24:
+    // [-124,124], width 248.
+    expect(out).toContain('viewBox="-124 -250 248 260"');
+    expect(out).toContain('width="248pt"'); // 400 * (248/400)
+    expect(out).toContain('height="260pt"'); // unchanged
+  });
+
+  it("crops a different slice to its own (equally narrow) x-range, not a wider one", () => {
+    const { grid } = build();
+    const out = cropToSlice(CROPPABLE_SVG, grid, 1);
+    // Same relocation, now snugged against slice 1's header cell (x=[120,220]):
+    // "Customer" relocates to x=120-12-44=64, giving [20,108]. Union with [120,220]
+    // is [20,220], padded: [-4,244], width 248 — the SAME width as slice 0's crop
+    // above, confirming every slice gets an equally narrow snippet regardless of
+    // how far from column 0 it sits (the bug this test guards against: unioning
+    // with the label column's real, far-left position would make this crop far
+    // wider than slice 0's).
+    expect(out).toContain('viewBox="-4 -250 248 260"');
+    expect(out).toContain('width="248pt"');
+  });
+
+  it("returns the input unchanged for an out-of-range slice index", () => {
+    const { grid } = build();
+    expect(cropToSlice(CROPPABLE_SVG, grid, 5)).toBe(CROPPABLE_SVG);
   });
 });
