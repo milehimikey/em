@@ -17,6 +17,7 @@ run on every command that reads a model.
 | An `arrow` endpoint that matches no element | Fix the name |
 | An `arrow` that points backward in time | Restructure so the target comes later |
 | An `arrow` between element kinds the four patterns don't connect | Add the missing step — the message names it |
+| A declared `type` nesting itself with no array to terminate it (directly or through other declared types) | Break the cycle, or route the self/mutual reference through an array (`children: Node[]`) if the data is genuinely tree-shaped — see [dsl.md](dsl.md#named-types) |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
@@ -54,6 +55,7 @@ each; run `em validate` on it to see all five.
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
 | A read model nothing consumes | Add the screen that displays it or the reaction that watches it, or drop the instance |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
+| A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
@@ -149,3 +151,7 @@ infer arrows in the first place: a `translation` or `processor` sharing a slice 
 only warns when a reaction shares a slice with a command. Reactions must always go through a
 command (`reaction → command → event`, split across two slices); enforce that by
 construction. The [patterns](patterns.md) doc covers why.
+
+`em validate` is also single-model by design: a name reused across kinds *within* one file is
+flagged ("ambiguous names", above), but the same term used inconsistently *across* files is
+not — that's `em glossary`'s job, not the validator's (see [cli.md](cli.md#em-glossary-files)).

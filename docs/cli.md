@@ -8,6 +8,7 @@
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
+| `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 
@@ -108,13 +109,17 @@ em export model.em -o model.json      # write to a file
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.2"`):
+**Schema summary** (`schemaVersion: "1.3"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `slices`, `arrows`.
+- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`.
+  - `types` (added in schema `1.3`) lists every declared named type (see
+    [dsl.md](dsl.md#named-types)), independent of the slice timeline. Each has a stable `ref`
+    (`types/<slug(name)>`, suffixed `~2`, `~3`, … — plus a warning diagnostic — on a name
+    collision), `name`, `line`, and `fields` in declaration order.
   - Each **slice** has a stable `key` (`slug(name)`, with a `~2`, `~3`, … suffix — and a
     warning diagnostic — if two slices share a name), plus `name`, `index`, `line`, `source`
     (the slice's `source "url"` clause — a link to the ticket/conversation it traces back to,
@@ -133,6 +138,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
     timeline instance of a `view … again` read model; `null` for everything else.
+  - Each **field** — on both a declared type's own `fields` and an element's `fields` — has
+    `name`, `type` (the raw type string, unchanged), and `typeRef` (added in schema `1.3`):
+    `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`
+    otherwise. See [dsl.md](dsl.md#named-types).
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
 - `diagnostics` — every diagnostic `em validate` would print (severity, message, line),
   plus any export-only ref-collision warnings.
@@ -154,11 +163,13 @@ See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step a
 
 Compares two models structurally and prints a rollup summary plus one line per change —
 slices and elements added/removed/moved, a slice's `source` added/removed/changed,
-field/`from`/note changes, issue lifecycle (opened, resolved, text changed), and an event's
-integration-surface promotion/demotion (`public` marked/unmarked). It's the semantic
-counterpart to `git diff` on a `.em` file: raw `git diff` shows line hunks; `em diff` groups
-them into what actually happened to the model, and — crucially — collapses a cross-slice move
-into one `moved:` line instead of a delete-hunk-plus-add-hunk in two different places.
+field/`from`/note changes, issue lifecycle (opened, resolved, text changed), an event's
+integration-surface promotion/demotion (`public` marked/unmarked), and declared types
+added/removed along with their own field changes (see [dsl.md](dsl.md#named-types)). It's the
+semantic counterpart to `git diff` on a `.em` file: raw `git diff` shows line hunks; `em diff`
+groups them into what actually happened to the model, and — crucially — collapses a
+cross-slice move into one `moved:` line instead of a delete-hunk-plus-add-hunk in two
+different places.
 
 When a change or removal involves an element the **old** side annotates with `divergence
 "text"`, the entry is additionally tagged with that text — see "Accepted divergence" below.
@@ -211,6 +222,14 @@ reports it as `event marked public` / `event unmarked public` — its own change
 lumped in with a generic field change, since a contract consumer needs to know exactly when
 an event enters or leaves the published surface.
 
+**Declared types** (`type-added`/`type-removed`/`type-field-added`/`type-field-removed`/
+`type-field-changed`, added in schema `1.3`). Types are matched by their `em export` `ref`,
+same identity scheme as elements — but with no slice scoping and no move detection, since a
+`type` declaration isn't slice-scoped. A type rename reads as remove+add, the same convention
+as an element rename. A surviving type's own field changes are reported the same shape as an
+element's field changes (`type-field-added`/`-removed`/`-changed`), just without the
+slice/from/note/issue/public dimensions a `type` declaration doesn't have.
+
 Example output:
 
 ```
@@ -226,7 +245,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.2"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.3"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -236,9 +255,10 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 17 counters the text rollup line summarizes (`slicesAdded`,
+- `counts` — the same 20 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
-  `eventsMarkedPublic`, `eventsUnmarkedPublic`, …), as-is.
+  `eventsMarkedPublic`, `eventsUnmarkedPublic`, `typesAdded`, `typesRemoved`,
+  `typeFieldChanges`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:
@@ -272,6 +292,92 @@ Entries identify elements by display name (`name`, `sliceName`), not by the `em 
 `ref`/slice `key` the diff actually matched on — joining a diff entry back to an `em export`
 document means re-deriving the slug. Carrying refs on entries is a planned additive change
 ([#40](https://github.com/milehimikey/em/issues/40)).
+
+## `em glossary <files...>`
+
+Aggregates the terms declared across N independently-compiled `.em` models — element
+names, field names, personas, contexts — into one glossary, and flags a term used
+inconsistently across models. This is the ubiquitous-language complement to `em diff`:
+`em diff` compares two revisions of *one* model; `em glossary` compares vocabulary across
+*several* models. Each file is compiled on its own (same as `em diff`'s two-file form) —
+`em glossary` never merges models, only correlates their terms by normalized name.
+
+Every input file must compile without errors; `em glossary` refuses (same convention as
+`em render`/`em export`/`em diff`) and prints each offending file's diagnostics, prefixed
+with its path, when any file has one. Warnings never block and are printed the same way,
+to stderr — stdout stays clean for `--json`.
+
+Two conflict rules in v1:
+
+- **Kind conflict** — the same normalized element name is a different `kind` in ≥2 models
+  (e.g. "Order" is an `event` in one model, a `view` in another). Requiring ≥2 distinct
+  models keeps this from overlapping with `em validate`'s own single-model "ambiguous
+  names" check (a name reused within one file).
+- **Field-type conflict** — the same normalized field name has a different `type` (or is
+  typed in one model and untyped in another) across ≥2 models. Field names are a global
+  namespace, not qualified by owning element, matching how `em validate`'s own
+  fields-completeness checks already union field names across a slice.
+
+Persona/context naming (e.g. casing differences like "Customer" vs. "customer") is
+explicitly out of scope for v1.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print the full glossary document instead of the text report |
+| `-o, --out <path>` | Write the JSON document to a file instead of stdout (requires `--json`) |
+| `--list-conflicts` | Print only the conflict lines, no scale summary |
+| `--fail-on-conflicts` | Exit non-zero if any cross-model conflicts were found (opt-in — conflicts are warnings and don't block by default) |
+
+```bash
+em glossary checkout.em billing.em                    # text report
+em glossary checkout.em billing.em --list-conflicts    # just the conflicts, for grep/CI
+em glossary checkout.em billing.em --json -o glossary.json
+em glossary checkout.em billing.em --fail-on-conflicts # CI gate
+```
+
+Default text report: a one-line scale summary (`"3 models, 62 terms, 2 conflicts"`)
+followed by either every conflict line or `"no conflicts"`. Deliberately **not** treated
+like `divergence` (no `--fail-on-divergences` exists, because an accepted divergence must
+never fail a build): a glossary conflict has no ratification mechanism in v1, so every
+conflict reported is by construction un-ratified — closer in spirit to an open `issue`
+than to an accepted `divergence` — hence `--fail-on-conflicts` exists, opt-in and off by
+default, same shape as `em validate --fail-on-issues`.
+
+Example output:
+
+```
+2 models, 5 terms, 2 conflicts
+
+kind-conflict "Order Confirmed": event in checkout.em:5 (slice "Submit Order"), view in billing.em:4 (slice "Confirm Invoice")
+field-type-conflict "total": Money on event "Order Confirmed" in checkout.em:5, number on view "Order Confirmed" in billing.em:4
+```
+
+**`--json` shape** (`glossarySchemaVersion: "1.0"`, versioned independently of both `em
+export`'s `schemaVersion` and `em diff`'s `diffSchemaVersion` — a glossary is a
+different-shaped artifact, an N-model aggregate rather than a single model's snapshot or a
+two-model comparison, and `em glossary` never reads or requires an existing `em export`
+document, so the schemas evolve independently):
+
+- `generator` — `{ name, version }` of the tool that produced the glossary.
+- `models` — `{ label, sha256 }` per input file, in argument order.
+- `elements` — one entry per normalized element name: `{ key, name, occurrences }`, where
+  each occurrence is `{ model, kind, line, sliceName }`.
+- `fields` — one entry per normalized field name: `{ key, name, occurrences }`, where each
+  occurrence is `{ model, elementKind, elementName, type, line, sliceName }` (`type` is
+  `null` when the field is untyped).
+- `personas` / `contexts` — one entry per normalized name: `{ key, name, occurrences }`,
+  where each occurrence is just `{ model }` (collected for completeness; never
+  conflict-checked in v1).
+- `conflicts` — `{ type: "kind-conflict" | "field-type-conflict", term, occurrences }`,
+  same occurrence shapes as above. `occurrences` is every occurrence of the term across
+  *all* input models that declare it, not filtered down to the disagreeing subset — with
+  3+ models, a conflict's `occurrences` array includes entries that agree with each other
+  alongside the one(s) that don't (same "every occurrence" convention the text report's
+  `formatConflictLine` already uses). Cross-reference `kind`/`type` per occurrence to see
+  which side(s) actually disagree.
+
+Every array is sorted by normalized key, so output is deterministic for the same set of
+inputs in the same order.
 
 ## `em changelog <file>`
 

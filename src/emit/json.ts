@@ -12,7 +12,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Element, NormalizedModel, resolveByName } from "../model/model.js";
+import { Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
+import { Field } from "../parser/ast.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 
@@ -24,7 +25,7 @@ export const GENERATOR_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8"),
 ).version;
 
-export const SCHEMA_VERSION = "1.2";
+export const SCHEMA_VERSION = "1.3";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -38,6 +39,8 @@ export interface RefsResult {
   sliceKeys: string[];
   /** Internal `Element.id` -> stable export `ref`. */
   refById: Map<string, string>;
+  /** Internal `TypeDecl.id` -> stable export `ref` (`types/<slug(name)>`). */
+  refByTypeId: Map<string, string>;
   /** Ref-collision warnings raised while assigning keys/refs (duplicate names). */
   diagnostics: Diagnostic[];
 }
@@ -47,7 +50,10 @@ export interface RefsResult {
  * export ref (`<sliceKey>/<kind>.<slug(name)>`), in document order, deduped
  * with a `~2`, `~3`, … suffix on collision. Shared by `em export` (this
  * module) and `em diff` (`src/model/diff.ts`), which both need the same
- * edit-stable identity scheme to match elements/slices across models.
+ * edit-stable identity scheme to match elements/slices across models. Also
+ * assigns every declared type its export ref (`types/<slug(name)>`) — types
+ * aren't slice-scoped, so no sliceKey prefix, same dedup-with-warning
+ * machinery otherwise.
  */
 export function computeRefs(model: NormalizedModel): RefsResult {
   const diagnostics: Diagnostic[] = [];
@@ -88,7 +94,51 @@ export function computeRefs(model: NormalizedModel): RefsResult {
     }
   });
 
-  return { sliceKeys, refById, diagnostics };
+  const usedTypeRefs = new Set<string>();
+  const refByTypeId = new Map<string, string>();
+  for (const t of model.types) {
+    const base = `types/${kebabSlug(t.name)}`;
+    const ref = dedupe(base, usedTypeRefs, "~");
+    if (ref !== base) {
+      diagnostics.push({
+        severity: "warning",
+        message: `duplicate type "${t.name}" (export ref "${base}" already used); rename for a stable export ref`,
+        line: t.line,
+      });
+    }
+    refByTypeId.set(t.id, ref);
+  }
+
+  return { sliceKeys, refById, refByTypeId, diagnostics };
+}
+
+export interface FieldExport {
+  name: string;
+  type: string | null;
+  typeRef: { name: string; ref: string; array: boolean } | null;
+}
+
+/**
+ * Export a single field, additively: `name`/`type` are exactly what today's consumers already
+ * see. `typeRef` is the new, purely-additive key — non-null only when `type` (bare or `[]`-
+ * suffixed) names a declared `type`, else `null`, same as every field in a model that declares
+ * no `type` blocks at all. Shared by both a declared type's own fields (`model.types[].fields`)
+ * and ordinary element fields (`model.slices[].elements[].fields`) so both get identical
+ * resolution.
+ */
+function fieldExport(
+  f: Field,
+  typesByName: Map<string, TypeDecl>,
+  refByTypeId: Map<string, string>,
+): FieldExport {
+  const resolved = resolveTypeRef(f.type, typesByName);
+  return {
+    name: f.name,
+    type: f.type ?? null,
+    typeRef: resolved
+      ? { name: resolved.typeDecl.name, ref: refByTypeId.get(resolved.typeDecl.id)!, array: resolved.array }
+      : null,
+  };
 }
 
 /** Build the `em export` document for an already-validated (error-free) model. */
@@ -98,7 +148,7 @@ export function buildExport(
   source: string,
   path: string,
 ): ExportResult {
-  const { sliceKeys, refById, diagnostics: extra } = computeRefs(model);
+  const { sliceKeys, refById, refByTypeId, diagnostics: extra } = computeRefs(model);
 
   const refOf = (id: string | undefined): string | null =>
     id ? refById.get(id) ?? null : null;
@@ -117,6 +167,14 @@ export function buildExport(
       personas: model.personas,
       contexts: model.contexts,
       hasAutomation: model.hasAutomation,
+      // Declared named types (MIL-64) — independent of the slice timeline, so listed
+      // once here rather than nested inside any slice.
+      types: model.types.map((t) => ({
+        ref: refByTypeId.get(t.id)!,
+        name: t.name,
+        line: t.line,
+        fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId)),
+      })),
       slices: model.slices.map((slice, sliceIndex) => ({
         key: sliceKeys[sliceIndex],
         name: slice.name,
@@ -131,7 +189,9 @@ export function buildExport(
           kind: el.kind,
           name: el.name,
           line: el.line,
-          fields: el.fields ? el.fields.map((f) => ({ name: f.name, type: f.type ?? null })) : null,
+          fields: el.fields
+            ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId))
+            : null,
           note: el.note ?? null,
           issue: el.issue ?? null,
           divergence: el.divergence ?? null,

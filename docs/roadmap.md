@@ -9,10 +9,13 @@ a ratified model-vs-code deviation stops re-firing as drift, provenance links fr
 to its ticket (`source`), a lightweight usage-data convention (skill Usage log —
 [usage-data.md](usage-data.md)) so the next roadmap pass has real signal instead of guesswork,
 a `public` marker on events for integration-surface promotion (contract generators can now
-tell a published event from an internal-only fact), and stakeholder review mode — a slice-by-
-slice storyboard walkthrough in the live viewer (`em watch --serve`'s "Review mode"), with
-red notes captured live during the session. [workflow.md](workflow.md) is the resulting
-picture.
+tell a published event from an internal-only fact), stakeholder review mode — a slice-by-slice
+storyboard walkthrough in the live viewer (`em watch --serve`'s "Review mode"), with red notes
+captured live during the session — and, most recently, `em glossary` — a cross-model glossary
+of element names, field names, personas, and contexts, with kind- and field-type-conflict
+checks across models — giving the `extract`/`conform` phases a fuzzy-name-matching aid so
+extraction vocabulary drift doesn't masquerade as real drift. [workflow.md](workflow.md) is the
+resulting picture.
 
 **Modeling and rendering**
 
@@ -41,7 +44,6 @@ that needs to browse models outside git:
 
 - A static catalog site rendered from git history (git stays the only history store).
 - An MCP server over `em export`, for agent surfaces beyond Claude Code.
-- A glossary export, with cross-model consistency checks on shared terms.
 
 Have a case for one of these, or something missing? Open an issue — a concrete use case is
 exactly what moves something out of the waiting list.
