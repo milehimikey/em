@@ -81,8 +81,22 @@ function layout(title: string, bodyHtml: string, homeHref: string): string {
     th { font-weight: 600; background: #f0f2f5; }
     .status { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: 12px; background: #e4e7eb; }
     .pattern { font-size: 12px; color: #52606d; }
-    object.diagram { width: 100%; border: 1px solid #ddd; margin: 1rem 0; }
-    .full-diagram-link { margin: -.5rem 0 1rem; font-size: 13px; }
+    /* Fixed-height frame, not a width-driven one: a slice snippet is often narrow
+       and tall (cropping shrinks width, but height stays the full model's height),
+       so sizing by width alone would blow a narrow crop's height up hugely.
+       object-fit doesn't apply to <object> the way it does <img> (needed here,
+       not <img>, so the SVG's clickable note links keep working) — giving it a
+       DEFINITE width AND height together (e.g. 100%/100%) makes it stretch
+       non-uniformly to fill both, distorting the aspect ratio instead of
+       preserving it. width:auto + height:100% + max-width:100% instead sizes it
+       from its own intrinsic aspect ratio (capped, never overflowing the frame),
+       which the flex centering below then centers horizontally. */
+    .diagram-frame {
+      height: 420px; border: 1px solid #ddd; margin: 1rem 0; overflow: hidden; background: #fff;
+      display: flex; align-items: flex-start; justify-content: center;
+    }
+    object.diagram { width: auto; height: 100%; max-width: 100%; }
+    .full-diagram-link { margin: 0 0 1rem; font-size: 13px; }
     .doc { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #ddd; }
     .doc h1 { font-size: 1.3rem; }
     .doc h2 { font-size: 1.05rem; }
@@ -116,7 +130,7 @@ export function renderIndexPage(models: CatalogModelSummary[], title: string, fo
       return `    <section>
       <h2>${escapeHtml(m.name)}</h2>
       <p>${m.slices.length} slice${m.slices.length === 1 ? "" : "s"} · <code>${escapeHtml(m.file)}</code> · <a href="${diagramHref}">open diagram full-size</a></p>
-      <object class="diagram" type="${diagramMimeType(format)}" data="${diagramHref}"></object>
+      <div class="diagram-frame"><object class="diagram" type="${diagramMimeType(format)}" data="${diagramHref}"></object></div>
       <table>
         <thead><tr><th>Slice</th><th>Pattern</th><th>Status</th></tr></thead>
         <tbody>
@@ -209,7 +223,7 @@ export function renderSlicePage(args: SlicePageArgs): string {
     `    <p><a href="../../index.html">&larr; ${escapeHtml(modelName)}</a></p>
     <h1>${escapeHtml(slice.name)}</h1>
     <p class="pattern">${escapeHtml(slicePatternLabel(pattern))} · <span class="status">${escapeHtml(statusLabel(!!doc, doc?.status ?? null))}</span></p>
-    <object class="diagram" type="image/svg+xml" data="${escapeHtml(sliceDiagramFile)}"></object>
+    <div class="diagram-frame"><object class="diagram" type="image/svg+xml" data="${escapeHtml(sliceDiagramFile)}"></object></div>
     <p class="full-diagram-link"><a href="${escapeHtml(diagramFile)}">View full model diagram &rarr;</a></p>
 ${renderElementsTable(slice, elementRefs)}
 ${docSection}`,
