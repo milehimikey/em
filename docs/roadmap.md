@@ -14,9 +14,11 @@ storyboard walkthrough in the live viewer (`em watch --serve`'s "Review mode"), 
 captured live during the session — and `em glossary` — a cross-model glossary of element names,
 field names, personas, and contexts, with kind- and field-type-conflict checks across models —
 giving the `extract`/`conform` phases a fuzzy-name-matching aid so extraction vocabulary drift
-doesn't masquerade as real drift. Most recently, `em catalog` — a static-site generator (index +
+doesn't masquerade as real drift, and `em catalog` — a static-site generator (index +
 per-slice pages, slice docs rendered as HTML) over one or more models, git still the only
-history store. [workflow.md](workflow.md) is the resulting picture.
+history store. Most recently, export refs (`ref`/`sliceKey`) carried directly on
+`em diff --json` entries so they join straight back to an `em export` document without
+re-deriving slugs. [workflow.md](workflow.md) is the resulting picture.
 
 **Modeling and rendering**
 
@@ -33,9 +35,6 @@ history store. [workflow.md](workflow.md) is the resulting picture.
 - **Slice-doc ↔ model consistency as a validate rule** — the `conform` phase checks this by
   judgment today, but slice-doc frontmatter and `{ fields }` blocks are structured enough to
   check deterministically ([#41](https://github.com/milehimikey/em/issues/41)).
-- **Export refs on diff entries** so a `em diff --json` entry joins directly to an
-  `em export` document without re-deriving slugs
-  ([#40](https://github.com/milehimikey/em/issues/40)).
 
 **Bigger, and deliberately waiting for a reason**
 

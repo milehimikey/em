@@ -48,14 +48,14 @@ slice "Fulfillment" {
 
   it("reports an added slice, without enumerating its elements separately", () => {
     const diff = diffOf(OLD, NEW);
-    expect(diff.changes).toEqual([{ type: "slice-added", name: "Fulfillment" }]);
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Fulfillment", sliceKey: "fulfillment" }]);
     expect(diff.counts.slicesAdded).toBe(1);
     expect(diff.counts.elementsAdded).toBe(0);
   });
 
   it("reports a removed slice symmetrically", () => {
     const diff = diffOf(NEW, OLD);
-    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Fulfillment" }]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Fulfillment", sliceKey: "fulfillment" }]);
     expect(diff.counts.slicesRemoved).toBe(1);
     expect(diff.counts.elementsRemoved).toBe(0);
   });
@@ -79,7 +79,14 @@ slice "Checkout" {
   it("reports the added element", () => {
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "element-added", kind: "event", name: "Discount Applied", sliceName: "Checkout" },
+      {
+        type: "element-added",
+        kind: "event",
+        name: "Discount Applied",
+        ref: "checkout/event.discount-applied",
+        sliceName: "Checkout",
+        sliceKey: "checkout",
+      },
     ]);
     expect(diff.counts.elementsAdded).toBe(1);
   });
@@ -91,11 +98,36 @@ slice "Checkout" {
         type: "element-removed",
         kind: "event",
         name: "Discount Applied",
+        ref: "checkout/event.discount-applied",
         sliceName: "Checkout",
+        sliceKey: "checkout",
         acceptedDivergence: null,
       },
     ]);
     expect(diff.counts.elementsRemoved).toBe(1);
+  });
+});
+
+describe("ref collision (dedupe)", () => {
+  it("carries the `~2` dedupe suffix onto a same-kind-same-name element's ref", () => {
+    // Two "Repeat" commands in one slice get "s/command.repeat" and
+    // "s/command.repeat~2" (see test/export.test.ts's identical scenario for
+    // `em export`) — the ref/sliceKey carried on ChangeEntry must reflect
+    // computeRefs()'s already-deduped output, not a naively-recomputed slug.
+    const OLD = `slice "S" {\n  command Repeat\n}`;
+    const NEW = `slice "S" {\n  command Repeat\n  command Repeat\n}`;
+    const diff = diffOf(OLD, NEW);
+    expect(diff.changes).toEqual([
+      {
+        type: "element-added",
+        kind: "command",
+        name: "Repeat",
+        ref: "s/command.repeat~2",
+        sliceName: "S",
+        sliceKey: "s",
+      },
+    ]);
+    expect(diff.counts.elementsAdded).toBe(1);
   });
 });
 
@@ -119,13 +151,16 @@ slice "Payment" {
 `;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "slice-added", name: "Payment" },
+      { type: "slice-added", name: "Payment", sliceKey: "payment" },
       {
         type: "element-moved",
         kind: "event",
         name: "Payment Failed",
+        ref: "payment/event.payment-failed",
         fromSlice: "Checkout",
+        fromSliceKey: "checkout",
         toSlice: "Payment",
+        toSliceKey: "payment",
       },
     ]);
     // The move is reported once — no separate add/remove entries for it.
@@ -156,7 +191,16 @@ slice "B" {
 `;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "element-moved", kind: "event", name: "Thing Happened", fromSlice: "A", toSlice: "B" },
+      {
+        type: "element-moved",
+        kind: "event",
+        name: "Thing Happened",
+        ref: "b/event.thing-happened",
+        fromSlice: "A",
+        fromSliceKey: "a",
+        toSlice: "B",
+        toSliceKey: "b",
+      },
     ]);
     expect(diff.removals).toEqual([]);
   });
@@ -181,9 +225,18 @@ slice "Keep" {
     // must still report a `moved:` line (only removed-origin + new-target pairs,
     // the slice-rename signature, are suppressed).
     expect(diff.changes).toEqual([
-      { type: "element-moved", kind: "event", name: "Thing Happened", fromSlice: "Legacy", toSlice: "Keep" },
+      {
+        type: "element-moved",
+        kind: "event",
+        name: "Thing Happened",
+        ref: "keep/event.thing-happened",
+        fromSlice: "Legacy",
+        fromSliceKey: "legacy",
+        toSlice: "Keep",
+        toSliceKey: "keep",
+      },
     ]);
-    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Legacy" }]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Legacy", sliceKey: "legacy" }]);
     expect(diff.counts.elementsMoved).toBe(1);
   });
 });
@@ -205,8 +258,8 @@ slice "Checkout Flow" {
     const diff = diffOf(OLD, NEW);
     // The slug-based slice key changes, re-keying every element — but the slice
     // add/remove lines already tell the story, so no per-element move noise.
-    expect(diff.changes).toEqual([{ type: "slice-added", name: "Checkout Flow" }]);
-    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Checkout" }]);
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Checkout Flow", sliceKey: "checkout-flow" }]);
+    expect(diff.removals).toEqual([{ type: "slice-removed", name: "Checkout", sliceKey: "checkout" }]);
     expect(diff.counts.elementsMoved).toBe(0);
     expect(diff.counts.elementsAdded).toBe(0);
     expect(diff.counts.elementsRemoved).toBe(0);
@@ -310,7 +363,9 @@ describe("issue lifecycle", () => {
         type: "issue-opened",
         kind: "command",
         name: "Do Thing",
+        ref: "s/command.do-thing",
         sliceName: "S",
+        sliceKey: "s",
         newText: "who approves?",
         acceptedDivergence: null,
       },
@@ -327,7 +382,9 @@ describe("issue lifecycle", () => {
         type: "issue-resolved",
         kind: "command",
         name: "Do Thing",
+        ref: "s/command.do-thing",
         sliceName: "S",
+        sliceKey: "s",
         oldText: "who approves?",
         acceptedDivergence: null,
       },
@@ -345,7 +402,9 @@ describe("issue lifecycle", () => {
         type: "issue-changed",
         kind: "command",
         name: "Do Thing",
+        ref: "s/command.do-thing",
         sliceName: "S",
+        sliceKey: "s",
         oldText: "v1 question",
         newText: "v2 question",
         acceptedDivergence: null,
@@ -361,7 +420,14 @@ describe("integration-surface promotion/demotion", () => {
     const NEW = `slice "S" {\n  event Order Placed @Order public\n}`;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "event-marked-public", kind: "event", name: "Order Placed", sliceName: "S" },
+      {
+        type: "event-marked-public",
+        kind: "event",
+        name: "Order Placed",
+        ref: "s/event.order-placed",
+        sliceName: "S",
+        sliceKey: "s",
+      },
     ]);
     expect(diff.counts.eventsMarkedPublic).toBe(1);
     expect(formatModelDiff(diff)).toContain("event marked public:");
@@ -372,7 +438,14 @@ describe("integration-surface promotion/demotion", () => {
     const NEW = `slice "S" {\n  event Order Placed @Order\n}`;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "event-unmarked-public", kind: "event", name: "Order Placed", sliceName: "S" },
+      {
+        type: "event-unmarked-public",
+        kind: "event",
+        name: "Order Placed",
+        ref: "s/event.order-placed",
+        sliceName: "S",
+        sliceKey: "s",
+      },
     ]);
     expect(diff.counts.eventsUnmarkedPublic).toBe(1);
     expect(formatModelDiff(diff)).toContain("event unmarked public:");
@@ -395,7 +468,9 @@ describe("note change", () => {
         type: "note-added",
         kind: "event",
         name: "Thing Happened",
+        ref: "s/event.thing-happened",
         sliceName: "S",
+        sliceKey: "s",
         newNote: "docs/thing.md",
         acceptedDivergence: null,
       },
@@ -410,7 +485,9 @@ describe("note change", () => {
         type: "note-changed",
         kind: "event",
         name: "Thing Happened",
+        ref: "s/event.thing-happened",
         sliceName: "S",
+        sliceKey: "s",
         oldNote: "docs/thing.md",
         newNote: "docs/thing-v2.md",
         acceptedDivergence: null,
@@ -430,7 +507,9 @@ describe("accepted divergence", () => {
         type: "element-removed",
         kind: "view",
         name: "Retired Things",
+        ref: "s/view.retired-things",
         sliceName: "S",
+        sliceKey: "s",
         acceptedDivergence: "tracking token covers idempotency",
       },
     ]);
@@ -472,7 +551,12 @@ describe("slice source change (MIL-69)", () => {
       `slice "Checkout" source "https://linear.app/team/issue/MIL-60" {\n  command Submit Order\n}`,
     );
     expect(added.changes).toEqual([
-      { type: "source-added", sliceName: "Checkout", newSource: "https://linear.app/team/issue/MIL-60" },
+      {
+        type: "source-added",
+        sliceName: "Checkout",
+        sliceKey: "checkout",
+        newSource: "https://linear.app/team/issue/MIL-60",
+      },
     ]);
     expect(added.counts.sourceChanges).toBe(1);
 
@@ -484,6 +568,7 @@ describe("slice source change (MIL-69)", () => {
       {
         type: "source-changed",
         sliceName: "Checkout",
+        sliceKey: "checkout",
         oldSource: "https://linear.app/team/issue/MIL-60",
         newSource: "https://linear.app/team/issue/MIL-61",
       },
@@ -495,7 +580,12 @@ describe("slice source change (MIL-69)", () => {
       `slice "Checkout" {\n  command Submit Order\n}`,
     );
     expect(removed.changes).toEqual([
-      { type: "source-removed", sliceName: "Checkout", oldSource: "https://linear.app/team/issue/MIL-60" },
+      {
+        type: "source-removed",
+        sliceName: "Checkout",
+        sliceKey: "checkout",
+        oldSource: "https://linear.app/team/issue/MIL-60",
+      },
     ]);
     expect(removed.counts.sourceChanges).toBe(1);
   });
@@ -505,7 +595,7 @@ describe("slice source change (MIL-69)", () => {
       `slice "Checkout" {\n  command Submit Order\n}`,
       `slice "Checkout" {\n  command Submit Order\n}\nslice "Fulfillment" source "https://linear.app/team/issue/MIL-61" {\n  command Ship Order\n}`,
     );
-    expect(diff.changes).toEqual([{ type: "slice-added", name: "Fulfillment" }]);
+    expect(diff.changes).toEqual([{ type: "slice-added", name: "Fulfillment", sliceKey: "fulfillment" }]);
     expect(diff.counts.sourceChanges).toBe(0);
   });
 });
@@ -617,14 +707,23 @@ describe("renames are out of scope (deliberate)", () => {
     const NEW = `slice "S" {\n  command Place Order\n}`;
     const diff = diffOf(OLD, NEW);
     expect(diff.changes).toEqual([
-      { type: "element-added", kind: "command", name: "Place Order", sliceName: "S" },
+      {
+        type: "element-added",
+        kind: "command",
+        name: "Place Order",
+        ref: "s/command.place-order",
+        sliceName: "S",
+        sliceKey: "s",
+      },
     ]);
     expect(diff.removals).toEqual([
       {
         type: "element-removed",
         kind: "command",
         name: "Submit Order",
+        ref: "s/command.submit-order",
         sliceName: "S",
+        sliceKey: "s",
         acceptedDivergence: null,
       },
     ]);
@@ -634,13 +733,13 @@ describe("renames are out of scope (deliberate)", () => {
 describe("declared `type` add/remove/field changes (MIL-64)", () => {
   it("reports a type added", () => {
     const diff = diffOf(``, `type Money { amount: int }`);
-    expect(diff.changes).toEqual([{ type: "type-added", name: "Money" }]);
+    expect(diff.changes).toEqual([{ type: "type-added", name: "Money", ref: "types/money" }]);
     expect(diff.counts.typesAdded).toBe(1);
   });
 
   it("reports a type removed symmetrically", () => {
     const diff = diffOf(`type Money { amount: int }`, ``);
-    expect(diff.removals).toEqual([{ type: "type-removed", name: "Money" }]);
+    expect(diff.removals).toEqual([{ type: "type-removed", name: "Money", ref: "types/money" }]);
     expect(diff.counts.typesRemoved).toBe(1);
   });
 
@@ -677,8 +776,8 @@ describe("declared `type` add/remove/field changes (MIL-64)", () => {
     const OLD = `type Money { amount: int }`;
     const NEW = `type Currency { amount: int }`;
     const diff = diffOf(OLD, NEW);
-    expect(diff.changes).toEqual([{ type: "type-added", name: "Currency" }]);
-    expect(diff.removals).toEqual([{ type: "type-removed", name: "Money" }]);
+    expect(diff.changes).toEqual([{ type: "type-added", name: "Currency", ref: "types/currency" }]);
+    expect(diff.removals).toEqual([{ type: "type-removed", name: "Money", ref: "types/money" }]);
   });
 
   it("includes type counters in the summary rollup line", () => {
