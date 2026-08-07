@@ -90,6 +90,47 @@ describe("end-to-end render", () => {
     }
   });
 
+  it("colors a slice header per its slices/<slug>.md doc's Status, and appends a status legend", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-status-"));
+    try {
+      const modelFile = join(dir, "model.em");
+      writeFileSync(
+        modelFile,
+        `slice "Place Order" {
+  command Place Order
+}
+slice "Ship Order" {
+  command Ship Order
+}
+`,
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(join(dir, "slices", "place-order.md"), "- **Status:** Reviewed\n");
+      // "Ship Order" has no doc at all — should keep the default header color.
+
+      const { model, grid, dot } = compile(readFileSync(modelFile, "utf8"));
+      const raw = await layoutDot(dot);
+      const svg = composeSvg(raw, model, grid, dir, dir);
+
+      expect(svg).toContain('class="em-status-legend"');
+      expect(svg).toContain(">Reviewed<");
+      const placeOrderHeader = /<title>__hdr_0<\/title>[\s\S]*?<\/g>/.exec(svg)![0];
+      const shipOrderHeader = /<title>__hdr_1<\/title>[\s\S]*?<\/g>/.exec(svg)![0];
+      expect(placeOrderHeader).not.toMatch(/fill="#e3e7eb"/i); // recolored
+      expect(shipOrderHeader).toMatch(/fill="#e3e7eb"/i); // untouched default
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("renders identically whether or not a slices/ dir exists, when no slice has a doc (non-breaking default)", async () => {
+    const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
+    const raw = await layoutDot(dot);
+    const withoutSlicesDir = composeSvg(raw, model, grid, dirname(EXAMPLE), dirname(EXAMPLE));
+    expect(withoutSlicesDir).not.toContain('class="em-status-legend"');
+    expect(withoutSlicesDir).toMatch(/fill="#e3e7eb"/i); // every header still the default gray
+  });
+
   it("rasterizes to PNG in-process", async () => {
     const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
     const dir = mkdtempSync(join(tmpdir(), "em-e2e-"));

@@ -15,8 +15,11 @@ import { Element, NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId, nodeIdAt, placeholderId } from "../layout/grid.js";
 import { styleFor } from "./theme.js";
 
-const HEADER_FILL = "#E3E7EB";
-const HEADER_BORDER = "#C7CDD4";
+// Exported: src/render/statusOverlay.ts matches/replaces these exact strings
+// to recolor a header cell post-layout based on its slice's doc status.
+export const HEADER_FILL = "#E3E7EB";
+export const HEADER_BORDER = "#C7CDD4";
+export const HEADER_FONT = "#1F2933";
 // Every cell is the same width so columns are evenly spaced and the header row
 // lines up with the element columns. Header width (pt) must match CELL_W (in).
 const CELL_W = 2.0; // inches
@@ -137,7 +140,7 @@ function headerCell(c: number, name: string): string {
   return (
     `${headerCellId(c)} [label=${q(wrapLabel(name, 20))}, shape=box, ` +
     `style=filled, fillcolor="${HEADER_FILL}", color="${HEADER_BORDER}", ` +
-    `fontcolor="#1F2933", fontname="Helvetica-Bold", fontsize=10, ` +
+    `fontcolor="${HEADER_FONT}", fontname="Helvetica-Bold", fontsize=10, ` +
     `fixedsize=true, width=${CELL_W}, height=${HEADER_H}, penwidth=1];`
   );
 }

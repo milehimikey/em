@@ -367,7 +367,10 @@ program
       }
     }
 
-    watchFile(file, build);
+    // Also watch slice design docs (slices/*.md): editing just a doc's Status
+    // line should live-update the diagram's header colors without touching
+    // the .em file. The glob still fires for docs authored after watch starts.
+    watchFile([file, join(dirname(file), "slices", "*.md")], build);
     console.log(`watching ${file} … (ctrl-c to stop)`);
   });
 

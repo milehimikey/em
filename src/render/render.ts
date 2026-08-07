@@ -19,6 +19,8 @@ import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, buildIssueMarkers, buildDivergenceMarkers, appendNoteLegend } from "./drawNotes.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
+import { readSliceStatuses } from "./sliceStatus.js";
+import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -59,7 +61,8 @@ export function composeSvg(
   outDir: string,
 ): string {
   const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
-  return withOverlays(rawSvg, model, grid, hrefOf);
+  const statuses = readSliceStatuses(model, baseDir);
+  return withOverlays(rawSvg, model, grid, hrefOf, statuses);
 }
 
 /** Serialize a composed SVG string to `outPath` in the requested format — split out
@@ -124,6 +127,7 @@ function withOverlays(
   model: NormalizedModel,
   grid: Grid,
   hrefOf: (el: Element) => string,
+  statuses: (string | null)[],
 ): string {
   const rects = parseNodeRects(svg, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
@@ -134,6 +138,10 @@ function withOverlays(
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
   // room before anything else measures or appends to the viewBox
   let out = fitCanvas(svg, bbox);
+  // recolor each slice's header cell per its doc status (src/render/sliceStatus.ts) —
+  // a scoped string replace keyed on each header's own <title> id, independent of
+  // tagSliceAttrs/buildSliceOverlay below, so the ordering here isn't load-bearing.
+  out = applyStatusColors(out, grid, statuses);
   // tag each element's node group with data-slice="<index>" so the storyboard
   // viewer (`em watch --serve`) can highlight/zoom to one slice at a time
   // client-side, purely from what's already in the SVG.
@@ -151,6 +159,7 @@ function withOverlays(
   out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}${divergences}$1$2`);
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
+  out = appendStatusLegend(out, grid, statuses);
   return out;
 }
 

@@ -61,10 +61,29 @@ balloon into showing most of the model. Can't be combined with `--emit-dot`. Thi
 the path convention the `event-modeling` skill's `slice` phase writes to, and that
 `em catalog` looks for (see below).
 
+**Slice status colors.** Every slice's title cell is colored by its design doc's
+`- **Status:** ...` line (`slices/<kebab-slug>.md`, same doc `em catalog` reads — see below),
+whenever one exists next to the `.em` file:
+
+| Status | Color |
+|---|---|
+| `reviewed` | blue |
+| `ready-to-implement` | amber |
+| `implemented` | green |
+| `draft`, no doc, or an unrecognized value | default gray (unchanged) |
+
+A "Slice Status" legend is appended below the diagram whenever at least one slice resolves to
+a recognized status. This is on by default and non-breaking: a model with no `slices/` docs
+at all renders exactly as before. Matching is case-insensitive and free-text otherwise — like
+`em catalog`, `em render` doesn't validate the Status value, it just doesn't color slices it
+doesn't recognize.
+
 ## `em watch <file>`
 
-Renders once, then re-renders on every save. Saves with validation errors are skipped (the
-errors print; the previous render stays on disk). Ctrl-C to stop.
+Renders once, then re-renders on every save — of the `.em` file, or of any of its slices'
+`slices/*.md` design docs (so flipping a `- **Status:** ...` line live-updates header colors
+without touching the model). Saves with validation errors are skipped (the errors print; the
+previous render stays on disk). Ctrl-C to stop.
 
 | Flag | Effect |
 |---|---|
@@ -448,6 +467,10 @@ are never conflated. Three outcomes, shown as the page/table's Status:
   template) → `unknown`; the doc's content still renders as HTML.
 - Doc matches the template → the Status value shown verbatim (`draft`, `reviewed`,
   `ready-to-implement`, `implemented`, …).
+
+Both the main diagram and every per-slice diagram embedded in the catalog carry the same
+status header coloring `em render`/`em watch` do (see above) — one status source, colored
+consistently everywhere it's shown.
 
 **Pattern.** Since a slice's pattern (State Change / State View / Automation /
 Translation) isn't stored anywhere, `em catalog` derives it from the slice's element kinds
