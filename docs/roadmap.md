@@ -11,14 +11,19 @@ to its ticket (`source`), a lightweight usage-data convention (skill Usage log �
 and a `public` marker on events for integration-surface promotion (contract generators can now
 tell a published event from an internal-only fact), stakeholder review mode — a slice-by-slice
 storyboard walkthrough in the live viewer (`em watch --serve`'s "Review mode"), with red notes
-captured live during the session — and `em glossary` — a cross-model glossary of element names,
+captured live during the session — `em glossary` — a cross-model glossary of element names,
 field names, personas, and contexts, with kind- and field-type-conflict checks across models —
 giving the `extract`/`conform` phases a fuzzy-name-matching aid so extraction vocabulary drift
-doesn't masquerade as real drift, and `em catalog` — a static-site generator (index +
-per-slice pages, slice docs rendered as HTML) over one or more models, git still the only
-history store. Most recently, export refs (`ref`/`sliceKey`) carried directly on
-`em diff --json` entries so they join straight back to an `em export` document without
-re-deriving slugs. [workflow.md](workflow.md) is the resulting picture.
+doesn't masquerade as real drift, and nested/structured field types (a top-level
+`type Name { ... }` declaration, referenced bare or as `Name[]` from any field), and
+`em catalog` — a static-site generator (index + per-slice pages, slice docs rendered as HTML)
+over one or more models, git still the only history store — alongside `em render --slice`
+rewritten to redraw a single slice in its own pattern shape (State Change/View/Automation/
+Translation) instead of cropping the full diagram, and slice headers now color-coded by
+design-doc status (reviewed/ready-to-implement/implemented). Most recently, export refs
+(`ref`/`sliceKey`) carried directly on `em diff --json` entries so they join straight back to
+an `em export` document without re-deriving slugs. [workflow.md](workflow.md) is the resulting
+picture.
 
 **Modeling and rendering**
 
