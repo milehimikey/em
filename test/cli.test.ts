@@ -32,6 +32,14 @@ slice "Open Orders" {
 }
 `;
 
+// Unclassified pattern (ui only, no command/view) so its slice diagram's API lane is
+// genuinely empty by default — the case --keep-empty-lanes exists to override.
+const UI_ONLY = `persona Customer
+slice "Just A Screen" {
+  ui Dashboard @Customer
+}
+`;
+
 // One warning (command with no event), no errors.
 const WARNING_ONLY = `slice "Place" {
   command Place Order
@@ -136,6 +144,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "glossary-b-clean.em"), GLOSSARY_B_CLEAN);
   writeFileSync(join(dir, "glossary-b-conflict.em"), GLOSSARY_B_CONFLICT);
   writeFileSync(join(dir, "catalog-duplicate.em"), CATALOG_DUPLICATE_SLICE_NAMES);
+  writeFileSync(join(dir, "ui-only.em"), UI_ONLY);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -576,6 +585,56 @@ describe("em glossary (CLI)", () => {
   });
 });
 
+describe("em render --slice (CLI)", () => {
+  it("defaults to slices/<kebab-slug>.svg next to the .em file", () => {
+    const r = em(["render", "clean.em", "--slice", "Place"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(`rendered ${join("slices", "place.svg")}`);
+    expect(existsSync(join(dir, "slices", "place.svg"))).toBe(true);
+  });
+
+  it("-o overrides the default output path", () => {
+    const r = em(["render", "clean.em", "--slice", "Open Orders", "-o", "open-orders-diagram.svg"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("rendered open-orders-diagram.svg");
+    expect(existsSync(join(dir, "open-orders-diagram.svg"))).toBe(true);
+  });
+
+  it("-T png renders the slice diagram as a valid PNG", () => {
+    const r = em(["render", "clean.em", "--slice", "Place", "-o", "place-slice.png"], dir);
+    expect(r.status).toBe(0);
+    const png = readFileSync(join(dir, "place-slice.png"));
+    expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  });
+
+  it("exits 1 on an unknown slice name, listing every valid slice", () => {
+    const r = em(["render", "clean.em", "--slice", "Nope"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no slice named "Nope"');
+    expect(r.stderr).toContain('"Place"');
+    expect(r.stderr).toContain('"Open Orders"');
+  });
+
+  it("--keep-empty-lanes is threaded through, not silently dropped", () => {
+    const collapsed = em(["render", "ui-only.em", "--slice", "Just A Screen", "-o", "no-lanes.svg"], dir);
+    expect(collapsed.status).toBe(0);
+    expect(readFileSync(join(dir, "no-lanes.svg"), "utf8")).not.toContain(">API<");
+
+    const kept = em(
+      ["render", "ui-only.em", "--slice", "Just A Screen", "--keep-empty-lanes", "-o", "with-lanes.svg"],
+      dir,
+    );
+    expect(kept.status).toBe(0);
+    expect(readFileSync(join(dir, "with-lanes.svg"), "utf8")).toContain(">API<");
+  });
+
+  it("rejects --slice combined with --emit-dot", () => {
+    const r = em(["render", "clean.em", "--slice", "Place", "--emit-dot"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--slice cannot be combined with --emit-dot");
+  });
+});
+
 describe("em catalog (CLI)", () => {
   it("writes an index + per-model diagram + slice pages, and reports counts on stdout", () => {
     const r = em(["catalog", "clean.em", "-o", "catalog-out"], dir);
@@ -583,6 +642,9 @@ describe("em catalog (CLI)", () => {
     expect(r.stdout).toContain("wrote catalog-out/ (1 model, 2 slices)");
     expect(existsSync(join(dir, "catalog-out", "index.html"))).toBe(true);
     expect(existsSync(join(dir, "catalog-out", "clean", "diagram.svg"))).toBe(true);
+    // per-slice diagrams, built fresh since clean.em has no slices/*.svg siblings
+    expect(existsSync(join(dir, "catalog-out", "clean", "slices", "place.svg"))).toBe(true);
+    expect(existsSync(join(dir, "catalog-out", "clean", "slices", "open-orders.svg"))).toBe(true);
   });
 
   it("accepts multiple files, one output directory per model, plural counts on stdout", () => {

@@ -39,6 +39,7 @@ renders.
 |---|---|
 | `-o, --out <path>` | Output path; the extension picks the format |
 | `-T, --format <fmt>` | Output format (`svg`, `png`, `pdf`, …); takes precedence over the `-o` extension |
+| `--slice <name>` | Render only this slice, redrawn in its own canonical pattern shape (default out: `slices/<kebab-slug>.svg`) |
 | `--emit-dot` | Print the generated Graphviz DOT instead of rendering (or write it with `-o`) |
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 
@@ -46,7 +47,19 @@ renders.
 em render model.em                 # -> model.svg
 em render model.em -o out/model.png
 em render model.em --emit-dot      # inspect the DOT
+em render model.em --slice "Place Order"   # -> slices/place-order.svg
 ```
+
+`--slice` doesn't crop the full diagram — it classifies the slice into one of the 4 Event
+Modeling patterns (State Change, State View, Automation, Translation) and redraws just its
+own canonical shape with a fresh layout, matched by an exact, case-sensitive `--slice` name
+against the model's slices (an unknown name lists every valid one). Only the minimum real
+context the pattern needs is pulled in: a State View's source event(s) (resolved via the
+view's `from`, even across slices), or the previous slice's automation/translation reaction
+when a State Change slice has no `ui` of its own. Never more than one hop away, so this can't
+balloon into showing most of the model. Can't be combined with `--emit-dot`. This is exactly
+the path convention the `event-modeling` skill's `slice` phase writes to, and that
+`em catalog` looks for (see below).
 
 ## `em watch <file>`
 
@@ -405,11 +418,23 @@ collide even without a cross-file dedup pass:
     diagram.svg              (or .png, via -T)
     slices/
       <slice-key>.html
+      <slice-key>.svg         (this slice's own diagram — always svg)
 ```
 
 `<model-key>` and `<slice-key>` are the same kebab-case, `~2`/`~3`-deduped identity scheme
 `em export` uses (`model-key` from the file's basename, `slice-key` from `em export`'s own
 slice key) — stable, collision-safe, and consistent across commands.
+
+**Slice diagrams.** Looked up at the same sibling location as slice docs —
+`slices/<kebab-slug-of-slice-name>.svg`, next to the `.em` file — the path `em render
+--slice` (and the `event-modeling` skill's `slice` phase) writes to. If found, it's copied
+into the catalog's output tree as-is. If not, `em catalog` builds one itself (the same
+pattern-shape render `--slice` does — no cropping, so this works regardless of the main
+diagram's own `-T` format) and writes the result into its own output tree only — never back
+into the source tree, per its presentation-layer philosophy above. Either way, the slice
+page embeds this diagram as primary, with a link back to the full model diagram alongside
+it. Always `.svg` — a slice diagram never depends on the catalog's own `-T` choice for the
+main diagram.
 
 **Slice docs.** A slice's design doc is looked up deterministically at
 `slices/<kebab-slug-of-slice-name>.md`, next to the `.em` file — the same path the

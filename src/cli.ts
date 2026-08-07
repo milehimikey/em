@@ -8,7 +8,9 @@ import { Command } from "commander";
 import { compile, CompileOptions, CompileResult } from "./pipeline.js";
 import { NormalizedModel } from "./model/model.js";
 import { ParseError } from "./parser/parser.js";
-import { renderDot, formatFromPath } from "./render/render.js";
+import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from "./render/render.js";
+import { buildSliceDiagram } from "./render/sliceDiagram.js";
+import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
 import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
@@ -67,9 +69,19 @@ program
   .argument("<file>", "input .em file")
   .option("-o, --out <path>", "output path (extension picks the format)")
   .option("-T, --format <fmt>", "output format (svg, png, pdf, ...)")
+  .option(
+    "--slice <name>",
+    "render only this slice, redrawn in its own canonical pattern shape " +
+      "(default out: slices/<kebab-slug>.svg)",
+  )
   .option("--emit-dot", "print the generated DOT instead of rendering")
   .option("--keep-empty-lanes", "keep the API lane even when empty")
   .action(async (file: string, opts) => {
+    if (opts.slice !== undefined && opts.emitDot) {
+      console.error("em render: --slice cannot be combined with --emit-dot");
+      process.exit(1);
+    }
+
     const { dot, model, grid, diagnostics } = compileFile(file, {
       keepEmptyLanes: opts.keepEmptyLanes,
     });
@@ -89,6 +101,25 @@ program
     if (hasErrors(diagnostics)) {
       console.error("not rendering: fix the errors above");
       process.exit(1);
+    }
+
+    if (opts.slice !== undefined) {
+      const lookup = resolveSliceArg(opts.slice, model.slices);
+      if ("error" in lookup) {
+        console.error(lookup.error);
+        process.exit(1);
+      }
+      const out = opts.out ?? defaultSliceOut(file, opts.slice);
+      const fmt = opts.format ?? formatFromPath(out);
+      await mkdir(dirname(out), { recursive: true }); // slices/ may not exist yet
+      const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, lookup.index, {
+        keepEmptyLanes: opts.keepEmptyLanes,
+      });
+      const raw = await layoutDot(sliceDot);
+      const svg = composeSvg(raw, sliceModel, sliceGrid, dirname(file), dirname(out));
+      await writeRendered(svg, out, fmt);
+      console.log(`rendered ${out}`);
+      return;
     }
 
     const out = opts.out ?? defaultOut(file, opts.format ?? "svg");
@@ -251,7 +282,12 @@ program
         process.exit(1);
       }
 
-      const result = await buildCatalog(inputs, { outDir: opts.out, format: plan.format, title: opts.title });
+      const result = await buildCatalog(inputs, {
+        outDir: opts.out,
+        format: plan.format,
+        title: opts.title,
+        keepEmptyLanes: opts.keepEmptyLanes,
+      });
       for (const d of result.diagnostics) printDiagnosticsFor(d.file, d.diagnostics);
       const modelWord = result.models === 1 ? "model" : "models";
       const sliceWord = result.slices === 1 ? "slice" : "slices";
