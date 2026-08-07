@@ -9,13 +9,15 @@
 //       diagram.svg (or .png)
 //       slices/
 //         <slice-key>.html
+//         <slice-key>.svg   (this slice's own diagram — copied in if authored, else built)
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { Grid } from "../layout/grid.js";
-import { renderDot } from "../render/render.js";
+import { layoutDot, composeSvg, writeRendered } from "../render/render.js";
+import { buildSliceDiagram } from "../render/sliceDiagram.js";
 import { computeRefs } from "../emit/json.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
@@ -71,7 +73,9 @@ export async function buildCatalog(
     const diagramFile = `diagram.${format}`;
     // baseDir = dirname(file), same as `em render`/`em watch` — this is why note hrefs
     // embedded in the diagram still resolve correctly from the catalog's output location.
-    await renderDot(dot, model, grid, join(modelDir, diagramFile), format, dirname(file));
+    const raw = await layoutDot(dot);
+    const mainSvg = composeSvg(raw, model, grid, dirname(file), modelDir);
+    await writeRendered(mainSvg, join(modelDir, diagramFile), format);
 
     const refs = computeRefs(model);
     if (refs.diagnostics.length > 0) diagnostics.push({ file, diagnostics: refs.diagnostics });
@@ -92,6 +96,22 @@ export async function buildCatalog(
       const docPath = join(dirname(file), docRelPath);
       const doc = existsSync(docPath) ? parseSliceDoc(readFileSync(docPath, "utf8")) : null;
 
+      // Same sibling-file convention as the doc lookup above, one extension over: a
+      // slice diagram authored by `em render --slice` (per the event-modeling skill)
+      // is copied in as-is so the catalog stays self-contained; otherwise built
+      // fresh via buildSliceDiagram, written only into the catalog's own output
+      // tree — `em catalog` never writes back into the source tree.
+      const sliceSvgSrcPath = join(dirname(file), "slices", `${sliceKey}.svg`);
+      const sliceDiagramFile = `${sliceKey}.svg`;
+      if (existsSync(sliceSvgSrcPath)) {
+        await copyFile(sliceSvgSrcPath, join(slicesDir, sliceDiagramFile));
+      } else {
+        const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, i);
+        const sliceRaw = await layoutDot(sliceDot);
+        const sliceSvg = composeSvg(sliceRaw, sliceModel, sliceGrid, dirname(file), slicesDir);
+        await writeFile(join(slicesDir, sliceDiagramFile), sliceSvg, "utf8");
+      }
+
       const elementRefs = new Map<string, string>();
       for (const el of slice.elements) {
         const ref = refs.refById.get(el.id);
@@ -101,7 +121,7 @@ export async function buildCatalog(
       const page = renderSlicePage({
         modelName: model.name,
         diagramFile: `../${diagramFile}`,
-        format,
+        sliceDiagramFile,
         slice,
         sliceKey,
         pattern,

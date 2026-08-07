@@ -4,7 +4,7 @@
 // are drawn (the renderer turns these into SVG paths over the Graphviz grid).
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
-import { NormalizedModel, normalizeName } from "./model.js";
+import { Element, NormalizedModel, normalizeName } from "./model.js";
 import { edgeColorFor } from "../emit/theme.js";
 
 export interface SemanticEdge {
@@ -63,14 +63,7 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   //   automation from read model(s) -> view  -> automation
   for (const el of model.elements) {
     for (const name of el.from ?? []) {
-      const bucket = model.byName.get(normalizeName(name));
-      if (!bucket) continue;
-      const src =
-        el.kind === "view"
-          ? bucket.find((x) => x.kind === "event") ?? bucket[0]
-          : nearestViewAtOrBefore(bucket, el.sliceIndex) ??
-            bucket.find((x) => x.kind === "view") ??
-            bucket[0];
+      const src = resolveFromSource(model, el, name);
       if (src) add(src.id, el.id, src.kind);
     }
   }
@@ -91,11 +84,26 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   return edges;
 }
 
+/**
+ * Resolve one `from "Name"` reference to the Element it points at — the same rule
+ * for every caller that needs to follow a cross-slice reference (semanticEdges here,
+ * and src/render/sliceDiagram.ts's single-slice pattern renderer, which needs the
+ * full source Element — not just its id — to draw it as a local context box).
+ * A `view`'s sources are events (or, failing that, whatever the bucket's first
+ * entry is); anything else (in practice unused today — only `view` populates
+ * `from`) resolves to the nearest view at-or-before its own slice, since a
+ * reaction reads whatever read-model state exists at that point in the timeline.
+ */
+export function resolveFromSource(model: NormalizedModel, el: Element, name: string): Element | undefined {
+  const bucket = model.byName.get(normalizeName(name));
+  if (!bucket) return undefined;
+  return el.kind === "view"
+    ? bucket.find((x) => x.kind === "event") ?? bucket[0]
+    : nearestViewAtOrBefore(bucket, el.sliceIndex) ?? bucket.find((x) => x.kind === "view") ?? bucket[0];
+}
+
 /** Latest view instance declared at-or-before the given slice (reactions read what exists). */
-function nearestViewAtOrBefore(
-  bucket: { kind: ElementKind; sliceIndex: number; id: string }[],
-  sliceIndex: number,
-) {
+function nearestViewAtOrBefore(bucket: Element[], sliceIndex: number): Element | undefined {
   return bucket
     .filter((x) => x.kind === "view" && x.sliceIndex <= sliceIndex)
     .sort((a, b) => b.sliceIndex - a.sliceIndex)[0];

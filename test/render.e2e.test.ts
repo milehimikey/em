@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from "vitest";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { renderDot } from "../src/render/render.js";
+import { renderDot, layoutDot, composeSvg } from "../src/render/render.js";
+import { buildSliceDiagram } from "../src/render/sliceDiagram.js";
 
 // Renders a real example through the full pipeline (WASM Graphviz + overlays +
 // resvg) — no system graphviz/librsvg required.
@@ -27,6 +28,63 @@ describe("end-to-end render", () => {
       expect(svg).toContain("notes/order-placed.md"); // working link
       expect(svg).toContain("authorizationId"); // field text rendered in a box
       expect(svg.trim().endsWith("</svg>")).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("renders a real State View slice as its own small diagram — the event's own column, not the neighboring slice", async () => {
+    const { model } = compile(readFileSync(EXAMPLE, "utf8"));
+    const i = model.slices.findIndex((s) => s.name === "View Open Orders");
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-slice-"));
+    try {
+      const { model: sm, grid, dot } = buildSliceDiagram(model, i);
+      const raw = await layoutDot(dot);
+      const svg = composeSvg(raw, sm, grid, dirname(EXAMPLE), dir);
+      expect(svg).toContain(">Order Placed<"); // the resolved source event
+      expect(svg).toContain(">Open Orders<"); // this slice's own view
+      expect(svg).not.toContain(">Place Order<"); // "Browse Catalog"'s command — not pulled in
+      expect(svg).not.toContain(">Product Catalog<"); // "Browse Catalog"'s ui — not pulled in
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("recomposes note hrefs relative to the slice diagram's own output directory, not the full diagram's", async () => {
+    // A minimal model whose only slice has a note — written into a real directory
+    // tree (not just an in-memory string) so relative-path resolution is real, and
+    // the note lives one level up from where a slice diagram under slices/ would
+    // be written. This is exactly the shape that broke if a slice diagram reused
+    // an already-composed SVG instead of recomposing overlays for its own outDir
+    // (see render.ts's layoutDot/composeSvg/writeRendered split).
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-notehref-"));
+    try {
+      const modelFile = join(dir, "model.em");
+      writeFileSync(
+        modelFile,
+        `slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order note "notes/place-order.md"
+  event Order Placed @Order
+}
+`,
+      );
+      mkdirSync(join(dir, "notes"), { recursive: true });
+      writeFileSync(join(dir, "notes", "place-order.md"), "# Place Order\n");
+
+      const { model, grid, dot } = compile(readFileSync(modelFile, "utf8"));
+
+      // full diagram: outDir == baseDir == dir -> note href is "notes/place-order.md"
+      const rawFull = await layoutDot(dot);
+      const fullSvg = composeSvg(rawFull, model, grid, dir, dir);
+      expect(fullSvg).toContain('href="notes/place-order.md"');
+
+      // slice diagram: outDir == dir/slices, one level deeper -> note href gains a "../"
+      const sliceDir = join(dir, "slices");
+      const { model: sm, grid: sg, dot: sd } = buildSliceDiagram(model, 0);
+      const rawSlice = await layoutDot(sd);
+      const sliceSvg = composeSvg(rawSlice, sm, sg, dir, sliceDir);
+      expect(sliceSvg).toContain('href="../notes/place-order.md"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

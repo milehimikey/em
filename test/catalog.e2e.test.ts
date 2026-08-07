@@ -66,8 +66,18 @@ describe("buildCatalog", () => {
     expect(index).toContain("reviewed");
     expect(index).toContain("no doc");
 
+    // per-slice diagrams: no slices/*.svg siblings exist on disk for this fixture,
+    // so both are built fresh (buildSliceDiagram) into the output tree only.
+    expect(existsSync(join(outDir, "model", "slices", "place-order.svg"))).toBe(true);
+    expect(existsSync(join(outDir, "model", "slices", "open-orders.svg"))).toBe(true);
+    // never written back into the source tree — em catalog is a pure presentation layer
+    expect(existsSync(join(dir, "slices", "place-order.svg"))).toBe(false);
+    expect(existsSync(join(dir, "slices", "open-orders.svg"))).toBe(false);
+
     const placeOrderPage = readFileSync(join(outDir, "model", "slices", "place-order.html"), "utf8");
-    expect(placeOrderPage).toContain('data="../diagram.svg"');
+    // the slice's own diagram is the primary embed; the full diagram is a secondary link
+    expect(placeOrderPage).toContain('<object class="diagram" type="image/svg+xml" data="place-order.svg">');
+    expect(placeOrderPage).toContain('href="../diagram.svg">View full model diagram');
     expect(placeOrderPage).toContain("Let customers place orders."); // real doc, rendered
     expect(placeOrderPage).toContain("reviewed");
 
@@ -109,6 +119,30 @@ slice "Place Order" {
     expect(first).toContain("Let customers place orders."); // real doc content
     expect(second).toContain("No slice doc found"); // honest, not a duplicate of `first`
     expect(second).not.toContain("Let customers place orders.");
+  });
+
+  it("copies an author-provided slices/<key>.svg sibling instead of building one", async () => {
+    // A hand-placed (or `em render --slice`-authored) diagram next to the .em
+    // file — deliberately distinguishable content so the assertion can't pass
+    // by coincidence.
+    const AUTHORED_SVG = '<svg viewBox="0 0 1 1"><!-- hand-authored diagram --></svg>';
+    writeFileSync(join(dir, "slices", "place-order.svg"), AUTHORED_SVG);
+    try {
+      const { model, grid, dot } = compile(MODEL);
+      const outDir = join(dir, "out-authored-svg");
+
+      await buildCatalog([{ file: modelFile, model, grid, dot }], { outDir });
+
+      const copied = readFileSync(join(outDir, "model", "slices", "place-order.svg"), "utf8");
+      expect(copied).toBe(AUTHORED_SVG); // copied verbatim, not rebuilt
+      // the sibling slice ("Open Orders") has no authored .svg, so it still falls
+      // back to building one fresh in the same build
+      expect(existsSync(join(outDir, "model", "slices", "open-orders.svg"))).toBe(true);
+      const built = readFileSync(join(outDir, "model", "slices", "open-orders.svg"), "utf8");
+      expect(built).not.toBe(AUTHORED_SVG);
+    } finally {
+      rmSync(join(dir, "slices", "place-order.svg"), { force: true });
+    }
   });
 
   it("keeps slice keys from different input models collision-free via per-model directories", async () => {

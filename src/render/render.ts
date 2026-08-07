@@ -33,22 +33,42 @@ export function formatFromPath(outPath: string, fallback = "svg"): string {
   return ext || fallback;
 }
 
-export async function renderDot(
-  dot: string,
+/** Run the Graphviz WASM layout pass only — the part shared by every caller that
+ *  needs to compose the same layout for more than one output location (a full
+ *  diagram and a slice diagram of it, note hrefs recomputed for each — see
+ *  buildCatalog and `em render --slice`), so it isn't paid for twice. */
+export async function layoutDot(dot: string): Promise<string> {
+  const gv = await graphviz();
+  return gv.layout(dot, "svg", "dot");
+}
+
+/**
+ * Compose a laid-out SVG with edges, notes, slice tags/metadata, and the legend —
+ * the pure/string half of rendering, split out from layoutDot's WASM call. `outDir`
+ * is where the composed SVG will ultimately be written; note links are authored
+ * relative to `baseDir` (the .em file) and get rewritten relative to `outDir` here,
+ * so a caller composing the *same* layout for two different output locations (e.g.
+ * a full diagram and a slice diagram one directory deeper) must call this twice,
+ * once per real outDir, rather than reuse one composed string for both.
+ */
+export function composeSvg(
+  rawSvg: string,
   model: NormalizedModel,
   grid: Grid,
+  baseDir: string,
+  outDir: string,
+): string {
+  const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
+  return withOverlays(rawSvg, model, grid, hrefOf);
+}
+
+/** Serialize a composed SVG string to `outPath` in the requested format — split out
+ *  so a caller can transform the composed string in between composing and writing it. */
+export async function writeRendered(
+  svg: string,
   outPath: string,
   format = formatFromPath(outPath),
-  baseDir = process.cwd(),
 ): Promise<void> {
-  // Note links are authored relative to the .em file (baseDir); rewrite them
-  // relative to the output SVG so they resolve wherever the SVG is written.
-  const outDir = dirname(outPath);
-  const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
-
-  const gv = await graphviz();
-  const svg = withOverlays(gv.layout(dot, "svg", "dot"), model, grid, hrefOf);
-
   if (format === "svg") {
     await writeFile(outPath, svg, "utf8");
     return;
@@ -70,6 +90,20 @@ export async function renderDot(
     `format '${format}' is not built in (svg and png are). Install librsvg ` +
       `(provides '${RSVG_BIN}') to render '${format}', or use -o file.svg / -o file.png.`,
   );
+}
+
+export async function renderDot(
+  dot: string,
+  model: NormalizedModel,
+  grid: Grid,
+  outPath: string,
+  format = formatFromPath(outPath),
+  baseDir = process.cwd(),
+): Promise<void> {
+  const outDir = dirname(outPath);
+  const raw = await layoutDot(dot);
+  const svg = composeSvg(raw, model, grid, baseDir, outDir);
+  await writeRendered(svg, outPath, format);
 }
 
 /**

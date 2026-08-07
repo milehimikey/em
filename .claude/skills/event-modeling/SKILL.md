@@ -237,12 +237,16 @@ For each slice:
    already defined elsewhere.
 2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name). Record the originating
    need (ticket/conversation link) in the Intent section when one exists.
-3. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
+3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
+   slices/<slice-name>.svg` (kebab-case, matching the doc's filename) — redraws just this slice
+   in its own canonical pattern shape, and add `![Diagram](./<slice-name>.svg)` near the top of
+   the doc, right after the metadata bullet list.
+4. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).
-4. Update `README.md`'s slice index — the one canonical slice table (`draft` →
+5. Update `README.md`'s slice index — the one canonical slice table (`draft` →
    `ready-to-implement`, later `implemented` once shipped, with `Implemented in:` filled in).
-5. Re-render and `em validate`.
+6. Re-render and `em validate`.
 
 ## Phase: `conform` — drift check against the codebase
 
@@ -348,6 +352,7 @@ em init <name>.em                          # optional starter scaffold
 em validate <name>.em                      # check rules; exit 0 if clean/warnings only
 em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
+em render <name>.em --slice "<slice-name>" -o slices/<slug>.svg   # this slice's own diagram
 em watch <name>.em -o <name>.svg           # re-render on save (run in background)
 em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-reload (--port N)
                                             #   click "Review mode" for a slice-by-slice storyboard walkthrough
