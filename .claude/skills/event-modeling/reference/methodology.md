@@ -142,15 +142,30 @@ records an event directly.
 **Boundary crossing → command → event.** An adapter translates data across a boundary (an external
 system, or another bounded context) into the model's own language. Like an automation, a
 translation is a *reaction*: it **triggers a command**, never records an event directly. Two
-trigger forms:
-- **Externally triggered:** `external input → translation → command → event`. The trigger comes
-  from outside the model, so the translation has no internal `from`.
-- **Internally triggered** (reacting to the modeled system's own state, e.g. pushing data out):
-  `read model → translation → command → event`. The translation reads a **view** via `from`.
+independent questions shape which form it takes — don't conflate them:
+- **Trigger source:** does the input come from outside the model, or from the model's own state
+  pushed back out?
+- **Durable artifact:** is there a queryable, persisted thing behind the trigger (a queue, topic,
+  or log), or is it an ephemeral call with nothing to query afterward?
+
+The `em` shape only tracks the second question — trigger source doesn't change it:
+- **No durable artifact:** `external input → translation → command → event`. No internal `from`.
+  Typically (not necessarily) externally triggered — a bare webhook call with nothing persisted
+  behind it.
+- **Durable artifact:** `read model → translation → command → event`. The translation reads a
+  **view** via `from`. This shape is the same whether the view was filled by the model's own event
+  (internally triggered, e.g. pushing data out) or by an external system's persisted queue
+  (externally triggered, e.g. a webhook whose inbound message is stored first for retries,
+  ordering, or audit) — an externally triggered translation backed by a real queue is
+  architecturally closer to this case than to the no-artifact one above.
+- **Event legitimacy:** a received external message counts as a legitimate domain `event` when
+  it's scoped to the context/lane whose fact it represents, not by who committed it — the same
+  move as an Anti-Corruption-Layer boundary event in DDD — and stays legitimate as long as it
+  doesn't leak into the model's own domain vocabulary.
 - `em` shape: **two slices**, exactly like an automation, plus the read slice for the event:
   ```em
   slice "Boundary" {
-    view Source from "..."     # internally triggered only; omit for an external trigger
+    view Source from "..."     # durable-artifact form only; omit if there's nothing persisted
     translation T from "Source"
   }
   slice "Record It" {

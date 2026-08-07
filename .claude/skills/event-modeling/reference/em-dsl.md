@@ -165,7 +165,7 @@ slice "Open Orders — shipped" {
   ui Order List @Customer                       # ...and every read model needs a consumer
 }
 
-# 4a. Translation (external trigger): external input -> translation -> command -> event
+# 4a. Translation (external trigger, no durable artifact): external call -> translation -> command -> event
 slice "Carrier Webhook" {
   translation Carrier Adapter         # inbound from outside the model; no internal `from`
 }
@@ -178,7 +178,26 @@ slice "Open Orders — delivered" {
   ui Order List @Customer
 }
 
-# 4b. Translation (internal trigger): read model -> translation -> command -> event
+# 4b. Translation (external trigger, durable artifact): persisted inbound queue -> translation -> command -> event
+slice "Receive Carrier Event" {           # ingest: persist the raw webhook before reacting to it
+  ui Webhook Endpoint @Carrier
+  command Receive Carrier Event
+  event Carrier Event Received @Shipping  # scoped to @Shipping's fact, not the @Carrier caller
+}
+slice "Inbound Carrier Events" {
+  view Inbound Carrier Events from "Carrier Event Received"   # the persisted inbound queue
+  translation Carrier Adapter
+}
+slice "Acknowledge Carrier Event" {
+  command Acknowledge Carrier Event
+  event Carrier Event Acknowledged @Shipping
+}
+slice "Inbound Carrier Events — processed" {
+  view Inbound Carrier Events again from "Carrier Event Acknowledged"
+  ui Delivery Board @Ops
+}
+
+# 4c. Translation (internal trigger, durable artifact): read model -> translation -> command -> event
 slice "Accept Quote" {
   ui Quote Screen @Customer     # every command needs a trigger: a ui, or a reaction before it
   command Accept Quote
@@ -197,6 +216,15 @@ slice "Accepted Quotes — synced" {
   ui Sync Status @Customer
 }
 ```
+
+Trigger source (external/internal) and durable artifact (`view`-backed or not) are independent
+axes — 4a and 4b are both "externally triggered" but only 4b has a queue, and a `view`-backed
+translation reacts the same whether the view was filled by an outside system (4b) or the model's
+own event (4c). An inbound message earns `event` status the same way any event does: scope it to
+the context/lane whose fact it represents (e.g. `Carrier Event Received @Shipping` or its own
+`Carrier` context), not by who committed it — that keeps it a legitimate boundary fact (à la an
+Anti-Corruption-Layer event in DDD) instead of a technical artifact leaking foreign vocabulary
+into the model.
 
 A `translation` (like a `processor`) is a **reaction**: it triggers a command and never carries an
 `event` in its own slice. Same two-slice split as the Automation pattern above.
@@ -230,7 +258,7 @@ slice "Read Quote — created" {
 
 - **`translation` stays reserved for genuine reactions and real external-system boundaries** — an
   internal automation, or a webhook/adapter crossing into another system (see the Automation and
-  4a/4b Translation examples above, unchanged). It is **not** how you model a synchronous
+  4a/4b/4c Translation examples above, unchanged). It is **not** how you model a synchronous
   request/response API call — that's Pattern 1 (State Change) with an API persona, exactly like the
   `Create Quote` slice above.
 - **Internal-only commands and views (no public route) carry no `ui` at all.** They follow the
