@@ -250,7 +250,7 @@ describe("em diff --json (CLI)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
-    expect(doc.diffSchemaVersion).toBe("1.3");
+    expect(doc.diffSchemaVersion).toBe("1.4");
     expect(doc.identical).toBe(false);
     expect(r.stderr).toContain("produces no event");
   });

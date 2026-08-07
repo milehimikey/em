@@ -10,7 +10,7 @@ import { ChangeEntry, ChangeType, ModelDiff, hasChanges } from "../model/diff.js
 import { Diagnostic } from "../model/validate.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
-export const DIFF_SCHEMA_VERSION = "1.3";
+export const DIFF_SCHEMA_VERSION = "1.4";
 
 /** One side of the diff: what it was called, its source text, and its warnings. */
 export interface DiffSide {
@@ -37,9 +37,13 @@ function serializeEntry(e: ChangeEntry): SerializedEntry {
     type: e.type,
     kind: e.kind ?? null,
     name: e.name ?? null,
+    ref: e.ref ?? null,
     sliceName: e.sliceName ?? null,
+    sliceKey: e.sliceKey ?? null,
     fromSlice: e.fromSlice ?? null,
+    fromSliceKey: e.fromSliceKey ?? null,
     toSlice: e.toSlice ?? null,
+    toSliceKey: e.toSliceKey ?? null,
     field: e.field ?? null,
     fieldType: e.fieldType ?? null,
     oldType: e.oldType ?? null,

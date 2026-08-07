@@ -278,7 +278,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.3"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.4"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -301,12 +301,12 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
 Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rather than
 `old`/`new`, since `const { old, new } = doc` is a syntax error.
 
-Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `sliceName`,
-`fromSlice`, `toSlice`, `field`, `fieldType`, `oldType`, `newType`, `source`, `oldNote`,
-`newNote`, `oldText`, `newText`, `from`, `to`, `acceptedDivergence`) — explicit `null` when
-unused by that entry's `type`, never omitted, so a typed consumer can destructure without
-sniffing for key presence (same convention as `em export`). Output is byte-deterministic for
-the same two inputs.
+Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `ref`, `sliceName`,
+`sliceKey`, `fromSlice`, `fromSliceKey`, `toSlice`, `toSliceKey`, `field`, `fieldType`,
+`oldType`, `newType`, `source`, `oldNote`, `newNote`, `oldText`, `newText`, `from`, `to`,
+`acceptedDivergence`) — explicit `null` when unused by that entry's `type`, never omitted, so
+a typed consumer can destructure without sniffing for key presence (same convention as `em
+export`). Output is byte-deterministic for the same two inputs.
 
 **Accepted divergence** (`acceptedDivergence`, added in schema `1.1`): non-null when the
 **old**-side (canonical) element behind this entry carries a `divergence "text"` annotation —
@@ -321,10 +321,22 @@ reports the true structural state regardless of annotation; classifying an annot
 as "not real drift" is the consumer's job (see the `conform` skill phase in
 [ai-workflow.md](ai-workflow.md)), not `em diff`'s.
 
-Entries identify elements by display name (`name`, `sliceName`), not by the `em export`
-`ref`/slice `key` the diff actually matched on — joining a diff entry back to an `em export`
-document means re-deriving the slug. Carrying refs on entries is a planned additive change
-([#40](https://github.com/milehimikey/em/issues/40)).
+**Export-ref join** (`ref`, `sliceKey`, `fromSliceKey`, `toSliceKey`, added in schema `1.4`,
+closes [#40](https://github.com/milehimikey/em/issues/40)): every entry that identifies a
+specific slice or element also carries the `em export` identity it was matched on, not just
+its display name. `ref` is the element/type's export ref (`<sliceKey>/<kind>.<slug>` for
+elements, `types/<slug>` for declared types); `sliceKey` is a slice's export key. Both are
+present on slice-scoped entries (`slice-added`/`slice-removed`, `source-*` — `sliceKey` only,
+no single element `ref` applies) and element-scoped entries (`element-added`/`element-removed`,
+`field-*`, `from-*`, `note-*`, `issue-*`, `event-marked-public`/`event-unmarked-public` — both
+`ref` and `sliceKey`). `type-added`/`type-removed`/`type-field-*` carry `ref` only — types
+aren't slice-scoped. `element-moved` carries `ref` (the element's new/target-side identity)
+plus `fromSliceKey`/`toSliceKey` alongside `fromSlice`/`toSlice`, mirroring that pair's shape.
+`arrow-added`/`arrow-removed` carry none of these — `em export` has no ref concept for arrows.
+A `~2`/`~3`-style dedupe suffix on a colliding name flows through automatically, since these
+values are read straight from the same `computeRefs()` `em export` already uses — a consumer
+can join a diff entry straight to the matching `em export` document's slice `key` or
+element/type `ref` without re-deriving the slug or reimplementing dedupe.
 
 ## `em glossary <files...>`
 

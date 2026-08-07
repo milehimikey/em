@@ -51,9 +51,20 @@ export interface ChangeEntry {
   type: ChangeType;
   kind?: ElementKind;
   name?: string;
+  /** This entry's `em export` element/type ref (`<sliceKey>/<kind>.<slug>` or `types/<slug>`)
+   *  — lets a JSON consumer join back to an `em export` document without re-deriving the
+   *  slug. Undefined for change types with no single ref (`slice-added/removed`, `source-*`,
+   *  `arrow-*`). */
+  ref?: string;
   sliceName?: string;
+  /** This entry's `em export` slice key. Undefined for types (not slice-scoped) and arrows. */
+  sliceKey?: string;
   fromSlice?: string;
+  /** `fromSlice`'s `em export` slice key, for `element-moved` only. */
+  fromSliceKey?: string;
   toSlice?: string;
+  /** `toSlice`'s `em export` slice key, for `element-moved` only. */
+  toSliceKey?: string;
   field?: string;
   fieldType?: string | null;
   oldType?: string | null;
@@ -199,7 +210,7 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
     else removedQueue.set(key, [{ ...entry, ref }]);
   }
   const movedOldRefs = new Set<string>();
-  const movedNewRefs = new Map<string, { fromSlice: string }>();
+  const movedNewRefs = new Map<string, { fromSlice: string; fromSliceKey: string }>();
   // Walk new-model elements in document order so the pairing itself is deterministic.
   newModel.slices.forEach((slice, i) => {
     const targetIsNew = !oldSliceKeySet.has(newRefs.sliceKeys[i]);
@@ -222,7 +233,7 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
         const originRemoved = !newSliceKeySet.has(origin.sliceKey);
         movedOldRefs.add(origin.ref);
         if (!(targetIsNew && originRemoved)) {
-          movedNewRefs.set(ref, { fromSlice: origin.sliceName });
+          movedNewRefs.set(ref, { fromSlice: origin.sliceName, fromSliceKey: origin.sliceKey });
         }
       }
     }
@@ -237,16 +248,16 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
     const sliceKey = newRefs.sliceKeys[i];
     const sliceIsNew = !oldSliceKeySet.has(sliceKey);
     if (sliceIsNew) {
-      changes.push({ type: "slice-added", name: slice.name });
+      changes.push({ type: "slice-added", name: slice.name, sliceKey });
       counts.slicesAdded++;
     } else {
-      pushSliceChanges(changes, counts, oldSliceByKey.get(sliceKey)!, slice);
+      pushSliceChanges(changes, counts, oldSliceByKey.get(sliceKey)!, slice, sliceKey);
     }
     for (const el of slice.elements) {
       const ref = newRefs.refById.get(el.id)!;
       const oldEntry = oldElByRef.get(ref);
       if (oldEntry) {
-        pushElementChanges(changes, counts, oldEntry.el, el, slice.name);
+        pushElementChanges(changes, counts, oldEntry.el, el, slice.name, sliceKey, ref);
         continue;
       }
       const moved = movedNewRefs.get(ref);
@@ -255,15 +266,18 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
           type: "element-moved",
           kind: el.kind,
           name: el.name,
+          ref,
           fromSlice: moved.fromSlice,
+          fromSliceKey: moved.fromSliceKey,
           toSlice: slice.name,
+          toSliceKey: sliceKey,
         });
         counts.elementsMoved++;
       } else if (!sliceIsNew) {
         // A genuinely new element in a slice that already existed. (A new
         // element inside a brand-new slice is implied by "+ slice" above —
         // element add/remove reporting is scoped to surviving slices.)
-        changes.push({ type: "element-added", kind: el.kind, name: el.name, sliceName: slice.name });
+        changes.push({ type: "element-added", kind: el.kind, name: el.name, ref, sliceName: slice.name, sliceKey });
         counts.elementsAdded++;
       }
     }
@@ -282,7 +296,7 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
     const sliceKey = oldRefs.sliceKeys[i];
     const sliceIsRemoved = !newSliceKeySet.has(sliceKey);
     if (sliceIsRemoved) {
-      removals.push({ type: "slice-removed", name: slice.name });
+      removals.push({ type: "slice-removed", name: slice.name, sliceKey });
       counts.slicesRemoved++;
     }
     for (const el of slice.elements) {
@@ -292,7 +306,7 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
       if (!sliceIsRemoved) {
         removals.push(
           annotate(
-            { type: "element-removed", kind: el.kind, name: el.name, sliceName: slice.name },
+            { type: "element-removed", kind: el.kind, name: el.name, ref, sliceName: slice.name, sliceKey },
             counts,
             el.divergence,
           ),
@@ -322,16 +336,16 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel)
     const ref = newRefs.refByTypeId.get(t.id)!;
     const oldType = oldTypeByRef.get(ref);
     if (oldType) {
-      pushTypeFieldChanges(changes, counts, oldType, t);
+      pushTypeFieldChanges(changes, counts, oldType, t, ref);
     } else {
-      changes.push({ type: "type-added", name: t.name });
+      changes.push({ type: "type-added", name: t.name, ref });
       counts.typesAdded++;
     }
   }
   for (const t of oldModel.types) {
     const ref = oldRefs.refByTypeId.get(t.id)!;
     if (newTypeByRef.has(ref)) continue; // matched pair, already diffed above
-    removals.push({ type: "type-removed", name: t.name });
+    removals.push({ type: "type-removed", name: t.name, ref });
     counts.typesRemoved++;
   }
 
@@ -344,16 +358,18 @@ function pushSliceChanges(
   counts: DiffCounts,
   oldSlice: Slice,
   newSlice: Slice,
+  sliceKey: string,
 ): void {
   if (oldSlice.source === newSlice.source) return;
   if (!oldSlice.source && newSlice.source) {
-    changes.push({ type: "source-added", sliceName: newSlice.name, newSource: newSlice.source });
+    changes.push({ type: "source-added", sliceName: newSlice.name, sliceKey, newSource: newSlice.source });
   } else if (oldSlice.source && !newSlice.source) {
-    changes.push({ type: "source-removed", sliceName: newSlice.name, oldSource: oldSlice.source });
+    changes.push({ type: "source-removed", sliceName: newSlice.name, sliceKey, oldSource: oldSlice.source });
   } else {
     changes.push({
       type: "source-changed",
       sliceName: newSlice.name,
+      sliceKey,
       oldSource: oldSlice.source,
       newSource: newSlice.source,
     });
@@ -369,19 +385,20 @@ function pushTypeFieldChanges(
   counts: DiffCounts,
   oldType: TypeDecl,
   newType: TypeDecl,
+  ref: string,
 ): void {
   const oldFields = new Map(oldType.fields.map((f) => [normalizeName(f.name), f]));
   const newFields = new Map(newType.fields.map((f) => [normalizeName(f.name), f]));
 
   for (const [key, f] of newFields) {
     if (!oldFields.has(key)) {
-      changes.push({ type: "type-field-added", name: newType.name, field: f.name, fieldType: f.type ?? null });
+      changes.push({ type: "type-field-added", name: newType.name, ref, field: f.name, fieldType: f.type ?? null });
       counts.typeFieldChanges++;
     }
   }
   for (const [key, f] of oldFields) {
     if (!newFields.has(key)) {
-      changes.push({ type: "type-field-removed", name: newType.name, field: f.name, fieldType: f.type ?? null });
+      changes.push({ type: "type-field-removed", name: newType.name, ref, field: f.name, fieldType: f.type ?? null });
       counts.typeFieldChanges++;
     }
   }
@@ -391,6 +408,7 @@ function pushTypeFieldChanges(
       changes.push({
         type: "type-field-changed",
         name: newType.name,
+        ref,
         field: newF.name,
         oldType: oldF.type ?? null,
         newType: newF.type ?? null,
@@ -407,6 +425,8 @@ function pushElementChanges(
   oldEl: Element,
   newEl: Element,
   sliceName: string,
+  sliceKey: string,
+  ref: string,
 ): void {
   const oldFields = new Map((oldEl.fields ?? []).map((f) => [normalizeName(f.name), f]));
   const newFields = new Map((newEl.fields ?? []).map((f) => [normalizeName(f.name), f]));
@@ -424,7 +444,9 @@ function pushElementChanges(
             type: "field-added",
             kind: newEl.kind,
             name: newEl.name,
+            ref,
             sliceName,
+            sliceKey,
             field: f.name,
             fieldType: f.type ?? null,
           },
@@ -443,7 +465,9 @@ function pushElementChanges(
             type: "field-removed",
             kind: newEl.kind,
             name: newEl.name,
+            ref,
             sliceName,
+            sliceKey,
             field: f.name,
             fieldType: f.type ?? null,
           },
@@ -463,7 +487,9 @@ function pushElementChanges(
             type: "field-changed",
             kind: newEl.kind,
             name: newEl.name,
+            ref,
             sliceName,
+            sliceKey,
             field: newF.name,
             oldType: oldF.type ?? null,
             newType: newF.type ?? null,
@@ -482,13 +508,17 @@ function pushElementChanges(
   const newFromSet = new Set(newFrom.map(normalizeName));
   for (const n of newFrom) {
     if (!oldFromSet.has(normalizeName(n))) {
-      changes.push(annotate({ type: "from-added", kind: newEl.kind, name: newEl.name, sliceName, source: n }, counts, div));
+      changes.push(
+        annotate({ type: "from-added", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey, source: n }, counts, div),
+      );
       counts.fromChanges++;
     }
   }
   for (const n of oldFrom) {
     if (!newFromSet.has(normalizeName(n))) {
-      changes.push(annotate({ type: "from-removed", kind: newEl.kind, name: newEl.name, sliceName, source: n }, counts, div));
+      changes.push(
+        annotate({ type: "from-removed", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey, source: n }, counts, div),
+      );
       counts.fromChanges++;
     }
   }
@@ -496,11 +526,19 @@ function pushElementChanges(
   if (oldEl.note !== newEl.note) {
     if (!oldEl.note && newEl.note) {
       changes.push(
-        annotate({ type: "note-added", kind: newEl.kind, name: newEl.name, sliceName, newNote: newEl.note }, counts, div),
+        annotate(
+          { type: "note-added", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey, newNote: newEl.note },
+          counts,
+          div,
+        ),
       );
     } else if (oldEl.note && !newEl.note) {
       changes.push(
-        annotate({ type: "note-removed", kind: newEl.kind, name: newEl.name, sliceName, oldNote: oldEl.note }, counts, div),
+        annotate(
+          { type: "note-removed", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey, oldNote: oldEl.note },
+          counts,
+          div,
+        ),
       );
     } else {
       changes.push(
@@ -509,7 +547,9 @@ function pushElementChanges(
             type: "note-changed",
             kind: newEl.kind,
             name: newEl.name,
+            ref,
             sliceName,
+            sliceKey,
             oldNote: oldEl.note,
             newNote: newEl.note,
           },
@@ -527,12 +567,20 @@ function pushElementChanges(
   if (oldEl.issue !== newEl.issue) {
     if (!oldEl.issue && newEl.issue) {
       changes.push(
-        annotate({ type: "issue-opened", kind: newEl.kind, name: newEl.name, sliceName, newText: newEl.issue }, counts, div),
+        annotate(
+          { type: "issue-opened", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey, newText: newEl.issue },
+          counts,
+          div,
+        ),
       );
       counts.issuesOpened++;
     } else if (oldEl.issue && !newEl.issue) {
       changes.push(
-        annotate({ type: "issue-resolved", kind: newEl.kind, name: newEl.name, sliceName, oldText: oldEl.issue }, counts, div),
+        annotate(
+          { type: "issue-resolved", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey, oldText: oldEl.issue },
+          counts,
+          div,
+        ),
       );
       counts.issuesResolved++;
     } else {
@@ -542,7 +590,9 @@ function pushElementChanges(
             type: "issue-changed",
             kind: newEl.kind,
             name: newEl.name,
+            ref,
             sliceName,
+            sliceKey,
             oldText: oldEl.issue,
             newText: newEl.issue,
           },
@@ -559,10 +609,10 @@ function pushElementChanges(
   // fields above — no kind special-casing needed.
   if (oldEl.public !== newEl.public) {
     if (newEl.public) {
-      changes.push({ type: "event-marked-public", kind: newEl.kind, name: newEl.name, sliceName });
+      changes.push({ type: "event-marked-public", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey });
       counts.eventsMarkedPublic++;
     } else {
-      changes.push({ type: "event-unmarked-public", kind: newEl.kind, name: newEl.name, sliceName });
+      changes.push({ type: "event-unmarked-public", kind: newEl.kind, name: newEl.name, ref, sliceName, sliceKey });
       counts.eventsUnmarkedPublic++;
     }
   }
