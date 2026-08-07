@@ -258,7 +258,7 @@ slice "Read Quote — created" {
 
 - **`translation` stays reserved for genuine reactions and real external-system boundaries** — an
   internal automation, or a webhook/adapter crossing into another system (see the Automation and
-  4a/4b Translation examples above, unchanged). It is **not** how you model a synchronous
+  4a/4b/4c Translation examples above, unchanged). It is **not** how you model a synchronous
   request/response API call — that's Pattern 1 (State Change) with an API persona, exactly like the
   `Create Quote` slice above.
 - **Internal-only commands and views (no public route) carry no `ui` at all.** They follow the
