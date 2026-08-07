@@ -27,7 +27,7 @@
 import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { Element, NormalizedModel, Slice, normalizeName } from "../model/model.js";
 import { resolveFromSource } from "../model/edges.js";
-import { Grid, layout } from "../layout/grid.js";
+import { Grid, LayoutOptions, layout } from "../layout/grid.js";
 import { emitDot } from "../emit/dot.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 
@@ -37,13 +37,19 @@ export interface SliceDiagramResult {
   dot: string;
 }
 
-/** Build a small, standalone diagram for one slice — real Graphviz layout, not a crop. */
-export function buildSliceDiagram(model: NormalizedModel, sliceIndex: number): SliceDiagramResult {
+/** Build a small, standalone diagram for one slice — real Graphviz layout, not a crop.
+ *  `opts` is forwarded to layout() unchanged, so `--keep-empty-lanes` behaves the same
+ *  way here as it does for the full model instead of being silently dropped. */
+export function buildSliceDiagram(
+  model: NormalizedModel,
+  sliceIndex: number,
+  opts: LayoutOptions = {},
+): SliceDiagramResult {
   const slice = model.slices[sliceIndex];
   const pattern = classifySlicePattern(slice);
   const columns = mergeColumns(collectColumns(model, sliceIndex, pattern));
   const synthetic = assembleSyntheticModel(model, columns, slice.name);
-  const grid = layout(synthetic);
+  const grid = layout(synthetic, opts);
   const dot = emitDot(synthetic, grid);
   return { model: synthetic, grid, dot };
 }

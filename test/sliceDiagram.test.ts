@@ -137,6 +137,20 @@ slice "Nothing Here" {
   });
 });
 
+describe("buildSliceDiagram — keepEmptyLanes", () => {
+  it("is dropped by default (matching layout()'s own default) and respected when passed", () => {
+    const model = modelFrom(`
+slice "Nothing Here" {
+}
+`);
+    const collapsed = buildSliceDiagram(model, 0);
+    expect(collapsed.grid.rows.some((r) => r.band === "api")).toBe(false);
+
+    const kept = buildSliceDiagram(model, 0, { keepEmptyLanes: true });
+    expect(kept.grid.rows.some((r) => r.band === "api")).toBe(true);
+  });
+});
+
 describe("buildSliceDiagram — regression guards", () => {
   it("personas/contexts reflect only the included elements, not the full model's lists", () => {
     // The full model here declares 3 personas and 2 contexts; "View Open Orders"

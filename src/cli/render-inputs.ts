@@ -14,10 +14,17 @@ export type SliceLookup = { index: number } | { error: string };
 
 /**
  * Resolve `--slice <name>` against the compiled model's slices: an exact,
- * case-sensitive match against Slice.name — the same identity `em export`/
- * `em catalog` key off (via kebabSlug), not a separate fuzzy namespace. On no
+ * case-sensitive match against `Slice.name` — not a fuzzy namespace. On no
  * match, lists every valid slice name in declaration order so a typo is
  * correctable without opening the .em file.
+ *
+ * Note this is a *different* identity than `em export`/`em catalog`'s
+ * deduped `sliceKey` (kebab-slug + `~2`/`~3` suffix for repeated names) —
+ * `findIndex` here always returns the *first* slice with a given name, so two
+ * identically-named slices can't be disambiguated via `--slice` at all today.
+ * Rare in practice (duplicate slice names are themselves a validation
+ * warning), and not worth a key-based `--slice` syntax until it's a real
+ * complaint — flagging here rather than silently.
  */
 export function resolveSliceArg(name: string, slices: Slice[]): SliceLookup {
   const index = slices.findIndex((s) => s.name === name);

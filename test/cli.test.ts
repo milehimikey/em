@@ -32,6 +32,14 @@ slice "Open Orders" {
 }
 `;
 
+// Unclassified pattern (ui only, no command/view) so its slice diagram's API lane is
+// genuinely empty by default — the case --keep-empty-lanes exists to override.
+const UI_ONLY = `persona Customer
+slice "Just A Screen" {
+  ui Dashboard @Customer
+}
+`;
+
 // One warning (command with no event), no errors.
 const WARNING_ONLY = `slice "Place" {
   command Place Order
@@ -136,6 +144,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "glossary-b-clean.em"), GLOSSARY_B_CLEAN);
   writeFileSync(join(dir, "glossary-b-conflict.em"), GLOSSARY_B_CONFLICT);
   writeFileSync(join(dir, "catalog-duplicate.em"), CATALOG_DUPLICATE_SLICE_NAMES);
+  writeFileSync(join(dir, "ui-only.em"), UI_ONLY);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -604,6 +613,19 @@ describe("em render --slice (CLI)", () => {
     expect(r.stderr).toContain('no slice named "Nope"');
     expect(r.stderr).toContain('"Place"');
     expect(r.stderr).toContain('"Open Orders"');
+  });
+
+  it("--keep-empty-lanes is threaded through, not silently dropped", () => {
+    const collapsed = em(["render", "ui-only.em", "--slice", "Just A Screen", "-o", "no-lanes.svg"], dir);
+    expect(collapsed.status).toBe(0);
+    expect(readFileSync(join(dir, "no-lanes.svg"), "utf8")).not.toContain(">API<");
+
+    const kept = em(
+      ["render", "ui-only.em", "--slice", "Just A Screen", "--keep-empty-lanes", "-o", "with-lanes.svg"],
+      dir,
+    );
+    expect(kept.status).toBe(0);
+    expect(readFileSync(join(dir, "with-lanes.svg"), "utf8")).toContain(">API<");
   });
 
   it("rejects --slice combined with --emit-dot", () => {

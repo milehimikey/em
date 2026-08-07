@@ -112,7 +112,9 @@ program
       const out = opts.out ?? defaultSliceOut(file, opts.slice);
       const fmt = opts.format ?? formatFromPath(out);
       await mkdir(dirname(out), { recursive: true }); // slices/ may not exist yet
-      const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, lookup.index);
+      const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, lookup.index, {
+        keepEmptyLanes: opts.keepEmptyLanes,
+      });
       const raw = await layoutDot(sliceDot);
       const svg = composeSvg(raw, sliceModel, sliceGrid, dirname(file), dirname(out));
       await writeRendered(svg, out, fmt);
@@ -280,7 +282,12 @@ program
         process.exit(1);
       }
 
-      const result = await buildCatalog(inputs, { outDir: opts.out, format: plan.format, title: opts.title });
+      const result = await buildCatalog(inputs, {
+        outDir: opts.out,
+        format: plan.format,
+        title: opts.title,
+        keepEmptyLanes: opts.keepEmptyLanes,
+      });
       for (const d of result.diagnostics) printDiagnosticsFor(d.file, d.diagnostics);
       const modelWord = result.models === 1 ? "model" : "models";
       const sliceWord = result.slices === 1 ? "slice" : "slices";

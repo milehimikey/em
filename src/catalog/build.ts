@@ -37,6 +37,11 @@ export interface CatalogOptions {
   outDir: string;
   format?: "svg" | "png";
   title?: string;
+  /** Forwarded to buildSliceDiagram's fallback build so `--keep-empty-lanes`
+   *  behaves the same way for a built-on-the-fly slice diagram as it does for
+   *  the main one (which already gets it via the per-file compileFile call
+   *  that produced `model`/`grid` in the first place). */
+  keepEmptyLanes?: boolean;
 }
 
 export interface CatalogBuildResult {
@@ -106,7 +111,15 @@ export async function buildCatalog(
       if (existsSync(sliceSvgSrcPath)) {
         await copyFile(sliceSvgSrcPath, join(slicesDir, sliceDiagramFile));
       } else {
-        const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, i);
+        // One Graphviz WASM layout pass per slice lacking an authored sibling — unlike
+        // the single shared pass the old crop-based approach paid for once per model.
+        // Each pass is on a tiny 1-3-column graph, so this is fast in absolute terms
+        // and the WASM module itself is loaded once and memoized (render.ts); a real,
+        // deliberate trade-off, not an oversight — worth revisiting only if catalog
+        // build time on a very-many-slice model actually becomes a complaint.
+        const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, i, {
+          keepEmptyLanes: opts.keepEmptyLanes,
+        });
         const sliceRaw = await layoutDot(sliceDot);
         const sliceSvg = composeSvg(sliceRaw, sliceModel, sliceGrid, dirname(file), slicesDir);
         await writeFile(join(slicesDir, sliceDiagramFile), sliceSvg, "utf8");
