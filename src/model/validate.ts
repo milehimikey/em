@@ -47,9 +47,11 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     }
 
     // A `ui` only ever triggers a `command` (State Change) — no pattern has a `ui`
-    // triggering a reaction. If one sits in a reaction's slice instead, it renders with
-    // no outgoing edge at all: a floating box nothing points at.
-    if (auto && !command) {
+    // triggering a reaction. If one sits in a reaction's slice instead, with no read
+    // model in the same slice, it renders with no outgoing edge at all: a floating box
+    // nothing points at. But a `view` in the same slice draws `view -> ui` regardless of
+    // whether an automation also reads it (edges.ts) — that ui IS connected, so stay quiet.
+    if (auto && !command && views.length === 0) {
       for (const ui of slice.elements.filter((e) => e.kind === "ui")) {
         diags.push({
           severity: "warning",

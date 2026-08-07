@@ -742,6 +742,25 @@ slice "Backlog" {
     expect(diags.filter((d) => d.message.includes("renders disconnected here"))).toHaveLength(0);
     expect(diags.some((d) => d.message.includes("shares slice"))).toBe(true);
   });
+
+  it("stays quiet when a view sits alongside — view -> ui connects it regardless of the automation", () => {
+    // edges.ts draws `view -> ui` whenever a view and ui share a slice, whether or not an
+    // automation also reads that same view. The ui is genuinely connected here, not dangling.
+    expect(
+      disconnected(`
+context Ticket
+slice "Backlog" {
+  view Backlog Items
+  ui Queue Board @Agent
+  processor Auto Assign
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
 });
 
 describe("unconsumed read model warning", () => {
