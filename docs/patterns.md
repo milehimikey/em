@@ -95,10 +95,23 @@ list, one payment shorter. Without it the event is unread and `em validate` warn
 
 An adapter carries data across a boundary — an external system, or another bounded context —
 and translates it into the model's own language. A translation is a reaction just like a
-processor: it triggers a command and never records an event directly. Two trigger forms:
+processor: it triggers a command and never records an event directly.
 
-Externally triggered — the input comes from outside the model, so the translation has no
-`from`:
+Two independent questions shape which form it takes — don't conflate them:
+
+* **Trigger source** — does the input come from outside the model, or from the model's own
+  state pushed back out?
+* **Durable artifact** — is there a queryable, persisted thing behind the trigger (a queue,
+  topic, or log), or is it an ephemeral call with nothing to query afterward?
+
+The DSL only cares about the second question: a translation with a `view` reads a durable read
+model in its own slice; one without has no `from` at all. Trigger source doesn't change the
+shape — an externally triggered translation backed by a real queue is architecturally closer to
+the internally triggered case (same durability, same queryability) than to a plain external
+call, even though both are "externally triggered."
+
+Externally triggered, no durable artifact — the input comes from outside the model as a bare
+call, so the translation has no `from`:
 
 ```em
 slice "Carrier Webhook" {
@@ -115,6 +128,36 @@ slice "Deliveries" {
   ui Delivery Board @Ops
 }
 ```
+
+Externally triggered, durable artifact — a lot of real integrations persist the inbound message
+first (for retries, ordering, audit) before processing it. Same `view` + `translation` shape as
+the internal case below, just fed by an external fact instead of one the model recorded itself:
+
+```em
+slice "Inbound Carrier Events" {
+  view Inbound Carrier Events from "Carrier Event Received"
+  translation Carrier Adapter
+}
+
+slice "Confirm Delivery" {
+  command Confirm Delivery
+  event Delivery Confirmed @Shipping
+}
+
+slice "Inbound Carrier Events — processed" {
+  view Inbound Carrier Events again from "Delivery Confirmed"
+  ui Delivery Board @Ops
+}
+```
+
+`Carrier Event Received` is recorded by whatever ingest step persists the raw webhook payload —
+out of frame here since this section is about the Translation pattern, not ingestion. That event
+is a legitimate domain `event`, not a technical artifact dressed up as one, by the same test that
+applies anywhere: an event is legitimate if it's scoped to the context/lane whose fact it
+represents, not by who committed it. `Carrier Event Received @Shipping` (or a `Carrier` context
+of its own) asserts a fact about the *carrier's* world — the same move as an Anti-Corruption-Layer
+boundary event in DDD — and stays legitimate as long as it doesn't leak into the model's own
+domain vocabulary.
 
 Internally triggered — the system pushes its own state outward, so the translation reads a
 read model:
@@ -136,8 +179,8 @@ slice "Accepted Quotes — synced" {
 }
 ```
 
-Both forms close with a State View slice, for the same reason as the Automation pattern: the
-command's event needs a reader. Note that a reaction reading the view doesn't satisfy that —
+All three forms close with a State View slice, for the same reason as the Automation pattern:
+the command's event needs a reader. Note that a reaction reading the view doesn't satisfy that —
 reactions read read models, not events.
 
 Note that `em validate` warns when a reaction shares a slice with a command, but cannot
