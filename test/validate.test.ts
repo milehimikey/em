@@ -674,6 +674,95 @@ slice "C" {
   });
 });
 
+describe("ui sharing a reaction's slice", () => {
+  // A `ui` only ever triggers a `command` (State Change) — no pattern has a `ui` triggering a
+  // reaction. Placed in a reaction's slice instead, it renders with no outgoing edge at all.
+  const disconnected = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("renders disconnected here"));
+
+  it("warns when a ui shares a slice with a translation and no command", () => {
+    const diags = disconnected(`
+context Shipping
+slice "Weird" {
+  ui Something @Ops
+  translation Carrier Adapter
+}
+slice "Confirm Delivery" {
+  command Confirm Delivery
+  event Delivery Confirmed @Shipping
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
+    expect(diags[0].message).toBe(
+      'ui "Something" shares slice "Weird" with translation "Carrier Adapter"; a `ui` only ' +
+        "wires to a `command` and renders disconnected here — move it to the slice that " +
+        "consumes the read model, or to the slice with the command this triggers",
+    );
+  });
+
+  it("warns for any automation alias (processor), not just translation", () => {
+    expect(
+      disconnected(`
+context Ticket
+slice "Backlog" {
+  ui Queue Board @Agent
+  processor Auto Assign
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(1);
+  });
+
+  it("stays quiet on the ordinary State Change pairing (ui + command)", () => {
+    expect(
+      disconnected(`
+context Ticket
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("stays quiet when the reaction shares its slice with a command instead (the other warning covers that)", () => {
+    const diags = diagsFor(`
+context Ticket
+slice "Backlog" {
+  processor Auto Assign
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`);
+    expect(diags.filter((d) => d.message.includes("renders disconnected here"))).toHaveLength(0);
+    expect(diags.some((d) => d.message.includes("shares slice"))).toBe(true);
+  });
+
+  it("stays quiet when a view sits alongside — view -> ui connects it regardless of the automation", () => {
+    // edges.ts draws `view -> ui` whenever a view and ui share a slice, whether or not an
+    // automation also reads that same view. The ui is genuinely connected here, not dangling.
+    expect(
+      disconnected(`
+context Ticket
+slice "Backlog" {
+  view Backlog Items
+  ui Queue Board @Agent
+  processor Auto Assign
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
+});
+
 describe("unconsumed read model warning", () => {
   // A complete State View is event -> read model -> ui (or -> reaction). A view nothing
   // displays or watches is the output-side half-slice.

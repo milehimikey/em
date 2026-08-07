@@ -49,6 +49,7 @@ each; run `em validate` on it to see all five.
 | Rule | Fix |
 |---|---|
 | A `processor`/`translation` shares a slice with a command | Reactions trigger commands; put the triggered command in the next slice |
+| A `ui` shares a slice with a `processor`/`translation` and no command | `ui` only wires to `command`; move it to the read-model slice, or to the slice with the command it should trigger |
 | A command nothing triggers | Add the screen it's issued from, or the reaction that issues it |
 | A command that records no event | Add the event, or reconsider the command |
 | An event no read model reads | Project it into a view, or reconsider recording it |

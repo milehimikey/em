@@ -83,6 +83,12 @@ Instances are never connected to one another — continuity is implied by the sh
 the events reaching each instance are what show the view changing over time. See
 [timeline.md](timeline.md).
 
+A `ui` only ever wires to a `command` (the State Change pattern) — no pattern has a `ui`
+triggering a `processor`/`automation`/`saga`/`translation`; reactions are triggered by reading a
+read model, or by an external input, never by a person on a screen. Placing a `ui` in a reaction's
+slice instead of a command's renders it with no outgoing edge at all — a floating box — and
+[`em validate` warns](validation.md#warnings) on it.
+
 ### `arrow`
 
 `arrow A -> B` draws an explicit edge for anything the patterns don't infer, such as a read
