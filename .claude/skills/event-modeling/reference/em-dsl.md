@@ -270,6 +270,10 @@ slice "Read Quote — created" {
 - A read model fed by an early event (e.g. a queue or to-do view) can't always sit directly after
   its source event when a reaction must immediately precede its command slice — placing the read
   later, in narrative order with a longer arrow, is the correct trade-off, not something to force-fix.
+- A `ui` never triggers a reaction — no pattern has a `ui` wired to `processor`/`automation`/
+  `saga`/`translation`, only to `command`. A `ui` left in the reaction's own slice (instead of the
+  read-model or command slice) renders with no outgoing edge, disconnected, and `em validate` now
+  warns on it.
 
 ---
 
@@ -300,28 +304,32 @@ slice "Read Quote — created" {
 **Warnings (should fix):**
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and
    `translation` are reactions; put the triggered command in the *next* slice.
-2. **Command with no trigger** — nothing issues it. A command needs a `ui` in its slice, or a
+2. **`ui` shares slice with a reaction, no command** — a `ui` only ever wires to a `command`; no
+   pattern has a `ui` triggering an automation/processor/saga/translation. Left in the reaction's
+   own slice it renders disconnected, with no edge. Move it to the read-model slice, or to the
+   slice with the command this eventually triggers.
+3. **Command with no trigger** — nothing issues it. A command needs a `ui` in its slice, or a
    reaction (automation/processor/saga/translation) in the slice *before* it. The input-side mirror
-   of (4): a command nothing points at is a write nobody can start.
-3. **Command without event** — every command should record at least one event.
-4. **Event nobody reads** — the mirror of (3): recording an event no read model projects is a
+   of (5): a command nothing points at is a write nobody can start.
+4. **Command without event** — every command should record at least one event.
+5. **Event nobody reads** — the mirror of (4): recording an event no read model projects is a
    write with no reader. Follow every write slice with the read slice that consumes its event.
    Counts as read when a `view` names it in `from` (any `again` instance will do), when a
    fieldless-`from` view sits in its slice, or via an explicit `event -> view` arrow.
-5. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
-6. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
+6. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
+7. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
    (A duplicate `type` name always warns, unlike a duplicate element name — there's no
    legitimate unreferenced-duplicate case for a named type.)
-7. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
+8. **Open issue** — an element carries `issue "text"`; resolve the question, then remove the
    clause. `em validate --list-issues` prints just these; `--fail-on-issues` (opt-in) makes CI
    fail while any remain open.
-8. **View field with no source** — a `view` field whose name matches no field on any instance
+9. **View field with no source** — a `view` field whose name matches no field on any instance
    of its source events. Only checked once BOTH the view and at least one source event declare
    `{ fields }`.
-9. **Event field not from a command** — an `event` field whose name matches no field on any
-   command in the same slice. Only checked once BOTH the event and at least one same-slice
-   command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
-   once fields are written down, `em validate` checks that data flows forward consistently.
+10. **Event field not from a command** — an `event` field whose name matches no field on any
+    command in the same slice. Only checked once BOTH the event and at least one same-slice
+    command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
+    once fields are written down, `em validate` checks that data flows forward consistently.
 
 `divergence "text"` is deliberately NOT in this list — it raises no warning at all, since it
 records a deviation already reasoned through and accepted, not something to fix. Use

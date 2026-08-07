@@ -88,6 +88,12 @@ Why two slices? Because the processor never records an event itself. It funnels 
 through a command like everyone else, so the command slice keeps its invariants no matter
 who's calling. Putting the command in the reaction's slice draws a validation warning.
 
+The reaction's own slice never holds a `ui` either — nothing on a screen triggers a processor
+directly, only a read model does. A `ui` belongs in the *consumer* slice instead: the one with
+the command this eventually triggers (if there's a screen for that), or, more commonly, a later
+State View slice reading the resulting event. A `ui` left in the reaction's slice renders
+disconnected, with no edge, and `em validate` warns on it too.
+
 The third slice is the State View that reads `Payment Captured` — here it's the same to-do
 list, one payment shorter. Without it the event is unread and `em validate` warns.
 
