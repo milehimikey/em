@@ -89,9 +89,15 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
         const bucket = model.byName.get(normalizeName(src));
         const evt = bucket?.find((e) => e.kind === "event");
         if (!evt) {
+          // Same courtesy as the reaction check below: if the name exists as
+          // another kind, say so rather than calling it unknown.
+          const other = bucket?.[0];
           diags.push({
             severity: "error",
-            message: `read model "${view.name}" references unknown event "${src}"`,
+            message: other
+              ? `read model "${view.name}" references "${src}", which is a ${other.kind}, not an event — ` +
+                `\`from\` on a view names the events it projects`
+              : `read model "${view.name}" references unknown event "${src}"`,
             line: view.line,
           });
         } else if (evt.sliceIndex > view.sliceIndex) {
@@ -176,9 +182,17 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       const bucket = model.byName.get(normalizeName(src));
       const views = bucket?.filter((e) => e.kind === "view") ?? [];
       if (views.length === 0) {
+        // A name that exists but as the wrong kind reads like a typo without
+        // saying so — call out the kind mismatch and the fix (project the
+        // event into a view) instead of claiming the name is unknown.
+        const asEvent = bucket?.find((e) => e.kind === "event");
         diags.push({
           severity: "error",
-          message: `${el.kind} "${el.name}" references unknown read model "${src}"`,
+          message: asEvent
+            ? `${el.kind} "${el.name}" references "${src}", which is an event, not a read model — ` +
+              `reactions watch read models; project the event into a view first ` +
+              `(\`view <Pending Work> from "${src}"\`) and reference that view`
+            : `${el.kind} "${el.name}" references unknown read model "${src}"`,
           line: el.line,
         });
       } else if (!views.some((v) => v.sliceIndex <= el.sliceIndex)) {

@@ -88,6 +88,14 @@ Why two slices? Because the processor never records an event itself. It funnels 
 through a command like everyone else, so the command slice keeps its invariants no matter
 who's calling. Putting the command in the reaction's slice draws a validation warning.
 
+Name the read model after the pending work — `Payments To Process`, `Orders To Fulfill`,
+`Pending Approvals` — never after the triggering event. The to-do list is a different thing
+from the fact that feeds it: `Payment Requested` is what happened; `Payments To Process` is
+what's left to do. Reusing the event's name isn't just harder to read — element names share
+one namespace, so a view named `Payment Requested` collides with the event of the same name,
+`from` references then resolve by element kind behind your back, and `em validate` flags the
+duplicated name.
+
 The reaction's own slice never holds a `ui` either — nothing on a screen triggers a processor
 directly, only a read model does. A `ui` belongs in the *consumer* slice instead: the one with
 the command this eventually triggers (if there's a screen for that), or, more commonly, a later

@@ -995,3 +995,68 @@ slice "Read" {
     ).toBe(false);
   });
 });
+
+describe("`from` kind-mismatch error messages (MIL-83)", () => {
+  it("says an event is not a read model when a reaction's `from` names an event", () => {
+    const diags = diagsFor(`
+slice "S" {
+  ui Screen @User
+  command Do Thing
+  event Thing Happened @Ctx
+}
+slice "React" {
+  processor Reactor from "Thing Happened"
+}
+`);
+    const err = diags.find(
+      (d) => d.severity === "error" && d.message.includes('"Reactor"'),
+    );
+    expect(err?.message).toContain("which is an event, not a read model");
+    expect(err?.message).toContain('view <Pending Work> from "Thing Happened"');
+  });
+
+  it("still reports a truly unknown read model as unknown", () => {
+    const diags = diagsFor(`
+slice "React" {
+  processor Reactor from "No Such Thing"
+}
+`);
+    expect(
+      diags.some((d) => d.message.includes('references unknown read model "No Such Thing"')),
+    ).toBe(true);
+  });
+
+  it("says a view is not an event when a view's `from` names another view", () => {
+    const diags = diagsFor(`
+slice "A" {
+  ui Screen @User
+  command Do Thing
+  event Thing Happened @Ctx
+}
+slice "B" {
+  view Things from "Thing Happened"
+  ui Board @User
+}
+slice "C" {
+  view Copy of Things from "Things"
+  ui Other Board @User
+}
+`);
+    const err = diags.find(
+      (d) => d.severity === "error" && d.message.includes('"Copy of Things"'),
+    );
+    expect(err?.message).toContain("which is a view, not an event");
+  });
+
+  it("still reports a truly unknown event as unknown", () => {
+    const diags = diagsFor(`
+slice "B" {
+  view Things from "Never Happened"
+  ui Board @User
+}
+`);
+    expect(
+      diags.some((d) => d.message.includes('references unknown event "Never Happened"')),
+    ).toBe(true);
+  });
+});

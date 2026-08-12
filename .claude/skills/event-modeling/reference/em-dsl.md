@@ -66,6 +66,12 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 - **`from "X"`** on views/automations declares the source(s); names are quoted, comma-separated.
   Matching is case-insensitive and whitespace-normalized. A `from` may never point at an event or
   view that first appears in a LATER slice (forward-only timeline — validation error).
+  Kinds never cross: a view's `from` resolves ONLY to events; a reaction's `from` resolves ONLY
+  to read models — naming an event on a reaction is a validation error even though the event
+  exists. Feed an event to a reaction by projecting it into a view first (the automation's
+  "to-do list") and pointing the reaction at that view. Name that view after the pending work
+  (`Payments To Process`), never after the triggering event — a view reusing the event's name
+  collides in the shared namespace and draws a duplicate-name warning.
 - **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an
   already-declared read model — the forward-only device for a view that evolves as later events
   land. Instances are ONE logical view: the first declaration owns the `note` binding; each
