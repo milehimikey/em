@@ -135,6 +135,11 @@ records an event directly.
   The processor band holds no event; the command in the next slice produces it. Keeping the
   triggered command in the same slice as the processor is a validation warning — always split it.
   Forgetting the third slice leaves `E` unread, which is also a warning.
+- **Naming:** name the read model after the pending work — `Payments To Process`,
+  `Orders To Fulfill`, `Pending Approvals` — never after the triggering event. The event is what
+  happened; the view is what's left to do. Reusing the event's name also collides in the shared
+  element namespace: `from` references then resolve by element kind, and `em validate` flags the
+  duplicated name.
 - Socratic prompts: *"What should happen without a human? What condition triggers it? What work
   list does the processor watch? What command does it fire? What if it fails or retries?"*
 

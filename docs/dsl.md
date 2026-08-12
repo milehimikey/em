@@ -66,6 +66,14 @@ matching is case-insensitive and whitespace-normalized. A `from` may only point 
 sideways in time — sourcing an event or view that first appears in a later slice is a
 validation error (see [timeline.md](timeline.md)).
 
+The two directions never cross: a view's `from` resolves only to **events**, and a
+reaction's `from` resolves only to **read models**. Naming an event on a reaction is a
+validation error even when the event exists — reactions don't watch the event stream
+directly. To feed an event into a reaction, project it into a view first
+(`view Payments To Process from "Payment Requested"`) and point the reaction at that view:
+the view is the automation's to-do list, and it lives in the reaction's slice (see the
+Automation pattern in [patterns.md](patterns.md)).
+
 ### `view … again`
 
 `view <Name> again [from "Event", …]` declares a later instance of an already-declared read
