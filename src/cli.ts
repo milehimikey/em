@@ -469,7 +469,7 @@ program
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
         if (opts.listIssues) printIssues(model);
         if (opts.listDivergences) printDivergences(model);
-        if (opts.listPublic) printPublicEvents(model);
+        if (opts.listPublic) printPublicElements(model);
         // Errors still fail the run below — surface them rather than exiting
         // non-zero with nothing but the list on screen.
         printDiagnostics(allDiagnostics.filter((d) => d.severity === "error"));
@@ -759,16 +759,16 @@ function printDivergences(model: NormalizedModel): void {
   }
 }
 
-/** Print only events marked `public`: slice, name, line — for an integration-surface audit. */
-function printPublicEvents(model: NormalizedModel): void {
-  const pub = model.elements.filter((el) => el.kind === "event" && el.public);
+/** Print only elements marked `public`: slice, kind, name, line — for an integration-surface audit. */
+function printPublicElements(model: NormalizedModel): void {
+  const pub = model.elements.filter((el) => el.public && (el.kind === "event" || el.kind === "view"));
   if (pub.length === 0) {
-    console.log("no public events");
+    console.log("no public elements");
     return;
   }
   for (const el of pub) {
     const slice = model.slices[el.sliceIndex];
-    console.log(`  public :${el.line} slice "${slice.name}" event "${el.name}"`);
+    console.log(`  public :${el.line} slice "${slice.name}" ${el.kind} "${el.name}"`);
   }
 }
 

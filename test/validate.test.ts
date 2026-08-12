@@ -1145,7 +1145,7 @@ slice "React B" {
 });
 
 describe("`public` marker raises no diagnostic", () => {
-  it("produces no diagnostics for an event marked public", () => {
+  it("produces no diagnostics for a fully-connected event marked public", () => {
     const diags = diagsFor(`
 slice "Place" {
   ui New Order @Customer
@@ -1158,6 +1158,64 @@ slice "Catalog" {
 }
 `);
     expect(diags).toHaveLength(0);
+  });
+
+  it("exempts a public event with no local reader from the unread-event warning", () => {
+    // The whole point of `public`: this event's consumer is outside this model — a partner
+    // integration, another team's service — so there's nothing local to project it into.
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  ui New Order @Customer
+  command Place Order
+  event Order Placed @Order public
+}
+`);
+    expect(diags.filter((d) => d.message.includes("not read by any read model"))).toHaveLength(0);
+  });
+
+  it("still warns on an unread event that isn't marked public", () => {
+    // Sanity check: the exemption is specific to `public`, not a blanket suppression.
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  ui New Order @Customer
+  command Place Order
+  event Order Placed @Order
+}
+`);
+    expect(diags.filter((d) => d.message.includes("not read by any read model"))).toHaveLength(1);
+  });
+
+  it("exempts a public view with no local consumer from the unconsumed-read-model warning", () => {
+    // A view feeding a public read API/webhook: its consumer is another service entirely,
+    // possibly outside this system, so there's no local `ui`/reaction to point to.
+    // `public`, like `again`, is written before `from` — grammar per dsl.md.
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Public Feed" {
+  view Order Feed public from "Order Placed"
+}
+`);
+    expect(diags.filter((d) => d.message.includes("has no consumer"))).toHaveLength(0);
+  });
+
+  it("still warns on an unconsumed view that isn't marked public", () => {
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Feed" {
+  view Order Feed from "Order Placed"
+}
+`);
+    expect(diags.filter((d) => d.message.includes("has no consumer"))).toHaveLength(1);
   });
 });
 

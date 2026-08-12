@@ -336,21 +336,23 @@ function extractClauses(
     rest = rest.slice(0, fromMatch.index).trim();
   }
 
-  // `public` clause (event only): marks this event as part of the published
-  // integration surface (e.g. an AsyncAPI contract), as opposed to an internal-only
-  // fact. Checked here, before `@Tag`, so `public` may be written either as the true
-  // last token (`event X @Context public`) or immediately before a trailing `@Tag`
-  // (`event X public @Context`) — either way `@Context` ends up the trailing-most
-  // token once `public` is excised, which is what the `@Tag` block below requires.
+  // `public` clause (event or view): marks this element as part of the published
+  // integration surface — an event as an AsyncAPI-style contract, a view as the response
+  // shape of a public read API/webhook another team or service consumes — as opposed to an
+  // internal-only fact or read model. Checked here, before `@Tag`/`again`, so `public` may be
+  // written either as the true last token, immediately before a trailing `@Tag` (event), or
+  // immediately before a trailing `again` (view) — either way the later token ends up the
+  // trailing-most once `public` is excised, which is what those blocks below require.
   // Anywhere else in the line, a bare `public` is left alone and folds into the free-
   // text name, same as any other unrecognized word (matching `again`'s discipline).
   // Case-sensitive, like the top-level keyword table, so a title-cased `Public`
   // in a name (`event Account Made Public`) is never taken as the marker.
-  const publicMatch = rest.match(/(?:^|\s)public(?=\s+@\S.*$|\s*$)/);
+  const publicMatch = rest.match(/(?:^|\s)public(?=\s+again\s*$|\s+@\S.*$|\s*$)/);
   if (publicMatch && publicMatch.index !== undefined) {
-    if (node.kind !== "event")
+    if (node.kind !== "event" && node.kind !== "view")
       throw new ParseError(
-        "`public` is only valid on event — only recorded facts are promoted to the integration surface",
+        "`public` is only valid on event or view — only recorded facts and read models are " +
+          "promoted to the integration surface",
         line,
       );
     node.public = true;

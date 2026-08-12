@@ -86,8 +86,8 @@ slice "Retire" {
 }
 `;
 
-// One event marked public, one not — the only diagnostic-free way to check --list-public
-// prints just the public one.
+// One event and one view marked public, one event not — the only diagnostic-free way to check --list-public
+// prints just the public ones (both event and view).
 const WITH_PUBLIC = `slice "Place" {
   ui Checkout @Customer
   command Place Order
@@ -97,7 +97,7 @@ slice "Retry" {
   event Internal Retry @Order
 }
 slice "Open Orders" {
-  view Open Orders from "Order Placed", "Internal Retry"
+  view Open Orders public from "Order Placed", "Internal Retry"
   ui Order List @Customer
 }
 `;
@@ -235,17 +235,18 @@ describe("em validate --list-divergences (CLI)", () => {
 });
 
 describe("em validate --list-public (CLI)", () => {
-  it("--list-public prints slice, name, and line per public event, excluding non-public ones", () => {
+  it("--list-public prints slice, kind, name, and line per public element, excluding non-public ones", () => {
     const r = em(["validate", "--list-public", "public.em"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/public :4 slice "Place" event "Order Placed"/);
+    expect(r.stdout).toMatch(/public :10 slice "Open Orders" view "Open Orders"/);
     expect(r.stdout).not.toContain("Internal Retry");
   });
 
   it("--list-public reports when there are none", () => {
     const r = em(["validate", "--list-public", "clean.em"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("no public events");
+    expect(r.stdout).toContain("no public elements");
   });
 
   it("--list-public never affects the exit code", () => {

@@ -34,7 +34,7 @@ same element kind.
 |---|---|---|---|---|
 | `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `{ fields }` |
 | `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `{ fields }` |
-| `view` | API | read model / projection | — | `from`, `again`, `note`, `issue`, `{ fields }` |
+| `view` | API | read model / projection | — | `from`, `again`, `public`, `note`, `issue`, `{ fields }` |
 | `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `public`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `{ fields }` |
 
@@ -259,30 +259,41 @@ Don't confuse this with an element's `note "path.md"`, which links a markdown fi
 
 ## Integration surface
 
-An `event` can carry a trailing `public` clause, marking it as part of the model's published
-integration surface — as opposed to an internal-only fact that only this context cares about.
+An `event` or `view` can carry a `public` clause, marking it as part of the model's published
+integration surface — for an event, a recorded fact meant for consumers (AsyncAPI contract
+style); for a view, a published read API or webhook response shape another service consumes —
+as opposed to internal-only facts and read models local to this context.
 It carries no free text and no diagram marker (unlike `note`/`issue`): it's a plain structural
 flag, the same posture as `again`, not an annotation.
 
 ```
-event Order Placed @Order public          # tag then public — public trails everything
-event Order Placed public @Order          # or public before the tag — also valid
-event Internal Retry Scheduled @Order      # no `public` — stays an internal-only fact
+event Order Placed public @Order          # event public before the tag
+event Order Placed @Order public          # event public after the tag — also valid
+event Internal Retry Scheduled @Order      # no `public` — internal-only fact
+
+view Order Summary public                 # view public (no consumers in this model)
+view Order History public from "Order Placed"  # public before from — required order
+view Public Orders public again           # both public and again allowed
 ```
 
-`public` is only valid on `event`; writing it on any other element kind is a parse error. It's
-written as the model's *last* token on the line, optionally right before a trailing `@Context`
-tag — either order works, since `public` is stripped before `@Tag` is matched. Written anywhere
-else on the line, a bare `public` isn't recognized as the clause and folds into the free-text
-name instead, the same as any other unrecognized trailing word.
+`public` is valid on `event` or `view` only; writing it on other element kinds is a parse
+error. For an event, it's written flexibly: before or after any trailing `@Context` tag, or
+as the line's final token. For a view, it must be written **before** any trailing `from` or
+`again` clause — the same ordering rule that governs `again`, since both are stripped in a
+specific sequence during parsing. Writing `public` after `from` causes it to be swallowed
+into the quoted-list tail and mangled; write `view Name public from "Event"`, never
+`from "Event" public`. Written anywhere else on the line, a bare `public` isn't recognized
+as the clause and folds into the free-text name instead, the same as any other unrecognized
+trailing word.
 
-`em export` carries the flag forward as `public: true`/`false` on every event — the field a
-downstream contract generator (e.g. an AsyncAPI generator) filters on to promote only the
-events actually meant for consumers, instead of every context event by default. `em diff`
-tracks an event flipping public↔private as its own change (`event marked public` / `event
-unmarked public`), so a promotion or demotion to the integration surface is a visible,
-diffable event, not something that quietly changes underneath a downstream contract. See
-[cli.md](cli.md) for both.
+`em export` carries the flag forward as `public: true`/`false` on every event and view — the
+field a downstream contract generator (e.g. an AsyncAPI generator) filters on to promote only
+the events and views actually meant for consumers, instead of every fact and read model by
+default. `em diff` tracks a flagged element flipping public↔private as its own change
+(`event marked public` / `view marked public` / etc.), so a promotion or demotion to the
+integration surface is a visible, diffable event. `em validate` exempts public elements from
+warnings about unread events and unconsumed views, since their readers/consumers exist outside
+this model (see [validation.md](validation.md)). See [cli.md](cli.md) for both.
 
 ## Colors
 

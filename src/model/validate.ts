@@ -340,6 +340,9 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     if (consumerInSlice) continue;
     for (const view of slice.elements.filter((e) => e.kind === "view")) {
       if (consumedViews.has(view.id)) continue;
+      // A `public` view is a published read API/webhook — its consumer is outside this
+      // model, possibly outside this system entirely, so there's nothing local to point to.
+      if (view.public) continue;
       pushDiag(diags, "both-ends-of-a-flow/view-unconsumed", {
         message:
           `read model "${view.name}" has no consumer; add the screen that displays it ` +
@@ -373,6 +376,10 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   for (const el of model.elements) {
     if (el.kind !== "event") continue;
     if (readEvents.has(normalizeName(el.name))) continue;
+    // A `public` event is part of the published integration surface — its reader is
+    // outside this model, possibly outside this system entirely, so there's nothing local
+    // to project it into.
+    if (el.public) continue;
     pushDiag(diags, "both-ends-of-a-flow/event-unread", {
       message:
         `event "${el.name}" is not read by any read model; project it into a view ` +

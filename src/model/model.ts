@@ -47,7 +47,7 @@ export interface Element {
   line: number;
   /** view-only: marks a later timeline instance of an already-declared read model. */
   again?: boolean;
-  /** event-only: marks this event as part of the published integration surface. */
+  /** event or view: marks this element as part of the published integration surface. */
   public?: boolean;
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;

@@ -101,6 +101,8 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A `ui` with no read model backing it and no command it issues | Add a `view` it displays, or the command it triggers, or reconsider the screen |
 | Two `translation`s sharing a name but reading from different producers | Rename one; a shared name for two unrelated external messages reads as one and confuses whoever reads the model next |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
+| An event marked `public` that no read model reads (unconditional variant of "An event no read model reads") | Mark it `public` only if its consumer is outside this model; otherwise add the view |
+| A view marked `public` with no consumer (unconditional variant of "A read model nothing consumes") | Mark it `public` only if its consumer is outside this model; otherwise add the screen or reaction |
 | A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
@@ -135,6 +137,9 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   no `from` sits in its slice, or when an explicit `arrow` points from it to a read model. Any
   instance of a repeated read model counts, so `view X again from "Event"` satisfies it.
   A reaction consuming it does **not** count — reactions read read models, not events.
+  **Exemption:** An event marked `public` is part of the published integration surface — its
+  reader is outside this model, possibly outside this system. The warning is suppressed; record
+  the fact and let downstream contracts govern consumption.
 - **A read model nothing consumes** is information projected out of the system and then dropped.
   It counts as consumed when a `ui` sits in its slice (State View), when a reaction sits in its
   slice or reads it by name from a later slice (Automation/Translation), or via an explicit
@@ -142,6 +147,9 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   persona — same rule, no special case. Each instance of a repeated read model needs its own
   consumer: if you repeat a view next to an event purely to keep the arrow short, bring its screen
   along, or don't add the instance.
+  **Exemption:** A view marked `public` is a published read API or webhook response shape for
+  an external consumer — its reader is outside this model. The warning is suppressed; document
+  it as part of the integration surface.
 - **A `ui` with no read model backing it and no command it issues** is a screen with nothing
   driving it — often a GET endpoint quietly dropped during extraction, since it doesn't fit the
   "each endpoint is a command" framing that fits the write side. It counts as backed when a
