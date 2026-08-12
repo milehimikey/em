@@ -257,6 +257,62 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     }
   });
 
+  // Something must produce every event. An event is only ever recorded by a command
+  // (isLegalFlow allows no other producer) — one with no command in its slice and no
+  // explicit arrow from one is a fact on the timeline with no traceable cause, the
+  // record-side mirror of a command nothing triggers.
+  for (const slice of model.slices) {
+    if (slice.elements.some((e) => e.kind === "command")) continue;
+    for (const evt of slice.elements.filter((e) => e.kind === "event")) {
+      const arrowed = model.arrows.some((a) => {
+        const from = a.fromId ? model.byId.get(a.fromId) : undefined;
+        return a.toId === evt.id && from?.kind === "command";
+      });
+      if (arrowed) continue;
+      diags.push({
+        severity: "warning",
+        message:
+          `event "${evt.name}" has no producing command; add the command that records it ` +
+          `(in this slice) or an explicit arrow from one`,
+        line: evt.line,
+      });
+    }
+  }
+
+  // Every screen needs something behind it: a read model to display (State View,
+  // view -> ui) or a command to issue (State Change, ui -> command). A `ui` with neither
+  // is a screen modeled with nothing driving it — commonly a GET endpoint quietly dropped
+  // during extraction because it doesn't fit the "each endpoint is a command" framing.
+  // The reaction-slice case (a `ui` misplaced in an automation's slice with no read model)
+  // already gets its own, more specific diagnostic above — skip it here to avoid a
+  // duplicate warning for the same root cause.
+  for (const slice of model.slices) {
+    const autoInSlice = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
+    const hasViewInSlice = slice.elements.some((e) => e.kind === "view");
+    const hasCommandInSlice = slice.elements.some((e) => e.kind === "command");
+    if (autoInSlice && !hasCommandInSlice && !hasViewInSlice) continue;
+    for (const ui of slice.elements.filter((e) => e.kind === "ui")) {
+      if (hasViewInSlice || hasCommandInSlice) continue;
+      const viewArrow = model.arrows.some((a) => {
+        const from = a.fromId ? model.byId.get(a.fromId) : undefined;
+        return a.toId === ui.id && from?.kind === "view";
+      });
+      const commandArrow = model.arrows.some((a) => {
+        const to = a.toId ? model.byId.get(a.toId) : undefined;
+        return a.fromId === ui.id && to?.kind === "command";
+      });
+      if (viewArrow || commandArrow) continue;
+      diags.push({
+        severity: "warning",
+        message:
+          `ui "${ui.name}" has no read model backing it and issues no command; add a ` +
+          `\`view\` it displays (event -> read model -> ui) or the command it triggers ` +
+          `(ui -> command), or reconsider this screen`,
+        line: ui.line,
+      });
+    }
+  }
+
   // Every read model must be consumed. A view nothing displays or watches is the output-side
   // half-slice: information projected out of the system and then dropped on the floor. A
   // complete State View is event -> read model -> ui (or -> reaction, the Automation pattern).
@@ -383,6 +439,38 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   // entire point of the annotation is that it stops re-firing as a warning (or as conform-loop
   // drift) on every run; a warning here would defeat that. Use `em validate --list-divergences`
   // to audit them on demand instead.
+
+  // Two translations sharing a name but reading from different producers is a naming
+  // collision waiting to confuse a reader — the timeline shows the same name twice for two
+  // unrelated external messages. Unlike the general ambiguous-name check below, this fires
+  // unconditionally (not gated on `isReferenced`): a translation is itself a producer, not
+  // typically something else's `from` target, so the confusion is in reading the model, not
+  // in resolving a reference.
+  const translationsByName = new Map<string, Element[]>();
+  for (const el of model.elements) {
+    if (el.kind !== "translation") continue;
+    const key = normalizeName(el.name);
+    const bucket = translationsByName.get(key);
+    if (bucket) bucket.push(el);
+    else translationsByName.set(key, [el]);
+  }
+  for (const group of translationsByName.values()) {
+    if (group.length < 2) continue;
+    const producerSets = group.map((t) => new Set((t.from ?? []).map(normalizeName)));
+    const first = producerSets[0];
+    const allSameProducers = producerSets.every(
+      (s) => s.size === first.size && [...s].every((v) => first.has(v)),
+    );
+    if (allSameProducers) continue; // same producers, just repeated for clarity — not a collision
+    diags.push({
+      severity: "warning",
+      message:
+        `translation "${group[0].name}" is defined ${group.length} times with different ` +
+        `producers (${group.map((t) => `"${(t.from ?? []).join(", ") || "none"}"`).join(" vs ")}); ` +
+        `use a distinct name per producer to avoid confusion`,
+      line: group[0].line,
+    });
+  }
 
   // Ambiguous names (used by arrows / view sources) get a heads-up.
   for (const [key, els] of model.byName) {

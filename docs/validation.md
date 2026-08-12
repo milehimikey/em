@@ -94,9 +94,12 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A `ui` shares a slice with a `processor`/`translation` and no command | `ui` only wires to `command`; move it to the read-model slice, or to the slice with the command it should trigger |
 | A command nothing triggers | Add the screen it's issued from, or the reaction that issues it |
 | A command that records no event | Add the event, or reconsider the command |
+| An event with no producing command | Add the command that records it, or an explicit `arrow` from one |
 | An event no read model reads | Project it into a view, or reconsider recording it |
 | A read model with no source | Add `from "Event"`, or place it in a slice with an event |
 | A read model nothing consumes | Add the screen that displays it or the reaction that watches it, or drop the instance |
+| A `ui` with no read model backing it and no command it issues | Add a `view` it displays, or the command it triggers, or reconsider the screen |
+| Two `translation`s sharing a name but reading from different producers | Rename one; a shared name for two unrelated external messages reads as one and confuses whoever reads the model next |
 | A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
 | A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
@@ -109,7 +112,7 @@ doesn't exist.
 
 ### Both ends of a flow
 
-Four warnings guard the chain that runs screen → command → event → read model → screen. Read in
+Six warnings guard the chain that runs screen → command → event → read model → screen. Read in
 order they say: something starts the write, the write records something, someone projects it, and
 someone looks at the projection. Every element in that chain has a link in and a link out, and
 each warning is one link missing.
@@ -124,6 +127,9 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   in the **previous** slice (the two-slice reaction split), or when an explicit `arrow` points
   to it from a screen or reaction.
 - **A command that records no event** is a write that changes nothing.
+- **An event with no producing command** is a fact with no traceable cause — the record side
+  can't happen on its own. It counts as produced when a `command` sits in its slice (either
+  order), or via an explicit `arrow` into it from a command.
 - **An event no read model reads** is a write nobody can see. There is no point recording a
   fact nothing projects. It counts as read when a `view` names it in `from`, when a `view` with
   no `from` sits in its slice, or when an explicit `arrow` points from it to a read model. Any
@@ -136,10 +142,29 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   persona — same rule, no special case. Each instance of a repeated read model needs its own
   consumer: if you repeat a view next to an event purely to keep the arrow short, bring its screen
   along, or don't add the instance.
+- **A `ui` with no read model backing it and no command it issues** is a screen with nothing
+  driving it — often a GET endpoint quietly dropped during extraction, since it doesn't fit the
+  "each endpoint is a command" framing that fits the write side. It counts as backed when a
+  `view` sits in its slice (State View), it issues a command when one sits in its slice (State
+  Change), or via an explicit `arrow` in either direction. A `ui` sharing a reaction's slice
+  with neither a view nor a command gets the more specific "renders disconnected here" warning
+  instead (above), not this one.
 
-All four are warnings rather than errors on purpose. A model under construction spends most of
+All six are warnings rather than errors on purpose. A model under construction spends most of
 its life with one end of a flow ahead of the other, and errors block rendering — `em watch`
 would stop redrawing mid-session exactly when you most want to see the diagram.
+
+### Translation naming
+
+A `translation` reading from two different producers under the same name is a different kind
+of duplicate than the "name defined more than once" check above: that check only fires when
+something else references the ambiguous name via `from` or `arrow`, since the confusion it
+guards against is *which* declaration a reference resolves to. A translation is itself a
+producer, not typically something else's target, so two same-named translations reading from
+different sources would otherwise pass silently — this check fires unconditionally, because
+the confusion is in reading the model, not in resolving a reference. Two translations that
+read from the *same* producer (e.g. repeated next to it for clarity) are not a collision and
+stay quiet.
 
 ### Fields completeness
 
