@@ -972,3 +972,26 @@ slice "Confirm" {
     expect(diags.filter((d) => d.message.includes("type "))).toHaveLength(0);
   });
 });
+
+describe("`from` resolution with clause keywords in names (MIL-82)", () => {
+  it("resolves a view's `from` to an event whose name contains the word From", () => {
+    const diags = diagsFor(`
+model "Test"
+persona User
+context Thing
+slice "A" {
+  ui Screen @User
+  command Take Widget Out
+  event Widget Removed From Cabinet @Thing
+}
+slice "Read" {
+  view List from "Widget Removed From Cabinet"
+  ui Cabinet Screen @User
+}
+`);
+    expect(diags.filter((d) => d.severity === "error")).toHaveLength(0);
+    expect(
+      diags.some((d) => d.message.includes("unknown event")),
+    ).toBe(false);
+  });
+});

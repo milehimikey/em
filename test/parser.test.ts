@@ -249,6 +249,96 @@ slice "S" {
     expect(ast.slices[0].elements[0].public).toBeUndefined();
   });
 
+  describe("clause keywords inside element names (MIL-82)", () => {
+    it("keeps a title-cased `From` in an event name and its @Context tag", () => {
+      const ast = parse(`
+slice "S" {
+  event Widget Removed From Cabinet @Thing
+}
+`);
+      const evt = ast.slices[0].elements[0];
+      expect(evt.name).toBe("Widget Removed From Cabinet");
+      expect(evt.context).toBe("Thing");
+      expect(evt.from).toBeUndefined();
+    });
+
+    it("keeps a title-cased `From` in command and ui names", () => {
+      const ast = parse(`
+slice "S" {
+  ui Notes From Support @Agent
+  command Remove From Cart
+}
+`);
+      const [ui, cmd] = ast.slices[0].elements;
+      expect(ui).toMatchObject({ name: "Notes From Support", persona: "Agent" });
+      expect(cmd.name).toBe("Remove From Cart");
+    });
+
+    it("keeps `From` in a view name while still parsing its real `from` clause", () => {
+      const ast = parse(`
+slice "S" {
+  view Orders From Yesterday from "Order Placed"
+}
+`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Orders From Yesterday",
+        from: ["Order Placed"],
+      });
+    });
+
+    it("skips a lowercase unquoted `from` in a name in favor of the quoted clause", () => {
+      const ast = parse(`
+slice "S" {
+  view Requests from partners from "Request Submitted"
+}
+`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Requests from partners",
+        from: ["Request Submitted"],
+      });
+    });
+
+    it("rejects a quoted `from` clause on kinds that don't take one", () => {
+      expect(() =>
+        parse(`
+slice "S" {
+  event Order Placed from "Somewhere"
+}
+`),
+      ).toThrow(ParseError);
+      expect(() =>
+        parse(`
+slice "S" {
+  command Place Order from "Somewhere"
+}
+`),
+      ).toThrow(/only valid on view or a reaction/);
+    });
+
+    it("keeps a title-cased `Public` in an event name (marker stays lowercase-only)", () => {
+      const ast = parse(`
+slice "S" {
+  event Account Made Public @Account
+}
+`);
+      const evt = ast.slices[0].elements[0];
+      expect(evt.name).toBe("Account Made Public");
+      expect(evt.public).toBeUndefined();
+      expect(evt.context).toBe("Account");
+    });
+
+    it("keeps a title-cased `Again` in a view name (marker stays lowercase-only)", () => {
+      const ast = parse(`
+slice "S" {
+  view Backlog Again
+}
+`);
+      const view = ast.slices[0].elements[0];
+      expect(view.name).toBe("Backlog Again");
+      expect(view.again).toBeUndefined();
+    });
+  });
+
   it("strips `note` before the `from` clause without swallowing it", () => {
     const ast = parse(`
 slice "S" {
