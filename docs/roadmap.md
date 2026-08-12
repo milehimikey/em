@@ -22,7 +22,12 @@ rewritten to redraw a single slice in its own pattern shape (State Change/View/A
 Translation) instead of cropping the full diagram, and slice headers now color-coded by
 design-doc status (reviewed/ready-to-implement/implemented). Most recently, export refs
 (`ref`/`sliceKey`) carried directly on `em diff --json` entries so they join straight back to
-an `em export` document without re-deriving slugs. [workflow.md](workflow.md) is the resulting
+an `em export` document without re-deriving slugs, and — in 1.6.1 — clause keywords made
+case-sensitive and operand-checked so element names containing words like "From", "Public",
+or "Again" are no longer silently corrupted at parse time, `from` kind-mismatch errors that
+name the actual kind instead of claiming the name is unknown, and the automation read-model
+naming rule (name the to-do list after the pending work, never after the triggering event)
+stated explicitly in the pattern docs. [workflow.md](workflow.md) is the resulting
 picture.
 
 **Modeling and rendering**
