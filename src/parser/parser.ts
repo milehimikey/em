@@ -18,6 +18,7 @@
 
 import {
   ArrowNode,
+  AUTOMATION_KINDS,
   ElementKind,
   ElementNode,
   Field,
@@ -319,9 +320,18 @@ function extractClauses(
     ).trim();
   }
 
-  // `from "A", "B"` clause (view only, but parsed wherever present).
-  const fromMatch = rest.match(/(?:^|\s)from\s+(.+)$/i);
+  // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive
+  // and its operand must open with a quote, so a capitalized `From` — or a bare
+  // lowercase `from` — inside an element name (`event Widget Removed From
+  // Cabinet`, `view Requests from partners from "Request Submitted"`) folds
+  // into the free-text name instead of being mistaken for the clause.
+  const fromMatch = rest.match(/(?:^|\s)from\s+(?=")(.+)$/);
   if (fromMatch && fromMatch.index !== undefined) {
+    if (node.kind !== "view" && !AUTOMATION_KINDS.has(node.kind))
+      throw new ParseError(
+        "`from` is only valid on view or a reaction (automation/processor/saga/translation)",
+        line,
+      );
     node.from = splitQuotedList(fromMatch[1]);
     rest = rest.slice(0, fromMatch.index).trim();
   }
@@ -334,7 +344,9 @@ function extractClauses(
   // token once `public` is excised, which is what the `@Tag` block below requires.
   // Anywhere else in the line, a bare `public` is left alone and folds into the free-
   // text name, same as any other unrecognized word (matching `again`'s discipline).
-  const publicMatch = rest.match(/(?:^|\s)public(?=\s+@\S+\s*$|\s*$)/i);
+  // Case-sensitive, like the top-level keyword table, so a title-cased `Public`
+  // in a name (`event Account Made Public`) is never taken as the marker.
+  const publicMatch = rest.match(/(?:^|\s)public(?=\s+@\S+\s*$|\s*$)/);
   if (publicMatch && publicMatch.index !== undefined) {
     if (node.kind !== "event")
       throw new ParseError(
@@ -361,7 +373,8 @@ function extractClauses(
 
   // Trailing `again` (view only): a later timeline instance of an existing read model —
   // the Event Modeling device for keeping arrows forward as a view evolves.
-  const againMatch = rest.match(/(?:^|\s)again$/i);
+  // Case-sensitive for the same reason as `public`: `view Backlog Again` is a name.
+  const againMatch = rest.match(/(?:^|\s)again$/);
   if (againMatch && againMatch.index !== undefined) {
     if (node.kind !== "view")
       throw new ParseError("`again` is only valid on view — read models are the only elements that reappear along the timeline", line);
