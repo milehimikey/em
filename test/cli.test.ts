@@ -415,6 +415,54 @@ describe("em diff --json with --from/--to (CLI, real git repo)", () => {
   });
 });
 
+describe("em diff lineage: removed-slice doc resolves via git show even after deletion (MIL-84)", () => {
+  // Regression test for a real PR-review-confirmed bug: resolveDocAtRevision used to look the
+  // path up via `git ls-files` (the *current* index), so a doc that had already been deleted
+  // by the time you're diffing — the routine case for a superseded-by-carrying doc, removed in
+  // the same commit that retires the slice it describes — silently failed to resolve, even
+  // though `git show <rev>:<path>` could read it fine. Fixed by resolving existence at `<rev>`
+  // itself (`git ls-tree`), not the current tree.
+  let repo: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-git-removed-doc-"));
+    git(["init", "-q", "-b", "main"], repo);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    writeFileSync(join(repo, "model.em"), `slice "Old Checkout" {\n  command Do Old Checkout\n  event Old Checkout Done\n}\n`);
+    writeFileSync(
+      join(repo, "slices", "old-checkout.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nsuperseded-by: new-checkout@v1\n---\nbody\n",
+    );
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "first"], repo);
+    // Same-commit convention: the slice AND its doc are both removed here, in the one commit
+    // that performs the retirement — so by the time `em diff` runs, slices/old-checkout.md no
+    // longer exists anywhere in the current working tree or index.
+    writeFileSync(join(repo, "model.em"), `slice "New Checkout" {\n  command Do New Checkout\n  event New Checkout Done\n}\n`);
+    git(["rm", "-q", "slices/old-checkout.md"], repo);
+    git(["add", "model.em"], repo);
+    git(["commit", "-qm", "second"], repo);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("resolves the removed slice's superseded-by even though its doc is gone from the current tree", () => {
+    const r = em(["diff", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.removals).toContainEqual(
+      expect.objectContaining({
+        type: "slice-removed",
+        name: "Old Checkout",
+        supersededBy: [{ raw: "new-checkout@v1", sliceKey: "new-checkout", version: 1 }],
+      }),
+    );
+    expect(doc.counts.slicesSuperseded).toBe(1);
+  });
+});
+
 describe("em diff lineage annotations (MIL-84, CLI)", () => {
   // Files form: each side's slice docs live relative to *that file's own* directory, so two
   // sibling dirs, each with their own `slices/` folder — matching src/cli.ts's per-side baseDir.

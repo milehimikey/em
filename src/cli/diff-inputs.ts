@@ -60,23 +60,34 @@ export const realGit: GitRunner = (args) => {
 export type RevisionResult = { ok: true; content: string } | { ok: false; message: string };
 
 /** One of the three ways reading a file at a revision can fail — see `showAtRevision`. */
-type ShowFailure = { ok: false; reason: "no-repo" | "not-tracked" | "show-failed"; detail?: string };
+type ShowFailure =
+  | { ok: false; reason: "no-repo" }
+  | { ok: false; reason: "not-tracked"; repoRoot: string }
+  | { ok: false; reason: "show-failed"; relPath: string; detail: string };
 
 /**
  * Read `targetAbs`'s content at git revision `rev`, resolving the repo root from
  * `anchorFile`'s directory (a file known to be somewhere inside the repo — doesn't itself have
  * to be `targetAbs`, e.g. a slice doc resolved relative to its `.em` file's location). The git
  * runner is injectable so every failure branch is unit-testable without a real repository.
+ *
+ * Existence/path lookup uses `git ls-tree -r --name-only <rev>` — scoped to `rev` itself, not
+ * `git ls-files` (which reflects the *current* index/working tree). A doc that existed at
+ * `rev` but has since been deleted — the routine case for a `superseded-by`-carrying doc, which
+ * gets removed in the very commit that performs the split/merge/removal it records — would
+ * otherwise resolve to "not tracked" even though `git show <rev>:<path>` can read it just fine.
  */
 function showAtRevision(runGit: GitRunner, anchorFile: string, targetAbs: string, rev: string): { ok: true; content: string } | ShowFailure {
   const toplevel = runGit(["-C", dirname(resolve(anchorFile)), "rev-parse", "--show-toplevel"]);
   if (toplevel.status !== 0) return { ok: false, reason: "no-repo" };
   const repoRoot = toplevel.stdout.trim();
-  const lsFiles = runGit(["-C", repoRoot, "ls-files", "--full-name", "--", targetAbs]);
-  const relPath = lsFiles.stdout.trim().split("\n")[0];
-  if (!relPath) return { ok: false, reason: "not-tracked" };
+  const lsTree = runGit(["-C", repoRoot, "ls-tree", "-r", "--name-only", rev, "--", targetAbs]);
+  const relPath = lsTree.stdout.trim().split("\n")[0];
+  if (!relPath) return { ok: false, reason: "not-tracked", repoRoot };
   const show = runGit(["-C", repoRoot, "show", `${rev}:${relPath}`]);
-  if (show.status !== 0) return { ok: false, reason: "show-failed", detail: (show.stderr || "").trim() || "unknown git error" };
+  if (show.status !== 0) {
+    return { ok: false, reason: "show-failed", relPath, detail: (show.stderr || "").trim() || "unknown git error" };
+  }
   return { ok: true, content: show.stdout };
 }
 
@@ -92,9 +103,9 @@ export function resolveRevision(file: string, rev: string, runGit: GitRunner = r
     case "no-repo":
       return { ok: false, message: `em diff: ${file} is not inside a git repository (needed for --from/--to)` };
     case "not-tracked":
-      return { ok: false, message: `em diff: ${file} is not tracked by git` };
+      return { ok: false, message: `em diff: ${file} is not tracked by git in ${result.repoRoot}` };
     case "show-failed":
-      return { ok: false, message: `em diff: cannot read ${file} at revision "${rev}": ${result.detail}` };
+      return { ok: false, message: `em diff: cannot read ${result.relPath} at revision "${rev}": ${result.detail}` };
   }
 }
 
