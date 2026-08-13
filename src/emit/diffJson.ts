@@ -10,9 +10,13 @@ import { ChangeEntry, ChangeType, ModelDiff, hasChanges } from "../model/diff.js
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
+// 1.6 (MIL-84): changes/removals gain lineage fields (splitFrom/mergedFrom/supersededBy,
+// resolved from each side's slice-doc frontmatter when `em diff` was given a LineageResolvers)
+// and counts gains slicesSplit/slicesMerged/slicesSuperseded — additive only, same pattern as
+// the 1.4->1.5 bump.
 // 1.5 (MIL-91): diagnostics gain `code`/`refs`, same structured-diagnostics retrofit as
 // `em export`'s SCHEMA_VERSION 1.4 — an independent cadence/field, bumped on its own.
-export const DIFF_SCHEMA_VERSION = "1.5";
+export const DIFF_SCHEMA_VERSION = "1.6";
 
 /** One side of the diff: what it was called, its source text, and its warnings. */
 export interface DiffSide {
@@ -60,6 +64,9 @@ function serializeEntry(e: ChangeEntry): SerializedEntry {
     from: e.from ?? null,
     to: e.to ?? null,
     acceptedDivergence: e.acceptedDivergence ?? null,
+    splitFrom: e.splitFrom ?? null,
+    mergedFrom: e.mergedFrom ?? null,
+    supersededBy: e.supersededBy ?? null,
   };
 }
 

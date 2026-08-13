@@ -5,7 +5,7 @@
 // functions (which test/export.test.ts and test/validate.test.ts cover).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -254,12 +254,52 @@ describe("em validate --list-public (CLI)", () => {
   });
 });
 
+describe("em validate lineage checks (CLI, MIL-84)", () => {
+  let lineageDir: string;
+
+  beforeAll(() => {
+    lineageDir = mkdtempSync(join(tmpdir(), "em-cli-lineage-validate-"));
+    mkdirSync(join(lineageDir, "slices"), { recursive: true });
+    // slice "Place" -> kebab key "place", shared by every .em fixture below (baseDir is this
+    // same dir for all of them).
+    writeFileSync(
+      join(lineageDir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 5\n---\nbody\n",
+    );
+  });
+  afterAll(() => rmSync(lineageDir, { recursive: true, force: true }));
+
+  it("errors with lineage-version-impossible when a ref names a future version", () => {
+    writeFileSync(
+      join(lineageDir, "slices", "impossible.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nsplit-from: place@v9\n---\nbody\n",
+    );
+    writeFileSync(join(lineageDir, "impossible.em"), `slice "Place" {\n  command Place Order\n}\nslice "Impossible" {\n  command Do Thing\n}\n`);
+    const r = em(["validate", "impossible.em"], lineageDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('slice "impossible"\'s split-from names "place"@v9, but "place" is only at v5');
+  });
+
+  it("produces zero lineage diagnostics for a backward ref naming a legitimately absent predecessor", () => {
+    writeFileSync(
+      join(lineageDir, "slices", "steady.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nmerged-from: retired-cart@v3\n---\nbody\n",
+    );
+    writeFileSync(join(lineageDir, "steady.em"), `slice "Place" {\n  command Place Order\n}\nslice "Steady" {\n  command Do Thing\n}\n`);
+    const r = em(["validate", "steady.em"], lineageDir);
+    // Both commands are trigger/event-less (same shape as "impossible.em" above), so this
+    // still warns — but never on lineage, and never a non-zero exit (warnings don't gate).
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toContain("lineage");
+  });
+});
+
 describe("em diff --json (CLI)", () => {
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
-    expect(doc.diffSchemaVersion).toBe("1.5");
+    expect(doc.diffSchemaVersion).toBe("1.6");
     expect(doc.identical).toBe(false);
     expect(r.stderr).toContain("produces no event");
   });
@@ -318,9 +358,18 @@ describe("em diff --json with --from/--to (CLI, real git repo)", () => {
     git(["add", "model.em"], repo);
     git(["commit", "-qm", "first"], repo);
     // Second revision adds a slice; the working tree adds one more on top, so
-    // HEAD~1 -> HEAD and HEAD -> working tree are both non-empty diffs.
+    // HEAD~1 -> HEAD and HEAD -> working tree are both non-empty diffs. It also carries a
+    // slice doc declaring split-from (MIL-84), committed in the same commit as the slice add —
+    // the same-commit lineage convention (docs/slice-doc-schema.md) — so `--from HEAD~1 --to
+    // HEAD` can resolve it via `git show` at HEAD, not the working tree.
     const READ = `slice "Read" {\n  view Open Orders from "Order Placed"\n}\n`;
     writeFileSync(join(repo, "model.em"), CLEAN + READ);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    writeFileSync(
+      join(repo, "slices", "read.md"),
+      "---\nschemaVersion: 1\npattern: state-view\nswimlane: order\nstatus: implemented\nversion: 1\nsplit-from: place@v1\n---\nbody\n",
+    );
+    git(["add", "slices/read.md"], repo);
     git(["commit", "-qam", "second"], repo);
     writeFileSync(join(repo, "model.em"), CLEAN + READ + `slice "Ship" {\n  command Ship It\n}\n`);
   });
@@ -346,10 +395,117 @@ describe("em diff --json with --from/--to (CLI, real git repo)", () => {
     expect(doc.changes).toContainEqual(expect.objectContaining({ type: "slice-added", name: "Read" }));
   });
 
+  it("resolves the new side's slice doc lineage via git show at the revision (MIL-84)", () => {
+    const r = em(["diff", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.changes).toContainEqual(
+      expect.objectContaining({
+        type: "slice-added",
+        name: "Read",
+        splitFrom: { raw: "place@v1", sliceKey: "place", version: 1 },
+      }),
+    );
+  });
+
   it("exits 0 with identical: true when the two revisions match", () => {
     const r = em(["diff", "model.em", "--from", "HEAD", "--to", "HEAD", "--json", "--exit-code"], repo);
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout).identical).toBe(true);
+  });
+});
+
+describe("em diff lineage: removed-slice doc resolves via git show even after deletion (MIL-84)", () => {
+  // Regression test for a real PR-review-confirmed bug: resolveDocAtRevision used to look the
+  // path up via `git ls-files` (the *current* index), so a doc that had already been deleted
+  // by the time you're diffing — the routine case for a superseded-by-carrying doc, removed in
+  // the same commit that retires the slice it describes — silently failed to resolve, even
+  // though `git show <rev>:<path>` could read it fine. Fixed by resolving existence at `<rev>`
+  // itself (`git ls-tree`), not the current tree.
+  let repo: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-git-removed-doc-"));
+    git(["init", "-q", "-b", "main"], repo);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    writeFileSync(join(repo, "model.em"), `slice "Old Checkout" {\n  command Do Old Checkout\n  event Old Checkout Done\n}\n`);
+    writeFileSync(
+      join(repo, "slices", "old-checkout.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nsuperseded-by: new-checkout@v1\n---\nbody\n",
+    );
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "first"], repo);
+    // Same-commit convention: the slice AND its doc are both removed here, in the one commit
+    // that performs the retirement — so by the time `em diff` runs, slices/old-checkout.md no
+    // longer exists anywhere in the current working tree or index.
+    writeFileSync(join(repo, "model.em"), `slice "New Checkout" {\n  command Do New Checkout\n  event New Checkout Done\n}\n`);
+    git(["rm", "-q", "slices/old-checkout.md"], repo);
+    git(["add", "model.em"], repo);
+    git(["commit", "-qm", "second"], repo);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("resolves the removed slice's superseded-by even though its doc is gone from the current tree", () => {
+    const r = em(["diff", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.removals).toContainEqual(
+      expect.objectContaining({
+        type: "slice-removed",
+        name: "Old Checkout",
+        supersededBy: [{ raw: "new-checkout@v1", sliceKey: "new-checkout", version: 1 }],
+      }),
+    );
+    expect(doc.counts.slicesSuperseded).toBe(1);
+  });
+});
+
+describe("em diff lineage annotations (MIL-84, CLI)", () => {
+  // Files form: each side's slice docs live relative to *that file's own* directory, so two
+  // sibling dirs, each with their own `slices/` folder — matching src/cli.ts's per-side baseDir.
+  let oldDir: string;
+  let newDir: string;
+
+  beforeAll(() => {
+    oldDir = mkdtempSync(join(tmpdir(), "em-cli-lineage-old-"));
+    newDir = mkdtempSync(join(tmpdir(), "em-cli-lineage-new-"));
+    writeFileSync(join(oldDir, "model.em"), CLEAN);
+    writeFileSync(
+      join(newDir, "model.em"),
+      CLEAN + `slice "Discount Rules" {\n  command Apply Discount\n  event Discount Applied\n}\n`,
+    );
+    mkdirSync(join(newDir, "slices"), { recursive: true });
+    writeFileSync(
+      join(newDir, "slices", "discount-rules.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nsplit-from: place@v1\n---\nbody\n",
+    );
+  });
+  afterAll(() => {
+    rmSync(oldDir, { recursive: true, force: true });
+    rmSync(newDir, { recursive: true, force: true });
+  });
+
+  it("resolves the new-side doc's split-from and shows it in --json", () => {
+    const r = em(["diff", join(oldDir, "model.em"), join(newDir, "model.em"), "--json"], newDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.changes).toContainEqual(
+      expect.objectContaining({
+        type: "slice-added",
+        name: "Discount Rules",
+        splitFrom: { raw: "place@v1", sliceKey: "place", version: 1 },
+      }),
+    );
+    expect(doc.counts.slicesSplit).toBe(1);
+  });
+
+  it("renders the split-from annotation in the text report", () => {
+    const r = em(["diff", join(oldDir, "model.em"), join(newDir, "model.em")], newDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('+ slice "Discount Rules" (split from "place"@v1)');
   });
 });
 

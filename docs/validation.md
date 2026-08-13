@@ -24,6 +24,10 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | An `arrow` that points backward in time | Restructure so the target comes later |
 | An `arrow` between element kinds the four patterns don't connect | Add the missing step — the message names it |
 | A declared `type` nesting itself with no array to terminate it (directly or through other declared types) | Break the cycle, or route the self/mutual reference through an array (`children: Node[]`) if the data is genuinely tree-shaped — see [dsl.md](dsl.md#named-types) |
+| A lineage ref (`split-from`/`merged-from`/`superseded-by`) that doesn't match the `<slice-key>@v<N>` grammar (`lineage-ref-malformed`) | Fix the value to `<slice-key>@v<N>`, or remove it |
+| A lineage ref that names its own slice, or that closes a cycle with another slice's lineage ref (`lineage-ref-cycle`) | Break the cycle — a slice can't be its own ancestor |
+| `superseded-by` naming a slice absent from the current model (`lineage-forward-dangling`) | Fix the key, or remove the stale successor |
+| A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the target slice first |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
@@ -49,6 +53,32 @@ them), `event → command`, `event → event` (Law 1), and an arrow between two 
 read model (see [timeline.md](timeline.md)).
 [examples/timeline-rules-invalid.em](../examples/timeline-rules-invalid.em) collects one of
 each; run `em validate` on it to see all five.
+
+### Lineage
+
+`em validate` is the one place this table's checks aren't a pure function of the `.em` source:
+resolving a `split-from`/`merged-from`/`superseded-by` ref means also reading `slices/*.md`
+frontmatter (see [slice-doc-schema.md](slice-doc-schema.md#lineage-grammar-and-cardinality)) —
+the first, and so far only, `em validate` rule that touches the filesystem.
+
+The rigor boundary is deliberate (ratified MIL-84, 2026-08-13): **validate checks what the
+current tree can falsify, and stays silent about what it can't.** `split-from`/`merged-from`
+are claims about history — for a rename, merge, or removal, the predecessor is *supposed* to
+be absent from the current tree afterward. `merged-from: cart@v3` on a doc whose predecessor
+was legitimately removed references an absent key **forever**; that's the steady state a real
+merge leaves behind, not a defect, so it gets no diagnostic at all — not even a warning. Only
+what's actually checkable against the present gets flagged: malformed grammar, a
+self-reference or cycle, a `superseded-by` pointing at nothing (a *forward* ref — it names the
+present, so absence there is a real broken link), and version arithmetic that names a future
+that hasn't happened when the target does resolve.
+
+Deep historical verification — did `slice@vN` really, once, exist? — never happens in core
+validate; a same-commit authoring convention substitutes for it instead. The lineage ref is
+written in the same ratification commit that performs the operation it records, so the PR diff
+already contains both sides of the claim, and the reviewer's read of that diff *is* the history
+check, at the moment history was still the present. If a deeper audit (walk git, prove every
+ref) is ever wanted, that's a separate CI-recipe-tier or conformance-walker concern — never
+this fast, current-tree-only rule.
 
 ## Warnings
 

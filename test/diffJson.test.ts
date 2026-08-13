@@ -49,6 +49,9 @@ function emptyCounts(): DiffCounts {
     typesAdded: 0,
     typesRemoved: 0,
     typeFieldChanges: 0,
+    slicesSplit: 0,
+    slicesMerged: 0,
+    slicesSuperseded: 0,
   };
 }
 
@@ -77,6 +80,9 @@ const OPTIONAL_FIELDS = [
   "from",
   "to",
   "acceptedDivergence",
+  "splitFrom",
+  "mergedFrom",
+  "supersededBy",
 ] as const;
 
 /** Expand a partial entry into the full explicit-null shape the serializer should produce. */
@@ -163,11 +169,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 20 counters", () => {
+  it("passes DiffCounts through as-is, all 23 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(20);
+    expect(Object.keys(doc.counts)).toHaveLength(23);
   });
 });
 
@@ -665,6 +671,60 @@ describe("one correctly-serialized entry per ChangeType", () => {
       expect(Object.keys(doc.removals[0])).toEqual(["type", ...OPTIONAL_FIELDS]);
     });
   }
+});
+
+describe("lineage annotations (MIL-84)", () => {
+  it("serializes a resolved splitFrom/mergedFrom as objects/arrays, unresolved as null", () => {
+    const entry: ChangeEntry = {
+      type: "slice-added",
+      name: "Discount Rules",
+      sliceKey: "discount-rules",
+      splitFrom: { raw: "checkout@v3", sliceKey: "checkout", version: 3 },
+      mergedFrom: [],
+    };
+    const diff: ModelDiff = { changes: [entry], removals: [], counts: emptyCounts() };
+    const doc = docFor(diff);
+    expect(doc.changes[0]).toEqual(
+      expectedEntry({
+        type: "slice-added",
+        name: "Discount Rules",
+        sliceKey: "discount-rules",
+        splitFrom: { raw: "checkout@v3", sliceKey: "checkout", version: 3 },
+        mergedFrom: [],
+      }),
+    );
+  });
+
+  it("serializes an unattempted lineage annotation (no lineage resolver passed) as null, not []", () => {
+    const entry: ChangeEntry = { type: "slice-added", name: "Fulfillment", sliceKey: "fulfillment" };
+    const diff: ModelDiff = { changes: [entry], removals: [], counts: emptyCounts() };
+    const doc = docFor(diff);
+    expect(doc.changes[0].splitFrom).toBeNull();
+    expect(doc.changes[0].mergedFrom).toBeNull();
+    expect(doc.changes[0].supersededBy).toBeNull();
+  });
+
+  it("serializes a resolved supersededBy list on a slice-removed entry", () => {
+    const entry: ChangeEntry = {
+      type: "slice-removed",
+      name: "Checkout",
+      sliceKey: "checkout",
+      supersededBy: [
+        { raw: "checkout@v5", sliceKey: "checkout", version: 5 },
+        { raw: "apply-discount@v1", sliceKey: "apply-discount", version: 1 },
+      ],
+    };
+    const diff: ModelDiff = { changes: [], removals: [entry], counts: emptyCounts() };
+    const doc = docFor(diff);
+    expect(doc.removals[0].supersededBy).toEqual([
+      { raw: "checkout@v5", sliceKey: "checkout", version: 5 },
+      { raw: "apply-discount@v1", sliceKey: "apply-discount", version: 1 },
+    ]);
+  });
+
+  it("bumps DIFF_SCHEMA_VERSION to 1.6", () => {
+    expect(DIFF_SCHEMA_VERSION).toBe("1.6");
+  });
 });
 
 describe("accepted divergence", () => {

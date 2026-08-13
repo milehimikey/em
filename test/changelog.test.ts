@@ -45,6 +45,9 @@ const EMPTY_COUNTS = {
   typesAdded: 0,
   typesRemoved: 0,
   typeFieldChanges: 0,
+  slicesSplit: 0,
+  slicesMerged: 0,
+  slicesSuperseded: 0,
 };
 
 /** A no-op diff: identical model on both sides, so `hasChanges()` is false. */

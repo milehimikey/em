@@ -8,6 +8,7 @@ import { describe, it, expect } from "vitest";
 import {
   planDiffArgs,
   resolveRevision,
+  resolveDocAtRevision,
   GitResult,
   GitRunner,
 } from "../src/cli/diff-inputs.js";
@@ -113,5 +114,44 @@ describe("resolveRevision", () => {
     const git = fakeGit([ok("/repo\n"), ok("model.em\n"), { status: 1, stdout: "", stderr: "" }]);
     const result = resolveRevision("model.em", "bogus", git);
     expect(result).toMatchObject({ ok: false, message: expect.stringContaining("unknown git error") });
+  });
+});
+
+describe("resolveDocAtRevision", () => {
+  // Same fake-git convention as resolveRevision's tests above.
+  const fakeGit = (responses: GitResult[]): GitRunner => {
+    let i = 0;
+    return () => responses[i++] ?? { status: 1, stdout: "", stderr: "unexpected extra git call" };
+  };
+  const ok = (stdout: string): GitResult => ({ status: 0, stdout, stderr: "" });
+
+  it("resolves and parses the slice doc's content at the revision", () => {
+    const git = fakeGit([
+      ok("/repo\n"), // rev-parse --show-toplevel
+      ok("slices/checkout.md\n"), // ls-files --full-name
+      ok("---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 3\n---\nbody\n"),
+    ]);
+    const doc = resolveDocAtRevision("model.em", "checkout", "HEAD~1", git);
+    expect(doc).not.toBeNull();
+    expect(doc?.status).toBe("implemented");
+    expect(doc?.version).toBe(3);
+  });
+
+  it("returns null when the anchor file is not inside a git repository", () => {
+    const git = fakeGit([{ status: 128, stdout: "", stderr: "not a git repository" }]);
+    expect(resolveDocAtRevision("model.em", "checkout", "HEAD", git)).toBeNull();
+  });
+
+  it("returns null when the doc isn't tracked by git", () => {
+    const git = fakeGit([
+      ok("/repo\n"),
+      ok("\n"), // ls-files returns nothing -> untracked (or doesn't exist at that revision)
+    ]);
+    expect(resolveDocAtRevision("model.em", "checkout", "HEAD", git)).toBeNull();
+  });
+
+  it("returns null when git show fails", () => {
+    const git = fakeGit([ok("/repo\n"), ok("slices/checkout.md\n"), { status: 128, stdout: "", stderr: "fatal: bad revision" }]);
+    expect(resolveDocAtRevision("model.em", "checkout", "bogus", git)).toBeNull();
   });
 });

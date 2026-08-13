@@ -6,14 +6,15 @@
 // testing cli.ts (see test/export.test.ts's header comment for the same call).
 import { describe, it, expect } from "vitest";
 import { compile } from "../src/pipeline.js";
-import { diffModels, formatModelDiff, hasChanges, ChangeEntry } from "../src/model/diff.js";
+import { diffModels, formatModelDiff, hasChanges, ChangeEntry, LineageResolvers } from "../src/model/diff.js";
+import { parseSliceDoc } from "../src/catalog/sliceDoc.js";
 
-const diffOf = (oldSrc: string, newSrc: string) => {
+const diffOf = (oldSrc: string, newSrc: string, lineage?: LineageResolvers) => {
   const o = compile(oldSrc);
   const n = compile(newSrc);
-  return diffModels(o.model, n.model, o.refs, n.refs);
+  return diffModels(o.model, n.model, o.refs, n.refs, lineage);
 };
-const reportOf = (oldSrc: string, newSrc: string) => formatModelDiff(diffOf(oldSrc, newSrc));
+const reportOf = (oldSrc: string, newSrc: string, lineage?: LineageResolvers) => formatModelDiff(diffOf(oldSrc, newSrc, lineage));
 
 describe("identical models", () => {
   it("produce an empty diff and the 'no structural changes' report", () => {
@@ -61,6 +62,138 @@ slice "Fulfillment" {
     expect(diff.removals).toEqual([{ type: "slice-removed", name: "Fulfillment", sliceKey: "fulfillment" }]);
     expect(diff.counts.slicesRemoved).toBe(1);
     expect(diff.counts.elementsRemoved).toBe(0);
+  });
+});
+
+describe("lineage annotations (MIL-84)", () => {
+  const OLD = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+`;
+  const NEW_SPLIT = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+slice "Discount Rules" {
+  command Apply Discount
+  event Discount Applied
+}
+`;
+  const NEW_MERGE = `
+slice "Checkout" {
+  command Submit Order
+  event Order Submitted
+}
+slice "Unified Cart" {
+  command Update Cart
+  event Cart Updated
+}
+`;
+  // "Checkout" is gone entirely here (not surviving, as it does in NEW_SPLIT) — the scenario a
+  // superseded-by ref describes: the old slice was fully replaced, not just split alongside.
+  const NEW_SUPERSEDED = `
+slice "Discount Rules" {
+  command Apply Discount
+  event Discount Applied
+}
+`;
+
+  const docWith = (frontmatter: string) =>
+    parseSliceDoc(`---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n${frontmatter}\n---\nbody\n`);
+
+  it("attaches a resolved split-from to the new slice's slice-added entry", () => {
+    const lineage: LineageResolvers = {
+      newDoc: (key) => (key === "discount-rules" ? docWith("split-from: checkout@v3") : null),
+    };
+    const diff = diffOf(OLD, NEW_SPLIT, lineage);
+    const added = diff.changes.find((c) => c.type === "slice-added") as ChangeEntry;
+    expect(added.splitFrom).toEqual({ raw: "checkout@v3", sliceKey: "checkout", version: 3 });
+    expect(added.mergedFrom).toEqual([]);
+    expect(diff.counts.slicesSplit).toBe(1);
+    expect(diff.counts.slicesMerged).toBe(0);
+  });
+
+  it("attaches a resolved merged-from list to the new slice's slice-added entry", () => {
+    const lineage: LineageResolvers = {
+      newDoc: (key) => (key === "unified-cart" ? docWith("merged-from: cart@v2, wishlist@v1") : null),
+    };
+    const diff = diffOf(OLD, NEW_MERGE, lineage);
+    const added = diff.changes.find((c) => c.type === "slice-added") as ChangeEntry;
+    expect(added.splitFrom).toBeNull();
+    expect(added.mergedFrom).toEqual([
+      { raw: "cart@v2", sliceKey: "cart", version: 2 },
+      { raw: "wishlist@v1", sliceKey: "wishlist", version: 1 },
+    ]);
+    expect(diff.counts.slicesMerged).toBe(1);
+  });
+
+  it("attaches a resolved superseded-by list to the removed slice's slice-removed entry", () => {
+    const lineage: LineageResolvers = {
+      oldDoc: (key) => (key === "checkout" ? docWith("superseded-by: checkout@v5, apply-discount@v1") : null),
+    };
+    const diff = diffOf(OLD, NEW_SUPERSEDED, lineage);
+    const removed = diff.removals.find((c) => c.type === "slice-removed") as ChangeEntry;
+    expect(removed.supersededBy).toEqual([
+      { raw: "checkout@v5", sliceKey: "checkout", version: 5 },
+      { raw: "apply-discount@v1", sliceKey: "apply-discount", version: 1 },
+    ]);
+    expect(diff.counts.slicesSuperseded).toBe(1);
+  });
+
+  it("leaves lineage fields undefined and counts at zero when the doc doesn't resolve", () => {
+    const lineage: LineageResolvers = { newDoc: () => null };
+    const diff = diffOf(OLD, NEW_SPLIT, lineage);
+    const added = diff.changes.find((c) => c.type === "slice-added") as ChangeEntry;
+    expect(added.splitFrom).toBeUndefined();
+    expect(added.mergedFrom).toBeUndefined();
+    expect(diff.counts.slicesSplit).toBe(0);
+  });
+
+  it("leaves lineage fields undefined when diffModels() is called without a lineage argument", () => {
+    const diff = diffOf(OLD, NEW_SPLIT);
+    const added = diff.changes.find((c) => c.type === "slice-added") as ChangeEntry;
+    expect(added.splitFrom).toBeUndefined();
+  });
+
+  it("renders the lineage suffix in the text report", () => {
+    const splitLineage: LineageResolvers = {
+      newDoc: (key) => (key === "discount-rules" ? docWith("split-from: checkout@v3") : null),
+    };
+    expect(reportOf(OLD, NEW_SPLIT, splitLineage)).toContain('+ slice "Discount Rules" (split from "checkout"@v3)');
+
+    const mergeLineage: LineageResolvers = {
+      newDoc: (key) => (key === "unified-cart" ? docWith("merged-from: cart@v2, wishlist@v1") : null),
+    };
+    expect(reportOf(OLD, NEW_MERGE, mergeLineage)).toContain(
+      '+ slice "Unified Cart" (merged from "cart"@v2, "wishlist"@v1)',
+    );
+
+    const supersedeLineage: LineageResolvers = {
+      oldDoc: (key) => (key === "checkout" ? docWith("superseded-by: checkout@v5, apply-discount@v1") : null),
+    };
+    expect(reportOf(OLD, NEW_SUPERSEDED, supersedeLineage)).toContain(
+      '- slice "Checkout" (superseded by "checkout"@v5, "apply-discount"@v1)',
+    );
+  });
+
+  it("falls back to the raw text for a malformed ref instead of hiding it", () => {
+    const lineage: LineageResolvers = {
+      newDoc: (key) => (key === "discount-rules" ? docWith("split-from: not-a-ref") : null),
+    };
+    const diff = diffOf(OLD, NEW_SPLIT, lineage);
+    const added = diff.changes.find((c) => c.type === "slice-added") as ChangeEntry;
+    expect(added.splitFrom).toEqual({ raw: "not-a-ref", sliceKey: null, version: null });
+    expect(reportOf(OLD, NEW_SPLIT, lineage)).toContain('+ slice "Discount Rules" (split from not-a-ref)');
+  });
+
+  it("counts a split in the summary line", () => {
+    const lineage: LineageResolvers = {
+      newDoc: (key) => (key === "discount-rules" ? docWith("split-from: checkout@v3") : null),
+    };
+    expect(reportOf(OLD, NEW_SPLIT, lineage)).toContain("1 slice split");
   });
 });
 

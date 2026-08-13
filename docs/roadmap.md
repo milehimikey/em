@@ -42,8 +42,16 @@ straight into the export JSON — every slice gains a model-derived `pattern` an
 `frontmatter-invalid` reason when there's nothing clean to join) — and every diagnostic
 `em export`/`em diff` emit now carries a stable `code` plus `refs` back to the entities it
 concerns, so a consumer can gate or bucket findings without parsing prose
-(`schemaVersion` `1.4`, `diffSchemaVersion` `1.5`). [workflow.md](workflow.md) is the
-resulting picture.
+(`schemaVersion` `1.4`, `diffSchemaVersion` `1.5`). Most recently, those lineage keys are now
+read, not just carried: `em diff` annotates a `slice-added`/`slice-removed` entry with its
+slice doc's resolved `split-from`/`merged-from`/`superseded-by` when one's declared (a real
+split reads as "split from", not a bare remove+add), and `em validate` resolves lineage refs
+against the current tree — malformed grammar, self-reference/cycles, a dangling
+`superseded-by`, and version arithmetic that names a future that hasn't happened are all
+errors, while a `split-from`/`merged-from` naming a key legitimately absent from the current
+tree (the steady state after a real split or merge) deliberately raises nothing at all
+(`diffSchemaVersion` `1.6`; see [validation.md#lineage](validation.md#lineage)).
+[workflow.md](workflow.md) is the resulting picture.
 
 **Modeling and rendering**
 
