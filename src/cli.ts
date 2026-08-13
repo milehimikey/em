@@ -17,8 +17,10 @@ import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { buildExport } from "./emit/json.js";
 import { buildDiffJson } from "./emit/diffJson.js";
-import { diffModels, formatModelDiff, hasChanges } from "./model/diff.js";
-import { planDiffArgs, resolveRevision } from "./cli/diff-inputs.js";
+import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
+import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
+import { readSliceDoc } from "./catalog/readSliceDoc.js";
+import { validateLineage } from "./catalog/lineageValidate.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -176,14 +178,23 @@ program
       if (plan.form === "files") {
         const oldSource = readFileOrExit(plan.oldFile);
         const newSource = readFileOrExit(plan.newFile);
-        runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode, opts.json);
+        const lineage: LineageResolvers = {
+          oldDoc: (key) => readSliceDoc(dirname(plan.oldFile), key),
+          newDoc: (key) => readSliceDoc(dirname(plan.newFile), key),
+        };
+        runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode, opts.json, lineage);
         return;
       }
       const oldSource = readAtRevision(plan.file, plan.from);
       const oldLabel = `${plan.file}@${plan.from}`;
       const newSource = plan.to ? readAtRevision(plan.file, plan.to) : readFileOrExit(plan.file);
       const newLabel = plan.to ? `${plan.file}@${plan.to}` : plan.file;
-      runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json);
+      const lineage: LineageResolvers = {
+        oldDoc: (key) => resolveDocAtRevision(plan.file, key, plan.from),
+        newDoc: (key) =>
+          plan.to ? resolveDocAtRevision(plan.file, key, plan.to) : readSliceDoc(dirname(plan.file), key),
+      };
+      runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json, lineage);
     },
   );
 
@@ -406,19 +417,22 @@ program
       file: string,
       opts: { listIssues?: boolean; listDivergences?: boolean; listPublic?: boolean; failOnIssues?: boolean },
     ) => {
-      const { model, diagnostics } = compileFile(file);
+      const { model, diagnostics, refs } = compileFile(file);
+      // Lineage-ref resolution (MIL-84) is validate's first fs-aware rule — every other check
+      // above is a pure function of the .em source. Reads slices/*.md alongside the model.
+      const allDiagnostics = [...diagnostics, ...validateLineage(model, refs, dirname(file))];
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
         if (opts.listIssues) printIssues(model);
         if (opts.listDivergences) printDivergences(model);
         if (opts.listPublic) printPublicEvents(model);
         // Errors still fail the run below — surface them rather than exiting
         // non-zero with nothing but the list on screen.
-        printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
+        printDiagnostics(allDiagnostics.filter((d) => d.severity === "error"));
       } else {
-        printDiagnostics(diagnostics);
-        if (diagnostics.length === 0) console.log("ok — no issues");
+        printDiagnostics(allDiagnostics);
+        if (allDiagnostics.length === 0) console.log("ok — no issues");
       }
-      if (hasErrors(diagnostics)) process.exit(1);
+      if (hasErrors(allDiagnostics)) process.exit(1);
       if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
     },
   );
@@ -586,6 +600,7 @@ function runDiff(
   newLabel: string,
   exitCode?: boolean,
   json?: boolean,
+  lineage?: LineageResolvers,
 ): void {
   const oldResult = compileSource(oldSource, oldLabel);
   const newResult = compileSource(newSource, newLabel);
@@ -598,7 +613,7 @@ function runDiff(
     process.exit(1);
   }
 
-  const diff = diffModels(oldResult.model, newResult.model, oldResult.refs, newResult.refs);
+  const diff = diffModels(oldResult.model, newResult.model, oldResult.refs, newResult.refs, lineage);
   if (json) {
     const oldSide = { label: oldLabel, source: oldSource, diagnostics: oldResult.diagnostics };
     const newSide = { label: newLabel, source: newSource, diagnostics: newResult.diagnostics };

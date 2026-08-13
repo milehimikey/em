@@ -12,6 +12,7 @@
 import { RefsResult } from "./refs.js";
 import { Element, NormalizedModel, Slice, TypeDecl, normalizeName } from "./model.js";
 import { ElementKind } from "../parser/ast.js";
+import { SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
 
 export type ChangeType =
   | "slice-added"
@@ -88,6 +89,22 @@ export interface ChangeEntry {
    * `element-added`, `element-moved` — out of scope for v1, see model.ts's `divergence` doc).
    */
   acceptedDivergence?: string | null;
+  /**
+   * MIL-84: the added slice's own doc frontmatter lineage — attached to `slice-added` entries
+   * only, and only when the new-side doc resolves (readable + parseable; see `LineageResolvers`
+   * below). Same shape/defaults as `em export`'s `slice.doc.splitFrom` (catalog/docJoin.ts's
+   * `SliceDocExport`). `undefined` when the doc doesn't resolve or lineage wasn't requested
+   * (`diffModels()` called without a `lineage` argument) — never cross-checked here (does
+   * `checkout@v3` really exist/match? that's `em validate`'s job, catalog/lineageValidate.ts).
+   */
+  splitFrom?: SliceRef | null;
+  /** MIL-84: same as `splitFrom`, for `merged-from`. Attached to `slice-added` entries. */
+  mergedFrom?: SliceRef[];
+  /**
+   * MIL-84: the removed slice's own (old-side) doc frontmatter `superseded-by` — attached to
+   * `slice-removed` entries only, when the old-side doc resolves. Never cross-checked here.
+   */
+  supersededBy?: SliceRef[];
 }
 
 export interface DiffCounts {
@@ -116,6 +133,12 @@ export interface DiffCounts {
   typesAdded: number;
   typesRemoved: number;
   typeFieldChanges: number;
+  /** `slice-added` entries whose new-side doc resolved with a non-null `splitFrom` (MIL-84). */
+  slicesSplit: number;
+  /** `slice-added` entries whose new-side doc resolved with a non-empty `mergedFrom` (MIL-84). */
+  slicesMerged: number;
+  /** `slice-removed` entries whose old-side doc resolved with a non-empty `supersededBy` (MIL-84). */
+  slicesSuperseded: number;
 }
 
 export interface ModelDiff {
@@ -148,6 +171,9 @@ function emptyCounts(): DiffCounts {
     typesAdded: 0,
     typesRemoved: 0,
     typeFieldChanges: 0,
+    slicesSplit: 0,
+    slicesMerged: 0,
+    slicesSuperseded: 0,
   };
 }
 
@@ -166,11 +192,33 @@ interface RefEntry {
 
 const arrowKey = (from: string, to: string): string => `${normalizeName(from)}->${normalizeName(to)}`;
 
+/**
+ * Optional per-side slice-doc lookups for lineage annotation (MIL-84) — resolve a slice's own
+ * doc, by its `em export` key, on that side of the diff. `newDoc` reads the *new*-side doc of a
+ * `slice-added` entry (for `split-from`/`merged-from`, which are claims a slice makes about
+ * itself); `oldDoc` reads the *old*-side doc of a `slice-removed` entry (for `superseded-by`).
+ * Each resolver returns `null` when the doc doesn't exist or can't be read — `diffModels()`
+ * never fails on that, it just omits the annotation, same report-not-gate philosophy as `em
+ * export`'s doc join (catalog/docJoin.ts). Omit `lineage` entirely (the default) to get today's
+ * plain add/remove behavior with no fs access at all — `em changelog`'s `diffModels()` calls
+ * deliberately don't pass one.
+ */
+export interface LineageResolvers {
+  newDoc?: (sliceKey: string) => SliceDoc | null;
+  oldDoc?: (sliceKey: string) => SliceDoc | null;
+}
+
 /** `oldRefs`/`newRefs` are each side's already-computed `RefsResult` (MIL-91) — sourced from
  *  the same `compile()` call that produced `oldModel`/`newModel`, never recomputed here, so
  *  their ref-collision diagnostics (already in each compile's own `diagnostics`) aren't
  *  silently dropped or double-computed. */
-export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel, oldRefs: RefsResult, newRefs: RefsResult): ModelDiff {
+export function diffModels(
+  oldModel: NormalizedModel,
+  newModel: NormalizedModel,
+  oldRefs: RefsResult,
+  newRefs: RefsResult,
+  lineage?: LineageResolvers,
+): ModelDiff {
   const oldSliceKeySet = new Set(oldRefs.sliceKeys);
   const newSliceKeySet = new Set(newRefs.sliceKeys);
 
@@ -249,7 +297,15 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel,
     const sliceKey = newRefs.sliceKeys[i];
     const sliceIsNew = !oldSliceKeySet.has(sliceKey);
     if (sliceIsNew) {
-      changes.push({ type: "slice-added", name: slice.name, sliceKey });
+      const entry: ChangeEntry = { type: "slice-added", name: slice.name, sliceKey };
+      const doc = lineage?.newDoc?.(sliceKey);
+      if (doc) {
+        entry.splitFrom = doc.splitFrom;
+        entry.mergedFrom = doc.mergedFrom;
+        if (doc.splitFrom) counts.slicesSplit++;
+        if (doc.mergedFrom.length > 0) counts.slicesMerged++;
+      }
+      changes.push(entry);
       counts.slicesAdded++;
     } else {
       pushSliceChanges(changes, counts, oldSliceByKey.get(sliceKey)!, slice, sliceKey);
@@ -297,7 +353,13 @@ export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel,
     const sliceKey = oldRefs.sliceKeys[i];
     const sliceIsRemoved = !newSliceKeySet.has(sliceKey);
     if (sliceIsRemoved) {
-      removals.push({ type: "slice-removed", name: slice.name, sliceKey });
+      const entry: ChangeEntry = { type: "slice-removed", name: slice.name, sliceKey };
+      const doc = lineage?.oldDoc?.(sliceKey);
+      if (doc) {
+        entry.supersededBy = doc.supersededBy;
+        if (doc.supersededBy.length > 0) counts.slicesSuperseded++;
+      }
+      removals.push(entry);
       counts.slicesRemoved++;
     }
     for (const el of slice.elements) {
@@ -649,6 +711,9 @@ function formatSummary(c: DiffCounts): string {
   push(c.typesRemoved, "type removed", "types removed");
   push(c.typeFieldChanges, "type field change", "type field changes");
   push(c.acceptedDivergences, "accepted divergence", "accepted divergences");
+  push(c.slicesSplit, "slice split", "slices split");
+  push(c.slicesMerged, "slice merged", "slices merged");
+  push(c.slicesSuperseded, "slice superseded", "slices superseded");
   return parts.length === 0 ? "no structural changes" : parts.join(", ");
 }
 
@@ -661,12 +726,29 @@ function divergenceSuffix(e: ChangeEntry): string {
   return e.acceptedDivergence ? ` [accepted divergence: "${e.acceptedDivergence}"]` : "";
 }
 
+/** Render a lineage ref for a formatted line — falls back to the raw frontmatter text rather
+ *  than hiding it when the ref didn't parse (MIL-84: a malformed ref still stays visible). */
+function formatRef(r: SliceRef): string {
+  return r.sliceKey ? `"${r.sliceKey}"@v${r.version}` : r.raw;
+}
+
+/** MIL-84 lineage suffix for `slice-added`/`slice-removed` lines — `splitFrom` takes priority
+ *  over `mergedFrom` in the (unexpected) case both are somehow set, mirroring the schema's
+ *  single-vs-list cardinality rule for the two keys. `undefined` fields (lineage not resolved)
+ *  and empty arrays both render nothing. */
+function lineageSuffix(e: ChangeEntry): string {
+  if (e.splitFrom) return ` (split from ${formatRef(e.splitFrom)})`;
+  if (e.mergedFrom && e.mergedFrom.length > 0) return ` (merged from ${e.mergedFrom.map(formatRef).join(", ")})`;
+  if (e.supersededBy && e.supersededBy.length > 0) return ` (superseded by ${e.supersededBy.map(formatRef).join(", ")})`;
+  return "";
+}
+
 function formatEntry(e: ChangeEntry): string {
   switch (e.type) {
     case "slice-added":
-      return `+ slice "${e.name}"`;
+      return `+ slice "${e.name}"${lineageSuffix(e)}`;
     case "slice-removed":
-      return `- slice "${e.name}"`;
+      return `- slice "${e.name}"${lineageSuffix(e)}`;
     case "source-added":
       return `~ source added on slice "${e.sliceName}": "${e.newSource}"`;
     case "source-removed":

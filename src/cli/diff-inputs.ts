@@ -6,6 +6,7 @@
 
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
+import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
 /** Resolved `em diff` invocation, or a user-facing `error` for an invalid form. */
 export type DiffPlan =
@@ -58,29 +59,55 @@ export const realGit: GitRunner = (args) => {
 /** File content at a git revision, or a user-facing `message` for each failure mode. */
 export type RevisionResult = { ok: true; content: string } | { ok: false; message: string };
 
+/** One of the three ways reading a file at a revision can fail — see `showAtRevision`. */
+type ShowFailure = { ok: false; reason: "no-repo" | "not-tracked" | "show-failed"; detail?: string };
+
+/**
+ * Read `targetAbs`'s content at git revision `rev`, resolving the repo root from
+ * `anchorFile`'s directory (a file known to be somewhere inside the repo — doesn't itself have
+ * to be `targetAbs`, e.g. a slice doc resolved relative to its `.em` file's location). The git
+ * runner is injectable so every failure branch is unit-testable without a real repository.
+ */
+function showAtRevision(runGit: GitRunner, anchorFile: string, targetAbs: string, rev: string): { ok: true; content: string } | ShowFailure {
+  const toplevel = runGit(["-C", dirname(resolve(anchorFile)), "rev-parse", "--show-toplevel"]);
+  if (toplevel.status !== 0) return { ok: false, reason: "no-repo" };
+  const repoRoot = toplevel.stdout.trim();
+  const lsFiles = runGit(["-C", repoRoot, "ls-files", "--full-name", "--", targetAbs]);
+  const relPath = lsFiles.stdout.trim().split("\n")[0];
+  if (!relPath) return { ok: false, reason: "not-tracked" };
+  const show = runGit(["-C", repoRoot, "show", `${rev}:${relPath}`]);
+  if (show.status !== 0) return { ok: false, reason: "show-failed", detail: (show.stderr || "").trim() || "unknown git error" };
+  return { ok: true, content: show.stdout };
+}
+
 /**
  * Resolve `file`'s content at git revision `rev` via `git show <rev>:<repo-relative-path>`.
  * The git runner is injectable so the not-a-repo / not-tracked / bad-rev branches are
  * unit-testable without a real repository.
  */
 export function resolveRevision(file: string, rev: string, runGit: GitRunner = realGit): RevisionResult {
-  const abs = resolve(file);
-  const toplevel = runGit(["-C", dirname(abs), "rev-parse", "--show-toplevel"]);
-  if (toplevel.status !== 0) {
-    return { ok: false, message: `em diff: ${file} is not inside a git repository (needed for --from/--to)` };
+  const result = showAtRevision(runGit, file, resolve(file), rev);
+  if (result.ok) return result;
+  switch (result.reason) {
+    case "no-repo":
+      return { ok: false, message: `em diff: ${file} is not inside a git repository (needed for --from/--to)` };
+    case "not-tracked":
+      return { ok: false, message: `em diff: ${file} is not tracked by git` };
+    case "show-failed":
+      return { ok: false, message: `em diff: cannot read ${file} at revision "${rev}": ${result.detail}` };
   }
-  const repoRoot = toplevel.stdout.trim();
-  const lsFiles = runGit(["-C", repoRoot, "ls-files", "--full-name", "--", abs]);
-  const relPath = lsFiles.stdout.trim().split("\n")[0];
-  if (!relPath) {
-    return { ok: false, message: `em diff: ${file} is not tracked by git in ${repoRoot}` };
-  }
-  const show = runGit(["-C", repoRoot, "show", `${rev}:${relPath}`]);
-  if (show.status !== 0) {
-    return {
-      ok: false,
-      message: `em diff: cannot read ${relPath} at revision "${rev}": ${(show.stderr || "").trim() || "unknown git error"}`,
-    };
-  }
-  return { ok: true, content: show.stdout };
+}
+
+/**
+ * Resolve a slice's doc (`slices/<sliceKey>.md`, relative to `anchorFile`'s directory — same
+ * convention as every other doc/note path in em) at git revision `rev`. Unlike
+ * `resolveRevision`, a missing doc at a revision is routine (not every slice had a doc yet, or
+ * the doc simply isn't tracked) rather than a user-facing error — so every failure mode
+ * collapses to `null`, for `em diff`'s lineage annotation (MIL-84) to treat as "nothing to
+ * annotate with" rather than aborting the diff.
+ */
+export function resolveDocAtRevision(anchorFile: string, sliceKey: string, rev: string, runGit: GitRunner = realGit): SliceDoc | null {
+  const targetAbs = resolve(dirname(resolve(anchorFile)), "slices", `${sliceKey}.md`);
+  const result = showAtRevision(runGit, anchorFile, targetAbs, rev);
+  return result.ok ? parseSliceDoc(result.content) : null;
 }

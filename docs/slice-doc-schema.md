@@ -37,9 +37,9 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `status` | string, case-insensitive | `draft` \| `reviewed` \| `ready-to-implement` \| `implemented` | `em catalog`, `em render`/`em watch` header coloring; joined into `em export`'s `slice.doc.status` (schema `1.4`) |
 | `version` | integer | positive integer, starts at `1` | joined into `em export`'s `slice.doc.version` (schema `1.4`, MIL-91) |
 | `implementedIn` | string | free text (PR/commit link) | joined into `em export`'s `slice.doc.implementedIn` (schema `1.4`, MIL-91) |
-| `split-from` | single ref | `<slice-key>@v<N>` | joined into `em export`'s `slice.doc.splitFrom` (schema `1.4`, MIL-91); referential validation is still future work (MIL-84) |
-| `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.mergedFrom` (schema `1.4`, MIL-91); referential validation is still future work (MIL-84) |
-| `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.supersededBy` (schema `1.4`, MIL-91); referential validation is still future work (MIL-84) |
+| `split-from` | single ref | `<slice-key>@v<N>` | joined into `em export`'s `slice.doc.splitFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
+| `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.mergedFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
+| `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.supersededBy` (schema `1.4`, MIL-91) and `em diff`'s `slice-removed` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 
 `status` and `version` also have this document's own required/optional rules below;
 `schemaVersion`/`pattern`/`swimlane`/`implementedIn` are unconditionally optional today (the
@@ -90,11 +90,25 @@ each get:
 split-from: checkout@v4
 ```
 
-**Scope note:** neither this schema nor `sliceDoc.ts` checks that a referenced slice/version
-actually *exists* — that referential validation (does `split-from` name a real slice@version)
-is deliberately out of scope for the parser. A malformed or dangling ref still parses (its
-`raw` text is preserved, `sliceKey`/`version` come back `null` for a malformed value), it's
-just not verified.
+**Scope note:** the parser (`sliceDoc.ts`) itself still never checks that a referenced
+slice/version actually *exists* — that stays deliberately out of scope here, by design (fs-free,
+pure). A malformed or dangling ref still parses (its `raw` text is preserved, `sliceKey`/
+`version` come back `null` for a malformed value); referential checking is a separate, fs-aware
+layer.
+
+`em validate` (`src/catalog/lineageValidate.ts`, MIL-84) is that layer. It checks what the
+*current tree* can prove wrong and stays silent about what it can't — see
+[validation.md#lineage](validation.md#lineage) for exactly what's checked (grammar,
+self-reference/cycles, dangling `superseded-by`, impossible version arithmetic) versus what's
+deliberately never flagged (a `split-from`/`merged-from` naming a key legitimately absent from
+the current tree — the normal state after a real split/merge). Deep historical verification —
+did `slice@vN` really, once, exist? — stays out of core validate; the reason that's sufficient
+is a same-commit authoring convention, not new plumbing:
+
+> Lineage refs (`split-from:`/`merged-from:`/`superseded-by:`) are written in the same
+> ratification commit that performs the operation they record, so the PR diff contains both
+> sides of the claim (the predecessor at its final version, and the ref naming it). The review
+> airlock is the history check.
 
 ## `status` under re-ratification
 
@@ -142,4 +156,6 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](cli.md#em-render-file) — slice status colors
 - [cli.md](cli.md#em-catalog-files) — pattern / doc lookup
 - [cli.md](cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91)
+- [cli.md](cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
+- [validation.md#lineage](validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)
 - [`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md) — the authored template

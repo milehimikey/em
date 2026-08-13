@@ -4,7 +4,10 @@
 // export JSON. Used ONLY by `em export` (src/emit/json.ts) — `em catalog`'s own doc lookup
 // (catalog/build.ts) deliberately keeps its simpler existsSync+parseSliceDoc convention: it
 // has a standing tested invariant that catalog's doc discovery ignores `note` entirely
-// (test/catalog.e2e.test.ts), and doesn't need this module's 3-state reason granularity.
+// (test/catalog.e2e.test.ts), and doesn't need this module's 3-state reason granularity. The
+// underlying read (`readSliceDoc.ts`) is shared with `em diff`'s lineage annotation
+// (model/diff.ts) and `em validate`'s lineage-ref resolution (catalog/lineageValidate.ts,
+// MIL-84) — this module's `note`-binding gate and 3-state `DocReason` stay export-specific.
 //
 // Three states (MIL-91): the `note "slices/<name>.md"` binding on an element is the
 // load-bearing fact — binding a note IS the ratified declaration that a doc should exist. No
@@ -12,11 +15,10 @@
 // binding pointing at a missing file, or a doc whose frontmatter is missing or malformed, are
 // both broken-contract states and warn.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { Slice } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
-import { parseSliceDoc, SliceRef } from "./sliceDoc.js";
+import { readSliceDoc } from "./readSliceDoc.js";
+import { SliceRef } from "./sliceDoc.js";
 
 export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
 
@@ -72,8 +74,8 @@ export function resolveSliceDocJoin(
     return { doc: { found: false, path, reason: "no-doc-bound", ...EMPTY_CONTENT }, diagnostics: [] };
   }
 
-  const fsPath = join(baseDir, "slices", `${sliceKey}.md`);
-  if (!existsSync(fsPath)) {
+  const parsed = readSliceDoc(baseDir, sliceKey);
+  if (!parsed) {
     return {
       doc: { found: false, path, reason: "binding-missing-file", ...EMPTY_CONTENT },
       diagnostics: [
@@ -88,7 +90,6 @@ export function resolveSliceDocJoin(
     };
   }
 
-  const parsed = parseSliceDoc(readFileSync(fsPath, "utf8"));
   if (!parsed.frontmatterPresent || parsed.missingRequiredFields.length > 0) {
     return {
       doc: { found: true, path, reason: "frontmatter-invalid", ...EMPTY_CONTENT },

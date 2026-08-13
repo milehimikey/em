@@ -113,6 +113,12 @@ non-zero if there are errors; exits zero on warnings or a clean model, printing
 `ok — no issues` when there is nothing to report. Useful in CI to keep a committed model
 honest.
 
+Every rule except one is a pure function of the `.em` source. The exception is lineage-ref
+resolution (MIL-84): `em validate` also reads `slices/*.md` frontmatter alongside the model,
+to check `split-from`/`merged-from`/`superseded-by` refs against the current tree — see
+[validation.md#lineage](validation.md#lineage) for exactly what's checked (and, just as
+deliberately, what's never flagged).
+
 | Flag | Effect |
 |---|---|
 | `--list-issues` | Print only the open `issue "text"` diagnostics (slice, element, line, text) instead of the full diagnostic list |
@@ -307,7 +313,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.5"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.6"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -317,10 +323,10 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 20 counters the text rollup line summarizes (`slicesAdded`,
+- `counts` — the same 23 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
   `eventsMarkedPublic`, `eventsUnmarkedPublic`, `typesAdded`, `typesRemoved`,
-  `typeFieldChanges`, …), as-is.
+  `typeFieldChanges`, `slicesSplit`, `slicesMerged`, `slicesSuperseded`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:
@@ -335,9 +341,10 @@ Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rathe
 Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `ref`, `sliceName`,
 `sliceKey`, `fromSlice`, `fromSliceKey`, `toSlice`, `toSliceKey`, `field`, `fieldType`,
 `oldType`, `newType`, `source`, `oldNote`, `newNote`, `oldText`, `newText`, `from`, `to`,
-`acceptedDivergence`) — explicit `null` when unused by that entry's `type`, never omitted, so
-a typed consumer can destructure without sniffing for key presence (same convention as `em
-export`). Output is byte-deterministic for the same two inputs.
+`acceptedDivergence`, `splitFrom`, `mergedFrom`, `supersededBy`) — explicit `null` when unused
+by that entry's `type`, never omitted, so a typed consumer can destructure without sniffing
+for key presence (same convention as `em export`). Output is byte-deterministic for the same
+two inputs.
 
 **Accepted divergence** (`acceptedDivergence`, added in schema `1.1`): non-null when the
 **old**-side (canonical) element behind this entry carries a `divergence "text"` annotation —
@@ -368,6 +375,21 @@ A `~2`/`~3`-style dedupe suffix on a colliding name flows through automatically,
 values are read straight from the same `computeRefs()` `em export` already uses — a consumer
 can join a diff entry straight to the matching `em export` document's slice `key` or
 element/type `ref` without re-deriving the slug or reimplementing dedupe.
+
+**Lineage annotation** (`splitFrom`, `mergedFrom`, `supersededBy`, added in schema `1.6`,
+MIL-84): when a `slice-added` entry's *new*-side slice doc declares `split-from`/`merged-from`
+frontmatter, or a `slice-removed` entry's *old*-side doc declares `superseded-by`, `em diff`
+attaches the parsed ref(s) (same `{ raw, sliceKey, version }` shape as `em export`'s
+`slice.doc.splitFrom`, see [slice-doc-schema.md](slice-doc-schema.md)) and counts it in
+`counts.slicesSplit`/`slicesMerged`/`slicesSuperseded`. The text report renders it as a
+suffix, e.g. `+ slice "Discount Rules" (split from "checkout"@v3)`. For the `--from`/`--to`
+git-revision form, the doc is read at the same revision as that side's `.em` source (`git
+show <rev>:slices/<key>.md`); for the two-file form, each side's doc is read relative to that
+file's own directory. A doc that doesn't resolve on a given side (missing, or — for the git
+form — not tracked at that revision) simply leaves these fields `null`/unset; `em diff` never
+fails over an unresolvable doc, same report-not-gate philosophy as `em export`'s doc join.
+**These refs are reported, never cross-checked** — whether `checkout@v3` actually exists or
+the version is plausible is `em validate`'s job (see [validation.md#lineage](validation.md#lineage)), not `em diff`'s.
 
 ## `em glossary <files...>`
 
