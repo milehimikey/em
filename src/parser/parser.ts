@@ -346,7 +346,7 @@ function extractClauses(
   // text name, same as any other unrecognized word (matching `again`'s discipline).
   // Case-sensitive, like the top-level keyword table, so a title-cased `Public`
   // in a name (`event Account Made Public`) is never taken as the marker.
-  const publicMatch = rest.match(/(?:^|\s)public(?=\s+@\S+\s*$|\s*$)/);
+  const publicMatch = rest.match(/(?:^|\s)public(?=\s+@\S.*$|\s*$)/);
   if (publicMatch && publicMatch.index !== undefined) {
     if (node.kind !== "event")
       throw new ParseError(
@@ -357,8 +357,18 @@ function extractClauses(
     rest = (rest.slice(0, publicMatch.index) + rest.slice(publicMatch.index + publicMatch[0].length)).trim();
   }
 
-  // Trailing `@Tag` (persona for ui, context for event).
-  const tagMatch = rest.match(/(?:^|\s)@(\S+)\s*$/);
+  // Trailing `@Tag` (persona for ui, context for event). Captures everything from `@` to
+  // end of line, not just the first word, so a multi-word persona/context (`@Pax8 Admin`,
+  // declared as `persona Pax8 Admin` — declarations are already free multi-word text, see
+  // the top-level `persona`/`context` handling) resolves correctly instead of silently
+  // failing to match. A failed match here doesn't error — the `@`-prefixed text just folds
+  // into the free-text name — so unquoted multi-word tags used to fail *silently*: the
+  // element's `persona`/`context` stayed unset, and normalization's fallback (first-declared
+  // persona/context) accepted it without complaint. Safe to capture greedily to end of line
+  // because every clause that can trail an element (`note`/`issue`/`divergence`/`from`/
+  // `public`) is already stripped from `rest` by this point; `again` is view-only and never
+  // co-occurs with a tag (ui/event only).
+  const tagMatch = rest.match(/(?:^|\s)@(\S.*?)\s*$/);
   if (tagMatch && tagMatch.index !== undefined) {
     const tag = tagMatch[1];
     if (node.kind === "ui") node.persona = tag;
