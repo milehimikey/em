@@ -61,9 +61,11 @@ balloon into showing most of the model. Can't be combined with `--emit-dot`. Thi
 the path convention the `event-modeling` skill's `slice` phase writes to, and that
 `em catalog` looks for (see below).
 
-**Slice status colors.** Every slice's title cell is colored by its design doc's
-`- **Status:** ...` line (`slices/<kebab-slug>.md`, same doc `em catalog` reads — see below),
-whenever one exists next to the `.em` file:
+**Slice status colors.** Every slice's title cell is colored by its design doc's status
+(`slices/<kebab-slug>.md`, same doc `em catalog` reads — see below), whenever one exists next
+to the `.em` file. Status comes from the doc's leading YAML frontmatter (`status: ...`) —
+the canonical dialect — or, for docs written before frontmatter existed, a legacy
+`- **Status:** ...` bullet line; frontmatter wins if a doc somehow has both:
 
 | Status | Color |
 |---|---|
@@ -81,9 +83,10 @@ doesn't recognize.
 ## `em watch <file>`
 
 Renders once, then re-renders on every save — of the `.em` file, or of any of its slices'
-`slices/*.md` design docs (so flipping a `- **Status:** ...` line live-updates header colors
-without touching the model). Saves with validation errors are skipped (the errors print; the
-previous render stays on disk). Ctrl-C to stop.
+`slices/*.md` design docs (so flipping a frontmatter `status:` value, or a legacy
+`- **Status:** ...` line, live-updates header colors without touching the model). Saves with
+validation errors are skipped (the errors print; the previous render stays on disk). Ctrl-C to
+stop.
 
 | Flag | Effect |
 |---|---|
@@ -475,18 +478,21 @@ are never conflated. Three outcomes, shown as the page/table's Status:
 
 - No doc at that path → `no doc`; the page still shows the AST-derived facts (pattern,
   elements, fields), since those never depend on the doc.
-- Doc exists but has no recognizable `- **Status:** ...` line (a freeform doc, not the
-  template) → `unknown`; the doc's content still renders as HTML.
+- Doc exists but has no recognizable status — no frontmatter `status:` scalar and no legacy
+  `- **Status:** ...` line (a freeform doc, not the template) → `unknown`; the doc's content
+  still renders as HTML (with any frontmatter fences it does have stripped first).
 - Doc matches the template → the Status value shown verbatim (`draft`, `reviewed`,
-  `ready-to-implement`, `implemented`, …).
+  `ready-to-implement`, `implemented`, …), read from frontmatter if present, else the legacy
+  bullet line.
 
 Both the main diagram and every per-slice diagram embedded in the catalog carry the same
 status header coloring `em render`/`em watch` do (see above) — one status source, colored
 consistently everywhere it's shown.
 
-**Pattern.** Since a slice's pattern (State Change / State View / Automation /
-Translation) isn't stored anywhere, `em catalog` derives it from the slice's element kinds
-(see [patterns.md](patterns.md)). One known simplification: Automation and Translation
+**Pattern.** `em catalog` derives a slice's pattern (State Change / State View / Automation /
+Translation) from the slice's element kinds (see [patterns.md](patterns.md)) rather than reading
+the doc's frontmatter `pattern:` field — that field is authored/informational only today, not
+yet parsed by any `em` command. One known simplification: Automation and Translation
 each span two slices in the model, and the second one (a bare `command`+`event` pair) has
 the same kind-signature as a State Change slice — it's classified as State Change, since
 classification looks at one slice at a time. This is intentional, not a defect.
