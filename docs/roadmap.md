@@ -31,8 +31,8 @@ stated explicitly in the pattern docs. Most recently, the slice-doc metadata dia
 canonically YAML frontmatter (`status`/`pattern`/`swimlane`/`implementedIn`, plus
 `schemaVersion`) — `templates/slice.md` and `em catalog`/`em render`/`em watch`'s status
 parsing all read frontmatter first, with the old `- **Status:** ...` bullet line kept as
-legacy/accepted input for docs written before frontmatter existed. Most recently, the
-slice-doc frontmatter contract gained a `version` field and three lineage keys
+legacy/accepted input for docs written before frontmatter existed. It also just gained a
+`version` field and three lineage keys
 (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar) for split/merge/rename
 provenance, plus a documented machine schema
 ([slice-doc-schema.md](slice-doc-schema.md)) spelling out required-vs-optional keys per

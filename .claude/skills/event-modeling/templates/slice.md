@@ -41,7 +41,8 @@ status: {{draft | reviewed | ready-to-implement | implemented}}
 version: 1
 implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 # Lineage — only when this doc exists because of a split, merge, or rename (delete these three
-# lines otherwise). Grammar: <slice-key>@v<N>. See docs/slice-doc-schema.md#lineage.
+# lines otherwise). Grammar: <slice-key>@v<N>. See
+# docs/slice-doc-schema.md#lineage-grammar-and-cardinality.
 # split-from: <slice-key>@v<N>
 # merged-from: <slice-key>@v<N>, <slice-key>@v<N>
 # superseded-by: <slice-key>@v<N>, <slice-key>@v<N>

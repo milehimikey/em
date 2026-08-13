@@ -114,6 +114,22 @@ describe("parseSliceDoc", () => {
     ]);
   });
 
+  it("parses a comma-separated list with a mix of well-formed and malformed refs", () => {
+    const doc = parseSliceDoc("---\nmerged-from: checkout, apply-discount@v1\n---\n# Some Slice\n");
+    expect(doc.mergedFrom).toEqual([
+      { raw: "checkout", sliceKey: null, version: null },
+      { raw: "apply-discount@v1", sliceKey: "apply-discount", version: 1 },
+    ]);
+  });
+
+  it("drops empty entries from a trailing-comma or double-comma lineage list", () => {
+    const doc = parseSliceDoc("---\nmerged-from: checkout@v4,, apply-discount@v1,\n---\n# Some Slice\n");
+    expect(doc.mergedFrom).toEqual([
+      { raw: "checkout@v4", sliceKey: "checkout", version: 4 },
+      { raw: "apply-discount@v1", sliceKey: "apply-discount", version: 1 },
+    ]);
+  });
+
   it("keeps the raw text and nulls sliceKey/version for a malformed lineage ref, without throwing", () => {
     const doc = parseSliceDoc("---\nsplit-from: checkout\n---\n# Some Slice\n");
     expect(doc.splitFrom).toEqual({ raw: "checkout", sliceKey: null, version: null });
