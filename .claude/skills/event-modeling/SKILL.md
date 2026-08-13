@@ -235,12 +235,15 @@ For each slice:
    adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling
    contexts) before finalizing field names/types or invariants — don't guess a shape that's
    already defined elsewhere.
-2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name). Record the originating
+2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name), with the YAML
+   frontmatter block (`pattern`/`swimlane`/`status`/`implementedIn`, kebab-case `pattern` value)
+   at the very top — the canonical, machine-read metadata dialect (`- **Status:** ...` bullet
+   lines are legacy/accepted input only; never write new docs that way). Record the originating
    need (ticket/conversation link) in the Intent section when one exists.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
    slices/<slice-name>.svg` (kebab-case, matching the doc's filename) — redraws just this slice
    in its own canonical pattern shape, and add `![Diagram](./<slice-name>.svg)` near the top of
-   the doc, right after the metadata bullet list.
+   the doc, right after the `# Slice:` heading (below the frontmatter block).
 4. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).

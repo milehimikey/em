@@ -4,18 +4,27 @@ linked from the .em model with:  note "slices/<slice-name>.md"  on the slice's d
 Fill every section through Socratic questioning. Leave "Open Questions" rather than guessing.
 Replace the bracketed placeholders; delete guidance comments before finishing.
 
+The frontmatter below is the canonical, machine-read metadata dialect — `em`'s own parser
+(src/catalog/sliceDoc.ts) reads `status:` (and `pattern:`) from it. `pattern` is kebab-case
+(state-change/state-view/automation/translation) even though the skill's prose always says
+"State Change"/"State View"/etc. — the frontmatter value is a machine key, not a display label.
+Older docs using a `- **Status:** ...` bullet line instead of frontmatter still parse (legacy/
+accepted input), but new docs should always use this frontmatter form.
+
 The diagram below is generated, not hand-drawn: `em render <model>.em --slice "{{Slice Name}}"
 -o slices/{{slice-name}}.svg` (kebab-case the slice name to match this doc's own filename).
 -->
 
+---
+schemaVersion: 1
+pattern: {{state-change | state-view | automation | translation}}
+swimlane: {{Persona/Actor}} → {{Context/Aggregate}}
+status: {{draft | reviewed | ready-to-implement | implemented}}
+implementedIn: {{PR/commit link — fill in once status is `implemented`}}
+---
 # Slice: {{Slice Name}}
 
 ![Diagram](./{{slice-name}}.svg)
-
-- **Pattern:** {{State Change | State View | Automation | Translation}}
-- **Swimlane:** {{Persona/Actor}} → {{Context/Aggregate}}
-- **Status:** {{draft | reviewed | ready-to-implement | implemented}}
-- **Implemented in:** {{PR/commit link — fill in once status is `implemented`}}
 
 ## Intent
 {{Why this slice exists — the user or business goal it serves, in one or two sentences. Note the

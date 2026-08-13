@@ -27,8 +27,12 @@ case-sensitive and operand-checked so element names containing words like "From"
 or "Again" are no longer silently corrupted at parse time, `from` kind-mismatch errors that
 name the actual kind instead of claiming the name is unknown, and the automation read-model
 naming rule (name the to-do list after the pending work, never after the triggering event)
-stated explicitly in the pattern docs. [workflow.md](workflow.md) is the resulting
-picture.
+stated explicitly in the pattern docs. Most recently, the slice-doc metadata dialect is now
+canonically YAML frontmatter (`status`/`pattern`/`swimlane`/`implementedIn`, plus
+`schemaVersion`) — `templates/slice.md` and `em catalog`/`em render`/`em watch`'s status
+parsing all read frontmatter first, with the old `- **Status:** ...` bullet line kept as
+legacy/accepted input for docs written before frontmatter existed. [workflow.md](workflow.md)
+is the resulting picture.
 
 **Modeling and rendering**
 
