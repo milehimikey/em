@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
-import { computeRefs } from "../emit/json.js";
+import { computeRefs } from "../model/refs.js";
 import { parseSliceDoc } from "../catalog/sliceDoc.js";
 
 /** One status per slice, same order as model.slices (and so the same order as

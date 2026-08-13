@@ -15,7 +15,16 @@ const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const CLI = join(ROOT, "src", "cli.ts");
 
 function em(args: string[], cwd: string) {
-  const res = spawnSync(process.execPath, [TSX, CLI, ...args], { cwd, encoding: "utf8" });
+  // Explicit maxBuffer, well above any realistic export/diff document: relying on
+  // spawnSync's implicit default silently truncates large stdout under vitest's worker
+  // environment well before Node's own default limit — the exact failure mode the
+  // "does not truncate a large document" test below exists to catch (MIL-91 grew
+  // diagnostics with code/refs, pushing a previously-fine fixture over that edge).
+  const res = spawnSync(process.execPath, [TSX, CLI, ...args], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
   return { status: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
@@ -154,14 +163,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.3");
+    expect(doc.schemaVersion).toBe("1.4");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.3");
+    expect(doc.schemaVersion).toBe("1.4");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -250,7 +259,7 @@ describe("em diff --json (CLI)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
-    expect(doc.diffSchemaVersion).toBe("1.4");
+    expect(doc.diffSchemaVersion).toBe("1.5");
     expect(doc.identical).toBe(false);
     expect(r.stderr).toContain("produces no event");
   });

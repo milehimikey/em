@@ -36,7 +36,14 @@ legacy/accepted input for docs written before frontmatter existed. It also just 
 (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar) for split/merge/rename
 provenance, plus a documented machine schema
 ([slice-doc-schema.md](slice-doc-schema.md)) spelling out required-vs-optional keys per
-`status` and the unknown-key policy. [workflow.md](workflow.md) is the resulting picture.
+`status` and the unknown-key policy. Most recently, `em export` joins that frontmatter
+straight into the export JSON — every slice gains a model-derived `pattern` and a `doc` object
+(status/version/implementedIn/lineage, or a `no-doc-bound`/`binding-missing-file`/
+`frontmatter-invalid` reason when there's nothing clean to join) — and every diagnostic
+`em export`/`em diff` emit now carries a stable `code` plus `refs` back to the entities it
+concerns, so a consumer can gate or bucket findings without parsing prose
+(`schemaVersion` `1.4`, `diffSchemaVersion` `1.5`). [workflow.md](workflow.md) is the
+resulting picture.
 
 **Modeling and rendering**
 

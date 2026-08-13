@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
 import { validate } from "../src/model/validate.js";
+import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
 
 const SKILL = ".claude/skills/event-modeling";
@@ -46,7 +47,7 @@ describe("event-modeling skill examples", () => {
     blocks.forEach((src, i) => {
       it(`${file} block ${i + 1} parses and validates`, () => {
         const model = normalize(parse(src)); // throws ParseError on bad syntax
-        const diags = validate(model, layout(model))
+        const diags = validate(model, layout(model), computeRefs(model))
           // A shape fragment may use a literal `from "..."` placeholder for the source event.
           .filter((d) => !d.message.includes('"..."'));
         expect(diags.map((d) => `${d.severity}: ${d.message}`)).toEqual([]);

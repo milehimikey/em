@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Structural diff between two NormalizedModels, for `em diff`. Identity is
 // export identity: slices are matched by their `em export` key, elements by
-// their `em export` ref (see computeRefs() in ../emit/json.ts) — the same
+// their `em export` ref (see computeRefs() in ./refs.ts) — the same
 // edit-stable scheme `em export` already guarantees (inserting/reordering
 // slices doesn't change an existing element's ref). A rename (same slot,
 // different name) is therefore NOT tracked as a rename — it reads as a
@@ -9,7 +9,7 @@
 // (same kind + normalized name, different slice) is detected separately and
 // reported once, not as add+remove.
 
-import { computeRefs } from "../emit/json.js";
+import { RefsResult } from "./refs.js";
 import { Element, NormalizedModel, Slice, TypeDecl, normalizeName } from "./model.js";
 import { ElementKind } from "../parser/ast.js";
 
@@ -166,10 +166,11 @@ interface RefEntry {
 
 const arrowKey = (from: string, to: string): string => `${normalizeName(from)}->${normalizeName(to)}`;
 
-export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel): ModelDiff {
-  const oldRefs = computeRefs(oldModel);
-  const newRefs = computeRefs(newModel);
-
+/** `oldRefs`/`newRefs` are each side's already-computed `RefsResult` (MIL-91) — sourced from
+ *  the same `compile()` call that produced `oldModel`/`newModel`, never recomputed here, so
+ *  their ref-collision diagnostics (already in each compile's own `diagnostics`) aren't
+ *  silently dropped or double-computed. */
+export function diffModels(oldModel: NormalizedModel, newModel: NormalizedModel, oldRefs: RefsResult, newRefs: RefsResult): ModelDiff {
   const oldSliceKeySet = new Set(oldRefs.sliceKeys);
   const newSliceKeySet = new Set(newRefs.sliceKeys);
 

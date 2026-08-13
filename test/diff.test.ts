@@ -8,8 +8,11 @@ import { describe, it, expect } from "vitest";
 import { compile } from "../src/pipeline.js";
 import { diffModels, formatModelDiff, hasChanges, ChangeEntry } from "../src/model/diff.js";
 
-const modelOf = (src: string) => compile(src).model;
-const diffOf = (oldSrc: string, newSrc: string) => diffModels(modelOf(oldSrc), modelOf(newSrc));
+const diffOf = (oldSrc: string, newSrc: string) => {
+  const o = compile(oldSrc);
+  const n = compile(newSrc);
+  return diffModels(o.model, n.model, o.refs, n.refs);
+};
 const reportOf = (oldSrc: string, newSrc: string) => formatModelDiff(diffOf(oldSrc, newSrc));
 
 describe("identical models", () => {

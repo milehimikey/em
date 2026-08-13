@@ -149,7 +149,7 @@ em export model.em -o model.json      # write to a file
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.3"`):
+**Schema summary** (`schemaVersion: "1.4"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -163,8 +163,25 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   - Each **slice** has a stable `key` (`slug(name)`, with a `~2`, `~3`, … suffix — and a
     warning diagnostic — if two slices share a name), plus `name`, `index`, `line`, `source`
     (the slice's `source "url"` clause — a link to the ticket/conversation it traces back to,
-    or `null` if absent), and its `elements`. Elements appear only inside their slice, not
-    flattened at `model.elements`.
+    or `null` if absent), `elements`, `pattern`, and `doc` (the latter two added in schema
+    `1.4`, MIL-91):
+    - `pattern` — `state-change` | `state-view` | `automation` | `translation` | `unclassified`,
+      derived from the slice's element kinds (see [patterns.md](patterns.md)) — the same
+      classification `em catalog` already shows, not the doc's own authored `pattern:`
+      frontmatter value (that stays informational-only, unread by any command — see
+      [slice-doc-schema.md](slice-doc-schema.md)).
+    - `doc` — the slice-doc frontmatter join: **frontmatter only, never the markdown body**
+      (no `.html`/prose ever appears here). Always a non-null object with a `found: boolean`
+      and a `reason` distinguishing three states: `no-doc-bound` (no element in the slice
+      carries a `note` clause naming the conventional `slices/<key>.md` path — a normal,
+      unremarkable state, never a diagnostic), `binding-missing-file` (a note names that path
+      but no file exists there — warns), and `frontmatter-invalid` (the file exists but has no
+      frontmatter block, or is missing a required key — warns). `reason` is `null` exactly
+      when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
+      `version`, `implementedIn`, `splitFrom`, `mergedFrom`, and `supersededBy` are populated
+      from it (each `null`/`[]` otherwise). Full contract:
+      [slice-doc-schema.md](slice-doc-schema.md).
+    Elements appear only inside their slice, not flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
     `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, `public`,
@@ -183,8 +200,13 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`
     otherwise. See [dsl.md](dsl.md#named-types).
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
-- `diagnostics` — every diagnostic `em validate` would print (severity, message, line),
-  plus any export-only ref-collision warnings.
+- `diagnostics` — every diagnostic `em validate` would print, plus export-only ref-collision
+  and slice-doc-join warnings. Each has `severity`, `code` (added in schema `1.4`, MIL-91 — a
+  stable, CI-matchable rule identifier; `message` stays free text and may be reworded without
+  notice), `message`, `line`, and `refs` (added in schema `1.4`) — the export-stable
+  `ref`/`key` of every entity the diagnostic concerns (0, 1, or more; e.g. a duplicate-name
+  collision names both colliding entities). Never a second identifier scheme — always the
+  same refs/keys the `model` section above uses.
 
 **Stable identity.** `ref`/`key` are edit-stable: inserting or reordering slices never changes
 an existing slice's `key` or an existing element's `ref` (only `index` moves). A rename does
@@ -285,7 +307,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.4"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.5"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -302,8 +324,10 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:
-  `{ side: "old" | "new", severity, message, line }`. Empty when neither side warned.
-  (`em diff` refuses to run at all if either side has *errors*, so these are warnings.)
+  `{ side: "old" | "new", severity, code, message, line, refs }` (`code`/`refs` added in
+  schema `1.5`, MIL-91 — same structured-diagnostic shape `em export` uses; see its schema
+  summary above). Empty when neither side warned. (`em diff` refuses to run at all if either
+  side has *errors*, so these are warnings.)
 
 Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rather than
 `old`/`new`, since `const { old, new } = doc` is a syntax error.

@@ -22,19 +22,24 @@ No `yaml` dependency, by design — a real YAML parser was added and reverted (c
 way: real YAML would also start accepting nesting/lists that this schema explicitly doesn't
 define a meaning for.
 
+`SliceDoc` (`src/catalog/sliceDoc.ts`) also exposes `frontmatterPresent` (was a well-formed
+fence found and closed at all) and `missingRequiredFields` (which of the required-at-every-
+status keys, above, were absent) — the mechanical basis `em export`'s doc join (MIL-91) uses
+to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of its own.
+
 ## Canonical keys
 
 | Key | Type | Grammar / enum | Read by |
 |---|---|---|---|
 | `schemaVersion` | integer | `1` (current dialect version) | not read back by any `em` command today — reserved |
-| `pattern` | string | `state-change` \| `state-view` \| `automation` \| `translation` | authored/informational only — `em catalog` derives pattern from the `.em` AST instead |
+| `pattern` | string | `state-change` \| `state-view` \| `automation` \| `translation` | authored/informational only — `em catalog` and `em export` both derive pattern from the `.em` AST instead (`em export`'s `slice.pattern`, schema `1.4`) |
 | `swimlane` | string | free text, `<Persona> → <Context>` | display-only |
-| `status` | string, case-insensitive | `draft` \| `reviewed` \| `ready-to-implement` \| `implemented` | `em catalog`, `em render`/`em watch` header coloring |
-| `version` | integer | positive integer, starts at `1` | parsed onto `SliceDoc.version`; not yet joined into `em export` |
-| `implementedIn` | string | free text (PR/commit link) | display-only |
-| `split-from` | single ref | `<slice-key>@v<N>` | parsed onto `SliceDoc.splitFrom`; referential validation is future work |
-| `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | parsed onto `SliceDoc.mergedFrom`; referential validation is future work |
-| `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | parsed onto `SliceDoc.supersededBy`; referential validation is future work |
+| `status` | string, case-insensitive | `draft` \| `reviewed` \| `ready-to-implement` \| `implemented` | `em catalog`, `em render`/`em watch` header coloring; joined into `em export`'s `slice.doc.status` (schema `1.4`) |
+| `version` | integer | positive integer, starts at `1` | joined into `em export`'s `slice.doc.version` (schema `1.4`, MIL-91) |
+| `implementedIn` | string | free text (PR/commit link) | joined into `em export`'s `slice.doc.implementedIn` (schema `1.4`, MIL-91) |
+| `split-from` | single ref | `<slice-key>@v<N>` | joined into `em export`'s `slice.doc.splitFrom` (schema `1.4`, MIL-91); referential validation is still future work (MIL-84) |
+| `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.mergedFrom` (schema `1.4`, MIL-91); referential validation is still future work (MIL-84) |
+| `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.supersededBy` (schema `1.4`, MIL-91); referential validation is still future work (MIL-84) |
 
 `status` and `version` also have this document's own required/optional rules below;
 `schemaVersion`/`pattern`/`swimlane`/`implementedIn` are unconditionally optional today (the
@@ -49,9 +54,13 @@ parser never fails a doc for omitting them, though the template always includes 
 | `implementedIn` | optional | optional | optional | required once the slice has *ever* reached `implemented` — may still name a **prior** version's PR during re-ratification, see below |
 | `split-from`, `merged-from`, `superseded-by` | optional in every state — present only on docs created by a split/merge, or on a doc that has been retired |
 
-Nothing in `em` enforces this table today (no `required key missing` error exists yet) — it's
-the authoring contract the template follows and the one future `em validate` checks (if added)
-would check against.
+`em export`'s slice-doc join (MIL-91) is the first `em` command to mechanically check the
+required row above: a bound doc missing any of `schemaVersion`/`pattern`/`swimlane`/`status`/
+`version` (or missing a frontmatter block entirely) reports `slice.doc.reason:
+"frontmatter-invalid"` plus a warning diagnostic — report, never fail, same as every other
+export finding. `implementedIn`'s conditional requirement (once a slice has *ever* reached
+`implemented`) is **not** checked — that needs git history no doc-only parse has access to.
+No `em` command fails a build over this table; a future `em validate` check remains open work.
 
 ## Lineage: grammar and cardinality
 
@@ -132,4 +141,5 @@ legacy form; they're frontmatter-only from the day they were introduced.
 
 - [cli.md](cli.md#em-render-file) — slice status colors
 - [cli.md](cli.md#em-catalog-files) — pattern / doc lookup
+- [cli.md](cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91)
 - [`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md) — the authored template

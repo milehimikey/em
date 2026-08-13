@@ -5,8 +5,9 @@
 // cli.ts (mirrors render's `hasErrors` check); tested here at the same level the
 // rest of the repo tests that logic — asserting `hasErrors()` on the diagnostics
 // `em export` would gate on.
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile } from "../src/pipeline.js";
@@ -19,8 +20,8 @@ const PKG_VERSION: string = JSON.parse(
 ).version;
 
 const exportOf = (src: string, path = "model.em") => {
-  const { model, diagnostics } = compile(src);
-  return buildExport(model, diagnostics, src, path);
+  const { model, refs, diagnostics } = compile(src);
+  return buildExport(model, refs, diagnostics, src, path);
 };
 const docOf = (src: string, path = "model.em") => JSON.parse(exportOf(src, path).text);
 
@@ -28,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.3");
+    expect(doc.schemaVersion).toBe("1.4");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -54,8 +55,27 @@ slice "Submit Order" {
 }
 `);
     const slice = doc.model.slices[0];
-    expect(slice).toMatchObject({ key: "submit-order", name: "Submit Order", index: 0, source: null });
+    expect(slice).toMatchObject({
+      key: "submit-order",
+      name: "Submit Order",
+      index: 0,
+      source: null,
+      pattern: "state-change",
+    });
     expect(typeof slice.line).toBe("number");
+    // No note binding anywhere in this model, and no fixture doc on disk — MIL-91's
+    // doc join reports the normal, unremarkable "nobody's declared a doc yet" state.
+    expect(slice.doc).toEqual({
+      found: false,
+      path: "slices/submit-order.md",
+      reason: "no-doc-bound",
+      status: null,
+      version: null,
+      implementedIn: null,
+      splitFrom: null,
+      mergedFrom: [],
+      supersededBy: [],
+    });
     expect(slice.elements[0]).toMatchObject({
       ref: "submit-order/command.submit-order",
       kind: "command",
@@ -270,11 +290,8 @@ slice "S" {
 }
 `);
     expect(doc.model.slices.map((s: any) => s.key)).toEqual(["s", "s~2"]);
-    expect(
-      doc.diagnostics.some(
-        (d: any) => d.severity === "warning" && /duplicate slice name "S"/.test(d.message),
-      ),
-    ).toBe(true);
+    const found = doc.diagnostics.find((d: any) => /duplicate slice name "S"/.test(d.message));
+    expect(found).toMatchObject({ severity: "warning", code: "duplicate-slice-name", refs: ["s~2", "s"] });
   });
 
   it("suffixes a same-kind-same-name duplicate within one slice and warns", () => {
@@ -384,8 +401,125 @@ type Order { billing: Address }
     ]);
   });
 
-  it("bumps schemaVersion to 1.3, additive over 1.2", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.3");
+  it("bumps schemaVersion to 1.4, additive over 1.3", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.4");
+  });
+});
+
+describe("slice pattern (MIL-91, model-derived)", () => {
+  it("classifies each slice by its element kinds, matching em catalog's classifySlicePattern", () => {
+    const doc = docOf(`
+slice "Change" {
+  command Do Thing
+  event Thing Done
+}
+slice "View" {
+  view Summary from "Thing Done"
+}
+slice "React" {
+  processor Notify from "Summary"
+}
+slice "Cross Boundary" {
+  translation Sync from "Summary"
+}
+slice "Lonely UI" {
+  ui Screen @Customer
+}
+`);
+    const [change, view, react, translation, lonely] = doc.model.slices;
+    expect(change.pattern).toBe("state-change");
+    expect(view.pattern).toBe("state-view");
+    expect(react.pattern).toBe("automation");
+    expect(translation.pattern).toBe("translation");
+    expect(lonely.pattern).toBe("unclassified");
+  });
+});
+
+describe("slice-doc join (MIL-91)", () => {
+  // Real fs fixtures, same convention test/catalog.e2e.test.ts already uses — the doc join
+  // is fs-based (existsSync + readFileSync), unlike the rest of this file's fake-path tests.
+  let dir: string;
+  let modelFile: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-export-doc-join-"));
+    modelFile = join(dir, "model.em");
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "checkout.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: state-change",
+        "swimlane: Customer -> Order",
+        "status: implemented",
+        "version: 2",
+        "implementedIn: https://github.com/example/pr/41",
+        "---",
+        "# Slice: Checkout",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "slices", "no-frontmatter.md"),
+      "# Slice: No Frontmatter\n\nJust prose, no frontmatter block.\n",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const exportOfFile = (src: string) => {
+    const { model, refs, diagnostics } = compile(src);
+    return buildExport(model, refs, diagnostics, src, modelFile);
+  };
+  const docOfFile = (src: string) => JSON.parse(exportOfFile(src).text);
+
+  // The fixture's own validate warnings (e.g. command-untriggered) are irrelevant to the doc
+  // join and deliberately not silenced — these tests filter to doc-related codes only.
+  const docCodes = (diags: any[]) =>
+    diags.filter((d) => ["binding-missing-file", "frontmatter-invalid"].includes(d.code));
+
+  it("reason no-doc-bound: no note clause names the conventional path — no warning, the normal state", () => {
+    const doc = docOfFile(`slice "Untouched" {\n  command Do Thing\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.doc.found).toBe(false);
+    expect(slice.doc.reason).toBe("no-doc-bound");
+    expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+
+  it("reason binding-missing-file: note names the conventional path but no file exists there — warns", () => {
+    const doc = docOfFile(`slice "Missing Doc" {\n  command Do Thing note "slices/missing-doc.md"\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({ found: false, reason: "binding-missing-file", path: "slices/missing-doc.md" });
+    const found = doc.diagnostics.find((d: any) => d.code === "binding-missing-file");
+    expect(found).toMatchObject({
+      severity: "warning",
+      refs: ["missing-doc", "missing-doc/command.do-thing"],
+    });
+  });
+
+  it("reason frontmatter-invalid: doc exists but has no frontmatter block — warns", () => {
+    const doc = docOfFile(`slice "No Frontmatter" {\n  command Do Thing note "slices/no-frontmatter.md"\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({ found: true, reason: "frontmatter-invalid" });
+    const found = doc.diagnostics.find((d: any) => d.code === "frontmatter-invalid");
+    expect(found).toMatchObject({ severity: "warning", refs: ["no-frontmatter"] });
+  });
+
+  it("happy path: a well-formed, note-bound doc joins every canonical field — no warning", () => {
+    const doc = docOfFile(`slice "Checkout" {\n  command Do Thing note "slices/checkout.md"\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toEqual({
+      found: true,
+      path: "slices/checkout.md",
+      reason: null,
+      status: "implemented",
+      version: 2,
+      implementedIn: "https://github.com/example/pr/41",
+      splitFrom: null,
+      mergedFrom: [],
+      supersededBy: [],
+    });
+    expect(docCodes(doc.diagnostics)).toEqual([]);
   });
 });
 

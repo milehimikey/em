@@ -20,6 +20,12 @@
 // `#`-prefixed lines (the template's commented-out optional lineage guidance)
 // are inert: they don't match the key regex below, so they're skipped exactly
 // like any other non-`key: value` line — safe to leave in an unfinished doc.
+//
+// `implementedIn`, `frontmatterPresent`, and `missingRequiredFields` (MIL-91)
+// exist so `em export`'s doc join (src/catalog/docJoin.ts) can mechanically
+// classify a doc as `frontmatter-invalid` — no frontmatter fence at all, or
+// missing one of the keys docs/slice-doc-schema.md says are required at every
+// status — without export re-deriving frontmatter-shape rules of its own.
 
 import { marked } from "marked";
 
@@ -63,11 +69,33 @@ export interface SliceDoc {
    *  `superseded-by:` (comma-separated). Empty array when absent — the
    *  common case; most slices are never superseded. */
   supersededBy: SliceRef[];
+  /** Frontmatter `implementedIn:` — free text, typically a PR/commit link — or null
+   *  when absent. No legacy bullet-line form, same as `version`/lineage. */
+  implementedIn: string | null;
+  /** True when a well-formed leading `---`/`---` frontmatter fence was found and
+   *  closed — independent of which keys it contained. False for a legacy
+   *  status-bullet-only doc, a doc with no frontmatter at all, or an
+   *  unterminated fence (splitFrontmatter() already treats that as "absent"). */
+  frontmatterPresent: boolean;
+  /** Which of REQUIRED_FRONTMATTER_KEYS were absent (or present-but-empty, which
+   *  the parser already treats as absent) from the frontmatter. Empty whenever
+   *  frontmatterPresent is false too — check frontmatterPresent separately to
+   *  distinguish "no frontmatter at all" from "every required key present".
+   *  Presence-only: doesn't validate `pattern`'s/`status`'s enum values, matching
+   *  this parser's existing lenient, informational treatment of those keys. */
+  missingRequiredFields: string[];
   /** The whole doc rendered to HTML, with any leading frontmatter block stripped
    *  first (otherwise its `---` fences render as stray <hr>s and the raw
    *  `key: value` lines leak into the body). */
   html: string;
 }
+
+/** Frontmatter keys docs/slice-doc-schema.md's required-vs-optional table marks
+ *  required at every `status` — the mechanical basis for `frontmatter-invalid`
+ *  (MIL-91). `implementedIn` is deliberately excluded: its requirement depends on
+ *  whether the slice has *ever* reached `implemented`, which is git history this
+ *  parser has no access to and doesn't attempt to check. */
+export const REQUIRED_FRONTMATTER_KEYS = ["schemaversion", "pattern", "swimlane", "status", "version"] as const;
 
 const STATUS_LINE = /^-\s*\*\*Status:\*\*\s*(.+?)\s*$/im;
 const SLICE_REF = /^([a-z0-9]+(?:-[a-z0-9]+)*)@v(\d+)$/i;
@@ -117,8 +145,10 @@ function parseVersion(raw: string | undefined): number | null {
  * the literal first thing in the file — the template's own guidance comment
  * must be deleted before the frontmatter counts as present.
  */
-function splitFrontmatter(markdown: string): { fields: Map<string, string>; body: string } {
-  if (!/^---\s*\r?\n/.test(markdown)) return { fields: new Map(), body: markdown };
+function splitFrontmatter(
+  markdown: string,
+): { fields: Map<string, string>; body: string; frontmatterPresent: boolean } {
+  if (!/^---\s*\r?\n/.test(markdown)) return { fields: new Map(), body: markdown, frontmatterPresent: false };
 
   const lines = markdown.split(/\r?\n/);
   const fields = new Map<string, string>();
@@ -133,12 +163,12 @@ function splitFrontmatter(markdown: string): { fields: Map<string, string>; body
     const value = m[2].trim().replace(/^["']|["']$/g, "");
     if (value) fields.set(m[1].toLowerCase(), value);
   }
-  if (closeIndex === -1) return { fields: new Map(), body: markdown };
-  return { fields, body: lines.slice(closeIndex + 1).join("\n") };
+  if (closeIndex === -1) return { fields: new Map(), body: markdown, frontmatterPresent: false };
+  return { fields, body: lines.slice(closeIndex + 1).join("\n"), frontmatterPresent: true };
 }
 
 export function parseSliceDoc(markdown: string): SliceDoc {
-  const { fields, body } = splitFrontmatter(markdown);
+  const { fields, body, frontmatterPresent } = splitFrontmatter(markdown);
   const legacyMatch = body.match(STATUS_LINE);
   const frontmatterStatus = fields.get("status");
   const status = frontmatterStatus
@@ -154,6 +184,9 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     splitFrom: splitFromRaw ? parseSliceRef(splitFromRaw) : null,
     mergedFrom: parseSliceRefList(fields.get("merged-from")),
     supersededBy: parseSliceRefList(fields.get("superseded-by")),
+    implementedIn: fields.get("implementedin") ?? null,
+    frontmatterPresent,
+    missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,
   };
 }

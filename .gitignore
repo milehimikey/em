@@ -10,8 +10,11 @@ dist/
 
 # em catalog's default --out directory (index.html + per-slice pages aren't
 # covered by the *.svg/*.png rules above, since it's a whole site, not a
-# single rendered image)
-catalog/
+# single rendered image). Anchored to the repo root — an unanchored `catalog/`
+# also matches src/catalog/ at any depth, silently hiding new files there from
+# `git status` (already-tracked files are unaffected, which is why this went
+# unnoticed until MIL-91 added a new file in src/catalog/).
+/catalog/
 
 # Local Claude Code permission config — never committed, never published
 .claude/settings.local.json
