@@ -80,6 +80,10 @@ at all renders exactly as before. Matching is case-insensitive and free-text oth
 `em catalog`, `em render` doesn't validate the Status value, it just doesn't color slices it
 doesn't recognize.
 
+See [slice-doc-schema.md](slice-doc-schema.md) for the complete frontmatter schema, including
+`version` and the lineage keys (`split-from`/`merged-from`/`superseded-by`) — neither affects
+header coloring.
+
 ## `em watch <file>`
 
 Renders once, then re-renders on every save — of the `.em` file, or of any of its slices'
@@ -496,6 +500,10 @@ yet parsed by any `em` command. One known simplification: Automation and Transla
 each span two slices in the model, and the second one (a bare `command`+`event` pair) has
 the same kind-signature as a State Change slice — it's classified as State Change, since
 classification looks at one slice at a time. This is intentional, not a defect.
+
+The catalog's Status column surfaces one field of a larger schema — see
+[slice-doc-schema.md](slice-doc-schema.md) for `version`, lineage, and the
+required-vs-optional rules; neither `version` nor lineage is shown in the catalog UI yet.
 
 | Flag | Effect |
 |---|---|

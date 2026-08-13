@@ -11,6 +11,7 @@ check the model against the code that implements it.
 | See how the pieces fit together over the life of a model | [workflow.md](workflow.md) |
 | Understand the four Event Modeling patterns | [patterns.md](patterns.md) |
 | Look up DSL syntax (keywords, `from`, `again`, fields, notes, issues) | [dsl.md](dsl.md) |
+| Look up the slice-doc frontmatter schema (version, lineage, required-vs-optional keys) | [slice-doc-schema.md](slice-doc-schema.md) |
 | Look up a command or flag | [cli.md](cli.md) |
 | Understand a validation error or warning | [validation.md](validation.md) |
 | Understand why arrows can't point backward | [timeline.md](timeline.md) |
