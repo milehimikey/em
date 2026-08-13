@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { compile, CompileOptions, CompileResult } from "./pipeline.js";
 import { NormalizedModel } from "./model/model.js";
+import { RefsResult } from "./model/refs.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from "./render/render.js";
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
@@ -134,15 +135,15 @@ program
   .argument("<file>", "input .em file")
   .option("-o, --out <path>", "write to a file instead of stdout")
   .action((file: string, opts: { out?: string }) => {
-    const { model, diagnostics, source } = compileFile(file);
+    const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
       console.error("not exporting: fix the errors above");
       process.exit(1);
     }
 
-    const exported = buildExport(model, diagnostics, source, file);
-    printDiagnostics(exported.diagnostics.filter((d) => !diagnostics.includes(d)));
+    const exported = buildExport(model, refs, diagnostics, source, file);
+    printDiagnostics(newDiagnostics(exported.diagnostics, diagnostics));
 
     if (opts.out) {
       writeFileSync(opts.out, exported.text + "\n");
@@ -269,13 +270,19 @@ program
       }
 
       const inputs: CatalogModelInput[] = [];
+      // Tracked so the post-buildCatalog print below can skip diagnostics already printed
+      // here (ref-collision warnings now live in compileFile()'s own `diagnostics`, and
+      // buildCatalog() forwards those same, reference-identical objects rather than
+      // recomputing them — printing both lists unfiltered would double-print them).
+      const diagnosticsByFile = new Map<string, Diagnostic[]>();
       let anyErrors = false;
       for (const file of files) {
-        const { dot, model, grid, diagnostics } = compileFile(file, { keepEmptyLanes: opts.keepEmptyLanes });
+        const { dot, model, grid, diagnostics, refs } = compileFile(file, { keepEmptyLanes: opts.keepEmptyLanes });
         printDiagnosticsFor(file, diagnostics);
+        diagnosticsByFile.set(file, diagnostics);
         warnMissingNotes(file, model);
         if (hasErrors(diagnostics)) anyErrors = true;
-        inputs.push({ file, model, grid, dot });
+        inputs.push({ file, model, grid, dot, refs });
       }
       if (anyErrors) {
         console.error("not building catalog: fix the errors above");
@@ -288,7 +295,10 @@ program
         title: opts.title,
         keepEmptyLanes: opts.keepEmptyLanes,
       });
-      for (const d of result.diagnostics) printDiagnosticsFor(d.file, d.diagnostics);
+      for (const d of result.diagnostics) {
+        const already = diagnosticsByFile.get(d.file) ?? [];
+        printDiagnosticsFor(d.file, newDiagnostics(d.diagnostics, already));
+      }
       const modelWord = result.models === 1 ? "model" : "models";
       const sliceWord = result.slices === 1 ? "slice" : "slices";
       console.log(`wrote ${opts.out}/ (${result.models} ${modelWord}, ${result.slices} ${sliceWord})`);
@@ -511,26 +521,31 @@ function readAtRevision(file: string, rev: string): string {
  */
 function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]): string {
   const models: (NormalizedModel | null)[] = [];
+  const refsList: (RefsResult | null)[] = [];
   const errors: (string | null)[] = [];
 
   for (const c of commits) {
     const rev = readFileAtCommit(repoRoot, c);
     if (!rev.ok) {
       models.push(null);
+      refsList.push(null);
       errors.push(rev.message);
       continue;
     }
     try {
-      const { model, diagnostics } = compile(rev.content);
+      const { model, refs, diagnostics } = compile(rev.content);
       if (hasErrors(diagnostics)) {
         models.push(null);
+        refsList.push(null);
         errors.push(`validation errors at ${c.shortHash} — fix with \`em validate\` at that revision`);
       } else {
         models.push(model);
+        refsList.push(refs);
         errors.push(null);
       }
     } catch (e) {
       models.push(null);
+      refsList.push(null);
       errors.push(e instanceof ParseError ? `parse error: ${e.message}` : e instanceof Error ? e.message : String(e));
     }
   }
@@ -546,7 +561,10 @@ function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]
     } else if (prevParseable === -1) {
       entries.push({ ...base, diff: null, error: `no earlier parseable revision to diff against (${commits[0].shortHash}: ${errors[0]})` });
     } else {
-      entries.push({ ...base, diff: diffModels(models[prevParseable]!, models[i]!) });
+      entries.push({
+        ...base,
+        diff: diffModels(models[prevParseable]!, models[i]!, refsList[prevParseable]!, refsList[i]!),
+      });
     }
     if (models[i]) prevParseable = i;
   });
@@ -580,7 +598,7 @@ function runDiff(
     process.exit(1);
   }
 
-  const diff = diffModels(oldResult.model, newResult.model);
+  const diff = diffModels(oldResult.model, newResult.model, oldResult.refs, newResult.refs);
   if (json) {
     const oldSide = { label: oldLabel, source: oldSource, diagnostics: oldResult.diagnostics };
     const newSide = { label: newLabel, source: newSource, diagnostics: newResult.diagnostics };
@@ -649,6 +667,14 @@ function printPublicEvents(model: NormalizedModel): void {
     const slice = model.slices[el.sliceIndex];
     console.log(`  public :${el.line} slice "${slice.name}" event "${el.name}"`);
   }
+}
+
+/** Diagnostics in `all` not already present (by reference identity) in `already` — avoids
+ *  double-printing diagnostic objects forwarded unchanged from an earlier compile step (e.g.
+ *  ref-collision warnings `buildExport()`/`buildCatalog()` fold in from the same `RefsResult`
+ *  `compileFile()` already printed once). */
+function newDiagnostics(all: Diagnostic[], already: Diagnostic[]): Diagnostic[] {
+  return all.filter((d) => !already.includes(d));
 }
 
 function printDiagnostics(diags: Diagnostic[]): void {

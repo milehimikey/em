@@ -6,12 +6,13 @@ import { parse, ParseError } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
 import { semanticEdges } from "../src/model/edges.js";
 import { validate } from "../src/model/validate.js";
+import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
 const diagsFor = (src: string) => {
   const model = modelFrom(src);
-  return validate(model, layout(model));
+  return validate(model, layout(model), computeRefs(model));
 };
 const edge = (es: { from: string; to: string }[], a: string, b: string) =>
   es.some((e) => e.from === a && e.to === b);

@@ -44,8 +44,8 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("buildCatalog", () => {
   it("writes the full directory-per-model tree with real diagrams and slice pages", async () => {
-    const { model, grid, dot } = compile(MODEL);
-    const inputs: CatalogModelInput[] = [{ file: modelFile, model, grid, dot }];
+    const { model, grid, dot, refs } = compile(MODEL);
+    const inputs: CatalogModelInput[] = [{ file: modelFile, model, grid, dot, refs }];
     const outDir = join(dir, "out");
 
     const result = await buildCatalog(inputs, { outDir });
@@ -105,10 +105,10 @@ slice "Place Order" {
 `;
     const dupFile = join(dir, "dup.em");
     writeFileSync(dupFile, DUPLICATE);
-    const { model, grid, dot } = compile(DUPLICATE);
+    const { model, grid, dot, refs } = compile(DUPLICATE);
     const outDir = join(dir, "out-dup");
 
-    const result = await buildCatalog([{ file: dupFile, model, grid, dot }], { outDir });
+    const result = await buildCatalog([{ file: dupFile, model, grid, dot, refs }], { outDir });
     expect(result.slices).toBe(2);
     expect(result.diagnostics).toHaveLength(1);
     expect(result.diagnostics[0].file).toBe(dupFile);
@@ -128,10 +128,10 @@ slice "Place Order" {
     const AUTHORED_SVG = '<svg viewBox="0 0 1 1"><!-- hand-authored diagram --></svg>';
     writeFileSync(join(dir, "slices", "place-order.svg"), AUTHORED_SVG);
     try {
-      const { model, grid, dot } = compile(MODEL);
+      const { model, grid, dot, refs } = compile(MODEL);
       const outDir = join(dir, "out-authored-svg");
 
-      await buildCatalog([{ file: modelFile, model, grid, dot }], { outDir });
+      await buildCatalog([{ file: modelFile, model, grid, dot, refs }], { outDir });
 
       const copied = readFileSync(join(outDir, "model", "slices", "place-order.svg"), "utf8");
       expect(copied).toBe(AUTHORED_SVG); // copied verbatim, not rebuilt
@@ -146,11 +146,11 @@ slice "Place Order" {
   });
 
   it("keeps slice keys from different input models collision-free via per-model directories", async () => {
-    const { model, grid, dot } = compile(MODEL);
+    const { model, grid, dot, refs } = compile(MODEL);
     const outDir = join(dir, "out-multi");
     const inputs: CatalogModelInput[] = [
-      { file: modelFile, model, grid, dot },
-      { file: join(dir, "model.em"), model, grid, dot }, // same basename on purpose -> model-key dedup via "~2"
+      { file: modelFile, model, grid, dot, refs },
+      { file: join(dir, "model.em"), model, grid, dot, refs }, // same basename on purpose -> model-key dedup via "~2"
     ];
 
     const result = await buildCatalog(inputs, { outDir });

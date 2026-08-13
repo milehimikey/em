@@ -9,13 +9,15 @@
 // changes an existing element's public identity.
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
 import { Field } from "../parser/ast.js";
-import { Diagnostic } from "../model/validate.js";
-import { dedupe, kebabSlug } from "../util/slug.js";
+import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
+import { RefsResult } from "../model/refs.js";
+import { classifySlicePattern } from "../catalog/classify.js";
+import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 
 // Read once from package.json (two levels up from src/emit/ and dist/emit/
 // alike) so `generator.version` can never drift from the released version.
@@ -25,91 +27,18 @@ export const GENERATOR_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8"),
 ).version;
 
-export const SCHEMA_VERSION = "1.3";
+// 1.4 (MIL-91): each slice gains `pattern` (model-derived, classifySlicePattern — same
+// function `em catalog` already uses) and `doc` (the slice-doc frontmatter join, always a
+// non-null object; see catalog/docJoin.ts). Diagnostics gain `code`/`refs`. Additive-only per
+// the versioning policy below — a minor bump.
+export const SCHEMA_VERSION = "1.4";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
   text: string;
-  /** validate()'s diagnostics plus any ref-collision warnings raised while exporting. */
+  /** validate()'s diagnostics, refs' ref-collision warnings, and the doc-join's
+   *  binding-missing-file/frontmatter-invalid warnings raised while exporting. */
   diagnostics: Diagnostic[];
-}
-
-export interface RefsResult {
-  /** Export key per slice, same order/index as `model.slices`. */
-  sliceKeys: string[];
-  /** Internal `Element.id` -> stable export `ref`. */
-  refById: Map<string, string>;
-  /** Internal `TypeDecl.id` -> stable export `ref` (`types/<slug(name)>`). */
-  refByTypeId: Map<string, string>;
-  /** Ref-collision warnings raised while assigning keys/refs (duplicate names). */
-  diagnostics: Diagnostic[];
-}
-
-/**
- * Assign every slice its export key (`slug(name)`) and every element its
- * export ref (`<sliceKey>/<kind>.<slug(name)>`), in document order, deduped
- * with a `~2`, `~3`, … suffix on collision. Shared by `em export` (this
- * module) and `em diff` (`src/model/diff.ts`), which both need the same
- * edit-stable identity scheme to match elements/slices across models. Also
- * assigns every declared type its export ref (`types/<slug(name)>`) — types
- * aren't slice-scoped, so no sliceKey prefix, same dedup-with-warning
- * machinery otherwise.
- */
-export function computeRefs(model: NormalizedModel): RefsResult {
-  const diagnostics: Diagnostic[] = [];
-
-  // Pass 1: assign every slice its export key and every element its export
-  // ref, in document order, before resolving any cross-references. Doing
-  // refs and cross-references in separate passes means a `from` or arrow
-  // can point at any element regardless of declaration order within a slice.
-  const usedSliceKeys = new Set<string>();
-  const sliceKeys: string[] = model.slices.map((slice) => {
-    const base = kebabSlug(slice.name);
-    const key = dedupe(base, usedSliceKeys, "~");
-    if (key !== base) {
-      diagnostics.push({
-        severity: "warning",
-        message: `duplicate slice name "${slice.name}" (export key "${base}" already used); rename slices uniquely for stable export refs`,
-        line: slice.line,
-      });
-    }
-    return key;
-  });
-
-  const usedElementRefs = new Set<string>();
-  const refById = new Map<string, string>();
-  model.slices.forEach((slice, sliceIndex) => {
-    const sliceKey = sliceKeys[sliceIndex];
-    for (const el of slice.elements) {
-      const base = `${sliceKey}/${el.kind}.${kebabSlug(el.name)}`;
-      const ref = dedupe(base, usedElementRefs, "~");
-      if (ref !== base) {
-        diagnostics.push({
-          severity: "warning",
-          message: `duplicate ${el.kind} "${el.name}" in slice "${slice.name}" (export ref "${base}" already used); rename for a stable export ref`,
-          line: el.line,
-        });
-      }
-      refById.set(el.id, ref);
-    }
-  });
-
-  const usedTypeRefs = new Set<string>();
-  const refByTypeId = new Map<string, string>();
-  for (const t of model.types) {
-    const base = `types/${kebabSlug(t.name)}`;
-    const ref = dedupe(base, usedTypeRefs, "~");
-    if (ref !== base) {
-      diagnostics.push({
-        severity: "warning",
-        message: `duplicate type "${t.name}" (export ref "${base}" already used); rename for a stable export ref`,
-        line: t.line,
-      });
-    }
-    refByTypeId.set(t.id, ref);
-  }
-
-  return { sliceKeys, refById, refByTypeId, diagnostics };
 }
 
 export interface FieldExport {
@@ -141,14 +70,21 @@ function fieldExport(
   };
 }
 
-/** Build the `em export` document for an already-validated (error-free) model. */
+/** Build the `em export` document for an already-validated (error-free) model. `refs` is
+ *  `compile()`'s already-computed `RefsResult` (MIL-91) — never recomputed here, so its
+ *  ref-collision diagnostics (already folded into `diagnostics` by `compile()`) aren't
+ *  emitted a second time. `path` is the `.em` file's own path — the doc join resolves
+ *  `slices/*.md` relative to its directory, same convention `em catalog`'s doc lookup uses. */
 export function buildExport(
   model: NormalizedModel,
+  refs: RefsResult,
   diagnostics: Diagnostic[],
   source: string,
   path: string,
 ): ExportResult {
-  const { sliceKeys, refById, refByTypeId, diagnostics: extra } = computeRefs(model);
+  const { sliceKeys, refById, refByTypeId } = refs;
+  const baseDir = dirname(path);
+  const docDiagnostics: Diagnostic[] = [];
 
   const refOf = (id: string | undefined): string | null =>
     id ? refById.get(id) ?? null : null;
@@ -158,7 +94,60 @@ export function buildExport(
     return el.from.map((name) => ({ name, ref: refOf(resolveByName(model.byName, name)) }));
   };
 
-  const doc = {
+  // Built ahead of exportDoc (rather than inline) so docDiagnostics is fully populated before
+  // allDiagnostics is computed once, below — no repeating the [...diagnostics, ...docDiagnostics]
+  // concatenation for both the JSON diagnostics field and the returned ExportResult.
+  const slices = model.slices.map((slice, sliceIndex) => {
+    const sliceKey = sliceKeys[sliceIndex];
+    const { doc, diagnostics: sliceDocDiags } = resolveSliceDocJoin(
+      slice,
+      sliceKey,
+      baseDir,
+      (id) => refById.get(id)!,
+    );
+    docDiagnostics.push(...sliceDocDiags);
+    return {
+      key: sliceKey,
+      name: slice.name,
+      index: slice.index,
+      // Link to the ticket/conversation this slice traces back to (MIL-69).
+      // Distinct from the document's top-level `source` (the .em file's own
+      // path/sha256 provenance) — same key name, different scope.
+      source: slice.source ?? null,
+      line: slice.line,
+      // Model-derived (MIL-91) — same classifySlicePattern() `em catalog` already uses.
+      // The frontmatter's own authored `pattern:` stays unread (informational only, per
+      // docs/slice-doc-schema.md) — this is not that value.
+      pattern: classifySlicePattern(slice),
+      // The slice-doc frontmatter join (MIL-91) — see catalog/docJoin.ts for the
+      // found/reason state machine. Never the markdown body: doc.html/doc.raw never
+      // appear here (the hard boundary the ticket requires).
+      doc,
+      elements: slice.elements.map((el) => ({
+        ref: refById.get(el.id)!,
+        kind: el.kind,
+        name: el.name,
+        line: el.line,
+        fields: el.fields
+          ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId))
+          : null,
+        note: el.note ?? null,
+        issue: el.issue ?? null,
+        divergence: el.divergence ?? null,
+        from: fromOf(el),
+        persona: el.persona ?? null,
+        context: el.context ?? null,
+        again: el.again === true,
+        public: el.public === true,
+        logicalRef:
+          el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
+      })),
+    };
+  });
+
+  const allDiagnostics = [...diagnostics, ...docDiagnostics];
+
+  const exportDoc = {
     schemaVersion: SCHEMA_VERSION,
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     source: { path, sha256: createHash("sha256").update(source, "utf8").digest("hex") },
@@ -175,35 +164,7 @@ export function buildExport(
         line: t.line,
         fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId)),
       })),
-      slices: model.slices.map((slice, sliceIndex) => ({
-        key: sliceKeys[sliceIndex],
-        name: slice.name,
-        index: slice.index,
-        // Link to the ticket/conversation this slice traces back to (MIL-69).
-        // Distinct from the document's top-level `source` (the .em file's own
-        // path/sha256 provenance) — same key name, different scope.
-        source: slice.source ?? null,
-        line: slice.line,
-        elements: slice.elements.map((el) => ({
-          ref: refById.get(el.id)!,
-          kind: el.kind,
-          name: el.name,
-          line: el.line,
-          fields: el.fields
-            ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId))
-            : null,
-          note: el.note ?? null,
-          issue: el.issue ?? null,
-          divergence: el.divergence ?? null,
-          from: fromOf(el),
-          persona: el.persona ?? null,
-          context: el.context ?? null,
-          again: el.again === true,
-          public: el.public === true,
-          logicalRef:
-            el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
-        })),
-      })),
+      slices,
       arrows: model.arrows.map((a) => ({
         from: a.from,
         to: a.to,
@@ -212,12 +173,8 @@ export function buildExport(
         line: a.line,
       })),
     },
-    diagnostics: [...diagnostics, ...extra].map((d) => ({
-      severity: d.severity,
-      message: d.message,
-      line: d.line ?? null,
-    })),
+    diagnostics: allDiagnostics.map(serializeDiagnostic),
   };
 
-  return { text: JSON.stringify(doc, null, 2), diagnostics: [...diagnostics, ...extra] };
+  return { text: JSON.stringify(exportDoc, null, 2), diagnostics: allDiagnostics };
 }

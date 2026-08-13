@@ -4,6 +4,12 @@
 (`em render` refuses, `em watch` skips the save); warnings print but don't. The same checks
 run on every command that reads a model.
 
+Every rule below has a stable `code` in `em export`/`em diff --json`'s `diagnostics[]` (added
+in schema `1.4`/`1.5`, MIL-91) — e.g. the "read model with no consumer" row is
+`both-ends-of-a-flow/view-unconsumed`. Terminal output (what's shown here in prose) never
+changes; `code` is the CI-matchable contract for consumers that want to gate or bucket
+findings without parsing message text. See [cli.md](cli.md#em-export-file).
+
 ## Errors
 
 | Rule | Fix |

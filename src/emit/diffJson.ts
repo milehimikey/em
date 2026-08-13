@@ -7,10 +7,12 @@
 
 import { createHash } from "node:crypto";
 import { ChangeEntry, ChangeType, ModelDiff, hasChanges } from "../model/diff.js";
-import { Diagnostic } from "../model/validate.js";
+import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
-export const DIFF_SCHEMA_VERSION = "1.4";
+// 1.5 (MIL-91): diagnostics gain `code`/`refs`, same structured-diagnostics retrofit as
+// `em export`'s SCHEMA_VERSION 1.4 — an independent cadence/field, bumped on its own.
+export const DIFF_SCHEMA_VERSION = "1.5";
 
 /** One side of the diff: what it was called, its source text, and its warnings. */
 export interface DiffSide {
@@ -62,18 +64,12 @@ function serializeEntry(e: ChangeEntry): SerializedEntry {
 }
 
 /**
- * `em export`'s `{ severity, message, line }` shape plus the `side` it came
- * from. Flat and side-tagged rather than `{ old: [...], new: [...] }` so the
- * array stays filterable and no key is a reserved word (see `oldModel`/
- * `newModel` below).
+ * `serializeDiagnostic()` (`model/validate.ts`) — the same shape `em export` uses — plus the
+ * `side` it came from. Flat and side-tagged rather than `{ old: [...], new: [...] }` so the
+ * array stays filterable and no key is a reserved word (see `oldModel`/`newModel` below).
  */
-function serializeDiagnostic(side: "old" | "new") {
-  return (d: Diagnostic) => ({
-    side,
-    severity: d.severity,
-    message: d.message,
-    line: d.line ?? null,
-  });
+function serializeSideDiagnostic(side: "old" | "new") {
+  return (d: Diagnostic) => ({ side, ...serializeDiagnostic(d) });
 }
 
 function serializeSide(side: DiffSide) {
@@ -98,8 +94,8 @@ export function buildDiffJson(diff: ModelDiff, oldSide: DiffSide, newSide: DiffS
     changes: diff.changes.map(serializeEntry),
     removals: diff.removals.map(serializeEntry),
     diagnostics: [
-      ...oldSide.diagnostics.map(serializeDiagnostic("old")),
-      ...newSide.diagnostics.map(serializeDiagnostic("new")),
+      ...oldSide.diagnostics.map(serializeSideDiagnostic("old")),
+      ...newSide.diagnostics.map(serializeSideDiagnostic("new")),
     ],
   };
   return JSON.stringify(doc, null, 2);

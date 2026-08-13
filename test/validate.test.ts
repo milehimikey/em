@@ -6,12 +6,13 @@ import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
 import { validate } from "../src/model/validate.js";
+import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
 const diagsFor = (src: string) => {
   const model = modelFrom(src);
-  return validate(model, layout(model));
+  return validate(model, layout(model), computeRefs(model));
 };
 
 describe("open `issue` warning", () => {

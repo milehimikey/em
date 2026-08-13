@@ -18,7 +18,7 @@ import { NormalizedModel } from "../model/model.js";
 import { Grid } from "../layout/grid.js";
 import { layoutDot, composeSvg, writeRendered } from "../render/render.js";
 import { buildSliceDiagram } from "../render/sliceDiagram.js";
-import { computeRefs } from "../emit/json.js";
+import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 import { classifySlicePattern } from "./classify.js";
@@ -31,6 +31,10 @@ export interface CatalogModelInput {
   model: NormalizedModel;
   grid: Grid;
   dot: string;
+  /** Already-computed by the same `compile()` call that produced `model`/`grid` (MIL-91) —
+   *  never recomputed here, so its ref-collision diagnostics (already in `compile()`'s own
+   *  `diagnostics`) aren't emitted a second time. */
+  refs: RefsResult;
 }
 
 export interface CatalogOptions {
@@ -69,7 +73,7 @@ export async function buildCatalog(
   const diagnostics: { file: string; diagnostics: Diagnostic[] }[] = [];
   let sliceCount = 0;
 
-  for (const { file, model, grid, dot } of inputs) {
+  for (const { file, model, grid, dot, refs } of inputs) {
     const modelKey = dedupe(kebabSlug(basename(file, extname(file))), usedModelKeys, "~");
     const modelDir = join(outDir, modelKey);
     const slicesDir = join(modelDir, "slices");
@@ -82,7 +86,6 @@ export async function buildCatalog(
     const mainSvg = composeSvg(raw, model, grid, dirname(file), modelDir);
     await writeRendered(mainSvg, join(modelDir, diagramFile), format);
 
-    const refs = computeRefs(model);
     if (refs.diagnostics.length > 0) diagnostics.push({ file, diagnostics: refs.diagnostics });
     const sliceSummaries: CatalogSliceSummary[] = [];
 

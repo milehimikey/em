@@ -2,7 +2,7 @@
 // Coverage for src/catalog/pages.ts's pure HTML-string builders.
 import { describe, it, expect } from "vitest";
 import { compile } from "../src/pipeline.js";
-import { computeRefs } from "../src/emit/json.js";
+import { computeRefs } from "../src/model/refs.js";
 import { escapeHtml, renderIndexPage, renderSlicePage, CatalogModelSummary } from "../src/catalog/pages.js";
 import { parseSliceDoc } from "../src/catalog/sliceDoc.js";
 

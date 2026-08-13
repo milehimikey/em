@@ -20,8 +20,11 @@ const PKG_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
 ).version;
 
-const modelOf = (src: string) => compile(src).model;
-const diffOf = (oldSrc: string, newSrc: string) => diffModels(modelOf(oldSrc), modelOf(newSrc));
+const diffOf = (oldSrc: string, newSrc: string) => {
+  const o = compile(oldSrc);
+  const n = compile(newSrc);
+  return diffModels(o.model, n.model, o.refs, n.refs);
+};
 const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 function emptyCounts(): DiffCounts {
@@ -146,13 +149,13 @@ describe("envelope shape", () => {
     const doc = JSON.parse(
       buildDiffJson(
         diff,
-        side("old.em", "", [{ severity: "warning", message: "old side warned", line: 2 }]),
-        side("new.em", "", [{ severity: "warning", message: "new side warned" }]),
+        side("old.em", "", [{ severity: "warning", code: "test-code", message: "old side warned", line: 2 }]),
+        side("new.em", "", [{ severity: "warning", code: "test-code", message: "new side warned" }]),
       ),
     );
     expect(doc.diagnostics).toEqual([
-      { side: "old", severity: "warning", message: "old side warned", line: 2 },
-      { side: "new", severity: "warning", message: "new side warned", line: null },
+      { side: "old", severity: "warning", code: "test-code", message: "old side warned", line: 2, refs: [] },
+      { side: "new", severity: "warning", code: "test-code", message: "new side warned", line: null, refs: [] },
     ]);
   });
 

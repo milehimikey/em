@@ -4,26 +4,40 @@
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
 import { Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
+import type { RefsResult } from "./refs.js";
 
 export type Severity = "error" | "warning";
 
 export interface Diagnostic {
   severity: Severity;
+  /** Stable, CI-matchable rule identifier (MIL-91) — the contract; `message` is prose and may
+   *  be reworded freely. One code per distinct rule; nested under a docs/validation.md H3
+   *  anchor (`both-ends-of-a-flow/...`, `fields-completeness/...`, `connection-legality/...`)
+   *  where one exists and covers more than one rule. */
+  code: string;
   message: string;
   line?: number;
+  /** Export-stable refs/keys (from `computeRefs()`) of every entity this diagnostic concerns —
+   *  0, 1, or more (e.g. a duplicate-name collision concerns two elements). Omitted, not `[]`,
+   *  at sites with no specific entity to point at. Never a second identifier scheme — always
+   *  sourced from the same `RefsResult` `em export`/`em diff` use. */
+  refs?: string[];
 }
 
-export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
+export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): Diagnostic[] {
   const diags: Diagnostic[] = [];
+  const refOf = (id: string): string => refs.refById.get(id)!;
 
   // Grid collisions: two elements of the same band landed in one slice cell.
   for (const c of grid.collisions) {
     diags.push({
       severity: "error",
+      code: "grid-collision",
       message:
         `"${c.dropped.name}" collides with "${c.kept.name}" in the same ` +
         `slice/lane (${c.rowKey}); split them into separate slices`,
       line: c.dropped.line,
+      refs: [refOf(c.dropped.id), refOf(c.kept.id)],
     });
   }
 
@@ -39,10 +53,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (auto && command) {
       diags.push({
         severity: "warning",
+        code: "automation-shares-slice-with-command",
         message:
           `${auto.kind} "${auto.name}" shares slice "${slice.name}" with command ` +
           `"${command.name}"; put the triggered command in the next slice`,
         line: command.line,
+        refs: [refOf(auto.id), refOf(command.id)],
       });
     }
 
@@ -55,11 +71,13 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       for (const ui of slice.elements.filter((e) => e.kind === "ui")) {
         diags.push({
           severity: "warning",
+          code: "ui-shares-slice-with-automation",
           message:
             `ui "${ui.name}" shares slice "${slice.name}" with ${auto.kind} "${auto.name}"; ` +
             `a \`ui\` only wires to a \`command\` and renders disconnected here — move it to the ` +
             `slice that consumes the read model, or to the slice with the command this triggers`,
           line: ui.line,
+          refs: [refOf(ui.id), refOf(auto.id)],
         });
       }
     }
@@ -68,8 +86,10 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (command && events.length === 0) {
       diags.push({
         severity: "warning",
+        code: "both-ends-of-a-flow/command-no-event",
         message: `command "${command.name}" produces no event in slice "${slice.name}"`,
         line: command.line,
+        refs: [refOf(command.id)],
       });
     }
 
@@ -79,10 +99,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       if (!hasFrom && events.length === 0) {
         diags.push({
           severity: "warning",
+          code: "view-no-source",
           message:
             `read model "${view.name}" has no source event ` +
             `(add \`from "Event"\` or place it in a slice with an event)`,
           line: view.line,
+          refs: [refOf(view.id)],
         });
       }
       for (const src of view.from ?? []) {
@@ -94,20 +116,24 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
           const other = bucket?.[0];
           diags.push({
             severity: "error",
+            code: "view-from-unresolved",
             message: other
               ? `read model "${view.name}" references "${src}", which is a ${other.kind}, not an event — ` +
                 `\`from\` on a view names the events it projects`
               : `read model "${view.name}" references unknown event "${src}"`,
             line: view.line,
+            refs: other ? [refOf(view.id), refOf(other.id)] : [refOf(view.id)],
           });
         } else if (evt.sliceIndex > view.sliceIndex) {
           diags.push({
             severity: "error",
+            code: "view-from-future-event",
             message:
               `time flows left to right: event "${evt.name}" (slice ${evt.sliceIndex + 1}) happens ` +
               `after read model "${view.name}" (slice ${view.sliceIndex + 1}); move this source to a ` +
               `later \`view ${view.name} again\` instance`,
             line: view.line,
+            refs: [refOf(view.id), refOf(evt.id)],
           });
         }
       }
@@ -136,8 +162,10 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
             if (!fieldUnion.has(normalizeName(f.name))) {
               diags.push({
                 severity: "warning",
+                code: "fields-completeness/view-field-no-source",
                 message: `view "${view.name}" field "${f.name}" has no source in ${eventList}`,
                 line: view.line,
+                refs: [refOf(view.id), ...sourceEvents.map((e) => refOf(e.id))],
               });
             }
           }
@@ -164,8 +192,10 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
             if (!commandFieldUnion.has(normalizeName(f.name))) {
               diags.push({
                 severity: "warning",
+                code: "fields-completeness/event-field-no-source",
                 message: `event "${evt.name}" field "${f.name}" not provided by ${byCommands}`,
                 line: evt.line,
+                refs: [refOf(evt.id), ...commands.map((c) => refOf(c.id))],
               });
             }
           }
@@ -188,20 +218,24 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
         const asEvent = bucket?.find((e) => e.kind === "event");
         diags.push({
           severity: "error",
+          code: "reaction-from-unresolved",
           message: asEvent
             ? `${el.kind} "${el.name}" references "${src}", which is an event, not a read model — ` +
               `reactions watch read models; project the event into a view first ` +
               `(\`view <Pending Work> from "${src}"\`) and reference that view`
             : `${el.kind} "${el.name}" references unknown read model "${src}"`,
           line: el.line,
+          refs: asEvent ? [refOf(el.id), refOf(asEvent.id)] : [refOf(el.id)],
         });
       } else if (!views.some((v) => v.sliceIndex <= el.sliceIndex)) {
         diags.push({
           severity: "error",
+          code: "reaction-from-future-view",
           message:
             `time flows left to right: ${el.kind} "${el.name}" (slice ${el.sliceIndex + 1}) reads ` +
             `"${src}" before any instance of it exists; declare the view in or before that slice`,
           line: el.line,
+          refs: [refOf(el.id)],
         });
       }
     }
@@ -212,10 +246,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (el.kind === "view" && el.again && el.logicalId === el.id) {
       diags.push({
         severity: "error",
+        code: "view-again-without-earlier",
         message:
           `view "${el.name}" is marked \`again\` but has no earlier declaration; ` +
           `declare it plainly the first time it appears`,
         line: el.line,
+        refs: [refOf(el.id)],
       });
     }
   }
@@ -236,10 +272,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       if (arrowed) continue;
       diags.push({
         severity: "warning",
+        code: "both-ends-of-a-flow/command-untriggered",
         message:
           `command "${cmd.name}" has nothing that triggers it; add the screen it is issued ` +
           `from (a \`ui\` in this slice) or the reaction that issues it (in the previous slice)`,
         line: cmd.line,
+        refs: [refOf(cmd.id)],
       });
     }
   });
@@ -273,10 +311,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       if (consumedViews.has(view.id)) continue;
       diags.push({
         severity: "warning",
+        code: "both-ends-of-a-flow/view-unconsumed",
         message:
           `read model "${view.name}" has no consumer; add the screen that displays it ` +
           `(a \`ui\` in this slice) or the reaction that watches it — or drop this instance`,
         line: view.line,
+        refs: [refOf(view.id)],
       });
     }
   }
@@ -306,10 +346,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (readEvents.has(normalizeName(el.name))) continue;
     diags.push({
       severity: "warning",
+      code: "both-ends-of-a-flow/event-unread",
       message:
         `event "${el.name}" is not read by any read model; project it into a view ` +
         `(\`view X from "${el.name}"\`), or reconsider recording it`,
       line: el.line,
+      refs: [refOf(el.id)],
     });
   }
 
@@ -321,10 +363,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       if (fromEl && toEl && toEl.sliceIndex < fromEl.sliceIndex) {
         diags.push({
           severity: "error",
+          code: "arrow-backward",
           message:
             `time flows left to right: arrow "${a.from}" -> "${a.to}" points backward ` +
             `(slice ${fromEl.sliceIndex + 1} -> ${toEl.sliceIndex + 1}); restructure so the target comes later`,
           line: a.line,
+          refs: [refOf(fromEl.id), refOf(toEl.id)],
         });
       }
       // Inferred edges are legal by construction; a hand-written arrow is the one way an
@@ -332,24 +376,30 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
       if (fromEl && toEl && !isLegalFlow(fromEl.kind, toEl.kind)) {
         diags.push({
           severity: "error",
+          code: "connection-legality/illegal-pair",
           message:
             `arrow "${a.from}" -> "${a.to}" connects ${withArticle(fromEl.kind)} directly to ` +
             `${withArticle(toEl.kind)}: ${flowGuidance(fromEl.kind, toEl.kind)}`,
           line: a.line,
+          refs: [refOf(fromEl.id), refOf(toEl.id)],
         });
       }
     }
     if (!a.fromId)
       diags.push({
         severity: "error",
+        code: "arrow-unresolved-source",
         message: `arrow source "${a.from}" does not match any element`,
         line: a.line,
+        ...(a.toId ? { refs: [refOf(a.toId)] } : {}),
       });
     if (!a.toId)
       diags.push({
         severity: "error",
+        code: "arrow-unresolved-target",
         message: `arrow target "${a.to}" does not match any element`,
         line: a.line,
+        ...(a.fromId ? { refs: [refOf(a.fromId)] } : {}),
       });
   }
 
@@ -359,8 +409,10 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (el.issue) {
       diags.push({
         severity: "warning",
+        code: "open-issue",
         message: `open issue on "${el.name}": ${el.issue}`,
         line: el.line,
+        refs: [refOf(el.id)],
       });
     }
   }
@@ -379,10 +431,12 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (nonInstances.length > 1 && isReferenced(model, key)) {
       diags.push({
         severity: "warning",
+        code: "duplicate-name",
         message:
           `name "${els[0].name}" is defined ${nonInstances.length} times; ` +
           `references resolve to the first occurrence`,
         line: els[0].line,
+        refs: nonInstances.map((e) => refOf(e.id)),
       });
     }
   }
@@ -402,8 +456,10 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
     if (decls.length > 1) {
       diags.push({
         severity: "warning",
+        code: "duplicate-type-name",
         message: `type "${decls[0].name}" is defined ${decls.length} times; references resolve to the first occurrence`,
         line: decls[0].line,
+        refs: decls.map((t) => refs.refByTypeId.get(t.id)!),
       });
     }
   }
@@ -412,10 +468,23 @@ export function validate(model: NormalizedModel, grid: Grid): Diagnostic[] {
   // shared `Address` referenced twice is fine), but a cycle — a type transitively nesting
   // itself with no array to terminate it at runtime — can never be satisfied and is an error.
   for (const cycle of findTypeCycles(model)) {
+    // cycle.path repeats its first name at the end (closing the loop) — dedupe by normalized
+    // name before resolving to refs, so a 3-hop cycle reports 3 refs, not 4.
+    const seen = new Set<string>();
+    const cycleRefs: string[] = [];
+    for (const name of cycle.path) {
+      const key = normalizeName(name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const t = model.typesByName.get(key);
+      if (t) cycleRefs.push(refs.refByTypeId.get(t.id)!);
+    }
     diags.push({
       severity: "error",
+      code: "type-cycle",
       message: `type "${cycle.path[0]}" has a cyclic reference: ${cycle.path.join(" -> ")}`,
       line: cycle.line,
+      refs: cycleRefs,
     });
   }
 
@@ -534,6 +603,14 @@ export function formatDiagnostic(d: Diagnostic): string {
   const where = d.line ? `:${d.line}` : "";
   const tag = d.severity === "error" ? "error" : "warn ";
   return `  ${tag}${where} ${d.message}`;
+}
+
+/** JSON-shaped diagnostic — `line`/`refs` widened to explicit `null`/`[]`, same convention
+ *  every other optional export field uses. Shared by `em export` (`emit/json.ts`) and `em
+ *  diff --json` (`emit/diffJson.ts`, which spreads `{ side, ...serializeDiagnostic(d) }`) so
+ *  the shape is defined once, next to the `Diagnostic` type it serializes. */
+export function serializeDiagnostic(d: Diagnostic) {
+  return { severity: d.severity, code: d.code, message: d.message, line: d.line ?? null, refs: d.refs ?? [] };
 }
 
 export type { Element };
