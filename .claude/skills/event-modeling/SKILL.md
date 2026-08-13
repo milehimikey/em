@@ -236,10 +236,13 @@ For each slice:
    contexts) before finalizing field names/types or invariants — don't guess a shape that's
    already defined elsewhere.
 2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name), with the YAML
-   frontmatter block (`pattern`/`swimlane`/`status`/`implementedIn`, kebab-case `pattern` value)
-   at the very top — the canonical, machine-read metadata dialect (`- **Status:** ...` bullet
-   lines are legacy/accepted input only; never write new docs that way). Record the originating
-   need (ticket/conversation link) in the Intent section when one exists.
+   frontmatter block (`pattern`/`swimlane`/`status`/`version`/`implementedIn`, kebab-case
+   `pattern` value, `version` starting at `1`) at the very top — the canonical, machine-read
+   metadata dialect (`- **Status:** ...` bullet lines are legacy/accepted input only; never
+   write new docs that way). When this doc exists because of a split, merge, or rename, add the
+   matching lineage key(s) too (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>`
+   grammar — see `docs/slice-doc-schema.md` for the full schema). Record the originating need
+   (ticket/conversation link) in the Intent section when one exists.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
    slices/<slice-name>.svg` (kebab-case, matching the doc's filename) — redraws just this slice
    in its own canonical pattern shape, and add `![Diagram](./<slice-name>.svg)` near the top of

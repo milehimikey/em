@@ -5,11 +5,29 @@ Fill every section through Socratic questioning. Leave "Open Questions" rather t
 Replace the bracketed placeholders; delete guidance comments before finishing.
 
 The frontmatter below is the canonical, machine-read metadata dialect — `em`'s own parser
-(src/catalog/sliceDoc.ts) reads `status:` (and `pattern:`) from it. `pattern` is kebab-case
+(src/catalog/sliceDoc.ts) reads `status:`, `version:`, `pattern:`, and the lineage keys
+(`split-from:`/`merged-from:`/`superseded-by:`) from it. `pattern` is kebab-case
 (state-change/state-view/automation/translation) even though the skill's prose always says
 "State Change"/"State View"/etc. — the frontmatter value is a machine key, not a display label.
 Older docs using a `- **Status:** ...` bullet line instead of frontmatter still parse (legacy/
-accepted input), but new docs should always use this frontmatter form.
+accepted input), but new docs should always use this frontmatter form; `version` and lineage
+have no legacy form — frontmatter-only from day one.
+
+`version` is this slice's own ratified-content version — starts at `1`, bumps when a delta is
+ratified — distinct from `schemaVersion`, which versions the frontmatter dialect itself, not
+this slice. When a ratified change lands on an already-`implemented` slice: bump `version`,
+flip `status` back to `ready-to-implement` (it tracks the CURRENT version's implementation
+state — `implementedIn` legitimately keeps naming the PRIOR version's PR until the new version
+ships; that mismatch is an intended drift signal, not a bug), and add a
+`Delta: vX → vY, ratified <date>: <summary>` line under the `# Slice:` heading below (body
+prose, not frontmatter).
+
+The three lineage keys only apply when this doc was produced by a split, merge, or rename —
+delete them otherwise; most slices never carry them. Grammar: `<slice-key>@v<N>`, where
+`<slice-key>` is the referenced slice's kebab-case filename stem.
+
+Full machine schema — required-vs-optional keys per `status`, value types/enums, the
+unknown-key policy — is documented in docs/slice-doc-schema.md.
 
 The diagram below is generated, not hand-drawn: `em render <model>.em --slice "{{Slice Name}}"
 -o slices/{{slice-name}}.svg` (kebab-case the slice name to match this doc's own filename).
@@ -20,7 +38,13 @@ schemaVersion: 1
 pattern: {{state-change | state-view | automation | translation}}
 swimlane: {{Persona/Actor}} → {{Context/Aggregate}}
 status: {{draft | reviewed | ready-to-implement | implemented}}
+version: 1
 implementedIn: {{PR/commit link — fill in once status is `implemented`}}
+# Lineage — only when this doc exists because of a split, merge, or rename (delete these three
+# lines otherwise). Grammar: <slice-key>@v<N>. See docs/slice-doc-schema.md#lineage.
+# split-from: <slice-key>@v<N>
+# merged-from: <slice-key>@v<N>, <slice-key>@v<N>
+# superseded-by: <slice-key>@v<N>, <slice-key>@v<N>
 ---
 # Slice: {{Slice Name}}
 
