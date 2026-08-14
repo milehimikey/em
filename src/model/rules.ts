@@ -15,7 +15,7 @@
 
 import type { Diagnostic, Severity } from "./validate.js";
 
-interface RuleDef {
+export interface RuleDef {
   severity: Severity;
   /** Short human title for a generated table row — not the dynamic per-instance `message`. */
   title: string;
