@@ -510,6 +510,47 @@ slice "X" { # open
     expect(() => parse(`slice "X" {\n  command Do @Nope\n}`)).toThrow(ParseError);
   });
 
+  describe("multi-word `@Tag` (persona/context)", () => {
+    it("parses a multi-word persona tag on a ui", () => {
+      const ast = parse(`slice "S" {\n  ui Order Approval @Support Admin\n}`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Order Approval",
+        persona: "Support Admin",
+      });
+    });
+
+    it("parses a multi-word context tag on an event", () => {
+      const ast = parse(`slice "S" {\n  event Shadow Created @Company Aggregate\n}`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Shadow Created",
+        context: "Company Aggregate",
+      });
+    });
+
+    it("parses a multi-word tag before a trailing `public` on an event", () => {
+      const ast = parse(`slice "S" {\n  event Order Placed @Billing Team public\n}`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Order Placed",
+        context: "Billing Team",
+        public: true,
+      });
+    });
+
+    it("parses a `public` clause before a multi-word tag on an event", () => {
+      const ast = parse(`slice "S" {\n  event Order Placed public @Billing Team\n}`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Order Placed",
+        context: "Billing Team",
+        public: true,
+      });
+    });
+
+    it("still parses a single-word tag exactly as before", () => {
+      const ast = parse(`slice "S" {\n  ui Catalog @Customer\n}`);
+      expect(ast.slices[0].elements[0]).toMatchObject({ name: "Catalog", persona: "Customer" });
+    });
+  });
+
   describe("slice `source` clause (MIL-69)", () => {
     it("parses a `source` clause on the slice header and keeps it out of the name", () => {
       const ast = parse(`
