@@ -633,6 +633,140 @@ describe("em diff lineage annotations (MIL-84, CLI)", () => {
   });
 });
 
+/** A well-formed slice doc with every required frontmatter key present, for `em ledger` tests
+ *  below (MIL-89). */
+function ledgerDoc(version: number, status: string, implementedIn: string, body: string): string {
+  return `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ${status}\nversion: ${version}\nimplementedIn: ${implementedIn}\n---\n${body}\n`;
+}
+
+describe("em ledger (CLI, real git repo, MIL-89)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-"));
+    git(["init", "-q", "-b", "main"], repo);
+    writeFileSync(join(repo, "model.em"), CLEAN);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    // "checkout": version bump + real body change together — the clean case.
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original checkout body."));
+    // "stale": body will change with no version bump.
+    writeFileSync(join(repo, "slices", "stale.md"), ledgerDoc(1, "implemented", "PR#10", "Stale body unchanged."));
+    // "bumped": version will bump with no content change.
+    writeFileSync(join(repo, "slices", "bumped.md"), ledgerDoc(1, "implemented", "PR#20", "Bumped body unchanged."));
+    // "regress": version will go backwards.
+    writeFileSync(join(repo, "slices", "regress.md"), ledgerDoc(5, "implemented", "PR#30", "Regress body unchanged."));
+    // "bad": missing the required `version:` key at every revision — frontmatter-invalid, both sides.
+    writeFileSync(
+      join(repo, "slices", "bad.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nimplementedIn: PR#99\n---\nBad doc body.\n",
+    );
+    // "removed": present at HEAD~1, retired (git rm) in the same commit that would otherwise
+    // touch it — the same-commit convention MIL-84's deleted-doc regression test also uses.
+    writeFileSync(join(repo, "slices", "removed.md"), ledgerDoc(1, "implemented", "PR#40", "Removed body."));
+    // "status-only": only `status` changes (re-ratification) — must never be flagged.
+    writeFileSync(join(repo, "slices", "status-only.md"), ledgerDoc(2, "implemented", "PR#50", "Status-only body unchanged."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "first"], repo);
+
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(2, "implemented", "PR#1", "Updated checkout body."));
+    writeFileSync(join(repo, "slices", "stale.md"), ledgerDoc(1, "implemented", "PR#10", "Stale body CHANGED."));
+    writeFileSync(join(repo, "slices", "bumped.md"), ledgerDoc(2, "implemented", "PR#20", "Bumped body unchanged."));
+    writeFileSync(join(repo, "slices", "regress.md"), ledgerDoc(4, "implemented", "PR#30", "Regress body unchanged."));
+    // "bad.md" untouched — still missing `version:` at HEAD.
+    git(["rm", "-q", "slices/removed.md"], repo);
+    writeFileSync(join(repo, "slices", "status-only.md"), ledgerDoc(2, "ready-to-implement", "PR#50", "Status-only body unchanged."));
+    // "new-slice": doesn't exist at HEAD~1 at all — no-prior-revision.
+    writeFileSync(join(repo, "slices", "new-slice.md"), ledgerDoc(1, "draft", "", "Brand new slice doc."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "second"], repo);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("--json reports every mismatch and skip between two commits", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.ledgerSchemaVersion).toBe("1.0");
+    expect(doc.from).toBe("HEAD~1");
+    expect(doc.to).toBe("HEAD");
+    expect(doc.ok).toBe(false);
+
+    expect(doc.findings).toContainEqual(
+      expect.objectContaining({ sliceKey: "stale", code: "ledger-content-without-version-bump", oldVersion: 1, newVersion: 1 }),
+    );
+    expect(doc.findings).toContainEqual(
+      expect.objectContaining({ sliceKey: "bumped", code: "ledger-version-without-content-change", oldVersion: 1, newVersion: 2 }),
+    );
+    expect(doc.findings).toContainEqual(
+      expect.objectContaining({ sliceKey: "regress", code: "ledger-version-regression", oldVersion: 5, newVersion: 4 }),
+    );
+
+    const findingKeys = doc.findings.map((f: { sliceKey: string }) => f.sliceKey);
+    expect(findingKeys).not.toContain("checkout"); // clean: bump + real content change together
+    expect(findingKeys).not.toContain("status-only"); // re-ratification convention: never flagged
+
+    expect(doc.skipped).toContainEqual({ sliceKey: "bad", reason: "frontmatter-invalid" });
+    expect(doc.skipped).toContainEqual({ sliceKey: "new-slice", reason: "no-prior-revision" });
+    expect(doc.skipped).toContainEqual({ sliceKey: "removed", reason: "deleted" });
+  });
+});
+
+describe("em ledger: text report, working tree, and argument validation (CLI, real git repo, MIL-89)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-simple-"));
+    git(["init", "-q", "-b", "main"], repo);
+    writeFileSync(join(repo, "model.em"), CLEAN);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original body."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "first"], repo);
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(2, "implemented", "PR#1", "Updated body."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "second"], repo);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("exits 0 and prints an ok summary in the text report when everything agrees", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD"], repo);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ok — ledger agrees (1 slice doc(s) checked)");
+  });
+
+  it("prints one line per finding and a mismatch count in the text report", () => {
+    // A third commit isolates this finding from the clean HEAD~1..HEAD pair above.
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(3, "implemented", "PR#1", "Updated body."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "third"], repo);
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD"], repo);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('slice "checkout": version: bumped (v2 -> v3) but doc content is unchanged');
+    expect(r.stdout).toContain("1 ledger mismatch(es)");
+  });
+
+  it("--to omitted compares against the current working tree", () => {
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(4, "implemented", "PR#1", "Working tree body."));
+    const r = em(["ledger", "model.em", "--from", "HEAD", "--json"], repo);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.to).toBeNull();
+    expect(doc.findings).toEqual([]);
+  });
+
+  it("requires --from", () => {
+    const r = em(["ledger", "model.em"], repo);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em ledger: --from <rev> is required");
+  });
+});
+
 describe("em changelog (CLI, real git repo)", () => {
   let repo: string;
 

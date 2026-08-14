@@ -111,7 +111,8 @@ self-reference/cycles, dangling `superseded-by`, impossible version arithmetic) 
 deliberately never flagged (a `split-from`/`merged-from` naming a key legitimately absent from
 the current tree — the normal state after a real split/merge). Deep historical verification —
 did `slice@vN` really, once, exist? — stays out of core validate; the reason that's sufficient
-is a same-commit authoring convention, not new plumbing:
+is a same-commit authoring convention, not new plumbing (`em ledger`, below, is the opt-in,
+two-revision command for the related-but-different version/content invariant):
 
 > Lineage refs (`split-from:`/`merged-from:`/`superseded-by:`) are written in the same
 > ratification commit that performs the operation they record, so the PR diff contains both
@@ -135,6 +136,15 @@ frontmatter-coherence check (MIL-85) deliberately never flags this combination �
 Pair a re-ratification with a `Delta: vX → vY, ratified <date>: <summary>` line under the doc's
 `# Slice:` heading (body prose, not a frontmatter key) so the lineage is readable without
 opening git.
+
+**Mechanically checking the invariant this section describes:** `em ledger` (MIL-89, opt-in —
+see [cli.md#em-ledger-file](cli.md#em-ledger-file)) checks that `version:` and a slice doc's
+content (body + lineage refs) always change together across two git revisions — a version bump
+with no real content change, or a content change with no version bump, is a ledger bug.
+It **deliberately excludes `status`/`implementedIn`** from what counts as "content" for exactly
+the reason this section explains: a re-ratification legitimately flips `status` and leaves
+`implementedIn` naming prior work, with no version bump of its own — including either field in
+the comparison would flag every ordinary lifecycle transition as a false positive.
 
 ## Unknown keys
 

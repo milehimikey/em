@@ -80,6 +80,12 @@ check, at the moment history was still the present. If a deeper audit (walk git,
 ref) is ever wanted, that's a separate CI-recipe-tier or conformance-walker concern — never
 this fast, current-tree-only rule.
 
+That "separate CI-recipe-tier" concern is exactly what `em ledger` (MIL-89) is: a two-revision
+check of a different invariant (does a slice doc's `version:` field agree with its content?),
+opt-in and never folded into `em validate` for the same reason — it needs git history this
+command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger-file) and
+[ci.md#em-ledger-opt-in](ci.md#em-ledger-opt-in).
+
 ## Warnings
 
 | Rule | Fix |

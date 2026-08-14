@@ -70,6 +70,11 @@ tree (the steady state after a real split or merge) deliberately raises nothing 
   field (`slice.doc.driftSignal`, MIL-85), so the `conform` phase reads a computed answer
   instead of judging it fresh each time. `{ fields }`-block-level consistency checking remains
   judgment-only ([#41](https://github.com/milehimikey/em/issues/41)).
+- **Version/content ledger agreement** — shipped: an opt-in `em ledger` CI check (MIL-89)
+  flags a slice doc whose `version:` didn't bump despite a content change, or vice versa (or
+  a version that went backwards), reusing `em diff`'s git-revision plumbing rather than adding
+  a new `em validate` rule — that check needs history, and `em validate` deliberately never
+  touches it.
 
 **Bigger, and deliberately waiting for a reason**
 

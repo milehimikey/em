@@ -114,6 +114,30 @@ either side of a rename, so scoping the check to the diff alone can miss it:
 
 See [cli.md](cli.md#em-glossary-files) for the conflict rules and the `--json` schema.
 
+## `em ledger` (opt-in)
+
+`em ledger` (MIL-89) checks that a slice doc's `version:` frontmatter field and its content
+(body + lineage refs) always change together between two git revisions — a version bump with
+no real content change, or a content change with no version bump, is a ledger bug (see
+[slice-doc-schema.md](slice-doc-schema.md)). Unlike the `em validate` job above, this needs
+git history to compare revisions, so it's **deliberately not part of `em validate`** — that
+command stays a fast function of the current tree (see
+[validation.md#lineage](validation.md#lineage)). It's its own opt-in step, only worth adding
+once your team has decided version/content agreement should be enforced rather than left to
+review discipline:
+
+```yaml
+      - name: Check slice doc version/content agreement
+        run: npx @milehimikey/em ledger model.em --from "${{ github.event.pull_request.base.sha }}"
+```
+
+Add this alongside the `actions/checkout@v4` step above (it already sets `fetch-depth: 0`,
+which this needs too). `--from` compares the PR base against the current working tree (the PR
+head, once checked out); `em ledger` exits non-zero on any mismatch — every finding is a
+defect once you've opted into running this check, so unlike `em diff`/`em glossary` there's no
+separate `--exit-code`/`--fail-on-*` opt-in flag. See
+[cli.md](cli.md#em-ledger-file) for the full flag/output reference and `--json` shape.
+
 ## Conformance cadence (advisory)
 
 Once a model's slices are `implemented`, the bundled skill's `conform` phase can check the

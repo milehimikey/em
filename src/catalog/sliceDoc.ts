@@ -47,6 +47,11 @@ export interface SliceRef {
 export interface SliceDoc {
   /** The doc's raw markdown, as read from disk. */
   raw: string;
+  /** The doc's body text — everything after the frontmatter fence (or the whole doc, if no
+   *  fence) — the same text `html`/`openQuestionsTotal` are already derived from. Exposed so a
+   *  two-revision content-agreement check (MIL-89, `em ledger`) can diff body text across git
+   *  revisions without frontmatter noise leaking in. */
+  body: string;
   /** Lowercased status value from frontmatter `status:` (canonical) or a legacy
    *  `- **Status:** ...` bullet line, or null if neither is found (a freeform
    *  doc that doesn't follow the slice.md template). */
@@ -226,6 +231,7 @@ export function parseSliceDoc(markdown: string): SliceDoc {
   const { openQuestionsTotal, openQuestionsUnchecked } = countOpenQuestions(body);
   return {
     raw: markdown,
+    body,
     status,
     version: parseVersion(fields.get("version")),
     splitFrom: splitFromRaw ? parseSliceRef(splitFromRaw) : null,

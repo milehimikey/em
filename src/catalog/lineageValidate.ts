@@ -20,8 +20,10 @@
 // scope here — a same-commit authoring convention substitutes for it (see
 // docs/slice-doc-schema.md's lineage section): the lineage ref is written in the same
 // ratification commit that performs the operation it records, so the PR diff already contains
-// both sides of the claim. That's the MIL-89 shape (CI-recipe tier / conformance walker) if
-// ever wanted — never core validate, which stays a fast function of the current tree.
+// both sides of the claim. `em ledger` (MIL-89, src/cli/ledgerCheck.ts) is that CI-recipe-tier,
+// two-revision shape for a related but different invariant — version:/content agreement, not
+// lineage-ref resolution — kept opt-in and separate for the same reason: it needs git history,
+// and this command stays a fast function of the current tree.
 
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
