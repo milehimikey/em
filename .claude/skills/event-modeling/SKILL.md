@@ -226,6 +226,16 @@ phases is the starting point, not the finished event set. **Every new event need
 real (someone has to see that the request was declined).
 
 For each slice:
+0. **Check for re-ratification first.** If `slices/<slice-name>.md` already exists with
+   `status: implemented`, this is a re-ratification, not fresh authoring: hold a Socratic
+   deep-dive on what changed (same rigor as step 1, scoped to the delta), update whichever
+   sections actually changed, then express the change as the `## Delta` section — fixed heading,
+   `### Added`/`Modified`/`Removed`/`Renamed` Requirement blocks each carrying its own scenarios
+   (see `templates/slice.md` and `docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle`)
+   — **overwriting** whatever the section held before, never appending to it. Then continue at
+   step 2 to bump `version` and flip `status` back to `ready-to-implement`, leaving
+   `implementedIn` naming the prior version's PR (intended drift signal, not a bug — see the
+   schema doc). Otherwise, this is first-time authoring: continue at step 1.
 1. Hold a Socratic deep-dive to fill every section of `templates/slice.md`: intent, trigger/actor,
    command + field table (types & rules), event(s) + payload (mark immutable facts), invariants
    (give each a stable ID), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
@@ -241,8 +251,9 @@ For each slice:
    metadata dialect (`- **Status:** ...` bullet lines are legacy/accepted input only; never
    write new docs that way). When this doc exists because of a split, merge, or rename, add the
    matching lineage key(s) too (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>`
-   grammar — see `docs/slice-doc-schema.md` for the full schema). Record the originating need
-   (ticket/conversation link) in the Intent section when one exists.
+   grammar — see `docs/slice-doc-schema.md` for the full schema). On a re-ratification (step 0),
+   bump `version` and flip `status` here instead of setting them fresh. Record the originating
+   need (ticket/conversation link) in the Intent section when one exists.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
    slices/<slice-name>.svg` (kebab-case, matching the doc's filename) — redraws just this slice
    in its own canonical pattern shape, and add `![Diagram](./<slice-name>.svg)` near the top of
