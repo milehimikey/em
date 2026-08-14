@@ -540,10 +540,19 @@ skill
     console.log("in Claude Code, run /event-modeling to start a guided session");
   });
 
-program.parseAsync().catch((e) => {
-  reportError(e);
-  process.exit(1);
-});
+// Exported so dev tooling (e.g. scripts/generate-skill-docs.ts) can introspect the registered
+// commands/options without triggering a real CLI run. Guarded the same way Node's CJS
+// `require.main === module` used to: only actually parse argv when this file is the process's
+// entry module, not merely `import`ed.
+export { program };
+
+const isMainModule = resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1] ?? "");
+if (isMainModule) {
+  program.parseAsync().catch((e) => {
+    reportError(e);
+    process.exit(1);
+  });
+}
 
 // ---- helpers ----
 
