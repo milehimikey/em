@@ -444,16 +444,22 @@ program
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
         // frontmatter-coherence findings for free by filtering allDiagnostics' own refs, rather
         // than re-deriving that classification here.
+        //
+        // "Concerns this slice" means a ref that either IS the bare slice key (lineage,
+        // frontmatter-coherence, and this module's own diagnostics all tag that way) OR starts
+        // with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
+        // e.g. an unknown-event error on a view inside this slice). An earlier version gated on
+        // "any error anywhere in the model," which silently failed the check — with zero
+        // diagnostics printed — on an unrelated slice's breakage; scoping to this slice alone
+        // matches the ticket's own scenario (check one slice while the rest of a large model is
+        // still WIP) and this module's own "single-slice" framing.
         const readyDiagnostics = validateSliceReady(model, refs, dirname(file), opts.sliceReady);
         const combined = [...allDiagnostics, ...readyDiagnostics];
-        const scoped = combined.filter((d) => d.refs?.includes(opts.sliceReady!));
+        const key = opts.sliceReady;
+        const scoped = combined.filter((d) => d.refs?.some((r) => r === key || r.startsWith(`${key}/`)));
         printDiagnostics(scoped);
-        const ready = !hasErrors(combined) && scoped.length === 0;
-        console.log(
-          ready
-            ? `slice "${opts.sliceReady}" is ready-to-implement`
-            : `slice "${opts.sliceReady}" is NOT ready-to-implement`,
-        );
+        const ready = scoped.length === 0;
+        console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
         if (!ready) process.exit(1);
         return;
       }

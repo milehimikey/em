@@ -128,7 +128,7 @@ checked (and, just as deliberately, what's never flagged — a re-ratified slice
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
 | `--list-public` | Print only events marked `public` (slice, name, line) — an integration-surface audit, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
-| `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*` if combined. |
+| `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
 
 ```bash
 em validate model.em                          # full diagnostics; exits non-zero only on errors

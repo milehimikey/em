@@ -226,9 +226,12 @@ semantics.
 
 Also folds in any [frontmatter coherence](#frontmatter-coherence) finding already scoped to the
 same slice (status/`implementedIn` incoherence) — not re-derived, just surfaced alongside the
-above when present. `--slice-ready` exits non-zero if the model has any error anywhere, or if
-any diagnostic (warning or error) carries the given slice key in its `refs` — every code above
-plus frontmatter coherence.
+above when present. `--slice-ready` exits non-zero if any diagnostic (warning or error) concerns
+this slice — either the bare slice key (every code above, plus frontmatter coherence) or an
+element ref inside it (`<key>/<kind>.<name>`, e.g. an unrelated model rule tripping on an
+element within the slice itself). Diagnostics from **other** slices never block this check —
+the gate is deliberately single-slice-scoped, matching the ticket's own scenario of checking one
+slice while the rest of a large, actively-evolving model is still WIP.
 
 ## What the validator can't catch
 
