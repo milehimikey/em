@@ -88,6 +88,14 @@ export interface SliceDoc {
    *  first (otherwise its `---` fences render as stray <hr>s and the raw
    *  `key: value` lines leak into the body). */
   html: string;
+  /** Count of GFM task-list items (`- [ ]` / `- [x]`) found under the `## Open Questions`
+   *  heading (case-insensitive), up to the next `#`/`##` heading or EOF. Both 0 when the doc
+   *  has no such heading — nothing for MIL-87's readiness check to block on. See
+   *  `openQuestionsUnchecked` for how many of these are still unresolved. */
+  openQuestionsTotal: number;
+  /** Of `openQuestionsTotal`, how many are still `- [ ]` (unchecked). 0 when every Open
+   *  Question has been checked off, or when there's no Open Questions section at all. */
+  openQuestionsUnchecked: number;
 }
 
 /** Frontmatter keys docs/slice-doc-schema.md's required-vs-optional table marks
@@ -111,6 +119,32 @@ export function hasUsableFrontmatter(doc: Pick<SliceDoc, "frontmatterPresent" | 
 
 const STATUS_LINE = /^-\s*\*\*Status:\*\*\s*(.+?)\s*$/im;
 const SLICE_REF = /^([a-z0-9]+(?:-[a-z0-9]+)*)@v(\d+)$/i;
+const OPEN_QUESTIONS_HEADING = /^##\s+Open Questions\s*$/i;
+const TASK_ITEM = /^[ \t]*[-*]\s*\[([ xX])\]/;
+
+/**
+ * Counts GFM task-list items under a `## Open Questions` heading (MIL-87), scanning `body`
+ * (post-frontmatter, pre-HTML-render text — the same text `html` below is built from) rather
+ * than the rendered HTML, which would be needlessly fragile to scrape. The section ends at the
+ * next `#`/`##` heading or EOF; a doc with no such heading counts as zero/zero, not an error —
+ * most slice docs won't have open questions left by the time they're read.
+ */
+function countOpenQuestions(body: string): { openQuestionsTotal: number; openQuestionsUnchecked: number } {
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
+  if (start === -1) return { openQuestionsTotal: 0, openQuestionsUnchecked: 0 };
+
+  let openQuestionsTotal = 0;
+  let openQuestionsUnchecked = 0;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^#{1,2}\s/.test(lines[i])) break;
+    const m = lines[i].match(TASK_ITEM);
+    if (!m) continue;
+    openQuestionsTotal++;
+    if (m[1] === " ") openQuestionsUnchecked++;
+  }
+  return { openQuestionsTotal, openQuestionsUnchecked };
+}
 
 /**
  * Parses a single `<slice-key>@v<N>` lineage reference (`split-from`, and each
@@ -189,6 +223,7 @@ export function parseSliceDoc(markdown: string): SliceDoc {
       ? legacyMatch[1].trim().toLowerCase()
       : null;
   const splitFromRaw = fields.get("split-from");
+  const { openQuestionsTotal, openQuestionsUnchecked } = countOpenQuestions(body);
   return {
     raw: markdown,
     status,
@@ -200,5 +235,7 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,
+    openQuestionsTotal,
+    openQuestionsUnchecked,
   };
 }

@@ -207,6 +207,29 @@ all. `em export`'s `slice.doc.driftSignal` (schema `1.5`) carries the same class
 consumers — like the event-modeling skill's `conform` phase — that need to distinguish "known,
 unpropagated delta" from "real drift" without re-deriving this rule's logic themselves.
 
+### Slice readiness
+
+`em validate --slice-ready <key>` (MIL-87) is the one rule family that never runs
+unconditionally — it's opt-in, scoped to a single named slice, and exists to answer one
+question: is this slice safe to hand to an implementer? Native `em` form of the check that used
+to live only in em-sdd-bridge's `assertReadyToImplement`. See
+[cli.md#--slice-ready-key-mil-87](cli.md#--slice-ready-key-mil-87) for usage and exit-code
+semantics.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `slice-ready-unknown-slice` | error | The given key names no slice in this model — a bad argument, not a model-quality finding |
+| `slice-ready-no-doc-bound` | warning | No element declares `note "slices/<key>.md"` — the note-binding gate `em export`'s doc join (MIL-91) also uses |
+| `binding-missing-file` / `frontmatter-invalid` | warning | Reused verbatim from `em export`'s doc join (see [slice-doc-schema.md](slice-doc-schema.md)) — the note names a path with no file there, or the file exists but its frontmatter isn't usable |
+| `slice-ready-status-not-ready` | warning | The doc's `status` isn't `ready-to-implement` |
+| `slice-ready-open-questions-unchecked` | warning | The doc's `## Open Questions` section has one or more unchecked (`- [ ]`) items |
+
+Also folds in any [frontmatter coherence](#frontmatter-coherence) finding already scoped to the
+same slice (status/`implementedIn` incoherence) — not re-derived, just surfaced alongside the
+above when present. `--slice-ready` exits non-zero if the model has any error anywhere, or if
+any diagnostic (warning or error) carries the given slice key in its `refs` — every code above
+plus frontmatter coherence.
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection

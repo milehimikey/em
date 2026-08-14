@@ -128,6 +128,7 @@ checked (and, just as deliberately, what's never flagged — a re-ratified slice
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
 | `--list-public` | Print only events marked `public` (slice, name, line) — an integration-surface audit, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
+| `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*` if combined. |
 
 ```bash
 em validate model.em                          # full diagnostics; exits non-zero only on errors
@@ -135,6 +136,31 @@ em validate model.em --list-issues             # just the open `issue` clauses, 
 em validate model.em --list-divergences        # just the accepted `divergence` clauses, for an audit
 em validate model.em --list-public             # just the events marked `public`, for an audit
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
+em validate model.em --slice-ready checkout    # is "checkout" safe to hand to an implementer?
+```
+
+### `--slice-ready <key>` (MIL-87)
+
+The handoff gate: is this one slice safe to hand to an implementer? Native `em` form of the
+check that used to live only in em-sdd-bridge's `assertReadyToImplement` — useful for any
+toolchain that reads slice docs directly rather than routing through the bridge. Exits non-zero
+unless **all** of the following hold, printing which ones don't and why
+(see [validation.md#slice-readiness](validation.md#slice-readiness) for the full code list):
+
+- the slice has a doc bound via `note "slices/<key>.md"` on one of its elements (same
+  note-binding gate `em export`'s doc join uses, MIL-91) and the doc's frontmatter is usable
+- the doc's `status` is `ready-to-implement`
+- every `## Open Questions` checkbox in the doc is checked (`- [x]`, none left `- [ ]`)
+- no version/status/link incoherence is flagged for the slice (folds in the frontmatter-
+  coherence check, MIL-85, for free — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence))
+
+```bash
+$ em validate model.em --slice-ready checkout
+  warn :12 slice "checkout" is status: draft, not ready-to-implement
+  warn :12 slice "checkout" has 1 of 2 Open Question(s) unchecked
+slice "checkout" is NOT ready-to-implement
+$ echo $?
+1
 ```
 
 ## `em export <file>`

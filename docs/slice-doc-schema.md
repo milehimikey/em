@@ -4,7 +4,12 @@ This documents the machine-read YAML frontmatter dialect `src/catalog/sliceDoc.t
 of `slices/<slice-key>.md` — the contract `em export`'s slice-frontmatter join reads. It covers
 the **frontmatter block only**. Body/prose authoring conventions (Intent, Scenarios, the
 `Delta:` line, Open Questions, …) live in the event-modeling skill's
-[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md), not here.
+[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md), not here — with one
+exception: the `## Open Questions` section's GFM checkboxes (`- [ ]` / `- [x]`) *are* now
+machine-parsed by `sliceDoc.ts` too (`openQuestionsTotal`/`openQuestionsUnchecked`, MIL-87),
+feeding `em validate --slice-ready <key>` (see [validation.md#slice-readiness](validation.md#slice-readiness)).
+Everything else about that section's authoring — what a good open question looks like, when to
+resolve one — stays owned by the skill template; this doc only covers the counting mechanics.
 
 ## How the parser reads frontmatter
 

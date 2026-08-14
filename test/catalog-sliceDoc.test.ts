@@ -170,3 +170,54 @@ describe("parseSliceDoc", () => {
     expect(doc.html).toContain("Body text.");
   });
 });
+
+// MIL-87: Open Questions checkbox counting, the readiness gate's other required signal
+// alongside status. Scans the raw body text (not the rendered HTML) for GFM task-list items
+// under a `## Open Questions` heading.
+describe("parseSliceDoc: openQuestionsTotal / openQuestionsUnchecked (MIL-87)", () => {
+  it("counts 0/0 when there's no Open Questions heading at all", () => {
+    const doc = parseSliceDoc("# Some Slice\n\nJust prose, no questions section.\n");
+    expect(doc.openQuestionsTotal).toBe(0);
+    expect(doc.openQuestionsUnchecked).toBe(0);
+  });
+
+  it("counts every checkbox item and how many remain unchecked", () => {
+    const doc = parseSliceDoc(
+      "# Some Slice\n\n## Open Questions\n- [ ] first question\n- [x] second question, resolved\n- [ ] third question\n",
+    );
+    expect(doc.openQuestionsTotal).toBe(3);
+    expect(doc.openQuestionsUnchecked).toBe(2);
+  });
+
+  it("counts 0 unchecked once every question is checked off", () => {
+    const doc = parseSliceDoc("## Open Questions\n- [x] resolved one\n- [X] resolved two (capital X)\n");
+    expect(doc.openQuestionsTotal).toBe(2);
+    expect(doc.openQuestionsUnchecked).toBe(0);
+  });
+
+  it("matches the heading case-insensitively", () => {
+    const doc = parseSliceDoc("## open questions\n- [ ] still open\n");
+    expect(doc.openQuestionsTotal).toBe(1);
+    expect(doc.openQuestionsUnchecked).toBe(1);
+  });
+
+  it("stops counting at the next heading, ignoring task items in later sections", () => {
+    const doc = parseSliceDoc(
+      "## Open Questions\n- [ ] in scope\n\n## Some Other Section\n- [ ] not an open question\n",
+    );
+    expect(doc.openQuestionsTotal).toBe(1);
+    expect(doc.openQuestionsUnchecked).toBe(1);
+  });
+
+  it("ignores task-list-shaped lines outside any Open Questions section", () => {
+    const doc = parseSliceDoc("## Scenarios\n- [ ] this looks like a checkbox but isn't a question\n");
+    expect(doc.openQuestionsTotal).toBe(0);
+    expect(doc.openQuestionsUnchecked).toBe(0);
+  });
+
+  it("counts indented sub-items the same as top-level ones", () => {
+    const doc = parseSliceDoc("## Open Questions\n- [ ] top-level question\n  - [ ] indented sub-question\n");
+    expect(doc.openQuestionsTotal).toBe(2);
+    expect(doc.openQuestionsUnchecked).toBe(2);
+  });
+});
