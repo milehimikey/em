@@ -18,9 +18,12 @@ ratified — distinct from `schemaVersion`, which versions the frontmatter diale
 this slice. When a ratified change lands on an already-`implemented` slice: bump `version`,
 flip `status` back to `ready-to-implement` (it tracks the CURRENT version's implementation
 state — `implementedIn` legitimately keeps naming the PRIOR version's PR until the new version
-ships; that mismatch is an intended drift signal, not a bug), and add a
-`Delta: vX → vY, ratified <date>: <summary>` line under the `# Slice:` heading below (body
-prose, not frontmatter).
+ships; that mismatch is an intended drift signal, not a bug), and fill in the `## Delta` section
+below with this hop's change, replacing whatever it held before (it always shows only the latest
+hop — full history lives in git, same-commit-ratification convention). Full grammar — the fixed
+heading, the four operation subsections, why the heading never varies, the replace-not-accumulate
+lifecycle — is documented in docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle; treat
+it the same Socratic way as every other section here, don't generate it mechanically.
 
 The three lineage keys only apply when this doc was produced by a split, merge, or rename —
 delete them otherwise; most slices never carry them. Grammar: `<slice-key>@v<N>`, where
@@ -50,6 +53,35 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 # Slice: {{Slice Name}}
 
 ![Diagram](./{{slice-name}}.svg)
+
+<!-- Only on re-ratification of an already-`implemented` slice — omit this whole section on a
+     slice's first version (v1 has no delta yet). The heading is always the literal `## Delta`,
+     never `## Delta: vX → vY` — hop metadata is a display line inside the section instead (see
+     docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle for why). Replace this
+     section's content wholesale on the next re-ratification — it shows only the latest hop, not
+     an accumulating log. Omit any of the four subsections below with no entries this hop; keep
+     the remaining ones in this order (Added/Modified/Removed/Renamed). `Renamed` is for a
+     requirement/invariant renamed within this slice, not a substitute for the frontmatter
+     `split-from`/`merged-from`/`superseded-by` lineage keys above, which record the slice-doc
+     itself splitting, merging, or being renamed. -->
+## Delta
+**v{{X}} → v{{Y}}, ratified {{date}}** — {{one-line summary of the ratified change}}
+
+### Added
+#### Requirement: {{title}} ({{stable ID, e.g. an INV-n from Invariants below}})
+{{requirement text — same voice as an Invariants entry}}
+##### Scenario: {{name}}
+- **GIVEN** {{...}} **WHEN** {{...}} **THEN** {{...}}
+
+### Modified
+<!-- Same shape as Added — the stable ID names the requirement that changed. -->
+
+### Removed
+#### Requirement: {{title}} ({{stable ID}})
+{{why it was removed}}
+
+### Renamed
+- {{old title}} ({{old ID}}) → {{new title}} ({{new ID}})
 
 ## Intent
 {{Why this slice exists — the user or business goal it serves, in one or two sentences. Note the

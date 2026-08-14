@@ -2,14 +2,23 @@
 
 This documents the machine-read YAML frontmatter dialect `src/catalog/sliceDoc.ts` parses out
 of `slices/<slice-key>.md` — the contract `em export`'s slice-frontmatter join reads. It covers
-the **frontmatter block only**. Body/prose authoring conventions (Intent, Scenarios, the
-`Delta:` line, Open Questions, …) live in the event-modeling skill's
-[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md), not here — with one
-exception: the `## Open Questions` section's GFM checkboxes (`- [ ]` / `- [x]`) *are* now
-machine-parsed by `sliceDoc.ts` too (`openQuestionsTotal`/`openQuestionsUnchecked`, MIL-87),
-feeding `em validate --slice-ready <key>` (see [validation.md#slice-readiness](validation.md#slice-readiness)).
-Everything else about that section's authoring — what a good open question looks like, when to
-resolve one — stays owned by the skill template; this doc only covers the counting mechanics.
+the **frontmatter block only**. Body/prose authoring conventions (Intent, Scenarios, Open
+Questions, …) live in the event-modeling skill's
+[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md), not here — with two
+exceptions:
+
+- The `## Open Questions` section's GFM checkboxes (`- [ ]` / `- [x]`) *are* now machine-parsed
+  by `sliceDoc.ts` too (`openQuestionsTotal`/`openQuestionsUnchecked`, MIL-87), feeding
+  `em validate --slice-ready <key>` (see [validation.md#slice-readiness](validation.md#slice-readiness)).
+  Everything else about that section's authoring — what a good open question looks like, when to
+  resolve one — stays owned by the skill template; this doc only covers the counting mechanics.
+- The `## Delta` section's grammar and lifecycle (MIL-88) is documented here, in full, alongside
+  the lineage keys it complements — a 2026-08-14 ruling deliberately kept the slice-doc contract
+  as one document rather than splitting a structurally-related convention across two files, even
+  though (unlike Open Questions) `## Delta` is currently display-only prose that no `em` command
+  parses yet. See [Delta section: grammar and lifecycle](#delta-section-grammar-and-lifecycle)
+  below; authoring voice/tone for the section still lives in the skill template, same as every
+  other body section.
 
 ## How the parser reads frontmatter
 
@@ -118,6 +127,76 @@ is a same-commit authoring convention, not new plumbing:
 > sides of the claim (the predecessor at its final version, and the ref naming it). The review
 > airlock is the history check.
 
+## Delta section: grammar and lifecycle
+
+`## Delta` is the body section that pairs with a re-ratification (see "`status` under
+re-ratification" below) — a structured record of what changed to produce the version currently
+in the frontmatter, in typed operation blocks (MIL-88) rather than a one-line summary. Like the
+lineage keys above, it's currently authored, not parsed — no `em` command reads it — but it's
+documented here rather than left purely to the skill template because its shape is a structural
+contract other tooling may parse later (the ticket's named stretch goal is `em diff` emitting
+this same vocabulary for slice docs), same reasoning as the lineage grammar.
+
+**The heading is always the literal string `## Delta` — never a variable heading** (e.g. never
+`## Delta: v1 → v2`). Several consumers key on exact `##` text when locating sections in a slice
+doc (the SDD-bridge's section splitter, the slice-to-spec mapping table, the redirect prompt
+preambles); a heading that changes every ratification would break exact-match lookup and move
+the anchor on every hop — the same problem a made-up per-doc key would cause anywhere else in
+this schema. Version range, ratification date, and a one-line summary go on the **first line
+inside** the section instead, as display text — not a frontmatter key, not parsed:
+
+```markdown
+## Delta
+**v1 → v2, ratified 2026-08-12** — one-line summary of the ratified change.
+
+### Added
+#### Requirement: {{title}} ({{stable ID, e.g. an INV-n from ## Invariants}})
+{{requirement text}}
+##### Scenario: {{name}}
+- **GIVEN** {{...}} **WHEN** {{...}} **THEN** {{...}}
+
+### Modified
+(same shape as Added — the ID names the requirement that changed)
+
+### Removed
+#### Requirement: {{title}} ({{stable ID}})
+{{why it was removed}}
+
+### Renamed
+- {{old title}} ({{old ID}}) → {{new title}} ({{new ID}})
+```
+
+**Four `###` subsections, in that fixed order, Title Case singular words** — `Added`, `Modified`,
+`Removed`, `Renamed` — not OpenSpec's shouting-case `ADDED Requirements` grouping. This is the
+one deliberate divergence from the OpenSpec grammar the convention was validated against: the
+four *operations* are retained (independent convergent design — OpenSpec arrived at the same
+vocabulary from its own change-management-first angle), but OpenSpec's flat, file-per-delta
+heading topology is not, because a slice doc's delta is a section inside a doc with its own
+parsed heading contract, not a standalone file. Omit any of the four subsections with no entries
+this hop — most re-ratifications touch one or two operations, not all four.
+
+**`Renamed` is a requirement-level operation, not a slice-level one.** It records an invariant or
+requirement *within this slice* being renamed or renumbered (e.g. `INV-CHK-3` → `INV-CHK-3a`) —
+it is not a substitute for the `split-from`/`merged-from`/`superseded-by` lineage keys above,
+which record the slice-doc-level operation of one doc splitting, merging, or being renamed into
+another. `em diff`'s own `ChangeType` deliberately treats a slice/element rename as remove+add,
+never a first-class rename (`src/model/diff.ts`: "a rename IS a model change") — `Renamed` here
+is a finer grain, inside one otherwise-unchanged slice, and doesn't revisit that decision.
+
+**Lifecycle: replace, never accumulate — the section is a window onto the latest hop, not a
+scroll of every hop.** A slice's first version (`v1`) carries no `## Delta` section at all —
+absence means no hop has happened yet, not an empty section. Ratifying `v2` writes the section
+for the first time, in the same commit that bumps `version` and flips `status`. Ratifying `v3`
+**overwrites** it with the `v2 → v3` hop; the `v1 → v2` content is not retained in the doc.
+Full history is git's job — the same-commit ratification convention above makes `git log -p
+slices/<name>.md` a precise, zero-maintenance delta archive — and a rolled-up multi-hop view, if
+ever wanted, is a *rendering* (e.g. a future `em changelog`), never hand-maintained doc content.
+An accumulating in-doc log would be a second history that diverges from git, grows unboundedly
+over a slice's life, references requirements that have since moved (a *live* doc quietly going
+stale reads as current, unlike git which is honestly historical), and forces every reader to
+work out which delta is the live one — exactly the ambiguity `driftSignal` (MIL-85, below) is
+built to avoid.
+
 ## `status` under re-ratification
 
 When a new version is ratified for a slice whose previous version already shipped, `status`
@@ -132,9 +211,9 @@ frontmatter-coherence check (MIL-85) deliberately never flags this combination �
 `status: implemented` with no `implementedIn` link at all is checkable incoherence; see
 [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence).
 
-Pair a re-ratification with a `Delta: vX → vY, ratified <date>: <summary>` line under the doc's
-`# Slice:` heading (body prose, not a frontmatter key) so the lineage is readable without
-opening git.
+Pair a re-ratification with a `## Delta` section (see
+[Delta section: grammar and lifecycle](#delta-section-grammar-and-lifecycle) above) recording
+the ratified change in typed operation blocks, so it's reviewable without opening git.
 
 ## Unknown keys
 
