@@ -1,5 +1,6 @@
 ---
 name: event-modeling
+em-version: 1.7.0
 description: >-
   Guide a user and their team through building rigorous Event Models with the `em` CLI, using
   the 7 steps of Event Modeling and the 4 patterns (State Change, State View, Automation,
