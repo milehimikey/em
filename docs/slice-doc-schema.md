@@ -34,9 +34,9 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `schemaVersion` | integer | `1` (current dialect version) | not read back by any `em` command today — reserved |
 | `pattern` | string | `state-change` \| `state-view` \| `automation` \| `translation` | authored/informational only — `em catalog` and `em export` both derive pattern from the `.em` AST instead (`em export`'s `slice.pattern`, schema `1.4`) |
 | `swimlane` | string | free text, `<Persona> → <Context>` | display-only |
-| `status` | string, case-insensitive | `draft` \| `reviewed` \| `ready-to-implement` \| `implemented` | `em catalog`, `em render`/`em watch` header coloring; joined into `em export`'s `slice.doc.status` (schema `1.4`) |
+| `status` | string, case-insensitive | `draft` \| `reviewed` \| `ready-to-implement` \| `implemented` | `em catalog`, `em render`/`em watch` header coloring; joined into `em export`'s `slice.doc.status` (schema `1.4`); paired with `implementedIn` to compute `slice.doc.driftSignal` (schema `1.5`, MIL-85) and `em validate`'s frontmatter-coherence check (MIL-85 — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)) |
 | `version` | integer | positive integer, starts at `1` | joined into `em export`'s `slice.doc.version` (schema `1.4`, MIL-91) |
-| `implementedIn` | string | free text (PR/commit link) | joined into `em export`'s `slice.doc.implementedIn` (schema `1.4`, MIL-91) |
+| `implementedIn` | string | free text (PR/commit link) | joined into `em export`'s `slice.doc.implementedIn` (schema `1.4`, MIL-91); paired with `status` to compute `slice.doc.driftSignal` (schema `1.5`, MIL-85) and `em validate`'s frontmatter-coherence check (MIL-85 — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)) |
 | `split-from` | single ref | `<slice-key>@v<N>` | joined into `em export`'s `slice.doc.splitFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 | `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.mergedFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 | `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.supersededBy` (schema `1.4`, MIL-91) and `em diff`'s `slice-removed` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
@@ -60,7 +60,10 @@ required row above: a bound doc missing any of `schemaVersion`/`pattern`/`swimla
 "frontmatter-invalid"` plus a warning diagnostic — report, never fail, same as every other
 export finding. `implementedIn`'s conditional requirement (once a slice has *ever* reached
 `implemented`) is **not** checked — that needs git history no doc-only parse has access to.
-No `em` command fails a build over this table; a future `em validate` check remains open work.
+No `em` command fails a build over this table. `em validate`'s frontmatter-coherence check
+(MIL-85 — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)) warns
+(never fails) on the one combination checkable without git history: `status: implemented` with
+no `implementedIn` link at all.
 
 ## Lineage: grammar and cardinality
 
@@ -117,8 +120,12 @@ tracks the **current version's** implementation state, not a running "has this e
 flag. Ratifying v2 on an `implemented` slice flips `status` back to `ready-to-implement`, while
 `implementedIn` keeps naming the v1 PR until v2 ships. That deliberate mismatch — version 2,
 implemented-link still pointing at v1's work — is not staleness, it's the **drift signal**: a
-reader (or a future conformance check) sees at a glance that a ratified delta hasn't shipped
-yet.
+reader, `em export`'s `slice.doc.driftSignal` (`"unpropagated-delta"`, schema `1.5`, MIL-85), and
+the event-modeling skill's `conform` phase all read it the same way — a ratified delta hasn't
+shipped yet, not a fresh finding against the still-live v1 code. `em validate`'s
+frontmatter-coherence check (MIL-85) deliberately never flags this combination — only
+`status: implemented` with no `implementedIn` link at all is checkable incoherence; see
+[validation.md#frontmatter-coherence](validation.md#frontmatter-coherence).
 
 Pair a re-ratification with a `Delta: vX → vY, ratified <date>: <summary>` line under the doc's
 `# Slice:` heading (body prose, not a frontmatter key) so the lineage is readable without

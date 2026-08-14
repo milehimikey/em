@@ -112,6 +112,18 @@ For each slice in scope:
      3). If it does, this is not a fresh finding to litigate: classify it as **Accepted
      divergence** (step 4) and cite the annotation text as the evidence. This is the specific,
      per-element, ratified counterpart to the idiom-level bullet above.
+   - **Unpropagated deltas (MIL-85):** before treating any slice-level finding as drift, check
+     that slice's `doc.driftSignal` in `em export --json` (see `docs/slice-doc-schema.md`'s
+     "`status` under re-ratification" section for the mechanics). `"unpropagated-delta"` means
+     the slice was re-ratified (a new
+     `version`, `status` flipped back off `implemented`) but `implementedIn` still names the
+     *prior* version's PR — the code you're evidence-walking is that prior version, on purpose.
+     Do not diff it against the newer doc content and do not report a mismatch as Real drift or
+     a Model gap; classify it as **Unpropagated delta** (step 4) instead and stop — the finding
+     is "this delta hasn't shipped yet," not a defect in the shipped code. `"implemented-
+     without-link"` (status: implemented, no link at all) is a genuine coherence problem, but
+     it's already surfaced by `em validate`'s `frontmatter-coherence-implemented-without-link`
+     warning — don't re-raise it here as a separate conform finding.
 3. Write what you found into the scratch model (`<model-name>-asis.em`, see below). **Seed the
    scratch model as a copy of the canonical `.em` and replace only the in-scope slices** with
    the as-is picture, leaving out-of-scope slices byte-identical. This is not an optimization:
@@ -178,6 +190,12 @@ step 2 — sorts into exactly one class:
   `.em`/`em export` for a spec/internal finding). This is what the annotation is *for*: a
   reasoned, ratified deviation stops being re-reported as drift on every run. Cite the
   annotation text, not fresh judgment — that judgment already happened when it was written.
+- **Unpropagated delta** (MIL-85) — the slice's `doc.driftSignal` (`em export --json`) is
+  `"unpropagated-delta"`: a ratified version bump hasn't shipped yet, so `implementedIn` still
+  names prior work on purpose. Distinct from Accepted divergence — this is a structurally-
+  derived, deterministic signal (`status`/`implementedIn` coherence), not a human-authored
+  `divergence` annotation; keep the two separate so a reader can tell which mechanism produced
+  which finding. Cite `slice.doc.driftSignal` and `slice.doc.version` together as evidence.
 - **Extraction uncertainty** — no evidence either way. Never reported as drift or a gap.
 
 Every classification must cite the evidence recorded in step 2 (or the `em diff` entry, for

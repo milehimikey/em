@@ -17,6 +17,7 @@
 
 import { Slice } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
+import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { SliceRef } from "./sliceDoc.js";
 
@@ -38,6 +39,11 @@ export interface SliceDocExport {
   splitFrom: SliceRef | null;
   mergedFrom: SliceRef[];
   supersededBy: SliceRef[];
+  /** Implementation-drift classification (MIL-85), from `status`+`implementedIn` alone — see
+   *  catalog/driftSignal.ts. Null only when `found` is false (nothing to classify); paired with
+   *  `version` above from the same doc parse — a finding built from `driftSignal` should always
+   *  cite `version` alongside it, never cache one without the other. */
+  driftSignal: DriftSignalKind | null;
 }
 
 export interface SliceDocJoinResult {
@@ -52,6 +58,7 @@ const EMPTY_CONTENT = {
   splitFrom: null,
   mergedFrom: [] as SliceRef[],
   supersededBy: [] as SliceRef[],
+  driftSignal: null as DriftSignalKind | null,
 };
 
 /**
@@ -118,6 +125,7 @@ export function resolveSliceDocJoin(
       splitFrom: parsed.splitFrom,
       mergedFrom: parsed.mergedFrom,
       supersededBy: parsed.supersededBy,
+      driftSignal: classifyImplementationDrift(parsed),
     },
     diagnostics: [],
   };

@@ -96,6 +96,7 @@ this fast, current-tree-only rule.
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
+| A slice doc's `status: implemented` with no `implementedIn` link (`frontmatter-coherence-implemented-without-link`) | Add the `implementedIn` link, or move `status` back if it hasn't actually shipped |
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
@@ -178,6 +179,25 @@ warning — unlike `issue`, it records a deviation that's already been reasoned 
 ratified, and the entire point of the annotation is that it stops re-firing on every run. Use
 `em validate --list-divergences` to audit them on demand; there's no `--fail-on` flag for it
 since an accepted divergence should never fail a build.
+
+### Frontmatter coherence
+
+`em validate`'s second fs-aware rule (MIL-85), alongside lineage above: it reads a slice doc's
+`status`/`implementedIn` frontmatter and flags exactly one combination as broken —
+`status: implemented` with no `implementedIn` link at all. Everything else is silent, including
+the one combination that looks the most like drift at a glance.
+
+**The non-obvious case, and the one this rule must never flag:** re-ratifying a shipped slice
+(bumping `version`, drafting a new delta) correctly flips `status` back off `implemented` —
+typically to `ready-to-implement` — while `implementedIn` keeps naming the *prior* version's PR
+until the new version ships. That mismatch (`status` no longer `implemented`, `implementedIn`
+still set) is the expected signature of a ratified-but-unshipped delta, not incoherence — see
+[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification).
+Flagging it would train people to ignore the warning, which is worse than not having the rule at
+all. `em export`'s `slice.doc.driftSignal` (schema `1.5`) carries the same classification
+(`in-sync` / `never-implemented` / `unpropagated-delta` / `implemented-without-link`) for
+consumers — like the event-modeling skill's `conform` phase — that need to distinguish "known,
+unpropagated delta" from "real drift" without re-deriving this rule's logic themselves.
 
 ## What the validator can't catch
 

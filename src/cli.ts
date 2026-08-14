@@ -21,6 +21,7 @@ import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./mod
 import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
+import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -418,9 +419,14 @@ program
       opts: { listIssues?: boolean; listDivergences?: boolean; listPublic?: boolean; failOnIssues?: boolean },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
-      // Lineage-ref resolution (MIL-84) is validate's first fs-aware rule — every other check
-      // above is a pure function of the .em source. Reads slices/*.md alongside the model.
-      const allDiagnostics = [...diagnostics, ...validateLineage(model, refs, dirname(file))];
+      // Lineage-ref resolution (MIL-84) and frontmatter-coherence (MIL-85) are validate's
+      // fs-aware rules — every other check above is a pure function of the .em source. Both
+      // read slices/*.md alongside the model.
+      const allDiagnostics = [
+        ...diagnostics,
+        ...validateLineage(model, refs, dirname(file)),
+        ...validateFrontmatterCoherence(model, refs, dirname(file)),
+      ];
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
         if (opts.listIssues) printIssues(model);
         if (opts.listDivergences) printDivergences(model);

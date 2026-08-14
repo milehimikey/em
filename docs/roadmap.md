@@ -65,9 +65,11 @@ tree (the steady state after a real split or merge) deliberately raises nothing 
 
 **The conformance loop**
 
-- **Slice-doc ↔ model consistency as a validate rule** — the `conform` phase checks this by
-  judgment today, but slice-doc frontmatter and `{ fields }` blocks are structured enough to
-  check deterministically ([#41](https://github.com/milehimikey/em/issues/41)).
+- **Slice-doc ↔ model consistency as a validate rule** — partially shipped: `status`/
+  `implementedIn` coherence is now a deterministic `em validate` rule and an `em export`
+  field (`slice.doc.driftSignal`, MIL-85), so the `conform` phase reads a computed answer
+  instead of judging it fresh each time. `{ fields }`-block-level consistency checking remains
+  judgment-only ([#41](https://github.com/milehimikey/em/issues/41)).
 
 **Bigger, and deliberately waiting for a reason**
 
