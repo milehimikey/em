@@ -11,6 +11,7 @@
 
 import { NormalizedModel } from "./model.js";
 import type { Diagnostic } from "./validate.js";
+import { pushDiag } from "./rules.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 
 export interface RefsResult {
@@ -46,9 +47,7 @@ export function computeRefs(model: NormalizedModel): RefsResult {
     const base = kebabSlug(slice.name);
     const key = dedupe(base, usedSliceKeys, "~");
     if (key !== base) {
-      diagnostics.push({
-        severity: "warning",
-        code: "duplicate-slice-name",
+      pushDiag(diagnostics, "duplicate-slice-name", {
         message: `duplicate slice name "${slice.name}" (export key "${base}" already used); rename slices uniquely for stable export refs`,
         line: slice.line,
         refs: [key, base],
@@ -65,9 +64,7 @@ export function computeRefs(model: NormalizedModel): RefsResult {
       const base = `${sliceKey}/${el.kind}.${kebabSlug(el.name)}`;
       const ref = dedupe(base, usedElementRefs, "~");
       if (ref !== base) {
-        diagnostics.push({
-          severity: "warning",
-          code: "duplicate-element-ref",
+        pushDiag(diagnostics, "duplicate-element-ref", {
           message: `duplicate ${el.kind} "${el.name}" in slice "${slice.name}" (export ref "${base}" already used); rename for a stable export ref`,
           line: el.line,
           refs: [ref, base],
@@ -83,9 +80,7 @@ export function computeRefs(model: NormalizedModel): RefsResult {
     const base = `types/${kebabSlug(t.name)}`;
     const ref = dedupe(base, usedTypeRefs, "~");
     if (ref !== base) {
-      diagnostics.push({
-        severity: "warning",
-        code: "duplicate-type-ref",
+      pushDiag(diagnostics, "duplicate-type-ref", {
         message: `duplicate type "${t.name}" (export ref "${base}" already used); rename for a stable export ref`,
         line: t.line,
         refs: [ref, base],

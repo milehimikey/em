@@ -25,6 +25,7 @@
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
+import { pushDiag } from "../model/rules.js";
 import { classifyImplementationDrift } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { hasUsableFrontmatter } from "./sliceDoc.js";
@@ -46,9 +47,7 @@ export function validateFrontmatterCoherence(model: NormalizedModel, refs: RefsR
     // "unpropagated-delta" falls through here silently — that's the point: a re-ratified slice
     // whose implementedIn still names prior work is expected, not a defect.
 
-    diags.push({
-      severity: "warning",
-      code: "frontmatter-coherence-implemented-without-link",
+    pushDiag(diags, "frontmatter-coherence-implemented-without-link", {
       message: `slice "${sliceKey}" has status: implemented but no implementedIn link (v${doc.version ?? "?"})`,
       line: slice.line,
       refs: [sliceKey],

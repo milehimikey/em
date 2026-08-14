@@ -4,6 +4,7 @@
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
 import { Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
+import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
 
 export type Severity = "error" | "warning";
@@ -30,9 +31,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
 
   // Grid collisions: two elements of the same band landed in one slice cell.
   for (const c of grid.collisions) {
-    diags.push({
-      severity: "error",
-      code: "grid-collision",
+    pushDiag(diags, "grid-collision", {
       message:
         `"${c.dropped.name}" collides with "${c.kept.name}" in the same ` +
         `slice/lane (${c.rowKey}); split them into separate slices`,
@@ -51,9 +50,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     // An automation/translation slice holds only the read model + the
     // automation; the command it triggers belongs in the next slice.
     if (auto && command) {
-      diags.push({
-        severity: "warning",
-        code: "automation-shares-slice-with-command",
+      pushDiag(diags, "automation-shares-slice-with-command", {
         message:
           `${auto.kind} "${auto.name}" shares slice "${slice.name}" with command ` +
           `"${command.name}"; put the triggered command in the next slice`,
@@ -69,9 +66,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     // whether an automation also reads it (edges.ts) — that ui IS connected, so stay quiet.
     if (auto && !command && views.length === 0) {
       for (const ui of slice.elements.filter((e) => e.kind === "ui")) {
-        diags.push({
-          severity: "warning",
-          code: "ui-shares-slice-with-automation",
+        pushDiag(diags, "ui-shares-slice-with-automation", {
           message:
             `ui "${ui.name}" shares slice "${slice.name}" with ${auto.kind} "${auto.name}"; ` +
             `a \`ui\` only wires to a \`command\` and renders disconnected here — move it to the ` +
@@ -84,9 +79,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
 
     // A command should record at least one event.
     if (command && events.length === 0) {
-      diags.push({
-        severity: "warning",
-        code: "both-ends-of-a-flow/command-no-event",
+      pushDiag(diags, "both-ends-of-a-flow/command-no-event", {
         message: `command "${command.name}" produces no event in slice "${slice.name}"`,
         line: command.line,
         refs: [refOf(command.id)],
@@ -97,9 +90,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     for (const view of views) {
       const hasFrom = (view.from ?? []).length > 0;
       if (!hasFrom && events.length === 0) {
-        diags.push({
-          severity: "warning",
-          code: "view-no-source",
+        pushDiag(diags, "view-no-source", {
           message:
             `read model "${view.name}" has no source event ` +
             `(add \`from "Event"\` or place it in a slice with an event)`,
@@ -114,9 +105,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           // Same courtesy as the reaction check below: if the name exists as
           // another kind, say so rather than calling it unknown.
           const other = bucket?.[0];
-          diags.push({
-            severity: "error",
-            code: "view-from-unresolved",
+          pushDiag(diags, "view-from-unresolved", {
             message: other
               ? `read model "${view.name}" references "${src}", which is a ${other.kind}, not an event — ` +
                 `\`from\` on a view names the events it projects`
@@ -125,9 +114,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
             refs: other ? [refOf(view.id), refOf(other.id)] : [refOf(view.id)],
           });
         } else if (evt.sliceIndex > view.sliceIndex) {
-          diags.push({
-            severity: "error",
-            code: "view-from-future-event",
+          pushDiag(diags, "view-from-future-event", {
             message:
               `time flows left to right: event "${evt.name}" (slice ${evt.sliceIndex + 1}) happens ` +
               `after read model "${view.name}" (slice ${view.sliceIndex + 1}); move this source to a ` +
@@ -160,9 +147,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           const eventList = fromNames.map((n) => `"${n}"`).join(", ");
           for (const f of view.fields) {
             if (!fieldUnion.has(normalizeName(f.name))) {
-              diags.push({
-                severity: "warning",
-                code: "fields-completeness/view-field-no-source",
+              pushDiag(diags, "fields-completeness/view-field-no-source", {
                 message: `view "${view.name}" field "${f.name}" has no source in ${eventList}`,
                 line: view.line,
                 refs: [refOf(view.id), ...sourceEvents.map((e) => refOf(e.id))],
@@ -190,9 +175,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           if (!evt.fields || evt.fields.length === 0) continue;
           for (const f of evt.fields) {
             if (!commandFieldUnion.has(normalizeName(f.name))) {
-              diags.push({
-                severity: "warning",
-                code: "fields-completeness/event-field-no-source",
+              pushDiag(diags, "fields-completeness/event-field-no-source", {
                 message: `event "${evt.name}" field "${f.name}" not provided by ${byCommands}`,
                 line: evt.line,
                 refs: [refOf(evt.id), ...commands.map((c) => refOf(c.id))],
@@ -216,9 +199,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         // saying so — call out the kind mismatch and the fix (project the
         // event into a view) instead of claiming the name is unknown.
         const asEvent = bucket?.find((e) => e.kind === "event");
-        diags.push({
-          severity: "error",
-          code: "reaction-from-unresolved",
+        pushDiag(diags, "reaction-from-unresolved", {
           message: asEvent
             ? `${el.kind} "${el.name}" references "${src}", which is an event, not a read model — ` +
               `reactions watch read models; project the event into a view first ` +
@@ -228,9 +209,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           refs: asEvent ? [refOf(el.id), refOf(asEvent.id)] : [refOf(el.id)],
         });
       } else if (!views.some((v) => v.sliceIndex <= el.sliceIndex)) {
-        diags.push({
-          severity: "error",
-          code: "reaction-from-future-view",
+        pushDiag(diags, "reaction-from-future-view", {
           message:
             `time flows left to right: ${el.kind} "${el.name}" (slice ${el.sliceIndex + 1}) reads ` +
             `"${src}" before any instance of it exists; declare the view in or before that slice`,
@@ -244,9 +223,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   // A \`view X again\` instance needs an earlier declaration to continue.
   for (const el of model.elements) {
     if (el.kind === "view" && el.again && el.logicalId === el.id) {
-      diags.push({
-        severity: "error",
-        code: "view-again-without-earlier",
+      pushDiag(diags, "view-again-without-earlier", {
         message:
           `view "${el.name}" is marked \`again\` but has no earlier declaration; ` +
           `declare it plainly the first time it appears`,
@@ -270,9 +247,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         return a.toId === cmd.id && !!from && (from.kind === "ui" || AUTOMATION_KINDS.has(from.kind));
       });
       if (arrowed) continue;
-      diags.push({
-        severity: "warning",
-        code: "both-ends-of-a-flow/command-untriggered",
+      pushDiag(diags, "both-ends-of-a-flow/command-untriggered", {
         message:
           `command "${cmd.name}" has nothing that triggers it; add the screen it is issued ` +
           `from (a \`ui\` in this slice) or the reaction that issues it (in the previous slice)`,
@@ -309,9 +284,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     if (consumerInSlice) continue;
     for (const view of slice.elements.filter((e) => e.kind === "view")) {
       if (consumedViews.has(view.id)) continue;
-      diags.push({
-        severity: "warning",
-        code: "both-ends-of-a-flow/view-unconsumed",
+      pushDiag(diags, "both-ends-of-a-flow/view-unconsumed", {
         message:
           `read model "${view.name}" has no consumer; add the screen that displays it ` +
           `(a \`ui\` in this slice) or the reaction that watches it — or drop this instance`,
@@ -344,9 +317,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   for (const el of model.elements) {
     if (el.kind !== "event") continue;
     if (readEvents.has(normalizeName(el.name))) continue;
-    diags.push({
-      severity: "warning",
-      code: "both-ends-of-a-flow/event-unread",
+    pushDiag(diags, "both-ends-of-a-flow/event-unread", {
       message:
         `event "${el.name}" is not read by any read model; project it into a view ` +
         `(\`view X from "${el.name}"\`), or reconsider recording it`,
@@ -361,9 +332,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       const fromEl = model.byId.get(a.fromId);
       const toEl = model.byId.get(a.toId);
       if (fromEl && toEl && toEl.sliceIndex < fromEl.sliceIndex) {
-        diags.push({
-          severity: "error",
-          code: "arrow-backward",
+        pushDiag(diags, "arrow-backward", {
           message:
             `time flows left to right: arrow "${a.from}" -> "${a.to}" points backward ` +
             `(slice ${fromEl.sliceIndex + 1} -> ${toEl.sliceIndex + 1}); restructure so the target comes later`,
@@ -374,9 +343,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       // Inferred edges are legal by construction; a hand-written arrow is the one way an
       // illegal connection can enter a model, so check the kind pair against the patterns.
       if (fromEl && toEl && !isLegalFlow(fromEl.kind, toEl.kind)) {
-        diags.push({
-          severity: "error",
-          code: "connection-legality/illegal-pair",
+        pushDiag(diags, "connection-legality/illegal-pair", {
           message:
             `arrow "${a.from}" -> "${a.to}" connects ${withArticle(fromEl.kind)} directly to ` +
             `${withArticle(toEl.kind)}: ${flowGuidance(fromEl.kind, toEl.kind)}`,
@@ -386,17 +353,13 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       }
     }
     if (!a.fromId)
-      diags.push({
-        severity: "error",
-        code: "arrow-unresolved-source",
+      pushDiag(diags, "arrow-unresolved-source", {
         message: `arrow source "${a.from}" does not match any element`,
         line: a.line,
         ...(a.toId ? { refs: [refOf(a.toId)] } : {}),
       });
     if (!a.toId)
-      diags.push({
-        severity: "error",
-        code: "arrow-unresolved-target",
+      pushDiag(diags, "arrow-unresolved-target", {
         message: `arrow target "${a.to}" does not match any element`,
         line: a.line,
         ...(a.fromId ? { refs: [refOf(a.fromId)] } : {}),
@@ -407,9 +370,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   // device for a question that hasn't been resolved yet.
   for (const el of model.elements) {
     if (el.issue) {
-      diags.push({
-        severity: "warning",
-        code: "open-issue",
+      pushDiag(diags, "open-issue", {
         message: `open issue on "${el.name}": ${el.issue}`,
         line: el.line,
         refs: [refOf(el.id)],
@@ -429,9 +390,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     // timeline — deliberate, not an ambiguity. Only warn when a duplicate is NOT an instance.
     const nonInstances = els.filter((e, i) => i === 0 || !(e.kind === "view" && e.again));
     if (nonInstances.length > 1 && isReferenced(model, key)) {
-      diags.push({
-        severity: "warning",
-        code: "duplicate-name",
+      pushDiag(diags, "duplicate-name", {
         message:
           `name "${els[0].name}" is defined ${nonInstances.length} times; ` +
           `references resolve to the first occurrence`,
@@ -454,9 +413,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   }
   for (const decls of typesByNormalizedName.values()) {
     if (decls.length > 1) {
-      diags.push({
-        severity: "warning",
-        code: "duplicate-type-name",
+      pushDiag(diags, "duplicate-type-name", {
         message: `type "${decls[0].name}" is defined ${decls.length} times; references resolve to the first occurrence`,
         line: decls[0].line,
         refs: decls.map((t) => refs.refByTypeId.get(t.id)!),
@@ -479,9 +436,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       const t = model.typesByName.get(key);
       if (t) cycleRefs.push(refs.refByTypeId.get(t.id)!);
     }
-    diags.push({
-      severity: "error",
-      code: "type-cycle",
+    pushDiag(diags, "type-cycle", {
       message: `type "${cycle.path[0]}" has a cyclic reference: ${cycle.path.join(" -> ")}`,
       line: cycle.line,
       refs: cycleRefs,

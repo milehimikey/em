@@ -20,6 +20,9 @@
     "em": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "docs:generate": "tsx scripts/generate-skill-docs.ts",
+    "docs:check": "tsx scripts/generate-skill-docs.ts --check",
+    "check:skill-version": "tsx scripts/check-skill-version-stamp.ts",
     "prepublishOnly": "npm run build && npm run typecheck && npm test"
   },
   "engines": {

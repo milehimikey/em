@@ -1,0 +1,41 @@
+name: CI
+
+# MIL-92: this repo's first CI workflow. build-test covers gates 1 (skill doctest,
+# test/skillExamples.test.ts) and 2 (generated skill-doc drift, test/skillDocsGenerated.test.ts)
+# as ordinary `npm test` assertions — no extra steps needed for those. skill-version-stamp is
+# gate 3's release gate: it needs a PR base revision to diff against, so it only runs on
+# pull_request (a direct push to main has no PR base and must not fail the job that isn't
+# applicable to it).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+
+  skill-version-stamp:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check:skill-version -- --from "${{ github.event.pull_request.base.sha }}"

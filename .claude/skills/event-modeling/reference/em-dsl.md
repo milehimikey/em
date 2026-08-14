@@ -10,20 +10,58 @@ Keep `.em` files focused on **structure**; put deep design in markdown linked vi
 
 ## CLI
 
+<!-- GENERATED:cli:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 ```bash
-em init [file]                 # scaffold a starter model.em (default: model.em); -f to overwrite
-em render <file> -o out.svg    # render (extension picks format: svg, png, pdf)
-em render <file> --emit-dot    # print the Graphviz DOT instead of rendering
-em render <file> --keep-empty-lanes   # keep the API lane even when empty
-em render <file> --slice "<slice-name>" -o slices/<slug>.svg   # this slice's own diagram
-em watch  <file> -o out.svg    # re-render on every save (file-based)
-em watch  <file> -o out.svg --serve   # + localhost live viewer, instant SSE push-reload (--port N)
-em validate <file>             # check event-modeling rules; exit 0 if only warnings/clean
-em validate <file> --list-issues       # print only open `issue "..."` clauses (slice, element, line, text)
-em validate <file> --list-divergences  # print only `divergence "..."` clauses (slice, element, line, text)
-em validate <file> --list-public       # print only events marked `public` (slice, name, line)
-em validate <file> --fail-on-issues    # opt-in CI gate: exit non-zero while any issue remains open
+em --version                              # print the installed em version
+em init [file]                            # scaffold a starter .em model
+em init [file] -f, --force                # overwrite if the file exists
+em render <file>                          # transpile a model and render it (or emit DOT)
+em render <file> -o, --out <path>         # output path (extension picks the format)
+em render <file> -T, --format <fmt>       # output format (svg, png, pdf, ...)
+em render <file> --slice <name>           # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
+em render <file> --emit-dot               # print the generated DOT instead of rendering
+em render <file> --keep-empty-lanes       # keep the API lane even when empty
+em export <file>                          # export a versioned JSON snapshot of the normalized model
+em export <file> -o, --out <path>         # write to a file instead of stdout
+em diff <old> [new]                       # compare two models structurally (two files, or one file across git revisions)
+em diff <old> [new] --from <rev>          # diff <old> against this git revision instead of a second file
+em diff <old> [new] --to <rev>            # diff against this git revision instead of the current file (requires --from)
+em diff <old> [new] --exit-code           # exit 1 if the models differ, 0 if identical (git-diff convention)
+em diff <old> [new] --json                # print a JSON document instead of the text report (see docs/cli.md)
+em glossary <files>                       # cross-model glossary of terms, with consistency checks across models (see docs/cli.md)
+em glossary <files> --json                # print the full glossary document instead of the text report
+em glossary <files> -o, --out <path>      # write the JSON document to a file instead of stdout (requires --json)
+em glossary <files> --list-conflicts      # print only the conflict lines, no summary
+em glossary <files> --fail-on-conflicts   # exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)
+em catalog <files>                        # generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)
+em catalog <files> -o, --out <dir>        # output directory
+em catalog <files> -T, --format <fmt>     # diagram format embedded in the catalog (svg or png)
+em catalog <files> --title <text>         # catalog site title
+em catalog <files> --keep-empty-lanes     # keep the API lane even when empty
+em changelog <file>                       # render a model's git history as a business-readable ledger (see docs/cli.md)
+em changelog <file> --from <rev>          # start the walk at this revision (inclusive)
+em changelog <file> --to <rev>            # end the walk at this revision (inclusive; default HEAD)
+em changelog <file> -o, --out <path>      # write to a file instead of stdout
+em watch <file>                           # re-render on every save
+em watch <file> -o, --out <path>          # output path (extension picks the format)
+em watch <file> -T, --format <fmt>        # output format (svg, png, pdf, ...)
+em watch <file> --keep-empty-lanes        # keep the API lane even when empty
+em watch <file> --serve                   # serve a live viewer with instant push-reload (no polling)
+em watch <file> --port <n>                # port for --serve (default 5173)
+em validate <file>                        # check a model against event-modeling rules
+em validate <file> --list-issues          # print only open `issue` diagnostics (slice, element, line, text)
+em validate <file> --list-divergences     # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
+em validate <file> --list-public          # print only events marked `public` (slice, name, line) — an integration-surface audit, never fails the build
+em validate <file> --fail-on-issues       # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
+em validate <file> --slice-ready <key>    # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
+em ledger <file>                          # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
+em ledger <file> --from <rev>             # baseline revision
+em ledger <file> --to <rev>               # compare revision (default: current working tree)
+em ledger <file> --json                   # print a JSON document instead of the text report (see docs/cli.md)
+em skill install                          # copy the event-modeling skill into .claude/skills/event-modeling/
+em skill install -f, --force              # overwrite an existing installation
 ```
+<!-- GENERATED:cli:end -->
 
 Install if missing: `npm i -g @milehimikey/em`. PNG works with no system deps; PDF needs
 `rsvg-convert`.
@@ -368,6 +406,52 @@ slice "Read Quote — created" {
 `divergence "text"` is deliberately NOT in this list — it raises no warning at all, since it
 records a deviation already reasoned through and accepted, not something to fix. Use
 `em validate --list-divergences` to audit them on demand.
+
+### Full rule code reference
+
+Every rule above (and every fs-aware check `em validate` layers on top — lineage, frontmatter
+coherence) has a stable `code`, generated below from the same registry `em` itself validates
+against (`src/model/rules.ts`) — a new rule shows up here the moment it's registered, whether or
+not the prose above has caught up yet. `--slice-ready <key>`-only codes are excluded; see
+[cli.md](../../../../docs/cli.md#em-validate-file).
+
+<!-- GENERATED:validate-rules:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
+| Code | Severity | Title | Fix |
+|---|---|---|---|
+| `arrow-backward` | error | Backward arrow | Restructure so the target comes later. |
+| `arrow-unresolved-source` | error | Arrow source unresolved | Fix the arrow's source name. |
+| `arrow-unresolved-target` | error | Arrow target unresolved | Fix the arrow's target name. |
+| `automation-shares-slice-with-command` | warning | Automation shares slice with its command | Put the triggered command in the next slice. |
+| `binding-missing-file` | warning | Doc binding points at a missing file | Create the slice doc, or fix the `note` path. |
+| `both-ends-of-a-flow/command-no-event` | warning | Command without event | Add the event this command records. |
+| `both-ends-of-a-flow/command-untriggered` | warning | Command with no trigger | Add a `ui` in this slice, or a reaction in the previous slice. |
+| `both-ends-of-a-flow/event-unread` | warning | Event nobody reads | Project it into a view, or reconsider recording it. |
+| `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
+| `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
+| `duplicate-element-ref` | warning | Duplicate element ref | Rename the element so its export ref is unique. |
+| `duplicate-name` | warning | Duplicate name | Rename one of the duplicates. |
+| `duplicate-slice-name` | warning | Duplicate slice name | Rename the slice so its export key is unique. |
+| `duplicate-type-name` | warning | Duplicate type name | Rename one of the duplicate `type` declarations. |
+| `duplicate-type-ref` | warning | Duplicate type ref | Rename the type so its export ref is unique. |
+| `fields-completeness/event-field-no-source` | warning | Event field not from a command | Add the field to a command in the slice, or remove it from the event. |
+| `fields-completeness/view-field-no-source` | warning | View field with no source | Add the field to a source event, or remove it from the view. |
+| `frontmatter-coherence-implemented-without-link` | warning | Implemented without a link | Add `implementedIn` once the slice ships. |
+| `frontmatter-invalid` | warning | Invalid or missing frontmatter | Add the required frontmatter keys, or add a frontmatter block. |
+| `grid-collision` | error | Band collision | Split the colliding elements into separate slices. |
+| `lineage-forward-dangling` | error | Dangling forward lineage ref | Fix the key, or remove the stale successor. |
+| `lineage-ref-cycle` | error | Lineage cycle | Break the cycle — a slice can't be its own ancestor. |
+| `lineage-ref-malformed` | error | Malformed lineage ref | Fix the value to `<slice-key>@v<N>`, or remove it. |
+| `lineage-version-impossible` | error | Impossible lineage version | Fix the referenced version, or ratify the target slice first. |
+| `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
+| `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
+| `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
+| `type-cycle` | error | Cyclic type reference | Break the cycle, or route the self/mutual reference through an array. |
+| `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction, no command | Move the `ui` to the read-model slice, or to the slice with the command this triggers. |
+| `view-again-without-earlier` | error | `again` without an earlier declaration | Declare the view plainly the first time it appears. |
+| `view-from-future-event` | error | Backward timeline (view reads a future event) | Move the source to a later `view X again` instance. |
+| `view-from-unresolved` | error | Unknown event source | Fix the `from` reference to name an existing event. |
+| `view-no-source` | warning | Read model without source | Add `from "Event"`, or place the view in a slice with an event. |
+<!-- GENERATED:validate-rules:end -->
 
 **Design rules that keep models valid:**
 - One element per band per slice (multiple personas/contexts are fine — they're different rows).

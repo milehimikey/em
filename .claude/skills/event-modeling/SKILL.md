@@ -1,5 +1,6 @@
 ---
 name: event-modeling
+em-version: 1.7.0
 description: >-
   Guide a user and their team through building rigorous Event Models with the `em` CLI, using
   the 7 steps of Event Modeling and the 4 patterns (State Change, State View, Automation,
@@ -363,6 +364,7 @@ two slices and route it through a command.
 
 ## em command reference (quick)
 
+<!-- GENERATED:cli-quick:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 ```bash
 em --version
 em init <name>.em                          # optional starter scaffold
@@ -374,6 +376,7 @@ em watch <name>.em -o <name>.svg           # re-render on save (run in backgroun
 em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-reload (--port N)
                                             #   click "Review mode" for a slice-by-slice storyboard walkthrough
 ```
+<!-- GENERATED:cli-quick:end -->
 
 Always finish a working session by: re-rendering, running `em validate`, and updating
 `.event-modeling.md` with the current phase/step, decisions, open questions, and a Usage log
