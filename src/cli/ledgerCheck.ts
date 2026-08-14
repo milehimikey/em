@@ -115,13 +115,19 @@ export function checkLedger(anchorFile: string, from: string, to: string | null,
       skipped.push({ sliceKey, reason: "deleted" });
       continue;
     }
-    if (!hasUsableFrontmatter(oldDoc) || !hasUsableFrontmatter(newDoc)) {
+    // hasUsableFrontmatter() only checks that the `version` key is *present*
+    // (missingRequiredFields), not that its value parsed to a valid positive integer —
+    // `version: abc`/`version: 0`/`version: 1.5` all pass that gate with SliceDoc.version still
+    // null (see sliceDoc.ts's parseVersion()). lineageValidate.ts hits the same gap and handles
+    // it the same way: an explicit null check, routed to the same skip a missing key gets,
+    // rather than a non-null assertion that would corrupt a finding's message/classification.
+    if (!hasUsableFrontmatter(oldDoc) || !hasUsableFrontmatter(newDoc) || oldDoc.version === null || newDoc.version === null) {
       skipped.push({ sliceKey, reason: "frontmatter-invalid" });
       continue;
     }
 
-    const oldVersion = oldDoc.version!;
-    const newVersion = newDoc.version!;
+    const oldVersion = oldDoc.version;
+    const newVersion = newDoc.version;
     const bodyChanged = oldDoc.body.trim() !== newDoc.body.trim();
     const docsLineageChanged = lineageChanged(oldDoc, newDoc);
     const contentChanged = bodyChanged || docsLineageChanged;

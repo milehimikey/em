@@ -185,4 +185,22 @@ describe("checkLedger: skips", () => {
     expect(result.findings).toEqual([]);
     expect(result.skipped).toEqual([{ sliceKey: "checkout", reason: "frontmatter-invalid" }]);
   });
+
+  it("skips a slice with a present-but-unparseable version (e.g. non-numeric) as frontmatter-invalid", () => {
+    // The `version:` *key* is present — hasUsableFrontmatter() alone would pass this — but its
+    // value isn't a valid positive integer, so SliceDoc.version parses to null (sliceDoc.ts's
+    // parseVersion()). Content also genuinely changed here: without the explicit null check,
+    // this used to fall through to a non-null assertion and mis-report as
+    // ledger-version-regression with a garbled "v1 -> vnull" message instead of being skipped.
+    const oldDoc = doc(1, "implemented", "PR#1", "Original body.");
+    const newDocWithBadVersion = "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: abc\nimplementedIn: PR#1\n---\nUpdated body.\n";
+    const result = checkLedger(
+      "model.em",
+      "HEAD~1",
+      "HEAD",
+      fakeGit(bothRevisionsResponses("checkout", oldDoc, newDocWithBadVersion)),
+    );
+    expect(result.findings).toEqual([]);
+    expect(result.skipped).toEqual([{ sliceKey: "checkout", reason: "frontmatter-invalid" }]);
+  });
 });
