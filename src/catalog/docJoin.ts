@@ -17,6 +17,7 @@
 
 import { Slice } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
+import { makeDiag } from "../model/rules.js";
 import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { hasUsableFrontmatter, SliceRef } from "./sliceDoc.js";
@@ -86,13 +87,11 @@ export function resolveSliceDocJoin(
     return {
       doc: { found: false, path, reason: "binding-missing-file", ...EMPTY_CONTENT },
       diagnostics: [
-        {
-          severity: "warning",
-          code: "binding-missing-file",
+        makeDiag("binding-missing-file", {
           message: `slice "${slice.name}" notes "${path}" but no such file exists`,
           line: boundEls[0].line,
           refs: [sliceKey, ...boundEls.map((el) => elementRefOf(el.id))],
-        },
+        }),
       ],
     };
   }
@@ -101,15 +100,13 @@ export function resolveSliceDocJoin(
     return {
       doc: { found: true, path, reason: "frontmatter-invalid", ...EMPTY_CONTENT },
       diagnostics: [
-        {
-          severity: "warning",
-          code: "frontmatter-invalid",
+        makeDiag("frontmatter-invalid", {
           message: parsed.frontmatterPresent
             ? `slice doc "${path}" is missing required frontmatter keys: ${parsed.missingRequiredFields.join(", ")}`
             : `slice doc "${path}" has no frontmatter block`,
           line: slice.line,
           refs: [sliceKey],
-        },
+        }),
       ],
     };
   }

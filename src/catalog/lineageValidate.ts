@@ -28,6 +28,7 @@
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
+import { pushDiag } from "../model/rules.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { SliceDoc, SliceRef } from "./sliceDoc.js";
 
@@ -77,9 +78,7 @@ export function validateLineage(model: NormalizedModel, refs: RefsResult, baseDi
   const resolvableEdges: LineageEdge[] = [];
   for (const edge of edges) {
     if (edge.ref.sliceKey === null) {
-      diags.push({
-        severity: "error",
-        code: "lineage-ref-malformed",
+      pushDiag(diags, "lineage-ref-malformed", {
         message: `slice "${edge.ownerKey}"'s ${edge.field} value "${edge.ref.raw}" doesn't match the <slice-key>@v<N> grammar`,
         line: edge.ownerLine,
         refs: [edge.ownerKey],
@@ -87,9 +86,7 @@ export function validateLineage(model: NormalizedModel, refs: RefsResult, baseDi
       continue;
     }
     if (edge.ref.sliceKey === edge.ownerKey) {
-      diags.push({
-        severity: "error",
-        code: "lineage-ref-cycle",
+      pushDiag(diags, "lineage-ref-cycle", {
         message: `slice "${edge.ownerKey}"'s ${edge.field} names itself (${edge.ref.raw})`,
         line: edge.ownerLine,
         refs: [edge.ownerKey],
@@ -97,9 +94,7 @@ export function validateLineage(model: NormalizedModel, refs: RefsResult, baseDi
       continue;
     }
     if (edge.field === "superseded-by" && !inModel.has(edge.ref.sliceKey)) {
-      diags.push({
-        severity: "error",
-        code: "lineage-forward-dangling",
+      pushDiag(diags, "lineage-forward-dangling", {
         message: `slice "${edge.ownerKey}"'s superseded-by names "${edge.ref.sliceKey}", which isn't a slice in the current model`,
         line: edge.ownerLine,
         refs: [edge.ownerKey],
@@ -117,9 +112,7 @@ export function validateLineage(model: NormalizedModel, refs: RefsResult, baseDi
     const targetDoc = docFor(edge.ref.sliceKey!);
     if (!targetDoc || targetDoc.version === null) continue;
     if (edge.ref.version! > targetDoc.version) {
-      diags.push({
-        severity: "error",
-        code: "lineage-version-impossible",
+      pushDiag(diags, "lineage-version-impossible", {
         message: `slice "${edge.ownerKey}"'s ${edge.field} names "${edge.ref.sliceKey}"@v${edge.ref.version}, but "${edge.ref.sliceKey}" is only at v${targetDoc.version}`,
         line: edge.ownerLine,
         refs: [edge.ownerKey, edge.ref.sliceKey!],
@@ -157,9 +150,7 @@ export function validateLineage(model: NormalizedModel, refs: RefsResult, baseDi
         if (!reportedCycles.has(dedupeKey)) {
           reportedCycles.add(dedupeKey);
           const cycleRefs = [...new Set(cyclePath)];
-          diags.push({
-            severity: "error",
-            code: "lineage-ref-cycle",
+          pushDiag(diags, "lineage-ref-cycle", {
             message: `slice "${dep}" is part of a lineage cycle: ${cyclePath.join(" -> ")}`,
             line: lineOf.get(dep),
             refs: cycleRefs,

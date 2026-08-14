@@ -28,6 +28,7 @@
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
+import { makeDiag, pushDiag } from "../model/rules.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 
@@ -47,12 +48,10 @@ export function validateSliceReady(
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
     return [
-      {
-        severity: "error",
-        code: "slice-ready-unknown-slice",
+      makeDiag("slice-ready-unknown-slice", {
         message: `no slice with export key "${sliceKey}" in this model`,
         refs: [sliceKey],
-      },
+      }),
     ];
   }
   const slice = model.slices[sliceIndex];
@@ -65,13 +64,11 @@ export function validateSliceReady(
 
   if (doc.reason === "no-doc-bound") {
     return [
-      {
-        severity: "warning",
-        code: "slice-ready-no-doc-bound",
+      makeDiag("slice-ready-no-doc-bound", {
         message: `slice "${sliceKey}" has no doc bound via \`note "slices/${sliceKey}.md"\` — bind a slice doc before it can be ready-to-implement`,
         line: slice.line,
         refs: [sliceKey],
-      },
+      }),
     ];
   }
   if (doc.reason === "binding-missing-file" || doc.reason === "frontmatter-invalid") {
@@ -83,9 +80,7 @@ export function validateSliceReady(
   // doc.reason === null: found, usable frontmatter.
   const diags: Diagnostic[] = [];
   if (doc.status !== "ready-to-implement") {
-    diags.push({
-      severity: "warning",
-      code: "slice-ready-status-not-ready",
+    pushDiag(diags, "slice-ready-status-not-ready", {
       message: `slice "${sliceKey}" is status: ${doc.status ?? "(none)"}, not ready-to-implement`,
       line: slice.line,
       refs: [sliceKey],
@@ -97,9 +92,7 @@ export function validateSliceReady(
   // full SliceDoc. Non-null: doc.reason === null already implies the file exists and parses.
   const parsed = readSliceDoc(baseDir, sliceKey)!;
   if (parsed.openQuestionsUnchecked > 0) {
-    diags.push({
-      severity: "warning",
-      code: "slice-ready-open-questions-unchecked",
+    pushDiag(diags, "slice-ready-open-questions-unchecked", {
       message: `slice "${sliceKey}" has ${parsed.openQuestionsUnchecked} of ${parsed.openQuestionsTotal} Open Question(s) unchecked`,
       line: slice.line,
       refs: [sliceKey],
