@@ -332,6 +332,92 @@ describe("em validate frontmatter coherence checks (CLI, MIL-85)", () => {
   });
 });
 
+describe("em validate --slice-ready (CLI, MIL-87)", () => {
+  let readyDir: string;
+
+  beforeAll(() => {
+    readyDir = mkdtempSync(join(tmpdir(), "em-cli-slice-ready-"));
+    mkdirSync(join(readyDir, "slices"), { recursive: true });
+    writeFileSync(
+      join(readyDir, "slices", "ready-slice.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n## Open Questions\n- [x] resolved\n",
+    );
+    // Genuinely complete (ui -> command -> event -> view -> ui), so this slice's own
+    // both-ends-of-a-flow diagnostics stay silent — the only way to isolate "ready" to
+    // meaning what these tests need it to mean.
+    writeFileSync(
+      join(readyDir, "ready.em"),
+      `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n`,
+    );
+    writeFileSync(
+      join(readyDir, "slices", "draft-slice.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n## Open Questions\n- [ ] still unresolved\n",
+    );
+    writeFileSync(
+      join(readyDir, "draft.em"),
+      `slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n`,
+    );
+    writeFileSync(join(readyDir, "unbound.em"), `slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n`);
+    // MIL-87 review fix: an otherwise-fully-ready slice, plus a second slice with a genuine
+    // model error unrelated to it — regression coverage for the bug where `--slice-ready` used
+    // to gate on errors anywhere in the whole model, silently failing (zero diagnostics printed)
+    // on breakage that had nothing to do with the named slice.
+    writeFileSync(
+      join(readyDir, "ready-with-unrelated-error.em"),
+      `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\nslice "Unrelated Broken" {\n  view Broken View from "No Such Event"\n}\n`,
+    );
+    // The mirror case: an issue INSIDE the named slice itself (element-level, not slice-level)
+    // must still block readiness — confirms the fix scopes to "this slice" (bare key or
+    // `<key>/...` element refs), not just the handful of slice-level codes.
+    writeFileSync(
+      join(readyDir, "ready-with-own-issue.em"),
+      `slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n`,
+    );
+  });
+  afterAll(() => rmSync(readyDir, { recursive: true, force: true }));
+
+  it("exits 0 and reports ready-to-implement for a bound, ready, fully-checked doc", () => {
+    const r = em(["validate", "ready.em", "--slice-ready", "ready-slice"], readyDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('slice "ready-slice" is ready-to-implement');
+  });
+
+  it("exits 1 and reports not-ready for status: draft with unchecked Open Questions", () => {
+    const r = em(["validate", "draft.em", "--slice-ready", "draft-slice"], readyDir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('slice "draft-slice" is NOT ready-to-implement');
+    expect(r.stderr).toContain('slice "draft-slice" is status: draft, not ready-to-implement');
+    expect(r.stderr).toContain('slice "draft-slice" has 1 of 1 Open Question(s) unchecked');
+  });
+
+  it("exits 1 with slice-ready-no-doc-bound when no note binds a doc", () => {
+    const r = em(["validate", "unbound.em", "--slice-ready", "unbound"], readyDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('slice "unbound" has no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("exits 1 with slice-ready-unknown-slice for a key that names no slice", () => {
+    const r = em(["validate", "ready.em", "--slice-ready", "no-such-key"], readyDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
+  });
+
+  it("stays ready (exit 0) despite a genuine error in an unrelated slice (regression)", () => {
+    const r = em(["validate", "ready-with-unrelated-error.em", "--slice-ready", "ready-slice"], readyDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('slice "ready-slice" is ready-to-implement');
+    // The unrelated slice's own error is real and stays unreported by this narrow flag — a
+    // plain `em validate` (no --slice-ready) is how you'd see it.
+  });
+
+  it("still blocks (exit 1) on a genuine issue inside the named slice itself, not just slice-level codes", () => {
+    const r = em(["validate", "ready-with-own-issue.em", "--slice-ready", "ready-slice"], readyDir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('slice "ready-slice" is NOT ready-to-implement');
+    expect(r.stderr).toContain("nothing that triggers it");
+  });
+});
+
 describe("em diff --json (CLI)", () => {
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);

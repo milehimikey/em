@@ -22,6 +22,7 @@ import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
+import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -413,10 +414,21 @@ program
     "--fail-on-issues",
     "exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)",
   )
+  .option(
+    "--slice-ready <key>",
+    "readiness gate for one slice (export key): status ready-to-implement, doc resolvable via " +
+      "note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)",
+  )
   .action(
     (
       file: string,
-      opts: { listIssues?: boolean; listDivergences?: boolean; listPublic?: boolean; failOnIssues?: boolean },
+      opts: {
+        listIssues?: boolean;
+        listDivergences?: boolean;
+        listPublic?: boolean;
+        failOnIssues?: boolean;
+        sliceReady?: string;
+      },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
       // Lineage-ref resolution (MIL-84) and frontmatter-coherence (MIL-85) are validate's
@@ -427,6 +439,30 @@ program
         ...validateLineage(model, refs, dirname(file)),
         ...validateFrontmatterCoherence(model, refs, dirname(file)),
       ];
+      if (opts.sliceReady) {
+        // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
+        // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
+        // frontmatter-coherence findings for free by filtering allDiagnostics' own refs, rather
+        // than re-deriving that classification here.
+        //
+        // "Concerns this slice" means a ref that either IS the bare slice key (lineage,
+        // frontmatter-coherence, and this module's own diagnostics all tag that way) OR starts
+        // with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
+        // e.g. an unknown-event error on a view inside this slice). An earlier version gated on
+        // "any error anywhere in the model," which silently failed the check — with zero
+        // diagnostics printed — on an unrelated slice's breakage; scoping to this slice alone
+        // matches the ticket's own scenario (check one slice while the rest of a large model is
+        // still WIP) and this module's own "single-slice" framing.
+        const readyDiagnostics = validateSliceReady(model, refs, dirname(file), opts.sliceReady);
+        const combined = [...allDiagnostics, ...readyDiagnostics];
+        const key = opts.sliceReady;
+        const scoped = combined.filter((d) => d.refs?.some((r) => r === key || r.startsWith(`${key}/`)));
+        printDiagnostics(scoped);
+        const ready = scoped.length === 0;
+        console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+        if (!ready) process.exit(1);
+        return;
+      }
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
         if (opts.listIssues) printIssues(model);
         if (opts.listDivergences) printDivergences(model);
