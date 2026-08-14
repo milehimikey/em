@@ -70,3 +70,19 @@ describe("no diagnostic: in-sync", () => {
     expect(diags).toEqual([]);
   });
 });
+
+describe("no diagnostic: legacy body-label dialect doc (no frontmatter)", () => {
+  it("stays silent for a legacy status: implemented doc — implementedIn is frontmatter-only, so absence isn't checkable here", () => {
+    // MIL-86's accepted-input legacy dialect: `- **Status:** ...` with no `---` frontmatter
+    // fence at all. `implementedIn` has no legacy form, so it always reads null on such a doc —
+    // flagging that as incoherence would be a false positive against every doc that simply
+    // predates the canonical dialect, not one that's actually incoherent. em export's docJoin.ts
+    // treats the same doc as frontmatter-invalid (driftSignal: null); this check matches that.
+    writeFileSync(
+      join(dir, "slices", "legacy.md"),
+      "# Slice: Legacy\n\n- **Status:** implemented\n\nbody\n",
+    );
+    const diags = coherenceOf(`slice "Legacy" {\n  command Do Thing\n}`);
+    expect(diags).toEqual([]);
+  });
+});

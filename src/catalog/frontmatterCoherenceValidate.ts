@@ -11,6 +11,14 @@
 // Same fs-aware shape as catalog/lineageValidate.ts (MIL-84): a sibling module to
 // model/validate.ts, not folded into it, because resolving a slice's doc needs `baseDir`/fs
 // access that the rest of validate deliberately never touches.
+//
+// Requires a well-formed frontmatter fence (`frontmatterPresent`), same gate `em export`'s
+// docJoin.ts uses for `frontmatter-invalid`. `implementedIn` is a frontmatter-only key (MIL-90/
+// 91) — a legacy body-label-dialect doc (MIL-86's accepted-input form: `- **Status:** ...`, no
+// frontmatter block) can never carry it, so treating its absence there as incoherence would be
+// a false positive against a doc that simply predates the canonical dialect, not one that's
+// actually incoherent. Without frontmatter this check has nothing reliable to read; stay silent
+// rather than guess, matching export's classification of the same doc.
 
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -28,7 +36,7 @@ export function validateFrontmatterCoherence(model: NormalizedModel, refs: RefsR
   model.slices.forEach((slice, i) => {
     const sliceKey = refs.sliceKeys[i];
     const doc = readSliceDoc(baseDir, sliceKey);
-    if (!doc) return;
+    if (!doc || !doc.frontmatterPresent) return;
 
     const drift = classifyImplementationDrift(doc);
     if (drift !== "implemented-without-link") return;
