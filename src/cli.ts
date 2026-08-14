@@ -23,6 +23,8 @@ import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
+import { checkLedger } from "./cli/ledgerCheck.js";
+import { buildLedgerJson } from "./emit/ledgerJson.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -478,6 +480,40 @@ program
       if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
     },
   );
+
+program
+  .command("ledger")
+  .description(
+    "check slice docs' version: field agrees with their content across two git revisions " +
+      "(opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)",
+  )
+  .argument("<file>", "anchor .em file — locates slices/ relative to it; never parsed")
+  .option("--from <rev>", "baseline revision")
+  .option("--to <rev>", "compare revision (default: current working tree)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { from?: string; to?: string; json?: boolean }) => {
+    if (!opts.from) {
+      console.error("em ledger: --from <rev> is required");
+      process.exit(1);
+    }
+    const to = opts.to ?? null;
+    const result = checkLedger(file, opts.from, to);
+
+    if (opts.json) {
+      process.stdout.write(buildLedgerJson(result, opts.from, to) + "\n");
+    } else {
+      for (const f of result.findings) console.log(f.message);
+      if (result.findings.length === 0) {
+        console.log(`ok — ledger agrees (${result.checkedCount} slice doc(s) checked)`);
+      } else {
+        console.log(`${result.findings.length} ledger mismatch(es)`);
+      }
+    }
+
+    // Set the code rather than process.exit(): same rationale as em diff/em glossary — stdout
+    // to a pipe (a --json document) shouldn't risk truncation.
+    if (result.findings.length > 0) process.exitCode = 1;
+  });
 
 const skill = program
   .command("skill")

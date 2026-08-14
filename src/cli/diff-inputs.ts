@@ -5,7 +5,7 @@
 // process.exit/console wiring; see test/diff-inputs.test.ts).
 
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
 /** Resolved `em diff` invocation, or a user-facing `error` for an invalid form. */
@@ -121,4 +121,27 @@ export function resolveDocAtRevision(anchorFile: string, sliceKey: string, rev: 
   const targetAbs = resolve(dirname(resolve(anchorFile)), "slices", `${sliceKey}.md`);
   const result = showAtRevision(runGit, anchorFile, targetAbs, rev);
   return result.ok ? parseSliceDoc(result.content) : null;
+}
+
+/**
+ * Slice doc keys (filename stems under `slices/`, relative to `anchorFile`'s directory — same
+ * anchor convention as `resolveDocAtRevision`) present at git revision `rev`. Used by `em ledger`
+ * (MIL-89) to discover the candidate set of docs to compare across two revisions, reusing the
+ * same repo-root resolution `showAtRevision` does rather than a second, divergent way of finding
+ * "what slice docs exist here." Returns `[]` (not an error) when the repo can't be resolved or
+ * `slices/` didn't exist at `rev` — both routine (a model with no slice docs yet), matching
+ * `resolveDocAtRevision`'s "missing is routine" stance.
+ */
+export function listSliceKeysAtRevision(anchorFile: string, rev: string, runGit: GitRunner = realGit): string[] {
+  const toplevel = runGit(["-C", dirname(resolve(anchorFile)), "rev-parse", "--show-toplevel"]);
+  if (toplevel.status !== 0) return [];
+  const repoRoot = toplevel.stdout.trim();
+  const slicesDirAbs = resolve(dirname(resolve(anchorFile)), "slices");
+  const lsTree = runGit(["-C", repoRoot, "ls-tree", "-r", "--name-only", rev, "--", slicesDirAbs]);
+  if (lsTree.status !== 0) return [];
+  return lsTree.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.endsWith(".md"))
+    .map((line) => basename(line, ".md"));
 }

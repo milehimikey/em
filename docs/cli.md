@@ -8,6 +8,7 @@
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
+| `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
@@ -424,6 +425,80 @@ form — not tracked at that revision) simply leaves these fields `null`/unset; 
 fails over an unresolvable doc, same report-not-gate philosophy as `em export`'s doc join.
 **These refs are reported, never cross-checked** — whether `checkout@v3` actually exists or
 the version is plausible is `em validate`'s job (see [validation.md#lineage](validation.md#lineage)), not `em diff`'s.
+
+## `em ledger <file>`
+
+Checks that a slice doc's `version:` frontmatter field and its content — body text plus the
+three lineage fields (`split-from`/`merged-from`/`superseded-by`) — always change together
+between two git revisions (MIL-89). `version:` is a pure "cache of git truth" (see
+[slice-doc-schema.md](slice-doc-schema.md)): a version bump with no real content change is a
+no-op ledger entry, a content change with no version bump is a stale ratification signal, and
+a version going backwards is almost always a typo. **Opt-in and CI-recipe-tier** — deliberately
+never folded into `em validate`, which stays a fast function of the current tree with no git
+history access; see [ci.md](ci.md#em-ledger-opt-in) for the recipe.
+
+`<file>` is an anchor `.em` file, used only to locate `slices/` relative to it — same
+convention as `em diff --from`'s doc-lineage resolution. Unlike every other command, `<file>`
+here is **never parsed or compiled**.
+
+| Flag | Effect |
+|---|---|
+| `--from <rev>` | Baseline revision (required) |
+| `--to <rev>` | Compare revision; omitted defaults to the current working tree (same convention as `em diff --to`) |
+| `--json` | Print a JSON document instead of the text report |
+
+```bash
+em ledger model.em --from HEAD~5                # 5 commits ago vs. the working tree
+em ledger model.em --from v1.0 --to v1.1         # two tags
+em ledger model.em --from HEAD --json            # CI-friendly machine-readable form
+```
+
+Every finding is a defect once you've opted into running this command — `em ledger` exits 1 on
+any mismatch, no separate `--exit-code`/`--fail-on-*` opt-in needed (unlike `em diff`/
+`em glossary`, where "changed" or "conflicts" are neutral facts you may or may not want to
+gate on).
+
+**What counts as a content change, precisely.** Body text (`.trim()`-only comparison — leading/
+trailing whitespace is ignored, everything else is exact) and the three lineage refs. `status`
+and `implementedIn` are **deliberately excluded**: those change independently by design during
+re-ratification (see
+[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification))
+— including them would false-positive on every ordinary lifecycle transition. `pattern`/
+`swimlane`/`schemaVersion` are also excluded — decorative, not currently exposed on `SliceDoc`
+at all.
+
+A slice doc that can't be usefully compared is **skipped**, not treated as a finding:
+
+| Skip reason | Meaning |
+|---|---|
+| `no-prior-revision` | The doc doesn't exist (or isn't tracked) at `--from` — a new slice doc, routine |
+| `deleted` | The doc existed at `--from` but not at `--to`/the working tree — a retired slice, routine |
+| `frontmatter-invalid` | Either side's frontmatter isn't usable (`hasUsableFrontmatter()`) — same gate `em export`'s doc join and `em validate`'s frontmatter-coherence check both use |
+
+Example output:
+
+```
+$ em ledger model.em --from HEAD~3
+slice "checkout": doc content changed but version: didn't bump (still v3)
+1 ledger mismatch(es)
+$ echo $?
+1
+```
+
+or `ok — ledger agrees (N slice doc(s) checked)` when nothing disagrees.
+
+**`--json` shape** (`ledgerSchemaVersion: "1.0"`, versioned independently of the npm package and
+every other command's own schema):
+
+- `generator` — `{ name, version }` of the tool that produced the document.
+- `from` / `to` — the revisions compared; `to` is explicit `null` for the working-tree form.
+- `checkedCount` — total slice docs considered (the union of both revisions' `slices/*.md`),
+  including skipped ones.
+- `findings` — `{ sliceKey, code, message, oldVersion, newVersion, bodyChanged, lineageChanged }[]`.
+  `code` is one of `ledger-content-without-version-bump`, `ledger-version-without-content-change`,
+  `ledger-version-regression`.
+- `skipped` — `{ sliceKey, reason }[]`, `reason` one of the three above.
+- `ok` — `true` when `findings` is empty.
 
 ## `em glossary <files...>`
 
