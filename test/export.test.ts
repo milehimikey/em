@@ -29,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.4");
+    expect(doc.schemaVersion).toBe("1.5");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -75,6 +75,7 @@ slice "Submit Order" {
       splitFrom: null,
       mergedFrom: [],
       supersededBy: [],
+      driftSignal: null,
     });
     expect(slice.elements[0]).toMatchObject({
       ref: "submit-order/command.submit-order",
@@ -401,8 +402,8 @@ type Order { billing: Address }
     ]);
   });
 
-  it("bumps schemaVersion to 1.4, additive over 1.3", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.4");
+  it("bumps schemaVersion to 1.5, additive over 1.4", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.5");
   });
 });
 
@@ -464,6 +465,51 @@ describe("slice-doc join (MIL-91)", () => {
       join(dir, "slices", "no-frontmatter.md"),
       "# Slice: No Frontmatter\n\nJust prose, no frontmatter block.\n",
     );
+    // MIL-85 driftSignal fixtures — a re-ratified slice (unpropagated-delta), a shipped slice
+    // missing its link (implemented-without-link), and a not-yet-shipped slice (never-implemented).
+    writeFileSync(
+      join(dir, "slices", "re-ratified.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: state-change",
+        "swimlane: Customer -> Order",
+        "status: ready-to-implement",
+        "version: 2",
+        "implementedIn: https://github.com/example/pr/41",
+        "---",
+        "# Slice: Re Ratified",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "slices", "no-link.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: state-change",
+        "swimlane: Customer -> Order",
+        "status: implemented",
+        "version: 1",
+        "---",
+        "# Slice: No Link",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "slices", "not-shipped.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: state-change",
+        "swimlane: Customer -> Order",
+        "status: draft",
+        "version: 1",
+        "---",
+        "# Slice: Not Shipped",
+        "",
+      ].join("\n"),
+    );
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -518,8 +564,68 @@ describe("slice-doc join (MIL-91)", () => {
       splitFrom: null,
       mergedFrom: [],
       supersededBy: [],
+      driftSignal: "in-sync",
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+});
+
+describe("driftSignal (MIL-85, status/implementedIn coherence)", () => {
+  let dir: string;
+  let modelFile: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-export-drift-signal-"));
+    modelFile = join(dir, "model.em");
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const writeDoc = (sliceKey: string, status: string, implementedIn: string | null) =>
+      writeFileSync(
+        join(dir, "slices", `${sliceKey}.md`),
+        [
+          "---",
+          "schemaVersion: 1",
+          "pattern: state-change",
+          "swimlane: Customer -> Order",
+          `status: ${status}`,
+          "version: 2",
+          ...(implementedIn ? [`implementedIn: ${implementedIn}`] : []),
+          "---",
+          "body",
+          "",
+        ].join("\n"),
+      );
+    writeDoc("in-sync", "implemented", "https://github.com/example/pr/1");
+    writeDoc("no-link", "implemented", null);
+    writeDoc("re-ratified", "ready-to-implement", "https://github.com/example/pr/1");
+    writeDoc("not-shipped", "draft", null);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  // Slice titles are chosen so classifySlicePattern's kebab key matches each fixture's filename
+  // (e.g. "In Sync" -> "in-sync") — the doc join resolves `slices/<sliceKey>.md` off the slice's
+  // own key, and requires a `note` binding pointing at that same conventional path.
+  const driftSignalOf = (title: string, sliceKey: string) => {
+    const { model, refs, diagnostics } = compile(
+      `slice "${title}" {\n  command Do Thing note "slices/${sliceKey}.md"\n}`,
+    );
+    const doc = JSON.parse(buildExport(model, refs, diagnostics, "src", modelFile).text);
+    return doc.model.slices[0].doc.driftSignal;
+  };
+
+  it("in-sync: implemented with a link", () => {
+    expect(driftSignalOf("In Sync", "in-sync")).toBe("in-sync");
+  });
+
+  it("implemented-without-link: implemented with no link — the bonus validate warning's trigger", () => {
+    expect(driftSignalOf("No Link", "no-link")).toBe("implemented-without-link");
+  });
+
+  it("unpropagated-delta: re-ratified past a shipped version — expected, never flagged", () => {
+    expect(driftSignalOf("Re Ratified", "re-ratified")).toBe("unpropagated-delta");
+  });
+
+  it("never-implemented: not yet shipped, no link", () => {
+    expect(driftSignalOf("Not Shipped", "not-shipped")).toBe("never-implemented");
   });
 });
 

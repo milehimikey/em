@@ -163,14 +163,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.4");
+    expect(doc.schemaVersion).toBe("1.5");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.4");
+    expect(doc.schemaVersion).toBe("1.5");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -291,6 +291,44 @@ describe("em validate lineage checks (CLI, MIL-84)", () => {
     // still warns — but never on lineage, and never a non-zero exit (warnings don't gate).
     expect(r.status).toBe(0);
     expect(r.stderr).not.toContain("lineage");
+  });
+});
+
+describe("em validate frontmatter coherence checks (CLI, MIL-85)", () => {
+  let coherenceDir: string;
+
+  beforeAll(() => {
+    coherenceDir = mkdtempSync(join(tmpdir(), "em-cli-frontmatter-coherence-validate-"));
+    mkdirSync(join(coherenceDir, "slices"), { recursive: true });
+  });
+  afterAll(() => rmSync(coherenceDir, { recursive: true, force: true }));
+
+  it("warns with frontmatter-coherence-implemented-without-link when implemented has no link", () => {
+    writeFileSync(
+      join(coherenceDir, "slices", "no-link.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(coherenceDir, "no-link.em"),
+      `slice "No Link" {\n  command Do Thing\n}\n`,
+    );
+    const r = em(["validate", "no-link.em"], coherenceDir);
+    expect(r.status).toBe(0); // a warning, never gates
+    expect(r.stderr).toContain('slice "no-link" has status: implemented but no implementedIn link');
+  });
+
+  it("stays silent for a re-ratified slice whose implementedIn still names prior work", () => {
+    writeFileSync(
+      join(coherenceDir, "slices", "re-ratified.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 2\nimplementedIn: https://github.com/example/pr/1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(coherenceDir, "re-ratified.em"),
+      `slice "Re Ratified" {\n  command Do Thing\n}\n`,
+    );
+    const r = em(["validate", "re-ratified.em"], coherenceDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toContain("implementedIn link");
   });
 });
 

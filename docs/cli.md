@@ -113,11 +113,14 @@ non-zero if there are errors; exits zero on warnings or a clean model, printing
 `ok — no issues` when there is nothing to report. Useful in CI to keep a committed model
 honest.
 
-Every rule except one is a pure function of the `.em` source. The exception is lineage-ref
-resolution (MIL-84): `em validate` also reads `slices/*.md` frontmatter alongside the model,
-to check `split-from`/`merged-from`/`superseded-by` refs against the current tree — see
-[validation.md#lineage](validation.md#lineage) for exactly what's checked (and, just as
-deliberately, what's never flagged).
+Every rule except two is a pure function of the `.em` source. Both exceptions read
+`slices/*.md` frontmatter alongside the model: lineage-ref resolution (MIL-84) checks
+`split-from`/`merged-from`/`superseded-by` refs against the current tree — see
+[validation.md#lineage](validation.md#lineage); frontmatter coherence (MIL-85) flags a slice
+doc whose `status: implemented` has no `implementedIn` link — see
+[validation.md#frontmatter-coherence](validation.md#frontmatter-coherence) for exactly what's
+checked (and, just as deliberately, what's never flagged — a re-ratified slice's stale
+`implementedIn` is expected, not incoherent).
 
 | Flag | Effect |
 |---|---|
@@ -155,7 +158,7 @@ em export model.em -o model.json      # write to a file
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.4"`):
+**Schema summary** (`schemaVersion: "1.5"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -184,9 +187,14 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       but no file exists there — warns), and `frontmatter-invalid` (the file exists but has no
       frontmatter block, or is missing a required key — warns). `reason` is `null` exactly
       when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
-      `version`, `implementedIn`, `splitFrom`, `mergedFrom`, and `supersededBy` are populated
-      from it (each `null`/`[]` otherwise). Full contract:
-      [slice-doc-schema.md](slice-doc-schema.md).
+      `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, and `driftSignal`
+      are populated from it (each `null`/`[]` otherwise). `driftSignal` (added in schema `1.5`,
+      MIL-85) is `"in-sync"` | `"never-implemented"` | `"unpropagated-delta"` |
+      `"implemented-without-link"` — the status/implementedIn coherence classification also
+      driving `em validate`'s frontmatter-coherence warning (see
+      [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)); it's paired
+      with `version` from the same doc parse, so a consumer reporting drift should always cite
+      both together. Full contract: [slice-doc-schema.md](slice-doc-schema.md).
     Elements appear only inside their slice, not flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,

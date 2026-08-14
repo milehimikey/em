@@ -31,7 +31,10 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // function `em catalog` already uses) and `doc` (the slice-doc frontmatter join, always a
 // non-null object; see catalog/docJoin.ts). Diagnostics gain `code`/`refs`. Additive-only per
 // the versioning policy below — a minor bump.
-export const SCHEMA_VERSION = "1.4";
+// 1.5 (MIL-85): `slice.doc` gains `driftSignal` — the status/implementedIn coherence
+// classification (catalog/driftSignal.ts), computed from the same doc parse as `doc.status`/
+// `doc.version`/`doc.implementedIn`. Additive-only.
+export const SCHEMA_VERSION = "1.5";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

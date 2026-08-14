@@ -16,11 +16,15 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 
 ## Summary
 
-| Surface | Real drift | Model gap | Internal inconsistency | Accepted divergence | Uncertainty |
-|---|---|---|---|---|---|
-| Structural | {{n}} | {{n}} | — | {{n}} | {{n}} |
-| Spec | {{n}} | {{n}} | — | {{n}} | {{n}} |
-| Internal | — | — | {{n}} | {{n}} | {{n}} |
+| Surface | Real drift | Model gap | Internal inconsistency | Accepted divergence | Unpropagated delta | Uncertainty |
+|---|---|---|---|---|---|---|
+| Structural | {{n}} | {{n}} | — | {{n}} | {{n}} | {{n}} |
+| Spec | {{n}} | {{n}} | — | {{n}} | {{n}} | {{n}} |
+| Internal | — | — | {{n}} | {{n}} | — | {{n}} |
+
+**Unpropagated delta** — a slice re-ratified past its shipped version (`slice.doc.driftSignal:
+"unpropagated-delta"` in `em export --json`): a known state, not a code defect. See
+`reference/conform.md` step 4.
 
 {{One or two sentences: overall read — clean, mostly clean with N items, or notably drifted.}}
 
@@ -32,15 +36,17 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 ### {{n}}. {{Short finding title}}
 
 - **Surface:** {{structural | spec | internal}}
-- **Classification:** {{real drift | model gap | internal inconsistency | accepted divergence}}
+- **Classification:** {{real drift | model gap | internal inconsistency | accepted divergence | unpropagated delta}}
 - **Slice:** {{slice name}}
 - **Evidence:** {{file path(s) and line/symbol, or the `em diff --json` entry (type + name) —
-  for accepted divergence, the `divergence "..."` annotation text itself}}
+  for accepted divergence, the `divergence "..."` annotation text itself; for unpropagated
+  delta, `slice.doc.driftSignal` and `slice.doc.version` from `em export --json`}}
 - **Claim:** {{what the model/doc says vs. what the code/doc shows — the actual disagreement}}
 - **Proposed red note:** `issue "conformance: {{text}}"` on {{element}} (slice "{{slice}}")
   <!-- Omit this line entirely for internal-inconsistency findings with no clear side to flag,
-       for any accepted-divergence finding (already ratified — don't propose re-ratifying it),
-       or when the finding doesn't warrant a red note (say why instead). -->
+       for any accepted-divergence or unpropagated-delta finding (already ratified, or already
+       a known pending-ship state — don't propose re-ratifying either), or when the finding
+       doesn't warrant a red note (say why instead). -->
 
 ## Scenario / invariant coverage
 
