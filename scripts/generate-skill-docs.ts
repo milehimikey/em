@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { program } from "../src/cli.js";
 import { RULES, RuleCode, RuleDef } from "../src/model/rules.js";
+import { isMainModule } from "../src/util/isMainModule.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const EM_DSL_MD = join(ROOT, ".claude/skills/event-modeling/reference/em-dsl.md");
@@ -195,5 +196,4 @@ function main(): void {
 // Guarded the same way src/cli.ts guards program.parseAsync(): only run when this file is the
 // process's entry module, so test/skillDocsGenerated.test.ts can import the builder functions
 // above without writing files or setting an exit code as a side effect.
-const isMainModule = resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1] ?? "");
-if (isMainModule) main();
+if (isMainModule(import.meta.url)) main();

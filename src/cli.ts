@@ -6,6 +6,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { compile, CompileOptions, CompileResult } from "./pipeline.js";
+import { isMainModule } from "./util/isMainModule.js";
 import { NormalizedModel } from "./model/model.js";
 import { RefsResult } from "./model/refs.js";
 import { ParseError } from "./parser/parser.js";
@@ -543,11 +544,11 @@ skill
 // Exported so dev tooling (e.g. scripts/generate-skill-docs.ts) can introspect the registered
 // commands/options without triggering a real CLI run. Guarded the same way Node's CJS
 // `require.main === module` used to: only actually parse argv when this file is the process's
-// entry module, not merely `import`ed.
+// entry module, not merely `import`ed. See util/isMainModule.ts for why this has to
+// realpath-resolve argv[1] — a naive path comparison breaks the `npm i -g` symlink case.
 export { program };
 
-const isMainModule = resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1] ?? "");
-if (isMainModule) {
+if (isMainModule(import.meta.url)) {
   program.parseAsync().catch((e) => {
     reportError(e);
     process.exit(1);
