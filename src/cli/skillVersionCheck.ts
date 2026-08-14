@@ -7,18 +7,24 @@
 // the thin CLI shim, and docs/ci.md's precedent framing for why a version/content-agreement
 // check needs two revisions rather than being folded into `em validate`.
 //
-// Two-way, not ledger's three-way: both sides here are version strings compared for "did it
-// move," not a version-vs-freeform-content comparison — the meaningful case is package.json's
-// version changing without the stamp following it. The inverse (stamp changed alone) is flagged
-// too, as cheap extra coverage for a stray hand-edit outside the release process — except the
-// stamp's first-ever introduction (no prior value to compare against), which is the normal
-// one-time bootstrap of the field and stays clean rather than a permanent false-positive on
-// whichever PR happens to add it (this check's own introducing PR, confirmed on CI, first).
+// Both sides here are version strings compared for "did it move," not ledger's version-vs-
+// freeform-content comparison — the meaningful case is package.json's version changing without
+// the stamp following it (`skill-version-stamp-not-bumped`). Two more are flagged as cheap extra
+// coverage: a stray stamp edit with no matching package.json move (`-stray-bump`), and the
+// stamp being deleted outright (`-removed`, unconditional — regardless of whether package.json
+// also changed, since losing the mechanism entirely is a problem on its own; a code review on
+// this very PR caught an earlier version that silently skipped the pkgChanged+deleted-stamp
+// combination). The one case that stays clean rather than becoming a finding: the stamp's
+// first-ever introduction (no prior value to compare against) — the normal one-time bootstrap
+// of the field, not a stray edit (this check's own introducing PR, confirmed on CI, first).
 
 import { readFileSync } from "node:fs";
 import { GitRunner, realGit, resolveRevision } from "./diff-inputs.js";
 
-export type SkillVersionFindingCode = "skill-version-stamp-not-bumped" | "skill-version-stamp-stray-bump";
+export type SkillVersionFindingCode =
+  | "skill-version-stamp-not-bumped"
+  | "skill-version-stamp-stray-bump"
+  | "skill-version-stamp-removed";
 
 export interface SkillVersionFinding {
   code: SkillVersionFindingCode;
@@ -30,8 +36,9 @@ export interface SkillVersionFinding {
 }
 
 /** Why no finding could be produced — a state the check can't prove anything from, not a
- *  defect. `stamp-missing` covers the revision-under-check having no `em-version:` at all
- *  (nothing to compare against, distinct from the stamp being *unchanged*). */
+ *  defect. `stamp-missing` covers the field not existing at EITHER revision (never adopted in
+ *  this span) — distinct from it existing at `from` and being deleted by `to`, which is a
+ *  `skill-version-stamp-removed` finding, not a skip. */
 export type SkillVersionSkipReason = "package-json-unreadable" | "skill-md-unreadable" | "stamp-missing";
 
 export interface SkillVersionCheckResult {
@@ -103,16 +110,43 @@ export function checkSkillVersionStamp(
   const newSkill = readAt(skillMdPath, to, runGit);
   if (!oldSkill.ok || !newSkill.ok) return { finding: null, skipped: "skill-md-unreadable" };
 
-  const newStamp = extractEmVersionStamp(newSkill.content);
-  if (newStamp === null) return { finding: null, skipped: "stamp-missing" };
   const oldStamp = extractEmVersionStamp(oldSkill.content);
+  const newStamp = extractEmVersionStamp(newSkill.content);
+
+  // Never adopted anywhere in this revision span — nothing to compare. Distinct from the stamp
+  // being *removed* below: that's a regression, this is simply "the field doesn't exist yet."
+  if (oldStamp === null && newStamp === null) return { finding: null, skipped: "stamp-missing" };
+
   // The stamp's first-ever introduction (no em-version: key at `from`, one at `to`) has nothing
-  // to compare against — not a stray edit, the normal one-time bootstrap of the field itself
-  // (e.g. this very check landing). Treat it as clean rather than a permanent false-positive on
-  // whichever PR happens to add the key.
+  // to compare against either — not a stray edit, the normal one-time bootstrap of the field
+  // itself (e.g. this very check landing). Treat it as clean rather than a permanent
+  // false-positive on whichever PR happens to add the key.
   if (oldStamp === null) return { finding: null, skipped: null };
 
   const pkgChanged = oldPkgVersion !== newPkgVersion;
+
+  // The stamp existed and is now gone entirely — a stronger signal than merely "left stale"
+  // (below), and one a naive "newStamp === null -> skip" early-out would otherwise swallow
+  // silently, including the worst case: package.json bumped in the very same change that
+  // deleted the stamp (caught in code review, MIL-92 PR #85 — no prior test combined
+  // pkgChanged: true with a deleted stamp). Always a finding, regardless of pkgChanged: removing
+  // the mechanism entirely is a problem on its own, not just when it coincides with a release.
+  if (newStamp === null) {
+    return {
+      skipped: null,
+      finding: {
+        code: "skill-version-stamp-removed",
+        message: pkgChanged
+          ? `SKILL.md's em-version: stamp (was ${oldStamp}) was removed entirely while package.json bumped ${oldPkgVersion} -> ${newPkgVersion}`
+          : `SKILL.md's em-version: stamp (was ${oldStamp}) was removed entirely`,
+        oldPkgVersion,
+        newPkgVersion,
+        oldStamp,
+        newStamp: null,
+      },
+    };
+  }
+
   const stampChanged = oldStamp !== newStamp;
 
   if (pkgChanged && !stampChanged) {

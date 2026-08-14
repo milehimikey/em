@@ -97,6 +97,44 @@ describe("checkSkillVersionStamp", () => {
     });
   });
 
+  it("flags the stamp being deleted outright while package.json bumps in the same change (the gap a code review caught)", () => {
+    const result = checkSkillVersionStamp(
+      "package.json",
+      "SKILL.md",
+      "HEAD~1",
+      "HEAD",
+      fakeGit(responses(pkgJson("1.7.0"), pkgJson("1.8.0"), skillMd("1.7.0"), skillMd(null))),
+    );
+    expect(result.skipped).toBeNull();
+    expect(result.finding).toEqual({
+      code: "skill-version-stamp-removed",
+      message: "SKILL.md's em-version: stamp (was 1.7.0) was removed entirely while package.json bumped 1.7.0 -> 1.8.0",
+      oldPkgVersion: "1.7.0",
+      newPkgVersion: "1.8.0",
+      oldStamp: "1.7.0",
+      newStamp: null,
+    });
+  });
+
+  it("flags the stamp being deleted outright even when package.json doesn't move", () => {
+    const result = checkSkillVersionStamp(
+      "package.json",
+      "SKILL.md",
+      "HEAD~1",
+      "HEAD",
+      fakeGit(responses(pkgJson("1.7.0"), pkgJson("1.7.0"), skillMd("1.7.0"), skillMd(null))),
+    );
+    expect(result.skipped).toBeNull();
+    expect(result.finding).toEqual({
+      code: "skill-version-stamp-removed",
+      message: "SKILL.md's em-version: stamp (was 1.7.0) was removed entirely",
+      oldPkgVersion: "1.7.0",
+      newPkgVersion: "1.7.0",
+      oldStamp: "1.7.0",
+      newStamp: null,
+    });
+  });
+
   it("treats the stamp's first-ever introduction (none -> a value) as clean, not a stray bump — nothing to compare it against", () => {
     const result = checkSkillVersionStamp(
       "package.json",
