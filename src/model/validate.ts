@@ -269,12 +269,12 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         return a.toId === evt.id && from?.kind === "command";
       });
       if (arrowed) continue;
-      diags.push({
-        severity: "warning",
+      pushDiag(diags, "both-ends-of-a-flow/event-unproduced", {
         message:
           `event "${evt.name}" has no producing command; add the command that records it ` +
           `(in this slice) or an explicit arrow from one`,
         line: evt.line,
+        refs: [refOf(evt.id)],
       });
     }
   }
@@ -302,13 +302,13 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         return a.fromId === ui.id && to?.kind === "command";
       });
       if (viewArrow || commandArrow) continue;
-      diags.push({
-        severity: "warning",
+      pushDiag(diags, "both-ends-of-a-flow/ui-unbacked", {
         message:
           `ui "${ui.name}" has no read model backing it and issues no command; add a ` +
           `\`view\` it displays (event -> read model -> ui) or the command it triggers ` +
           `(ui -> command), or reconsider this screen`,
         line: ui.line,
+        refs: [refOf(ui.id)],
       });
     }
   }
@@ -469,13 +469,13 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       (s) => s.size === first.size && [...s].every((v) => first.has(v)),
     );
     if (allSameProducers) continue; // same producers, just repeated for clarity — not a collision
-    diags.push({
-      severity: "warning",
+    pushDiag(diags, "translation-name-collision", {
       message:
         `translation "${group[0].name}" is defined ${group.length} times with different ` +
         `producers (${group.map((t) => `"${(t.from ?? []).join(", ") || "none"}"`).join(" vs ")}); ` +
         `use a distinct name per producer to avoid confusion`,
       line: group[0].line,
+      refs: group.map((t) => refOf(t.id)),
     });
   }
 

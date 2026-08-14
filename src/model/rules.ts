@@ -109,6 +109,18 @@ export const RULES = {
     fix: "Project it into a view, or reconsider recording it.",
     docAnchor: "both-ends-of-a-flow",
   },
+  "both-ends-of-a-flow/event-unproduced": {
+    severity: "warning",
+    title: "Event with no producing command",
+    fix: "Add the command that records it, or an explicit arrow from one.",
+    docAnchor: "both-ends-of-a-flow",
+  },
+  "both-ends-of-a-flow/ui-unbacked": {
+    severity: "warning",
+    title: "`ui` with no read model or command",
+    fix: "Add a `view` it displays, or the command it triggers.",
+    docAnchor: "both-ends-of-a-flow",
+  },
   "arrow-backward": {
     severity: "error",
     title: "Backward arrow",
@@ -139,6 +151,11 @@ export const RULES = {
     severity: "warning",
     title: "Duplicate name",
     fix: "Rename one of the duplicates.",
+  },
+  "translation-name-collision": {
+    severity: "warning",
+    title: "Translation name reused for different producers",
+    fix: "Use a distinct name per producer to avoid confusion.",
   },
   "duplicate-type-name": {
     severity: "warning",

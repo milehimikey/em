@@ -278,13 +278,12 @@ view Public Orders public again           # both public and again allowed
 
 `public` is valid on `event` or `view` only; writing it on other element kinds is a parse
 error. For an event, it's written flexibly: before or after any trailing `@Context` tag, or
-as the line's final token. For a view, it must be written **before** any trailing `from` or
-`again` clause — the same ordering rule that governs `again`, since both are stripped in a
-specific sequence during parsing. Writing `public` after `from` causes it to be swallowed
-into the quoted-list tail and mangled; write `view Name public from "Event"`, never
-`from "Event" public`. Written anywhere else on the line, a bare `public` isn't recognized
-as the clause and folds into the free-text name instead, the same as any other unrecognized
-trailing word.
+as the line's final token. For a view, `public` must come before `from` (writing `public`
+after a quoted list causes it to be swallowed into the tail and mangled — use
+`view Name public from "Event"`, not `view Name from "Event" public`). With `again`, both
+orders work: `view Name public again` and `view Name again public` are equivalent. Written
+anywhere else on the line, a bare `public` isn't recognized as the clause and folds into the
+free-text name instead, the same as any other unrecognized trailing word.
 
 `em export` carries the flag forward as `public: true`/`false` on every event and view — the
 field a downstream contract generator (e.g. an AsyncAPI generator) filters on to promote only
