@@ -97,7 +97,7 @@ describe("checkSkillVersionStamp", () => {
     });
   });
 
-  it("treats the stamp's first-ever introduction (none -> a value) as a stray bump if package.json didn't also move", () => {
+  it("treats the stamp's first-ever introduction (none -> a value) as clean, not a stray bump — nothing to compare it against", () => {
     const result = checkSkillVersionStamp(
       "package.json",
       "SKILL.md",
@@ -105,8 +105,7 @@ describe("checkSkillVersionStamp", () => {
       "HEAD",
       fakeGit(responses(pkgJson("1.7.0"), pkgJson("1.7.0"), skillMd(null), skillMd("1.7.0"))),
     );
-    expect(result.finding?.code).toBe("skill-version-stamp-stray-bump");
-    expect(result.finding?.oldStamp).toBeNull();
+    expect(result).toEqual({ finding: null, skipped: null });
   });
 
   it("skips with stamp-missing when the target revision's SKILL.md has no em-version: at all", () => {

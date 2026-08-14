@@ -10,7 +10,10 @@
 // Two-way, not ledger's three-way: both sides here are version strings compared for "did it
 // move," not a version-vs-freeform-content comparison — the meaningful case is package.json's
 // version changing without the stamp following it. The inverse (stamp changed alone) is flagged
-// too, as cheap extra coverage for a stray hand-edit outside the release process.
+// too, as cheap extra coverage for a stray hand-edit outside the release process — except the
+// stamp's first-ever introduction (no prior value to compare against), which is the normal
+// one-time bootstrap of the field and stays clean rather than a permanent false-positive on
+// whichever PR happens to add it (this check's own introducing PR, confirmed on CI, first).
 
 import { readFileSync } from "node:fs";
 import { GitRunner, realGit, resolveRevision } from "./diff-inputs.js";
@@ -103,6 +106,11 @@ export function checkSkillVersionStamp(
   const newStamp = extractEmVersionStamp(newSkill.content);
   if (newStamp === null) return { finding: null, skipped: "stamp-missing" };
   const oldStamp = extractEmVersionStamp(oldSkill.content);
+  // The stamp's first-ever introduction (no em-version: key at `from`, one at `to`) has nothing
+  // to compare against — not a stray edit, the normal one-time bootstrap of the field itself
+  // (e.g. this very check landing). Treat it as clean rather than a permanent false-positive on
+  // whichever PR happens to add the key.
+  if (oldStamp === null) return { finding: null, skipped: null };
 
   const pkgChanged = oldPkgVersion !== newPkgVersion;
   const stampChanged = oldStamp !== newStamp;
