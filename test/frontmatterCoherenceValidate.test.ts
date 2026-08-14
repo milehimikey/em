@@ -86,3 +86,18 @@ describe("no diagnostic: legacy body-label dialect doc (no frontmatter)", () => 
     expect(diags).toEqual([]);
   });
 });
+
+describe("no diagnostic: well-formed fence missing a different required key", () => {
+  it("stays silent when the fence is present but `version` is absent — hasUsableFrontmatter() gates on missingRequiredFields too, not just the fence", () => {
+    // Repro from PR review: a doc with a closed `---`/`---` fence but missing `version` (a
+    // REQUIRED_FRONTMATTER_KEYS entry) previously slipped past a `!frontmatterPresent`-only
+    // guard and still triggered the warning, disagreeing with em export's docJoin.ts, which
+    // already classifies this exact doc as frontmatter-invalid (driftSignal: null).
+    writeFileSync(
+      join(dir, "slices", "missing-version.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\n---\nbody\n",
+    );
+    const diags = coherenceOf(`slice "Missing Version" {\n  command Do Thing\n}`);
+    expect(diags).toEqual([]);
+  });
+});

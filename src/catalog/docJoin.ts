@@ -19,7 +19,7 @@ import { Slice } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
 import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
-import { SliceRef } from "./sliceDoc.js";
+import { hasUsableFrontmatter, SliceRef } from "./sliceDoc.js";
 
 export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
 
@@ -97,7 +97,7 @@ export function resolveSliceDocJoin(
     };
   }
 
-  if (!parsed.frontmatterPresent || parsed.missingRequiredFields.length > 0) {
+  if (!hasUsableFrontmatter(parsed)) {
     return {
       doc: { found: true, path, reason: "frontmatter-invalid", ...EMPTY_CONTENT },
       diagnostics: [

@@ -97,6 +97,18 @@ export interface SliceDoc {
  *  parser has no access to and doesn't attempt to check. */
 export const REQUIRED_FRONTMATTER_KEYS = ["schemaversion", "pattern", "swimlane", "status", "version"] as const;
 
+/** True when a doc's frontmatter is well-formed enough to trust its canonical fields: a closed
+ *  fence was found AND every REQUIRED_FRONTMATTER_KEYS entry is present. The single gate `em
+ *  export`'s doc join (MIL-91, `frontmatter-invalid`) and `em validate`'s frontmatter-coherence
+ *  check (MIL-85) both call, instead of each re-deriving `!frontmatterPresent ||
+ *  missingRequiredFields.length > 0` and risking the two silently drifting apart on what counts
+ *  as "usable" as the required-fields list evolves. A doc that fails this — no fence at all
+ *  (e.g. MIL-86's legacy body-label dialect), or missing any required key — has nothing reliable
+ *  enough to classify; treat it as unreadable rather than guess. */
+export function hasUsableFrontmatter(doc: Pick<SliceDoc, "frontmatterPresent" | "missingRequiredFields">): boolean {
+  return doc.frontmatterPresent && doc.missingRequiredFields.length === 0;
+}
+
 const STATUS_LINE = /^-\s*\*\*Status:\*\*\s*(.+?)\s*$/im;
 const SLICE_REF = /^([a-z0-9]+(?:-[a-z0-9]+)*)@v(\d+)$/i;
 

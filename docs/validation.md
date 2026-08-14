@@ -187,10 +187,13 @@ since an accepted divergence should never fail a build.
 `status: implemented` with no `implementedIn` link at all. Everything else is silent, including
 the one combination that looks the most like drift at a glance.
 
-Requires a well-formed frontmatter fence, same as `em export`'s `frontmatter-invalid` gate — a
-legacy body-label-dialect doc (MIL-86's accepted-input form, no `---` fence) never carries
-`implementedIn` at all, since that key has no legacy form, so this rule stays silent on such a
-doc rather than flag its absence as incoherence.
+Requires usable frontmatter — a closed fence with every required key present
+(`hasUsableFrontmatter()`, `src/catalog/sliceDoc.ts`), the exact same predicate `em export`'s
+`frontmatter-invalid` gate uses, so the two can't silently disagree on what counts as a readable
+doc. A legacy body-label-dialect doc (MIL-86's accepted-input form, no `---` fence) never
+carries `implementedIn` at all, since that key has no legacy form; a doc with a fence but a
+missing required key (e.g. no `version`) is equally unreadable for this purpose. Either way this
+rule stays silent rather than flag an unreadable doc as incoherent.
 
 **The non-obvious case, and the one this rule must never flag:** re-ratifying a shipped slice
 (bumping `version`, drafting a new delta) correctly flips `status` back off `implemented` —

@@ -12,12 +12,14 @@
 // model/validate.ts, not folded into it, because resolving a slice's doc needs `baseDir`/fs
 // access that the rest of validate deliberately never touches.
 //
-// Requires a well-formed frontmatter fence (`frontmatterPresent`), same gate `em export`'s
-// docJoin.ts uses for `frontmatter-invalid`. `implementedIn` is a frontmatter-only key (MIL-90/
-// 91) — a legacy body-label-dialect doc (MIL-86's accepted-input form: `- **Status:** ...`, no
-// frontmatter block) can never carry it, so treating its absence there as incoherence would be
-// a false positive against a doc that simply predates the canonical dialect, not one that's
-// actually incoherent. Without frontmatter this check has nothing reliable to read; stay silent
+// Requires usable frontmatter (`hasUsableFrontmatter()`, sliceDoc.ts) — the exact same gate
+// `em export`'s docJoin.ts uses for `frontmatter-invalid`, shared as one function precisely so
+// the two can't silently disagree on what counts as a readable doc. `implementedIn` is a
+// frontmatter-only key (MIL-90/91) with no legacy body-label form (MIL-86's accepted-input
+// dialect: `- **Status:** ...`, no frontmatter block), and every canonical field this check
+// reads is itself frontmatter-only — so a doc with no fence, or one missing any required key,
+// has nothing reliable enough to classify. Flagging it as incoherent would be a false positive
+// against a doc that's merely unreadable, not one that's actually incoherent; stay silent
 // rather than guess, matching export's classification of the same doc.
 
 import { NormalizedModel } from "../model/model.js";
@@ -25,6 +27,7 @@ import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { classifyImplementationDrift } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
+import { hasUsableFrontmatter } from "./sliceDoc.js";
 
 /**
  * Resolve every slice's doc and flag genuine status/implementedIn incoherence. `baseDir` is the
@@ -36,7 +39,7 @@ export function validateFrontmatterCoherence(model: NormalizedModel, refs: RefsR
   model.slices.forEach((slice, i) => {
     const sliceKey = refs.sliceKeys[i];
     const doc = readSliceDoc(baseDir, sliceKey);
-    if (!doc || !doc.frontmatterPresent) return;
+    if (!doc || !hasUsableFrontmatter(doc)) return;
 
     const drift = classifyImplementationDrift(doc);
     if (drift !== "implemented-without-link") return;
