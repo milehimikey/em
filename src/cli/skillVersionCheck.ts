@@ -74,8 +74,11 @@ function extractPkgVersion(content: string): string | null {
 
 /** Pull `em-version: X` out of a `---\n...\n---` frontmatter block. Minimal and single-purpose
  *  — SKILL.md's frontmatter is two plain scalar keys plus a folded `description:` block, not
- *  the richer schema src/catalog/sliceDoc.ts parses, so this doesn't reuse that parser. */
-function extractEmVersionStamp(content: string): string | null {
+ *  the richer schema src/catalog/sliceDoc.ts parses, so this doesn't reuse that parser.
+ *  Exported for reuse by src/cli/skillCheck.ts (MIL-93), which needs the same extraction to
+ *  compare a vendored copy's stamp against the installed em's own version — no reason to
+ *  duplicate the regex a second time. */
+export function extractEmVersionStamp(content: string): string | null {
   const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
   if (!frontmatter) return null;
   const line = frontmatter[1].split("\n").find((l) => /^em-version:\s*/.test(l));

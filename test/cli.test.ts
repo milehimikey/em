@@ -767,6 +767,54 @@ describe("em ledger: text report, working tree, and argument validation (CLI, re
   });
 });
 
+describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
+  let target: string;
+
+  beforeAll(() => {
+    target = mkdtempSync(join(tmpdir(), "em-cli-skillsync-"));
+  });
+  afterAll(() => rmSync(target, { recursive: true, force: true }));
+
+  it("sync materializes the packaged skill into [path]/.claude/skills/event-modeling/", () => {
+    const r = em(["skill", "sync", target], ROOT);
+    expect(r.status).toBe(0);
+    expect(existsSync(join(target, ".claude", "skills", "event-modeling", "SKILL.md"))).toBe(true);
+    expect(r.stdout).toContain("added: SKILL.md");
+  });
+
+  it("re-running sync reports up to date and makes no changes", () => {
+    const r = em(["skill", "sync", target], ROOT);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("up to date");
+  });
+
+  it("check reports ok for a freshly synced copy", () => {
+    const r = em(["skill", "check", target], ROOT);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^ok — vendored skill matches em /);
+  });
+
+  it("check exits non-zero and reports drift after a hand edit", () => {
+    writeFileSync(join(target, ".claude", "skills", "event-modeling", "SKILL.md"), "hand-edited, no frontmatter");
+    const r = em(["skill", "check", target], ROOT);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("has no em-version: stamp");
+    expect(r.stdout).toContain("differs from the packaged skill");
+  });
+
+  it("check --json prints the documented envelope", () => {
+    const r = em(["skill", "check", target, "--json"], ROOT);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.skillCheckSchemaVersion).toBe("1.0");
+    expect(doc.ok).toBe(false);
+    expect(doc.findings.map((f: { code: string }) => f.code).sort()).toEqual([
+      "skill-check-content-drift",
+      "skill-check-stamp-missing",
+    ]);
+  });
+});
+
 describe("em changelog (CLI, real git repo)", () => {
   let repo: string;
 
