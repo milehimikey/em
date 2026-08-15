@@ -26,6 +26,9 @@ import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceVali
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
+import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
+import { checkSkillSync } from "./cli/skillCheck.js";
+import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -516,6 +519,17 @@ program
     if (result.findings.length > 0) process.exitCode = 1;
   });
 
+// Shared by install/sync/check: the skill directory bundled with whatever em package is
+// actually running (works whether em was installed from npm or run from a checkout, and
+// regardless of a symlinked global install — see pkgDir's own resolution above for
+// PKG_VERSION) and the skill directory a consumer repo vendors it into.
+function packagedSkillDir(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", ".claude", "skills", "event-modeling");
+}
+function vendoredSkillDir(repoRoot: string): string {
+  return join(resolve(repoRoot), ".claude", "skills", "event-modeling");
+}
+
 const skill = program
   .command("skill")
   .description("manage Claude Code skills bundled with em");
@@ -525,9 +539,8 @@ skill
   .description("copy the event-modeling skill into .claude/skills/event-modeling/")
   .option("-f, --force", "overwrite an existing installation")
   .action(async (opts: { force?: boolean }) => {
-    const pkgDir = dirname(fileURLToPath(import.meta.url));
-    const src = join(pkgDir, "..", ".claude", "skills", "event-modeling");
-    const dest = join(process.cwd(), ".claude", "skills", "event-modeling");
+    const src = packagedSkillDir();
+    const dest = vendoredSkillDir(process.cwd());
 
     if (existsSync(dest) && !opts.force) {
       console.log(`skill already installed at ${dest}`);
@@ -539,6 +552,53 @@ skill
     await cp(src, dest, { recursive: true });
     console.log(`installed event-modeling skill → ${dest}`);
     console.log("in Claude Code, run /event-modeling to start a guided session");
+  });
+
+skill
+  .command("sync")
+  .description(
+    "update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed " +
+      "em package (overwrites unconditionally; local edits are never merged, MIL-93)",
+  )
+  .argument("[path]", "consumer repo root", ".")
+  .action(async (path: string) => {
+    const packagedDir = packagedSkillDir();
+    const vendoredDir = vendoredSkillDir(path);
+
+    const plan = planSkillSync(packagedDir, vendoredDir);
+    if (plan.changes.length === 0) {
+      console.log(`up to date — ${vendoredDir} already matches the installed skill (${plan.unchangedCount} file(s))`);
+      return;
+    }
+    applySkillSync(plan, packagedDir, vendoredDir);
+    for (const c of plan.changes) console.log(`${c.kind}: ${c.relPath}`);
+    console.log(`synced ${vendoredDir} — ${plan.changes.length} file(s) changed, ${plan.unchangedCount} unchanged`);
+  });
+
+skill
+  .command("check")
+  .description(
+    "check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the " +
+      "installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)",
+  )
+  .argument("[path]", "consumer repo root", ".")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((path: string, opts: { json?: boolean }) => {
+    const packagedDir = packagedSkillDir();
+    const vendoredDir = vendoredSkillDir(path);
+
+    const result = checkSkillSync(packagedDir, vendoredDir, PKG_VERSION);
+
+    if (opts.json) {
+      process.stdout.write(buildSkillCheckJson(result, vendoredDir, PKG_VERSION) + "\n");
+    } else {
+      for (const f of result.findings) console.log(f.message);
+      console.log(result.ok ? `ok — vendored skill matches em ${PKG_VERSION}` : `${result.findings.length} mismatch(es)`);
+    }
+
+    // Set the code rather than process.exit(): same rationale as em ledger/em diff — stdout to
+    // a pipe (a --json document) shouldn't risk truncation.
+    if (!result.ok) process.exitCode = 1;
   });
 
 // Exported so dev tooling (e.g. scripts/generate-skill-docs.ts) can introspect the registered

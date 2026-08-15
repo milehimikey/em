@@ -198,7 +198,22 @@ Unlike the recipes above, this one installs `em` globally rather than reaching f
 agent shells out to a bare `em` of its own accord, so the binary has to be on `PATH` for the
 whole run. `em skill install --force` overwrites the copy committed in the repo, so the phase
 that runs is the one bundled with the `em` version just installed — drop the `--force` if you'd
-rather pin the phase to whatever your repo has committed.
+rather pin the phase to whatever your repo has committed. `em skill sync` (MIL-93) is the more
+precise tool for this exact "always take the latest, no drift check" intent — same
+always-overwrite semantics as `install --force`, plus a change report — so newer setups should
+reach for `em skill sync` here instead.
+
+If you'd rather **pin** the vendored copy and fail the build when it drifts from whatever `em`
+version CI just installed, add `em skill check` as its own gate instead of silently overwriting:
+
+```yaml
+      - name: Check vendored skill matches installed em
+        run: npx @milehimikey/em skill check
+```
+
+`em skill check` exits non-zero on any mismatch — a stale `em-version:` stamp, or content that
+diverges from the packaged skill even with a matching stamp (e.g. a hand-edited file). See
+[cli.md](cli.md#em-skill-check-path) for the full flag/output reference and `--json` shape.
 
 Ground rules, matching the phase's own stance (see
 `.claude/skills/event-modeling/reference/conform.md` once the skill is installed):

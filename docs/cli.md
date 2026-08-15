@@ -13,6 +13,8 @@
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
+| `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
+| `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
 
 Every command that reads a model also parses and validates it first, printing any
 diagnostics (see [validation.md](validation.md)).
@@ -740,3 +742,72 @@ Copies the bundled `event-modeling` Claude Code skill out of the npm package int
 | Flag | Effect |
 |---|---|
 | `-f, --force` | Overwrite an existing installation |
+
+## `em skill sync [path]`
+
+The downstream half of the skill-drift problem `em skill install`'s version-stamp gate
+(MIL-92) covers only in this repo: a repo that vendored the skill via `em skill install` has
+no way to know its copy has gone stale as the source skill in the `em` npm package moves on.
+`em skill sync` closes that gap — it updates `[path]/.claude/skills/event-modeling/` to
+exactly match the skill bundled with whatever `em` is currently installed (MIL-93).
+
+`[path]` defaults to the current directory. **The vendored copy is read-only** — sync always
+overwrites unconditionally; a local edit is never merged, only clobbered on the next sync. This
+is the opposite contract from `em skill install`, which refuses to touch an existing copy
+without `-f`/`--force` (a first-time materialization you're expected to be able to customize).
+If that's not the contract you want, don't run `sync` — stick with `install --force` for an
+occasional, deliberate refresh instead.
+
+```bash
+em skill sync                 # sync ./.claude/skills/event-modeling/ against the installed em
+em skill sync ../other-repo   # sync a different repo's vendored copy
+```
+
+Prints one `added:`/`modified:`/`removed:` line per changed file, or `up to date — ...` when
+the vendored copy already matches.
+
+## `em skill check [path]`
+
+Checks `[path]/.claude/skills/event-modeling/` for drift against the skill bundled with the
+installed `em`, without changing anything — the CI-gate counterpart to `sync`. Two independent
+signals are checked and reported together (never short-circuited on the first):
+
+- the vendored `SKILL.md`'s `em-version:` frontmatter stamp vs. the installed `em`'s own
+  version (`em --version`)
+- a full content diff against the packaged skill (same per-file hash comparison `sync` uses),
+  which catches a hand-edited vendored file even when its stamp still happens to match
+
+`[path]` defaults to the current directory, same convention as `sync`.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print a JSON document instead of the text report |
+
+```
+$ em skill check
+vendored skill's em-version: stamp (1.6.0) doesn't match installed em (1.7.0) — run `em skill sync`
+1 mismatch(es)
+$ echo $?
+1
+```
+
+or `ok — vendored skill matches em <version>` when everything agrees. Every finding is a
+defect once you've opted into running this command — `em skill check` exits 1 on any mismatch,
+same no-opt-in-flag-needed convention as `em ledger`.
+
+**`--json` shape** (`skillCheckSchemaVersion: "1.0"`, versioned independently of the npm
+package and every other command's own schema):
+
+- `generator` — `{ name, version }` of the tool that produced the document.
+- `vendoredDir` — the vendored skill directory that was checked.
+- `installedVersion` — the installed `em`'s own version (`em --version`).
+- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles }[]`, every key
+  always present (explicit `null` when unused by `code`, so a consumer can destructure without
+  sniffing for key presence — same convention as `em diff`/`em export`'s schemas). `code` is one
+  of `skill-check-not-installed` (nothing vendored at `[path]` at all — findings stop there,
+  nothing else is checked), `skill-check-stamp-missing` (vendored `SKILL.md` has no
+  `em-version:` stamp), `skill-check-stamp-mismatch` (stamp present but doesn't match the
+  installed version — `vendoredStamp`/`installedVersion` non-null), or
+  `skill-check-content-drift` (one or more files differ by hash from the packaged skill —
+  `driftedFiles` non-null, sorted).
+- `ok` — `true` iff `findings` is empty.

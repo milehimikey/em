@@ -75,6 +75,12 @@ tree (the steady state after a real split or merge) deliberately raises nothing 
   a version that went backwards), reusing `em diff`'s git-revision plumbing rather than adding
   a new `em validate` rule — that check needs history, and `em validate` deliberately never
   touches it.
+- **Vendored-skill drift** — shipped: the bundled `event-modeling` skill can itself go
+  stale two ways. In-repo, an `em-version:` stamp plus a doctest/generated-reference gate
+  (MIL-92) keeps this repo's own skill docs honest release-over-release. Downstream, `em skill
+  sync`/`em skill check` (MIL-93) let a repo that vendored the skill via `em skill install`
+  materialize the current copy or CI-gate on drift against whatever `em` is actually
+  installed, instead of a hand-rolled sync guard per consuming repo.
 
 **Bigger, and deliberately waiting for a reason**
 

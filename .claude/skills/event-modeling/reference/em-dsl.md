@@ -60,6 +60,9 @@ em ledger <file> --to <rev>               # compare revision (default: current w
 em ledger <file> --json                   # print a JSON document instead of the text report (see docs/cli.md)
 em skill install                          # copy the event-modeling skill into .claude/skills/event-modeling/
 em skill install -f, --force              # overwrite an existing installation
+em skill sync [path]                      # update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
+em skill check [path]                     # check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
+em skill check [path] --json              # print a JSON document instead of the text report (see docs/cli.md)
 ```
 <!-- GENERATED:cli:end -->
 
