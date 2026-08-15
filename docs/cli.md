@@ -127,7 +127,7 @@ checked (and, just as deliberately, what's never flagged — a re-ratified slice
 |---|---|
 | `--list-issues` | Print only the open `issue "text"` diagnostics (slice, element, line, text) instead of the full diagnostic list |
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
-| `--list-public` | Print only events marked `public` (slice, name, line) — an integration-surface audit, never affects the exit code |
+| `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 | `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
 
@@ -135,7 +135,7 @@ checked (and, just as deliberately, what's never flagged — a re-ratified slice
 em validate model.em                          # full diagnostics; exits non-zero only on errors
 em validate model.em --list-issues             # just the open `issue` clauses, for a quick sweep
 em validate model.em --list-divergences        # just the accepted `divergence` clauses, for an audit
-em validate model.em --list-public             # just the events marked `public`, for an audit
+em validate model.em --list-public             # just the events and views marked `public`, for an audit
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
 em validate model.em --slice-ready checkout    # is "checkout" safe to hand to an implementer?
 ```

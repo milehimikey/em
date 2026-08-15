@@ -82,6 +82,8 @@ describe("`divergence` — the accepted, resolved sibling of `issue`", () => {
   it("emits NO diagnostic at all for an element with a divergence annotation", () => {
     const diags = diagsFor(`
 slice "Emit" {
+  ui Emit @Customer
+  command Emit Thing
   event Thing Done
 }
 slice "S" {
@@ -95,6 +97,8 @@ slice "S" {
   it("still emits no divergence-related diagnostic even alongside an open `issue` on the same element", () => {
     const diags = diagsFor(`
 slice "Emit" {
+  ui Emit @Customer
+  command Emit Thing
   event Thing Done
 }
 slice "S" {
@@ -675,6 +679,78 @@ slice "C" {
   });
 });
 
+describe("untriggered event warning", () => {
+  // The record-side mirror of the untriggered-command rule. An event is only ever produced
+  // by a command (isLegalFlow allows no other producer) — one with no command in its slice
+  // and no explicit arrow from one is a fact with no traceable cause.
+  const unproduced = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("no producing command"));
+
+  it("warns on an event alone in a slice, with no command", () => {
+    const diags = unproduced(`
+context Ticket
+slice "Emit" {
+  event Ticket Opened @Ticket
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
+    expect(diags[0].message).toContain('event "Ticket Opened"');
+  });
+
+  it("stays quiet when a command shares the slice, in any order", () => {
+    expect(
+      unproduced(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+`),
+    ).toHaveLength(0);
+    expect(
+      unproduced(`
+context Ticket
+slice "Open" {
+  event Ticket Opened @Ticket
+  command Open Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts an explicit command -> event arrow from an earlier slice", () => {
+    expect(
+      unproduced(`
+context Ticket
+slice "Open" {
+  ui Ticket Form @Agent
+  command Open Ticket
+}
+slice "Record" {
+  event Ticket Opened @Ticket
+}
+arrow "Open Ticket" -> "Ticket Opened"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("flags each unproduced event separately and leaves the produced ones alone", () => {
+    const diags = unproduced(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+  event Ticket Logged @Ticket
+}
+slice "Stray" {
+  event Ticket Escalated @Ticket
+}
+`);
+    expect(diags.map((d) => d.message)).toEqual([expect.stringContaining('"Ticket Escalated"')]);
+  });
+});
+
 describe("ui sharing a reaction's slice", () => {
   // A `ui` only ever triggers a `command` (State Change) — no pattern has a `ui` triggering a
   // reaction. Placed in a reaction's slice instead, it renders with no outgoing edge at all.
@@ -761,6 +837,106 @@ slice "Assign" {
 }
 `),
     ).toHaveLength(0);
+  });
+});
+
+describe("ui with no backing view or command", () => {
+  // Every screen needs something behind it: a read model to display (State View) or a
+  // command to issue (State Change). A `ui` with neither is a screen with nothing driving
+  // it — commonly a GET endpoint quietly dropped during extraction.
+  const unbacked = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("issues no command"));
+
+  it("warns on a ui alone in a slice, with no view and no command", () => {
+    const diags = unbacked(`
+context Ticket
+slice "Mystery" {
+  ui Something @Agent
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
+    expect(diags[0].message).toContain('ui "Something"');
+  });
+
+  it("stays quiet on the ordinary State Change pairing (ui + command, no view)", () => {
+    expect(
+      unbacked(`
+context Ticket
+slice "Assign" {
+  ui Queue Board @Agent
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("stays quiet on the ordinary State View pairing (view + ui, no command)", () => {
+    expect(
+      unbacked(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Board" {
+  view Ticket Queue from "Ticket Opened"
+  ui Queue Board @Agent
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts an explicit view -> ui arrow", () => {
+    expect(
+      unbacked(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Board" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Screen" {
+  ui Queue Board @Agent
+}
+arrow "Ticket Queue" -> "Queue Board"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts an explicit ui -> command arrow", () => {
+    expect(
+      unbacked(`
+context Ticket
+slice "Screen" {
+  ui Queue Board @Agent
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+arrow "Queue Board" -> "Assign Ticket"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("does not double-warn when the ui shares a reaction's slice (that case has its own diagnostic)", () => {
+    const diags = diagsFor(`
+context Shipping
+slice "Weird" {
+  ui Something @Ops
+  translation Carrier Adapter
+}
+slice "Confirm Delivery" {
+  command Confirm Delivery
+  event Delivery Confirmed @Shipping
+}
+`);
+    expect(diags.filter((d) => d.message.includes("renders disconnected here"))).toHaveLength(1);
+    expect(diags.filter((d) => d.message.includes("issues no command"))).toHaveLength(0);
   });
 });
 
@@ -874,8 +1050,102 @@ slice "Queue Again" {
   });
 });
 
+describe("translation naming collision across producers", () => {
+  // Two translations sharing a name but reading from different producers is a naming
+  // collision — the timeline shows the same name twice for two unrelated external messages.
+  const collision = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("different producers"));
+
+  it("warns when two translations share a name but read from different producers", () => {
+    const diags = collision(`
+context External
+persona User
+slice "External A" {
+  event Ext A Happened @External
+}
+slice "View A" {
+  view A State from "Ext A Happened"
+}
+slice "React A" {
+  translation Sync from "A State"
+  command Handle A
+  event A Handled @External
+}
+slice "External B" {
+  event Ext B Happened @External
+}
+slice "View B" {
+  view B State from "Ext B Happened"
+}
+slice "React B" {
+  translation Sync from "B State"
+  command Handle B
+  event B Handled @External
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning" });
+    expect(diags[0].message).toContain('translation "Sync" is defined 2 times');
+    expect(diags[0].message).toContain('"A State" vs "B State"');
+  });
+
+  it("stays quiet when translations of the same name share the same producer (e.g. repeated for clarity)", () => {
+    expect(
+      collision(`
+context External
+slice "External A" {
+  event Ext A Happened @External
+}
+slice "View A" {
+  view A State from "Ext A Happened"
+}
+slice "React A" {
+  translation Sync from "A State"
+  command Handle A
+  event A Handled @External
+}
+slice "React A Again" {
+  translation Sync from "A State"
+  command Handle A Again
+  event A Handled Again @External
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("stays quiet on translations with distinct names, regardless of producer", () => {
+    expect(
+      collision(`
+context External
+slice "External A" {
+  event Ext A Happened @External
+}
+slice "View A" {
+  view A State from "Ext A Happened"
+}
+slice "React A" {
+  translation Sync A from "A State"
+  command Handle A
+  event A Handled @External
+}
+slice "External B" {
+  event Ext B Happened @External
+}
+slice "View B" {
+  view B State from "Ext B Happened"
+}
+slice "React B" {
+  translation Sync B from "B State"
+  command Handle B
+  event B Handled @External
+}
+`),
+    ).toHaveLength(0);
+  });
+});
+
 describe("`public` marker raises no diagnostic", () => {
-  it("produces no diagnostics for an event marked public", () => {
+  it("produces no diagnostics for a fully-connected event marked public", () => {
     const diags = diagsFor(`
 slice "Place" {
   ui New Order @Customer
@@ -888,6 +1158,64 @@ slice "Catalog" {
 }
 `);
     expect(diags).toHaveLength(0);
+  });
+
+  it("exempts a public event with no local reader from the unread-event warning", () => {
+    // The whole point of `public`: this event's consumer is outside this model — a partner
+    // integration, another team's service — so there's nothing local to project it into.
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  ui New Order @Customer
+  command Place Order
+  event Order Placed @Order public
+}
+`);
+    expect(diags.filter((d) => d.message.includes("not read by any read model"))).toHaveLength(0);
+  });
+
+  it("still warns on an unread event that isn't marked public", () => {
+    // Sanity check: the exemption is specific to `public`, not a blanket suppression.
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  ui New Order @Customer
+  command Place Order
+  event Order Placed @Order
+}
+`);
+    expect(diags.filter((d) => d.message.includes("not read by any read model"))).toHaveLength(1);
+  });
+
+  it("exempts a public view with no local consumer from the unconsumed-read-model warning", () => {
+    // A view feeding a public read API/webhook: its consumer is another service entirely,
+    // possibly outside this system, so there's no local `ui`/reaction to point to.
+    // `public`, like `again`, is written before `from` — grammar per dsl.md.
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Public Feed" {
+  view Order Feed public from "Order Placed"
+}
+`);
+    expect(diags.filter((d) => d.message.includes("has no consumer"))).toHaveLength(0);
+  });
+
+  it("still warns on an unconsumed view that isn't marked public", () => {
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Feed" {
+  view Order Feed from "Order Placed"
+}
+`);
+    expect(diags.filter((d) => d.message.includes("has no consumer"))).toHaveLength(1);
   });
 });
 

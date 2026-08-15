@@ -425,7 +425,9 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `binding-missing-file` | warning | Doc binding points at a missing file | Create the slice doc, or fix the `note` path. |
 | `both-ends-of-a-flow/command-no-event` | warning | Command without event | Add the event this command records. |
 | `both-ends-of-a-flow/command-untriggered` | warning | Command with no trigger | Add a `ui` in this slice, or a reaction in the previous slice. |
+| `both-ends-of-a-flow/event-unproduced` | warning | Event with no producing command | Add the command that records it, or an explicit arrow from one. |
 | `both-ends-of-a-flow/event-unread` | warning | Event nobody reads | Project it into a view, or reconsider recording it. |
+| `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
 | `duplicate-element-ref` | warning | Duplicate element ref | Rename the element so its export ref is unique. |
@@ -445,6 +447,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
+| `translation-name-collision` | warning | Translation name reused for different producers | Use a distinct name per producer to avoid confusion. |
 | `type-cycle` | error | Cyclic type reference | Break the cycle, or route the self/mutual reference through an array. |
 | `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction, no command | Move the `ui` to the read-model slice, or to the slice with the command this triggers. |
 | `view-again-without-earlier` | error | `again` without an earlier declaration | Declare the view plainly the first time it appears. |

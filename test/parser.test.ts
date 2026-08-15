@@ -174,16 +174,29 @@ slice "S" {
     });
   });
 
-  it("rejects `public` on a non-event kind", () => {
+  it("rejects `public` on a command or ui — only event and view carry an integration surface", () => {
     expect(() => parse(`slice "S" {\n  command Do Thing public\n}`)).toThrow(
-      /`public` is only valid on event/,
+      /`public` is only valid on event or view/,
     );
     expect(() => parse(`slice "S" {\n  ui Catalog public @Customer\n}`)).toThrow(
-      /`public` is only valid on event/,
+      /`public` is only valid on event or view/,
     );
-    expect(() => parse(`slice "S" {\n  view Open Orders public\n}`)).toThrow(
-      /`public` is only valid on event/,
-    );
+  });
+
+  it("parses a `public` clause on a view — a published read API/webhook with no local consumer", () => {
+    const ast = parse(`slice "S" {\n  view Open Orders public\n}`);
+    expect(ast.slices[0].elements[0]).toMatchObject({
+      name: "Open Orders",
+      public: true,
+    });
+  });
+
+  it("accepts `public` before a trailing `again` on a view, in either order", () => {
+    const beforeAgain = parse(`slice "S" {\n  view Open Orders public again\n}`);
+    expect(beforeAgain.slices[0].elements[0]).toMatchObject({ name: "Open Orders", public: true, again: true });
+
+    const afterAgain = parse(`slice "S" {\n  view Open Orders again public\n}`);
+    expect(afterAgain.slices[0].elements[0]).toMatchObject({ name: "Open Orders", public: true, again: true });
   });
 
   it("coexists `public` with `note`, `issue`, and `@Context` on the same element", () => {
