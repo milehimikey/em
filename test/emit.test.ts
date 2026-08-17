@@ -52,6 +52,41 @@ slice "S" {
     expect(dot).toMatch(/place_order \[label="Place Order"[^\]]*fixedsize=true/);
   });
 
+  it("wraps a PascalCase name with no spaces onto multiple lines", () => {
+    const { dot } = compile(
+      `slice "S" {\n  command ThisIsAnExtremelyLongCommandNameThatShouldTestBoxWidthOverflowHandling\n}`,
+    );
+    const match = dot.match(/label="([^"]*)", fillcolor=/);
+    expect(match).not.toBeNull();
+    const lines = (match![1] as string).split("\\n");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(18);
+  });
+
+  it("splits camelCase acronyms at case transitions, not mid-acronym", () => {
+    const { dot } = compile(`slice "S" {\n  command SyncHTTPServerConfigNow\n}`);
+    const match = dot.match(/label="([^"]*)", fillcolor=/);
+    const lines = (match![1] as string).split("\\n");
+    expect(lines.join(" ")).toMatch(/HTTP/);
+  });
+
+  it("hard-chops a single unbroken run of characters as a last resort", () => {
+    const long = "a".repeat(60);
+    const { dot } = compile(`slice "S" {\n  command ${long}\n}`);
+    const match = dot.match(/label="([^"]*)", fillcolor=/);
+    const lines = (match![1] as string).split("\\n");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(18);
+    expect(lines.join("")).toBe(long);
+  });
+
+  it("leaves normal multi-word wrapping unchanged", () => {
+    const { dot } = compile(
+      `slice "S" {\n  command Sync Smartphone Operating System Name\n}`,
+    );
+    expect(dot).toContain('label="Sync Smartphone\\nOperating System\\nName"');
+  });
+
   it("warns when an automation slice also contains the triggered command", () => {
     const { diagnostics } = compile(`
 slice "Auto" {
