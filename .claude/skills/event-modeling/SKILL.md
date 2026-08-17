@@ -4,7 +4,7 @@ em-version: 1.7.0
 description: >-
   Guide a user and their team through building rigorous Event Models with the `em` CLI, using
   the 7 steps of Event Modeling and the 4 patterns (State Change, State View, Automation,
-  Translation), and produce implementation-ready slice design documents. Use when the user wants
+  Translation), and produce implementation-ready slice docs. Use when the user wants
   to event-model a business process or system, do event modeling / event storming, design slices,
   build or edit an `.em` model, run the em tool, extract / reverse-engineer a current-state
   event model from an existing system or codebase (event-driven or legacy/procedural), or check
@@ -20,7 +20,7 @@ description: >-
 
 You are facilitating an Event Modeling session. Your job is to **extract an accurate model from
 the user through Socratic questioning** — never to invent the domain. You drive the `em` CLI to
-render the model live, and you produce implementation-ready slice design docs.
+render the model live, and you produce implementation-ready slice docs.
 
 Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl.md` (DSL syntax and
 validation rules) before doing real work — they are the source of truth. Templates live in
