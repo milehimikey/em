@@ -29,8 +29,9 @@ copy), so it's versioned with your repo and works for anyone who opens it in Cla
 `/event-modeling` takes an optional phase argument. With no argument it resumes wherever
 the previous session left off.
 
-Most phases run once per model, in roughly the order below — but `conform` is a **recurring**
-one, run again whenever the codebase has moved. [workflow.md](workflow.md) puts these phases
+Most phases run once per model, in roughly the order below — but `implement` runs **once per
+ratified slice**, and `conform` is a **recurring** one, run again whenever the codebase has
+moved. [workflow.md](workflow.md) puts these phases
 in the context of a model's whole life, alongside the CLI commands (`em diff`, `em changelog`)
 that live between sessions.
 
@@ -40,8 +41,10 @@ that live between sessions.
 | `extract` | The as-is sibling of discover: derives a current-state model from an existing system (event-driven or procedural), confirming each round with you | A validated as-is `.em`, unknowns parked as `# TBD` |
 | `model` | Steps 5–7: group events into contexts, classify every slice as one of the [four patterns](patterns.md), check completeness | A structurally complete, validated model |
 | `slice` | Deep-dive one slice at a time: fields, invariants, Given/When/Then scenarios, error flows | One implementation-ready `slices/<name>.md` per slice, wired in via `note` |
+| `implement` | Builds one **ratified** slice into code, following the bundled [agent guide](../.claude/skills/event-modeling/reference/implement.md): readiness-gated (`em validate --slice-ready`), slice doc treated as the read-only spec, gaps surfaced to you rather than decided silently | A merged PR; the slice doc flipped to `implemented` with its `implementedIn` link |
 | `conform` | Checks a ratified model (and its slice docs) against the codebase that implements it: evidence-first per-slice walk, `em diff --json` for structural drift, findings classified with cited evidence | An advisory `conformance/<date>-report.md` with proposed red notes you ratify |
 | `watch` | Starts `em watch --serve` in the background for a live team view | A running live viewer |
+| `review` | Facilitated stakeholder walkthrough: steps the live viewer's Review mode through slices one at a time, capturing anything the room raises as `issue "..."` red notes | Triaged issues; a `Last stakeholder review:` marker in the state file |
 | `validate` | Walks every diagnostic with you and applies fixes, plus the one check the validator can't do itself | A clean `em validate` |
 
 ## What a session produces

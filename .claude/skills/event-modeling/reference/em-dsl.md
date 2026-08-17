@@ -51,7 +51,7 @@ em watch <file> --port <n>                # port for --serve (default 5173)
 em validate <file>                        # check a model against event-modeling rules
 em validate <file> --list-issues          # print only open `issue` diagnostics (slice, element, line, text)
 em validate <file> --list-divergences     # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
-em validate <file> --list-public          # print only events marked `public` (slice, name, line) — an integration-surface audit, never fails the build
+em validate <file> --list-public          # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
 em validate <file> --fail-on-issues       # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
 em validate <file> --slice-ready <key>    # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
 em ledger <file>                          # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
@@ -98,12 +98,14 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 |---|---|---|---|---|
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `{ fields }` |
-| `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `{ fields }` |
+| `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
 | `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
-- **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a row.
+- **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a
+  row. Multi-word tags need no quoting — the tag captures everything after `@` to end of line
+  (`ui Ticket Queue @Customer Service` matches `persona Customer Service`).
 - **`from "X"`** on views/automations declares the source(s); names are quoted, comma-separated.
   Matching is case-insensitive and whitespace-normalized. A `from` may never point at an event or
   view that first appears in a LATER slice (forward-only timeline — validation error).
@@ -136,13 +138,16 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   Raises **no** `em validate` warning by design; use `--list-divergences` to audit. `em diff
   --json` carries it forward as `acceptedDivergence` on the affected change/removal entry, so
   `conform` can cite an already-ratified deviation instead of re-flagging it as drift every run.
-- **`public`** (events only): marks this event as part of the published integration surface
-  (e.g. an AsyncAPI contract), as opposed to an internal-only fact. Plain structural flag, no
-  free text and no diagram marker (same posture as `again`). Write it as the last token on the
-  line, optionally right before a trailing `@Context` — `event X @Context public` or
-  `event X public @Context` both work. `em export` carries it as `public: true`/`false`;
-  `em diff` reports a flip as `event marked public`/`event unmarked public`;
-  `em validate --list-public` audits which events are public.
+- **`public`** (events and views): marks the element as part of the published integration
+  surface — a published event contract (e.g. AsyncAPI), or a view whose read API/response
+  shape external consumers depend on — as opposed to an internal-only fact or projection.
+  Plain structural flag, no free text and no diagram marker (same posture as `again`). Write
+  it as the last token on the line; on an event, optionally right before a trailing
+  `@Context` — `event X @Context public` or `event X public @Context` both work. A `public`
+  element is exempt from the unread-event / unconsumed-view warnings (its consumer is outside
+  this model). `em export` carries it as `public: true`/`false`; `em diff` reports a flip as
+  `event marked public`/`event unmarked public` (the entry cites the element's kind, so a
+  view flip reads `view "X"`); `em validate --list-public` audits the whole public surface.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured
@@ -375,6 +380,12 @@ slice "Read Quote — created" {
    (`type Node { child: Node }`, or the same shape across several types). Break the cycle, or
    route the self/mutual reference through an array (`children: Node[]`) if the data is
    genuinely tree-shaped.
+9. **Lineage-ref errors** (slice-doc frontmatter, fs-aware) — a
+   `split-from`/`merged-from`/`superseded-by` ref with malformed `<slice-key>@v<N>` grammar, a
+   self-reference or cycle, a `superseded-by` naming a slice absent from the current model, or
+   a ref naming a version higher than the target's own `version:`. A `split-from`/`merged-from`
+   naming a key absent from the tree is deliberately silent — that's the normal state after a
+   real split/merge (see the four `lineage-*` codes in the table below).
 
 **Warnings (should fix):**
 1. **Automation/translation shares slice with its command** — both `automation`/`processor` and
@@ -389,8 +400,10 @@ slice "Read Quote — created" {
 4. **Command without event** — every command should record at least one event.
 5. **Event nobody reads** — the mirror of (4): recording an event no read model projects is a
    write with no reader. Follow every write slice with the read slice that consumes its event.
-   Counts as read when a `view` names it in `from` (any `again` instance will do), when a
-   fieldless-`from` view sits in its slice, or via an explicit `event -> view` arrow.
+   Counts as read when a `view` names it in `from` (any `again` instance will do), when a view
+   with no `from` of its own sits in its slice, or via an explicit `event -> view` arrow.
+   (Events marked `public` are exempt — their reader is outside the model; same for a
+   `public` view and the no-consumer warning.)
 6. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
 7. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
    (A duplicate `type` name always warns, unlike a duplicate element name — there's no
@@ -405,6 +418,18 @@ slice "Read Quote — created" {
     command in the same slice. Only checked once BOTH the event and at least one same-slice
     command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
     once fields are written down, `em validate` checks that data flows forward consistently.
+11. **Event with no producing command** — a fact with no traceable cause; add the command that
+    records it (either order within the slice), or an explicit `arrow` from one.
+12. **Two same-named `translation`s reading different producers** — rename one; fires
+    unconditionally (unlike the duplicate-name warning), since the confusion is in reading
+    the model, not resolving a reference.
+13. **Frontmatter coherence** (slice docs, fs-aware) — `status: implemented` with no
+    `implementedIn` link at all. The re-ratification mismatch (status flipped back while
+    `implementedIn` names the prior PR) is deliberately never flagged — it's the drift
+    signal, not incoherence.
+14. **Doc-join problems** (`em export`/`--slice-ready`) — `binding-missing-file` (a
+    `note "slices/<key>.md"` binding pointing at a file that doesn't exist) and
+    `frontmatter-invalid` (the doc exists but lacks a frontmatter block or a required key).
 
 `divergence "text"` is deliberately NOT in this list — it raises no warning at all, since it
 records a deviation already reasoned through and accepted, not something to fix. Use
@@ -416,7 +441,8 @@ Every rule above (and every fs-aware check `em validate` layers on top — linea
 coherence) has a stable `code`, generated below from the same registry `em` itself validates
 against (`src/model/rules.ts`) — a new rule shows up here the moment it's registered, whether or
 not the prose above has caught up yet. `--slice-ready <key>`-only codes are excluded; see
-[cli.md](../../../../docs/cli.md#em-validate-file).
+`docs/cli.md#em-validate-file` in the
+[em repository](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-validate-file).
 
 <!-- GENERATED:validate-rules:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Code | Severity | Title | Fix |

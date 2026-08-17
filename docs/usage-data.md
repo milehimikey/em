@@ -19,7 +19,8 @@ current phase, decisions made, and open questions. It now also gets a **Usage lo
 
 One line per session. Two things per line:
 
-- **Phase(s) touched** — `discover`, `extract`, `model`, `slice`, `conform`, `validate`, `watch`.
+- **Phase(s) touched** — `discover`, `extract`, `model`, `slice`, `implement`, `conform`,
+  `review`, `validate`, `watch`.
 - **Validate diagnostic categories hit** — one of the fixed strings in
   [Categories](#categories) below, not the full instance message. `none` if `em validate` came
   back clean.
@@ -46,15 +47,23 @@ into two in the aggregation recipe below.
 | Category |
 |---|
 | reaction shares slice with command |
+| ui shares slice with reaction |
 | command nothing triggers |
 | command produces no event |
+| event has no producing command |
 | event not read by any read model |
 | read model has no source |
 | read model has no consumer |
+| ui with no view or command |
+| translation name collision |
 | duplicate name referenced |
+| duplicate type name |
+| public event unread |
+| public view unconsumed |
 | open issue |
 | view field no source |
 | event field not provided by command |
+| implemented without link |
 
 **Errors**
 
@@ -69,6 +78,11 @@ into two in the aggregation recipe below.
 | arrow endpoint unresolved |
 | arrow points backward |
 | illegal connection |
+| type cycle |
+| lineage ref malformed |
+| lineage ref cycle |
+| lineage forward dangling |
+| lineage version impossible |
 
 If a genuinely new rule shows up that doesn't fit, add its category here first — don't
 freelance a new string in a state file.

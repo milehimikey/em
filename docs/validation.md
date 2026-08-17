@@ -27,7 +27,7 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | A lineage ref (`split-from`/`merged-from`/`superseded-by`) that doesn't match the `<slice-key>@v<N>` grammar (`lineage-ref-malformed`) | Fix the value to `<slice-key>@v<N>`, or remove it |
 | A lineage ref that names its own slice, or that closes a cycle with another slice's lineage ref (`lineage-ref-cycle`) | Break the cycle — a slice can't be its own ancestor |
 | `superseded-by` naming a slice absent from the current model (`lineage-forward-dangling`) | Fix the key, or remove the stale successor |
-| A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the target slice first |
+| A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the pending delta on the target slice first (bumping its `version:`) |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
@@ -56,10 +56,12 @@ each; run `em validate` on it to see all five.
 
 ### Lineage
 
-`em validate` is the one place this table's checks aren't a pure function of the `.em` source:
-resolving a `split-from`/`merged-from`/`superseded-by` ref means also reading `slices/*.md`
-frontmatter (see [slice-doc-schema.md](slice-doc-schema.md#lineage-grammar-and-cardinality)) —
-the first, and so far only, `em validate` rule that touches the filesystem.
+This is one place this table's checks aren't a pure function of the `.em` source: resolving a
+`split-from`/`merged-from`/`superseded-by` ref means also reading `slices/*.md` frontmatter
+(see [slice-doc-schema.md](slice-doc-schema.md#lineage-grammar-and-cardinality)). It is one of
+three fs-aware rule families in `em validate`, alongside
+[frontmatter coherence](#frontmatter-coherence) and the opt-in
+[slice readiness](#slice-readiness) gate; every other rule reads only the `.em`.
 
 The rigor boundary is deliberate (ratified MIL-84, 2026-08-13): **validate checks what the
 current tree can falsify, and stays silent about what it can't.** `split-from`/`merged-from`

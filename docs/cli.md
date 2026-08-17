@@ -64,7 +64,7 @@ balloon into showing most of the model. Can't be combined with `--emit-dot`. Thi
 the path convention the `event-modeling` skill's `slice` phase writes to, and that
 `em catalog` looks for (see below).
 
-**Slice status colors.** Every slice's title cell is colored by its design doc's status
+**Slice status colors.** Every slice's title cell is colored by its slice doc's status
 (`slices/<kebab-slug>.md`, same doc `em catalog` reads — see below), whenever one exists next
 to the `.em` file. Status comes from the doc's leading YAML frontmatter (`status: ...`) —
 the canonical dialect — or, for docs written before frontmatter existed, a legacy
@@ -90,7 +90,7 @@ header coloring.
 ## `em watch <file>`
 
 Renders once, then re-renders on every save — of the `.em` file, or of any of its slices'
-`slices/*.md` design docs (so flipping a frontmatter `status:` value, or a legacy
+`slices/*.md` slice docs (so flipping a frontmatter `status:` value, or a legacy
 `- **Status:** ...` line, live-updates header colors without touching the model). Saves with
 validation errors are skipped (the errors print; the previous render stays on disk). Ctrl-C to
 stop.
@@ -109,6 +109,13 @@ reload over Server-Sent Events, so the browser updates the moment you save, with
 and no flicker. The server serves the directory the SVG is written to, which is what keeps
 `note` links inside the SVG clickable.
 
+The served viewer's header also carries **Review mode** — a slice-by-slice storyboard
+walkthrough for stakeholder sessions: Prev/Next (or the arrow keys) steps through slices in
+declaration order, panning/zooming each into view with everything else dimmed. Issues added
+to the `.em` mid-session arrive over the same SSE push without leaving review mode; the
+event-modeling skill's `review` phase ([ai-workflow.md](ai-workflow.md)) runs a facilitated
+session on top of it.
+
 ## `em validate <file>`
 
 Runs every rule in [validation.md](validation.md) and prints the diagnostics. Exits
@@ -116,8 +123,9 @@ non-zero if there are errors; exits zero on warnings or a clean model, printing
 `ok — no issues` when there is nothing to report. Useful in CI to keep a committed model
 honest.
 
-Every rule except two is a pure function of the `.em` source. Both exceptions read
-`slices/*.md` frontmatter alongside the model: lineage-ref resolution (MIL-84) checks
+Every always-on rule except two is a pure function of the `.em` source (the opt-in
+`--slice-ready` gate below reads the slice doc as well, by design). Both always-on exceptions
+read `slices/*.md` frontmatter alongside the model: lineage-ref resolution (MIL-84) checks
 `split-from`/`merged-from`/`superseded-by` refs against the current tree — see
 [validation.md#lineage](validation.md#lineage); frontmatter coherence (MIL-85) flags a slice
 doc whose `status: implemented` has no `implementedIn` link — see
@@ -321,11 +329,12 @@ slice). This is intentional — a rename genuinely is a change to the model's ub
 language, and `em diff` surfacing it as one is the honest read, not a bug to fix later.
 
 **Integration-surface promotion/demotion** (`event-marked-public`/`event-unmarked-public`,
-added in schema `1.2`). When an event's `public` clause (see
+added in schema `1.2`). When an event's or view's `public` clause (see
 [dsl.md](dsl.md#integration-surface)) is added or removed between the two sides, `em diff`
 reports it as `event marked public` / `event unmarked public` — its own change type, not
 lumped in with a generic field change, since a contract consumer needs to know exactly when
-an event enters or leaves the published surface.
+an element enters or leaves the published surface. (The change-type names predate the marker
+widening to views; the entry's `kind` says which it was.)
 
 **Declared types** (`type-added`/`type-removed`/`type-field-added`/`type-field-removed`/
 `type-field-changed`, added in schema `1.3`). Types are matched by their `em export` `ref`,
@@ -592,7 +601,7 @@ inputs in the same order.
 
 Generates a browsable static HTML site over one or more models — an index page with each
 model's diagram embedded inline plus a table of its slices, and a per-slice detail page
-(diagram, elements, and its `slices/<slice-name>.md` design doc rendered as HTML, if one
+(diagram, elements, and its `slices/<slice-name>.md` slice doc rendered as HTML, if one
 exists). Git stays the only
 history store: the catalog is regenerated from the current `.em` file(s) each run, never a
 new place data lives. This is the presentation layer the roadmap held back until there was
@@ -631,7 +640,7 @@ page embeds this diagram as primary, with a link back to the full model diagram 
 it. Always `.svg` — a slice diagram never depends on the catalog's own `-T` choice for the
 main diagram.
 
-**Slice docs.** A slice's design doc is looked up deterministically at
+**Slice docs.** A slice's doc is looked up deterministically at
 `slices/<kebab-slug-of-slice-name>.md`, next to the `.em` file — the same path the
 `event-modeling` skill's `slice` phase writes to. This is *not* the same thing as an
 element's `note` clause (which annotates one diagram element, not a whole slice) — the two
@@ -745,8 +754,9 @@ Copies the bundled `event-modeling` Claude Code skill out of the npm package int
 
 ## `em skill sync [path]`
 
-The downstream half of the skill-drift problem `em skill install`'s version-stamp gate
-(MIL-92) covers only in this repo: a repo that vendored the skill via `em skill install` has
+The downstream half of the skill-drift problem the in-repo MIL-92 gates (the `em-version:`
+version stamp, skill doctests, and generated reference sections) cover only in this repo: a
+repo that vendored the skill via `em skill install` has
 no way to know its copy has gone stale as the source skill in the `em` npm package moves on.
 `em skill sync` closes that gap — it updates `[path]/.claude/skills/event-modeling/` to
 exactly match the skill bundled with whatever `em` is currently installed (MIL-93).

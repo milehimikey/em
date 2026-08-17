@@ -13,14 +13,16 @@ to make staying true cheap.
 | 1. Build | Model the process — greenfield or from an existing system | `/event-modeling discover` or `extract` | `<model>.em`, rendered diagram |
 | 2. Specify | Deepen each slice into an implementable spec | `/event-modeling slice` | `slices/<name>.md`, linked via `note` |
 | 3. Gate | Keep the committed model honest | `em validate` in CI | A failing check on a broken model |
-| 4. Hand off | Give a slice to whoever (or whatever) builds it | the slice doc; `em export` | Working code, `Status: implemented` |
+| 4. Hand off | Give a slice to whoever (or whatever) builds it | the slice doc; `em export` | Working code, `status: implemented` + `implementedIn` link |
 | 5. Track | Show what changed, to engineers and to the business | `em diff`, `em changelog` | Review comments, a business ledger |
 | 6. Check | Ask whether the code still matches the model | `/event-modeling conform` | `conformance/<date>-report.md` |
 | 7. Ratify | Decide what the drift means, and record it | you, with the report | An updated model + decisions log |
 
 Stages 6 and 7 loop back into 1 — that's what keeps a model worth trusting a year after
 somebody wrote it. Not every model needs all seven; see
-[adopting this incrementally](#adopting-this-incrementally) at the end.
+[adopting this incrementally](#adopting-this-incrementally) at the end. And for the
+responsibility view of the same lifecycle — which stages need humans in the room, which an
+agent can carry with review — see [process.md](process.md).
 
 ## 1. Build the model
 
@@ -54,15 +56,20 @@ The `.em` file holds structure. Depth belongs in prose, one markdown file per sl
 from the diagram with `note "slices/<name>.md"`. The `slice` phase produces these: field
 tables with validation rules, named invariants, Given/When/Then scenarios, error flows.
 
-Each slice doc carries a status that moves as the work does:
+Each slice doc carries machine-read YAML frontmatter — the full contract is
+[slice-doc-schema.md](slice-doc-schema.md) — whose `status` moves as the work does:
 
 ```
 draft → reviewed → ready-to-implement → implemented
 ```
 
-`implemented` also records where — a PR or commit link. That link looks like bookkeeping
-and isn't: it's what stage 6 uses to know which slices are worth checking against code, and
-what a future reader follows to find out how a business rule was actually built.
+`implemented` also records where — `implementedIn`, a PR or commit link. That link looks like
+bookkeeping and isn't: it's what stage 6 uses to know which slices are worth checking against
+code, and what a future reader follows to find out how a business rule was actually built.
+The frontmatter also carries `version:`, which bumps when a change to an already-shipped
+slice is ratified — recorded in the doc's `## Delta` section as typed operation blocks — and
+lineage keys (`split-from`/`merged-from`/`superseded-by`) when a slice splits, merges, or is
+renamed, so its history survives the reshuffle.
 
 Add `{ fields }` to elements as you learn them. Once both sides of a flow declare fields,
 `em validate` starts checking that data traces forward — a view field with no source event,
@@ -77,8 +84,9 @@ Actions workflow that runs `em validate` on every changed model.
 `em validate` fails only on **errors** — structural breakage like an unresolved `from` or a
 backward-pointing arrow. Warnings, including open `issue` clauses, never block, so the gate
 doesn't get noisy as a model evolves. If you want open questions to block a *handoff*
-specifically, that's `--fail-on-issues`, and it belongs on the slice's readiness check
-rather than on every PR.
+specifically, that's the per-slice readiness gate — `em validate --slice-ready <key>`, run at
+stage 4, not on every PR ([cli.md](cli.md#--slice-ready-key-mil-87)); `--fail-on-issues`
+remains for gating a whole model on its open `issue` clauses.
 
 ## 4. Hand a slice off
 
@@ -86,6 +94,19 @@ A slice is a good unit of work precisely because it's bounded: one command, its 
 the read models involved, the invariants that must hold, and scenarios that compile to
 tests. Hand the slice doc to an engineer or an agent and it is, in most cases, a complete
 brief.
+
+The handoff has a gate: a slice goes out only once it's **ratified** — a human flips its
+`status` to `ready-to-implement` with every open question resolved
+([process.md](process.md#what-ratified-means)). That's mechanically checkable:
+
+```bash
+em validate model.em --slice-ready <key>    # exits non-zero until the slice is safe to hand off
+```
+
+For an agent implementer, the bundled skill ships the full contract to follow —
+[the agent guide](../.claude/skills/event-modeling/reference/implement.md): the readiness
+gate, the read-only rule on ratified docs, propose-don't-decide for gaps, the merge-time
+status flip, and the spec-kit adapter (em-sdd-bridge) where one applies.
 
 For anything programmatic — a generator, a dashboard, an MCP server, your own scripts —
 consume `em export` rather than parsing the DSL:
@@ -199,7 +220,10 @@ and treat a finding as the start of a conversation.
 | Structural errors (unresolved `from`, backward arrows) | `em validate` exits non-zero | — |
 | Open `issue` clauses | only with `--fail-on-issues` (opt-in) | warning by default |
 | Fields completeness | — | warnings |
+| Slice readiness at handoff | `em validate --slice-ready <key>` exits non-zero (opt-in, per slice) | — |
 | Model changed at all | only with `em diff --exit-code` | — |
+| Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history) | — |
+| Vendored skill drift | `em skill check` exits non-zero (opt-in) | — |
 | Conformance findings | never | always — you ratify |
 
 The pattern is deliberate: `em` is strict about things that are unambiguously wrong, and

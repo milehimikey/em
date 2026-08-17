@@ -10,9 +10,10 @@ description: >-
   event model from an existing system or codebase (event-driven or legacy/procedural), or check
   a ratified model for drift against the codebase that implements it. Works in resumable phases
   via an argument: `discover` (steps 1-4, greenfield), `extract` (current-state model of an
-  existing system), `model` (steps 5-7), `slice` (deep slice specs), `conform` (drift check
-  against the codebase), plus `watch` and `validate`. With no argument it resumes from the saved
-  state file.
+  existing system), `model` (steps 5-7), `slice` (deep slice specs), `implement` (build one
+  ratified slice into code, following the bundled agent guide), `conform` (drift check
+  against the codebase), plus `watch`, `review` (stakeholder walkthrough), and `validate`.
+  With no argument it resumes from the saved state file.
 ---
 
 # Event Modeling with `em`
@@ -23,7 +24,9 @@ render the model live, and you produce implementation-ready slice design docs.
 
 Read `reference/methodology.md` (the 7 steps + 4 patterns) and `reference/em-dsl.md` (DSL syntax and
 validation rules) before doing real work — they are the source of truth. Templates live in
-`templates/`.
+`templates/`. References to `docs/*.md` throughout this skill mean the
+[em repository's docs](https://github.com/milehimikey/em/tree/main/docs) — they are not
+vendored alongside this skill.
 
 ## Operating principles (every phase)
 
@@ -80,8 +83,8 @@ validation rules) before doing real work — they are the source of truth. Templ
 - **Validate continuously.** Run `em validate` and fix errors/warnings as you go (see DSL ref).
 - **Save state at the end of every session** so work resumes cleanly. Also append one line to
   the Usage log: the phase(s) touched and the `em validate` diagnostic *categories* that fired
-  (rule name only, e.g. "read model nothing consumes" — never the full message or domain
-  content). This is the team's only usage signal today (`docs/usage-data.md`) — keep it cheap
+  (the exact fixed strings from `docs/usage-data.md`, e.g. "read model has no consumer" —
+  never the full message or domain content). This is the team's only usage signal today (`docs/usage-data.md`) — keep it cheap
   and habitual, not a task to skip.
 
 ## Preconditions (run first)
@@ -247,8 +250,10 @@ For each slice:
    contexts) before finalizing field names/types or invariants — don't guess a shape that's
    already defined elsewhere.
 2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name), with the YAML
-   frontmatter block (`pattern`/`swimlane`/`status`/`version`/`implementedIn`, kebab-case
-   `pattern` value, `version` starting at `1`) at the very top — the canonical, machine-read
+   frontmatter block at the very top — all five of `schemaVersion`/`pattern`/`swimlane`/
+   `status`/`version` (kebab-case `pattern` value, `schemaVersion: 1`, `version` starting at
+   `1`; omitting any of the five makes the doc `frontmatter-invalid` to `em export` and the
+   readiness gate), plus `implementedIn` once shipped — the canonical, machine-read
    metadata dialect (`- **Status:** ...` bullet lines are legacy/accepted input only; never
    write new docs that way). When this doc exists because of a split, merge, or rename, add the
    matching lineage key(s) too (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>`
@@ -262,9 +267,32 @@ For each slice:
 4. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).
-5. Update `README.md`'s slice index — the one canonical slice table (`draft` →
-   `ready-to-implement`, later `implemented` once shipped, with `Implemented in:` filled in).
+5. Update `README.md`'s slice index — the one canonical slice table (`draft` → `reviewed` →
+   `ready-to-implement`, later `implemented` once shipped, with its Implemented-in link
+   filled in).
 6. Re-render and `em validate`.
+
+When a slice is **ratified** — a human flips its `status` to `ready-to-implement` with every
+open question resolved — it's ready to hand to an implementer. Confirm with
+`em validate <model>.em --slice-ready <key>`, and point whoever (or whatever) implements it
+at `reference/implement.md`.
+
+## Phase: `implement` — build one ratified slice
+
+Goal: turn a single `ready-to-implement` slice into merged, verified code — the one phase
+where the agent builds rather than facilitates.
+
+**Read `reference/implement.md` before doing any implement work and follow it as the
+contract.** In short: gate on `em validate <model>.em --slice-ready <key>` (stop and hand
+back if it fails — never edit the doc to make the gate pass); treat the slice doc as the
+spec (read-only, except the merge-time `status`/`implementedIn` flip); surface every gap to
+the user instead of deciding it silently; cover every INV-n and every scenario with tests;
+in spec-kit projects, allocate via em-sdd-bridge (redirect mode) and never run
+`/speckit.specify`.
+
+End of phase: PR merged, slice doc flipped to `status: implemented` with `implementedIn`
+filled, `README.md`'s slice index updated. Implement doesn't chain to another phase — run it
+once per ratified slice; `conform` later checks the result against the model.
 
 ## Phase: `conform` — drift check against the codebase
 

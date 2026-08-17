@@ -414,7 +414,7 @@ program
   )
   .option(
     "--list-public",
-    "print only events marked `public` (slice, name, line) — an integration-surface audit, never fails the build",
+    "print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build",
   )
   .option(
     "--fail-on-issues",

@@ -41,8 +41,9 @@ straight into the export JSON — every slice gains a model-derived `pattern` an
 (status/version/implementedIn/lineage, or a `no-doc-bound`/`binding-missing-file`/
 `frontmatter-invalid` reason when there's nothing clean to join) — and every diagnostic
 `em export`/`em diff` emit now carries a stable `code` plus `refs` back to the entities it
-concerns, so a consumer can gate or bucket findings without parsing prose
-(`schemaVersion` `1.4`, `diffSchemaVersion` `1.5`). Most recently, those lineage keys are now
+concerns, so a consumer can gate or bucket findings without parsing prose (added at
+`schemaVersion` `1.4` / `diffSchemaVersion` `1.5`; current values `1.5` and `1.6`). Most
+recently, those lineage keys are now
 read, not just carried: `em diff` annotates a `slice-added`/`slice-removed` entry with its
 slice doc's resolved `split-from`/`merged-from`/`superseded-by` when one's declared (a real
 split reads as "split from", not a bare remove+add), and `em validate` resolves lineage refs
@@ -50,14 +51,19 @@ against the current tree — malformed grammar, self-reference/cycles, a danglin
 `superseded-by`, and version arithmetic that names a future that hasn't happened are all
 errors, while a `split-from`/`merged-from` naming a key legitimately absent from the current
 tree (the steady state after a real split or merge) deliberately raises nothing at all
-(`diffSchemaVersion` `1.6`; see [validation.md#lineage](validation.md#lineage)).
-[workflow.md](workflow.md) is the resulting picture.
+(`diffSchemaVersion` `1.6`; see [validation.md#lineage](validation.md#lineage)). Rounding out
+the same wave: `em validate --slice-ready <key>` as the native handoff gate (doc bound,
+status `ready-to-implement`, open questions all checked), typed `## Delta` operation blocks
+(Added/Modified/Removed/Renamed) for re-ratified slices, multi-word `@Persona`/`@Context`
+tags parsing without quotes, and an agent guide
+([reference/implement.md](../.claude/skills/event-modeling/reference/implement.md)) shipped
+inside the bundled skill so implementing agents follow one contract from ratified slice to
+merged PR. [workflow.md](workflow.md) is the resulting picture.
 
 **Modeling and rendering**
 
 - **UI-field tracing** — extend fields-completeness validation (shipped for view←event and
   event←command) to trace `ui` fields back to the read model they display.
-- **Multi-word `@tags`** — quoted persona/context tags (`@"Customer Service"`).
 - **Uniform-per-lane box height** — optional rigid alignment when field counts differ a lot
   within a lane (the current default is Graphviz center alignment).
 - **Theming / palette options** and additional export niceties.
@@ -84,11 +90,11 @@ tree (the steady state after a real split or merge) deliberately raises nothing 
 
 **Bigger, and deliberately waiting for a reason**
 
-These are real ideas held back on purpose until something concrete asks for them — more
-models than a repo can comfortably hold, a second agent surface, a non-engineer audience
-that needs to browse models outside git:
+These are real ideas held back on purpose until something concrete asks for them:
 
-- An MCP server over `em export`, for agent surfaces beyond Claude Code.
+- An MCP server over `em export`, for agent surfaces beyond Claude Code — waiting for a
+  second agent surface actually in use against em models. (The static catalog used to sit
+  here with the same posture; its trigger fired, and it shipped as `em catalog`.)
 
 Have a case for one of these, or something missing? Open an issue — a concrete use case is
 exactly what moves something out of the waiting list.

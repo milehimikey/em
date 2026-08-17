@@ -84,6 +84,7 @@ built this way.
 |---|---|
 | [docs/tutorial.md](docs/tutorial.md) | Learn the tool by building a model from scratch |
 | [docs/workflow.md](docs/workflow.md) | The model lifecycle: specify, gate, hand off, track change, detect drift |
+| [docs/process.md](docs/process.md) | Who does what: where humans are required, where agents work with review |
 | [docs/patterns.md](docs/patterns.md) | The four Event Modeling patterns and their DSL shapes |
 | [docs/dsl.md](docs/dsl.md) | Full DSL reference: keywords, `from`, `again`, fields, notes |
 | [docs/cli.md](docs/cli.md) | Every command and flag |

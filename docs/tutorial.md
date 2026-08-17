@@ -374,11 +374,11 @@ em validate order-fulfillment.em
 ```
 
 ```
-  warn :17 event "Order Placed" field "orderId" not provided by command "Place Order"
-  warn :17 event "Order Placed" field "placedAt" not provided by command "Place Order"
-  warn :27 view "Open Orders" field "status" has no source in "Order Placed"
-  warn :59 event "Payment Captured" field "orderId" not provided by command "Capture Payment"
-  warn :59 event "Payment Captured" field "capturedAt" not provided by command "Capture Payment"
+  warn :16 event "Order Placed" field "orderId" not provided by command "Place Order"
+  warn :16 event "Order Placed" field "placedAt" not provided by command "Place Order"
+  warn :25 view "Open Orders" field "status" has no source in "Order Placed"
+  warn :54 event "Payment Captured" field "orderId" not provided by command "Capture Payment"
+  warn :54 event "Payment Captured" field "capturedAt" not provided by command "Capture Payment"
 ```
 
 Warnings, not errors — the model is fine, it exits zero, and this is worth understanding

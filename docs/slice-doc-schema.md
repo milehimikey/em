@@ -45,7 +45,7 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 
 | Key | Type | Grammar / enum | Read by |
 |---|---|---|---|
-| `schemaVersion` | integer | `1` (current dialect version) | not read back by any `em` command today — reserved |
+| `schemaVersion` | integer | `1` (current dialect version) | its *value* is not read back by any `em` command today (reserved) — but its *presence* is required by `hasUsableFrontmatter()`: a doc omitting it is `frontmatter-invalid` (see below) |
 | `pattern` | string | `state-change` \| `state-view` \| `automation` \| `translation` | authored/informational only — `em catalog` and `em export` both derive pattern from the `.em` AST instead (`em export`'s `slice.pattern`, schema `1.4`) |
 | `swimlane` | string | free text, `<Persona> → <Context>` | display-only |
 | `status` | string, case-insensitive | `draft` \| `reviewed` \| `ready-to-implement` \| `implemented` | `em catalog`, `em render`/`em watch` header coloring; joined into `em export`'s `slice.doc.status` (schema `1.4`); paired with `implementedIn` to compute `slice.doc.driftSignal` (schema `1.5`, MIL-85) and `em validate`'s frontmatter-coherence check (MIL-85 — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)) |
@@ -55,9 +55,12 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.mergedFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 | `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.supersededBy` (schema `1.4`, MIL-91) and `em diff`'s `slice-removed` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 
-`status` and `version` also have this document's own required/optional rules below;
-`schemaVersion`/`pattern`/`swimlane`/`implementedIn` are unconditionally optional today (the
-parser never fails a doc for omitting them, though the template always includes the first four).
+Five keys — `schemaVersion`/`pattern`/`swimlane`/`status`/`version` — are what
+`hasUsableFrontmatter()` requires: a doc omitting any of them is `frontmatter-invalid` to
+`em export`'s doc join and to `em validate --slice-ready` (the parser itself never *throws*
+over an omission — it reports). `implementedIn` and the lineage keys are the genuinely
+optional ones; `implementedIn`'s required-once-implemented rule in the table below is
+convention, not parser-enforced.
 
 ## Required vs optional, by `status`
 
@@ -244,7 +247,7 @@ a doc is always safe.
 | Who bumps it | `em` maintainers, when the dialect's canonical keys change | Whoever ratifies a delta on this slice |
 | Cardinality | One value, same across every doc using this dialect | One per slice doc, incrementing per ratified delta |
 | Current value | `1` (unchanged since MIL-86) | Starts at `1` |
-| Read by `em` today | No — captured, not exposed on `SliceDoc` | Yes — parsed onto `SliceDoc.version` |
+| Read by `em` today | Value: no — captured, not exposed on `SliceDoc`. Presence: required for usable frontmatter | Yes — parsed onto `SliceDoc.version` |
 
 ## Legacy status bullet line
 
