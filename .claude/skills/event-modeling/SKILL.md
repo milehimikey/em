@@ -2,18 +2,12 @@
 name: event-modeling
 em-version: 1.7.0
 description: >-
-  Guide a user and their team through building rigorous Event Models with the `em` CLI, using
-  the 7 steps of Event Modeling and the 4 patterns (State Change, State View, Automation,
-  Translation), and produce implementation-ready slice docs. Use when the user wants
-  to event-model a business process or system, do event modeling / event storming, design slices,
-  build or edit an `.em` model, run the em tool, extract / reverse-engineer a current-state
-  event model from an existing system or codebase (event-driven or legacy/procedural), or check
-  a ratified model for drift against the codebase that implements it. Works in resumable phases
-  via an argument: `discover` (steps 1-4, greenfield), `extract` (current-state model of an
-  existing system), `model` (steps 5-7), `slice` (deep slice specs), `implement` (build one
-  ratified slice into code, following the bundled agent guide), `conform` (drift check
-  against the codebase), plus `watch`, `review` (stakeholder walkthrough), and `validate`.
-  With no argument it resumes from the saved state file.
+  Use when the user wants to event-model a business process or system: building, editing,
+  updating, or maintaining a model — extending or detailing an existing one into slices,
+  extracting a current-state model from an existing codebase, implementing a ratified slice, or
+  checking a model for drift against the code. Drives the `em` CLI through resumable phases —
+  discover, extract, model, slice, implement, conform, watch, review, validate — or resumes
+  automatically with no argument.
 ---
 
 # Event Modeling with `em`
