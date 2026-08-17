@@ -7,7 +7,7 @@ Keep it current at the end of every working session.
 # Event Modeling Progress — {{Model Name}}
 
 - **Model file:** `{{model-name}}.em`
-- **Current phase:** {{extract | discover | model | slice}}
+- **Current phase:** {{discover | extract | model | slice | implement | conform | review | validate}}
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}
 - **Last conformance:** {{YYYY-MM-DD @ <target-repo revision> — report: conformance/<date>-report.md | never}}
@@ -50,10 +50,11 @@ Keep it current at the end of every working session.
 
 ## Usage log
 <!-- The team's only usage signal today (see docs/usage-data.md) — cheap and coarse on purpose.
-     One line per session: phase(s) touched, and validate diagnostic *categories* hit (the rule
-     name from docs/validation.md's tables, e.g. "read model nothing consumes" — never the full
-     instance message or any domain content). Append, never edit past entries. -->
-- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | conform | review | validate | watch, ...}} — validate: {{diagnostic category (docs/usage-data.md#categories), ... | none}}
+     One line per session: phase(s) touched, and validate diagnostic *categories* hit (one of
+     the exact fixed strings in docs/usage-data.md#categories, e.g. "read model has no
+     consumer" — never the full instance message or any domain content). Append, never edit
+     past entries. -->
+- {{YYYY-MM-DD}}: phases: {{discover | extract | model | slice | implement | conform | review | validate | watch, ...}} — validate: {{diagnostic category (docs/usage-data.md#categories), ... | none}}
 
 ## Open questions / parking lot
 <!-- Unresolved items to bring back to the user. Never guess these. Metadata is optional and

@@ -34,10 +34,11 @@ difference is what you do with what you find: extract *builds* a model from the 
 
 1. A canonical `.em` model with a state file (`.event-modeling.md`), reachable the same way the
    SKILL.md preconditions locate it.
-2. The model should be ratified for the slices you're about to check — `slice` docs at
-   `implemented` (or the status the user says corresponds to shipped code) for whichever slices
-   are in scope. Checking a `draft` or `ready-to-implement` slice against code is a wasted walk;
-   tell the user and skip it rather than reporting "drift" against a doc nobody built to yet.
+2. The slices you're about to check should be **implemented** — docs at `status: implemented`
+   (or the status the user says corresponds to shipped code) for whichever slices are in scope.
+   Checking a `draft` or `ready-to-implement` slice against code is a wasted walk — ratified or
+   not, nobody has built to it yet; tell the user and skip it rather than reporting "drift"
+   against it.
 3. The codebase to check: the state file's **Existing system refs** (populated during
    `extract`, if this model came from one) or ask the user for the repo path if not set. Record
    it if missing. In a headless/scheduled run with no user to ask, default to the repository
@@ -56,7 +57,7 @@ named invariants, Given/When/Then scenarios). Conform checks all three surfaces 
 |---|---|---|---|
 | **Structural** — `.em` ↔ code | slices/elements/fields/flow | `em` (deterministic) | `em diff --json` on canonical vs. an as-is scratch model |
 | **Spec** — slice doc ↔ code | field rules not enforced, named invariants (`INV-*`) without enforcement/test sites, GWT scenarios without test sites | you (judgment) | per-slice evidence walk: each checkable claim in the doc mapped to a code/test site by name (`INV-CHK-4` → its enforcement site + its test) |
-| **Internal** — slice doc ↔ `.em` | the doc's header metadata (Pattern, Status) or its Command/Event/Read Model sections and field tables disagreeing with the model's own elements/fields | you (judgment, v1) | cross-check the doc's structured sections against the slice's model elements |
+| **Internal** — slice doc ↔ `.em` | the doc's frontmatter (`pattern:`, `status:`) or its Command/Event/Read Model sections and field tables disagreeing with the model's own elements/fields | you (judgment, v1) | cross-check the doc's structured sections against the slice's model elements |
 
 The internal surface is deterministically checkable in principle (structured doc sections +
 `{ fields }` blocks) — promoting it to an `em validate` rule is a natural follow-up; file it as
@@ -74,7 +75,7 @@ authoritative.
 Default: **diff-scoped.** Read the state file's `Last conformance:` marker (date + target-repo
 revision). If it's set, run `git diff --name-only <recorded-revision>..HEAD` from the target
 repo's root to list the changed paths (`git log` alone prints commit subjects, not paths), then
-map those paths to slices (via each slice doc's known code locations, `Implemented in:` links,
+map those paths to slices (via each slice doc's known code locations, `implementedIn:` links,
 or a quick Grep if those are stale) — that's your in-scope set. If the marker reads `never`
 (first run) or the user passes `--full`, scope is every `implemented` slice.
 
@@ -221,8 +222,11 @@ End of run: update the state file's `Last conformance:` marker, exact format:
 ```
 
 The revision is the one you just diffed against, so the next run's scope starts from here —
-step 1 parses this line, so keep the format exact. If any proposals were ratified and applied,
-log a Decisions entry noting what changed and why.
+step 1 parses this line, so keep the format exact. **The marker only advances with the human
+in the loop**: in an interactive session, update it after walking the report with the user; a
+headless/scheduled run writes the report but never the marker (nobody ratified the outcome),
+so the next run re-walks the same span — see `docs/ci.md`. If any proposals were ratified and
+applied, log a Decisions entry noting what changed and why.
 
 ## Conventions
 

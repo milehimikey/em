@@ -32,11 +32,11 @@ same element kind.
 
 | Keyword | Band | Meaning | Tag | Clauses |
 |---|---|---|---|---|
-| `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `{ fields }` |
-| `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `{ fields }` |
-| `view` | API | read model / projection | — | `from`, `again`, `public`, `note`, `issue`, `{ fields }` |
-| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `public`, `{ fields }` |
-| `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `{ fields }` |
+| `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
+| `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `divergence`, `{ fields }` |
+| `view` | API | read model / projection | — | `from`, `again`, `public`, `note`, `issue`, `divergence`, `{ fields }` |
+| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `divergence`, `public`, `{ fields }` |
+| `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Swimlane bands, top to bottom
 
@@ -50,7 +50,10 @@ same element kind.
 
 `@Persona` is valid only on `ui`; `@Context` only on `event`. An undeclared tag creates a
 new row on first use. An untagged `ui` defaults to the first persona (or "User"); an
-untagged `event` defaults to a "Domain" context.
+untagged `event` defaults to a "Domain" context. Multi-word tags need no quoting — the tag
+captures everything after `@` to the end of the line (`ui Ticket Queue @Customer Service`
+matches `persona Customer Service`), since every other trailing clause is stripped before
+the tag is read.
 
 ## Wiring data flow
 

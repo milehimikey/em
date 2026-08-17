@@ -1,10 +1,16 @@
 # The four patterns
 
 Event Modeling builds every system from four patterns, and every slice in a `.em` model is
-exactly one of them. The discipline behind the patterns: information moves **into** the
-system through a command that records an event, **out of** the system through a read model,
-and no other way. Automations and translations are not exceptions — they are reactions that
-issue a command, which then records the event.
+meant to be exactly one of them. The discipline behind the patterns: information moves
+**into** the system through a command that records an event, **out of** the system through a
+read model, and no other way. Automations and translations are not exceptions — they are
+reactions that issue a command, which then records the event.
+
+(Mechanically, `em export` classifies a slice from its element kinds and reports
+`unclassified` for a shape still under construction that matches none of the four; and an
+Automation/Translation's second slice — the bare `command` + `event` pair — classifies as
+State Change, since classification looks at one slice at a time. See
+[cli.md](cli.md#em-export-file).)
 
 | Pattern | Flow | DSL elements |
 |---|---|---|
