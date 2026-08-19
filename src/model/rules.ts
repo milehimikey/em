@@ -33,15 +33,10 @@ export const RULES = {
     title: "Band collision",
     fix: "Split the colliding elements into separate slices.",
   },
-  "automation-shares-slice-with-command": {
-    severity: "warning",
-    title: "Automation shares slice with its command",
-    fix: "Put the triggered command in the next slice.",
-  },
   "ui-shares-slice-with-automation": {
     severity: "warning",
-    title: "`ui` shares slice with a reaction, no command",
-    fix: "Move the `ui` to the read-model slice, or to the slice with the command this triggers.",
+    title: "`ui` shares slice with a reaction",
+    fix: "Move the `ui` to the slice that displays the read model, or drop it.",
   },
   "both-ends-of-a-flow/command-no-event": {
     severity: "warning",
@@ -94,7 +89,13 @@ export const RULES = {
   "both-ends-of-a-flow/command-untriggered": {
     severity: "warning",
     title: "Command with no trigger",
-    fix: "Add a `ui` in this slice, or a reaction in the previous slice.",
+    fix: "Add a `ui` or the reaction that issues it, both in this slice.",
+    docAnchor: "both-ends-of-a-flow",
+  },
+  "both-ends-of-a-flow/reaction-no-command": {
+    severity: "warning",
+    title: "Reaction with no command",
+    fix: "Add the command it triggers, in this slice, or an explicit arrow to one.",
     docAnchor: "both-ends-of-a-flow",
   },
   "both-ends-of-a-flow/view-unconsumed": {

@@ -25,7 +25,7 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
     edges.push({ from, to, color: edgeColorFor(kind) });
   };
 
-  model.slices.forEach((slice, i) => {
+  for (const slice of model.slices) {
     const uis = slice.elements.filter((e) => e.kind === "ui");
     const command = slice.elements.find((e) => e.kind === "command");
     const view = slice.elements.find((e) => e.kind === "view");
@@ -38,16 +38,12 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
       for (const ev of events) add(command.id, ev.id, "command");
     }
 
-    // Automation/translation: it reads the read model in its own slice, then
-    // triggers the command in the next slice.
-    if (auto) {
-      if (view) add(view.id, auto.id, "view");
-      const nextCommand = model.slices[i + 1]?.elements.find(
-        (e) => e.kind === "command",
-      );
-      if (nextCommand) add(auto.id, nextCommand.id, auto.kind);
-      else for (const ev of events) add(auto.id, ev.id, auto.kind);
-    }
+    // Automation/translation: it triggers the command in this same slice — the
+    // reaction is to a command what a `ui` is in the State Change pattern. If it
+    // also reads a read model that happens to share this slice, wire that too;
+    // the far more common cross-slice case is handled by the `from` loop below.
+    if (auto && command) add(auto.id, command.id, auto.kind);
+    if (auto && view) add(view.id, auto.id, "view");
 
     // Output pattern: view -> UI (read model feeds the screen)
     if (view) {
@@ -56,7 +52,7 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
         for (const ev of events) add(ev.id, view.id, "event");
       }
     }
-  });
+  }
 
   // Cross-slice `from` wiring:
   //   view       from event(s)      -> event -> view

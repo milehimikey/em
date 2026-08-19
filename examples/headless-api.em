@@ -29,13 +29,14 @@ slice "Quote — created" {
   ui Read Quote @IntegratorAPI
 }
 
-# --- Automation: fully internal, no public route, so no `ui` at all ---
+# --- Read model the internal automation watches ---
 slice "Quotes Pending Approval" {
   view Quotes Pending Approval from "Quote Created"
-  processor Approval Router
 }
 
+# --- Automation: fully internal, no public route, so no `ui` at all ---
 slice "Escalate Quote" {
+  processor Approval Router from "Quotes Pending Approval"
   command Escalate Quote
   event Quote Escalated @Quote {
     quoteId
@@ -50,11 +51,10 @@ slice "Quote — escalated" {
 }
 
 # --- Translation: a real external-system boundary, not a synchronous API call ---
-slice "Pricing Engine Webhook" {
-  translation Pricing Engine
-}
-
+# No durable artifact and no `from` — the webhook call itself is the trigger, so the
+# reaction, command, and event share one slice with nothing before it.
 slice "Apply Discount" {
+  translation Pricing Engine
   command Apply Discount
   event Discount Applied @Quote {
     quoteId

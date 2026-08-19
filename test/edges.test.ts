@@ -27,18 +27,18 @@ slice "B" {
     expect(edge(semanticEdges(model), placed, view)).toBe(true);
   });
 
-  it("wires automation: read model -> processor (own slice) and processor -> next command", () => {
+  it("wires automation: read model -> processor (slice before) and processor -> command (own slice)", () => {
     const model = modelFrom(`
 context P
 slice "Trigger" {
   command Make It
   event Thing Happened @P
 }
-slice "Auto" {
+slice "Todo" {
   view Todo List from "Thing Happened"
-  processor Worker
 }
 slice "Do" {
+  processor Worker from "Todo List"
   command Do Work
   event Work Done @P
 }
@@ -47,8 +47,8 @@ slice "Do" {
     const todo = model.byName.get("todo list")![0].id;
     const worker = model.byName.get("worker")![0].id;
     const cmd = model.byName.get("do work")![0].id;
-    expect(edge(es, todo, worker)).toBe(true); // reads read model in its slice
-    expect(edge(es, worker, cmd)).toBe(true); // triggers command in the next slice
+    expect(edge(es, todo, worker)).toBe(true); // reads read model from the slice before
+    expect(edge(es, worker, cmd)).toBe(true); // triggers command in its own slice
   });
 });
 

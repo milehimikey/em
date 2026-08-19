@@ -603,15 +603,15 @@ slice "Assign" {
     ).toHaveLength(0);
   });
 
-  it("counts a reaction in the previous slice — the Automation/Translation split", () => {
+  it("counts a reaction in the same slice — the Automation/Translation shape", () => {
     expect(
       untriggered(`
 context Billing
 slice "Backlog" {
   view Refund Backlog from "Refund Requested"
-  processor Refund Gateway
 }
 slice "Issue Refund" {
+  processor Refund Gateway from "Refund Backlog"
   command Issue Refund
   event Refund Issued @Billing
 }
@@ -619,16 +619,16 @@ slice "Issue Refund" {
     ).toHaveLength(0);
   });
 
-  it("does not count a reaction two slices back", () => {
+  it("does not count a reaction in a different slice with no explicit arrow (MIL-120)", () => {
+    // The old bare-adjacency loophole: a reaction sitting in the slice *before* the command,
+    // with no name/id link between them, used to silently satisfy this check. It no longer does
+    // — the reaction has to share the command's own slice, or connect via an explicit arrow.
     expect(
       untriggered(`
 context Billing
 slice "Backlog" {
   view Refund Backlog from "Refund Requested"
   processor Refund Gateway
-}
-slice "Gap" {
-  view Something from "Refund Requested"
 }
 slice "Issue Refund" {
   command Issue Refund
@@ -757,14 +757,12 @@ describe("ui sharing a reaction's slice", () => {
   const disconnected = (src: string) =>
     diagsFor(src).filter((d) => d.message.includes("renders disconnected here"));
 
-  it("warns when a ui shares a slice with a translation and no command", () => {
+  it("warns when a ui shares a slice with a translation, even alongside its command", () => {
     const diags = disconnected(`
 context Shipping
 slice "Weird" {
   ui Something @Ops
   translation Carrier Adapter
-}
-slice "Confirm Delivery" {
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
@@ -773,8 +771,8 @@ slice "Confirm Delivery" {
     expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
     expect(diags[0].message).toBe(
       'ui "Something" shares slice "Weird" with translation "Carrier Adapter"; a `ui` only ' +
-        "wires to a `command` and renders disconnected here — move it to the slice that " +
-        "consumes the read model, or to the slice with the command this triggers",
+        "wires to a `command` a person issues and renders disconnected here — move it to the " +
+        "slice that displays the read model, or drop it",
     );
   });
 
@@ -785,8 +783,6 @@ context Ticket
 slice "Backlog" {
   ui Queue Board @Agent
   processor Auto Assign
-}
-slice "Assign" {
   command Assign Ticket
   event Ticket Assigned @Ticket
 }
@@ -807,7 +803,7 @@ slice "Assign" {
     ).toHaveLength(0);
   });
 
-  it("stays quiet when the reaction shares its slice with a command instead (the other warning covers that)", () => {
+  it("stays quiet when the reaction shares its slice with its command (the correct shape)", () => {
     const diags = diagsFor(`
 context Ticket
 slice "Backlog" {
@@ -817,7 +813,7 @@ slice "Backlog" {
 }
 `);
     expect(diags.filter((d) => d.message.includes("renders disconnected here"))).toHaveLength(0);
-    expect(diags.some((d) => d.message.includes("shares slice"))).toBe(true);
+    expect(diags.some((d) => d.message.includes("triggers no command"))).toBe(false);
   });
 
   it("stays quiet when a view sits alongside — view -> ui connects it regardless of the automation", () => {
@@ -830,8 +826,6 @@ slice "Backlog" {
   view Backlog Items
   ui Queue Board @Agent
   processor Auto Assign
-}
-slice "Assign" {
   command Assign Ticket
   event Ticket Assigned @Ticket
 }
@@ -929,14 +923,84 @@ context Shipping
 slice "Weird" {
   ui Something @Ops
   translation Carrier Adapter
-}
-slice "Confirm Delivery" {
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
 `);
     expect(diags.filter((d) => d.message.includes("renders disconnected here"))).toHaveLength(1);
     expect(diags.filter((d) => d.message.includes("issues no command"))).toHaveLength(0);
+  });
+});
+
+describe("reaction with no command warning", () => {
+  // The input-side mirror of the untriggered-event rule, and the counterpart to the
+  // untriggered-command check above: a processor/translation/automation/saga never records
+  // an event itself, it always funnels through a command. One with no command in its own
+  // slice and no explicit arrow to one is a decision the system never acts on.
+  const noCommand = (src: string) => diagsFor(src).filter((d) => d.message.includes("triggers no command"));
+
+  it("warns on a reaction alone in a slice, with no command", () => {
+    const diags = noCommand(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", line: 5 });
+    expect(diags[0].message).toContain('processor "Refund Gateway"');
+  });
+
+  it("stays quiet when the command shares the slice, in any order", () => {
+    expect(
+      noCommand(`
+context Billing
+slice "Issue Refund" {
+  processor Refund Gateway
+  command Issue Refund
+  event Refund Issued @Billing
+}
+`),
+    ).toHaveLength(0);
+    expect(
+      noCommand(`
+context Billing
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+  processor Refund Gateway
+}
+`),
+    ).toHaveLength(0);
+  });
+
+  it("counts an explicit reaction -> command arrow to a different slice", () => {
+    expect(
+      noCommand(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog from "Refund Requested"
+  processor Refund Gateway
+}
+slice "Issue Refund" {
+  command Issue Refund
+  event Refund Issued @Billing
+}
+arrow "Refund Gateway" -> "Issue Refund"
+`),
+    ).toHaveLength(0);
+  });
+
+  it("warns for any automation alias, not just processor", () => {
+    expect(
+      noCommand(`
+context Shipping
+slice "Adapt" {
+  translation Carrier Adapter
+}
+`),
+    ).toHaveLength(1);
   });
 });
 

@@ -84,12 +84,12 @@ slice "Request Refund" {
 # Automation pattern, and it is what makes this a complete State View.
 slice "Refund Backlog" {
   view Refund Backlog from "Refund Requested"
-  processor Refund Gateway
 }
 
-# A reaction never records an event itself: it triggers a command, in the next slice,
+# A reaction never records an event itself: it triggers a command, in this same slice,
 # and that command records the event.
 slice "Issue Refund" {
+  processor Refund Gateway from "Refund Backlog"
   command Issue Refund
   event Refund Issued @Billing
 }

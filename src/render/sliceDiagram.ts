@@ -8,8 +8,10 @@
 // The key trick: every piece of "immediate context" a slice needs to draw its
 // own shape is already one hop away in the compiled model — a view's upstream
 // event(s) resolve via `from` (resolveFromSource, shared with semanticEdges),
-// and an automation/translation's watched view is just whatever `view` sits in
-// the same slice. So this builds a tiny *synthetic* NormalizedModel — reusing
+// and an automation/translation's watched view resolves via the reaction's own
+// `from` the same way (the reaction, its command, and that command's event all
+// share this slice already, so none of *those* need to be pulled from
+// elsewhere). So this builds a tiny *synthetic* NormalizedModel — reusing
 // the real, already-normalized Element objects (same ids, same fields, same
 // notes), shallow-cloned only to reassign which of a handful of new columns
 // they land in — and runs it through the exact same layout()/emitDot() the
@@ -18,11 +20,10 @@
 // is populated, the arrows get drawn by the existing inference with zero new
 // edge-drawing code.
 //
-// This never chases more than one hop away (previous slice for a triggerless
-// State Change; a view's own `from` sources for State View; the next slice for
-// Automation/Translation — semanticEdges itself never looks further than i+1),
-// so a slice diagram can never balloon into showing most of the model, the way
-// a naive crop or a naive "just extract this slice and recompile" both could.
+// This never chases more than one hop away (a view's own `from` sources, for
+// both State View and Automation/Translation), so a slice diagram can never
+// balloon into showing most of the model, the way a naive crop or a naive
+// "just extract this slice and recompile" both could.
 
 import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { Element, NormalizedModel, Slice, normalizeName } from "../model/model.js";
@@ -75,19 +76,13 @@ function collectColumns(model: NormalizedModel, sliceIndex: number, pattern: str
   }
 }
 
-/** State Change: UI -> Command -> Event, all in this slice. If there's no local
- *  UI, the command's real trigger is the previous slice's automation/translation
- *  reaction — pull in just that one element as earlier context. */
+/** State Change: UI -> Command -> Event, all in this slice. A slice classifies as
+ *  "state-change" only when it carries no automation-kind element at all (see
+ *  classify.ts), so a command with no local `ui` here has nothing else to pull in —
+ *  that's exactly `both-ends-of-a-flow/command-untriggered`'s case, not a shape this
+ *  renderer can complete by reaching elsewhere. */
 function columnsForStateChange(model: NormalizedModel, i: number): SyntheticColumn[] {
-  const slice = model.slices[i];
-  const hasUi = slice.elements.some((e) => e.kind === "ui");
-  const cols: SyntheticColumn[] = [{ sourceSliceIndex: i, elements: slice.elements }];
-  if (!hasUi) {
-    const prev = model.slices[i - 1];
-    const trigger = prev?.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
-    if (trigger) cols.push({ sourceSliceIndex: i - 1, elements: [trigger] });
-  }
-  return cols;
+  return [{ sourceSliceIndex: i, elements: model.slices[i].elements }];
 }
 
 /** State View: Event(s) -> View -> UI. Each view's `from` names resolve to their
@@ -108,26 +103,30 @@ function columnsForStateView(model: NormalizedModel, i: number): SyntheticColumn
   return cols;
 }
 
-/** Automation/Translation share one shape: [View ->] Automation (this slice),
- *  then Command -> Event (the immediately next slice — never further, mirroring
- *  semanticEdges' own i+1-only rule). The watched view is same-slice adjacency,
- *  not a `from` hop, so it's already included via this slice's own elements —
- *  deliberately not chased any further back. Only command/event are pulled from
- *  the next slice; a stray `ui` there belongs to *that* slice's own diagram. */
+/** Automation/Translation share one shape: [View ->] Reaction -> Command -> Event, all in
+ *  this one slice — same as State Change's ui -> command -> event. The watched view (when
+ *  internally triggered) resolves via the reaction's own `from` names to their real source
+ *  Elements, exactly the rule columnsForStateView uses for a view's `from` — one column per
+ *  distinct origin slice. An externally-triggered reaction carries no `from` at all, so
+ *  there's nothing to pull. */
 function columnsForReaction(model: NormalizedModel, i: number): SyntheticColumn[] {
   const slice = model.slices[i];
-  const cols: SyntheticColumn[] = [{ sourceSliceIndex: i, elements: slice.elements }];
-  const next = model.slices[i + 1];
-  const forward = next?.elements.filter((e) => e.kind === "command" || e.kind === "event") ?? [];
-  if (forward.length > 0) cols.push({ sourceSliceIndex: i + 1, elements: forward });
+  const cols: SyntheticColumn[] = [];
+  for (const auto of slice.elements.filter((e) => AUTOMATION_KINDS.has(e.kind))) {
+    for (const name of auto.from ?? []) {
+      const src = resolveFromSource(model, auto, name);
+      if (src) cols.push({ sourceSliceIndex: src.sliceIndex, elements: [src] });
+    }
+  }
+  cols.push({ sourceSliceIndex: i, elements: slice.elements });
   return cols;
 }
 
 /** Merge columns sharing a source slice (two `from` names can resolve to the same
- *  origin slice), dedupe elements by id, then sort chronologically. `from`/reaction
- *  wiring only ever points backward or to the immediate next slice, so a plain
- *  ascending sort by real slice index is sufficient for correct left-to-right
- *  placement across every pattern — no pattern-specific ordering code needed. */
+ *  origin slice), dedupe elements by id, then sort chronologically. `from` wiring
+ *  only ever points backward (or to this same slice), so a plain ascending sort by
+ *  real slice index is sufficient for correct left-to-right placement across every
+ *  pattern — no pattern-specific ordering code needed. */
 function mergeColumns(columns: SyntheticColumn[]): SyntheticColumn[] {
   const bySource = new Map<number, Map<string, Element>>();
   for (const col of columns) {

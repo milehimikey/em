@@ -47,30 +47,25 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     const views = slice.elements.filter((e) => e.kind === "view");
     const auto = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
 
-    // An automation/translation slice holds only the read model + the
-    // automation; the command it triggers belongs in the next slice.
-    if (auto && command) {
-      pushDiag(diags, "automation-shares-slice-with-command", {
-        message:
-          `${auto.kind} "${auto.name}" shares slice "${slice.name}" with command ` +
-          `"${command.name}"; put the triggered command in the next slice`,
-        line: command.line,
-        refs: [refOf(auto.id), refOf(command.id)],
-      });
-    }
+    // An automation/translation triggers its command in the same slice — the reaction is
+    // to a command what a `ui` is in the State Change pattern, just in the automation band
+    // instead of a persona row. An explicit arrow to a command elsewhere also counts (see
+    // the command-untriggered check below for the symmetric case); this is the other half
+    // of that same completeness pair, checked in the block below alongside `event-unproduced`.
 
     // A `ui` only ever triggers a `command` (State Change) — no pattern has a `ui`
-    // triggering a reaction. If one sits in a reaction's slice instead, with no read
-    // model in the same slice, it renders with no outgoing edge at all: a floating box
-    // nothing points at. But a `view` in the same slice draws `view -> ui` regardless of
-    // whether an automation also reads it (edges.ts) — that ui IS connected, so stay quiet.
-    if (auto && !command && views.length === 0) {
+    // triggering a reaction. If one sits in a reaction's slice, with no read model in the
+    // same slice, it renders with no outgoing edge at all: a floating box nothing points
+    // at — true whether or not that slice already has the reaction's own command. But a
+    // `view` in the same slice draws `view -> ui` regardless of whether an automation also
+    // reads it (edges.ts) — that ui IS connected, so stay quiet.
+    if (auto && views.length === 0) {
       for (const ui of slice.elements.filter((e) => e.kind === "ui")) {
         pushDiag(diags, "ui-shares-slice-with-automation", {
           message:
             `ui "${ui.name}" shares slice "${slice.name}" with ${auto.kind} "${auto.name}"; ` +
-            `a \`ui\` only wires to a \`command\` and renders disconnected here — move it to the ` +
-            `slice that consumes the read model, or to the slice with the command this triggers`,
+            `a \`ui\` only wires to a \`command\` a person issues and renders disconnected here — ` +
+            `move it to the slice that displays the read model, or drop it`,
           line: ui.line,
           refs: [refOf(ui.id), refOf(auto.id)],
         });
@@ -236,12 +231,11 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   // Something must trigger every command. Information enters the system through a command, and
   // a command enters through a person on a screen or a reaction acting for them — one with
   // neither is a write nobody can start, the input-side mirror of an event nobody reads.
-  model.slices.forEach((slice, i) => {
+  for (const slice of model.slices) {
     for (const cmd of slice.elements.filter((e) => e.kind === "command")) {
       if (slice.elements.some((e) => e.kind === "ui")) continue; // State Change: ui -> command
-      // Automation/Translation: the reaction sits in the slice before its command.
-      const prev = model.slices[i - 1]?.elements ?? [];
-      if (prev.some((e) => AUTOMATION_KINDS.has(e.kind))) continue;
+      // Automation/Translation: the reaction triggers the command in this same slice.
+      if (slice.elements.some((e) => AUTOMATION_KINDS.has(e.kind))) continue;
       const arrowed = model.arrows.some((a) => {
         const from = a.fromId ? model.byId.get(a.fromId) : undefined;
         return a.toId === cmd.id && !!from && (from.kind === "ui" || AUTOMATION_KINDS.has(from.kind));
@@ -250,12 +244,34 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       pushDiag(diags, "both-ends-of-a-flow/command-untriggered", {
         message:
           `command "${cmd.name}" has nothing that triggers it; add the screen it is issued ` +
-          `from (a \`ui\` in this slice) or the reaction that issues it (in the previous slice)`,
+          `from (a \`ui\` in this slice) or the reaction that issues it (also in this slice)`,
         line: cmd.line,
         refs: [refOf(cmd.id)],
       });
     }
-  });
+  }
+
+  // The mirror case: a reaction that triggers no command. A processor/translation never
+  // records an event itself (isLegalFlow allows no other producer downstream of a reaction
+  // but a command) — one with no command in its slice and no explicit arrow to one is a
+  // decision the system never acts on.
+  for (const slice of model.slices) {
+    for (const auto of slice.elements.filter((e) => AUTOMATION_KINDS.has(e.kind))) {
+      if (slice.elements.some((e) => e.kind === "command")) continue;
+      const arrowed = model.arrows.some((a) => {
+        const to = a.toId ? model.byId.get(a.toId) : undefined;
+        return a.fromId === auto.id && to?.kind === "command";
+      });
+      if (arrowed) continue;
+      pushDiag(diags, "both-ends-of-a-flow/reaction-no-command", {
+        message:
+          `${auto.kind} "${auto.name}" triggers no command; add the command it issues ` +
+          `(in this slice) or an explicit arrow to one`,
+        line: auto.line,
+        refs: [refOf(auto.id)],
+      });
+    }
+  }
 
   // Something must produce every event. An event is only ever recorded by a command
   // (isLegalFlow allows no other producer) — one with no command in its slice and no
@@ -290,7 +306,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     const autoInSlice = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
     const hasViewInSlice = slice.elements.some((e) => e.kind === "view");
     const hasCommandInSlice = slice.elements.some((e) => e.kind === "command");
-    if (autoInSlice && !hasCommandInSlice && !hasViewInSlice) continue;
+    if (autoInSlice && !hasViewInSlice) continue;
     for (const ui of slice.elements.filter((e) => e.kind === "ui")) {
       if (hasViewInSlice || hasCommandInSlice) continue;
       const viewArrow = model.arrows.some((a) => {
@@ -606,7 +622,7 @@ function flowGuidance(from: ElementKind, to: ElementKind): string {
   if (from === "command" && to === "view")
     return "an event has to sit between them (command -> event -> read model)";
   if (from === "view" && to === "command")
-    return "a reaction has to sit between them (read model -> processor -> command), split across two slices";
+    return "a reaction has to sit between them (read model -> processor -> command)";
   if (from === "event" && to === "command")
     return "project the event into a read model a reaction watches (event -> read model -> processor -> command)";
   if (from === "event" && to === "event")

@@ -92,9 +92,9 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 
 | Rule | Fix |
 |---|---|
-| A `processor`/`translation` shares a slice with a command | Reactions trigger commands; put the triggered command in the next slice |
-| A `ui` shares a slice with a `processor`/`translation` and no command | `ui` only wires to `command`; move it to the read-model slice, or to the slice with the command it should trigger |
-| A command nothing triggers | Add the screen it's issued from, or the reaction that issues it |
+| A `processor`/`translation` triggers no command | Add the command it issues, in this same slice, or an explicit `arrow` to one elsewhere |
+| A `ui` shares a slice with a `processor`/`translation` | `ui` only wires to a `command` a person issues; move it to the slice that displays the read model, or drop it |
+| A command nothing triggers | Add the screen it's issued from, or the reaction that issues it, both in this slice |
 | A command that records no event | Add the event, or reconsider the command |
 | An event with no producing command | Add the command that records it, or an explicit `arrow` from one |
 | An event no read model reads | Project it into a view, or reconsider recording it |
@@ -116,10 +116,10 @@ doesn't exist.
 
 ### Both ends of a flow
 
-Six warnings guard the chain that runs screen → command → event → read model → screen. Read in
-order they say: something starts the write, the write records something, someone projects it, and
-someone looks at the projection. Every element in that chain has a link in and a link out, and
-each warning is one link missing.
+Seven warnings guard the chain that runs screen/reaction → command → event → read model →
+screen/reaction. Read in order they say: something starts the write, the write records
+something, someone projects it, and someone looks at the projection. Every element in that
+chain has a link in and a link out, and each warning is one link missing.
 
 Put another way: they enforce that every slice is a **complete** instance of one of the
 [four patterns](patterns.md), not a half-slice. A State Change is `ui → command → event`; a State
@@ -128,8 +128,12 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
 - **A command nothing triggers** is a write nobody can start. A command is issued by a person
   on a screen or by a reaction acting on their behalf — it doesn't fire itself. It counts as
   triggered when a `ui` sits in its slice, when an automation/processor/saga/translation sits
-  in the **previous** slice (the two-slice reaction split), or when an explicit `arrow` points
-  to it from a screen or reaction.
+  in that **same** slice, or when an explicit `arrow` points to it from a screen or reaction
+  elsewhere.
+- **A reaction that triggers no command** is the mirror case: a decision the system never acts
+  on. A `processor`/`automation`/`saga`/`translation` never records an event itself — it counts
+  as triggering when a `command` sits in its own slice, or via an explicit `arrow` from it to a
+  command elsewhere.
 - **A command that records no event** is a write that changes nothing.
 - **An event with no producing command** is a fact with no traceable cause — the record side
   can't happen on its own. It counts as produced when a `command` sits in its slice (either
@@ -157,10 +161,10 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   "each endpoint is a command" framing that fits the write side. It counts as backed when a
   `view` sits in its slice (State View), it issues a command when one sits in its slice (State
   Change), or via an explicit `arrow` in either direction. A `ui` sharing a reaction's slice
-  with neither a view nor a command gets the more specific "renders disconnected here" warning
-  instead (above), not this one.
+  with no view present gets the more specific "renders disconnected here" warning instead
+  (above), not this one — whether or not that slice also has the reaction's own command.
 
-All six are warnings rather than errors on purpose. A model under construction spends most of
+All seven are warnings rather than errors on purpose. A model under construction spends most of
 its life with one end of a flow ahead of the other, and errors block rendering — `em watch`
 would stop redrawing mid-session exactly when you most want to see the diagram.
 
@@ -277,12 +281,14 @@ slice while the rest of a large, actively-evolving model is still WIP.
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection
-can be written down. It can't be checked on slice *shape*, because shape is what em reads to
-infer arrows in the first place: a `translation` or `processor` sharing a slice with an
-`event` but no `command` is a reaction wired straight to an event, and nothing flags it. em
-only warns when a reaction shares a slice with a command. Reactions must always go through a
-command (`reaction → command → event`, split across two slices); enforce that by
-construction. The [patterns](patterns.md) doc covers why.
+can be written down — it can't be checked on slice *shape*, because shape is what em reads to
+infer arrows in the first place. A `translation` or `processor` sharing a slice with an `event`
+but no `command` — a reaction wired straight to an event — is exactly what the "a reaction that
+triggers no command" warning above catches: any reaction with no `command` in its own slice,
+and no explicit arrow to one, is flagged. Still route every reaction through a real command by
+construction (`reaction → command → event`, all in one slice) rather than an explicit
+`arrow "Reaction" -> "Event"` — that shape is its own connection-legality error (a reaction
+never records an event itself). The [patterns](patterns.md) doc covers why.
 
 `em validate` is also single-model by design: a name reused across kinds *within* one file is
 flagged ("ambiguous names", above), but the same term used inconsistently *across* files is

@@ -4,20 +4,21 @@ Event Modeling builds every system from four patterns, and every slice in a `.em
 meant to be exactly one of them. The discipline behind the patterns: information moves
 **into** the system through a command that records an event, **out of** the system through a
 read model, and no other way. Automations and translations are not exceptions — they are
-reactions that issue a command, which then records the event.
+reactions that issue a command, which then records the event, in the same slice as the
+reaction.
 
 (Mechanically, `em export` classifies a slice from its element kinds and reports
-`unclassified` for a shape still under construction that matches none of the four; and an
-Automation/Translation's second slice — the bare `command` + `event` pair — classifies as
-State Change, since classification looks at one slice at a time. See
-[cli.md](cli.md#em-export-file).)
+`unclassified` for a shape still under construction that matches none of the four; checking
+`translation`/`processor`/`automation`/`saga` kinds before `command`/`event` is what makes an
+Automation or Translation slice classify correctly even though it also carries a command and
+event of its own. See [cli.md](cli.md#em-export-file).)
 
 | Pattern | Flow | DSL elements |
 |---|---|---|
 | State Change | UI → command → event | `ui`, `command`, `event` |
 | State View | event(s) → read model → UI | `event`, `view from "…"`, `ui` |
-| Automation | read model → processor, then command → event | `view` + `processor`, next slice `command` + `event` |
-| Translation | boundary crossing → translation, then command → event | `translation` [+ `view`], next slice `command` + `event` |
+| Automation | read model (slice before) → processor + command → event, together | `view`, then `processor` + `command` + `event` |
+| Translation | boundary crossing → translation + command → event, together | [`view` (slice before)], then `translation` + `command` + `event` |
 
 ## State Change
 
@@ -37,12 +38,12 @@ A command may record several events in one slice; the renderer draws a fan from 
 to each (never an event-to-event chain).
 
 Both ends of the slice have to be joined up. Something must **trigger** the command — the `ui`
-it's issued from, or (in the Automation and Translation patterns) the reaction in the slice
-before it; a command nothing points at is a write nobody can start. And the event it records
-must end up in a **read model**; an event nothing projects is a write nobody can see. A State
-Change slice is only finished once both hold, which in practice means pairing it with the State
-View slice that consumes its event — and that State View needs its own consumer in turn.
-[`em validate` warns](validation.md#both-ends-of-a-flow) on any of those gaps.
+it's issued from, or (in the Automation and Translation patterns) the reaction that triggers
+it, also in this slice; a command nothing points at is a write nobody can start. And the event
+it records must end up in a **read model**; an event nothing projects is a write nobody can
+see. A State Change slice is only finished once both hold, which in practice means pairing it
+with the State View slice that consumes its event — and that State View needs its own consumer
+in turn. [`em validate` warns](validation.md#both-ends-of-a-flow) on any of those gaps.
 
 ## State View
 
@@ -69,17 +70,18 @@ the instance shouldn't be there.
 ## Automation
 
 The system acts on its own. A processor watches a read model — a "to-do list" of pending
-work — and issues a command when there's something to do. The pattern is always **two
-slices**: the reaction slice holds only the read model and the processor; the command it
-triggers, and that command's event, form the next slice.
+work — and issues a command when there's something to do. The reaction, the command it
+triggers, and that command's event all share **one slice** — the same shape a `ui` already
+uses in State Change. The read model it watches lives in the slice before, named by the
+reaction's own `from`:
 
 ```em
 slice "Payments To Process" {
   view Payments To Process from "Payment Requested"
-  processor Payment Gateway
 }
 
 slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Process"
   command Capture Payment
   event Payment Captured @Payment
 }
@@ -90,9 +92,11 @@ slice "Payments To Process — captured" {
 }
 ```
 
-Why two slices? Because the processor never records an event itself. It funnels its decision
-through a command like everyone else, so the command slice keeps its invariants no matter
-who's calling. Putting the command in the reaction's slice draws a validation warning.
+The processor never records an event itself, even though one now sits in its own slice — it
+funnels its decision through the command, which is what actually records `Payment Captured`.
+That's what keeps the command's invariants intact no matter who's calling it. A processor with
+no command in its slice, and no explicit arrow to one elsewhere, is a validation warning: a
+decision the system never acts on.
 
 Name the read model after the pending work — `Payments To Process`, `Orders To Fulfill`,
 `Pending Approvals` — never after the triggering event. The to-do list is a different thing
@@ -103,10 +107,9 @@ one namespace, so a view named `Payment Requested` collides with the event of th
 duplicated name.
 
 The reaction's own slice never holds a `ui` either — nothing on a screen triggers a processor
-directly, only a read model does. A `ui` belongs in the *consumer* slice instead: the one with
-the command this eventually triggers (if there's a screen for that), or, more commonly, a later
-State View slice reading the resulting event. A `ui` left in the reaction's slice renders
-disconnected, with no edge, and `em validate` warns on it too.
+directly, only a read model does. A `ui` belongs in the slice that displays the read model
+instead. A `ui` left in the reaction's slice renders disconnected, with no edge, and
+`em validate` warns on it too.
 
 The third slice is the State View that reads `Payment Captured` — here it's the same to-do
 list, one payment shorter. Without it the event is unread and `em validate` warns.
@@ -115,7 +118,7 @@ list, one payment shorter. Without it the event is unread and `em validate` warn
 
 An adapter carries data across a boundary — an external system, or another bounded context —
 and translates it into the model's own language. A translation is a reaction just like a
-processor: it triggers a command and never records an event directly.
+processor: it triggers a command — in the same slice — and never records an event directly.
 
 Two independent questions shape which form it takes — don't conflate them:
 
@@ -124,21 +127,19 @@ Two independent questions shape which form it takes — don't conflate them:
 * **Durable artifact** — is there a queryable, persisted thing behind the trigger (a queue,
   topic, or log), or is it an ephemeral call with nothing to query afterward?
 
-The DSL only cares about the second question: a translation with a `view` reads a durable read
-model in its own slice; one without has no `from` at all. Trigger source doesn't change the
-shape — an externally triggered translation backed by a real queue is architecturally closer to
-the internally triggered case (same durability, same queryability) than to a plain external
-call, even though both are "externally triggered."
+The DSL only cares about the second question: a translation with a `from` reads a durable read
+model from the slice before it; one without has no `from` at all, and nothing before it either.
+Trigger source doesn't change the shape — an externally triggered translation backed by a real
+queue is architecturally closer to the internally triggered case (same durability, same
+queryability) than to a plain external call, even though both are "externally triggered."
 
 Externally triggered, no durable artifact — the input comes from outside the model as a bare
-call, so the translation has no `from`:
+call, so the translation has no `from` and nothing precedes it; the reaction, command, and
+event share one slice with no earlier column at all:
 
 ```em
-slice "Carrier Webhook" {
-  translation Carrier Adapter
-}
-
 slice "Confirm Delivery" {
+  translation Carrier Adapter
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
@@ -150,16 +151,17 @@ slice "Deliveries" {
 ```
 
 Externally triggered, durable artifact — a lot of real integrations persist the inbound message
-first (for retries, ordering, audit) before processing it. Same `view` + `translation` shape as
-the internal case below, just fed by an external fact instead of one the model recorded itself:
+first (for retries, ordering, audit) before processing it. Same read-model-in-the-slice-before
+shape as the internal case below, just fed by an external fact instead of one the model
+recorded itself:
 
 ```em
 slice "Inbound Carrier Events" {
   view Inbound Carrier Events from "Carrier Event Received"
-  translation Carrier Adapter
 }
 
 slice "Confirm Delivery" {
+  translation Carrier Adapter from "Inbound Carrier Events"
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
@@ -180,15 +182,15 @@ boundary event in DDD — and stays legitimate as long as it doesn't leak into t
 domain vocabulary.
 
 Internally triggered — the system pushes its own state outward, so the translation reads a
-read model:
+read model from the slice before it:
 
 ```em
 slice "Quotes To Sync" {
   view Accepted Quotes from "Quote Accepted"
-  translation CRM Sync
 }
 
 slice "Record Sync" {
+  translation CRM Sync from "Accepted Quotes"
   command Record Crm Sync
   event Quote Synced @Quote
 }
@@ -203,9 +205,13 @@ All three forms close with a State View slice, for the same reason as the Automa
 the command's event needs a reader. Note that a reaction reading the view doesn't satisfy that —
 reactions read read models, not events.
 
-Note that `em validate` warns when a reaction shares a slice with a command, but cannot
-catch a reaction wired straight to an event — keep the two-slice split by construction
-(see [validation.md](validation.md)).
+`em validate` warns when a reaction has no command in its own slice (and no explicit arrow to
+one elsewhere) — a translation or processor wired straight to an event, with nothing issuing
+it, is exactly what that check catches. Still route every reaction through a real command by
+construction (`reaction → command → event`) rather than an explicit
+`arrow "Reaction" -> "Event"` — that shape is its own
+[connection-legality error](validation.md#connection-legality) (a reaction never records an
+event itself). See [validation.md](validation.md).
 
 ## Headless systems
 
@@ -232,7 +238,9 @@ slice "Read Quote — created" {
 `translation` stays reserved for genuine reactions and real external-system boundaries (the
 Automation and Translation patterns above, unchanged) — not for modeling a synchronous
 request/response API call. Internal-only commands and views with no public route carry no `ui`
-at all; they follow the ordinary Automation pattern instead.
+at all; they follow the ordinary Automation pattern instead — the reaction shares the command's
+slice, and an internal-only read model is consumed by that reaction (from the slice before), not
+by a screen or an API query.
 [examples/headless-api.em](../examples/headless-api.em) is a runnable model exercising all of
 this: an API-triggered State Change and State View, a fully internal Automation (no `ui`), and a
 Translation crossing a real external boundary. The

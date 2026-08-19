@@ -96,7 +96,7 @@ an event directly.}}
 
 ## Command / Input
 <!-- For State Change, and the command half of an Automation or Translation (reactions trigger a
-     command in the next slice). Omit for pure State View slices. -->
+     command in this same slice). Omit for pure State View slices. -->
 **Command:** `{{Command Name}}`
 
 | Field | Type | Required | Rules / Validation |
@@ -106,8 +106,8 @@ an event directly.}}
 ## Trigger
 <!-- What issues this slice's command. Required: a command nothing points at is a write nobody
      can start. Either the screen the user acts on (a `ui` in this slice), or the reaction that
-     issues it (an automation/processor/translation in the PREVIOUS slice). -->
-**Triggered by:** {{screen `X` @Persona | processor `Y` in slice "Z"}}
+     issues it (an automation/processor/translation, also in this slice). -->
+**Triggered by:** {{screen `X` @Persona | processor `Y`, also in this slice}}
 
 ## Event(s) Emitted
 <!-- The immutable facts recorded. List each event and its payload. -->

@@ -203,12 +203,12 @@ slice "Open Orders" {
   ui Order List @Customer
 }
 
-# 3. Automation: split across TWO slices (plus the read slice that consumes the event)
+# 3. Automation: read model in the slice before, reaction + command + event together
 slice "Orders To Fulfill" {
   view Orders To Fulfill from "Order Placed"
-  processor Fulfillment Service
 }
-slice "Ship Order" {            # the triggered command goes in the NEXT slice
+slice "Ship Order" {            # reaction, command, and event all share this one slice
+  processor Fulfillment Service from "Orders To Fulfill"
   command Ship Order
   event Order Shipped @Shipping
 }
@@ -218,10 +218,8 @@ slice "Open Orders — shipped" {
 }
 
 # 4a. Translation (external trigger, no durable artifact): external call -> translation -> command -> event
-slice "Carrier Webhook" {
+slice "Confirm Delivery" {
   translation Carrier Adapter         # inbound from outside the model; no internal `from`
-}
-slice "Confirm Delivery" {            # the triggered command goes in the NEXT slice
   command Confirm Delivery
   event Delivery Confirmed @Shipping
 }
@@ -238,9 +236,9 @@ slice "Receive Carrier Event" {           # ingest: persist the raw webhook befo
 }
 slice "Inbound Carrier Events" {
   view Inbound Carrier Events from "Carrier Event Received"   # the persisted inbound queue
-  translation Carrier Adapter
 }
 slice "Acknowledge Carrier Event" {
+  translation Carrier Queue Adapter from "Inbound Carrier Events"   # different producer than 4a's Carrier Adapter, so a distinct name
   command Acknowledge Carrier Event
   event Carrier Event Acknowledged @Shipping
 }
@@ -251,15 +249,15 @@ slice "Inbound Carrier Events — processed" {
 
 # 4c. Translation (internal trigger, durable artifact): read model -> translation -> command -> event
 slice "Accept Quote" {
-  ui Quote Screen @Customer     # every command needs a trigger: a ui, or a reaction before it
+  ui Quote Screen @Customer     # every command needs a trigger: a ui, or a reaction, in this slice
   command Accept Quote
   event Quote Accepted @Quote
 }
 slice "Quotes To Sync" {
   view Accepted Quotes from "Quote Accepted"
-  translation CRM Sync                # reacts to our own state via the read model in this slice
 }
 slice "Record Sync" {
+  translation CRM Sync from "Accepted Quotes"   # reacts to our own state via the read model
   command Record Crm Sync
   event Quote Synced @Quote
 }
@@ -278,8 +276,11 @@ the context/lane whose fact it represents (e.g. `Carrier Event Received @Shippin
 Anti-Corruption-Layer event in DDD) instead of a technical artifact leaking foreign vocabulary
 into the model.
 
-A `translation` (like a `processor`) is a **reaction**: it triggers a command and never carries an
-`event` in its own slice. Same two-slice split as the Automation pattern above.
+A `translation` (like a `processor`) is a **reaction**: it triggers a command in the same slice —
+same shape as the Automation pattern above, and the same shape `ui` already uses in State Change.
+The reaction never records the event directly (there's no `reaction -> event` edge); the command
+it triggers is what records it, and that event happens to live in the reaction's own slice now
+because the command does.
 
 Note the read slice closing each pattern: **every event must be read by some read model**
 (warning 4 below). A command slice is not finished until the slice that projects its event
@@ -314,8 +315,9 @@ slice "Read Quote — created" {
   request/response API call — that's Pattern 1 (State Change) with an API persona, exactly like the
   `Create Quote` slice above.
 - **Internal-only commands and views (no public route) carry no `ui` at all.** They follow the
-  ordinary Automation pattern already documented: the reaction sits in the previous slice, and an
-  internal-only read model is consumed by that reaction, not by a screen or an API query.
+  ordinary Automation pattern already documented: the reaction shares the command's slice, and an
+  internal-only read model is consumed by that reaction (from the slice before), not by a screen
+  or an API query.
 - **Repeat the read model** in every slice where it's read so the timeline flows left-to-right, and
   **prefer `view X again`** for every instance after the first (see Clauses) — **each instance
   carries its own consumer** (the `ui` that reads it, or a reaction), not just the last one. `again`
@@ -337,23 +339,19 @@ slice "Read Quote — created" {
   Keep the read model adjacent to its event, and keep a sub-flow that detours into another context
   together rather than parking it at the end of the model.
 
-### Slice-ordering gotchas (edge inference)
+### Reaction wiring — no positional gotcha
 
-`em` infers cross-slice arrows positionally, so **slice order matters**:
-- A **reaction** (`processor`/`translation` that triggers a command) wires to the command in the
-  **immediately next** slice. So a reaction slice must be *directly* followed by its command slice —
-  don't insert a read slice between them.
-- A read slice whose consumer is a **reaction** (`view` + `processor`/`translation`, no command in
-  the same slice) must **not** be immediately followed by a `command` slice, or the reaction will be
-  mis-wired to that command. Put it after a command+event slice, or before another read/reaction
-  slice instead. (A `ui`-consumed read slice has no such risk — `ui` never wires as a reaction.)
-- A read model fed by an early event (e.g. a queue or to-do view) can't always sit directly after
-  its source event when a reaction must immediately precede its command slice — placing the read
-  later, in narrative order with a longer arrow, is the correct trade-off, not something to force-fix.
-- A `ui` never triggers a reaction — no pattern has a `ui` wired to `processor`/`automation`/
-  `saga`/`translation`, only to `command`. A `ui` left in the reaction's own slice (instead of the
-  read-model or command slice) renders with no outgoing edge, disconnected, and `em validate` now
-  warns on it.
+A reaction's command is inferred from **same-slice presence**, exactly like `ui -> command`: put
+`processor`/`translation` in the same slice as the command it triggers, in either order, and `em`
+wires it correctly regardless of what any other slice contains or where it sits in the file. There's
+no adjacency to get right and no reordering hazard — the read model it watches (if any) is named
+explicitly via `from "View"`, resolved by name to the nearest instance at or before its own slice,
+not by position either.
+
+The one thing that still doesn't wire on its own: a `ui` never triggers a reaction — no pattern has
+a `ui` wired to `processor`/`automation`/`saga`/`translation`, only to `command`. A `ui` left in a
+reaction's slice renders with no outgoing edge, disconnected, and `em validate` warns on it — move
+it to the slice that displays the read model, or drop it.
 
 ---
 
@@ -388,15 +386,16 @@ slice "Read Quote — created" {
    real split/merge (see the four `lineage-*` codes in the table below).
 
 **Warnings (should fix):**
-1. **Automation/translation shares slice with its command** — both `automation`/`processor` and
-   `translation` are reactions; put the triggered command in the *next* slice.
-2. **`ui` shares slice with a reaction, no command** — a `ui` only ever wires to a `command`; no
+1. **Reaction with no command** — a `processor`/`automation`/`saga`/`translation` that triggers
+   nothing. It never records an event itself; add the command it issues in this same slice, or an
+   explicit `arrow` to one elsewhere.
+2. **`ui` shares slice with a reaction** — a `ui` only ever wires to a `command` a person issues; no
    pattern has a `ui` triggering an automation/processor/saga/translation. Left in the reaction's
-   own slice it renders disconnected, with no edge. Move it to the read-model slice, or to the
-   slice with the command this eventually triggers.
-3. **Command with no trigger** — nothing issues it. A command needs a `ui` in its slice, or a
-   reaction (automation/processor/saga/translation) in the slice *before* it. The input-side mirror
-   of (5): a command nothing points at is a write nobody can start.
+   own slice it renders disconnected, with no edge, whether or not that slice also has the
+   reaction's own command. Move it to the slice that displays the read model, or drop it.
+3. **Command with no trigger** — nothing issues it. A command needs a `ui` in its slice, or the
+   reaction (automation/processor/saga/translation) that triggers it, *also* in this slice. The
+   input-side mirror of (5): a command nothing points at is a write nobody can start.
 4. **Command without event** — every command should record at least one event.
 5. **Event nobody reads** — the mirror of (4): recording an event no read model projects is a
    write with no reader. Follow every write slice with the read slice that consumes its event.
@@ -450,12 +449,12 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `arrow-backward` | error | Backward arrow | Restructure so the target comes later. |
 | `arrow-unresolved-source` | error | Arrow source unresolved | Fix the arrow's source name. |
 | `arrow-unresolved-target` | error | Arrow target unresolved | Fix the arrow's target name. |
-| `automation-shares-slice-with-command` | warning | Automation shares slice with its command | Put the triggered command in the next slice. |
 | `binding-missing-file` | warning | Doc binding points at a missing file | Create the slice doc, or fix the `note` path. |
 | `both-ends-of-a-flow/command-no-event` | warning | Command without event | Add the event this command records. |
-| `both-ends-of-a-flow/command-untriggered` | warning | Command with no trigger | Add a `ui` in this slice, or a reaction in the previous slice. |
+| `both-ends-of-a-flow/command-untriggered` | warning | Command with no trigger | Add a `ui` or the reaction that issues it, both in this slice. |
 | `both-ends-of-a-flow/event-unproduced` | warning | Event with no producing command | Add the command that records it, or an explicit arrow from one. |
 | `both-ends-of-a-flow/event-unread` | warning | Event nobody reads | Project it into a view, or reconsider recording it. |
+| `both-ends-of-a-flow/reaction-no-command` | warning | Reaction with no command | Add the command it triggers, in this slice, or an explicit arrow to one. |
 | `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
@@ -478,7 +477,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
 | `translation-name-collision` | warning | Translation name reused for different producers | Use a distinct name per producer to avoid confusion. |
 | `type-cycle` | error | Cyclic type reference | Break the cycle, or route the self/mutual reference through an array. |
-| `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction, no command | Move the `ui` to the read-model slice, or to the slice with the command this triggers. |
+| `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction | Move the `ui` to the slice that displays the read model, or drop it. |
 | `view-again-without-earlier` | error | `again` without an earlier declaration | Declare the view plainly the first time it appears. |
 | `view-from-future-event` | error | Backward timeline (view reads a future event) | Move the source to a later `view X again` instance. |
 | `view-from-unresolved` | error | Unknown event source | Fix the `from` reference to name an existing event. |
@@ -488,8 +487,8 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 **Design rules that keep models valid:**
 - One element per band per slice (multiple personas/contexts are fine — they're different rows).
 - Every `command` slice includes its `event`. Every `view` has a `from` source.
-- **Every `command` has a trigger.** A `ui` in its slice, or a reaction in the slice *before* it.
-  A command nothing points at is a write nobody can start.
+- **Every `command` has a trigger.** A `ui` in its slice, or the reaction that triggers it, also in
+  its slice. A command nothing points at is a write nobody can start.
 - **Every `event` has a reader.** A command slice isn't finished until the read slice that projects
   its event exists. Reactions don't count — they read views, not events. Pair each write slice with
   its read slice as you go rather than sweeping up dangling events at the end.
@@ -502,16 +501,17 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
   `command → view` (the CQRS violation: an event has to sit between them) and `view → command`
   (a reaction has to sit between them). If you reach for an arrow the patterns don't allow, the
   model is missing an element, not an arrow.
-- Automations **and translations** are always two slices: the reaction (plus its read model, if
-  internally triggered) in one slice, the triggered `command` + its `event` in the next. A
-  translation/automation slice **never contains an `event`** — reactions trigger commands, not
-  events. Externally-triggered reactions start from outside the model (no `from`);
-  internally-triggered ones read a **view** (read model) — `from "X"` must resolve to a view.
+- A reaction (`processor`/`automation`/`saga`/`translation`) shares its slice with the `command` it
+  triggers and that command's `event` — the same shape `ui` already uses in State Change. If it's
+  internally triggered, the **view** (read model) it watches lives in the slice before, named via
+  `from "X"` (which must resolve to a view, never an event directly). Externally-triggered reactions
+  start from outside the model — no `from` at all, and no slice before them.
 - Name everything uniquely and consistently.
 - Events are past tense; commands are imperative; views name the thing shown.
 
-> ⚠️ **Validator blind spot:** `em validate` does **not** flag a translation/automation that emits
-> an event directly (e.g. `translation T` and `event E` in the same slice with no command). It only
-> warns when a reaction shares a slice with a *command*. So enforce the two-slice
-> `reaction → command → event` split **by construction** — never rely on `em validate` to catch a
-> reaction wired straight to an event.
+A reaction that emits an event with no command anywhere between them — `translation T` and
+`event E` in the same slice, nothing issuing it — is exactly what
+`both-ends-of-a-flow/reaction-no-command` (above) catches: any reaction with no `command` in its
+own slice, and no explicit arrow to one, warns. Still route every reaction through a real command
+by construction (`reaction → command → event`) rather than an explicit `arrow "Reaction" -> "Event"`
+— that shape is its own `connection-legality` error (a reaction never records an event itself).

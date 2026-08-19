@@ -32,17 +32,21 @@ slice "View Open Orders" {
     expect(names(sm)).toEqual(["Order Placed", "Place Order", "Product Catalog"]);
   });
 
-  it("with no local UI: pulls the previous slice's automation-kind trigger as earlier context", () => {
-    // "Capture Payment" (order-fulfillment.em): no ui, triggered by "Payments To
-    // Process"'s processor. Real, already-verified case, per plan.
-    const model = compile(readFileSync("examples/order-fulfillment.em", "utf8")).model;
-    const i = model.slices.findIndex((s) => s.name === "Capture Payment");
-    const { model: sm } = buildSliceDiagram(model, i);
-    expect(sliceNames(sm)).toEqual(["Payments To Process", "Capture Payment"]);
-    // only the processor comes along from the trigger slice — not its own view too
-    const triggerColumn = sm.elements.filter((e) => e.sliceIndex === 0);
-    expect(triggerColumn.map((e) => e.kind)).toEqual(["processor"]);
-    expect(names(sm)).toEqual(["Capture Payment", "Payment Captured", "Payment Gateway"]);
+  it("with no local UI and no reaction: single column, nothing to pull (an untriggered command)", () => {
+    // A slice classifies as "state-change" only when it carries no automation-kind element at
+    // all (see classify.ts) — so a command with no local `ui` here has no reaction to chase
+    // either; it's exactly `both-ends-of-a-flow/command-untriggered`'s case, a validate concern
+    // rather than something this renderer can complete by reaching elsewhere.
+    const model = modelFrom(`
+context Order
+slice "Untriggered" {
+  command Place Order
+  event Order Placed @Order
+}
+`);
+    const { model: sm } = buildSliceDiagram(model, 0);
+    expect(sliceNames(sm)).toEqual(["Untriggered"]);
+    expect(names(sm)).toEqual(["Order Placed", "Place Order"]);
   });
 });
 
@@ -74,46 +78,46 @@ describe("buildSliceDiagram — State View", () => {
 });
 
 describe("buildSliceDiagram — Automation / Translation", () => {
-  it("Automation: view+processor column, then the next slice's command+event", () => {
+  it("Automation: the watched view pulled from the slice before, then this slice's processor+command+event", () => {
     const model = compile(readFileSync("examples/order-fulfillment.em", "utf8")).model;
-    const i = model.slices.findIndex((s) => s.name === "Payments To Process");
+    const i = model.slices.findIndex((s) => s.name === "Capture Payment");
     const { model: sm } = buildSliceDiagram(model, i);
     expect(sliceNames(sm)).toEqual(["Payments To Process", "Capture Payment"]);
-    expect(sm.slices[0].elements.map((e) => e.kind).sort()).toEqual(["processor", "view"]);
-    expect(sm.slices[1].elements.map((e) => e.kind).sort()).toEqual(["command", "event"]);
+    expect(sm.slices[0].elements.map((e) => e.kind)).toEqual(["view"]);
+    expect(sm.slices[1].elements.map((e) => e.kind).sort()).toEqual(["command", "event", "processor"]);
   });
 
-  it("Automation: filters a stray UI out of the next slice — only command/event are pulled", () => {
+  it("Automation: filters a stray UI out of the origin slice — only the referenced view is pulled", () => {
     const model = modelFrom(`
 persona Manager
 slice "React" {
   view Watched from "Something Happened"
-  processor Worker
+  ui Dashboard @Manager
 }
 slice "Follow Up" {
+  processor Worker from "Watched"
   command Do The Thing
   event Thing Done
-  ui Confirmation Screen @Manager
 }
 `);
-    const { model: sm } = buildSliceDiagram(model, 0);
+    const { model: sm } = buildSliceDiagram(model, 1);
     expect(sliceNames(sm)).toEqual(["React", "Follow Up"]);
-    expect(sm.slices[1].elements.map((e) => e.kind).sort()).toEqual(["command", "event"]);
-    expect(names(sm)).not.toContain("Confirmation Screen");
+    expect(sm.slices[0].elements.map((e) => e.kind)).toEqual(["view"]);
+    expect(names(sm)).not.toContain("Dashboard");
   });
 
   it("Translation: same shared shape as Automation", () => {
-    // "Carrier Sync" (ecommerce-fulfillment.em): internally-triggered translation
-    // (has a same-slice view), followed by "Record Delivery"'s command+event.
+    // "Carrier Sync" (ecommerce-fulfillment.em): the read model the translation watches,
+    // pulled from the slice before "Record Delivery"'s translation+command+event.
     const model = compile(readFileSync("examples/ecommerce-fulfillment.em", "utf8")).model;
-    const i = model.slices.findIndex((s) => s.name === "Carrier Sync");
+    const i = model.slices.findIndex((s) => s.name === "Record Delivery");
     const { model: sm } = buildSliceDiagram(model, i);
     expect(sliceNames(sm)).toEqual(["Carrier Sync", "Record Delivery"]);
-    expect(sm.slices[0].elements.map((e) => e.kind).sort()).toEqual(["translation", "view"]);
-    expect(sm.slices[1].elements.map((e) => e.kind).sort()).toEqual(["command", "event"]);
+    expect(sm.slices[0].elements.map((e) => e.kind)).toEqual(["view"]);
+    expect(sm.slices[1].elements.map((e) => e.kind).sort()).toEqual(["command", "event", "translation"]);
   });
 
-  it("Automation as the very last slice: no next-slice column, doesn't throw", () => {
+  it("Automation with no `from` to chase: single column, doesn't throw", () => {
     const model = modelFrom(`
 slice "React" {
   view Watched from "Something Happened"

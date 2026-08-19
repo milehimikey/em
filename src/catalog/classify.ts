@@ -11,14 +11,13 @@ import { Slice } from "../model/model.js";
 export type SlicePattern = "translation" | "automation" | "state-change" | "state-view" | "unclassified";
 
 /**
- * Classify a single slice by its element kinds. Known simplification, not a
- * bug: docs/patterns.md describes Automation and Translation as spanning
- * *two* slices — the reaction slice, then a following `command`+`event`
- * slice. That second slice has the exact same kind-signature as a State
- * Change slice, so per-slice classification reads it as State Change. This
- * matches "derived from which element kinds appear in the slice" and keeps
- * the classifier a pure function of one slice at a time; don't "fix" this by
- * trying to look at neighboring slices.
+ * Classify a single slice by its element kinds. A reaction (`translation`/
+ * `processor`/`automation`/`saga`) shares its slice with the command it
+ * triggers — see docs/patterns.md — so checking translation/automation kinds
+ * before command/event is what makes that combined slice read as Translation
+ * or Automation rather than State Change. A view the reaction reads via
+ * `from` lives in its own, earlier slice and classifies as State View on its
+ * own. Order matters for this reason; keep the reaction checks first.
  */
 export function classifySlicePattern(slice: Slice): SlicePattern {
   const kinds = new Set(slice.elements.map((el) => el.kind));

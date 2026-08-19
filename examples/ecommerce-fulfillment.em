@@ -56,26 +56,26 @@ slice "Request Payment" {
   event Payment Requested @Payment
 }
 
-# --- Automation: settle queued payments ---
+# --- Read model the payment automation watches ---
 slice "Payments To Settle" {
   view Payments To Settle from "Payment Requested"
-  processor Payment Gateway
 }
 
-# --- Command (triggered): capture ---
+# --- Automation: settle queued payments (reaction + command + event together) ---
 slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Settle"
   command Capture Payment
   event Payment Captured @Payment
 }
 
-# --- Automation: fulfill paid orders ---
+# --- Read model the fulfillment automation watches ---
 slice "Fulfillment Queue" {
   view Orders To Fulfill from "Payment Captured"
-  processor Fulfillment Engine
 }
 
-# --- Command (triggered): reserve stock ---
+# --- Automation: fulfill paid orders (reaction + command + event together) ---
 slice "Reserve Stock" {
+  processor Fulfillment Engine from "Orders To Fulfill"
   command Reserve Stock
   event Stock Reserved @Shipping
 }
@@ -93,26 +93,26 @@ slice "Confirm Pick" {
   event Items Picked @Shipping
 }
 
-# --- Automation: dispatch picked shipments ---
+# --- Read model the dispatch automation watches ---
 slice "Dispatch Queue" {
   view Shipments To Dispatch from "Items Picked"
-  processor Dispatch Service
 }
 
-# --- Command (triggered): dispatch ---
+# --- Automation: dispatch picked shipments (reaction + command + event together) ---
 slice "Dispatch Shipment" {
+  processor Dispatch Service from "Shipments To Dispatch"
   command Dispatch Shipment
   event Shipment Dispatched @Shipping
 }
 
-# --- Translation: external carrier tracking feed ---
+# --- Read model the carrier translation watches ---
 slice "Carrier Sync" {
   view Carrier Tracking from "Shipment Dispatched"
-  translation Carrier Adapter
 }
 
-# --- Command (triggered): record delivery ---
+# --- Translation: external carrier tracking feed (reaction + command + event together) ---
 slice "Record Delivery" {
+  translation Carrier Adapter from "Carrier Tracking"
   command Record Delivery
   event Order Delivered @Shipping
 }

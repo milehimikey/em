@@ -25,16 +25,16 @@ tempting shortcuts:
 - **`command → read model`** — the CQRS violation. A write is only ever visible to a reader
   through the event it recorded. Put the event between them.
 - **`read model → command`** — reads never drive a write directly. A processor or translation
-  watches the read model and issues the command, across two slices.
+  watches the read model and issues the command that sits in the same slice.
 
 If you find yourself wanting an arrow the patterns don't allow, the model is missing an
 **element**, not an arrow.
 
 **Automations and translations are not exceptions to rule 1.** They are *reactions* — a processor
 or an adapter that wakes up, decides something must change, and **issues a command** to do it. They
-never record an event themselves. A reaction box always points at a **command** (in the next
-slice), and that command produces the event. If you ever see a translation or automation wired
-straight to an event, the model is wrong.
+never record an event themselves. A reaction box always points at a **command in its own slice** —
+the same shape a `ui` already uses in State Change — and that command produces the event. If you
+ever see a translation or automation wired straight to an event, the model is wrong.
 
 Events are **immutable past-tense facts** ("Order Placed", "Payment Captured"). They are the
 spine of the model. Everything else hangs off the events.
@@ -52,8 +52,8 @@ Every slice is exactly one of these. In `em`, each maps to a specific shape (see
 **UI → Command → Event.** A user (or automation) submits a command; the system validates it
 against invariants and records one or more events.
 - **A State Change never travels alone, and it's joined at both ends.** Something must *trigger*
-  the command — the `ui` it's issued from, or (patterns 3 and 4) the reaction in the slice before
-  it — and its event needs a read model that projects it. So the unit of work is a State Change
+  the command — the `ui` it's issued from, or (patterns 3 and 4) the reaction that triggers it,
+  also in this slice — and its event needs a read model that projects it. So the unit of work is a State Change
   slice *plus* the State View slice that reads its event. Write them together; a command nothing
   points at is a write nobody can start, an unread event is a write nobody can see, and
   `em validate` warns on each.
@@ -114,16 +114,17 @@ displays. Read-only; changes no state.
   expectation?"*
 
 ### 3. Automation (Processor pattern)
-**Read Model → Processor → (next slice) Command → Event.** The system reacts on its own: a
-processor watches a read model (a "to-do list" of work) and **issues a command** — it never
-records an event directly.
-- `em` shape: **two slices**, then the read slice that consumes the event — three in all:
+**Read Model → Processor → Command → Event, the last three together in one slice.** The system
+reacts on its own: a processor watches a read model (a "to-do list" of work) and **issues a
+command** — it never records an event directly.
+- `em` shape: the read model in the slice before, then the reaction with its command and event —
+  plus the read slice that consumes the event — three slices in all:
   ```em
   slice "Todo" {
     view Todo from "..."
-    processor P
   }
-  slice "Do It" {           # the triggered command goes in the NEXT slice
+  slice "Do It" {           # processor, command, and event all share this slice
+    processor P from "Todo"
     command C
     event E @Context
   }
@@ -132,9 +133,10 @@ records an event directly.
     ui Work Board @Persona     # ...and every read model needs a consumer
   }
   ```
-  The processor band holds no event; the command in the next slice produces it. Keeping the
-  triggered command in the same slice as the processor is a validation warning — always split it.
-  Forgetting the third slice leaves `E` unread, which is also a warning.
+  The processor never records the event directly — the command it triggers does, and that event
+  happens to live in the processor's own slice now because the command does. A processor with no
+  command in its slice (and no explicit arrow to one) is a validation warning: a decision the
+  system never acts on. Forgetting the third slice leaves `E` unread, which is also a warning.
 - **Naming:** name the read model after the pending work — `Payments To Process`,
   `Orders To Fulfill`, `Pending Approvals` — never after the triggering event. The event is what
   happened; the view is what's left to do. Reusing the event's name also collides in the shared
@@ -144,10 +146,11 @@ records an event directly.
   list does the processor watch? What command does it fire? What if it fails or retries?"*
 
 ### 4. Translation
-**Boundary crossing → command → event.** An adapter translates data across a boundary (an external
-system, or another bounded context) into the model's own language. Like an automation, a
-translation is a *reaction*: it **triggers a command**, never records an event directly. Two
-independent questions shape which form it takes — don't conflate them:
+**Boundary crossing → command → event, the reaction and what it triggers together in one slice.**
+An adapter translates data across a boundary (an external system, or another bounded context) into
+the model's own language. Like an automation, a translation is a *reaction*: it **triggers a
+command**, never records an event directly. Two independent questions shape which form it takes —
+don't conflate them:
 - **Trigger source:** does the input come from outside the model, or from the model's own state
   pushed back out?
 - **Durable artifact:** is there a queryable, persisted thing behind the trigger (a queue, topic,
@@ -167,13 +170,14 @@ The `em` shape only tracks the second question — trigger source doesn't change
   it's scoped to the context/lane whose fact it represents, not by who committed it — the same
   move as an Anti-Corruption-Layer boundary event in DDD — and stays legitimate as long as it
   doesn't leak into the model's own domain vocabulary.
-- `em` shape: **two slices**, exactly like an automation, plus the read slice for the event:
+- `em` shape: exactly like an automation — the read model (durable-artifact form only) in the
+  slice before, then the reaction with its command and event, plus the read slice for the event:
   ```em
   slice "Boundary" {
     view Source from "..."     # durable-artifact form only; omit if there's nothing persisted
-    translation T from "Source"
   }
-  slice "Record It" {
+  slice "Record It" {          # translation, command, and event all share this slice
+    translation T from "Source"   # omit `from` entirely for the no-durable-artifact form
     command C
     event E @Context
   }
@@ -182,7 +186,7 @@ The `em` shape only tracks the second question — trigger source doesn't change
     ui Status Screen @Persona    # ...and every read model needs a consumer
   }
   ```
-  The translation band never carries an event.
+  The translation never records the event directly — the command it triggers does.
 - Socratic prompts: *"What boundary are we crossing, and which way? What outside system or context
   feeds us (or do we feed)? In what format? How do we know its data is trustworthy/complete? What
   internal **command** does it trigger, and what event does that command record?"*
@@ -237,9 +241,9 @@ each view to the events that feed it.
 ### Step 5 — Swimlanes & Apply the Patterns  *(model)*
 Organize elements into swimlanes: one **persona** row per actor, one **context** (bounded
 context / aggregate) row per event family. Classify every slice as one of the **4 patterns** and
-wire them correctly — especially **split both automations and translations across two slices**
-(the reaction in one, the command + event in the next). A translation or automation never records
-an event directly; it triggers a command.
+wire them correctly — especially **share the slice between every automation or translation and the
+command it triggers** (the read model it watches, if any, stays in the slice before). A translation
+or automation never records an event directly; it triggers a command.
 - Prompts: *"Which events belong together as one consistency boundary (aggregate)? Who owns this
   data? Is this slice a state change, a view, an automation, or a translation?"*
 - Output: a structurally complete model with swimlanes and pattern-correct slices.
@@ -258,8 +262,9 @@ dedicated `slice` phase writes the full rich spec (see `templates/slice.md`).
 
 ### Step 7 — Evaluate Completeness  *(model)*
 Walk the whole model with stakeholders and check for loose ends:
-- Every **command** has something that **triggers** it — a `ui` in its slice, or a reaction in the
-  slice before it. A command nothing points at is a write nobody can start. `em validate` warns.
+- Every **command** has something that **triggers** it — a `ui` in its slice, or the reaction that
+  triggers it, also in its slice. A command nothing points at is a write nobody can start.
+  `em validate` warns.
 - Every **command** produces at least one **event**.
 - Every **view** has at least one source event, **and a consumer** — a `ui` (headless: the `ui`
   tagged to the API-caller persona), or a reaction watching it. Every *instance* of a repeated
@@ -273,11 +278,13 @@ Walk the whole model with stakeholders and check for loose ends:
 - Every connection is one of the six legal pairs (`ui → command`, `command → event`,
   `event → read model`, `read model → ui`, `read model → reaction`, `reaction → command`). No
   arrow between two instances of one read model.
-- Automations **and** translations are split correctly (reaction → command → event, never a
-  reaction wired straight to an event); translations cover every external input.
-- Run `em validate` and resolve all errors and warnings. It now catches illegal `arrow` kind pairs
-  (error) and unread events (warning), but it still does **not** catch a translation/automation that
-  emits an event directly — verify the two-slice split by hand.
+- Automations **and** translations are wired correctly (reaction → command → event, all in one
+  slice — never a reaction wired straight to an event, and never a reaction with no command at
+  all); translations cover every external input.
+- Run `em validate` and resolve all errors and warnings. It catches illegal `arrow` kind pairs
+  (error), unread events (warning), and a reaction with no command in its slice (warning) — a
+  reaction wired straight to an event with no command anywhere is exactly what that last check
+  catches, so a clean `em validate` run does cover this case.
 - Prompts: *"Is there any event nobody reads — and if the business genuinely never looks at it, why
   are we recording it? Any command that just happens, with nobody and nothing asking for it? Any
   screen with no way in or out? Any command that records nothing? Any

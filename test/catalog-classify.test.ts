@@ -25,7 +25,7 @@ describe("classifySlicePattern", () => {
     expect(slicePatternLabel("state-view")).toBe("State View");
   });
 
-  it("classifies view+processor (the automation reaction slice) as Automation", () => {
+  it("classifies a bare view+processor slice (no command yet) as Automation", () => {
     const { model } = compile(`slice "Payments To Process" {
   view Payments To Process from "Payment Requested"
   processor Payment Gateway
@@ -50,16 +50,26 @@ describe("classifySlicePattern", () => {
     expect(slicePatternLabel("unclassified")).toBe("Unclassified");
   });
 
-  it("classifies Automation/Translation's second slice (bare command+event) as State Change — " +
-    "a deliberate simplification of per-slice classification, not a bug (see docs/patterns.md)", () => {
+  it("classifies the canonical merged shape — processor+command+event together — as Automation, " +
+    "not State Change (checking reaction kinds before command/event is what makes this work; " +
+    "see the doc comment on classifySlicePattern)", () => {
     const { model } = compile(`slice "Payments To Process" {
   view Payments To Process from "Payment Requested"
-  processor Payment Gateway
 }
 slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Process"
   command Capture Payment
   event Payment Captured @Payment
 }`);
-    expect(classifySlicePattern(model.slices[1])).toBe("state-change");
+    expect(classifySlicePattern(model.slices[1])).toBe("automation");
+  });
+
+  it("classifies the merged shape with a translation the same way — Translation, not State Change", () => {
+    const { model } = compile(`slice "Confirm Delivery" {
+  translation Carrier Adapter
+  command Confirm Delivery
+  event Delivery Confirmed @Shipping
+}`);
+    expect(classifySlicePattern(model.slices[0])).toBe("translation");
   });
 });

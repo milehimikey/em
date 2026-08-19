@@ -160,27 +160,29 @@ slice "Manager Review" {
 ```
 
 Now the automation itself. Think of it as a payment gateway watching a to-do list: the read
-model collects payments that need processing, and a processor works through them. The
-pattern takes **two slices**:
+model collects payments that need processing, and a processor works through them, triggering
+the command that acts on one. The read model lives in the slice before; the processor, the
+command it triggers, and that command's event all share **one slice** — the same shape a `ui`
+already uses in State Change:
 
 ```em
 slice "Payments To Process" {
   view Payments To Process from "Payment Requested"
-  processor Payment Gateway
 }
 
 slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Process"
   command Capture Payment
   event Payment Captured @Payment
 }
 ```
 
-The first slice holds only the to-do list and the processor — a new band appears across the
-top of the diagram for it. The command it triggers, and that command's event, form the
-*next* slice. This split is the heart of the pattern: a processor never records an event
-itself. It issues a command like everyone else, so "Capture Payment" keeps its invariants
-whether a human or a machine is calling. (Putting the command in the processor's slice is a
-validation warning.)
+The first slice holds only the to-do list — a new band appears across the top of the diagram
+for the processor that watches it, in the next slice. This is the heart of the pattern: a
+processor never records an event itself, even though one now sits in its own slice. It issues
+a command like everyone else, so "Capture Payment" keeps its invariants whether a human or a
+machine is calling. (A processor with no command anywhere to trigger — no command in its
+slice, and no explicit arrow to one — is a validation warning.)
 
 Right now "Payment Captured" is a fact nobody looks at. Validate and em says so:
 
@@ -346,10 +348,10 @@ slice "Manager Review" {
 
 slice "Payments To Process" {
   view Payments To Process from "Payment Requested"
-  processor Payment Gateway
 }
 
 slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Process"
   command Capture Payment note "notes/capture-payment.md" {
     authorizationId
     amount: Money
