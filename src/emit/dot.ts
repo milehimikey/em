@@ -100,10 +100,14 @@ function elementCell(el: Element): string {
       `shape=box, fixedsize=false, width=${CELL_W}, margin="0.04,0.03"];`
     );
   }
+  const lineCount = wrap(el.name, 18).length;
+  const LINE_H = 0.1833; // inches, ~13.2pt at fontsize 11
+  const V_PAD = 0.1667; // inches, ~12pt top+bottom padding inside a fixedsize box
+  const height = Math.max(CELL_H, lineCount * LINE_H + V_PAD);
   return (
     `${el.id} [label=${q(wrapLabel(el.name))}, fillcolor="${s.fill}", ` +
     `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
-    `fixedsize=true, width=${CELL_W}, height=${CELL_H}];`
+    `fixedsize=true, width=${CELL_W}, height=${height}];`
   );
 }
 
@@ -170,15 +174,50 @@ function wrap(name: string, max: number): string[] {
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
-    if (cur && (cur + " " + w).length > max) {
+    if (w.length <= max) {
+      if (cur && (cur + " " + w).length > max) {
+        lines.push(cur);
+        cur = w;
+      } else {
+        cur = cur ? cur + " " + w : w;
+      }
+      continue;
+    }
+    // w has no whitespace and is longer than max on its own (e.g. a
+    // PascalCase/camelCase identifier pasted in place of a phrase): break it
+    // at natural boundaries so it still wraps instead of overflowing the
+    // fixed-width box. Hard-chop any leftover piece still too long (e.g. a
+    // single unbroken run of lowercase characters) as a last resort.
+    if (cur) {
       lines.push(cur);
-      cur = w;
-    } else {
-      cur = cur ? cur + " " + w : w;
+      cur = "";
+    }
+    for (const piece of splitLongToken(w, max)) {
+      if (cur && (cur + piece).length > max) {
+        lines.push(cur);
+        cur = piece;
+      } else {
+        cur = cur + piece;
+      }
     }
   }
   if (cur) lines.push(cur);
   return lines;
+}
+
+/** Break a single unspaced token at camelCase/PascalCase transitions and
+ *  -, _, / separators; hard-chop any resulting piece still longer than max. */
+function splitLongToken(word: string, max: number): string[] {
+  const pieces = word.split(/(?=[A-Z][a-z])|(?<=[a-z0-9])(?=[A-Z])|[-_/]/).filter(Boolean);
+  const result: string[] = [];
+  for (const p of pieces) {
+    if (p.length <= max) {
+      result.push(p);
+    } else {
+      for (let i = 0; i < p.length; i += max) result.push(p.slice(i, i + max));
+    }
+  }
+  return result;
 }
 
 /** Quote a string for DOT (label newlines already encoded as \n). */
