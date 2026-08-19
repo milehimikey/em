@@ -822,5 +822,28 @@ slice "S" {
         parse('slice "S" {\n  view V from "Order Placed\\\n}'),
       ).toThrow(/unterminated string literal in 'from' clause/);
     });
+
+    it("does not let two independently-stray quotes pair with each other and hide real syntax between them (regression)", () => {
+      // Two individually-unpaired `"` (inch marks, here) used to be treated as a
+      // matching pair, silently hiding a real `{ … }` field block between them.
+      // A quote only opens a span when it's grammar-anchored (start of a
+      // name/clause value, or a `from`-list item) — an inch mark is neither, so
+      // this is a real, visible parse error instead of silent data loss.
+      expect(() =>
+        parse(`slice "S" {\n  ui Compare 24" { should this open? } vs 32" Monitor\n}`),
+      ).toThrow(/unrecognized trailing text after '\{ … \}' block/);
+    });
+
+    it("still treats a `{` inside a second (or later) quoted `from` list item as literal", () => {
+      // The comma before a from-list item's opening quote is itself a valid
+      // anchor, so `{Updated}` in the second item stays literal even though it
+      // isn't immediately after the `from` keyword.
+      const ast = parse(`
+slice "S" {
+  view Widget from "Order Placed", "Order {Updated}"
+}
+`);
+      expect(ast.slices[0].elements[0].from).toEqual(["Order Placed", "Order {Updated}"]);
+    });
   });
 });

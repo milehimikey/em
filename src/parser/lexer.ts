@@ -30,22 +30,39 @@ export function matchQuote(s: string, openIdx: number): number {
   return -1;
 }
 
+/** Keywords after which a `"` is grammar-legitimate as the start of a quoted
+ *  string: a declaration's name (`model "Name"`, `slice "Name"`, `type "Name"`)
+ *  or a clause's value (`note`/`issue`/`divergence`/`from`/`source "..."`). */
+const QUOTE_OPENER_KEYWORDS =
+  /(?:^|\s)(?:model|slice|type|note|issue|divergence|from|source)$/i;
+
+/** True if the `"` at `s[i]` is grammar-legitimate as the START of a quoted
+ *  string — the very first character of `s`, immediately after one of
+ *  `QUOTE_OPENER_KEYWORDS` (`keyword "value"`), or immediately after a
+ *  list-item comma (`from "A", "B"`). Any other `"` — an inch mark, a scare
+ *  quote inside otherwise-unquoted free text — is just a character, never a
+ *  quote-opener: free-text element names carry no quoting convention of their
+ *  own, and treating every bare `"` as an opener let two *independently* stray
+ *  quotes accidentally pair with *each other*, silently swallowing a real
+ *  field block or comment between them (MIL-122 follow-up). A quote that fails
+ *  this check can still validly serve as some other span's *closing* quote —
+ *  only opens are anchored, `matchQuote` finds the close unconditionally. */
+function isQuoteOpener(s: string, i: number): boolean {
+  if (s[i] !== '"') return false;
+  if (i === 0) return true;
+  const before = s.slice(0, i).replace(/\s+$/, "");
+  return before.endsWith(",") || QUOTE_OPENER_KEYWORDS.test(before);
+}
+
 /** Index of the first (or last) unquoted occurrence of the single character `ch` in
- *  `s` — one not inside a well-formed `"..."` span. A *closed* quoted span is
- *  skipped whole (escapes honoured throughout), so a literal `ch` written inside a
- *  properly-quoted string is invisible to this scan. A `"` that never finds its
- *  close is, by construction, not really opening a string at all — free-text
- *  element names carry no quoting convention of their own, so an incidental bare
- *  `"` (an inch mark, a scare quote) is just a character, not a lexing signal, and
- *  must not swallow whatever syntax follows it on the line. (A *genuinely*
- *  unterminated clause string, e.g. `issue "foo`, is instead caught precisely at
- *  its own extraction site — see `extractQuotedClause`/`hasUnterminatedQuote` in
- *  parser.ts — which knows it's looking at a real clause, not stray free text.)
- *  Returns -1 if `ch` never occurs outside a (closed) string. */
+ *  `s` — one not inside a grammar-anchored `"..."` span (see `isQuoteOpener`).
+ *  A span is skipped whole once opened (escapes honoured throughout), so a
+ *  literal `ch` written inside it is invisible to this scan. Returns -1 if `ch`
+ *  never occurs outside such a span. */
 function scanUnquoted(s: string, ch: string, last: boolean): number {
   let result = -1;
   for (let i = 0; i < s.length; i++) {
-    if (s[i] === '"') {
+    if (isQuoteOpener(s, i)) {
       const close = matchQuote(s, i);
       if (close >= 0) i = close;
       continue;
@@ -85,13 +102,12 @@ export function hasUnterminatedQuote(s: string): boolean {
   return false;
 }
 
-/** Remove a trailing `# comment`, ignoring `#` inside a well-formed pair of double
- *  quotes. A `"` with no matching close isn't treated as opening a string (same
- *  reasoning as `scanUnquoted` above) — a comment after a stray bare `"` still gets
- *  stripped. */
+/** Remove a trailing `# comment`, ignoring `#` inside a grammar-anchored `"..."`
+ *  span (see `isQuoteOpener`) — a stray, unopened bare `"` doesn't hide a `#`
+ *  that follows it. */
 export function stripComment(line: string): string {
   for (let i = 0; i < line.length; i++) {
-    if (line[i] === '"') {
+    if (isQuoteOpener(line, i)) {
       const close = matchQuote(line, i);
       if (close >= 0) i = close;
       continue;
