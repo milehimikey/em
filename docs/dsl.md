@@ -25,6 +25,28 @@ arrow From Element -> To Element    # explicit extra edge
 
 Comments are `#` to end of line, anywhere outside quotes.
 
+### Quoted strings
+
+Everything between a `"` and its matching `"` is literal content — `{`, `}`, and `#`
+included — never re-interpreted as a field block or a comment. That makes REST
+path-template placeholders safe to write exactly as OpenAPI/READMEs do:
+
+```
+command Suspend Widget issue "PUT v3/widgets/{widgetId}/suspend"
+```
+
+To put a literal `"` or `\` inside a quoted string, escape it: `\"` and `\\`. No other
+backslash sequence is special, so ordinary backslashes (e.g. in a Windows-style path)
+pass through untouched:
+
+```
+event Order Placed issue "does \"pending\" include cancelled orders?"
+note "C:\paths\work.md"    # not an escape sequence — \p and \w aren't recognized
+```
+
+A string left unterminated by end of line (a missing closing `"`) is a parse error
+naming the clause it broke in, not a downstream "unrecognized trailing text" error.
+
 ## Element keywords
 
 There are 8 keywords and nothing else. Four of the automation spellings are aliases for the

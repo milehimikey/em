@@ -26,7 +26,16 @@ import {
   SliceNode,
   TypeDeclNode,
 } from "./ast.js";
-import { splitQuotedList, stripComment, unquote } from "./lexer.js";
+import {
+  decodeQuoted,
+  hasUnterminatedQuote,
+  indexOfUnquoted,
+  lastIndexOfUnquoted,
+  matchQuote,
+  splitQuotedList,
+  stripComment,
+  unquote,
+} from "./lexer.js";
 
 export class ParseError extends Error {
   constructor(message: string, public line: number) {
@@ -134,14 +143,16 @@ export function parse(source: string): ModelNode {
           lineNo,
         );
       }
-      // An element may open a `{ … }` field block (inline or multi-line).
-      const braceAt = remainder.indexOf("{");
+      // An element may open a `{ … }` field block (inline or multi-line). The brace
+      // scan is quote-aware: a literal `{`/`}` inside a quoted clause (e.g.
+      // `issue "PUT /widgets/{id}"`) is string content, never a block opener (MIL-122).
+      const braceAt = indexOfUnquoted(remainder, "{");
       if (braceAt >= 0) {
         const el = parseElement(keyword as ElementKind, remainder.slice(0, braceAt).trim(), lineNo);
         el.fields = [];
         currentSlice.elements.push(el);
         const after = remainder.slice(braceAt + 1);
-        const closeAt = after.indexOf("}");
+        const closeAt = indexOfUnquoted(after, "}");
         const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
         el.fields.push(...parseInlineFields(inner));
         if (closeAt < 0) {
@@ -182,7 +193,9 @@ export function parse(source: string): ModelNode {
         pushUnique(model.contexts, unquote(remainder));
         break;
       case "slice": {
-        const open = remainder.lastIndexOf("{");
+        // Quote-aware so a literal `{` inside a quoted `source "url"` (or the slice
+        // name itself) is never mistaken for the block opener (MIL-122).
+        const open = lastIndexOfUnquoted(remainder, "{");
         if (open < 0)
           throw new ParseError("slice must open a block with '{'", lineNo);
         let header = remainder.slice(0, open).trim();
@@ -193,10 +206,10 @@ export function parse(source: string): ModelNode {
         // to the name): a link to the ticket/conversation this slice traces
         // back to, so the intake-loop audit chain is machine-traversable
         // through `em export` instead of living only in prose (MIL-69).
-        const sourceMatch = header.match(/(?:^|\s)source\s+"([^"]*)"/i);
-        if (sourceMatch && sourceMatch.index !== undefined) {
-          node.source = sourceMatch[1];
-          header = (header.slice(0, sourceMatch.index) + header.slice(sourceMatch.index + sourceMatch[0].length)).trim();
+        const sourceClause = extractQuotedClause(header, "source", lineNo);
+        if (sourceClause) {
+          node.source = sourceClause.value;
+          header = sourceClause.rest;
         }
 
         node.name = unquote(header);
@@ -208,13 +221,13 @@ export function parse(source: string): ModelNode {
         model.arrows.push(parseArrow(remainder, lineNo));
         break;
       case "type": {
-        const braceAt = remainder.indexOf("{");
+        const braceAt = indexOfUnquoted(remainder, "{");
         if (braceAt < 0) throw new ParseError("type must open a block with '{'", lineNo);
         const name = unquote(remainder.slice(0, braceAt).trim());
         if (!name) throw new ParseError("type requires a name", lineNo);
         const decl: TypeDeclNode = { name, fields: [], line: lineNo };
         const after = remainder.slice(braceAt + 1);
-        const closeAt = after.indexOf("}");
+        const closeAt = indexOfUnquoted(after, "}");
         const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
         decl.fields.push(...parseInlineFields(inner));
         if (closeAt < 0) {
@@ -272,6 +285,33 @@ function parseElement(
 }
 
 /**
+ * Pulls a `keyword "value"` clause out of `rest`, case-insensitively, honouring
+ * `\"`/`\\` escapes inside the string (decoded in the returned `value`) and a
+ * literal `{`/`}`/`#` anywhere inside it — string content is never re-interpreted
+ * as block or comment syntax (MIL-122). Returns `null` if `keyword` isn't
+ * immediately followed by an opening quote (clause absent; same as a failed regex
+ * match, e.g. `keyword` appearing only as part of the element's free-text name).
+ * Throws if the string never finds its closing quote, naming the real cause
+ * instead of surfacing as a confusing downstream "unrecognized trailing text".
+ */
+function extractQuotedClause(
+  rest: string,
+  keyword: string,
+  line: number,
+): { value: string; rest: string } | null {
+  const kwMatch = rest.match(new RegExp(`(?:^|\\s)${keyword}\\s+(?=")`, "i"));
+  if (!kwMatch || kwMatch.index === undefined) return null;
+  const openIdx = kwMatch.index + kwMatch[0].length;
+  const closeIdx = matchQuote(rest, openIdx);
+  if (closeIdx < 0)
+    throw new ParseError(`unterminated string literal in '${keyword}' clause`, line);
+  return {
+    value: decodeQuoted(rest.slice(openIdx + 1, closeIdx)),
+    rest: (rest.slice(0, kwMatch.index) + rest.slice(closeIdx + 1)).trim(),
+  };
+}
+
+/**
  * Pulls `note`/`issue`/`divergence`/`from`/`public`/`@Tag`/`again` clauses out
  * of `raw`, applying each to `node` and returning whatever text is left (the
  * element's name, when called on the text before a `{ … }` block —
@@ -293,31 +333,29 @@ function extractClauses(
 
   // `note "path.md"` clause (valid on any element). Pulled off first because
   // the `from` clause below greedily consumes to end-of-line.
-  const noteMatch = rest.match(/(?:^|\s)note\s+"([^"]*)"/i);
-  if (noteMatch && noteMatch.index !== undefined) {
-    node.note = noteMatch[1];
-    rest = (rest.slice(0, noteMatch.index) + rest.slice(noteMatch.index + noteMatch[0].length)).trim();
+  const noteClause = extractQuotedClause(rest, "note", line);
+  if (noteClause) {
+    node.note = noteClause.value;
+    rest = noteClause.rest;
   }
 
   // `issue "text"` clause (valid on any element): an open question flagged red on
   // the diagram, distinct from `note`'s file link. Extracted the same way, before
   // `from`, for the same reason.
-  const issueMatch = rest.match(/(?:^|\s)issue\s+"([^"]*)"/i);
-  if (issueMatch && issueMatch.index !== undefined) {
-    node.issue = issueMatch[1];
-    rest = (rest.slice(0, issueMatch.index) + rest.slice(issueMatch.index + issueMatch[0].length)).trim();
+  const issueClause = extractQuotedClause(rest, "issue", line);
+  if (issueClause) {
+    node.issue = issueClause.value;
+    rest = issueClause.rest;
   }
 
   // `divergence "text"` clause (valid on any element): a reasoned, ratified
   // deviation between this element and its implementation — the *resolved*
   // sibling of `issue`'s open question. Extracted the same way, before
   // `from`, for the same reason.
-  const divergenceMatch = rest.match(/(?:^|\s)divergence\s+"([^"]*)"/i);
-  if (divergenceMatch && divergenceMatch.index !== undefined) {
-    node.divergence = divergenceMatch[1];
-    rest = (
-      rest.slice(0, divergenceMatch.index) + rest.slice(divergenceMatch.index + divergenceMatch[0].length)
-    ).trim();
+  const divergenceClause = extractQuotedClause(rest, "divergence", line);
+  if (divergenceClause) {
+    node.divergence = divergenceClause.value;
+    rest = divergenceClause.rest;
   }
 
   // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive
@@ -332,6 +370,8 @@ function extractClauses(
         "`from` is only valid on view or a reaction (automation/processor/saga/translation)",
         line,
       );
+    if (hasUnterminatedQuote(fromMatch[1]))
+      throw new ParseError("unterminated string literal in 'from' clause", line);
     node.from = splitQuotedList(fromMatch[1]);
     rest = rest.slice(0, fromMatch.index).trim();
   }

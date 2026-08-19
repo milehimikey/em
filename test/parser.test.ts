@@ -697,4 +697,130 @@ slice "S" {
       ]);
     });
   });
+
+  describe("quoted string literals: braces and escapes (MIL-122)", () => {
+    it("treats a REST path-template `{param}` inside `issue` as literal text, not a field block", () => {
+      const ast = parse(`
+slice "S" {
+  command DoIt issue "PUT v3/widgets/{widgetId}/suspend"
+  event Done @Foo
+}
+`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "DoIt",
+        issue: "PUT v3/widgets/{widgetId}/suspend",
+      });
+    });
+
+    it("treats `{param}` as literal inside `note`, `divergence`, `from`, and `source` too", () => {
+      const ast = parse(`
+slice "S" source "https://api.example.com/{tenant}/checkout" {
+  view Widget note "notes/{id}.md" divergence "was {legacy}, now stable" from "PUT /widgets/{id}"
+}
+`);
+      expect(ast.slices[0].source).toBe("https://api.example.com/{tenant}/checkout");
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Widget",
+        note: "notes/{id}.md",
+        divergence: "was {legacy}, now stable",
+        from: ["PUT /widgets/{id}"],
+      });
+    });
+
+    it("still opens a real field block right after a quoted clause containing `{`", () => {
+      const ast = parse(`
+slice "S" {
+  command DoIt issue "PUT /{id}" { widgetId: UUID }
+}
+`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "DoIt",
+        issue: "PUT /{id}",
+        fields: [{ name: "widgetId", type: "UUID" }],
+      });
+    });
+
+    it("treats `{name}` in a slice header and a `type` header as literal, not a block opener", () => {
+      const ast = parse(`
+slice "Suspend {widget}" {
+  command Do Thing
+}
+type "Weird {Name}" { amount: int }
+`);
+      expect(ast.slices[0].name).toBe("Suspend {widget}");
+      expect(ast.types[0].name).toBe("Weird {Name}");
+    });
+
+    it("decodes an escaped `\\\"` inside a quoted clause as a literal quote", () => {
+      const ast = parse(`slice "S" {\n  command DoIt issue "size is 5\\" or larger"\n}`);
+      expect(ast.slices[0].elements[0].issue).toBe('size is 5" or larger');
+    });
+
+    it("decodes an escaped `\\\\` inside a quoted clause as a literal backslash", () => {
+      const ast = parse(`slice "S" {\n  command DoIt note "C:\\\\paths\\\\work"\n}`);
+      expect(ast.slices[0].elements[0].note).toBe("C:\\paths\\work");
+    });
+
+    it("decodes escaped quotes in a `from` list and in a slice/type name", () => {
+      const ast = parse(`
+slice "The \\"Big\\" Slice" {
+  view V from "Event \\"A\\"", "Event B"
+}
+`);
+      expect(ast.slices[0].name).toBe('The "Big" Slice');
+      expect(ast.slices[0].elements[0].from).toEqual(['Event "A"', "Event B"]);
+    });
+
+    it("leaves a stray, unescaped `\"` inside plain free-text names working as before", () => {
+      const ast = parse(`slice "S" {\n  ui 5" Tablet Screen\n}`);
+      expect(ast.slices[0].elements[0].name).toBe('5" Tablet Screen');
+    });
+
+    it("reports an unterminated string literal in an `issue` clause with the real cause", () => {
+      expect(() =>
+        parse(`slice "S" {\n  command DoIt issue "PUT /widgets/{id}/suspend\n}`),
+      ).toThrow(/unterminated string literal in 'issue' clause/);
+    });
+
+    it("reports an unterminated string literal in a `from` clause with the real cause", () => {
+      expect(() =>
+        parse(`slice "S" {\n  view V from "Order Placed\n}`),
+      ).toThrow(/unterminated string literal in 'from' clause/);
+    });
+
+    it("reports an unterminated string literal in a slice's `source` clause with the real cause", () => {
+      expect(() =>
+        parse(`slice "S" source "https://x {\n  command Do Thing\n}`),
+      ).toThrow(/unterminated string literal in 'source' clause/);
+    });
+
+    it("does not let a stray, unpaired quote in free text swallow real syntax after it (regression)", () => {
+      // A bare `"` with no partner (an inch mark, a scare quote) isn't a string
+      // opener — it must not hide a real field block, clause, or comment that
+      // follows it later on the same line.
+      const ast = parse(`
+slice "S" {
+  command Fix 24" Monitor { orderId }
+}
+`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: 'Fix 24" Monitor',
+        fields: [{ name: "orderId" }],
+      });
+    });
+
+    it("does not let a stray, unpaired quote hide a trailing comment (regression)", () => {
+      const ast = parse(`slice "S" {\n  command Fix 24" Monitor # trailing comment\n}`);
+      expect(ast.slices[0].elements[0].name).toBe('Fix 24" Monitor');
+    });
+
+    it("never hangs on a quoted string whose content ends in a trailing lone backslash (regression)", () => {
+      // `\` as the very last character before end-of-line has nothing left to
+      // escape — must still be treated as unterminated, not spin forever.
+      expect(() => parse('slice "Foo\\')).toThrow(ParseError);
+      expect(() =>
+        parse('slice "S" {\n  view V from "Order Placed\\\n}'),
+      ).toThrow(/unterminated string literal in 'from' clause/);
+    });
+  });
 });
