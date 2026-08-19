@@ -21,14 +21,14 @@ slice "Claim Status" {
   ui Status Page @Policyholder
 }
 
-# --- Automation: triage new claims ---
+# --- Read model the triage automation watches ---
 slice "Triage Queue" {
   view Claims To Triage from "Claim Filed"
-  processor Triage Engine
 }
 
-# --- Command (triggered): assign an adjuster ---
+# --- Automation: triage new claims (reaction + command + event together) ---
 slice "Assign Adjuster" {
+  processor Triage Engine from "Claims To Triage"
   command Assign Adjuster
   event Adjuster Assigned @Claim
 }
@@ -46,26 +46,26 @@ slice "Review Claim" {
   event Claim Approved @Claim
 }
 
-# --- Translation: external policy-admin coverage feed ---
+# --- Read model the policy-admin translation watches ---
 slice "Verify Coverage" {
   view Coverage Feed from "Claim Approved"
-  translation Policy Sync
 }
 
-# --- Command (triggered): confirm coverage ---
+# --- Translation: external policy-admin coverage feed (reaction + command + event together) ---
 slice "Confirm Coverage" {
+  translation Policy Sync from "Coverage Feed"
   command Confirm Coverage
   event Coverage Confirmed @Policy
 }
 
-# --- Automation: queue confirmed claims for payout ---
+# --- Read model the payout automation watches ---
 slice "Payout Queue" {
   view Confirmed Claims from "Coverage Confirmed"
-  processor Payout Engine
 }
 
-# --- Command (triggered): send the payment ---
+# --- Automation: queue confirmed claims for payout (reaction + command + event together) ---
 slice "Send Payment" {
+  processor Payout Engine from "Confirmed Claims"
   command Send Payment
   event Payment Sent @Payment
 }

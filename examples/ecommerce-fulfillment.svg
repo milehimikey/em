@@ -5,13 +5,13 @@
  -->
 <!-- Title: EventModel Pages: 1 -->
 <svg width="3126pt" height="887pt"
- viewBox="0.00 0.00 3126.00 887.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-5F6368" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#5F6368"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs>
+ viewBox="0.00 0.00 3126.00 887.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-5F6368" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#5F6368"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs><metadata id="em-slices">{"slices":[{"index":0,"name":"Browse Catalog","x0":105.25,"x1":249.25},{"index":1,"name":"View Cart","x0":274.25,"x1":418.25},{"index":2,"name":"Checkout","x0":443.25,"x1":587.25},{"index":3,"name":"Order Confirmation","x0":612.25,"x1":756.25},{"index":4,"name":"Request Payment","x0":781.25,"x1":925.25},{"index":5,"name":"Payments To Settle","x0":950.25,"x1":1094.25},{"index":6,"name":"Capture Payment","x0":1119.25,"x1":1263.25},{"index":7,"name":"Fulfillment Queue","x0":1288.25,"x1":1432.25},{"index":8,"name":"Reserve Stock","x0":1457.25,"x1":1601.25},{"index":9,"name":"Pick List","x0":1626.25,"x1":1770.25},{"index":10,"name":"Confirm Pick","x0":1795.25,"x1":1939.25},{"index":11,"name":"Dispatch Queue","x0":1964.25,"x1":2108.25},{"index":12,"name":"Dispatch Shipment","x0":2133.25,"x1":2277.25},{"index":13,"name":"Carrier Sync","x0":2302.25,"x1":2446.25},{"index":14,"name":"Record Delivery","x0":2471.25,"x1":2615.25},{"index":15,"name":"Track Order","x0":2640.25,"x1":2784.25},{"index":16,"name":"Ops Dashboard","x0":2809.25,"x1":2953.25},{"index":17,"name":"Support Lookup","x0":2978.25,"x1":3122.25}],"rowLabels":{"x0":-11.75,"x1":96.25}}</metadata><style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 882.72)">
 <title>EventModel</title>
 <polygon fill="white" stroke="none" points="-4,4 -4,-882.72 3122.25,-882.72 3122.25,4 -4,4"/>
 <text xml:space="preserve" text-anchor="middle" x="1559.13" y="-858.52" font-family="Helvetica,sans-Serif" font-size="18.00">E&#45;Commerce Fulfillment</text>
 <!-- __row_0 -->
-<g class="em-edges"><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M173.25,-647.04 L173.25,-368.16" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M173.25,-323.52 L173.25,-287.28" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M342.25,-368.16 L342.25,-647.04" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M511.25,-647.04 L511.25,-368.4" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M511.25,-323.28 L511.25,-202.08" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M680.25,-368.16 L680.25,-647.04" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M849.25,-647.04 L849.25,-368.16" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M849.25,-323.52 L849.25,-125.52" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1018.25,-368.16 L1018.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1018.25,-727.92 C1018.25,-637.92 1187.25,-458.16 1187.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1187.25,-323.52 L1187.25,-125.52" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1356.25,-368.16 L1356.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1356.25,-727.92 C1356.25,-637.92 1525.25,-458.16 1525.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1525.25,-323.52 L1525.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1694.25,-368.16 L1694.25,-566.16" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M1863.25,-566.16 L1863.25,-368.16" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1863.25,-323.52 L1863.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2032.25,-368.16 L2032.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M2032.25,-727.92 C2032.25,-637.92 2201.25,-458.16 2201.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M2201.25,-323.52 L2201.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2370.25,-368.16 L2370.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M2370.25,-727.92 C2370.25,-637.92 2539.25,-458.16 2539.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M2539.25,-323.52 L2539.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2708.25,-368.16 L2708.25,-647.04" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2877.25,-368.16 L2877.25,-485.28" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M3046.25,-368.16 L3046.25,-404.4" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M173.25,-287.28 C173.25,-335.81 342.25,-274.99 342.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M511.25,-202.08 C511.25,-292.08 680.25,-233.52 680.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M849.25,-125.52 C849.25,-215.52 1018.25,-233.52 1018.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1187.25,-125.52 C1187.25,-215.52 1356.25,-233.52 1356.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1525.25,-44.64 C1525.25,-134.64 1694.25,-233.52 1694.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1863.25,-44.64 C1863.25,-134.64 2032.25,-233.52 2032.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2201.25,-44.64 C2201.25,-134.64 2370.25,-233.52 2370.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2539.25,-44.64 C2539.25,-134.64 2708.25,-233.52 2708.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1525.25,-44.64 C1525.25,-134.64 2877.25,-233.52 2877.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2201.25,-44.64 C2201.25,-134.64 2877.25,-233.52 2877.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2539.25,-44.64 C2539.25,-134.64 3046.25,-233.52 3046.25,-323.52" marker-end="url(#em-arrow-B7791F)"/></g><g id="node1" class="node">
+<g class="em-edges"><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M173.25,-647.04 L173.25,-368.16" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M173.25,-323.52 L173.25,-287.28" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M342.25,-368.16 L342.25,-647.04" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M511.25,-647.04 L511.25,-368.4" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M511.25,-323.28 L511.25,-202.08" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M680.25,-368.16 L680.25,-647.04" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M849.25,-647.04 L849.25,-368.16" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M849.25,-323.52 L849.25,-125.52" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1187.25,-323.52 L1187.25,-125.52" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1187.25,-727.92 L1187.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1525.25,-323.52 L1525.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1525.25,-727.92 L1525.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1694.25,-368.16 L1694.25,-566.16" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M1863.25,-566.16 L1863.25,-368.16" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1863.25,-323.52 L1863.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M2201.25,-323.52 L2201.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M2201.25,-727.92 L2201.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M2539.25,-323.52 L2539.25,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M2539.25,-727.92 L2539.25,-368.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2708.25,-368.16 L2708.25,-647.04" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2877.25,-368.16 L2877.25,-485.28" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M3046.25,-368.16 L3046.25,-404.4" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M173.25,-287.28 C173.25,-335.81 342.25,-274.99 342.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M511.25,-202.08 C511.25,-292.08 680.25,-233.52 680.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M849.25,-125.52 C849.25,-215.52 1018.25,-233.52 1018.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1018.25,-368.16 C1018.25,-458.16 1187.25,-637.92 1187.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1187.25,-125.52 C1187.25,-215.52 1356.25,-233.52 1356.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1356.25,-368.16 C1356.25,-458.16 1525.25,-637.92 1525.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1525.25,-44.64 C1525.25,-134.64 1694.25,-233.52 1694.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1863.25,-44.64 C1863.25,-134.64 2032.25,-233.52 2032.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2032.25,-368.16 C2032.25,-458.16 2201.25,-637.92 2201.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2201.25,-44.64 C2201.25,-134.64 2370.25,-233.52 2370.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2370.25,-368.16 C2370.25,-458.16 2539.25,-637.92 2539.25,-727.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2539.25,-44.64 C2539.25,-134.64 2708.25,-233.52 2708.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1525.25,-44.64 C1525.25,-134.64 2877.25,-233.52 2877.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2201.25,-44.64 C2201.25,-134.64 2877.25,-233.52 2877.25,-323.52" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M2539.25,-44.64 C2539.25,-134.64 3046.25,-233.52 3046.25,-323.52" marker-end="url(#em-arrow-B7791F)"/></g><g id="node1" class="node">
 <title>__row_0</title>
 </g>
 <!-- __row_1 -->
@@ -42,7 +42,7 @@
 </g>
 <!-- __row_2&#45;&gt;__row_3 -->
 <!-- product_catalog -->
-<g id="node48" class="node">
+<g data-slice="0" id="node48" class="node">
 <title>product_catalog</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="245.25,-691.68 101.25,-691.68 101.25,-647.04 245.25,-647.04 245.25,-691.68"/>
 <text xml:space="preserve" text-anchor="middle" x="173.25" y="-666.06" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Product Catalog</text>
@@ -79,7 +79,7 @@
 </g>
 <!-- __row_6&#45;&gt;__row_7 -->
 <!-- add_to_cart -->
-<g id="node120" class="node">
+<g data-slice="0" id="node120" class="node">
 <title>add_to_cart</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M233.25,-368.16C233.25,-368.16 113.25,-368.16 113.25,-368.16 107.25,-368.16 101.25,-362.16 101.25,-356.16 101.25,-356.16 101.25,-335.52 101.25,-335.52 101.25,-329.52 107.25,-323.52 113.25,-323.52 113.25,-323.52 233.25,-323.52 233.25,-323.52 239.25,-323.52 245.25,-329.52 245.25,-335.52 245.25,-335.52 245.25,-356.16 245.25,-356.16 245.25,-362.16 239.25,-368.16 233.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="173.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Add To Cart</text>
@@ -92,7 +92,7 @@
 </g>
 <!-- __row_7&#45;&gt;__row_8 -->
 <!-- item_added -->
-<g id="node138" class="node">
+<g data-slice="0" id="node138" class="node">
 <title>item_added</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M233.25,-287.28C233.25,-287.28 113.25,-287.28 113.25,-287.28 107.25,-287.28 101.25,-281.28 101.25,-275.28 101.25,-275.28 101.25,-254.64 101.25,-254.64 101.25,-248.64 107.25,-242.64 113.25,-242.64 113.25,-242.64 233.25,-242.64 233.25,-242.64 239.25,-242.64 245.25,-248.64 245.25,-254.64 245.25,-254.64 245.25,-275.28 245.25,-275.28 245.25,-281.28 239.25,-287.28 233.25,-287.28"/>
 <text xml:space="preserve" text-anchor="middle" x="173.25" y="-261.66" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Item Added</text>
@@ -167,13 +167,8 @@
 <text xml:space="preserve" text-anchor="middle" x="1187.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Capture Payment</text>
 </g>
 <!-- __hdr_5&#45;&gt;__hdr_6 -->
-<!-- payment_gateway -->
-<g id="node35" class="node">
-<title>payment_gateway</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1078.25,-772.56C1078.25,-772.56 958.25,-772.56 958.25,-772.56 952.25,-772.56 946.25,-766.56 946.25,-760.56 946.25,-760.56 946.25,-739.92 946.25,-739.92 946.25,-733.92 952.25,-727.92 958.25,-727.92 958.25,-727.92 1078.25,-727.92 1078.25,-727.92 1084.25,-727.92 1090.25,-733.92 1090.25,-739.92 1090.25,-739.92 1090.25,-760.56 1090.25,-760.56 1090.25,-766.56 1084.25,-772.56 1078.25,-772.56"/>
-<text xml:space="preserve" text-anchor="middle" x="1018.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payment Gateway</text>
-</g>
-<!-- __hdr_5&#45;&gt;payment_gateway -->
+<!-- __ph_1_5 -->
+<!-- __hdr_5&#45;&gt;__ph_1_5 -->
 <!-- __hdr_7 -->
 <g id="node19" class="node">
 <title>__hdr_7</title>
@@ -181,8 +176,13 @@
 <text xml:space="preserve" text-anchor="middle" x="1356.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Fulfillment Queue</text>
 </g>
 <!-- __hdr_6&#45;&gt;__hdr_7 -->
-<!-- __ph_1_6 -->
-<!-- __hdr_6&#45;&gt;__ph_1_6 -->
+<!-- payment_gateway -->
+<g data-slice="6" id="node36" class="node">
+<title>payment_gateway</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1247.25,-772.56C1247.25,-772.56 1127.25,-772.56 1127.25,-772.56 1121.25,-772.56 1115.25,-766.56 1115.25,-760.56 1115.25,-760.56 1115.25,-739.92 1115.25,-739.92 1115.25,-733.92 1121.25,-727.92 1127.25,-727.92 1127.25,-727.92 1247.25,-727.92 1247.25,-727.92 1253.25,-727.92 1259.25,-733.92 1259.25,-739.92 1259.25,-739.92 1259.25,-760.56 1259.25,-760.56 1259.25,-766.56 1253.25,-772.56 1247.25,-772.56"/>
+<text xml:space="preserve" text-anchor="middle" x="1187.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payment Gateway</text>
+</g>
+<!-- __hdr_6&#45;&gt;payment_gateway -->
 <!-- __hdr_8 -->
 <g id="node20" class="node">
 <title>__hdr_8</title>
@@ -190,13 +190,8 @@
 <text xml:space="preserve" text-anchor="middle" x="1525.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Reserve Stock</text>
 </g>
 <!-- __hdr_7&#45;&gt;__hdr_8 -->
-<!-- fulfillment_engine -->
-<g id="node37" class="node">
-<title>fulfillment_engine</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1416.25,-772.56C1416.25,-772.56 1296.25,-772.56 1296.25,-772.56 1290.25,-772.56 1284.25,-766.56 1284.25,-760.56 1284.25,-760.56 1284.25,-739.92 1284.25,-739.92 1284.25,-733.92 1290.25,-727.92 1296.25,-727.92 1296.25,-727.92 1416.25,-727.92 1416.25,-727.92 1422.25,-727.92 1428.25,-733.92 1428.25,-739.92 1428.25,-739.92 1428.25,-760.56 1428.25,-760.56 1428.25,-766.56 1422.25,-772.56 1416.25,-772.56"/>
-<text xml:space="preserve" text-anchor="middle" x="1356.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Fulfillment Engine</text>
-</g>
-<!-- __hdr_7&#45;&gt;fulfillment_engine -->
+<!-- __ph_1_7 -->
+<!-- __hdr_7&#45;&gt;__ph_1_7 -->
 <!-- __hdr_9 -->
 <g id="node21" class="node">
 <title>__hdr_9</title>
@@ -204,8 +199,13 @@
 <text xml:space="preserve" text-anchor="middle" x="1694.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Pick List</text>
 </g>
 <!-- __hdr_8&#45;&gt;__hdr_9 -->
-<!-- __ph_1_8 -->
-<!-- __hdr_8&#45;&gt;__ph_1_8 -->
+<!-- fulfillment_engine -->
+<g data-slice="8" id="node38" class="node">
+<title>fulfillment_engine</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1585.25,-772.56C1585.25,-772.56 1465.25,-772.56 1465.25,-772.56 1459.25,-772.56 1453.25,-766.56 1453.25,-760.56 1453.25,-760.56 1453.25,-739.92 1453.25,-739.92 1453.25,-733.92 1459.25,-727.92 1465.25,-727.92 1465.25,-727.92 1585.25,-727.92 1585.25,-727.92 1591.25,-727.92 1597.25,-733.92 1597.25,-739.92 1597.25,-739.92 1597.25,-760.56 1597.25,-760.56 1597.25,-766.56 1591.25,-772.56 1585.25,-772.56"/>
+<text xml:space="preserve" text-anchor="middle" x="1525.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Fulfillment Engine</text>
+</g>
+<!-- __hdr_8&#45;&gt;fulfillment_engine -->
 <!-- __hdr_10 -->
 <g id="node22" class="node">
 <title>__hdr_10</title>
@@ -231,13 +231,8 @@
 <text xml:space="preserve" text-anchor="middle" x="2201.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Dispatch Shipment</text>
 </g>
 <!-- __hdr_11&#45;&gt;__hdr_12 -->
-<!-- dispatch_service -->
-<g id="node41" class="node">
-<title>dispatch_service</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M2092.25,-772.56C2092.25,-772.56 1972.25,-772.56 1972.25,-772.56 1966.25,-772.56 1960.25,-766.56 1960.25,-760.56 1960.25,-760.56 1960.25,-739.92 1960.25,-739.92 1960.25,-733.92 1966.25,-727.92 1972.25,-727.92 1972.25,-727.92 2092.25,-727.92 2092.25,-727.92 2098.25,-727.92 2104.25,-733.92 2104.25,-739.92 2104.25,-739.92 2104.25,-760.56 2104.25,-760.56 2104.25,-766.56 2098.25,-772.56 2092.25,-772.56"/>
-<text xml:space="preserve" text-anchor="middle" x="2032.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Dispatch Service</text>
-</g>
-<!-- __hdr_11&#45;&gt;dispatch_service -->
+<!-- __ph_1_11 -->
+<!-- __hdr_11&#45;&gt;__ph_1_11 -->
 <!-- __hdr_13 -->
 <g id="node25" class="node">
 <title>__hdr_13</title>
@@ -245,8 +240,13 @@
 <text xml:space="preserve" text-anchor="middle" x="2370.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Carrier Sync</text>
 </g>
 <!-- __hdr_12&#45;&gt;__hdr_13 -->
-<!-- __ph_1_12 -->
-<!-- __hdr_12&#45;&gt;__ph_1_12 -->
+<!-- dispatch_service -->
+<g data-slice="12" id="node42" class="node">
+<title>dispatch_service</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M2261.25,-772.56C2261.25,-772.56 2141.25,-772.56 2141.25,-772.56 2135.25,-772.56 2129.25,-766.56 2129.25,-760.56 2129.25,-760.56 2129.25,-739.92 2129.25,-739.92 2129.25,-733.92 2135.25,-727.92 2141.25,-727.92 2141.25,-727.92 2261.25,-727.92 2261.25,-727.92 2267.25,-727.92 2273.25,-733.92 2273.25,-739.92 2273.25,-739.92 2273.25,-760.56 2273.25,-760.56 2273.25,-766.56 2267.25,-772.56 2261.25,-772.56"/>
+<text xml:space="preserve" text-anchor="middle" x="2201.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Dispatch Service</text>
+</g>
+<!-- __hdr_12&#45;&gt;dispatch_service -->
 <!-- __hdr_14 -->
 <g id="node26" class="node">
 <title>__hdr_14</title>
@@ -254,13 +254,8 @@
 <text xml:space="preserve" text-anchor="middle" x="2539.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Record Delivery</text>
 </g>
 <!-- __hdr_13&#45;&gt;__hdr_14 -->
-<!-- carrier_adapter -->
-<g id="node43" class="node">
-<title>carrier_adapter</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M2430.25,-772.56C2430.25,-772.56 2310.25,-772.56 2310.25,-772.56 2304.25,-772.56 2298.25,-766.56 2298.25,-760.56 2298.25,-760.56 2298.25,-739.92 2298.25,-739.92 2298.25,-733.92 2304.25,-727.92 2310.25,-727.92 2310.25,-727.92 2430.25,-727.92 2430.25,-727.92 2436.25,-727.92 2442.25,-733.92 2442.25,-739.92 2442.25,-739.92 2442.25,-760.56 2442.25,-760.56 2442.25,-766.56 2436.25,-772.56 2430.25,-772.56"/>
-<text xml:space="preserve" text-anchor="middle" x="2370.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Carrier Adapter</text>
-</g>
-<!-- __hdr_13&#45;&gt;carrier_adapter -->
+<!-- __ph_1_13 -->
+<!-- __hdr_13&#45;&gt;__ph_1_13 -->
 <!-- __hdr_15 -->
 <g id="node27" class="node">
 <title>__hdr_15</title>
@@ -268,8 +263,13 @@
 <text xml:space="preserve" text-anchor="middle" x="2708.25" y="-828.12" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Track Order</text>
 </g>
 <!-- __hdr_14&#45;&gt;__hdr_15 -->
-<!-- __ph_1_14 -->
-<!-- __hdr_14&#45;&gt;__ph_1_14 -->
+<!-- carrier_adapter -->
+<g data-slice="14" id="node44" class="node">
+<title>carrier_adapter</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M2599.25,-772.56C2599.25,-772.56 2479.25,-772.56 2479.25,-772.56 2473.25,-772.56 2467.25,-766.56 2467.25,-760.56 2467.25,-760.56 2467.25,-739.92 2467.25,-739.92 2467.25,-733.92 2473.25,-727.92 2479.25,-727.92 2479.25,-727.92 2599.25,-727.92 2599.25,-727.92 2605.25,-727.92 2611.25,-733.92 2611.25,-739.92 2611.25,-739.92 2611.25,-760.56 2611.25,-760.56 2611.25,-766.56 2605.25,-772.56 2599.25,-772.56"/>
+<text xml:space="preserve" text-anchor="middle" x="2539.25" y="-746.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Carrier Adapter</text>
+</g>
+<!-- __hdr_14&#45;&gt;carrier_adapter -->
 <!-- __hdr_16 -->
 <g id="node28" class="node">
 <title>__hdr_16</title>
@@ -294,7 +294,7 @@
 <!-- __ph_1_0&#45;&gt;product_catalog -->
 <!-- __ph_1_1&#45;&gt;__ph_1_2 -->
 <!-- cart_page -->
-<g id="node49" class="node">
+<g data-slice="1" id="node49" class="node">
 <title>cart_page</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="414.25,-691.68 270.25,-691.68 270.25,-647.04 414.25,-647.04 414.25,-691.68"/>
 <text xml:space="preserve" text-anchor="middle" x="342.25" y="-666.06" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Cart Page</text>
@@ -302,7 +302,7 @@
 <!-- __ph_1_1&#45;&gt;cart_page -->
 <!-- __ph_1_2&#45;&gt;__ph_1_3 -->
 <!-- checkout_form -->
-<g id="node50" class="node">
+<g data-slice="2" id="node50" class="node">
 <title>checkout_form</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="583.25,-691.68 439.25,-691.68 439.25,-647.04 583.25,-647.04 583.25,-691.68"/>
 <text xml:space="preserve" text-anchor="middle" x="511.25" y="-666.06" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Checkout Form</text>
@@ -310,53 +310,53 @@
 <!-- __ph_1_2&#45;&gt;checkout_form -->
 <!-- __ph_1_3&#45;&gt;__ph_1_4 -->
 <!-- confirmation_page -->
-<g id="node51" class="node">
+<g data-slice="3" id="node51" class="node">
 <title>confirmation_page</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="752.25,-691.68 608.25,-691.68 608.25,-647.04 752.25,-647.04 752.25,-691.68"/>
 <text xml:space="preserve" text-anchor="middle" x="680.25" y="-666.06" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Confirmation Page</text>
 </g>
 <!-- __ph_1_3&#45;&gt;confirmation_page -->
-<!-- __ph_1_4&#45;&gt;payment_gateway -->
+<!-- __ph_1_4&#45;&gt;__ph_1_5 -->
 <!-- payment_form -->
-<g id="node52" class="node">
+<g data-slice="4" id="node52" class="node">
 <title>payment_form</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="921.25,-691.68 777.25,-691.68 777.25,-647.04 921.25,-647.04 921.25,-691.68"/>
 <text xml:space="preserve" text-anchor="middle" x="849.25" y="-666.06" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payment Form</text>
 </g>
 <!-- __ph_1_4&#45;&gt;payment_form -->
-<!-- payment_gateway&#45;&gt;__ph_1_6 -->
+<!-- __ph_1_5&#45;&gt;payment_gateway -->
 <!-- __ph_2_5 -->
-<!-- payment_gateway&#45;&gt;__ph_2_5 -->
-<!-- __ph_1_6&#45;&gt;fulfillment_engine -->
+<!-- __ph_1_5&#45;&gt;__ph_2_5 -->
+<!-- payment_gateway&#45;&gt;__ph_1_7 -->
 <!-- __ph_2_6 -->
-<!-- __ph_1_6&#45;&gt;__ph_2_6 -->
-<!-- fulfillment_engine&#45;&gt;__ph_1_8 -->
+<!-- payment_gateway&#45;&gt;__ph_2_6 -->
+<!-- __ph_1_7&#45;&gt;fulfillment_engine -->
 <!-- __ph_2_7 -->
-<!-- fulfillment_engine&#45;&gt;__ph_2_7 -->
-<!-- __ph_1_8&#45;&gt;__ph_1_9 -->
+<!-- __ph_1_7&#45;&gt;__ph_2_7 -->
+<!-- fulfillment_engine&#45;&gt;__ph_1_9 -->
 <!-- __ph_2_8 -->
-<!-- __ph_1_8&#45;&gt;__ph_2_8 -->
+<!-- fulfillment_engine&#45;&gt;__ph_2_8 -->
 <!-- __ph_1_9&#45;&gt;__ph_1_10 -->
 <!-- __ph_2_9 -->
 <!-- __ph_1_9&#45;&gt;__ph_2_9 -->
-<!-- __ph_1_10&#45;&gt;dispatch_service -->
+<!-- __ph_1_10&#45;&gt;__ph_1_11 -->
 <!-- __ph_2_10 -->
 <!-- __ph_1_10&#45;&gt;__ph_2_10 -->
-<!-- dispatch_service&#45;&gt;__ph_1_12 -->
+<!-- __ph_1_11&#45;&gt;dispatch_service -->
 <!-- __ph_2_11 -->
-<!-- dispatch_service&#45;&gt;__ph_2_11 -->
-<!-- __ph_1_12&#45;&gt;carrier_adapter -->
+<!-- __ph_1_11&#45;&gt;__ph_2_11 -->
+<!-- dispatch_service&#45;&gt;__ph_1_13 -->
 <!-- __ph_2_12 -->
-<!-- __ph_1_12&#45;&gt;__ph_2_12 -->
-<!-- carrier_adapter&#45;&gt;__ph_1_14 -->
+<!-- dispatch_service&#45;&gt;__ph_2_12 -->
+<!-- __ph_1_13&#45;&gt;carrier_adapter -->
 <!-- __ph_2_13 -->
-<!-- carrier_adapter&#45;&gt;__ph_2_13 -->
-<!-- __ph_1_14&#45;&gt;__ph_1_15 -->
+<!-- __ph_1_13&#45;&gt;__ph_2_13 -->
+<!-- carrier_adapter&#45;&gt;__ph_1_15 -->
 <!-- __ph_2_14 -->
-<!-- __ph_1_14&#45;&gt;__ph_2_14 -->
+<!-- carrier_adapter&#45;&gt;__ph_2_14 -->
 <!-- __ph_1_15&#45;&gt;__ph_1_16 -->
 <!-- order_tracking -->
-<g id="node63" class="node">
+<g data-slice="15" id="node63" class="node">
 <title>order_tracking</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="2780.25,-691.68 2636.25,-691.68 2636.25,-647.04 2780.25,-647.04 2780.25,-691.68"/>
 <text xml:space="preserve" text-anchor="middle" x="2708.25" y="-666.06" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Order Tracking</text>
@@ -395,7 +395,7 @@
 <!-- __ph_2_8&#45;&gt;__ph_3_8 -->
 <!-- __ph_2_9&#45;&gt;__ph_2_10 -->
 <!-- pick_list_screen -->
-<g id="node75" class="node">
+<g data-slice="9" id="node75" class="node">
 <title>pick_list_screen</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="1766.25,-610.8 1622.25,-610.8 1622.25,-566.16 1766.25,-566.16 1766.25,-610.8"/>
 <text xml:space="preserve" text-anchor="middle" x="1694.25" y="-585.18" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Pick List Screen</text>
@@ -403,7 +403,7 @@
 <!-- __ph_2_9&#45;&gt;pick_list_screen -->
 <!-- __ph_2_10&#45;&gt;__ph_2_11 -->
 <!-- scan_items -->
-<g id="node76" class="node">
+<g data-slice="10" id="node76" class="node">
 <title>scan_items</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="1935.25,-610.8 1791.25,-610.8 1791.25,-566.16 1935.25,-566.16 1935.25,-610.8"/>
 <text xml:space="preserve" text-anchor="middle" x="1863.25" y="-585.18" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Scan Items</text>
@@ -478,7 +478,7 @@
 <!-- __ph_3_15&#45;&gt;__ph_4_15 -->
 <!-- __ph_3_16&#45;&gt;__ph_3_17 -->
 <!-- ops_console -->
-<g id="node100" class="node">
+<g data-slice="16" id="node100" class="node">
 <title>ops_console</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="2949.25,-529.92 2805.25,-529.92 2805.25,-485.28 2949.25,-485.28 2949.25,-529.92"/>
 <text xml:space="preserve" text-anchor="middle" x="2877.25" y="-504.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Ops Console</text>
@@ -537,7 +537,7 @@
 <!-- __ph_5_16 -->
 <!-- ops_console&#45;&gt;__ph_5_16 -->
 <!-- support_console -->
-<g id="node119" class="node">
+<g data-slice="17" id="node119" class="node">
 <title>support_console</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="3118.25,-449.04 2974.25,-449.04 2974.25,-404.4 3118.25,-404.4 3118.25,-449.04"/>
 <text xml:space="preserve" text-anchor="middle" x="3046.25" y="-423.42" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Support Console</text>
@@ -547,7 +547,7 @@
 <!-- __ph_5_0&#45;&gt;add_to_cart -->
 <!-- __ph_5_1&#45;&gt;__ph_5_2 -->
 <!-- cart_contents -->
-<g id="node121" class="node">
+<g data-slice="1" id="node121" class="node">
 <title>cart_contents</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M402.25,-368.16C402.25,-368.16 282.25,-368.16 282.25,-368.16 276.25,-368.16 270.25,-362.16 270.25,-356.16 270.25,-356.16 270.25,-335.52 270.25,-335.52 270.25,-329.52 276.25,-323.52 282.25,-323.52 282.25,-323.52 402.25,-323.52 402.25,-323.52 408.25,-323.52 414.25,-329.52 414.25,-335.52 414.25,-335.52 414.25,-356.16 414.25,-356.16 414.25,-362.16 408.25,-368.16 402.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="342.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Cart Contents</text>
@@ -555,7 +555,7 @@
 <!-- __ph_5_1&#45;&gt;cart_contents -->
 <!-- __ph_5_2&#45;&gt;__ph_5_3 -->
 <!-- place_order -->
-<g id="node122" class="node">
+<g data-slice="2" id="node122" class="node">
 <title>place_order</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M571.25,-368.4C571.25,-368.4 451.25,-368.4 451.25,-368.4 445.25,-368.4 439.25,-362.4 439.25,-356.4 439.25,-356.4 439.25,-335.28 439.25,-335.28 439.25,-329.28 445.25,-323.28 451.25,-323.28 451.25,-323.28 571.25,-323.28 571.25,-323.28 577.25,-323.28 583.25,-329.28 583.25,-335.28 583.25,-335.28 583.25,-356.4 583.25,-356.4 583.25,-362.4 577.25,-368.4 571.25,-368.4"/>
 <text xml:space="preserve" text-anchor="start" x="480.37" y="-356.34" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#10243e">Place Order</text>
@@ -568,7 +568,7 @@
 <!-- __ph_5_2&#45;&gt;place_order -->
 <!-- __ph_5_3&#45;&gt;__ph_5_4 -->
 <!-- order_summary -->
-<g id="node123" class="node">
+<g data-slice="3" id="node123" class="node">
 <title>order_summary</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M740.25,-368.16C740.25,-368.16 620.25,-368.16 620.25,-368.16 614.25,-368.16 608.25,-362.16 608.25,-356.16 608.25,-356.16 608.25,-335.52 608.25,-335.52 608.25,-329.52 614.25,-323.52 620.25,-323.52 620.25,-323.52 740.25,-323.52 740.25,-323.52 746.25,-323.52 752.25,-329.52 752.25,-335.52 752.25,-335.52 752.25,-356.16 752.25,-356.16 752.25,-362.16 746.25,-368.16 740.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="680.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Order Summary</text>
@@ -576,7 +576,7 @@
 <!-- __ph_5_3&#45;&gt;order_summary -->
 <!-- __ph_5_4&#45;&gt;__ph_5_5 -->
 <!-- submit_payment -->
-<g id="node124" class="node">
+<g data-slice="4" id="node124" class="node">
 <title>submit_payment</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M909.25,-368.16C909.25,-368.16 789.25,-368.16 789.25,-368.16 783.25,-368.16 777.25,-362.16 777.25,-356.16 777.25,-356.16 777.25,-335.52 777.25,-335.52 777.25,-329.52 783.25,-323.52 789.25,-323.52 789.25,-323.52 909.25,-323.52 909.25,-323.52 915.25,-323.52 921.25,-329.52 921.25,-335.52 921.25,-335.52 921.25,-356.16 921.25,-356.16 921.25,-362.16 915.25,-368.16 909.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="849.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Submit Payment</text>
@@ -584,7 +584,7 @@
 <!-- __ph_5_4&#45;&gt;submit_payment -->
 <!-- __ph_5_5&#45;&gt;__ph_5_6 -->
 <!-- payments_to_settle -->
-<g id="node125" class="node">
+<g data-slice="5" id="node125" class="node">
 <title>payments_to_settle</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1078.25,-368.16C1078.25,-368.16 958.25,-368.16 958.25,-368.16 952.25,-368.16 946.25,-362.16 946.25,-356.16 946.25,-356.16 946.25,-335.52 946.25,-335.52 946.25,-329.52 952.25,-323.52 958.25,-323.52 958.25,-323.52 1078.25,-323.52 1078.25,-323.52 1084.25,-323.52 1090.25,-329.52 1090.25,-335.52 1090.25,-335.52 1090.25,-356.16 1090.25,-356.16 1090.25,-362.16 1084.25,-368.16 1078.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="1018.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Payments To Settle</text>
@@ -592,7 +592,7 @@
 <!-- __ph_5_5&#45;&gt;payments_to_settle -->
 <!-- __ph_5_6&#45;&gt;__ph_5_7 -->
 <!-- capture_payment -->
-<g id="node126" class="node">
+<g data-slice="6" id="node126" class="node">
 <title>capture_payment</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1247.25,-368.16C1247.25,-368.16 1127.25,-368.16 1127.25,-368.16 1121.25,-368.16 1115.25,-362.16 1115.25,-356.16 1115.25,-356.16 1115.25,-335.52 1115.25,-335.52 1115.25,-329.52 1121.25,-323.52 1127.25,-323.52 1127.25,-323.52 1247.25,-323.52 1247.25,-323.52 1253.25,-323.52 1259.25,-329.52 1259.25,-335.52 1259.25,-335.52 1259.25,-356.16 1259.25,-356.16 1259.25,-362.16 1253.25,-368.16 1247.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="1187.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Capture Payment</text>
@@ -600,7 +600,7 @@
 <!-- __ph_5_6&#45;&gt;capture_payment -->
 <!-- __ph_5_7&#45;&gt;__ph_5_8 -->
 <!-- orders_to_fulfill -->
-<g id="node127" class="node">
+<g data-slice="7" id="node127" class="node">
 <title>orders_to_fulfill</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1416.25,-368.16C1416.25,-368.16 1296.25,-368.16 1296.25,-368.16 1290.25,-368.16 1284.25,-362.16 1284.25,-356.16 1284.25,-356.16 1284.25,-335.52 1284.25,-335.52 1284.25,-329.52 1290.25,-323.52 1296.25,-323.52 1296.25,-323.52 1416.25,-323.52 1416.25,-323.52 1422.25,-323.52 1428.25,-329.52 1428.25,-335.52 1428.25,-335.52 1428.25,-356.16 1428.25,-356.16 1428.25,-362.16 1422.25,-368.16 1416.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="1356.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Orders To Fulfill</text>
@@ -608,7 +608,7 @@
 <!-- __ph_5_7&#45;&gt;orders_to_fulfill -->
 <!-- __ph_5_8&#45;&gt;__ph_5_9 -->
 <!-- reserve_stock -->
-<g id="node128" class="node">
+<g data-slice="8" id="node128" class="node">
 <title>reserve_stock</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1585.25,-368.16C1585.25,-368.16 1465.25,-368.16 1465.25,-368.16 1459.25,-368.16 1453.25,-362.16 1453.25,-356.16 1453.25,-356.16 1453.25,-335.52 1453.25,-335.52 1453.25,-329.52 1459.25,-323.52 1465.25,-323.52 1465.25,-323.52 1585.25,-323.52 1585.25,-323.52 1591.25,-323.52 1597.25,-329.52 1597.25,-335.52 1597.25,-335.52 1597.25,-356.16 1597.25,-356.16 1597.25,-362.16 1591.25,-368.16 1585.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="1525.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Reserve Stock</text>
@@ -616,7 +616,7 @@
 <!-- __ph_5_8&#45;&gt;reserve_stock -->
 <!-- __ph_5_9&#45;&gt;__ph_5_10 -->
 <!-- pick_list -->
-<g id="node129" class="node">
+<g data-slice="9" id="node129" class="node">
 <title>pick_list</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1754.25,-368.16C1754.25,-368.16 1634.25,-368.16 1634.25,-368.16 1628.25,-368.16 1622.25,-362.16 1622.25,-356.16 1622.25,-356.16 1622.25,-335.52 1622.25,-335.52 1622.25,-329.52 1628.25,-323.52 1634.25,-323.52 1634.25,-323.52 1754.25,-323.52 1754.25,-323.52 1760.25,-323.52 1766.25,-329.52 1766.25,-335.52 1766.25,-335.52 1766.25,-356.16 1766.25,-356.16 1766.25,-362.16 1760.25,-368.16 1754.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="1694.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Pick List</text>
@@ -624,7 +624,7 @@
 <!-- __ph_5_9&#45;&gt;pick_list -->
 <!-- __ph_5_10&#45;&gt;__ph_5_11 -->
 <!-- confirm_pick -->
-<g id="node130" class="node">
+<g data-slice="10" id="node130" class="node">
 <title>confirm_pick</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1923.25,-368.16C1923.25,-368.16 1803.25,-368.16 1803.25,-368.16 1797.25,-368.16 1791.25,-362.16 1791.25,-356.16 1791.25,-356.16 1791.25,-335.52 1791.25,-335.52 1791.25,-329.52 1797.25,-323.52 1803.25,-323.52 1803.25,-323.52 1923.25,-323.52 1923.25,-323.52 1929.25,-323.52 1935.25,-329.52 1935.25,-335.52 1935.25,-335.52 1935.25,-356.16 1935.25,-356.16 1935.25,-362.16 1929.25,-368.16 1923.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="1863.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Confirm Pick</text>
@@ -632,7 +632,7 @@
 <!-- __ph_5_10&#45;&gt;confirm_pick -->
 <!-- __ph_5_11&#45;&gt;__ph_5_12 -->
 <!-- shipments_to_dispatch -->
-<g id="node131" class="node">
+<g data-slice="11" id="node131" class="node">
 <title>shipments_to_dispatch</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M2092.25,-368.16C2092.25,-368.16 1972.25,-368.16 1972.25,-368.16 1966.25,-368.16 1960.25,-362.16 1960.25,-356.16 1960.25,-356.16 1960.25,-335.52 1960.25,-335.52 1960.25,-329.52 1966.25,-323.52 1972.25,-323.52 1972.25,-323.52 2092.25,-323.52 2092.25,-323.52 2098.25,-323.52 2104.25,-329.52 2104.25,-335.52 2104.25,-335.52 2104.25,-356.16 2104.25,-356.16 2104.25,-362.16 2098.25,-368.16 2092.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="2032.25" y="-349.14" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Shipments To</text>
@@ -641,7 +641,7 @@
 <!-- __ph_5_11&#45;&gt;shipments_to_dispatch -->
 <!-- __ph_5_12&#45;&gt;__ph_5_13 -->
 <!-- dispatch_shipment -->
-<g id="node132" class="node">
+<g data-slice="12" id="node132" class="node">
 <title>dispatch_shipment</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M2261.25,-368.16C2261.25,-368.16 2141.25,-368.16 2141.25,-368.16 2135.25,-368.16 2129.25,-362.16 2129.25,-356.16 2129.25,-356.16 2129.25,-335.52 2129.25,-335.52 2129.25,-329.52 2135.25,-323.52 2141.25,-323.52 2141.25,-323.52 2261.25,-323.52 2261.25,-323.52 2267.25,-323.52 2273.25,-329.52 2273.25,-335.52 2273.25,-335.52 2273.25,-356.16 2273.25,-356.16 2273.25,-362.16 2267.25,-368.16 2261.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="2201.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Dispatch Shipment</text>
@@ -649,7 +649,7 @@
 <!-- __ph_5_12&#45;&gt;dispatch_shipment -->
 <!-- __ph_5_13&#45;&gt;__ph_5_14 -->
 <!-- carrier_tracking -->
-<g id="node133" class="node">
+<g data-slice="13" id="node133" class="node">
 <title>carrier_tracking</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M2430.25,-368.16C2430.25,-368.16 2310.25,-368.16 2310.25,-368.16 2304.25,-368.16 2298.25,-362.16 2298.25,-356.16 2298.25,-356.16 2298.25,-335.52 2298.25,-335.52 2298.25,-329.52 2304.25,-323.52 2310.25,-323.52 2310.25,-323.52 2430.25,-323.52 2430.25,-323.52 2436.25,-323.52 2442.25,-329.52 2442.25,-335.52 2442.25,-335.52 2442.25,-356.16 2442.25,-356.16 2442.25,-362.16 2436.25,-368.16 2430.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="2370.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Carrier Tracking</text>
@@ -657,7 +657,7 @@
 <!-- __ph_5_13&#45;&gt;carrier_tracking -->
 <!-- __ph_5_14&#45;&gt;__ph_5_15 -->
 <!-- record_delivery -->
-<g id="node134" class="node">
+<g data-slice="14" id="node134" class="node">
 <title>record_delivery</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M2599.25,-368.16C2599.25,-368.16 2479.25,-368.16 2479.25,-368.16 2473.25,-368.16 2467.25,-362.16 2467.25,-356.16 2467.25,-356.16 2467.25,-335.52 2467.25,-335.52 2467.25,-329.52 2473.25,-323.52 2479.25,-323.52 2479.25,-323.52 2599.25,-323.52 2599.25,-323.52 2605.25,-323.52 2611.25,-329.52 2611.25,-335.52 2611.25,-335.52 2611.25,-356.16 2611.25,-356.16 2611.25,-362.16 2605.25,-368.16 2599.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="2539.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Record Delivery</text>
@@ -665,7 +665,7 @@
 <!-- __ph_5_14&#45;&gt;record_delivery -->
 <!-- __ph_5_15&#45;&gt;__ph_5_16 -->
 <!-- delivery_status -->
-<g id="node135" class="node">
+<g data-slice="15" id="node135" class="node">
 <title>delivery_status</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M2768.25,-368.16C2768.25,-368.16 2648.25,-368.16 2648.25,-368.16 2642.25,-368.16 2636.25,-362.16 2636.25,-356.16 2636.25,-356.16 2636.25,-335.52 2636.25,-335.52 2636.25,-329.52 2642.25,-323.52 2648.25,-323.52 2648.25,-323.52 2768.25,-323.52 2768.25,-323.52 2774.25,-323.52 2780.25,-329.52 2780.25,-335.52 2780.25,-335.52 2780.25,-356.16 2780.25,-356.16 2780.25,-362.16 2774.25,-368.16 2768.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="2708.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Delivery Status</text>
@@ -673,14 +673,14 @@
 <!-- __ph_5_15&#45;&gt;delivery_status -->
 <!-- __ph_5_16&#45;&gt;support_console -->
 <!-- fulfillment_board -->
-<g id="node136" class="node">
+<g data-slice="16" id="node136" class="node">
 <title>fulfillment_board</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M2937.25,-368.16C2937.25,-368.16 2817.25,-368.16 2817.25,-368.16 2811.25,-368.16 2805.25,-362.16 2805.25,-356.16 2805.25,-356.16 2805.25,-335.52 2805.25,-335.52 2805.25,-329.52 2811.25,-323.52 2817.25,-323.52 2817.25,-323.52 2937.25,-323.52 2937.25,-323.52 2943.25,-323.52 2949.25,-329.52 2949.25,-335.52 2949.25,-335.52 2949.25,-356.16 2949.25,-356.16 2949.25,-362.16 2943.25,-368.16 2937.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="2877.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Fulfillment Board</text>
 </g>
 <!-- __ph_5_16&#45;&gt;fulfillment_board -->
 <!-- order_history -->
-<g id="node137" class="node">
+<g data-slice="17" id="node137" class="node">
 <title>order_history</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M3106.25,-368.16C3106.25,-368.16 2986.25,-368.16 2986.25,-368.16 2980.25,-368.16 2974.25,-362.16 2974.25,-356.16 2974.25,-356.16 2974.25,-335.52 2974.25,-335.52 2974.25,-329.52 2980.25,-323.52 2986.25,-323.52 2986.25,-323.52 3106.25,-323.52 3106.25,-323.52 3112.25,-323.52 3118.25,-329.52 3118.25,-335.52 3118.25,-335.52 3118.25,-356.16 3118.25,-356.16 3118.25,-362.16 3112.25,-368.16 3106.25,-368.16"/>
 <text xml:space="preserve" text-anchor="middle" x="3046.25" y="-342.54" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Order History</text>
@@ -745,7 +745,7 @@
 <!-- __ph_7_1&#45;&gt;__ph_8_1 -->
 <!-- __ph_7_2&#45;&gt;__ph_7_3 -->
 <!-- order_placed -->
-<g id="node158" class="node">
+<g data-slice="2" id="node158" class="node">
 <title>order_placed</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M571.25,-202.08C571.25,-202.08 451.25,-202.08 451.25,-202.08 445.25,-202.08 439.25,-196.08 439.25,-190.08 439.25,-190.08 439.25,-178.08 439.25,-178.08 439.25,-172.08 445.25,-166.08 451.25,-166.08 451.25,-166.08 571.25,-166.08 571.25,-166.08 577.25,-166.08 583.25,-172.08 583.25,-178.08 583.25,-178.08 583.25,-190.08 583.25,-190.08 583.25,-196.08 577.25,-202.08 571.25,-202.08"/>
 <text xml:space="preserve" text-anchor="start" x="477.01" y="-188.18" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#3f2a06">Order Placed</text>
@@ -811,7 +811,7 @@
 <!-- __ph_8_3&#45;&gt;__ph_9_3 -->
 <!-- __ph_8_4&#45;&gt;__ph_8_5 -->
 <!-- payment_requested -->
-<g id="node178" class="node">
+<g data-slice="4" id="node178" class="node">
 <title>payment_requested</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M909.25,-125.52C909.25,-125.52 789.25,-125.52 789.25,-125.52 783.25,-125.52 777.25,-119.52 777.25,-113.52 777.25,-113.52 777.25,-92.88 777.25,-92.88 777.25,-86.88 783.25,-80.88 789.25,-80.88 789.25,-80.88 909.25,-80.88 909.25,-80.88 915.25,-80.88 921.25,-86.88 921.25,-92.88 921.25,-92.88 921.25,-113.52 921.25,-113.52 921.25,-119.52 915.25,-125.52 909.25,-125.52"/>
 <text xml:space="preserve" text-anchor="middle" x="849.25" y="-99.9" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Payment Requested</text>
@@ -822,7 +822,7 @@
 <!-- __ph_8_5&#45;&gt;__ph_9_5 -->
 <!-- __ph_8_6&#45;&gt;__ph_8_7 -->
 <!-- payment_captured -->
-<g id="node180" class="node">
+<g data-slice="6" id="node180" class="node">
 <title>payment_captured</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1247.25,-125.52C1247.25,-125.52 1127.25,-125.52 1127.25,-125.52 1121.25,-125.52 1115.25,-119.52 1115.25,-113.52 1115.25,-113.52 1115.25,-92.88 1115.25,-92.88 1115.25,-86.88 1121.25,-80.88 1127.25,-80.88 1127.25,-80.88 1247.25,-80.88 1247.25,-80.88 1253.25,-80.88 1259.25,-86.88 1259.25,-92.88 1259.25,-92.88 1259.25,-113.52 1259.25,-113.52 1259.25,-119.52 1253.25,-125.52 1247.25,-125.52"/>
 <text xml:space="preserve" text-anchor="middle" x="1187.25" y="-99.9" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Payment Captured</text>
@@ -885,7 +885,7 @@
 <!-- __ph_9_7&#45;&gt;__ph_10_7 -->
 <!-- __ph_9_8&#45;&gt;__ph_9_9 -->
 <!-- stock_reserved -->
-<g id="node200" class="node">
+<g data-slice="8" id="node200" class="node">
 <title>stock_reserved</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1585.25,-44.64C1585.25,-44.64 1465.25,-44.64 1465.25,-44.64 1459.25,-44.64 1453.25,-38.64 1453.25,-32.64 1453.25,-32.64 1453.25,-12 1453.25,-12 1453.25,-6 1459.25,0 1465.25,0 1465.25,0 1585.25,0 1585.25,0 1591.25,0 1597.25,-6 1597.25,-12 1597.25,-12 1597.25,-32.64 1597.25,-32.64 1597.25,-38.64 1591.25,-44.64 1585.25,-44.64"/>
 <text xml:space="preserve" text-anchor="middle" x="1525.25" y="-19.02" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Stock Reserved</text>
@@ -896,7 +896,7 @@
 <!-- __ph_9_9&#45;&gt;__ph_10_9 -->
 <!-- __ph_9_10&#45;&gt;__ph_9_11 -->
 <!-- items_picked -->
-<g id="node202" class="node">
+<g data-slice="10" id="node202" class="node">
 <title>items_picked</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1923.25,-44.64C1923.25,-44.64 1803.25,-44.64 1803.25,-44.64 1797.25,-44.64 1791.25,-38.64 1791.25,-32.64 1791.25,-32.64 1791.25,-12 1791.25,-12 1791.25,-6 1797.25,0 1803.25,0 1803.25,0 1923.25,0 1923.25,0 1929.25,0 1935.25,-6 1935.25,-12 1935.25,-12 1935.25,-32.64 1935.25,-32.64 1935.25,-38.64 1929.25,-44.64 1923.25,-44.64"/>
 <text xml:space="preserve" text-anchor="middle" x="1863.25" y="-19.02" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Items Picked</text>
@@ -907,7 +907,7 @@
 <!-- __ph_9_11&#45;&gt;__ph_10_11 -->
 <!-- __ph_9_12&#45;&gt;__ph_9_13 -->
 <!-- shipment_dispatched -->
-<g id="node204" class="node">
+<g data-slice="12" id="node204" class="node">
 <title>shipment_dispatched</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M2261.25,-44.64C2261.25,-44.64 2141.25,-44.64 2141.25,-44.64 2135.25,-44.64 2129.25,-38.64 2129.25,-32.64 2129.25,-32.64 2129.25,-12 2129.25,-12 2129.25,-6 2135.25,0 2141.25,0 2141.25,0 2261.25,0 2261.25,0 2267.25,0 2273.25,-6 2273.25,-12 2273.25,-12 2273.25,-32.64 2273.25,-32.64 2273.25,-38.64 2267.25,-44.64 2261.25,-44.64"/>
 <text xml:space="preserve" text-anchor="middle" x="2201.25" y="-25.62" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Shipment</text>
@@ -919,7 +919,7 @@
 <!-- __ph_9_13&#45;&gt;__ph_10_13 -->
 <!-- __ph_9_14&#45;&gt;__ph_9_15 -->
 <!-- order_delivered -->
-<g id="node206" class="node">
+<g data-slice="14" id="node206" class="node">
 <title>order_delivered</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M2599.25,-44.64C2599.25,-44.64 2479.25,-44.64 2479.25,-44.64 2473.25,-44.64 2467.25,-38.64 2467.25,-32.64 2467.25,-32.64 2467.25,-12 2467.25,-12 2467.25,-6 2473.25,0 2479.25,0 2479.25,0 2599.25,0 2599.25,0 2605.25,0 2611.25,-6 2611.25,-12 2611.25,-12 2611.25,-32.64 2611.25,-32.64 2611.25,-38.64 2605.25,-44.64 2599.25,-44.64"/>
 <text xml:space="preserve" text-anchor="middle" x="2539.25" y="-19.02" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Order Delivered</text>

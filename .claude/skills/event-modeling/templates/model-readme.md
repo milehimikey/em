@@ -18,14 +18,14 @@ Static render: `em render {{model-name}}.em -o {{model-name}}.svg`
 ## Patterns legend
 - **State Change** — UI → Command → Event
 - **State View** — Event(s) → Read Model → UI
-- **Automation** — Read Model → Processor → (next slice) Command → Event
-- **Translation** — External input (or Read Model) → Translation → (next slice) Command → Event
+- **Automation** — Read Model (slice before) → Processor + Command → Event, together
+- **Translation** — External input (or Read Model, slice before) → Translation + Command → Event, together
 
 Between them these are the only legal connections: `ui → command`, `command → event`,
 `event → read model`, `read model → ui`, `read model → reaction`, `reaction → command`. A command
 never reaches a read model directly — the event goes between them. Every slice is joined up at
-both ends: something triggers each command (the screen it's issued from, or the reaction in the
-slice before it), and every event a command records is read by some read model — so each State
+both ends: something triggers each command (the screen it's issued from, or the reaction that
+triggers it, also in this slice), and every event a command records is read by some read model — so each State
 Change slice is paired with the State View slice that projects its event. A read model repeated
 along the timeline (`view X again`) shows the same projection at a later point; the instances are
 never connected to one another.

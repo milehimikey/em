@@ -5,13 +5,13 @@
  -->
 <!-- Title: EventModel Pages: 1 -->
 <svg width="1267pt" height="772pt"
- viewBox="0.00 0.00 1267.00 772" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-5F6368" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#5F6368"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs>
+ viewBox="0.00 0.00 1267.00 772" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-5F6368" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#5F6368"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs><metadata id="em-slices">{"slices":[{"index":0,"name":"Browse Catalog","x0":105.25,"x1":249.25},{"index":1,"name":"View Open Orders","x0":274.25,"x1":418.25},{"index":2,"name":"Checkout","x0":443.25,"x1":587.25},{"index":3,"name":"Manager Review","x0":612.25,"x1":756.25},{"index":4,"name":"Payments To Process","x0":781.25,"x1":925.25},{"index":5,"name":"Capture Payment","x0":950.25,"x1":1094.25},{"index":6,"name":"Show Receipt","x0":1119.25,"x1":1263.25}],"rowLabels":{"x0":-11.75,"x1":96.25}}</metadata><style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 682.48)">
 <title>EventModel</title>
 <polygon fill="white" stroke="none" points="-4,4 -4,-682.48 1263.25,-682.48 1263.25,4 -4,4"/>
 <text xml:space="preserve" text-anchor="middle" x="629.63" y="-658.28" font-family="Helvetica,sans-Serif" font-size="18.00">Order Fulfillment</text>
 <!-- __row_0 -->
-<g class="em-edges"><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M173.25,-407.92 L173.25,-258.56" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M173.25,-200.64 L173.25,-164.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M342.25,-258.56 L342.25,-407.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M511.25,-407.92 L511.25,-251.92" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M511.25,-207.28 L511.25,-51.28" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M680.25,-251.92 L680.25,-307.6" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M849.25,-251.92 L849.25,-508.24" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M849.25,-508.24 C849.25,-418.24 1018.25,-342.16 1018.25,-252.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1018.25,-207.04 L1018.25,-57.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1187.25,-251.92 L1187.25,-407.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M173.25,-164.64 C173.25,-224.83 342.25,-140.45 342.25,-200.64" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M511.25,-51.28 C511.25,-141.28 680.25,-117.28 680.25,-207.28" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M511.25,-51.28 C511.25,-141.28 849.25,-117.28 849.25,-207.28" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1018.25,-57.92 C1018.25,-147.92 1187.25,-117.28 1187.25,-207.28" marker-end="url(#em-arrow-B7791F)"/></g><g id="node1" class="node">
+<g class="em-edges"><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M173.25,-407.92 L173.25,-258.56" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M173.25,-200.64 L173.25,-164.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M342.25,-258.56 L342.25,-407.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M511.25,-407.92 L511.25,-251.92" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M511.25,-207.28 L511.25,-51.28" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M680.25,-251.92 L680.25,-307.6" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1018.25,-207.04 L1018.25,-57.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1018.25,-508.24 L1018.25,-252.16" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1187.25,-251.92 L1187.25,-407.92" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M173.25,-164.64 C173.25,-224.83 342.25,-140.45 342.25,-200.64" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M511.25,-51.28 C511.25,-141.28 680.25,-117.28 680.25,-207.28" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M511.25,-51.28 C511.25,-141.28 849.25,-117.28 849.25,-207.28" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M849.25,-251.92 C849.25,-341.92 1018.25,-418.24 1018.25,-508.24" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1018.25,-57.92 C1018.25,-147.92 1187.25,-117.28 1187.25,-207.28" marker-end="url(#em-arrow-B7791F)"/></g><g id="node1" class="node">
 <title>__row_0</title>
 </g>
 <!-- __row_1 -->
@@ -42,7 +42,7 @@
 </g>
 <!-- __row_2&#45;&gt;__row_3 -->
 <!-- product_catalog -->
-<g id="node22" class="node">
+<g data-slice="0" id="node22" class="node">
 <title>product_catalog</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="245.25,-452.56 101.25,-452.56 101.25,-407.92 245.25,-407.92 245.25,-452.56"/>
 <text xml:space="preserve" text-anchor="middle" x="173.25" y="-426.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Product Catalog</text>
@@ -63,7 +63,7 @@
 </g>
 <!-- __row_4&#45;&gt;__row_5 -->
 <!-- place_order -->
-<g id="node36" class="node">
+<g data-slice="0" id="node36" class="node">
 <title>place_order</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M233.25,-258.56C233.25,-258.56 113.25,-258.56 113.25,-258.56 107.25,-258.56 101.25,-252.56 101.25,-246.56 101.25,-246.56 101.25,-212.64 101.25,-212.64 101.25,-206.64 107.25,-200.64 113.25,-200.64 113.25,-200.64 233.25,-200.64 233.25,-200.64 239.25,-200.64 245.25,-206.64 245.25,-212.64 245.25,-212.64 245.25,-246.56 245.25,-246.56 245.25,-252.56 239.25,-258.56 233.25,-258.56"/>
 <text xml:space="preserve" text-anchor="start" x="142.37" y="-246.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#10243e">Place Order</text>
@@ -82,7 +82,7 @@
 </g>
 <!-- __row_5&#45;&gt;__row_6 -->
 <!-- order_placed -->
-<g id="node43" class="node">
+<g data-slice="0" id="node43" class="node">
 <title>order_placed</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M233.25,-164.64C233.25,-164.64 113.25,-164.64 113.25,-164.64 107.25,-164.64 101.25,-158.64 101.25,-152.64 101.25,-152.64 101.25,-105.92 101.25,-105.92 101.25,-99.92 107.25,-93.92 113.25,-93.92 113.25,-93.92 233.25,-93.92 233.25,-93.92 239.25,-93.92 245.25,-99.92 245.25,-105.92 245.25,-105.92 245.25,-152.64 245.25,-152.64 245.25,-158.64 239.25,-164.64 233.25,-164.64"/>
 <text xml:space="preserve" text-anchor="start" x="139.01" y="-152.58" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#3f2a06">Order Placed</text>
@@ -139,13 +139,8 @@
 <text xml:space="preserve" text-anchor="middle" x="1018.25" y="-627.88" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Capture Payment</text>
 </g>
 <!-- __hdr_4&#45;&gt;__hdr_5 -->
-<!-- payment_gateway -->
-<g id="node19" class="node">
-<title>payment_gateway</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M909.25,-552.88C909.25,-552.88 789.25,-552.88 789.25,-552.88 783.25,-552.88 777.25,-546.88 777.25,-540.88 777.25,-540.88 777.25,-520.24 777.25,-520.24 777.25,-514.24 783.25,-508.24 789.25,-508.24 789.25,-508.24 909.25,-508.24 909.25,-508.24 915.25,-508.24 921.25,-514.24 921.25,-520.24 921.25,-520.24 921.25,-540.88 921.25,-540.88 921.25,-546.88 915.25,-552.88 909.25,-552.88"/>
-<text xml:space="preserve" text-anchor="middle" x="849.25" y="-527.26" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payment Gateway</text>
-</g>
-<!-- __hdr_4&#45;&gt;payment_gateway -->
+<!-- __ph_1_4 -->
+<!-- __hdr_4&#45;&gt;__ph_1_4 -->
 <!-- __hdr_6 -->
 <g id="node14" class="node">
 <title>__hdr_6</title>
@@ -153,15 +148,20 @@
 <text xml:space="preserve" text-anchor="middle" x="1187.25" y="-627.88" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Show Receipt</text>
 </g>
 <!-- __hdr_5&#45;&gt;__hdr_6 -->
-<!-- __ph_1_5 -->
-<!-- __hdr_5&#45;&gt;__ph_1_5 -->
+<!-- payment_gateway -->
+<g data-slice="5" id="node20" class="node">
+<title>payment_gateway</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1078.25,-552.88C1078.25,-552.88 958.25,-552.88 958.25,-552.88 952.25,-552.88 946.25,-546.88 946.25,-540.88 946.25,-540.88 946.25,-520.24 946.25,-520.24 946.25,-514.24 952.25,-508.24 958.25,-508.24 958.25,-508.24 1078.25,-508.24 1078.25,-508.24 1084.25,-508.24 1090.25,-514.24 1090.25,-520.24 1090.25,-520.24 1090.25,-540.88 1090.25,-540.88 1090.25,-546.88 1084.25,-552.88 1078.25,-552.88"/>
+<text xml:space="preserve" text-anchor="middle" x="1018.25" y="-527.26" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payment Gateway</text>
+</g>
+<!-- __hdr_5&#45;&gt;payment_gateway -->
 <!-- __ph_1_6 -->
 <!-- __hdr_6&#45;&gt;__ph_1_6 -->
 <!-- __ph_1_0&#45;&gt;__ph_1_1 -->
 <!-- __ph_1_0&#45;&gt;product_catalog -->
 <!-- __ph_1_1&#45;&gt;__ph_1_2 -->
 <!-- order_list -->
-<g id="node23" class="node">
+<g data-slice="1" id="node23" class="node">
 <title>order_list</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="414.25,-452.56 270.25,-452.56 270.25,-407.92 414.25,-407.92 414.25,-452.56"/>
 <text xml:space="preserve" text-anchor="middle" x="342.25" y="-426.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Order List</text>
@@ -169,23 +169,23 @@
 <!-- __ph_1_1&#45;&gt;order_list -->
 <!-- __ph_1_2&#45;&gt;__ph_1_3 -->
 <!-- checkout_screen -->
-<g id="node24" class="node">
+<g data-slice="2" id="node24" class="node">
 <title>checkout_screen</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="583.25,-452.56 439.25,-452.56 439.25,-407.92 583.25,-407.92 583.25,-452.56"/>
 <text xml:space="preserve" text-anchor="middle" x="511.25" y="-426.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Checkout Screen</text>
 </g>
 <!-- __ph_1_2&#45;&gt;checkout_screen -->
-<!-- __ph_1_3&#45;&gt;payment_gateway -->
+<!-- __ph_1_3&#45;&gt;__ph_1_4 -->
 <!-- __ph_2_3 -->
 <!-- __ph_1_3&#45;&gt;__ph_2_3 -->
-<!-- payment_gateway&#45;&gt;__ph_1_5 -->
+<!-- __ph_1_4&#45;&gt;payment_gateway -->
 <!-- __ph_2_4 -->
-<!-- payment_gateway&#45;&gt;__ph_2_4 -->
-<!-- __ph_1_5&#45;&gt;__ph_1_6 -->
+<!-- __ph_1_4&#45;&gt;__ph_2_4 -->
+<!-- payment_gateway&#45;&gt;__ph_1_6 -->
 <!-- __ph_2_5 -->
-<!-- __ph_1_5&#45;&gt;__ph_2_5 -->
+<!-- payment_gateway&#45;&gt;__ph_2_5 -->
 <!-- receipt_screen -->
-<g id="node28" class="node">
+<g data-slice="6" id="node28" class="node">
 <title>receipt_screen</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="1259.25,-452.56 1115.25,-452.56 1115.25,-407.92 1259.25,-407.92 1259.25,-452.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1187.25" y="-426.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Receipt Screen</text>
@@ -201,7 +201,7 @@
 <!-- checkout_screen&#45;&gt;__ph_3_2 -->
 <!-- __ph_2_3&#45;&gt;__ph_2_4 -->
 <!-- payment_dashboard -->
-<g id="node32" class="node">
+<g data-slice="3" id="node32" class="node">
 <title>payment_dashboard</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="752.25,-352.24 608.25,-352.24 608.25,-307.6 752.25,-307.6 752.25,-352.24"/>
 <text xml:space="preserve" text-anchor="middle" x="680.25" y="-326.62" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payment Dashboard</text>
@@ -219,7 +219,7 @@
 <!-- __ph_3_0&#45;&gt;place_order -->
 <!-- __ph_3_1&#45;&gt;__ph_3_2 -->
 <!-- open_orders -->
-<g id="node37" class="node">
+<g data-slice="1" id="node37" class="node">
 <title>open_orders</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M402.25,-258.56C402.25,-258.56 282.25,-258.56 282.25,-258.56 276.25,-258.56 270.25,-252.56 270.25,-246.56 270.25,-246.56 270.25,-212.64 270.25,-212.64 270.25,-206.64 276.25,-200.64 282.25,-200.64 282.25,-200.64 402.25,-200.64 402.25,-200.64 408.25,-200.64 414.25,-206.64 414.25,-212.64 414.25,-212.64 414.25,-246.56 414.25,-246.56 414.25,-252.56 408.25,-258.56 402.25,-258.56"/>
 <text xml:space="preserve" text-anchor="start" x="308.63" y="-246.5" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#173f25">Open Orders</text>
@@ -232,7 +232,7 @@
 <!-- __ph_3_1&#45;&gt;open_orders -->
 <!-- __ph_3_2&#45;&gt;payment_dashboard -->
 <!-- submit_payment -->
-<g id="node38" class="node">
+<g data-slice="2" id="node38" class="node">
 <title>submit_payment</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M571.25,-251.92C571.25,-251.92 451.25,-251.92 451.25,-251.92 445.25,-251.92 439.25,-245.92 439.25,-239.92 439.25,-239.92 439.25,-219.28 439.25,-219.28 439.25,-213.28 445.25,-207.28 451.25,-207.28 451.25,-207.28 571.25,-207.28 571.25,-207.28 577.25,-207.28 583.25,-213.28 583.25,-219.28 583.25,-219.28 583.25,-239.92 583.25,-239.92 583.25,-245.92 577.25,-251.92 571.25,-251.92"/>
 <text xml:space="preserve" text-anchor="middle" x="511.25" y="-226.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Submit Payment</text>
@@ -240,7 +240,7 @@
 <!-- __ph_3_2&#45;&gt;submit_payment -->
 <!-- payment_dashboard&#45;&gt;__ph_3_4 -->
 <!-- pending_payments -->
-<g id="node39" class="node">
+<g data-slice="3" id="node39" class="node">
 <title>pending_payments</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M740.25,-251.92C740.25,-251.92 620.25,-251.92 620.25,-251.92 614.25,-251.92 608.25,-245.92 608.25,-239.92 608.25,-239.92 608.25,-219.28 608.25,-219.28 608.25,-213.28 614.25,-207.28 620.25,-207.28 620.25,-207.28 740.25,-207.28 740.25,-207.28 746.25,-207.28 752.25,-213.28 752.25,-219.28 752.25,-219.28 752.25,-239.92 752.25,-239.92 752.25,-245.92 746.25,-251.92 740.25,-251.92"/>
 <text xml:space="preserve" text-anchor="middle" x="680.25" y="-226.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Pending Payments</text>
@@ -248,7 +248,7 @@
 <!-- payment_dashboard&#45;&gt;pending_payments -->
 <!-- __ph_3_4&#45;&gt;__ph_3_5 -->
 <!-- payments_to_process -->
-<g id="node40" class="node">
+<g data-slice="4" id="node40" class="node">
 <title>payments_to_process</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M909.25,-251.92C909.25,-251.92 789.25,-251.92 789.25,-251.92 783.25,-251.92 777.25,-245.92 777.25,-239.92 777.25,-239.92 777.25,-219.28 777.25,-219.28 777.25,-213.28 783.25,-207.28 789.25,-207.28 789.25,-207.28 909.25,-207.28 909.25,-207.28 915.25,-207.28 921.25,-213.28 921.25,-219.28 921.25,-219.28 921.25,-239.92 921.25,-239.92 921.25,-245.92 915.25,-251.92 909.25,-251.92"/>
 <text xml:space="preserve" text-anchor="middle" x="849.25" y="-232.9" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Payments To</text>
@@ -257,7 +257,7 @@
 <!-- __ph_3_4&#45;&gt;payments_to_process -->
 <!-- __ph_3_5&#45;&gt;__ph_3_6 -->
 <!-- capture_payment -->
-<g id="node41" class="node">
+<g data-slice="5" id="node41" class="node">
 <title>capture_payment</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1078.25,-252.16C1078.25,-252.16 958.25,-252.16 958.25,-252.16 952.25,-252.16 946.25,-246.16 946.25,-240.16 946.25,-240.16 946.25,-219.04 946.25,-219.04 946.25,-213.04 952.25,-207.04 958.25,-207.04 958.25,-207.04 1078.25,-207.04 1078.25,-207.04 1084.25,-207.04 1090.25,-213.04 1090.25,-219.04 1090.25,-219.04 1090.25,-240.16 1090.25,-240.16 1090.25,-246.16 1084.25,-252.16 1078.25,-252.16"/>
 <text xml:space="preserve" text-anchor="start" x="973.02" y="-240.1" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#10243e">Capture Payment</text>
@@ -268,7 +268,7 @@
 </g>
 <!-- __ph_3_5&#45;&gt;capture_payment -->
 <!-- receipts -->
-<g id="node42" class="node">
+<g data-slice="6" id="node42" class="node">
 <title>receipts</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1247.25,-251.92C1247.25,-251.92 1127.25,-251.92 1127.25,-251.92 1121.25,-251.92 1115.25,-245.92 1115.25,-239.92 1115.25,-239.92 1115.25,-219.28 1115.25,-219.28 1115.25,-213.28 1121.25,-207.28 1127.25,-207.28 1127.25,-207.28 1247.25,-207.28 1247.25,-207.28 1253.25,-207.28 1259.25,-213.28 1259.25,-219.28 1259.25,-219.28 1259.25,-239.92 1259.25,-239.92 1259.25,-245.92 1253.25,-251.92 1247.25,-251.92"/>
 <text xml:space="preserve" text-anchor="middle" x="1187.25" y="-226.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Receipts</text>
@@ -300,7 +300,7 @@
 <!-- __ph_5_1&#45;&gt;__ph_6_1 -->
 <!-- __ph_5_2&#45;&gt;__ph_5_3 -->
 <!-- payment_requested -->
-<g id="node52" class="node">
+<g data-slice="2" id="node52" class="node">
 <title>payment_requested</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M571.25,-51.28C571.25,-51.28 451.25,-51.28 451.25,-51.28 445.25,-51.28 439.25,-45.28 439.25,-39.28 439.25,-39.28 439.25,-18.64 439.25,-18.64 439.25,-12.64 445.25,-6.64 451.25,-6.64 451.25,-6.64 571.25,-6.64 571.25,-6.64 577.25,-6.64 583.25,-12.64 583.25,-18.64 583.25,-18.64 583.25,-39.28 583.25,-39.28 583.25,-45.28 577.25,-51.28 571.25,-51.28"/>
 <text xml:space="preserve" text-anchor="middle" x="511.25" y="-25.66" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Payment Requested</text>
@@ -314,7 +314,7 @@
 <!-- __ph_5_4&#45;&gt;__ph_6_4 -->
 <!-- __ph_5_5&#45;&gt;__ph_5_6 -->
 <!-- payment_captured -->
-<g id="node55" class="node">
+<g data-slice="5" id="node55" class="node">
 <title>payment_captured</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1078.25,-57.92C1078.25,-57.92 958.25,-57.92 958.25,-57.92 952.25,-57.92 946.25,-51.92 946.25,-45.92 946.25,-45.92 946.25,-12 946.25,-12 946.25,-6 952.25,0 958.25,0 958.25,0 1078.25,0 1078.25,0 1084.25,0 1090.25,-6 1090.25,-12 1090.25,-12 1090.25,-45.92 1090.25,-45.92 1090.25,-51.92 1084.25,-57.92 1078.25,-57.92"/>
 <text xml:space="preserve" text-anchor="start" x="969.66" y="-45.86" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#3f2a06">Payment Captured</text>
@@ -334,5 +334,5 @@
 <!-- __ph_6_3&#45;&gt;__ph_6_4 -->
 <!-- __ph_6_4&#45;&gt;payment_captured -->
 <!-- payment_captured&#45;&gt;__ph_6_6 -->
-<g class="em-notes"><a xlink:href="notes/order-placed.md" href="notes/order-placed.md" target="_blank"><title>1. notes/order-placed.md</title><path d="M227.25,-159.64 L240.25,-159.64 L240.25,-146.64 Z" fill="#F4C430" stroke="#7A5200" stroke-width="1" stroke-linejoin="round"/><path d="M227.25,-159.64 L240.25,-146.64" fill="none" stroke="#7A5200" stroke-width="0.7"/><text x="225.25" y="-150.64" text-anchor="end" font-family="Helvetica" font-weight="bold" font-size="10" fill="#7A5200">1</text></a><a xlink:href="notes/capture-payment.md" href="notes/capture-payment.md" target="_blank"><title>2. notes/capture-payment.md</title><path d="M1072.25,-247.16 L1085.25,-247.16 L1085.25,-234.16 Z" fill="#F4C430" stroke="#7A5200" stroke-width="1" stroke-linejoin="round"/><path d="M1072.25,-247.16 L1085.25,-234.16" fill="none" stroke="#7A5200" stroke-width="0.7"/><text x="1070.25" y="-238.16" text-anchor="end" font-family="Helvetica" font-weight="bold" font-size="10" fill="#7A5200">2</text></a></g><g class="em-issues"></g></g>
+<g class="em-notes"><a xlink:href="notes/order-placed.md" href="notes/order-placed.md" target="_blank"><title>1. notes/order-placed.md</title><path d="M227.25,-159.64 L240.25,-159.64 L240.25,-146.64 Z" fill="#F4C430" stroke="#7A5200" stroke-width="1" stroke-linejoin="round"/><path d="M227.25,-159.64 L240.25,-146.64" fill="none" stroke="#7A5200" stroke-width="0.7"/><text x="225.25" y="-150.64" text-anchor="end" font-family="Helvetica" font-weight="bold" font-size="10" fill="#7A5200">1</text></a><a xlink:href="notes/capture-payment.md" href="notes/capture-payment.md" target="_blank"><title>2. notes/capture-payment.md</title><path d="M1072.25,-247.16 L1085.25,-247.16 L1085.25,-234.16 Z" fill="#F4C430" stroke="#7A5200" stroke-width="1" stroke-linejoin="round"/><path d="M1072.25,-247.16 L1085.25,-234.16" fill="none" stroke="#7A5200" stroke-width="0.7"/><text x="1070.25" y="-238.16" text-anchor="end" font-family="Helvetica" font-weight="bold" font-size="10" fill="#7A5200">2</text></a></g><g class="em-issues"></g><g class="em-divergences"></g></g>
 <g class="em-note-legend"><rect x="0" y="686" width="1267" height="86" fill="#FFFFFF"/><line x1="0" y1="686" x2="1267" y2="686" stroke="#D0D0D0" stroke-width="1"/><text x="16" y="714" font-family="Helvetica" font-weight="bold" font-size="12" fill="#202124">Notes</text><a xlink:href="notes/order-placed.md" href="notes/order-placed.md" target="_blank"><text x="16" y="735" font-family="Helvetica" font-size="11" fill="#202124"><tspan font-weight="bold" fill="#7A5200">1.</tspan><tspan dx="6">Order Placed</tspan><tspan dx="6" fill="#5F6368">— notes/order-placed.md</tspan></text></a><a xlink:href="notes/capture-payment.md" href="notes/capture-payment.md" target="_blank"><text x="16" y="753" font-family="Helvetica" font-size="11" fill="#202124"><tspan font-weight="bold" fill="#7A5200">2.</tspan><tspan dx="6">Capture Payment</tspan><tspan dx="6" fill="#5F6368">— notes/capture-payment.md</tspan></text></a></g></svg>

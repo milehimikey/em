@@ -87,16 +87,13 @@ slice "S" {
     expect(dot).toContain('label="Sync Smartphone\\nOperating System\\nName"');
   });
 
-  it("warns when an automation slice also contains the triggered command", () => {
+  it("warns when a reaction triggers no command", () => {
     const { diagnostics } = compile(`
 slice "Auto" {
   processor Worker
-  command Do Work
 }
 `);
-    expect(
-      diagnostics.some((d) => /put the triggered command in the next slice/.test(d.message)),
-    ).toBe(true);
+    expect(diagnostics.some((d) => /triggers no command/.test(d.message))).toBe(true);
   });
 });
 

@@ -5,13 +5,13 @@
  -->
 <!-- Title: EventModel Pages: 1 -->
 <svg width="2116pt" height="723pt"
- viewBox="0.00 0.00 2116.00 723.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-5F6368" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#5F6368"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs>
+ viewBox="0.00 0.00 2116.00 723.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-5F6368" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#5F6368"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs><metadata id="em-slices">{"slices":[{"index":0,"name":"File Claim","x0":109.2,"x1":253.2},{"index":1,"name":"Claim Status","x0":278.2,"x1":422.2},{"index":2,"name":"Triage Queue","x0":447.2,"x1":591.2},{"index":3,"name":"Assign Adjuster","x0":616.2,"x1":760.2},{"index":4,"name":"Adjuster Worklist","x0":785.2,"x1":929.2},{"index":5,"name":"Review Claim","x0":954.2,"x1":1098.2},{"index":6,"name":"Verify Coverage","x0":1123.2,"x1":1267.2},{"index":7,"name":"Confirm Coverage","x0":1292.2,"x1":1436.2},{"index":8,"name":"Payout Queue","x0":1461.2,"x1":1605.2},{"index":9,"name":"Send Payment","x0":1630.2,"x1":1774.2},{"index":10,"name":"Payment Confirmation","x0":1799.2,"x1":1943.2},{"index":11,"name":"Manager Dashboard","x0":1968.2,"x1":2112.2}],"rowLabels":{"x0":-19.799999999999997,"x1":108.2}}</metadata><style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 719.04)">
 <title>EventModel</title>
 <polygon fill="white" stroke="none" points="-4,4 -4,-719.04 2112.2,-719.04 2112.2,4 -4,4"/>
 <text xml:space="preserve" text-anchor="middle" x="1054.1" y="-694.84" font-family="Helvetica,sans-Serif" font-size="18.00">Insurance Claim</text>
 <!-- __row_0 -->
-<g class="em-edges"><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M177.2,-483.84 L177.2,-286.56" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M177.2,-241.92 L177.2,-205.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M346.2,-286.56 L346.2,-483.84" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M515.2,-286.56 L515.2,-564.48" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M515.2,-564.48 C515.2,-474.48 684.2,-376.56 684.2,-286.56" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M684.2,-241.92 L684.2,-205.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M853.2,-286.56 L853.2,-403.2" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M1022.2,-403.2 L1022.2,-286.56" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1022.2,-241.92 L1022.2,-205.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1191.2,-286.56 L1191.2,-564.48" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1191.2,-564.48 C1191.2,-474.48 1360.2,-376.56 1360.2,-286.56" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1360.2,-241.92 L1360.2,-125.28" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1529.2,-286.56 L1529.2,-564.48" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1529.2,-564.48 C1529.2,-474.48 1698.2,-376.56 1698.2,-286.56" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1698.2,-241.92 L1698.2,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1867.2,-286.56 L1867.2,-483.84" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2036.2,-286.56 L2036.2,-322.56" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M177.2,-205.92 C177.2,-254.3 346.2,-193.54 346.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M177.2,-205.92 C177.2,-254.3 515.2,-193.54 515.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M684.2,-205.92 C684.2,-254.3 853.2,-193.54 853.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1022.2,-205.92 C1022.2,-254.3 1191.2,-193.54 1191.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1360.2,-125.28 C1360.2,-215.28 1529.2,-151.92 1529.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1698.2,-44.64 C1698.2,-134.64 1867.2,-151.92 1867.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1022.2,-205.92 C1022.2,-254.3 2036.2,-193.54 2036.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1698.2,-44.64 C1698.2,-134.64 2036.2,-151.92 2036.2,-241.92" marker-end="url(#em-arrow-B7791F)"/></g><g id="node1" class="node">
+<g class="em-edges"><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M177.2,-483.84 L177.2,-286.56" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M177.2,-241.92 L177.2,-205.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M346.2,-286.56 L346.2,-483.84" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M684.2,-241.92 L684.2,-205.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M684.2,-564.48 L684.2,-286.56" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M853.2,-286.56 L853.2,-403.2" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#3C4043" stroke-width="1.5" d="M1022.2,-403.2 L1022.2,-286.56" marker-end="url(#em-arrow-3C4043)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1022.2,-241.92 L1022.2,-205.92" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1360.2,-241.92 L1360.2,-125.28" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1360.2,-564.48 L1360.2,-286.56" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2B6CB0" stroke-width="1.5" d="M1698.2,-241.92 L1698.2,-44.64" marker-end="url(#em-arrow-2B6CB0)"/><path fill="none" stroke="#5F6368" stroke-width="1.5" d="M1698.2,-564.48 L1698.2,-286.56" marker-end="url(#em-arrow-5F6368)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1867.2,-286.56 L1867.2,-483.84" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M2036.2,-286.56 L2036.2,-322.56" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M177.2,-205.92 C177.2,-254.3 346.2,-193.54 346.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M177.2,-205.92 C177.2,-254.3 515.2,-193.54 515.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M515.2,-286.56 C515.2,-376.56 684.2,-474.48 684.2,-564.48" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M684.2,-205.92 C684.2,-254.3 853.2,-193.54 853.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1022.2,-205.92 C1022.2,-254.3 1191.2,-193.54 1191.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1191.2,-286.56 C1191.2,-376.56 1360.2,-474.48 1360.2,-564.48" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1360.2,-125.28 C1360.2,-215.28 1529.2,-151.92 1529.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#2F855A" stroke-width="1.5" d="M1529.2,-286.56 C1529.2,-376.56 1698.2,-474.48 1698.2,-564.48" marker-end="url(#em-arrow-2F855A)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1698.2,-44.64 C1698.2,-134.64 1867.2,-151.92 1867.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1022.2,-205.92 C1022.2,-254.3 2036.2,-193.54 2036.2,-241.92" marker-end="url(#em-arrow-B7791F)"/><path fill="none" stroke="#B7791F" stroke-width="1.5" d="M1698.2,-44.64 C1698.2,-134.64 2036.2,-151.92 2036.2,-241.92" marker-end="url(#em-arrow-B7791F)"/></g><g id="node1" class="node">
 <title>__row_0</title>
 </g>
 <!-- __row_1 -->
@@ -42,7 +42,7 @@
 </g>
 <!-- __row_2&#45;&gt;__row_3 -->
 <!-- claim_form -->
-<g id="node34" class="node">
+<g data-slice="0" id="node34" class="node">
 <title>claim_form</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="249.2,-528.48 105.2,-528.48 105.2,-483.84 249.2,-483.84 249.2,-528.48"/>
 <text xml:space="preserve" text-anchor="middle" x="177.2" y="-502.86" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Claim Form</text>
@@ -71,7 +71,7 @@
 </g>
 <!-- __row_5&#45;&gt;__row_6 -->
 <!-- file_claim -->
-<g id="node70" class="node">
+<g data-slice="0" id="node70" class="node">
 <title>file_claim</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M237.2,-286.56C237.2,-286.56 117.2,-286.56 117.2,-286.56 111.2,-286.56 105.2,-280.56 105.2,-274.56 105.2,-274.56 105.2,-253.92 105.2,-253.92 105.2,-247.92 111.2,-241.92 117.2,-241.92 117.2,-241.92 237.2,-241.92 237.2,-241.92 243.2,-241.92 249.2,-247.92 249.2,-253.92 249.2,-253.92 249.2,-274.56 249.2,-274.56 249.2,-280.56 243.2,-286.56 237.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="177.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">File Claim</text>
@@ -84,7 +84,7 @@
 </g>
 <!-- __row_6&#45;&gt;__row_7 -->
 <!-- claim_filed -->
-<g id="node82" class="node">
+<g data-slice="0" id="node82" class="node">
 <title>claim_filed</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M237.2,-205.92C237.2,-205.92 117.2,-205.92 117.2,-205.92 111.2,-205.92 105.2,-199.92 105.2,-193.92 105.2,-193.92 105.2,-173.28 105.2,-173.28 105.2,-167.28 111.2,-161.28 117.2,-161.28 117.2,-161.28 237.2,-161.28 237.2,-161.28 243.2,-161.28 249.2,-167.28 249.2,-173.28 249.2,-173.28 249.2,-193.92 249.2,-193.92 249.2,-199.92 243.2,-205.92 237.2,-205.92"/>
 <text xml:space="preserve" text-anchor="middle" x="177.2" y="-180.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Claim Filed</text>
@@ -124,13 +124,8 @@
 <text xml:space="preserve" text-anchor="middle" x="684.2" y="-664.44" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Assign Adjuster</text>
 </g>
 <!-- __hdr_2&#45;&gt;__hdr_3 -->
-<!-- triage_engine -->
-<g id="node24" class="node">
-<title>triage_engine</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M575.2,-609.12C575.2,-609.12 455.2,-609.12 455.2,-609.12 449.2,-609.12 443.2,-603.12 443.2,-597.12 443.2,-597.12 443.2,-576.48 443.2,-576.48 443.2,-570.48 449.2,-564.48 455.2,-564.48 455.2,-564.48 575.2,-564.48 575.2,-564.48 581.2,-564.48 587.2,-570.48 587.2,-576.48 587.2,-576.48 587.2,-597.12 587.2,-597.12 587.2,-603.12 581.2,-609.12 575.2,-609.12"/>
-<text xml:space="preserve" text-anchor="middle" x="515.2" y="-583.5" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Triage Engine</text>
-</g>
-<!-- __hdr_2&#45;&gt;triage_engine -->
+<!-- __ph_1_2 -->
+<!-- __hdr_2&#45;&gt;__ph_1_2 -->
 <!-- __hdr_4 -->
 <g id="node14" class="node">
 <title>__hdr_4</title>
@@ -138,8 +133,13 @@
 <text xml:space="preserve" text-anchor="middle" x="853.2" y="-664.44" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Adjuster Worklist</text>
 </g>
 <!-- __hdr_3&#45;&gt;__hdr_4 -->
-<!-- __ph_1_3 -->
-<!-- __hdr_3&#45;&gt;__ph_1_3 -->
+<!-- triage_engine -->
+<g data-slice="3" id="node25" class="node">
+<title>triage_engine</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M744.2,-609.12C744.2,-609.12 624.2,-609.12 624.2,-609.12 618.2,-609.12 612.2,-603.12 612.2,-597.12 612.2,-597.12 612.2,-576.48 612.2,-576.48 612.2,-570.48 618.2,-564.48 624.2,-564.48 624.2,-564.48 744.2,-564.48 744.2,-564.48 750.2,-564.48 756.2,-570.48 756.2,-576.48 756.2,-576.48 756.2,-597.12 756.2,-597.12 756.2,-603.12 750.2,-609.12 744.2,-609.12"/>
+<text xml:space="preserve" text-anchor="middle" x="684.2" y="-583.5" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Triage Engine</text>
+</g>
+<!-- __hdr_3&#45;&gt;triage_engine -->
 <!-- __hdr_5 -->
 <g id="node15" class="node">
 <title>__hdr_5</title>
@@ -165,13 +165,8 @@
 <text xml:space="preserve" text-anchor="middle" x="1360.2" y="-664.44" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Confirm Coverage</text>
 </g>
 <!-- __hdr_6&#45;&gt;__hdr_7 -->
-<!-- policy_sync -->
-<g id="node28" class="node">
-<title>policy_sync</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1251.2,-609.12C1251.2,-609.12 1131.2,-609.12 1131.2,-609.12 1125.2,-609.12 1119.2,-603.12 1119.2,-597.12 1119.2,-597.12 1119.2,-576.48 1119.2,-576.48 1119.2,-570.48 1125.2,-564.48 1131.2,-564.48 1131.2,-564.48 1251.2,-564.48 1251.2,-564.48 1257.2,-564.48 1263.2,-570.48 1263.2,-576.48 1263.2,-576.48 1263.2,-597.12 1263.2,-597.12 1263.2,-603.12 1257.2,-609.12 1251.2,-609.12"/>
-<text xml:space="preserve" text-anchor="middle" x="1191.2" y="-583.5" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Policy Sync</text>
-</g>
-<!-- __hdr_6&#45;&gt;policy_sync -->
+<!-- __ph_1_6 -->
+<!-- __hdr_6&#45;&gt;__ph_1_6 -->
 <!-- __hdr_8 -->
 <g id="node18" class="node">
 <title>__hdr_8</title>
@@ -179,8 +174,13 @@
 <text xml:space="preserve" text-anchor="middle" x="1529.2" y="-664.44" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Payout Queue</text>
 </g>
 <!-- __hdr_7&#45;&gt;__hdr_8 -->
-<!-- __ph_1_7 -->
-<!-- __hdr_7&#45;&gt;__ph_1_7 -->
+<!-- policy_sync -->
+<g data-slice="7" id="node29" class="node">
+<title>policy_sync</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1420.2,-609.12C1420.2,-609.12 1300.2,-609.12 1300.2,-609.12 1294.2,-609.12 1288.2,-603.12 1288.2,-597.12 1288.2,-597.12 1288.2,-576.48 1288.2,-576.48 1288.2,-570.48 1294.2,-564.48 1300.2,-564.48 1300.2,-564.48 1420.2,-564.48 1420.2,-564.48 1426.2,-564.48 1432.2,-570.48 1432.2,-576.48 1432.2,-576.48 1432.2,-597.12 1432.2,-597.12 1432.2,-603.12 1426.2,-609.12 1420.2,-609.12"/>
+<text xml:space="preserve" text-anchor="middle" x="1360.2" y="-583.5" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Policy Sync</text>
+</g>
+<!-- __hdr_7&#45;&gt;policy_sync -->
 <!-- __hdr_9 -->
 <g id="node19" class="node">
 <title>__hdr_9</title>
@@ -188,13 +188,8 @@
 <text xml:space="preserve" text-anchor="middle" x="1698.2" y="-664.44" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Send Payment</text>
 </g>
 <!-- __hdr_8&#45;&gt;__hdr_9 -->
-<!-- payout_engine -->
-<g id="node30" class="node">
-<title>payout_engine</title>
-<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1589.2,-609.12C1589.2,-609.12 1469.2,-609.12 1469.2,-609.12 1463.2,-609.12 1457.2,-603.12 1457.2,-597.12 1457.2,-597.12 1457.2,-576.48 1457.2,-576.48 1457.2,-570.48 1463.2,-564.48 1469.2,-564.48 1469.2,-564.48 1589.2,-564.48 1589.2,-564.48 1595.2,-564.48 1601.2,-570.48 1601.2,-576.48 1601.2,-576.48 1601.2,-597.12 1601.2,-597.12 1601.2,-603.12 1595.2,-609.12 1589.2,-609.12"/>
-<text xml:space="preserve" text-anchor="middle" x="1529.2" y="-583.5" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payout Engine</text>
-</g>
-<!-- __hdr_8&#45;&gt;payout_engine -->
+<!-- __ph_1_8 -->
+<!-- __hdr_8&#45;&gt;__ph_1_8 -->
 <!-- __hdr_10 -->
 <g id="node20" class="node">
 <title>__hdr_10</title>
@@ -202,8 +197,13 @@
 <text xml:space="preserve" text-anchor="middle" x="1867.2" y="-664.44" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="10.00" fill="#1f2933">Payment Confirmation</text>
 </g>
 <!-- __hdr_9&#45;&gt;__hdr_10 -->
-<!-- __ph_1_9 -->
-<!-- __hdr_9&#45;&gt;__ph_1_9 -->
+<!-- payout_engine -->
+<g data-slice="9" id="node31" class="node">
+<title>payout_engine</title>
+<path fill="#dbdbdb" stroke="#5f6368" stroke-width="1.3" d="M1758.2,-609.12C1758.2,-609.12 1638.2,-609.12 1638.2,-609.12 1632.2,-609.12 1626.2,-603.12 1626.2,-597.12 1626.2,-597.12 1626.2,-576.48 1626.2,-576.48 1626.2,-570.48 1632.2,-564.48 1638.2,-564.48 1638.2,-564.48 1758.2,-564.48 1758.2,-564.48 1764.2,-564.48 1770.2,-570.48 1770.2,-576.48 1770.2,-576.48 1770.2,-597.12 1770.2,-597.12 1770.2,-603.12 1764.2,-609.12 1758.2,-609.12"/>
+<text xml:space="preserve" text-anchor="middle" x="1698.2" y="-583.5" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Payout Engine</text>
+</g>
+<!-- __hdr_9&#45;&gt;payout_engine -->
 <!-- __hdr_11 -->
 <g id="node21" class="node">
 <title>__hdr_11</title>
@@ -217,41 +217,41 @@
 <!-- __hdr_11&#45;&gt;__ph_1_11 -->
 <!-- __ph_1_0&#45;&gt;__ph_1_1 -->
 <!-- __ph_1_0&#45;&gt;claim_form -->
-<!-- __ph_1_1&#45;&gt;triage_engine -->
+<!-- __ph_1_1&#45;&gt;__ph_1_2 -->
 <!-- status_page -->
-<g id="node35" class="node">
+<g data-slice="1" id="node35" class="node">
 <title>status_page</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="418.2,-528.48 274.2,-528.48 274.2,-483.84 418.2,-483.84 418.2,-528.48"/>
 <text xml:space="preserve" text-anchor="middle" x="346.2" y="-502.86" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Status Page</text>
 </g>
 <!-- __ph_1_1&#45;&gt;status_page -->
-<!-- triage_engine&#45;&gt;__ph_1_3 -->
+<!-- __ph_1_2&#45;&gt;triage_engine -->
 <!-- __ph_2_2 -->
-<!-- triage_engine&#45;&gt;__ph_2_2 -->
-<!-- __ph_1_3&#45;&gt;__ph_1_4 -->
+<!-- __ph_1_2&#45;&gt;__ph_2_2 -->
+<!-- triage_engine&#45;&gt;__ph_1_4 -->
 <!-- __ph_2_3 -->
-<!-- __ph_1_3&#45;&gt;__ph_2_3 -->
+<!-- triage_engine&#45;&gt;__ph_2_3 -->
 <!-- __ph_1_4&#45;&gt;__ph_1_5 -->
 <!-- __ph_2_4 -->
 <!-- __ph_1_4&#45;&gt;__ph_2_4 -->
-<!-- __ph_1_5&#45;&gt;policy_sync -->
+<!-- __ph_1_5&#45;&gt;__ph_1_6 -->
 <!-- __ph_2_5 -->
 <!-- __ph_1_5&#45;&gt;__ph_2_5 -->
-<!-- policy_sync&#45;&gt;__ph_1_7 -->
+<!-- __ph_1_6&#45;&gt;policy_sync -->
 <!-- __ph_2_6 -->
-<!-- policy_sync&#45;&gt;__ph_2_6 -->
-<!-- __ph_1_7&#45;&gt;payout_engine -->
+<!-- __ph_1_6&#45;&gt;__ph_2_6 -->
+<!-- policy_sync&#45;&gt;__ph_1_8 -->
 <!-- __ph_2_7 -->
-<!-- __ph_1_7&#45;&gt;__ph_2_7 -->
-<!-- payout_engine&#45;&gt;__ph_1_9 -->
+<!-- policy_sync&#45;&gt;__ph_2_7 -->
+<!-- __ph_1_8&#45;&gt;payout_engine -->
 <!-- __ph_2_8 -->
-<!-- payout_engine&#45;&gt;__ph_2_8 -->
-<!-- __ph_1_9&#45;&gt;__ph_1_10 -->
+<!-- __ph_1_8&#45;&gt;__ph_2_8 -->
+<!-- payout_engine&#45;&gt;__ph_1_10 -->
 <!-- __ph_2_9 -->
-<!-- __ph_1_9&#45;&gt;__ph_2_9 -->
+<!-- payout_engine&#45;&gt;__ph_2_9 -->
 <!-- __ph_1_10&#45;&gt;__ph_1_11 -->
 <!-- receipt_page -->
-<g id="node44" class="node">
+<g data-slice="10" id="node44" class="node">
 <title>receipt_page</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="1939.2,-528.48 1795.2,-528.48 1795.2,-483.84 1939.2,-483.84 1939.2,-528.48"/>
 <text xml:space="preserve" text-anchor="middle" x="1867.2" y="-502.86" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Receipt Page</text>
@@ -272,7 +272,7 @@
 <!-- __ph_2_3&#45;&gt;__ph_3_3 -->
 <!-- __ph_2_4&#45;&gt;__ph_2_5 -->
 <!-- adjuster_console -->
-<g id="node50" class="node">
+<g data-slice="4" id="node50" class="node">
 <title>adjuster_console</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="925.2,-447.84 781.2,-447.84 781.2,-403.2 925.2,-403.2 925.2,-447.84"/>
 <text xml:space="preserve" text-anchor="middle" x="853.2" y="-422.22" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Adjuster Console</text>
@@ -280,7 +280,7 @@
 <!-- __ph_2_4&#45;&gt;adjuster_console -->
 <!-- __ph_2_5&#45;&gt;__ph_2_6 -->
 <!-- review_screen -->
-<g id="node51" class="node">
+<g data-slice="5" id="node51" class="node">
 <title>review_screen</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="1094.2,-447.84 950.2,-447.84 950.2,-403.2 1094.2,-403.2 1094.2,-447.84"/>
 <text xml:space="preserve" text-anchor="middle" x="1022.2" y="-422.22" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Review Screen</text>
@@ -336,7 +336,7 @@
 <!-- __ph_4_10 -->
 <!-- __ph_3_10&#45;&gt;__ph_4_10 -->
 <!-- manager_console -->
-<g id="node69" class="node">
+<g data-slice="11" id="node69" class="node">
 <title>manager_console</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="2108.2,-367.2 1964.2,-367.2 1964.2,-322.56 2108.2,-322.56 2108.2,-367.2"/>
 <text xml:space="preserve" text-anchor="middle" x="2036.2" y="-341.58" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Manager Console</text>
@@ -346,7 +346,7 @@
 <!-- __ph_4_0&#45;&gt;file_claim -->
 <!-- __ph_4_1&#45;&gt;__ph_4_2 -->
 <!-- claim_status -->
-<g id="node71" class="node">
+<g data-slice="1" id="node71" class="node">
 <title>claim_status</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M406.2,-286.56C406.2,-286.56 286.2,-286.56 286.2,-286.56 280.2,-286.56 274.2,-280.56 274.2,-274.56 274.2,-274.56 274.2,-253.92 274.2,-253.92 274.2,-247.92 280.2,-241.92 286.2,-241.92 286.2,-241.92 406.2,-241.92 406.2,-241.92 412.2,-241.92 418.2,-247.92 418.2,-253.92 418.2,-253.92 418.2,-274.56 418.2,-274.56 418.2,-280.56 412.2,-286.56 406.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="346.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Claim Status</text>
@@ -354,7 +354,7 @@
 <!-- __ph_4_1&#45;&gt;claim_status -->
 <!-- __ph_4_2&#45;&gt;__ph_4_3 -->
 <!-- claims_to_triage -->
-<g id="node72" class="node">
+<g data-slice="2" id="node72" class="node">
 <title>claims_to_triage</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M575.2,-286.56C575.2,-286.56 455.2,-286.56 455.2,-286.56 449.2,-286.56 443.2,-280.56 443.2,-274.56 443.2,-274.56 443.2,-253.92 443.2,-253.92 443.2,-247.92 449.2,-241.92 455.2,-241.92 455.2,-241.92 575.2,-241.92 575.2,-241.92 581.2,-241.92 587.2,-247.92 587.2,-253.92 587.2,-253.92 587.2,-274.56 587.2,-274.56 587.2,-280.56 581.2,-286.56 575.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="515.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Claims To Triage</text>
@@ -362,7 +362,7 @@
 <!-- __ph_4_2&#45;&gt;claims_to_triage -->
 <!-- __ph_4_3&#45;&gt;__ph_4_4 -->
 <!-- assign_adjuster -->
-<g id="node73" class="node">
+<g data-slice="3" id="node73" class="node">
 <title>assign_adjuster</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M744.2,-286.56C744.2,-286.56 624.2,-286.56 624.2,-286.56 618.2,-286.56 612.2,-280.56 612.2,-274.56 612.2,-274.56 612.2,-253.92 612.2,-253.92 612.2,-247.92 618.2,-241.92 624.2,-241.92 624.2,-241.92 744.2,-241.92 744.2,-241.92 750.2,-241.92 756.2,-247.92 756.2,-253.92 756.2,-253.92 756.2,-274.56 756.2,-274.56 756.2,-280.56 750.2,-286.56 744.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="684.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Assign Adjuster</text>
@@ -370,7 +370,7 @@
 <!-- __ph_4_3&#45;&gt;assign_adjuster -->
 <!-- __ph_4_4&#45;&gt;__ph_4_5 -->
 <!-- my_claims -->
-<g id="node74" class="node">
+<g data-slice="4" id="node74" class="node">
 <title>my_claims</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M913.2,-286.56C913.2,-286.56 793.2,-286.56 793.2,-286.56 787.2,-286.56 781.2,-280.56 781.2,-274.56 781.2,-274.56 781.2,-253.92 781.2,-253.92 781.2,-247.92 787.2,-241.92 793.2,-241.92 793.2,-241.92 913.2,-241.92 913.2,-241.92 919.2,-241.92 925.2,-247.92 925.2,-253.92 925.2,-253.92 925.2,-274.56 925.2,-274.56 925.2,-280.56 919.2,-286.56 913.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="853.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">My Claims</text>
@@ -378,7 +378,7 @@
 <!-- __ph_4_4&#45;&gt;my_claims -->
 <!-- __ph_4_5&#45;&gt;__ph_4_6 -->
 <!-- approve_claim -->
-<g id="node75" class="node">
+<g data-slice="5" id="node75" class="node">
 <title>approve_claim</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1082.2,-286.56C1082.2,-286.56 962.2,-286.56 962.2,-286.56 956.2,-286.56 950.2,-280.56 950.2,-274.56 950.2,-274.56 950.2,-253.92 950.2,-253.92 950.2,-247.92 956.2,-241.92 962.2,-241.92 962.2,-241.92 1082.2,-241.92 1082.2,-241.92 1088.2,-241.92 1094.2,-247.92 1094.2,-253.92 1094.2,-253.92 1094.2,-274.56 1094.2,-274.56 1094.2,-280.56 1088.2,-286.56 1082.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1022.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Approve Claim</text>
@@ -386,7 +386,7 @@
 <!-- __ph_4_5&#45;&gt;approve_claim -->
 <!-- __ph_4_6&#45;&gt;__ph_4_7 -->
 <!-- coverage_feed -->
-<g id="node76" class="node">
+<g data-slice="6" id="node76" class="node">
 <title>coverage_feed</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1251.2,-286.56C1251.2,-286.56 1131.2,-286.56 1131.2,-286.56 1125.2,-286.56 1119.2,-280.56 1119.2,-274.56 1119.2,-274.56 1119.2,-253.92 1119.2,-253.92 1119.2,-247.92 1125.2,-241.92 1131.2,-241.92 1131.2,-241.92 1251.2,-241.92 1251.2,-241.92 1257.2,-241.92 1263.2,-247.92 1263.2,-253.92 1263.2,-253.92 1263.2,-274.56 1263.2,-274.56 1263.2,-280.56 1257.2,-286.56 1251.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1191.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Coverage Feed</text>
@@ -394,7 +394,7 @@
 <!-- __ph_4_6&#45;&gt;coverage_feed -->
 <!-- __ph_4_7&#45;&gt;__ph_4_8 -->
 <!-- confirm_coverage -->
-<g id="node77" class="node">
+<g data-slice="7" id="node77" class="node">
 <title>confirm_coverage</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1420.2,-286.56C1420.2,-286.56 1300.2,-286.56 1300.2,-286.56 1294.2,-286.56 1288.2,-280.56 1288.2,-274.56 1288.2,-274.56 1288.2,-253.92 1288.2,-253.92 1288.2,-247.92 1294.2,-241.92 1300.2,-241.92 1300.2,-241.92 1420.2,-241.92 1420.2,-241.92 1426.2,-241.92 1432.2,-247.92 1432.2,-253.92 1432.2,-253.92 1432.2,-274.56 1432.2,-274.56 1432.2,-280.56 1426.2,-286.56 1420.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1360.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Confirm Coverage</text>
@@ -402,7 +402,7 @@
 <!-- __ph_4_7&#45;&gt;confirm_coverage -->
 <!-- __ph_4_8&#45;&gt;__ph_4_9 -->
 <!-- confirmed_claims -->
-<g id="node78" class="node">
+<g data-slice="8" id="node78" class="node">
 <title>confirmed_claims</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1589.2,-286.56C1589.2,-286.56 1469.2,-286.56 1469.2,-286.56 1463.2,-286.56 1457.2,-280.56 1457.2,-274.56 1457.2,-274.56 1457.2,-253.92 1457.2,-253.92 1457.2,-247.92 1463.2,-241.92 1469.2,-241.92 1469.2,-241.92 1589.2,-241.92 1589.2,-241.92 1595.2,-241.92 1601.2,-247.92 1601.2,-253.92 1601.2,-253.92 1601.2,-274.56 1601.2,-274.56 1601.2,-280.56 1595.2,-286.56 1589.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1529.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Confirmed Claims</text>
@@ -410,7 +410,7 @@
 <!-- __ph_4_8&#45;&gt;confirmed_claims -->
 <!-- __ph_4_9&#45;&gt;__ph_4_10 -->
 <!-- send_payment -->
-<g id="node79" class="node">
+<g data-slice="9" id="node79" class="node">
 <title>send_payment</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M1758.2,-286.56C1758.2,-286.56 1638.2,-286.56 1638.2,-286.56 1632.2,-286.56 1626.2,-280.56 1626.2,-274.56 1626.2,-274.56 1626.2,-253.92 1626.2,-253.92 1626.2,-247.92 1632.2,-241.92 1638.2,-241.92 1638.2,-241.92 1758.2,-241.92 1758.2,-241.92 1764.2,-241.92 1770.2,-247.92 1770.2,-253.92 1770.2,-253.92 1770.2,-274.56 1770.2,-274.56 1770.2,-280.56 1764.2,-286.56 1758.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1698.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Send Payment</text>
@@ -418,14 +418,14 @@
 <!-- __ph_4_9&#45;&gt;send_payment -->
 <!-- __ph_4_10&#45;&gt;manager_console -->
 <!-- payment_receipt -->
-<g id="node80" class="node">
+<g data-slice="10" id="node80" class="node">
 <title>payment_receipt</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M1927.2,-286.56C1927.2,-286.56 1807.2,-286.56 1807.2,-286.56 1801.2,-286.56 1795.2,-280.56 1795.2,-274.56 1795.2,-274.56 1795.2,-253.92 1795.2,-253.92 1795.2,-247.92 1801.2,-241.92 1807.2,-241.92 1807.2,-241.92 1927.2,-241.92 1927.2,-241.92 1933.2,-241.92 1939.2,-247.92 1939.2,-253.92 1939.2,-253.92 1939.2,-274.56 1939.2,-274.56 1939.2,-280.56 1933.2,-286.56 1927.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="1867.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Payment Receipt</text>
 </g>
 <!-- __ph_4_10&#45;&gt;payment_receipt -->
 <!-- claims_dashboard -->
-<g id="node81" class="node">
+<g data-slice="11" id="node81" class="node">
 <title>claims_dashboard</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M2096.2,-286.56C2096.2,-286.56 1976.2,-286.56 1976.2,-286.56 1970.2,-286.56 1964.2,-280.56 1964.2,-274.56 1964.2,-274.56 1964.2,-253.92 1964.2,-253.92 1964.2,-247.92 1970.2,-241.92 1976.2,-241.92 1976.2,-241.92 2096.2,-241.92 2096.2,-241.92 2102.2,-241.92 2108.2,-247.92 2108.2,-253.92 2108.2,-253.92 2108.2,-274.56 2108.2,-274.56 2108.2,-280.56 2102.2,-286.56 2096.2,-286.56"/>
 <text xml:space="preserve" text-anchor="middle" x="2036.2" y="-260.94" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#173f25">Claims Dashboard</text>
@@ -441,7 +441,7 @@
 <!-- claims_to_triage&#45;&gt;__ph_6_2 -->
 <!-- assign_adjuster&#45;&gt;my_claims -->
 <!-- adjuster_assigned -->
-<g id="node85" class="node">
+<g data-slice="3" id="node85" class="node">
 <title>adjuster_assigned</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M744.2,-205.92C744.2,-205.92 624.2,-205.92 624.2,-205.92 618.2,-205.92 612.2,-199.92 612.2,-193.92 612.2,-193.92 612.2,-173.28 612.2,-173.28 612.2,-167.28 618.2,-161.28 624.2,-161.28 624.2,-161.28 744.2,-161.28 744.2,-161.28 750.2,-161.28 756.2,-167.28 756.2,-173.28 756.2,-173.28 756.2,-193.92 756.2,-193.92 756.2,-199.92 750.2,-205.92 744.2,-205.92"/>
 <text xml:space="preserve" text-anchor="middle" x="684.2" y="-180.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Adjuster Assigned</text>
@@ -452,7 +452,7 @@
 <!-- my_claims&#45;&gt;__ph_6_4 -->
 <!-- approve_claim&#45;&gt;coverage_feed -->
 <!-- claim_approved -->
-<g id="node87" class="node">
+<g data-slice="5" id="node87" class="node">
 <title>claim_approved</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1082.2,-205.92C1082.2,-205.92 962.2,-205.92 962.2,-205.92 956.2,-205.92 950.2,-199.92 950.2,-193.92 950.2,-193.92 950.2,-173.28 950.2,-173.28 950.2,-167.28 956.2,-161.28 962.2,-161.28 962.2,-161.28 1082.2,-161.28 1082.2,-161.28 1088.2,-161.28 1094.2,-167.28 1094.2,-173.28 1094.2,-173.28 1094.2,-193.92 1094.2,-193.92 1094.2,-199.92 1088.2,-205.92 1082.2,-205.92"/>
 <text xml:space="preserve" text-anchor="middle" x="1022.2" y="-180.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Claim Approved</text>
@@ -497,7 +497,7 @@
 <!-- __ph_6_6&#45;&gt;__ph_7_6 -->
 <!-- __ph_6_7&#45;&gt;__ph_6_8 -->
 <!-- coverage_confirmed -->
-<g id="node101" class="node">
+<g data-slice="7" id="node101" class="node">
 <title>coverage_confirmed</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1420.2,-125.28C1420.2,-125.28 1300.2,-125.28 1300.2,-125.28 1294.2,-125.28 1288.2,-119.28 1288.2,-113.28 1288.2,-113.28 1288.2,-92.64 1288.2,-92.64 1288.2,-86.64 1294.2,-80.64 1300.2,-80.64 1300.2,-80.64 1420.2,-80.64 1420.2,-80.64 1426.2,-80.64 1432.2,-86.64 1432.2,-92.64 1432.2,-92.64 1432.2,-113.28 1432.2,-113.28 1432.2,-119.28 1426.2,-125.28 1420.2,-125.28"/>
 <text xml:space="preserve" text-anchor="middle" x="1360.2" y="-99.66" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Coverage Confirmed</text>
@@ -542,7 +542,7 @@
 <!-- __ph_7_8&#45;&gt;__ph_8_8 -->
 <!-- __ph_7_9&#45;&gt;__ph_7_10 -->
 <!-- payment_sent -->
-<g id="node115" class="node">
+<g data-slice="9" id="node115" class="node">
 <title>payment_sent</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M1758.2,-44.64C1758.2,-44.64 1638.2,-44.64 1638.2,-44.64 1632.2,-44.64 1626.2,-38.64 1626.2,-32.64 1626.2,-32.64 1626.2,-12 1626.2,-12 1626.2,-6 1632.2,0 1638.2,0 1638.2,0 1758.2,0 1758.2,0 1764.2,0 1770.2,-6 1770.2,-12 1770.2,-12 1770.2,-32.64 1770.2,-32.64 1770.2,-38.64 1764.2,-44.64 1758.2,-44.64"/>
 <text xml:space="preserve" text-anchor="middle" x="1698.2" y="-19.02" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Payment Sent</text>
@@ -564,5 +564,5 @@
 <!-- __ph_8_8&#45;&gt;payment_sent -->
 <!-- payment_sent&#45;&gt;__ph_8_10 -->
 <!-- __ph_8_10&#45;&gt;__ph_8_11 -->
-<g class="em-notes"></g><g class="em-issues"></g></g>
+<g class="em-notes"></g><g class="em-issues"></g><g class="em-divergences"></g></g>
 </svg>

@@ -46,7 +46,7 @@ into two in the aggregation recipe below.
 
 | Category |
 |---|
-| reaction shares slice with command |
+| reaction triggers no command |
 | ui shares slice with reaction |
 | command nothing triggers |
 | command produces no event |

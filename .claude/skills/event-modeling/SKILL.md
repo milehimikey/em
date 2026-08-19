@@ -53,23 +53,24 @@ vendored alongside this skill.
   keep a sub-flow that detours into another context together, not parked at the end of the model).
   Declare every instance after the first with
   **`view X again from "..."`** — `again` instances are exempt from the duplicate-name warning even
-  when referenced, and each reference resolves to the right instance. Slice order matters: a
-  reaction must be directly followed by its command slice, and a read slice must not be immediately
-  followed by a command slice (see `em-dsl.md`).
+  when referenced, and each reference resolves to the right instance. A reaction's command is
+  wired by same-slice presence, exactly like `ui → command` — no positional/adjacency rule to get
+  right (see `em-dsl.md`).
   See `reference/methodology.md` (State View) and `reference/em-dsl.md`.
 - **Never connect two instances of one read model.** The repeat is a timeline device, not a flow:
   continuity is implied by the shared name, and the events arriving at each instance are what show
   it changing. An arrow between instances says the read model feeds itself, and is an error.
 - **Every slice is a COMPLETE pattern, never a half-slice.** A State Change is
   `ui → command → event`; a State View is `event → read model → ui` (or `→ reaction`). So: a
-  command needs something that **triggers** it (the `ui` it's issued from, or the reaction in the
-  slice before it), its event needs a **reader**, and that read model needs a **consumer** of its
-  own. A command nothing points at is a write nobody can start; an event nothing projects is a
-  write nobody can see; a read model nothing displays is information dropped on the floor. Write
-  the whole chain together rather than sweeping up dangling ends later. Reactions don't count as
-  readers of *events* — they read views. **Every instance** of a repeated read model needs its own
-  consumer: if you repeat a view next to an event just to keep the arrow short, bring its screen
-  along, or don't add the instance.
+  command needs something that **triggers** it (the `ui` it's issued from, or the reaction that
+  triggers it, also in this slice), its event needs a **reader**, and that read model needs a
+  **consumer** of its own. A command nothing points at is a write nobody can start; a reaction
+  that triggers no command is a decision the system never acts on; an event nothing projects is
+  a write nobody can see; a read model nothing displays is information dropped on the floor.
+  Write the whole chain together rather than sweeping up dangling ends later. Reactions don't
+  count as readers of *events* — they read views. **Every instance** of a repeated read model
+  needs its own consumer: if you repeat a view next to an event just to keep the arrow short,
+  bring its screen along, or don't add the instance.
 - **Only six connections are legal:** `ui → command`, `command → event`, `event → read model`,
   `read model → ui`, `read model → reaction`, `reaction → command`. Reaching for anything else —
   above all `command → read model` (the CQRS violation) or `read model → command` — means the model
@@ -144,8 +145,9 @@ phase applies to field tables, below.
 3. **Inputs (step 3).** For each event, find the **command** that causes it (imperative name).
    Form `command → event` slices (State Change pattern). Every command needs a **trigger** in the
    same breath: the screen the user issues it from (a `ui` in the slice), or — for the Automation
-   and Translation patterns — the reaction in the slice before it. A command nothing points at is
-   a write nobody can start. *"Who does this, and where are they when they do it?"*
+   and Translation patterns — the reaction that triggers it, also in this slice. A command
+   nothing points at is a write nobody can start. *"Who does this, and where are they when they
+   do it?"*
 4. **Outputs (step 4).** Identify the **read models / views** consumers need and wire them with
    `from "Event"` (State View pattern), each with the screen (or reaction) that consumes it — a
    read model nothing displays is information dropped on the floor. In a **headless/API** model
@@ -188,23 +190,23 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
 
 1. **Swimlanes & patterns (step 5).** Group events into **contexts** (bounded contexts /
    aggregates) — ask which events share a consistency boundary and who owns them. Classify each
-   slice as one of the 4 patterns. **Split every automation _and every translation_ across two
-   slices** (the reaction — processor/translation — plus its read model in one slice; the
-   triggered command + its event in the *next* slice). A translation or automation is a reaction:
-   it **triggers a command and never records an event directly**. Add `translation` slices for
-   external inputs (externally triggered: external → translation → command → event) and for the
-   system reacting to its own state (internally triggered: read model → translation → command →
-   event).
+   slice as one of the 4 patterns. **Share the slice between every automation or translation and
+   the command it triggers** (the reaction — processor/translation — together with the command
+   and event it produces; the read model it watches, if any, stays in the slice before). A
+   translation or automation is a reaction: it **triggers a command and never records an event
+   directly**. Add `translation` slices for external inputs (externally triggered: external →
+   translation → command → event, no slice before) and for the system reacting to its own state
+   (internally triggered: read model in the slice before → translation → command → event).
 2. **Elaborate scenarios — first pass (step 6).** For each slice, capture the happy-path
    Given/When/Then and the obvious invariants as short notes. (The full spec is the `slice` phase.)
 3. **Evaluate completeness (step 7).** Walk the model: every slice is a **complete** pattern, not a
    half-slice — **every command has something that triggers it**, every command emits an event,
    **every event is read by a read model**, **every read model has a consumer**, every view has a
    source, every UI is reachable, every connection is
-   one of the six legal pairs, and automations **and translations** split correctly (each reaction
-   triggers a command — none wired straight to an event). Run `em validate` and resolve all errors
-   and warnings — but check the reaction→command→event split by hand, since `em validate` does
-   **not** flag a translation/automation that emits an event directly (see `reference/em-dsl.md`).
+   one of the six legal pairs, and every automation **and** translation triggers a command (none
+   wired straight to an event, none with no command at all). Run `em validate` and resolve all
+   errors and warnings — it catches a reaction wired straight to an event too now (see
+   `reference/em-dsl.md`), so a clean run covers this case.
    For an unread event, don't just bolt on a view to silence the warning: ask the user who looks at
    this fact and what they do with it. The honest answers are "here's the read model we missed" or
    "nobody — so why are we recording it", and both improve the model.
@@ -362,8 +364,8 @@ rule (see `reference/em-dsl.md`) and proposing the fix. Apply fixes on agreement
 
 | Diagnostic | Fix |
 |---|---|
-| automation/translation shares a slice with a command | Split the command into the next slice |
-| **command has nothing that triggers it** | Add the `ui` it's issued from — or, if the system issues it, the reaction in the slice before it. Ask *"who does this, and where are they when they do it?"* |
+| reaction triggers no command | Add the command it issues, in this same slice, or an explicit `arrow` to one elsewhere |
+| **command has nothing that triggers it** | Add the `ui` it's issued from — or, if the system issues it, the reaction that triggers it, also in this slice. Ask *"who does this, and where are they when they do it?"* |
 | **read model has no consumer** | Add the screen that displays it, or the reaction that watches it. If it's a repeat added only to shorten an arrow and nothing looks at it there, drop the instance |
 | read model has no source | Add the missing `from "Event"` |
 | command produces no event | Give the command its event, or drop the command |
@@ -377,10 +379,11 @@ relevant element over a `# TBD` comment — it shows up as a red marker on the r
 `em validate` tracks it as an open-issue warning, so it isn't lost once rendered. `em validate
 --list-issues` gives a quick sweep of everything still open.
 
-Then do one check `em validate` can't: scan every `translation`/`processor`/`automation` slice and
-confirm none contains an `event` — each reaction must trigger a `command` in the next slice
-(`reaction → command → event`). If you find a reaction wired straight to an event, split it into
-two slices and route it through a command.
+`em validate` now catches a reaction wired straight to an event too — any reaction with no
+`command` in its own slice, and no explicit arrow to one, warns "triggers no command". A
+`translation`/`processor`/`automation` should always trigger a `command` in its own slice
+(`reaction → command → event`); if one instead records an event directly, route it through a
+command instead.
 
 ---
 

@@ -57,10 +57,10 @@ em render model.em --slice "Place Order"   # -> slices/place-order.svg
 Modeling patterns (State Change, State View, Automation, Translation) and redraws just its
 own canonical shape with a fresh layout, matched by an exact, case-sensitive `--slice` name
 against the model's slices (an unknown name lists every valid one). Only the minimum real
-context the pattern needs is pulled in: a State View's source event(s) (resolved via the
-view's `from`, even across slices), or the previous slice's automation/translation reaction
-when a State Change slice has no `ui` of its own. Never more than one hop away, so this can't
-balloon into showing most of the model. Can't be combined with `--emit-dot`. This is exactly
+context the pattern needs is pulled in: a State View's source event(s), or an Automation/
+Translation's watched read model — both resolved via `from`, even across slices. Never more
+than one hop away, so this can't balloon into showing most of the model. Can't be combined
+with `--emit-dot`. This is exactly
 the path convention the `event-modeling` skill's `slice` phase writes to, and that
 `em catalog` looks for (see below).
 
@@ -663,10 +663,9 @@ consistently everywhere it's shown.
 **Pattern.** `em catalog` derives a slice's pattern (State Change / State View / Automation /
 Translation) from the slice's element kinds (see [patterns.md](patterns.md)) rather than reading
 the doc's frontmatter `pattern:` field — that field is authored/informational only today, not
-yet parsed by any `em` command. One known simplification: Automation and Translation
-each span two slices in the model, and the second one (a bare `command`+`event` pair) has
-the same kind-signature as a State Change slice — it's classified as State Change, since
-classification looks at one slice at a time. This is intentional, not a defect.
+yet parsed by any `em` command. An Automation or Translation slice carries a reaction alongside
+its `command`/`event`, so checking translation/automation kinds first is what makes it classify
+correctly instead of reading as State Change.
 
 The catalog's Status column surfaces one field of a larger schema — see
 [slice-doc-schema.md](slice-doc-schema.md) for `version`, lineage, and the
