@@ -74,8 +74,9 @@ reaction's `from` resolves only to **read models**. Naming an event on a reactio
 validation error even when the event exists — reactions don't watch the event stream
 directly. To feed an event into a reaction, project it into a view first
 (`view Payments To Process from "Payment Requested"`) and point the reaction at that view:
-the view is the automation's to-do list, and it lives in the reaction's slice (see the
-Automation pattern in [patterns.md](patterns.md)).
+the view is the automation's to-do list, and it lives in the slice *before* the reaction's own
+— the reaction shares its slice with the command it triggers instead (see the Automation
+pattern in [patterns.md](patterns.md)).
 
 ### `view … again`
 
@@ -96,8 +97,10 @@ the events reaching each instance are what show the view changing over time. See
 
 A `ui` only ever wires to a `command` (the State Change pattern) — no pattern has a `ui`
 triggering a `processor`/`automation`/`saga`/`translation`; reactions are triggered by reading a
-read model, or by an external input, never by a person on a screen. Placing a `ui` in a reaction's
-slice instead of a command's renders it with no outgoing edge at all — a floating box — and
+read model, or by an external input, never by a person on a screen. A `ui` sharing a reaction's
+slice renders with no outgoing edge at all — a floating box — whether or not that slice also
+has the reaction's own command; the `ui`/command pairing that would normally wire it is
+suppressed there, since a `ui` and a reaction never legitimately share one trigger. And
 [`em validate` warns](validation.md#warnings) on it.
 
 ### `arrow`

@@ -32,9 +32,12 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
     const events = slice.elements.filter((e) => e.kind === "event");
     const auto = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
 
-    // Input pattern: UI -> command -> event(s)
+    // Input pattern: UI -> command -> event(s). No pattern has a `ui` and a reaction both
+    // triggering the same command — that's not a real dual-trigger, it's a `ui` misplaced in
+    // a reaction's slice — so skip the ui->command wire when an automation-kind element also
+    // shares this slice, matching validate.ts's "renders disconnected here" diagnosis exactly.
     if (command) {
-      for (const ui of uis) add(ui.id, command.id, "ui");
+      if (!auto) for (const ui of uis) add(ui.id, command.id, "ui");
       for (const ev of events) add(command.id, ev.id, "command");
     }
 

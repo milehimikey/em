@@ -50,6 +50,30 @@ slice "Do" {
     expect(edge(es, todo, worker)).toBe(true); // reads read model from the slice before
     expect(edge(es, worker, cmd)).toBe(true); // triggers command in its own slice
   });
+
+  it("suppresses ui -> command when a reaction shares the slice — no legitimate dual trigger", () => {
+    // A `ui` misplaced in a reaction's slice must render with no outgoing edge (validate.ts's
+    // "renders disconnected here" warning depends on this being literally true), even when that
+    // slice also has the reaction's own command — the ui/command pairing that would normally
+    // wire an ordinary State Change slice is suppressed here instead of drawing a false second
+    // trigger on the same command.
+    const model = modelFrom(`
+context Shipping
+slice "Weird" {
+  ui Something @Ops
+  translation Carrier Adapter
+  command Confirm Delivery
+  event Delivery Confirmed @Shipping
+}
+`);
+    const es = semanticEdges(model);
+    const ui = model.byName.get("something")![0].id;
+    const auto = model.byName.get("carrier adapter")![0].id;
+    const cmd = model.byName.get("confirm delivery")![0].id;
+    expect(edge(es, ui, cmd)).toBe(false); // no false dual trigger
+    expect(edge(es, auto, cmd)).toBe(true); // the reaction's own trigger still wires
+    expect(es.some((e) => e.from === ui)).toBe(false); // ui has no outgoing edge at all
+  });
 });
 
 describe("buildEdgeOverlay", () => {
