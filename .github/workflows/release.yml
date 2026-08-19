@@ -1,0 +1,41 @@
+name: Release
+
+# Publishes @milehimikey/em to npm when a v* tag is pushed. The tag is created by
+# `gh release create` in the /release flow (docs/release.md) — the GitHub release
+# carries the notes; this workflow only verifies and publishes.
+#
+# Auth is npm trusted publishing (OIDC): no NPM_TOKEN secret. The one-time
+# trusted-publisher setup on npmjs.com is documented in docs/release.md.
+# prepublishOnly (build + typecheck + test) runs as part of `npm publish`,
+# so the full gate suite guards the publish itself.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # OIDC token for npm trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      # trusted publishing requires npm >= 11.5.1
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION" >&2
+            exit 1
+          fi
+      - run: npm publish
