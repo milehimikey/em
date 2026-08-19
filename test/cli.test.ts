@@ -255,6 +255,21 @@ describe("em validate --list-public (CLI)", () => {
   });
 });
 
+describe("em validate rejects excess positional file arguments (CLI, MIL-123)", () => {
+  it("still validates a single file", () => {
+    const r = em(["validate", "clean.em"], dir);
+    expect(r.status).toBe(0);
+  });
+
+  it("fails loudly instead of silently validating only the first file", () => {
+    const r = em(["validate", "clean.em", "issue.em", "error.em"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/too many arguments/);
+    // Confirms it never got as far as actually validating anything.
+    expect(r.stdout).not.toContain("ok — no issues");
+  });
+});
+
 describe("em validate lineage checks (CLI, MIL-84)", () => {
   let lineageDir: string;
 

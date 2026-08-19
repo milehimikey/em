@@ -407,6 +407,10 @@ program
   .command("validate")
   .description("check a model against event-modeling rules")
   .argument("<file>", "input .em file")
+  // MIL-123: Commander accepts excess positional args by default, silently dropping
+  // everything past <file> — `em validate a.em b.em c.em` looked like it validated all
+  // three but only ever checked a.em. Fail loudly instead of under-checking silently.
+  .allowExcessArguments(false)
   .option("--list-issues", "print only open `issue` diagnostics (slice, element, line, text)")
   .option(
     "--list-divergences",

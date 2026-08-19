@@ -121,7 +121,8 @@ session on top of it.
 Runs every rule in [validation.md](validation.md) and prints the diagnostics. Exits
 non-zero if there are errors; exits zero on warnings or a clean model, printing
 `ok — no issues` when there is nothing to report. Useful in CI to keep a committed model
-honest.
+honest. Takes exactly one file — passing more (`em validate a.em b.em`) errors out rather
+than silently checking only the first one (MIL-123).
 
 Every always-on rule except two is a pure function of the `.em` source (the opt-in
 `--slice-ready` gate below reads the slice doc as well, by design). Both always-on exceptions
