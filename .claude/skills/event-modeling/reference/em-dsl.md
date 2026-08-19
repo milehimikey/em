@@ -153,6 +153,11 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   declared `type` (see Named types below), in which case it resolves to a structured
   reference. Keep these light; full field specs with rules live in the slice doc.
 - **Comments:** `# ...` anywhere outside quotes (full-line or trailing).
+- **Quoted strings:** everything between a `"` and its matching `"` is literal — `{`, `}`, `#`
+  included, never re-interpreted as a field block or comment — so REST path-template
+  placeholders are safe as-is: `issue "PUT v3/widgets/{widgetId}/suspend"`. Escape a literal
+  `"` or `\` inside a string with `\"`/`\\`; no other backslash sequence is special. An
+  unterminated string (missing closing `"`) is a parse error naming the clause it broke in.
 - **`source "url"` on a slice header** (the only slice-level clause — everything above is
   per-element) links the slice back to the ticket/conversation it traces to, e.g.
   `slice "Checkout" source "https://linear.app/team/issue/MIL-60" { ... }`. Exports as
