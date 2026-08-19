@@ -30,7 +30,7 @@ Keep it current at the end of every working session.
 - [ ] R2. Timeline order (as-is narrative, actors/callers, first render)
 - [ ] R3. Commands / inputs
 - [ ] R4. Read models / outputs (validate from here)
-- [ ] R5. Boundaries & reactions (two-slice splits)
+- [ ] R5. Boundaries & reactions (reaction shares its slice with the command it triggers)
 - [ ] R6. Gap & TBD reconciliation
 - [ ] R7. Convergence (render + validate clean, user confirmed as-is)
 

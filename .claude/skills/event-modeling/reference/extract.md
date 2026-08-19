@@ -3,8 +3,8 @@
 Read this **before doing any extract work**. It governs the `extract` phase and **overrides
 `methodology.md` step 1's stance** for the duration of extraction: you are capturing how the
 system behaves **today**, not modeling what the business needs. Everything else in the
-methodology — the 4 patterns, the "is it an event?" test, the Socratic stance, the two-slice
-reaction split — still applies.
+methodology — the 4 patterns, the "is it an event?" test, the Socratic stance, the
+reaction-shares-a-slice-with-its-command shape — still applies.
 
 ## Stance override — current-state-only
 
@@ -81,7 +81,7 @@ it is fine to finish a round with `# TBD`s still parked.
   `em render` here.**
 - **R3 — Commands / inputs.** For each event, the request that actually produces it today
   (imperative name), *and what triggers it* — the real screen, or the scheduler/listener that
-  fires it (model that as a reaction in the preceding slice, per R5). Unclear trigger → `# TBD`,
+  fires it (model that as a reaction sharing this same slice, per R5). Unclear trigger → `# TBD`,
   not a plausible guess; expect a *command has nothing that triggers it* warning until R5 fills
   it in, and don't invent a screen to silence it.
 - **R4 — Read models / outputs.** The projections/queries the system actually serves; wire
@@ -91,16 +91,18 @@ it is fine to finish a round with `# TBD`s still parked.
   a **finding about the system**, not a modelling mistake — never invent a reader to silence it
   (that would be desired state). Park it in the Decisions log and carry the warning.
 - **R5 — Boundaries & reactions.** Current automations and integrations as-is: schedulers,
-  listeners, outbound syncs, inbound webhooks. Model each as a reaction with the two-slice
-  `reaction → command → event` split and the slice-ordering rules in `em-dsl.md` — even when
-  the current code wires it as one procedural step (note the as-built shape in the slice's
-  `# TBD`/Decisions if it differs).
+  listeners, outbound syncs, inbound webhooks. Model each as a reaction sharing its slice with
+  the `command` + `event` it triggers (`reaction → command → event`, per `em-dsl.md`) — the
+  read model it watches, if any, lives in the slice before, named via the reaction's own
+  `from`. This matches how the current code usually already reads (scheduler/listener → one
+  procedural step); note any real as-built difference in the slice's `# TBD`/Decisions.
 - **R6 — Gap & TBD reconciliation.** Walk every parked `# TBD` with the user. Resolve only
   what they can confirm **as a current-state fact**; everything else stays parked. Explicitly
   refuse to resolve a TBD by inventing desired behavior.
-- **R7 — Convergence.** Final `em render` + `em validate` (fix errors and warnings; remember
-  the validator's blind spot — check the reaction split by hand). User confirms the model is a
-  faithful picture of today. Mark extraction complete in the state file and hand off.
+- **R7 — Convergence.** Final `em render` + `em validate` (fix errors and warnings — this now
+  catches a reaction wired straight to an event too, via *reaction triggers no command*). User
+  confirms the model is a faithful picture of today. Mark extraction complete in the state file
+  and hand off.
 
 Seven rounds is the default shape, not a quota — collapse rounds for a small system, repeat
 one for a sprawling one. Record any deviation in the Decisions log.
