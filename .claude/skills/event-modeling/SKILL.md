@@ -124,9 +124,9 @@ usually replace the scaffolded `.em`'s content as the discovery conversation bui
 model — it starts out as the same starter model `em init` writes, titled from `<model-name>`.
 `slices/*.md` and `conformance/` aren't part of `em scaffold`; they come from the `slice` and
 `conform` phases below. The `conformance/` directory
-and `<model-name>-asis.em` only appear once the `conform` phase runs; add the pattern `*-asis.em`
-to the repository's `.gitignore` the first time one is created (see `reference/conform.md`) —
-it's scratch, never committed.
+and `<model-name>-asis.em` only appear once the `conform` phase runs; `em conform-scope
+--seed-asis` creates `<model-name>-asis.em` and gitignores `*-asis.em` for you (see
+`reference/conform.md`) — it's scratch, never committed.
 
 ---
 
@@ -323,9 +323,12 @@ and report where they've drifted — advisory only, never a gate, never an unpro
 stance guardrails (evidence-first, uncertainty is never drift, propose-don't-edit). It reuses
 `extract`'s sourcing/mode rules for reading the target codebase rather than duplicating them.
 
-In short: for each in-scope slice, gather code evidence *before* comparing to the model or doc;
-write the as-is picture into a scratch model (`<model-name>-asis.em`, reusing the canonical
-model's names wherever the code matches them); run `em diff <model-name>.em
+In short: run `em conform-scope <model-name>.em --repo <target-repo-path> --seed-asis` to
+compute the in-scope slice set (diff-scoped by default, via `Last conformance:` + the target
+repo's changed paths mapped through each slice doc's `implementedIn:`) and seed the scratch
+model in one step; for each in-scope slice, gather code evidence *before* comparing to the model
+or doc; write the as-is picture into that scratch model (`<model-name>-asis.em`, reusing the
+canonical model's names wherever the code matches them); run `em diff <model-name>.em
 <model-name>-asis.em --json` and let `em` decide the structural deltas; classify every finding
 (real drift / model gap / internal inconsistency / uncertainty) with cited evidence; write
 `conformance/<date>-report.md` with proposed `issue "conformance: …"` red notes; apply only the

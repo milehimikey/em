@@ -72,13 +72,34 @@ authoritative.
 
 ### 1. Scope
 
-Default: **diff-scoped.** Run `em state read <model-dir>` and check its `lastConformance` field
-(date + target-repo revision, or `null` for `never`) rather than parsing the `Last conformance:`
-bullet by hand. If it's set, run `git diff --name-only <lastConformance.revision>..HEAD` from
-the target repo's root to list the changed paths (`git log` alone prints commit subjects, not
-paths), then map those paths to slices (via each slice doc's known code locations,
-`implementedIn:` links, or a quick Grep if those are stale) — that's your in-scope set. If it's `null`
-(first run) or the user passes `--full`, scope is every `implemented` slice.
+Run `em conform-scope <model-name>.em --repo <target-repo-path>` — it mechanizes everything
+about scoping that's deterministic: parsing `Last conformance:` (via the same state-file reader
+`em state read` uses), running `git diff --name-only <revision>..HEAD` in the target repo, and
+mapping each changed path to a slice via that slice doc's `implementedIn:` link (a bare/embedded
+repo-relative path that's a prefix of or equal to the changed path — a URL-only `implementedIn`,
+e.g. a PR link, deterministically matches nothing). It prints one JSON document
+(`docs/cli.md`'s conform-scope section documents the envelope):
+
+```json
+{ "lastConformance": { "date": "...", "revision": "..." } | null,
+  "changedPaths": ["..."],
+  "candidateSlices": [ { "key": "checkout", "matchedBy": "implementedIn", "paths": ["..."] } ],
+  "unmappedPaths": ["..."] }
+```
+
+Default: **diff-scoped** — `lastConformance` set, `--full` not passed — `candidateSlices` is
+your in-scope set for step 2. If `lastConformance` is `null` (first run) or you pass `--full`,
+`em conform-scope` scopes every `implemented` slice instead (`matchedBy: "full"`,
+`changedPaths`/`unmappedPaths` both empty) — the tool makes this call for you, no need to
+special-case it yourself.
+
+**`unmappedPaths` is your judgment queue, not a dead end.** A changed path the tool couldn't
+place mechanically (`implementedIn` stale, a URL-only link, code that moved) still might belong
+to an in-scope slice — a quick Grep for the path's obvious symbols against the slice docs/model
+vocabulary is exactly the judgment call this phase reserves for you (`em conform-scope` never
+guesses on purpose). Fold anything you place this way into your in-scope set alongside
+`candidateSlices`; leave genuinely unplaceable paths out of scope but note them in the report's
+run metadata rather than silently dropping them.
 
 Cost containment here is cadence, not a trigger condition — diff-scoped-by-default is what
 keeps a recurring conform run cheap; don't invent a smarter trigger.
@@ -126,9 +147,11 @@ For each slice in scope:
      without-link"` (status: implemented, no link at all) is a genuine coherence problem, but
      it's already surfaced by `em validate`'s `frontmatter-coherence-implemented-without-link`
      warning — don't re-raise it here as a separate conform finding.
-3. Write what you found into the scratch model (`<model-name>-asis.em`, see below). **Seed the
-   scratch model as a copy of the canonical `.em` and replace only the in-scope slices** with
-   the as-is picture, leaving out-of-scope slices byte-identical. This is not an optimization:
+3. Write what you found into the scratch model (`<model-name>-asis.em`, see below) — start it
+   with `em conform-scope <model-name>.em --repo <target-repo-path> --seed-asis`, which
+   byte-copies the canonical `.em` to `<model-name>-asis.em` and ensures `*-asis.em` is
+   gitignored (idempotent — safe to pass on every run). **Then replace only the in-scope
+   slices** with the as-is picture, leaving out-of-scope slices byte-identical. This is not an optimization:
    `em diff` matches slices by name, so a scratch model containing *only* the in-scope slices
    reports every other canonical slice as `slice-removed` plus one `element-removed` per
    element — a phantom-removal flood on every diff-scoped run, which is the exact false drift
@@ -234,9 +257,9 @@ changed and why.
 
 - **Scratch model:** `<model-name>-asis.em`, written **next to** the canonical model (same
   directory as `.event-modeling.md`). Always seeded as a copy of the canonical model with only
-  the in-scope slices rewritten (step 2), never built up from nothing. It's regenerated every
-  conform run — add the pattern `*-asis.em` to the repository's `.gitignore` (create the entry
-  if there isn't one) so it never gets committed.
+  the in-scope slices rewritten (step 2) — `em conform-scope --seed-asis` does the seeding and
+  the gitignoring (`*-asis.em`, idempotent) mechanically, never built up from nothing and never
+  hand-maintained. It's regenerated every conform run.
 - **Report location:** `conformance/<YYYY-MM-DD>-report.md` in the model directory. One file
   per run; don't overwrite a prior date's report.
 - **Red note wording:** `issue "conformance: <what's wrong, plainly>"` — plain enough that

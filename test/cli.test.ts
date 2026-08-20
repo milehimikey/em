@@ -1077,6 +1077,171 @@ describe("em changelog follows renames (CLI, real git repo)", () => {
   });
 });
 
+describe("em conform-scope (CLI, real git repo)", () => {
+  const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
+
+  // Genuinely clean, same shape as the top-of-file CLEAN fixture (ui+command+event, then a
+  // view+ui slice reading it) doubled up — so this model triggers no diagnostics on stderr and
+  // "diff-scoped..." below can assert stderr stays empty.
+  const MODEL =
+    `slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n` +
+    `slice "Open Orders" {\n  view Open Orders from "Order Placed"\n  ui Order List @Customer\n}\n` +
+    `slice "Ship Order" {\n  ui Shipping @Customer\n  command Ship Order note "slices/ship-order.md"\n  event Order Shipped\n}\n` +
+    `slice "Shipped Orders" {\n  view Shipped Orders from "Order Shipped"\n  ui Shipment List @Customer\n}\n`;
+
+  const docWithImplementedIn = (implementedIn: string) =>
+    `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: ${implementedIn}\n---\n## Intent\n`;
+
+  let modelDir: string;
+  let targetRepo: string;
+  let baseRev: string;
+
+  beforeAll(() => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-"));
+    const scaffolded = em(["scaffold", "Checkout"], cwd);
+    expect(scaffolded.status).toBe(0);
+    modelDir = join(cwd, "checkout");
+    writeFileSync(join(modelDir, "checkout.em"), MODEL);
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    writeFileSync(join(modelDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
+    writeFileSync(join(modelDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+
+    targetRepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-target-"));
+    git(["init", "-q", "-b", "main"], targetRepo);
+    mkdirSync(join(targetRepo, "src", "checkout"), { recursive: true });
+    writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
+    writeFileSync(join(targetRepo, "README.md"), "# demo\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "initial"], targetRepo);
+    baseRev = git(["rev-parse", "HEAD"], targetRepo).stdout.trim();
+
+    const setConformance = em(
+      ["state", "set-conformance", baseRev, "--report", "conformance/2026-08-01-report.md"],
+      modelDir,
+    );
+    expect(setConformance.status).toBe(0);
+
+    writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler2\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "tweak checkout handler"], targetRepo);
+
+    writeFileSync(join(targetRepo, "README.md"), "# demo, updated\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "unrelated readme edit"], targetRepo);
+  });
+  afterAll(() => {
+    rmSync(modelDir, { recursive: true, force: true });
+    rmSync(targetRepo, { recursive: true, force: true });
+  });
+
+  it("diff-scoped: maps a changed path to its slice via implementedIn, a URL-only slice matches nothing, unmatched paths come back unmapped", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    const doc = JSON.parse(r.stdout);
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.changedPaths.sort()).toEqual(["README.md", "src/checkout/Handler.kt"]);
+    expect(doc.candidateSlices).toEqual([
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+    ]);
+    expect(doc.unmappedPaths).toEqual(["README.md"]);
+  });
+
+  it("--full scopes every implemented slice regardless of Last conformance, changedPaths/unmappedPaths empty", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--full"], modelDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.changedPaths).toEqual([]);
+    expect(doc.unmappedPaths).toEqual([]);
+    expect(doc.candidateSlices.map((c: { key: string }) => c.key).sort()).toEqual(["place-order", "ship-order"]);
+    expect(doc.candidateSlices.every((c: { matchedBy: string; paths: string[] }) => c.matchedBy === "full" && c.paths.length === 0)).toBe(true);
+  });
+
+  it("first run (Last conformance: never) behaves like --full without needing the flag, and never shells out to --repo", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-firstrun-"));
+    try {
+      const scaffolded = em(["scaffold", "Checkout"], cwd);
+      expect(scaffolded.status).toBe(0);
+      const freshDir = join(cwd, "checkout");
+      writeFileSync(join(freshDir, "checkout.em"), MODEL);
+      mkdirSync(join(freshDir, "slices"), { recursive: true });
+      writeFileSync(join(freshDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
+      writeFileSync(join(freshDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+
+      // A --repo path that isn't even a git repository — proves first-run scoping never touches it.
+      const r = em(["conform-scope", "checkout.em", "--repo", cwd], freshDir);
+      expect(r.status).toBe(0);
+      const doc = JSON.parse(r.stdout);
+      expect(doc.lastConformance).toBeNull();
+      expect(doc.changedPaths).toEqual([]);
+      expect(doc.candidateSlices.map((c: { key: string }) => c.key).sort()).toEqual(["place-order", "ship-order"]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("--seed-asis writes a byte copy of the model and gitignores *-asis.em idempotently", () => {
+    const r1 = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--seed-asis"], modelDir);
+    expect(r1.status).toBe(0);
+    const doc1 = JSON.parse(r1.stdout);
+    expect(doc1.seeded.asisPath).toBe("checkout-asis.em");
+    expect(doc1.seeded.gitignoreUpdated).toBe(true);
+    expect(readFileSync(join(modelDir, "checkout-asis.em"), "utf8")).toBe(readFileSync(join(modelDir, "checkout.em"), "utf8"));
+    const gitignore = readFileSync(join(modelDir, ".gitignore"), "utf8");
+    expect(gitignore.split(/\r?\n/).filter((l) => l === "*-asis.em")).toHaveLength(1);
+
+    const r2 = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--seed-asis"], modelDir);
+    expect(r2.status).toBe(0);
+    const doc2 = JSON.parse(r2.stdout);
+    expect(doc2.seeded.gitignoreUpdated).toBe(false);
+    expect(readFileSync(join(modelDir, ".gitignore"), "utf8").split(/\r?\n/).filter((l) => l === "*-asis.em")).toHaveLength(1);
+  });
+
+  it("no --seed-asis: no scratch model/gitignore side effects, no `seeded` key", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.seeded).toBeUndefined();
+  });
+
+  it("surfaces a clear, non-zero error when --repo isn't a git repository", () => {
+    const notARepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-norepo-"));
+    try {
+      const r = em(["conform-scope", "checkout.em", "--repo", notARepo], modelDir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("is not a git repository");
+    } finally {
+      rmSync(notARepo, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces a clear, non-zero error on an unknown revision recorded in Last conformance", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-badrev-"));
+    try {
+      const scaffolded = em(["scaffold", "Checkout"], cwd);
+      expect(scaffolded.status).toBe(0);
+      const badRevDir = join(cwd, "checkout");
+      writeFileSync(join(badRevDir, "checkout.em"), MODEL);
+      mkdirSync(join(badRevDir, "slices"), { recursive: true });
+      writeFileSync(join(badRevDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
+      writeFileSync(join(badRevDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+      const setConformance = em(
+        ["state", "set-conformance", "not-a-real-rev", "--report", "conformance/2026-08-01-report.md"],
+        badRevDir,
+      );
+      expect(setConformance.status).toBe(0);
+
+      const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], badRevDir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("git diff failed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("em glossary (CLI)", () => {
   it("reports scale and 'no conflicts' in the default text report when models agree", () => {
     const r = em(["glossary", "glossary-a.em", "glossary-b-clean.em"], dir);

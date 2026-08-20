@@ -934,6 +934,73 @@ Participants`, matching `templates/state.md`'s format. `<date>` must look like `
 em state set-review 2026-08-20 my-model/
 ```
 
+## `em conform-scope <file>`
+
+Mechanizes the mechanical half of
+[reference/conform.md](../.claude/skills/event-modeling/reference/conform.md)'s conform-phase
+step 1 ("Scope") — reading the `Last conformance:` marker, running `git diff --name-only` in
+the target repo, and mapping the changed paths to slices via each slice doc's `implementedIn` —
+so the agent no longer does this by hand. Prints one JSON document to stdout:
+
+```json
+{
+  "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
+  "changedPaths": ["src/checkout/CheckoutHandler.kt", "README.md"],
+  "candidateSlices": [
+    { "key": "checkout", "matchedBy": "implementedIn", "paths": ["src/checkout/CheckoutHandler.kt"] }
+  ],
+  "unmappedPaths": ["README.md"]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `lastConformance` | The state file's `Last conformance:` marker, parsed via `em state read`'s same `stateFile.ts` (`{ "date", "revision" }`), or `null` for the `never` marker (first run). Always echoed back as parsed, even under `--full`. |
+| `changedPaths` | `git diff --name-only <lastConformance.revision>..HEAD` in `--repo`, repo-root-relative. `[]` when scoping in full mode (see below) — not omitted, so the JSON shape stays stable across modes. |
+| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. |
+| `unmappedPaths` | `changedPaths` matched by no slice — hand to agent judgment (grep fallback, evidence walks per `reference/conform.md`). Always `[]` in full mode. |
+
+**Scoping mode.** Diff-scoped by default: when `lastConformance` is set and `--full` isn't
+passed, `changedPaths` is fetched from `--repo` and mapped to slices. Full mode — every
+`status: implemented` slice, `changedPaths`/`unmappedPaths` both `[]` — kicks in when
+`lastConformance` is `null` (first run, matching `reference/conform.md` step 1) or `--full` is
+passed.
+
+**The `implementedIn` -> path matching rule** is deliberately conservative and never guesses: a
+slice doc's `implementedIn` value counts as naming a changed path only when, after stripping a
+leading `./`/trailing `/`, it's textually equal to that path or a directory prefix of it (e.g.
+`implementedIn: src/checkout` matches `src/checkout/CheckoutHandler.kt`). A URL or SCP-style git
+remote (`https://…`, `git@host:…` — the common PR/commit-link shape) carries no repo-relative
+path information, so it deterministically matches nothing. There's no grep fallback here on
+purpose — that judgment call belongs to the agent, one level up (`reference/conform.md` step 1).
+
+| Flag | Effect |
+|---|---|
+| `--repo <path>` | Path to (or inside) the target codebase's git repository (required) |
+| `--full` | Ignore `Last conformance:`/changed paths; scope every `implemented` slice |
+| `--seed-asis` | Also seed the conform-phase scratch model (see below) |
+
+```bash
+em conform-scope my-model.em --repo ../target-repo
+em conform-scope my-model.em --repo ../target-repo --full
+em conform-scope my-model.em --repo ../target-repo --seed-asis
+```
+
+**`--seed-asis`** mechanizes the OTHER mechanical convention conform-phase step 1 describes:
+byte-copies the canonical model to `<dirname(file)>/<stem>-asis.em`, and makes sure `*-asis.em`
+is listed in the model's own repository's root `.gitignore` (creating the file, or appending the
+line, only if it isn't already present anywhere in it — never duplicated). Reports what it did
+as an additional `seeded` key in the JSON, omitted entirely when the flag isn't passed:
+
+```json
+{ "seeded": { "asisPath": "my-model-asis.em", "gitignoreUpdated": true } }
+```
+
+Any input-model error (parse/validation) is reported and exits 1 before any git call or file
+write, same as every other command. A missing state file, an unparsable `Last conformance:`
+bullet, a `--repo` that isn't a git repository, or an unknown revision in `Last conformance:`
+each exit 1 with a clear message.
+
 ## `em skill install`
 
 Copies the bundled `event-modeling` Claude Code skill out of the npm package into

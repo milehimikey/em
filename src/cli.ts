@@ -43,6 +43,7 @@ import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
+import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
@@ -533,6 +534,59 @@ state
       process.exit(1);
     }
     writeStateUpdate(dir, "em state set-review", (text, today) => setReview(text, date, today));
+  });
+
+program
+  .command("conform-scope")
+  .description(
+    "mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths " +
+      "since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — " +
+      "--seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--repo <path>", "path to (or inside) the target codebase's git repository")
+  .option("--full", "ignore Last conformance:/changed paths; scope every implemented slice")
+  .option("--seed-asis", "write <model>-asis.em as a byte copy of the canonical model and ensure it's gitignored")
+  .action((file: string, opts: { repo: string; full?: boolean; seedAsis?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("not scoping: fix the errors above");
+      process.exit(1);
+    }
+
+    const loaded = loadStateFile(dirname(file));
+    if (!loaded.ok) {
+      console.error(loaded.message);
+      process.exit(1);
+    }
+    const parsed = parseState(loaded.text);
+    if (!parsed.ok) {
+      console.error(`em conform-scope: ${parsed.message}`);
+      process.exit(1);
+    }
+    const { lastConformance } = parsed.state;
+
+    const { facts, diagnostics: docDiags } = resolveSliceDocFacts(model, refs, dirname(file));
+    printDiagnostics(newDiagnostics(docDiags, diagnostics));
+
+    const skipGit = !!opts.full || lastConformance === null;
+    let changedPaths: string[] = [];
+    if (!skipGit) {
+      const result = changedPathsSince(opts.repo, lastConformance!.revision);
+      if (!result.ok) {
+        console.error(result.message);
+        process.exit(1);
+      }
+      changedPaths = result.paths;
+    }
+
+    const scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full);
+    const output: Record<string, unknown> = { ...scope };
+    if (opts.seedAsis) {
+      output.seeded = seedAsisModel(file);
+    }
+    console.log(JSON.stringify(output, null, 2));
   });
 
 program

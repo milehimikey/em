@@ -56,6 +56,10 @@ em state set-phase <phase> [dir] --step <n>                 # also set Current s
 em state set-conformance <revision> [dir]                   # rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses
 em state set-conformance <revision> [dir] --report <path>   # path to the conformance report just written
 em state set-review <date> [dir]                            # rewrite Last stakeholder review: (and Last updated:)
+em conform-scope <file>                                     # mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — --seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)
+em conform-scope <file> --repo <path>                       # path to (or inside) the target codebase's git repository
+em conform-scope <file> --full                              # ignore Last conformance:/changed paths; scope every implemented slice
+em conform-scope <file> --seed-asis                         # write <model>-asis.em as a byte copy of the canonical model and ensure it's gitignored
 em watch <file>                                             # re-render on every save
 em watch <file> -o, --out <path>                            # output path (extension picks the format)
 em watch <file> -T, --format <fmt>                          # output format (svg, png, pdf, ...)
