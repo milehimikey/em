@@ -54,6 +54,19 @@ describe("live server", () => {
     expect(body).toContain("onSvgLoaded()");
   });
 
+  it("attaches the reload buffer <object> to the DOM before setting data", async () => {
+    // Regression for MIL-136 (GitHub #96): a detached <object> never starts
+    // fetching its data resource, so its load event never fires and the viewer
+    // stays blank forever. The buffer must be appended to the stage first.
+    const res = await fetch(`${base}/`);
+    const body = await res.text();
+    const attach = body.indexOf("stage.appendChild(next)");
+    const setData = body.indexOf('next.setAttribute("data"');
+    expect(attach).toBeGreaterThan(-1);
+    expect(setData).toBeGreaterThan(-1);
+    expect(attach).toBeLessThan(setData);
+  });
+
   it("serves a model file with no-store caching and the right type", async () => {
     const res = await fetch(`${base}/model.svg`);
     expect(res.status).toBe(200);
