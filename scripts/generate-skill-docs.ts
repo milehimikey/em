@@ -70,6 +70,10 @@ export function buildCliReferenceFull(prog: Command): string {
 const QUICK_CLI_LINES: ReadonlyArray<{ line: string; command: string; flags?: string[] }> = [
   { line: "em --version", command: "--version" },
   { line: "em init <name>.em                          # optional starter scaffold", command: "init" },
+  {
+    line: "em scaffold <name>                         # full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md",
+    command: "scaffold",
+  },
   { line: "em validate <name>.em                      # check rules; exit 0 if clean/warnings only", command: "validate" },
   { line: "em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)", command: "render", flags: ["-o"] },
   { line: "em render <name>.em --emit-dot             # inspect generated Graphviz DOT", command: "render", flags: ["--emit-dot"] },

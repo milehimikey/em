@@ -3,6 +3,7 @@
 | Command | What it does |
 |---|---|
 | `em init [file]` | Scaffold a starter model (default `model.em`) |
+| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `live.html`, `README.md`, `.event-modeling.md` |
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
@@ -27,6 +28,35 @@ builds, minus fields and notes. Defaults to `model.em`.
 | Flag | Effect |
 |---|---|
 | `-f, --force` | Overwrite the file if it already exists |
+
+## `em scaffold <name>`
+
+Scaffolds a full project in one step, rather than just a starter `.em`. Kebab-slugs `<name>`
+for the directory and file names (`kebabSlug()` — lowercase, non-alphanumeric runs collapsed to
+a single `-`); the display name you passed is used as-is for titles/prose. Creates
+`<slug>/` and writes:
+
+| File | Content |
+|---|---|
+| `<slug>/<slug>.em` | The same starter model `em init` writes, titled `model "<name>"` |
+| `<slug>/live.html` | `file://` auto-refresh viewer, verbatim (see [ai-workflow.md](ai-workflow.md)) |
+| `<slug>/README.md` | Overview + slice index, `{{Model Name}}`/`{{model-name}}` filled in; the `GENERATED:slices` table stays empty (run `em slice index` once the model has slices) |
+| `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
+
+This is the machinery behind the bundled `event-modeling` Claude Code skill's "scaffold the
+project layout" setup step (see [ai-workflow.md](ai-workflow.md)) — the skill runs this
+command rather than hand-copying its `templates/*` files.
+
+| Flag | Effect |
+|---|---|
+| `-f, --force` | Overwrite the directory's contents if it already exists |
+
+```bash
+em scaffold "Order Fulfillment"   # writes order-fulfillment/{order-fulfillment.em,live.html,README.md,.event-modeling.md}
+```
+
+Refuses if `<slug>/` already exists (`refusing to overwrite <slug>/ (use --force)`), matching
+`em init`'s convention.
 
 ## `em render <file>`
 

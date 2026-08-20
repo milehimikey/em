@@ -831,6 +831,88 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   });
 });
 
+describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
+  let cwd: string;
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-"));
+  });
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it("creates <slug>/ with all 4 files, correctly titled/slugged", () => {
+    const r = em(["scaffold", "Order Fulfillment"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("scaffolded order-fulfillment/");
+
+    const dir = join(cwd, "order-fulfillment");
+    expect(existsSync(join(dir, "order-fulfillment.em"))).toBe(true);
+    expect(existsSync(join(dir, "live.html"))).toBe(true);
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+    expect(existsSync(join(dir, ".event-modeling.md"))).toBe(true);
+
+    const em_ = readFileSync(join(dir, "order-fulfillment.em"), "utf8");
+    expect(em_.startsWith('model "Order Fulfillment"\n')).toBe(true);
+
+    const live = readFileSync(join(dir, "live.html"), "utf8");
+    expect(live).toBe(readFileSync(join(ROOT, ".claude", "skills", "event-modeling", "templates", "live.html"), "utf8"));
+
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme.startsWith("# Order Fulfillment\n")).toBe(true);
+    expect(readme).toContain("em watch order-fulfillment.em -o order-fulfillment.svg --serve");
+    expect(readme).toContain(
+      "<!-- GENERATED:slices:start -->\n" +
+        "| # | Slice | Pattern | Status | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|----------------|------------|\n" +
+        "<!-- GENERATED:slices:end -->",
+    );
+
+    const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
+    expect(state).toContain("# Event Modeling Progress — Order Fulfillment");
+    expect(state).toContain("- **Model file:** `order-fulfillment.em`");
+    expect(state).toContain("- **Current phase:** discover");
+    expect(state).toContain("- **Current step:** 1");
+    expect(state).toMatch(/- \*\*Last updated:\*\* \d{4}-\d{2}-\d{2}/);
+    expect(state).toContain("- **Last conformance:** never");
+    expect(state).toContain("- **Last stakeholder review:** never");
+
+    // Never leave a template placeholder in any written file.
+    for (const text of [em_, live, readme, state]) {
+      expect(text).not.toMatch(/\{\{[^}]*\}\}/);
+    }
+  });
+
+  it("refuses to overwrite an existing directory without --force", () => {
+    const r = em(["scaffold", "Order Fulfillment"], cwd);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing to overwrite order-fulfillment/ (use --force)");
+  });
+
+  it("--force overwrites the existing directory's contents", () => {
+    const dir = join(cwd, "order-fulfillment");
+    writeFileSync(join(dir, "README.md"), "hand-edited, should be clobbered");
+    const r = em(["scaffold", "Order Fulfillment", "--force"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("scaffolded order-fulfillment/");
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme.startsWith("# Order Fulfillment\n")).toBe(true);
+  });
+
+  it("kebab-slugs an already-slug-shaped name to itself, and a messy name into a clean slug", () => {
+    const r1 = em(["scaffold", "widget-returns"], cwd);
+    expect(r1.status).toBe(0);
+    expect(existsSync(join(cwd, "widget-returns", "widget-returns.em"))).toBe(true);
+
+    const r2 = em(["scaffold", "Weird!! Name_2"], cwd);
+    expect(r2.status).toBe(0);
+    expect(r2.stdout).toContain("scaffolded weird-name-2/");
+    expect(existsSync(join(cwd, "weird-name-2", "weird-name-2.em"))).toBe(true);
+    const readme = readFileSync(join(cwd, "weird-name-2", "README.md"), "utf8");
+    // Display name (untouched) is used for titles/prose; slug is used for filenames.
+    expect(readme.startsWith("# Weird!! Name_2\n")).toBe(true);
+  });
+});
+
 describe("em changelog (CLI, real git repo)", () => {
   let repo: string;
 

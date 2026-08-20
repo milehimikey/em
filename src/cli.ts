@@ -45,7 +45,8 @@ import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
-import { STARTER_EM } from "./templates.js";
+import { STARTER_EM, LIVE_HTML_TEMPLATE, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
+import { kebabSlug } from "./util/slug.js";
 
 const program = new Command();
 
@@ -73,6 +74,29 @@ program
     }
     writeFileSync(file, STARTER_EM);
     console.log(`wrote ${file}`);
+  });
+
+program
+  .command("scaffold")
+  .description(
+    "scaffold a full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md " +
+      "(see docs/cli.md — for just a starter .em, use `em init`)",
+  )
+  .argument("<name>", "model display name — kebab-cased for the directory and file names, used as-is for titles/prose")
+  .option("-f, --force", "overwrite the directory's contents if it already exists")
+  .action(async (name: string, opts: { force?: boolean }) => {
+    const dirName = kebabSlug(name);
+    if (existsSync(dirName) && !opts.force) {
+      console.error(`refusing to overwrite ${dirName}/ (use --force)`);
+      process.exit(1);
+    }
+    await mkdir(dirName, { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+    writeFileSync(join(dirName, `${dirName}.em`), starterEmFor(name));
+    writeFileSync(join(dirName, "live.html"), LIVE_HTML_TEMPLATE);
+    writeFileSync(join(dirName, "README.md"), scaffoldReadme(name, dirName));
+    writeFileSync(join(dirName, ".event-modeling.md"), scaffoldStateFile(name, dirName, today));
+    console.log(`scaffolded ${dirName}/`);
   });
 
 program

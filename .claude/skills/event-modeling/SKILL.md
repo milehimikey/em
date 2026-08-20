@@ -111,11 +111,17 @@ vendored alongside this skill.
   <model-name>-asis.em     # conform-phase scratch model, regenerated per run — git-ignore this
 ```
 
-When creating a new model, scaffold the directory and copy the templates in (filling the
-placeholders). Copy `live.html` **verbatim** — it takes the SVG name from its URL query
-(`live.html?svg=<model-name>.svg`), so there's nothing to edit. You may use `em init` for a
-starter `.em`, but usually you'll build it up from the discovery conversation instead. Fill
-template placeholders — never leave `{{...}}` in delivered files. The `conformance/` directory
+When creating a new model, run `em scaffold <model-name>` — it creates `<model-name>/` and
+writes all four starter files in one step (`<model-name>.em`, `live.html`, `README.md`,
+`.event-modeling.md`), filling the Model Name/model-name placeholders and the state file's
+mechanical fields (model path, `Current phase: discover`, `Current step: 1`, dates) for you, so
+there's nothing left to hand-copy or fill in. Refuses if `<model-name>/` already exists; pass
+`--force` to overwrite. `live.html` is written **verbatim** — it takes the SVG name from its
+URL query (`live.html?svg=<model-name>.svg`), so there's nothing to edit there either. You'll
+usually replace the scaffolded `.em`'s content as the discovery conversation builds up the real
+model — it starts out as the same starter model `em init` writes, titled from `<model-name>`.
+`slices/*.md` and `conformance/` aren't part of `em scaffold`; they come from the `slice` and
+`conform` phases below. The `conformance/` directory
 and `<model-name>-asis.em` only appear once the `conform` phase runs; add the pattern `*-asis.em`
 to the repository's `.gitignore` the first time one is created (see `reference/conform.md`) —
 it's scratch, never committed.
@@ -397,6 +403,7 @@ command instead.
 ```bash
 em --version
 em init <name>.em                          # optional starter scaffold
+em scaffold <name>                         # full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md
 em validate <name>.em                      # check rules; exit 0 if clean/warnings only
 em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
