@@ -1338,3 +1338,117 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.stderr).toContain("not indexing");
   });
 });
+
+describe("em slice new (CLI, MIL-97 item 3)", () => {
+  let cwd: string;
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-slice-new-"));
+  });
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it("writes slices/<key>.md with the 5-key frontmatter and body stub, creating slices/", () => {
+    expect(existsSync(join(cwd, "slices"))).toBe(false);
+    const r = em(
+      ["slice", "new", "Request Payment", "--pattern", "automation", "--swimlane", "System → Payment"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("wrote slices/request-payment.md");
+    expect(existsSync(join(cwd, "slices"))).toBe(true);
+
+    const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
+    expect(content).toBe(
+      "---\n" +
+        "schemaVersion: 1\n" +
+        "pattern: automation\n" +
+        "swimlane: System → Payment\n" +
+        "status: draft\n" +
+        "version: 1\n" +
+        "---\n" +
+        "# Slice: Request Payment\n" +
+        "\n" +
+        "![Diagram](./request-payment.svg)\n",
+    );
+  });
+
+  it("prints the note line the user must add to the .em file", () => {
+    const r = em(
+      ["slice", "new", "Some Other Slice", "--pattern", "state-view", "--swimlane", "Customer → Orders"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('note "slices/some-other-slice.md"');
+  });
+
+  it("kebab-slugs the display name for the filename, keeping the display name in the heading", () => {
+    const r = em(
+      ["slice", "new", "Weird!! Name_2", "--pattern", "translation", "--swimlane", "A → B"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slices/weird-name-2.md");
+    const content = readFileSync(join(cwd, "slices", "weird-name-2.md"), "utf8");
+    expect(content).toContain("# Slice: Weird!! Name_2");
+  });
+
+  it("fails clearly when --pattern is omitted", () => {
+    const r = em(["slice", "new", "No Pattern", "--swimlane", "A → B"], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--pattern");
+    expect(existsSync(join(cwd, "slices", "no-pattern.md"))).toBe(false);
+  });
+
+  it("fails clearly when --swimlane is omitted", () => {
+    const r = em(["slice", "new", "No Swimlane", "--pattern", "automation"], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--swimlane");
+    expect(existsSync(join(cwd, "slices", "no-swimlane.md"))).toBe(false);
+  });
+
+  it("rejects an invalid --pattern, listing the 4 valid values", () => {
+    const r = em(
+      ["slice", "new", "Bad Pattern", "--pattern", "bogus", "--swimlane", "A → B"],
+      cwd,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("bogus");
+    expect(r.stderr).toContain("state-change");
+    expect(r.stderr).toContain("state-view");
+    expect(r.stderr).toContain("automation");
+    expect(r.stderr).toContain("translation");
+    expect(existsSync(join(cwd, "slices", "bad-pattern.md"))).toBe(false);
+  });
+
+  it("refuses to overwrite an existing doc without --force", () => {
+    const r = em(
+      ["slice", "new", "Request Payment", "--pattern", "automation", "--swimlane", "System → Payment"],
+      cwd,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("refusing to overwrite slices/request-payment.md (use --force)");
+  });
+
+  it("--force overwrites an existing doc", () => {
+    writeFileSync(join(cwd, "slices", "request-payment.md"), "hand-edited, should be clobbered\n");
+    const r = em(
+      [
+        "slice",
+        "new",
+        "Request Payment",
+        "--pattern",
+        "state-change",
+        "--swimlane",
+        "System → Payment v2",
+        "--force",
+      ],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slices/request-payment.md");
+    const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
+    expect(content).toContain("pattern: state-change\n");
+    expect(content).toContain("swimlane: System → Payment v2\n");
+  });
+});

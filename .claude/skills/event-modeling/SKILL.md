@@ -254,24 +254,33 @@ For each slice:
    adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling
    contexts) before finalizing field names/types or invariants — don't guess a shape that's
    already defined elsewhere.
-2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name), with the YAML
-   frontmatter block at the very top — all five of `schemaVersion`/`pattern`/`swimlane`/
-   `status`/`version` (kebab-case `pattern` value, `schemaVersion: 1`, `version` starting at
-   `1`; omitting any of the five makes the doc `frontmatter-invalid` to `em export` and the
-   readiness gate), plus `implementedIn` once shipped — the canonical, machine-read
-   metadata dialect (`- **Status:** ...` bullet lines are legacy/accepted input only; never
-   write new docs that way). When this doc exists because of a split, merge, or rename, add the
-   matching lineage key(s) too (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>`
-   grammar — see `docs/slice-doc-schema.md` for the full schema). On a re-ratification (step 0),
-   bump `version` and flip `status` here instead of setting them fresh. Record the originating
-   need (ticket/conversation link) in the Intent section when one exists.
+2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
+   frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
+   translation> --swimlane "<Persona> → <Context>"` writes `slices/<slice-name>.md`
+   (kebab-cased to match, via the same slugging `em` uses everywhere else) with the canonical
+   `schemaVersion`/`pattern`/`swimlane`/`status: draft`/`version: 1` frontmatter — exactly the
+   five keys `em export` and the readiness gate require, no more — and the `# Slice:` heading +
+   diagram-image stub already in place. Both `--pattern` and `--swimlane` are required; an
+   invalid `--pattern` is refused with the valid choices listed. Never hand-type this block, and
+   never fall back to a placeholder pattern/swimlane to dodge the flags. Then fill in every
+   judgment section below the stub from step 1 (Intent, Command, Event(s), Invariants,
+   Scenarios, ...) — the doc's prose is still entirely hand-authored, only the frontmatter/
+   heading scaffold is mechanized. Record the originating need (ticket/conversation link) in the
+   Intent section when one exists. When this doc exists because of a split, merge, or rename,
+   add the matching lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`,
+   `<slice-key>@v<N>` grammar — see `docs/slice-doc-schema.md` for the full schema).
+   **Re-ratification (step 0):** the doc already exists, so `em slice new` doesn't apply here
+   (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
+   doc's authored body) — bump `version` and flip `status` back to `ready-to-implement` by hand
+   in the existing frontmatter instead.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
-   slices/<slice-name>.svg` (kebab-case, matching the doc's filename) — redraws just this slice
-   in its own canonical pattern shape, and add `![Diagram](./<slice-name>.svg)` near the top of
-   the doc, right after the `# Slice:` heading (below the frontmatter block).
-4. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
-   (the command for State Change, the view for State View, the processor for Automation, the
-   translation for Translation).
+   slices/<slice-name>.svg` (kebab-case, matching the doc's filename and the `![Diagram]` stub
+   `em slice new` already wrote) — redraws just this slice in its own canonical pattern shape.
+4. Wire it into the `.em`: `em slice new` (step 2) printed the exact `note
+   "slices/<slice-name>.md"` line to add to the slice's primary element (the command for State
+   Change, the view for State View, the processor for Automation, the translation for
+   Translation) — `em slice new` only writes the new doc file, never edits the `.em` source
+   itself, so add that line by hand.
 5. Run `em slice index <model-name>.em` to regenerate `README.md`'s Slices table — the one
    canonical slice index — from the model and the doc frontmatter you just wrote (status,
    `implementedIn` once shipped). Never hand-edit the table; it's a generated block.

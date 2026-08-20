@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +43,7 @@ import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
+import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
 import { STARTER_EM, LIVE_HTML_TEMPLATE, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
@@ -349,10 +350,45 @@ program
     },
   );
 
-// Namespace for slice-doc authoring/maintenance subcommands — `index` today (MIL-98); `new`
-// (MIL-97, scaffolding a fresh slice doc) is planned to join it here rather than as a top-level
-// command, so both share the `em slice <verb>` shape.
+// Namespace for slice-doc authoring/maintenance subcommands: `new` (MIL-97, scaffolds a fresh
+// slice doc's frontmatter) and `index` (MIL-98, regenerates the model README's Slices table)
+// share the `em slice <verb>` shape rather than living as separate top-level commands.
 const slice = program.command("slice").description("author and maintain slice docs");
+
+slice
+  .command("new")
+  .description(
+    "scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` " +
+      "plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, " +
+      "Scenarios, Open Questions, ...) stay hand-authored (see docs/slice-doc-schema.md, " +
+      "templates/slice.md)",
+  )
+  .argument("<name>", "slice display name (e.g. \"Request Payment\") — kebab-cased for the filename")
+  .requiredOption("--pattern <pattern>", `slice pattern: ${SLICE_PATTERNS.join(" | ")}`)
+  .requiredOption("--swimlane <swimlane>", 'swimlane, e.g. "Persona → Context"')
+  .option("-f, --force", "overwrite the file if it already exists")
+  .action((name: string, opts: { pattern: string; swimlane: string; force?: boolean }) => {
+    if (!isSlicePattern(opts.pattern)) {
+      console.error(
+        `em slice new: invalid --pattern "${opts.pattern}" — expected one of: ${SLICE_PATTERNS.join(", ")}`,
+      );
+      process.exit(1);
+    }
+
+    const key = sliceDocKey(name);
+    const dir = "slices";
+    const path = join(dir, `${key}.md`);
+    if (existsSync(path) && !opts.force) {
+      console.error(`refusing to overwrite ${path} (use --force)`);
+      process.exit(1);
+    }
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, buildSliceDocContent(name, key, opts.pattern, opts.swimlane));
+    console.log(`wrote ${path}`);
+    console.log(`add this to the slice's primary element in the .em file:`);
+    console.log(`  note "${path}"`);
+  });
 
 slice
   .command("index")

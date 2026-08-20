@@ -714,6 +714,41 @@ em catalog checkout.em billing.em -o site         # multiple models, one site
 em catalog model.em -T png --title "Order System"
 ```
 
+## `em slice new <name>`
+
+Scaffolds a fresh `slices/<key>.md` doc (MIL-97) — the filename key is `<name>` run through
+`kebabSlug()`, the same slugging helper `em scaffold` uses, so the file can never drift from
+what a `note "slices/<key>.md"` binding needs to match. Writes exactly the 5 frontmatter keys
+[slice-doc-schema.md](slice-doc-schema.md#required-vs-optional-by-status) requires at
+`status: draft` — `schemaVersion`, `pattern`, `swimlane`, `status`, `version` — no more: no
+`implementedIn` (only required once a slice has ever reached `implemented`), no lineage keys
+(`split-from`/`merged-from`/`superseded-by` only apply to a split/merge/rename doc), no
+commented-out guidance. Body is just the `# Slice: <name>` heading and the diagram-image stub;
+every judgment section (Intent, Command, Scenarios, Open Questions, ...) is deliberately left
+for hand-authoring, matching `templates/slice.md` — this command mechanizes only the part that
+was silently drifting when hand-typed (a placeholder left unedited, a key forgotten).
+
+`--pattern` and `--swimlane` are both required — no placeholder fallback on omission, since a
+guessed default would reintroduce the exact drift this command exists to kill. `--pattern` is
+validated against the same 4-value enum as the schema's `pattern` key; an invalid value is a
+clear error listing the valid choices, non-zero exit.
+
+Creates `slices/` if it doesn't exist yet. Does **not** touch the model's `.em` source — writing
+a brand-new file is safe to automate blindly, but editing existing `.em` text isn't, so the
+command instead prints the exact `note "slices/<key>.md"` line to add to the slice's primary
+element by hand.
+
+| Flag | Effect |
+|---|---|
+| `--pattern <pattern>` | **Required.** `state-change` \| `state-view` \| `automation` \| `translation` |
+| `--swimlane <swimlane>` | **Required.** Free text, conventionally `<Persona> → <Context>` |
+| `-f, --force` | Overwrite the file if it already exists |
+
+```bash
+em slice new "Request Payment" --pattern automation --swimlane "System → Payment"
+# -> writes slices/request-payment.md, prints the note "slices/request-payment.md" line to add
+```
+
 ## `em slice index <file>`
 
 Rewrites the marker-delimited Slices table in the model's sibling `README.md` (MIL-98) — the

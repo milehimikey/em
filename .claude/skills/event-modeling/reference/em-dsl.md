@@ -12,61 +12,65 @@ Keep `.em` files focused on **structure**; put deep design in markdown linked vi
 
 <!-- GENERATED:cli:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 ```bash
-em --version                              # print the installed em version
-em init [file]                            # scaffold a starter .em model
-em init [file] -f, --force                # overwrite if the file exists
-em scaffold <name>                        # scaffold a full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md (see docs/cli.md — for just a starter .em, use `em init`)
-em scaffold <name> -f, --force            # overwrite the directory's contents if it already exists
-em render <file>                          # transpile a model and render it (or emit DOT)
-em render <file> -o, --out <path>         # output path (extension picks the format)
-em render <file> -T, --format <fmt>       # output format (svg, png, pdf, ...)
-em render <file> --slice <name>           # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
-em render <file> --emit-dot               # print the generated DOT instead of rendering
-em render <file> --keep-empty-lanes       # keep the API lane even when empty
-em export <file>                          # export a versioned JSON snapshot of the normalized model
-em export <file> -o, --out <path>         # write to a file instead of stdout
-em diff <old> [new]                       # compare two models structurally (two files, or one file across git revisions)
-em diff <old> [new] --from <rev>          # diff <old> against this git revision instead of a second file
-em diff <old> [new] --to <rev>            # diff against this git revision instead of the current file (requires --from)
-em diff <old> [new] --exit-code           # exit 1 if the models differ, 0 if identical (git-diff convention)
-em diff <old> [new] --json                # print a JSON document instead of the text report (see docs/cli.md)
-em glossary <files>                       # cross-model glossary of terms, with consistency checks across models (see docs/cli.md)
-em glossary <files> --json                # print the full glossary document instead of the text report
-em glossary <files> -o, --out <path>      # write the JSON document to a file instead of stdout (requires --json)
-em glossary <files> --list-conflicts      # print only the conflict lines, no summary
-em glossary <files> --fail-on-conflicts   # exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)
-em catalog <files>                        # generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)
-em catalog <files> -o, --out <dir>        # output directory
-em catalog <files> -T, --format <fmt>     # diagram format embedded in the catalog (svg or png)
-em catalog <files> --title <text>         # catalog site title
-em catalog <files> --keep-empty-lanes     # keep the API lane even when empty
-em slice index <file>                     # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
-em slice index <file> --check             # verify the table is current; exit non-zero on drift without writing (CI)
-em changelog <file>                       # render a model's git history as a business-readable ledger (see docs/cli.md)
-em changelog <file> --from <rev>          # start the walk at this revision (inclusive)
-em changelog <file> --to <rev>            # end the walk at this revision (inclusive; default HEAD)
-em changelog <file> -o, --out <path>      # write to a file instead of stdout
-em watch <file>                           # re-render on every save
-em watch <file> -o, --out <path>          # output path (extension picks the format)
-em watch <file> -T, --format <fmt>        # output format (svg, png, pdf, ...)
-em watch <file> --keep-empty-lanes        # keep the API lane even when empty
-em watch <file> --serve                   # serve a live viewer with instant push-reload (no polling)
-em watch <file> --port <n>                # port for --serve (default 5173)
-em validate <file>                        # check a model against event-modeling rules
-em validate <file> --list-issues          # print only open `issue` diagnostics (slice, element, line, text)
-em validate <file> --list-divergences     # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
-em validate <file> --list-public          # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
-em validate <file> --fail-on-issues       # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
-em validate <file> --slice-ready <key>    # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
-em ledger <file>                          # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
-em ledger <file> --from <rev>             # baseline revision
-em ledger <file> --to <rev>               # compare revision (default: current working tree)
-em ledger <file> --json                   # print a JSON document instead of the text report (see docs/cli.md)
-em skill install                          # copy the event-modeling skill into .claude/skills/event-modeling/
-em skill install -f, --force              # overwrite an existing installation
-em skill sync [path]                      # update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
-em skill check [path]                     # check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
-em skill check [path] --json              # print a JSON document instead of the text report (see docs/cli.md)
+em --version                                # print the installed em version
+em init [file]                              # scaffold a starter .em model
+em init [file] -f, --force                  # overwrite if the file exists
+em scaffold <name>                          # scaffold a full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md (see docs/cli.md — for just a starter .em, use `em init`)
+em scaffold <name> -f, --force              # overwrite the directory's contents if it already exists
+em render <file>                            # transpile a model and render it (or emit DOT)
+em render <file> -o, --out <path>           # output path (extension picks the format)
+em render <file> -T, --format <fmt>         # output format (svg, png, pdf, ...)
+em render <file> --slice <name>             # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
+em render <file> --emit-dot                 # print the generated DOT instead of rendering
+em render <file> --keep-empty-lanes         # keep the API lane even when empty
+em export <file>                            # export a versioned JSON snapshot of the normalized model
+em export <file> -o, --out <path>           # write to a file instead of stdout
+em diff <old> [new]                         # compare two models structurally (two files, or one file across git revisions)
+em diff <old> [new] --from <rev>            # diff <old> against this git revision instead of a second file
+em diff <old> [new] --to <rev>              # diff against this git revision instead of the current file (requires --from)
+em diff <old> [new] --exit-code             # exit 1 if the models differ, 0 if identical (git-diff convention)
+em diff <old> [new] --json                  # print a JSON document instead of the text report (see docs/cli.md)
+em glossary <files>                         # cross-model glossary of terms, with consistency checks across models (see docs/cli.md)
+em glossary <files> --json                  # print the full glossary document instead of the text report
+em glossary <files> -o, --out <path>        # write the JSON document to a file instead of stdout (requires --json)
+em glossary <files> --list-conflicts        # print only the conflict lines, no summary
+em glossary <files> --fail-on-conflicts     # exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)
+em catalog <files>                          # generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)
+em catalog <files> -o, --out <dir>          # output directory
+em catalog <files> -T, --format <fmt>       # diagram format embedded in the catalog (svg or png)
+em catalog <files> --title <text>           # catalog site title
+em catalog <files> --keep-empty-lanes       # keep the API lane even when empty
+em slice new <name>                         # scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, Scenarios, Open Questions, ...) stay hand-authored (see docs/slice-doc-schema.md, templates/slice.md)
+em slice new <name> --pattern <pattern>     # slice pattern: state-change | state-view | automation | translation
+em slice new <name> --swimlane <swimlane>   # swimlane, e.g. "Persona → Context"
+em slice new <name> -f, --force             # overwrite the file if it already exists
+em slice index <file>                       # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
+em slice index <file> --check               # verify the table is current; exit non-zero on drift without writing (CI)
+em changelog <file>                         # render a model's git history as a business-readable ledger (see docs/cli.md)
+em changelog <file> --from <rev>            # start the walk at this revision (inclusive)
+em changelog <file> --to <rev>              # end the walk at this revision (inclusive; default HEAD)
+em changelog <file> -o, --out <path>        # write to a file instead of stdout
+em watch <file>                             # re-render on every save
+em watch <file> -o, --out <path>            # output path (extension picks the format)
+em watch <file> -T, --format <fmt>          # output format (svg, png, pdf, ...)
+em watch <file> --keep-empty-lanes          # keep the API lane even when empty
+em watch <file> --serve                     # serve a live viewer with instant push-reload (no polling)
+em watch <file> --port <n>                  # port for --serve (default 5173)
+em validate <file>                          # check a model against event-modeling rules
+em validate <file> --list-issues            # print only open `issue` diagnostics (slice, element, line, text)
+em validate <file> --list-divergences       # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
+em validate <file> --list-public            # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
+em validate <file> --fail-on-issues         # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
+em validate <file> --slice-ready <key>      # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
+em ledger <file>                            # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
+em ledger <file> --from <rev>               # baseline revision
+em ledger <file> --to <rev>                 # compare revision (default: current working tree)
+em ledger <file> --json                     # print a JSON document instead of the text report (see docs/cli.md)
+em skill install                            # copy the event-modeling skill into .claude/skills/event-modeling/
+em skill install -f, --force                # overwrite an existing installation
+em skill sync [path]                        # update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
+em skill check [path]                       # check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
+em skill check [path] --json                # print a JSON document instead of the text report (see docs/cli.md)
 ```
 <!-- GENERATED:cli:end -->
 
