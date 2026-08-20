@@ -151,8 +151,16 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   slice or reads it by name from a later slice (Automation/Translation), or via an explicit
   `arrow` out of it. In a headless model the consumer is the `ui` tagged to the API-caller
   persona — same rule, no special case. Each instance of a repeated read model needs its own
-  consumer: if you repeat a view next to an event purely to keep the arrow short, bring its screen
-  along, or don't add the instance.
+  consumer, but a reaction's isn't limited to the single instance nearest it (MIL-75): em's
+  span-1/wire-once DSL rules force an accumulating read model across several instances, each
+  re-declaring it with `from` naming only the newly adjacent event, and the consuming reaction
+  legitimately sits only at the last one — so every instance at-or-before a consuming reaction
+  counts as consumed, not just the nearest. (Rendering still draws the reaction's arrow to the
+  nearest instance at-or-before it — that resolution is unchanged; only which instances count as
+  *consumed* broadens.) An instance strictly after the last consuming reaction still needs its
+  own consumer: nothing later reads what it accumulates. If you repeat a view next to an event
+  purely to keep the arrow short, and no reaction ever reads that far, bring its screen along or
+  don't add the instance.
   **Exemption:** A view marked `public` is a published read API or webhook response shape for
   an external consumer — its reader is outside this model. The warning is suppressed; document
   it as part of the integration surface.
