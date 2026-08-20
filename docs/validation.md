@@ -264,10 +264,20 @@ semantics.
 | Code | Severity | Meaning |
 |---|---|---|
 | `slice-ready-unknown-slice` | error | The given key names no slice in this model — a bad argument, not a model-quality finding |
-| `slice-ready-no-doc-bound` | warning | No element declares `note "slices/<key>.md"` — the note-binding gate `em export`'s doc join (MIL-91) also uses |
+| `slice-ready-no-doc-bound` | warning | No element declares `note "slices/<key>.md"` (or a ratified `covers` cross-binding to a different slice's doc, MIL-121 — see below) — the note-binding gate `em export`'s doc join (MIL-91) also uses |
 | `binding-missing-file` / `frontmatter-invalid` | warning | Reused verbatim from `em export`'s doc join (see [slice-doc-schema.md](slice-doc-schema.md)) — the note names a path with no file there, or the file exists but its frontmatter isn't usable |
 | `slice-ready-status-not-ready` | warning | The doc's `status` isn't `ready-to-implement` |
 | `slice-ready-open-questions-unchecked` | warning | The doc's `## Open Questions` section has one or more unchecked (`- [ ]`) items |
+
+**Cross-slice binding (MIL-121):** since the two-slice Automation/Translation shape means a
+bare `view` slice can have nothing of its own to document, an element in it may instead
+`note "slices/<other-key>.md"` — a *different* slice's canonical doc path — and that other
+doc's frontmatter `covers` list can ratify the borrow by naming this slice's key back. When
+ratified, every check above (status, Open Questions) reads the **covering** doc, exactly as if
+it were this slice's own; when NOT ratified (missing file, unusable frontmatter, or no matching
+`covers` entry), the slice is silently `slice-ready-no-doc-bound` — same as no note at all, no
+extra diagnostic for the mismatch (that's MIL-126). See
+[slice-doc-schema.md#cross-slice-coverage-covers](slice-doc-schema.md#cross-slice-coverage-covers).
 
 Also folds in any [frontmatter coherence](#frontmatter-coherence) finding already scoped to the
 same slice (status/`implementedIn` incoherence) — not re-derived, just surfaced alongside the

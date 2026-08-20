@@ -14,13 +14,29 @@
 // note binding is a normal, unremarkable state (a slice that hasn't reached specify yet); a
 // binding pointing at a missing file, or a doc whose frontmatter is missing or malformed, are
 // both broken-contract states and warn.
+//
+// Cross-slice binding (MIL-121): the canonical two-slice Automation/Translation shape (MIL-120)
+// splits one design conversation across a view-only slice and its reaction+command+event slice,
+// but a team may still want ONE doc to cover both. A `note "slices/<other-key>.md"` pointing at
+// a DIFFERENT slice's canonical path is an explicit request to borrow that doc — honored only
+// when the other end also ratifies it, via that doc's own frontmatter `covers:` list naming this
+// slice's key. This is a two-ended handshake by design: an unratified cross-note (the target
+// doc doesn't list this slice in `covers`, is missing, or has unusable frontmatter) leaves the
+// slice silently unbound (`no-doc-bound`) rather than warning — a one-sided note is exactly the
+// same "hasn't reached specify yet" state as no note at all, and diagnosing *mismatched* notes is
+// deliberately deferred to MIL-126. Canonical binding (a note naming this slice's own path)
+// always takes precedence and is checked first, unchanged from before this ticket.
 
 import { Slice } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
 import { makeDiag } from "../model/rules.js";
 import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
-import { hasUsableFrontmatter, SliceRef } from "./sliceDoc.js";
+import { hasUsableFrontmatter, SliceDoc, SliceRef } from "./sliceDoc.js";
+
+// Matches a `note "slices/<key>.md"` value's path shape, to pull `<key>` back out for the
+// MIL-121 cross-binding search below — same kebab-slug grammar sliceDoc.ts's SLICE_REF uses.
+const NOTE_SLICE_PATH = /^slices\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/i;
 
 export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
 
@@ -30,8 +46,11 @@ export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-i
  *  cleanly; otherwise it names which of the three broken states applies. */
 export interface SliceDocExport {
   found: boolean;
-  /** The conventional path (`slices/<sliceKey>.md`), always present regardless of `found` —
-   *  the path a doc would need to exist at, and (when `found`) the path it was read from. */
+  /** The bound doc's path — the conventional `slices/<sliceKey>.md` for the ordinary canonical
+   *  binding, or (MIL-121) a different slice's canonical path when this slice's doc join
+   *  resolved to a ratified cross-binding instead. Always present regardless of `found` — when
+   *  nothing is bound (or bound-but-unratified), it's still the conventional path this slice's
+   *  own doc would need to exist at. */
   path: string;
   reason: DocReason;
   status: string | null;
@@ -79,6 +98,29 @@ export function resolveSliceDocJoin(
   const boundEls = slice.elements.filter((el) => el.note === path);
 
   if (boundEls.length === 0) {
+    // No canonical binding — MIL-121: look for a ratified cross-binding before giving up. Walk
+    // elements in declaration order (deterministic "first wins") for a `note "slices/<other>.md"`
+    // naming a DIFFERENT slice, and accept the first one whose target doc exists, has usable
+    // frontmatter, AND ratifies coverage back via its own `covers:` list. Anything short of that
+    // — missing file, unusable frontmatter, or no ratifying `covers` entry — is silently not a
+    // binding at all (same as no note ever having been written); MIL-126 is where a mismatched/
+    // dangling cross-note becomes its own diagnostic, deliberately not here.
+    for (const el of slice.elements) {
+      if (!el.note) continue;
+      const m = el.note.match(NOTE_SLICE_PATH);
+      if (!m) continue;
+      const otherKey = m[1].toLowerCase();
+      if (otherKey === sliceKey) continue; // already handled above; can't happen if we got here
+      const otherParsed = readSliceDoc(baseDir, otherKey);
+      if (!otherParsed || !hasUsableFrontmatter(otherParsed) || !otherParsed.covers.includes(sliceKey)) continue;
+      // Normalized (lowercased) path, NOT `el.note` verbatim: `otherKey` is lowercased before
+      // the readSliceDoc() call above (NOTE_SLICE_PATH is case-insensitive), so a mixed-case
+      // note like `note "slices/Request-Payment.md"` must still report the path it actually
+      // read — `slices/request-payment.md` — not the note's original casing. Otherwise a
+      // consumer that re-derives the key from `doc.path` (sliceReadyValidate.ts) would try to
+      // re-read the mixed-case path and get null on a case-sensitive filesystem.
+      return { doc: foundDoc(`slices/${otherKey}.md`, otherParsed), diagnostics: [] };
+    }
     return { doc: { found: false, path, reason: "no-doc-bound", ...EMPTY_CONTENT }, diagnostics: [] };
   }
 
@@ -111,19 +153,22 @@ export function resolveSliceDocJoin(
     };
   }
 
+  return { doc: foundDoc(path, parsed), diagnostics: [] };
+}
+
+/** Builds the `found: true, reason: null` doc join result shared by a canonical binding and a
+ *  ratified MIL-121 cross-binding — `path` is whichever path the content actually came from. */
+function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
   return {
-    doc: {
-      found: true,
-      path,
-      reason: null,
-      status: parsed.status,
-      version: parsed.version,
-      implementedIn: parsed.implementedIn,
-      splitFrom: parsed.splitFrom,
-      mergedFrom: parsed.mergedFrom,
-      supersededBy: parsed.supersededBy,
-      driftSignal: classifyImplementationDrift(parsed),
-    },
-    diagnostics: [],
+    found: true,
+    path,
+    reason: null,
+    status: parsed.status,
+    version: parsed.version,
+    implementedIn: parsed.implementedIn,
+    splitFrom: parsed.splitFrom,
+    mergedFrom: parsed.mergedFrom,
+    supersededBy: parsed.supersededBy,
+    driftSignal: classifyImplementationDrift(parsed),
   };
 }
