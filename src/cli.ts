@@ -23,6 +23,7 @@ import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
+import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
@@ -93,10 +94,15 @@ program
       process.exit(1);
     }
 
-    const { dot, model, grid, diagnostics } = compileFile(file, {
+    const { dot, model, grid, diagnostics, refs } = compileFile(file, {
       keepEmptyLanes: opts.keepEmptyLanes,
     });
-    printDiagnostics(diagnostics);
+    // MIL-126: note-binding mismatches read slices/*.md alongside the model, so (like
+    // validateLineage/validateFrontmatterCoherence in `em validate`) they're computed here
+    // rather than living in compile()'s pure diagnostics. Always warning-severity — folding
+    // them in never changes whether rendering proceeds below.
+    const allDiagnostics = [...diagnostics, ...validateNoteBindings(model, refs, dirname(file))];
+    printDiagnostics(allDiagnostics);
     warnMissingNotes(file, model);
 
     if (opts.emitDot) {
@@ -109,7 +115,7 @@ program
       return;
     }
 
-    if (hasErrors(diagnostics)) {
+    if (hasErrors(allDiagnostics)) {
       console.error("not rendering: fix the errors above");
       process.exit(1);
     }
@@ -441,23 +447,25 @@ program
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
-      // Lineage-ref resolution (MIL-84) and frontmatter-coherence (MIL-85) are validate's
-      // fs-aware rules — every other check above is a pure function of the .em source. Both
-      // read slices/*.md alongside the model.
+      // Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), and note-binding
+      // mismatches (MIL-126) are validate's fs-aware rules — every other check above is a pure
+      // function of the .em source. All three read slices/*.md alongside the model.
       const allDiagnostics = [
         ...diagnostics,
         ...validateLineage(model, refs, dirname(file)),
         ...validateFrontmatterCoherence(model, refs, dirname(file)),
+        ...validateNoteBindings(model, refs, dirname(file)),
       ];
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
-        // frontmatter-coherence findings for free by filtering allDiagnostics' own refs, rather
-        // than re-deriving that classification here.
+        // frontmatter-coherence findings AND MIL-126's note-binding-mismatch findings for free
+        // by filtering allDiagnostics' own refs, rather than re-deriving either classification
+        // here.
         //
         // "Concerns this slice" means a ref that either IS the bare slice key (lineage,
-        // frontmatter-coherence, and this module's own diagnostics all tag that way) OR starts
-        // with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
+        // frontmatter-coherence, note-binding, and this module's own diagnostics all tag that
+        // way) OR starts with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
         // e.g. an unknown-event error on a view inside this slice). An earlier version gated on
         // "any error anywhere in the model," which silently failed the check — with zero
         // diagnostics printed — on an unrelated slice's breakage; scoping to this slice alone

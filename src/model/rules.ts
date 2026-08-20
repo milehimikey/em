@@ -208,6 +208,30 @@ export const RULES = {
     title: "Invalid or missing frontmatter",
     fix: "Add the required frontmatter keys, or add a frontmatter block.",
   },
+  "note-binding-extra": {
+    severity: "warning",
+    title: "Extra doc-binding note, ignored",
+    fix: "Remove the note, or point it at the slice's actual bound doc.",
+    docAnchor: "note-binding-mismatch",
+  },
+  "note-binding-dangling": {
+    severity: "warning",
+    title: "Dangling cross-slice note",
+    fix: "Create the doc at that path, or fix/remove the note.",
+    docAnchor: "note-binding-mismatch",
+  },
+  "note-binding-unusable": {
+    severity: "warning",
+    title: "Cross-slice note to a doc with unusable frontmatter",
+    fix: "Fix that doc's frontmatter, or fix/remove the note.",
+    docAnchor: "note-binding-mismatch",
+  },
+  "note-binding-unratified": {
+    severity: "warning",
+    title: "Unratified cross-slice note",
+    fix: "Add `covers: <this-slice-key>` to that doc's frontmatter, or correct the note's path.",
+    docAnchor: "note-binding-mismatch",
+  },
   "duplicate-slice-name": {
     severity: "warning",
     title: "Duplicate slice name",

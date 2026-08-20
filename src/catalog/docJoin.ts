@@ -22,10 +22,18 @@
 // when the other end also ratifies it, via that doc's own frontmatter `covers:` list naming this
 // slice's key. This is a two-ended handshake by design: an unratified cross-note (the target
 // doc doesn't list this slice in `covers`, is missing, or has unusable frontmatter) leaves the
-// slice silently unbound (`no-doc-bound`) rather than warning — a one-sided note is exactly the
-// same "hasn't reached specify yet" state as no note at all, and diagnosing *mismatched* notes is
-// deliberately deferred to MIL-126. Canonical binding (a note naming this slice's own path)
-// always takes precedence and is checked first, unchanged from before this ticket.
+// slice silently unbound (`no-doc-bound`) rather than warning here — a one-sided note is exactly
+// the same "hasn't reached specify yet" state as no note at all *from this module's point of
+// view*. Canonical binding (a note naming this slice's own path) always takes precedence and is
+// checked first, unchanged from before this ticket.
+//
+// MIL-126 gives the silent cases above (and a canonically-bound slice's OTHER, now-pointless
+// notes) their own diagnostic instead of staying silent forever: see
+// catalog/noteBindingValidate.ts, a sibling module, not folded in here — same reasoning as
+// lineageValidate.ts/frontmatterCoherenceValidate.ts staying separate from this one, and it
+// needs a second, cross-cutting pass over EVERY doc-shaped note on a slice (not just the winning
+// one) to tell "extra" from "dangling" from "unratified". It reuses `NOTE_SLICE_PATH` and
+// `resolveCrossCandidate` below rather than re-deriving the ratification predicate.
 
 import { Slice } from "../model/model.js";
 import { Diagnostic } from "../model/validate.js";
@@ -35,8 +43,33 @@ import { readSliceDoc } from "./readSliceDoc.js";
 import { hasUsableFrontmatter, SliceDoc, SliceRef } from "./sliceDoc.js";
 
 // Matches a `note "slices/<key>.md"` value's path shape, to pull `<key>` back out for the
-// MIL-121 cross-binding search below — same kebab-slug grammar sliceDoc.ts's SLICE_REF uses.
-const NOTE_SLICE_PATH = /^slices\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/i;
+// MIL-121 cross-binding search below (and MIL-126's mismatch sweep, catalog/noteBindingValidate.ts)
+// — same kebab-slug grammar sliceDoc.ts's SLICE_REF uses.
+export const NOTE_SLICE_PATH = /^slices\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/i;
+
+/** One cross-binding candidate's resolution against `sliceKey`'s ratification requirement:
+ *  the target file doesn't exist, exists but its frontmatter isn't usable, exists and is usable
+ *  but doesn't list `sliceKey` in its `covers:` (doesn't carry the `doc` — nothing downstream
+ *  needs it), or ratifies (does carry `doc`, the parse the caller needs next). */
+export type CrossCandidateResolution =
+  | { status: "missing" }
+  | { status: "unusable" }
+  | { status: "unratified" }
+  | { status: "ratified"; doc: SliceDoc };
+
+/**
+ * Resolves a single `slices/<candidateKey>.md` cross-binding candidate — the exact ratification
+ * predicate `resolveSliceDocJoin`'s cross-binding search (MIL-121) applies, extracted so
+ * `noteBindingValidate.ts` (MIL-126) can classify a *non*-winning candidate's reason without
+ * re-deriving what "ratifies" means. One source of truth for both.
+ */
+export function resolveCrossCandidate(baseDir: string, candidateKey: string, sliceKey: string): CrossCandidateResolution {
+  const doc = readSliceDoc(baseDir, candidateKey);
+  if (!doc) return { status: "missing" };
+  if (!hasUsableFrontmatter(doc)) return { status: "unusable" };
+  if (!doc.covers.includes(sliceKey)) return { status: "unratified" };
+  return { status: "ratified", doc };
+}
 
 export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
 
@@ -100,26 +133,26 @@ export function resolveSliceDocJoin(
   if (boundEls.length === 0) {
     // No canonical binding — MIL-121: look for a ratified cross-binding before giving up. Walk
     // elements in declaration order (deterministic "first wins") for a `note "slices/<other>.md"`
-    // naming a DIFFERENT slice, and accept the first one whose target doc exists, has usable
-    // frontmatter, AND ratifies coverage back via its own `covers:` list. Anything short of that
-    // — missing file, unusable frontmatter, or no ratifying `covers` entry — is silently not a
-    // binding at all (same as no note ever having been written); MIL-126 is where a mismatched/
-    // dangling cross-note becomes its own diagnostic, deliberately not here.
+    // naming a DIFFERENT slice, and accept the first one `resolveCrossCandidate` reports as
+    // ratified. Anything short of that (missing file, unusable frontmatter, or no ratifying
+    // `covers` entry) is silently not a binding at all here (same as no note ever having been
+    // written) — MIL-126's noteBindingValidate.ts is where that non-winning candidate's specific
+    // reason becomes its own diagnostic, using this same predicate.
     for (const el of slice.elements) {
       if (!el.note) continue;
       const m = el.note.match(NOTE_SLICE_PATH);
       if (!m) continue;
       const otherKey = m[1].toLowerCase();
       if (otherKey === sliceKey) continue; // already handled above; can't happen if we got here
-      const otherParsed = readSliceDoc(baseDir, otherKey);
-      if (!otherParsed || !hasUsableFrontmatter(otherParsed) || !otherParsed.covers.includes(sliceKey)) continue;
+      const result = resolveCrossCandidate(baseDir, otherKey, sliceKey);
+      if (result.status !== "ratified") continue;
       // Normalized (lowercased) path, NOT `el.note` verbatim: `otherKey` is lowercased before
       // the readSliceDoc() call above (NOTE_SLICE_PATH is case-insensitive), so a mixed-case
       // note like `note "slices/Request-Payment.md"` must still report the path it actually
       // read — `slices/request-payment.md` — not the note's original casing. Otherwise a
       // consumer that re-derives the key from `doc.path` (sliceReadyValidate.ts) would try to
       // re-read the mixed-case path and get null on a case-sensitive filesystem.
-      return { doc: foundDoc(`slices/${otherKey}.md`, otherParsed), diagnostics: [] };
+      return { doc: foundDoc(`slices/${otherKey}.md`, result.doc), diagnostics: [] };
     }
     return { doc: { found: false, path, reason: "no-doc-bound", ...EMPTY_CONTENT }, diagnostics: [] };
   }

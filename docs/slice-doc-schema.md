@@ -168,10 +168,15 @@ covers its own canonical slice key implicitly — `covers` never needs to list i
 serves that slice" declaration, with no version component — unlike lineage, which records a
 specific historical hop.
 
-**Deliberately out of scope here:** em never validates or warns on a *mismatched* cross-note (a
-note naming a doc that doesn't ratify it back) — that stays silently `no-doc-bound`, the same as
-never having written the note. Flagging that mismatch is a separate, deliberately deferred
-ticket (MIL-126).
+**Out of scope for THIS join:** `resolveSliceDocJoin` itself never warns on a *mismatched*
+cross-note (a note naming a doc that doesn't ratify it back) — the slice's doc join still stays
+silently `no-doc-bound`, the same as never having written the note; the join's own job is
+resolving the *winning* binding, not auditing every note that didn't win. `em validate` does flag
+the mismatch, as its own separate rule (MIL-126) — see
+[validation.md#note-binding-mismatch](validation.md#note-binding-mismatch): a dangling cross-note
+(missing file), one pointing at a doc with unusable frontmatter, one pointing at a usable doc
+that just doesn't ratify (`covers` doesn't list this slice back), and an extra note doing nothing
+in a slice that's already bound elsewhere, each get their own diagnostic there.
 
 ## Delta section: grammar and lifecycle
 
@@ -305,4 +310,5 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
 - [validation.md#lineage](validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)
 - [validation.md#slice-readiness](validation.md#slice-readiness) — `em validate --slice-ready`'s note-binding gate, including the `covers` cross-binding (MIL-121)
+- [validation.md#note-binding-mismatch](validation.md#note-binding-mismatch) — `em validate`'s check for a doc-shaped note that doesn't participate in its slice's binding (MIL-126)
 - [`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md) — the authored template

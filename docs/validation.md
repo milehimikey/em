@@ -275,18 +275,48 @@ bare `view` slice can have nothing of its own to document, an element in it may 
 doc's frontmatter `covers` list can ratify the borrow by naming this slice's key back. When
 ratified, every check above (status, Open Questions) reads the **covering** doc, exactly as if
 it were this slice's own; when NOT ratified (missing file, unusable frontmatter, or no matching
-`covers` entry), the slice is silently `slice-ready-no-doc-bound` — same as no note at all, no
-extra diagnostic for the mismatch (that's MIL-126). See
+`covers` entry), the slice is silently `slice-ready-no-doc-bound` — same as no note at all, from
+*this* check's point of view. The mismatch itself — why that cross-note didn't ratify, or an
+extra note doing nothing in an already-bound slice — gets its own diagnostic below
+([Note-binding mismatch](#note-binding-mismatch), MIL-126), and folds into `--slice-ready`'s
+output the same way frontmatter coherence does (next paragraph), since it's part of the same
+unconditional `allDiagnostics` set the scoped filter draws from. See
 [slice-doc-schema.md#cross-slice-coverage-covers](slice-doc-schema.md#cross-slice-coverage-covers).
 
-Also folds in any [frontmatter coherence](#frontmatter-coherence) finding already scoped to the
-same slice (status/`implementedIn` incoherence) — not re-derived, just surfaced alongside the
-above when present. `--slice-ready` exits non-zero if any diagnostic (warning or error) concerns
-this slice — either the bare slice key (every code above, plus frontmatter coherence) or an
-element ref inside it (`<key>/<kind>.<name>`, e.g. an unrelated model rule tripping on an
-element within the slice itself). Diagnostics from **other** slices never block this check —
-the gate is deliberately single-slice-scoped, matching the ticket's own scenario of checking one
-slice while the rest of a large, actively-evolving model is still WIP.
+Also folds in any [frontmatter coherence](#frontmatter-coherence) and
+[note-binding mismatch](#note-binding-mismatch) finding already scoped to the same slice — not
+re-derived, just surfaced alongside the above when present. `--slice-ready` exits non-zero if
+any diagnostic (warning or error) concerns this slice — either the bare slice key (every code
+above, plus frontmatter coherence and note-binding mismatch) or an element ref inside it
+(`<key>/<kind>.<name>`, e.g. an unrelated model rule tripping on an element within the slice
+itself). Diagnostics from **other** slices never block this check — the gate is deliberately
+single-slice-scoped, matching the ticket's own scenario of checking one slice while the rest of
+a large, actively-evolving model is still WIP.
+
+### Note-binding mismatch
+
+`em validate`'s third fs-aware rule (MIL-126), alongside lineage and frontmatter coherence
+above: a `note` shaped like `slices/<key>.md` (the doc-binding convention, case-insensitively)
+that doesn't actually participate in the slice's resolved doc binding no longer vanishes
+silently. Follow-on to [cross-slice binding](#slice-readiness) above — MIL-121
+deliberately left every non-ratifying cross-note silent; this is where that silence ends. A
+`note` pointing at anything else — a freeform annotation, a path outside `slices/`, any file at
+all — is never this rule's business; `note` remains a general-purpose annotation mechanism
+rendered on diagrams (see [dsl.md](dsl.md)), not exclusively a doc-binding declaration.
+
+| Code | Meaning |
+|---|---|
+| `note-binding-extra` | The slice is already bound (canonically, or via a ratified MIL-121 cross-binding) and this note names a *different* doc path — ignored. Also covers a second, later cross-note that would itself have ratified, losing to an earlier one under MIL-121's "first wins" rule — from that note's own point of view, the slice is simply already bound elsewhere. |
+| `note-binding-dangling` | The slice is unbound, and this cross-note names a `slices/<key>.md` path with no file there. |
+| `note-binding-unusable` | The slice is unbound, and this cross-note's target doc exists but its frontmatter isn't usable (same gate as `frontmatter-invalid`), so it can't ratify anything. |
+| `note-binding-unratified` | The slice is unbound, and this cross-note's target doc exists and is usable, but its `covers:` list doesn't name this slice — add `covers: <this-key>` to that doc, or correct the note's path. |
+
+Never warns on: a canonical note (`note "slices/<own-key>.md"`) whose file is missing or whose
+frontmatter is unusable — `binding-missing-file`/`frontmatter-invalid` already cover that, and
+duplicating them here would be noise; multiple elements carrying the same winning note (canonical
+or cross); or a note whose `slices/<key>.md`-shaped target happens to name this slice's own key
+in the wrong case — an existing, unrelated case-sensitivity quirk of the exact-match canonical
+check, not something this ticket set out to police.
 
 ## What the validator can't catch
 

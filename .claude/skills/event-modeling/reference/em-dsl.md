@@ -477,6 +477,10 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `lineage-ref-cycle` | error | Lineage cycle | Break the cycle — a slice can't be its own ancestor. |
 | `lineage-ref-malformed` | error | Malformed lineage ref | Fix the value to `<slice-key>@v<N>`, or remove it. |
 | `lineage-version-impossible` | error | Impossible lineage version | Fix the referenced version, or ratify the target slice first. |
+| `note-binding-dangling` | warning | Dangling cross-slice note | Create the doc at that path, or fix/remove the note. |
+| `note-binding-extra` | warning | Extra doc-binding note, ignored | Remove the note, or point it at the slice's actual bound doc. |
+| `note-binding-unratified` | warning | Unratified cross-slice note | Add `covers: <this-slice-key>` to that doc's frontmatter, or correct the note's path. |
+| `note-binding-unusable` | warning | Cross-slice note to a doc with unusable frontmatter | Fix that doc's frontmatter, or fix/remove the note. |
 | `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
