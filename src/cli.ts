@@ -46,6 +46,18 @@ import { runSliceIndex } from "./cli/sliceIndex.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
+import {
+  STATE_FILE_NAME,
+  PHASES,
+  isPhase,
+  loadStateFile,
+  parseState,
+  setPhase,
+  setConformance,
+  setReview,
+  isValidDateString,
+  PatchResult,
+} from "./cli/stateFile.js";
 import { STARTER_EM, LIVE_HTML_TEMPLATE, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
 
@@ -96,7 +108,7 @@ program
     writeFileSync(join(dirName, `${dirName}.em`), starterEmFor(name));
     writeFileSync(join(dirName, "live.html"), LIVE_HTML_TEMPLATE);
     writeFileSync(join(dirName, "README.md"), scaffoldReadme(name, dirName));
-    writeFileSync(join(dirName, ".event-modeling.md"), scaffoldStateFile(name, dirName, today));
+    writeFileSync(join(dirName, STATE_FILE_NAME), scaffoldStateFile(name, dirName, today));
     console.log(`scaffolded ${dirName}/`);
   });
 
@@ -441,6 +453,86 @@ program
     } else {
       process.stdout.write(markdown + "\n");
     }
+  });
+
+const STATE_DIR_HELP =
+  "model directory containing .event-modeling.md, or a direct path to that file (default: current directory)";
+
+/** Shared by every `em state` writer: load, apply the pure patch, write, report — the only
+ *  difference between set-phase/set-conformance/set-review is which `mutate` closure they pass. */
+function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: string, today: string) => PatchResult): void {
+  const loaded = loadStateFile(dirOrFile);
+  if (!loaded.ok) {
+    console.error(loaded.message);
+    process.exit(1);
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const result = mutate(loaded.text, today);
+  if (!result.ok) {
+    console.error(`${cmdLabel}: ${result.message}`);
+    process.exit(1);
+  }
+  writeFileSync(loaded.path, result.text);
+  console.log(`wrote ${loaded.path}`);
+}
+
+const state = program
+  .command("state")
+  .description("read/write the state file's mechanical fields deterministically (see docs/cli.md)");
+
+state
+  .command("read")
+  .description("print the state file's mechanical fields as JSON")
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .action((dir: string) => {
+    const loaded = loadStateFile(dir);
+    if (!loaded.ok) {
+      console.error(loaded.message);
+      process.exit(1);
+    }
+    const parsed = parseState(loaded.text);
+    if (!parsed.ok) {
+      console.error(`em state read: ${parsed.message}`);
+      process.exit(1);
+    }
+    console.log(JSON.stringify(parsed.state, null, 2));
+  });
+
+state
+  .command("set-phase")
+  .description("rewrite Current phase: (and Last updated:); --step also rewrites Current step:")
+  .argument("<phase>", `phase: ${PHASES.join(" | ")}`)
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .option("--step <n>", "also set Current step: to this value")
+  .action((phase: string, dir: string, opts: { step?: string }) => {
+    if (!isPhase(phase)) {
+      console.error(`em state set-phase: invalid phase "${phase}" — expected one of: ${PHASES.join(", ")}`);
+      process.exit(1);
+    }
+    writeStateUpdate(dir, "em state set-phase", (text, today) => setPhase(text, phase, today, opts.step));
+  });
+
+state
+  .command("set-conformance")
+  .description("rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses")
+  .argument("<revision>", "target-repo revision just diffed against")
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .requiredOption("--report <path>", "path to the conformance report just written")
+  .action((revision: string, dir: string, opts: { report: string }) => {
+    writeStateUpdate(dir, "em state set-conformance", (text, today) => setConformance(text, revision, opts.report, today));
+  });
+
+state
+  .command("set-review")
+  .description("rewrite Last stakeholder review: (and Last updated:)")
+  .argument("<date>", "review date, YYYY-MM-DD")
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .action((date: string, dir: string) => {
+    if (!isValidDateString(date)) {
+      console.error(`em state set-review: invalid date "${date}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+    writeStateUpdate(dir, "em state set-review", (text, today) => setReview(text, date, today));
   });
 
 program
@@ -834,7 +926,7 @@ function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]
   const intro: ChangelogIntro | null = models[0] ? { slices: models[0].slices.length, elements: models[0].elements.length } : null;
   const introError = models[0] ? undefined : (errors[0] ?? undefined);
 
-  const stateFile = join(dirname(file), ".event-modeling.md");
+  const stateFile = join(dirname(file), STATE_FILE_NAME);
   const decisions = existsSync(stateFile) ? parseDecisionsLog(readFileSync(stateFile, "utf8")) : [];
 
   return buildChangelog(entries, decisions, { file, intro, introError });

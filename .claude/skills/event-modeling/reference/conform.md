@@ -72,11 +72,12 @@ authoritative.
 
 ### 1. Scope
 
-Default: **diff-scoped.** Read the state file's `Last conformance:` marker (date + target-repo
-revision). If it's set, run `git diff --name-only <recorded-revision>..HEAD` from the target
-repo's root to list the changed paths (`git log` alone prints commit subjects, not paths), then
-map those paths to slices (via each slice doc's known code locations, `implementedIn:` links,
-or a quick Grep if those are stale) — that's your in-scope set. If the marker reads `never`
+Default: **diff-scoped.** Run `em state read <model-dir>` and check its `lastConformance` field
+(date + target-repo revision, or `null` for `never`) rather than parsing the `Last conformance:`
+bullet by hand. If it's set, run `git diff --name-only <lastConformance.revision>..HEAD` from
+the target repo's root to list the changed paths (`git log` alone prints commit subjects, not
+paths), then map those paths to slices (via each slice doc's known code locations,
+`implementedIn:` links, or a quick Grep if those are stale) — that's your in-scope set. If it's `null`
 (first run) or the user passes `--full`, scope is every `implemented` slice.
 
 Cost containment here is cadence, not a trigger condition — diff-scoped-by-default is what
@@ -215,18 +216,19 @@ stays auditable) but don't ask the user to ratify what's already ratified. **You
 canonical model or a slice doc unprompted** — walk the report with the user, apply only the
 proposals they approve, then re-render and `em validate`.
 
-End of run: update the state file's `Last conformance:` marker, exact format:
+End of run: update the state file's `Last conformance:` marker with
 
 ```
-- **Last conformance:** YYYY-MM-DD @ <target-repo revision> — report: conformance/YYYY-MM-DD-report.md
+em state set-conformance <target-repo revision> --report conformance/YYYY-MM-DD-report.md
 ```
 
-The revision is the one you just diffed against, so the next run's scope starts from here —
-step 1 parses this line, so keep the format exact. **The marker only advances with the human
-in the loop**: in an interactive session, update it after walking the report with the user; a
-headless/scheduled run writes the report but never the marker (nobody ratified the outcome),
-so the next run re-walks the same span — see `docs/ci.md`. If any proposals were ratified and
-applied, log a Decisions entry noting what changed and why.
+— the revision is the one you just diffed against, so the next run's scope starts from here.
+The command writes the exact format step 1 parses back out; never hand-edit the bullet.
+**The marker only advances with the human in the loop**: in an interactive session, run it
+after walking the report with the user; a headless/scheduled run writes the report but never
+the marker (nobody ratified the outcome), so the next run re-walks the same span — see
+`docs/ci.md`. If any proposals were ratified and applied, log a Decisions entry noting what
+changed and why.
 
 ## Conventions
 

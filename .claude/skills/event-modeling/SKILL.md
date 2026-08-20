@@ -87,11 +87,13 @@ vendored alongside this skill.
 1. Check the tool: `em --version`. If missing, tell the user to run `npm i -g @milehimikey/em`
    and stop until installed.
 2. Locate the model. Look for an existing `<dir>/.event-modeling.md` and `*.em` in the working
-   directory (or a `models/` subfolder). If found, read the state file. If not, and the phase
-   needs one, ask the user for the model name and where to create it.
-3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, read the
-   state file and resume the recorded phase/step; if no model exists, propose starting `discover`
-   (greenfield) or `extract` (modeling an existing system).
+   directory (or a `models/` subfolder). If found, run `em state read <dir>` to read the state
+   file's mechanical fields (model path, phase, step, last updated, last conformance, last
+   review) as JSON — don't parse the bullets by hand. If not, and the phase needs one, ask the
+   user for the model name and where to create it.
+3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, use
+   `em state read <dir>`'s `phase`/`step` to resume the recorded phase/step; if no model exists,
+   propose starting `discover` (greenfield) or `extract` (modeling an existing system).
 4. Populate the state file's Participants section at session start. For a live workshop, ask for
    a single human proxy to relay questions to the room, and attribute every answer/decision in
    the Decisions log to a named participant.
@@ -166,9 +168,10 @@ phase applies to field tables, below.
    both are worth raising with the user rather than leaving dangling.
 
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
-decisions, open questions), and run `em slice index <model-name>.em` to seed `README.md`'s
-Slices table (every slice already reads "no doc yet" — no slice docs exist until the `slice`
-phase writes them). Tell the user they can stop here and resume with `/event-modeling model`.
+decisions, open questions — run `em state set-phase model` rather than hand-editing `Current
+phase:`), and run `em slice index <model-name>.em` to seed `README.md`'s Slices table (every
+slice already reads "no doc yet" — no slice docs exist until the `slice` phase writes them).
+Tell the user they can stop here and resume with `/event-modeling model`.
 
 ## Phase: `extract` — current-state model of an existing system
 
@@ -188,9 +191,9 @@ state).
 - **Current-state-only:** park unknowns as `# TBD` comments in the `.em`, mirrored in the state
   file's Open Questions — never guess intended design.
 
-End of phase: validated as-is model; state file updated (source mode, rounds, decisions); run
-`em slice index <model-name>.em` to seed `README.md`'s Slices table; then chain to
-`/event-modeling model` (steps 5-7).
+End of phase: validated as-is model; state file updated (source mode, rounds, decisions; `em
+state set-phase model` for `Current phase:`); run `em slice index <model-name>.em` to seed
+`README.md`'s Slices table; then chain to `/event-modeling model` (steps 5-7).
 
 ## Phase: `model` — steps 5-7
 
@@ -219,7 +222,8 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    this fact and what they do with it. The honest answers are "here's the read model we missed" or
    "nobody — so why are we recording it", and both improve the model.
 
-End of phase: render, update state, suggest `/event-modeling slice` to write implementation specs.
+End of phase: render, update state (`em state set-phase slice`), suggest `/event-modeling slice`
+to write implementation specs.
 
 ## Phase: `slice` — deep slice documents
 
@@ -325,10 +329,11 @@ model's names wherever the code matches them); run `em diff <model-name>.em
 <model-name>-asis.em --json` and let `em` decide the structural deltas; classify every finding
 (real drift / model gap / internal inconsistency / uncertainty) with cited evidence; write
 `conformance/<date>-report.md` with proposed `issue "conformance: …"` red notes; apply only the
-proposals the user ratifies, then re-render and validate; update the state file's
-`Last conformance:` marker.
+proposals the user ratifies, then re-render and validate; run `em state set-conformance
+<revision> --report <path>` to update the state file's `Last conformance:` marker.
 
-End of phase: state file's `Last conformance:` marker updated, Decisions log entry if any
+End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance`),
+Decisions log entry if any
 proposals were applied. Conform doesn't chain to another phase — it's a recurring loop, run
 again whenever the codebase has moved.
 
@@ -368,8 +373,8 @@ losing the current slice or resetting review mode.
 
 Wrap-up: run `em validate --list-issues` to sweep everything captured during the session and
 walk each one with the user, same as any open issue. Update the state file's Participants
-section with who attended, and set a `Last stakeholder review:` marker (mirrors `Last
-conformance:`).
+section with who attended, and run `em state set-review <date>` to set the `Last stakeholder
+review:` marker (mirrors `Last conformance:`).
 
 End of phase: state file's `Last stakeholder review:` marker updated, every issue captured
 live triaged (resolved on the spot, moved to Open questions / parking lot, or left open on
@@ -424,5 +429,6 @@ em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-rel
 <!-- GENERATED:cli-quick:end -->
 
 Always finish a working session by: re-rendering, running `em validate`, and updating
-`.event-modeling.md` with the current phase/step, decisions, open questions, and a Usage log
-entry (phases touched + validate diagnostic categories hit).
+`.event-modeling.md` — `em state set-phase <phase> [--step <n>]` for the current phase/step,
+decisions and open questions by hand, and a Usage log entry (phases touched + validate
+diagnostic categories hit).

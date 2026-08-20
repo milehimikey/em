@@ -13,6 +13,10 @@
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
+| `em state read [dir]` | Print the state file's mechanical fields as JSON |
+| `em state set-phase <phase> [dir]` | Rewrite `Current phase:` (and `Current step:` with `--step`) |
+| `em state set-conformance <revision> [dir]` | Rewrite `Last conformance:` in the exact format `conform` parses |
+| `em state set-review <date> [dir]` | Rewrite `Last stakeholder review:` |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
@@ -845,6 +849,90 @@ carries no Decisions blocks.
 **Determinism.** Given the same commit range and the same state file content, the output
 is byte-identical — no timestamps beyond the commits' own author dates, no environment-
 derived values.
+
+## `em state`
+
+Reads and writes the **mechanical** fields of a model's state file (`.event-modeling.md`,
+see [ai-workflow.md](ai-workflow.md) and the `event-modeling` skill's `templates/state.md`):
+`Model file:`, `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Last
+stakeholder review:`. This is the enforcement point for the phase enum and for the exact
+`Last conformance:`/`Last stakeholder review:` formats the skill's `conform`/`review` phases
+depend on — hand-editing these bullets risks a typo the next resume/conform run can't parse.
+
+Everything else in the file — Session inputs, Participants, Decisions log, Usage log, Open
+questions, Slice inventory — is agent-authored prose and stays out of `em state`'s reach;
+every writer below touches only its one targeted bullet (plus `Last updated:`), leaving every
+other byte of the file untouched.
+
+**Locating the state file.** Every subcommand takes an optional `[dir]` (default: the current
+directory) — either the model directory containing `.event-modeling.md`, or a direct path to
+that file itself (its basename is checked against `.event-modeling.md` exactly). All four
+subcommands fail clearly, non-zero, if the file — or the bullet a writer targets — is missing.
+
+### `em state read [dir]`
+
+Prints the six mechanical fields as JSON on stdout:
+
+```json
+{
+  "modelPath": "order-fulfillment.em",
+  "phase": "discover",
+  "step": "1",
+  "lastUpdated": "2026-08-20",
+  "lastConformance": null,
+  "lastReview": null
+}
+```
+
+`lastConformance` is `null` for the template's `never` marker, otherwise `{ "date", "revision",
+"report" }` parsed from the `Last conformance:` bullet. `lastReview` is `null` for `never`,
+otherwise the `YYYY-MM-DD` at the start of the `Last stakeholder review:` bullet.
+
+### `em state set-phase <phase> [dir]`
+
+Rewrites `Current phase:` (and `Last updated:`) to today. `<phase>` must be one of the
+canonical phases — `discover | extract | model | slice | implement | conform | review |
+validate` (the same list `templates/state.md`'s placeholder documents) — an invalid value is
+refused with the full list. `--step <n>` additionally rewrites `Current step:`.
+
+| Flag | Effect |
+|---|---|
+| `--step <n>` | Also rewrite `Current step:` to this value |
+
+```bash
+em state set-phase slice my-model/
+em state set-phase implement my-model/ --step 3
+```
+
+### `em state set-conformance <revision> [dir]`
+
+Rewrites `Last conformance:` (and `Last updated:`) to the exact format
+[reference/conform.md](../.claude/skills/event-modeling/reference/conform.md)'s scoping step
+parses back out:
+
+```
+- **Last conformance:** <today> @ <revision> — report: <report>
+```
+
+`--report <path>` is required.
+
+| Flag | Effect |
+|---|---|
+| `--report <path>` | Path to the conformance report just written (required) |
+
+```bash
+em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
+```
+
+### `em state set-review <date> [dir]`
+
+Rewrites `Last stakeholder review:` (and `Last updated:`) to `<date> — attendees: see
+Participants`, matching `templates/state.md`'s format. `<date>` must look like `YYYY-MM-DD`
+(month/day range-checked, not a full calendar) — an invalid value is refused.
+
+```bash
+em state set-review 2026-08-20 my-model/
+```
 
 ## `em skill install`
 
