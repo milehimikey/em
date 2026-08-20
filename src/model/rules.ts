@@ -232,6 +232,30 @@ export const RULES = {
     fix: "Add `covers: <this-slice-key>` to that doc's frontmatter, or correct the note's path.",
     docAnchor: "note-binding-mismatch",
   },
+  "doc-model-pattern-mismatch": {
+    severity: "warning",
+    title: "Doc/model pattern mismatch",
+    fix: "Fix the doc's `pattern:` frontmatter to match the model, or restructure the slice to match the doc.",
+    docAnchor: "doc-model-consistency",
+  },
+  "doc-model-element-not-in-model": {
+    severity: "warning",
+    title: "Doc names an element the model doesn't have",
+    fix: "Add the element to the model, or fix/remove it in the doc.",
+    docAnchor: "doc-model-consistency",
+  },
+  "doc-model-element-not-in-doc": {
+    severity: "warning",
+    title: "Model element the doc doesn't mention",
+    fix: "Add the matching marker to the doc, or remove the element from the model.",
+    docAnchor: "doc-model-consistency",
+  },
+  "doc-model-field-mismatch": {
+    severity: "warning",
+    title: "Doc/model field mismatch",
+    fix: "Reconcile the field table with the model's fields — names and types.",
+    docAnchor: "doc-model-consistency",
+  },
   "duplicate-slice-name": {
     severity: "warning",
     title: "Duplicate slice name",

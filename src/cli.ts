@@ -24,6 +24,7 @@ import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
+import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
@@ -447,21 +448,25 @@ program
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
-      // Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), and note-binding
-      // mismatches (MIL-126) are validate's fs-aware rules — every other check above is a pure
-      // function of the .em source. All three read slices/*.md alongside the model.
+      // Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding
+      // mismatches (MIL-126), and doc↔model consistency (MIL-124) are validate's fs-aware
+      // rules — every other check above is a pure function of the .em source. All four read
+      // slices/*.md alongside the model. Doc↔model consistency is deliberately validate-only
+      // (unlike note-binding, which `em render` also folds in) — it's a conform-phase concern,
+      // not something every render needs to recheck.
       const allDiagnostics = [
         ...diagnostics,
         ...validateLineage(model, refs, dirname(file)),
         ...validateFrontmatterCoherence(model, refs, dirname(file)),
         ...validateNoteBindings(model, refs, dirname(file)),
+        ...validateDocModelConsistency(model, refs, dirname(file)),
       ];
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
-        // frontmatter-coherence findings AND MIL-126's note-binding-mismatch findings for free
-        // by filtering allDiagnostics' own refs, rather than re-deriving either classification
-        // here.
+        // frontmatter-coherence findings, MIL-126's note-binding-mismatch findings, AND MIL-124's
+        // doc-model-consistency findings for free by filtering allDiagnostics' own refs, rather
+        // than re-deriving any of those classifications here.
         //
         // "Concerns this slice" means a ref that either IS the bare slice key (lineage,
         // frontmatter-coherence, note-binding, and this module's own diagnostics all tag that

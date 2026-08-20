@@ -63,6 +63,12 @@ export interface SliceDoc {
    *  `- **Status:** ...` bullet line, or null if neither is found (a freeform
    *  doc that doesn't follow the slice.md template). */
   status: string | null;
+  /** Lowercased `pattern:` frontmatter value (`state-change`/`state-view`/`automation`/
+   *  `translation`, per the template) — frontmatter-only, no legacy body form. Authored/
+   *  informational per docs/slice-doc-schema.md, but MIL-124's doc-model-consistency check
+   *  (catalog/docModelConsistencyValidate.ts) is the first `em` consumer that reads it back, to
+   *  compare against `classify.ts`'s deterministic `classifySlicePattern()`. Null when absent. */
+  pattern: string | null;
   /** This slice's own ratified-content version, from frontmatter `version:`
    *  (e.g. `version: 1`) — a cache of git truth (docset module 06), not
    *  derived or validated against git history. Null when absent or
@@ -261,6 +267,7 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     raw: markdown,
     body,
     status,
+    pattern: fields.get("pattern")?.toLowerCase() ?? null,
     version: parseVersion(fields.get("version")),
     splitFrom: splitFromRaw ? parseSliceRef(splitFromRaw) : null,
     mergedFrom: parseSliceRefList(fields.get("merged-from")),

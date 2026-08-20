@@ -326,6 +326,58 @@ or cross); or a note whose `slices/<key>.md`-shaped target happens to name this 
 in the wrong case — an existing, unrelated case-sensitivity quirk of the exact-match canonical
 check, not something this ticket set out to police.
 
+### Doc-model consistency
+
+`em validate`'s fourth fs-aware rule (MIL-124), alongside lineage, frontmatter coherence, and
+note-binding mismatch above: the conform phase's "internal surface" check — does a bound slice
+doc's structured claims still agree with the `.em` model? — used to be entirely a matter of
+agent judgment. This rule makes the mechanically-checkable core of that judgment deterministic.
+It only looks at a slice's **resolved** doc binding (`docJoin.ts`'s `resolveSliceDocJoin`, the
+same MIL-91/MIL-121-aware resolution `em export` and `--slice-ready` use) with usable
+frontmatter — an unbound slice, a dangling/unratified note, or a doc with unusable frontmatter
+are all silent here (already covered by `binding-missing-file`/`frontmatter-invalid`/note-binding
+mismatch above).
+
+Every check is **declare-gated**: a doc that says nothing structured about a given kind or field
+stays silent for it. Partial/draft docs are the normal case; disagreement between what a doc
+*does* declare and what the model actually has is the genuine anomaly this rule exists to catch.
+
+| Code | Meaning |
+|---|---|
+| `doc-model-pattern-mismatch` | The doc's frontmatter `pattern:` doesn't match `classify.ts`'s `classifySlicePattern()` for the doc's owning slice — the same classification `em export` publishes as `slice.pattern`. Silent when the slice classifies as unclassified (nothing to compare against). |
+| `doc-model-element-not-in-model` | The doc declares a `**Command:**`/`**Event:**`/`- **View:**` marker naming a command/event/view the model doesn't have — checked only for kinds the doc declares at least one marker of. |
+| `doc-model-element-not-in-doc` | The model has a command/event/view the doc never mentions — checked only for kinds the doc declares at least one marker of (a kind with zero markers is silent entirely, not "the doc is missing everything"). |
+| `doc-model-field-mismatch` | A matched Command/Event's field table (first column = field name) disagrees with the model element's `{ fields }` block — a field name on one side but not the other, or a type declared on both sides that differs (case-insensitive). Checked only when *both* sides declare at least one field. |
+
+**Name comparison** uses `model.ts`'s own `normalizeName()` — the same case/spacing-insensitive
+comparison the DSL itself uses to resolve names — for element names and field names alike, never
+a second, independently-invented comparison.
+
+**Body markers** are the slice.md template's own stable shapes:
+`` **Command:** `Name` ``, `` **Event:** `Name` `` (optionally followed by `` → context `Ctx` ``),
+and `` - **View:** `Name` ... ``. A field table is the markdown table (`| Field | Type | ... |`)
+found between a Command/Event marker and the next `##` heading or marker. Parsing is tolerant by
+construction: only these exact shapes are recognized at all — prose, a differently-shaped table,
+an unfilled `{{field}}` placeholder row — is simply not matched, never a parse error.
+
+**Out of scope, deliberately:** GWT scenarios, invariants (`INV-*`), status coherence (already
+[frontmatter coherence](#frontmatter-coherence)), swimlane, the `Read by:`/`Consumed by:` prose
+lines, and comparing a doc's `` → context `Ctx` `` against the model's `@Context` tag — all of
+these need judgment (or, for `@Context`, were judged not worth a first cut) rather than a
+mechanical name/shape comparison, and stay part of the agent-judgment side of the conform phase.
+
+**MIL-121 cross-covered docs:** a doc bound to more than one slice (its own canonical slice, plus
+any slice whose ratified `covers:` cross-note points at it) is checked **once**, against the
+union of elements across every slice it's the resolved binding for — not once per slice, which
+would double-report the same disagreement. A finding with a specific model element to point at
+(`doc-model-element-not-in-doc`, field mismatches) anchors there; a finding with nothing model-side
+to point at (`doc-model-pattern-mismatch`, `doc-model-element-not-in-model`) anchors at the doc's
+*owning* slice — the one canonically bound to the doc's own path.
+
+`--slice-ready` folds these findings in for free, same as frontmatter coherence and note-binding
+mismatch — every diagnostic here tags `refs` with the bare slice key (or `<sliceKey>/<kind>.<name>`
+element refs), so the existing ref filter picks them up without this module re-deriving anything.
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection
