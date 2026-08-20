@@ -35,7 +35,9 @@ export function matchQuote(s: string, openIdx: number): number {
  *  or a clause's value (`note`/`issue`/`divergence`/`from`/`source`/`external "..."`).
  *  `external` (MIL-66) is here so a `#`/`{`/`}` inside a `tag X external "..."` description is
  *  inert string content, never mistaken for a comment or block boundary (same MIL-122 discipline
- *  every other quoted clause value gets). */
+ *  every other quoted clause value gets). `renamed from "..."` (MIL-68) needs no entry of its
+ *  own: it incidentally ends in the same `from` this list already carries, so a `#`/`{`/`}`
+ *  inside a rename item's quotes is already inert here — relied on deliberately, not by luck. */
 const QUOTE_OPENER_KEYWORDS =
   /(?:^|\s)(?:model|slice|type|note|issue|divergence|from|source|external)$/i;
 
@@ -138,14 +140,21 @@ export function unquote(s: string): string {
  *  as native `String.split(sep)` (for input with no quotes at all, output is character-for-
  *  character identical to `s.split(sep)`). Used for field specs: `parseInlineFields` needs one
  *  comma-separated span per field, but a field-level clause may itself contain a quoted list with
- *  embedded commas (MIL-68's planned `renamed from "Old1", "Old2"`), which a naive `.split(",")`
- *  would break apart mid-string. */
+ *  embedded commas (MIL-68's `renamed from "Old1", "Old2"`), which a naive `.split(",")` would
+ *  break apart mid-string.
+ *
+ *  A `"` only opens a span when `isQuoteOpener` says it's grammar-anchored (start of `s`, after
+ *  a `QUOTE_OPENER_KEYWORDS` keyword, or after a comma) — same MIL-122 discipline as
+ *  `scanUnquoted` above. Two independently-stray inch marks in a field list
+ *  (`{ size24: 24", size32: 32" }`) must NOT pair with each other and swallow the comma between
+ *  them; only a genuinely anchored `"` (e.g. right after `renamed from`, or after a from-list
+ *  comma) opens a span at all. */
 export function splitTopLevel(s: string, sep: string): string[] {
   const items: string[] = [];
   let cur = "";
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if (c === '"') {
+    if (c === '"' && isQuoteOpener(s, i)) {
       const close = matchQuote(s, i);
       const end = close >= 0 ? close : s.length - 1;
       cur += s.slice(i, end + 1);

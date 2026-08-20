@@ -38,6 +38,14 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // convention like `public`), and element `tags: [{ key, kind, fields, description }] | null`
 // (identity/composite/external DCB tag metadata — events only; `null` when the element has
 // none). See `model/model.ts`'s `collectTags`. Additive-only.
+// Also 1.6 (MIL-68, same unreleased cycle as MIL-66 — no separate bump): field
+// `renamedFrom: string[] | null` (the prior name(s) a field was known as, most-recent-first;
+// `null` — not the `tag`-style boolean-default convention — when the field carries no
+// `renamed from` clause, which includes every field of a declared `type`, since the clause
+// can't parse there), and element `renamedFrom: string[] | null` (same shape, on the
+// element's own name; events and commands only — `null` on every other kind and on an
+// event/command that declares none). Both are purely codegen/export metadata: `em diff`
+// does not read either and keeps reporting a rename as remove+add. Additive-only.
 export const SCHEMA_VERSION = "1.6";
 
 export interface ExportResult {
@@ -56,6 +64,11 @@ export interface FieldExport {
    *  convention as `public`. Always present; `false` on every field that isn't one, including
    *  every field of a declared type (MIL-66). */
   tag: boolean;
+  /** The prior name(s) this field was known as, most-recent-first, from a trailing
+   *  `renamed from "Old1", "Old2"` clause (event/command fields only, MIL-68) — `typeRef`-style
+   *  nullable, not the `tag` boolean-default convention. `null` when the field carries no such
+   *  clause, which includes every field of a declared `type` (the clause can't parse there). */
+  renamedFrom: string[] | null;
 }
 
 export interface TagExport {
@@ -86,6 +99,7 @@ function fieldExport(
       ? { name: resolved.typeDecl.name, ref: refByTypeId.get(resolved.typeDecl.id)!, array: resolved.array }
       : null,
     tag: f.tag === true,
+    renamedFrom: f.renamedFrom ?? null,
   };
 }
 
@@ -168,6 +182,7 @@ export function buildExport(
         again: el.again === true,
         public: el.public === true,
         tags: tagsOf(el),
+        renamedFrom: el.renamedFrom ?? null,
         logicalRef:
           el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
       })),

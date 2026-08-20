@@ -97,9 +97,9 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 | Keyword | Band | Meaning | Tag | Extra clauses |
 |---|---|---|---|---|
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
-| `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `{ fields }` |
+| `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `renamed from`, `{ fields }` |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
@@ -161,6 +161,17 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   element-level `tag` clause on a non-event, is a parse error. `em export` carries every tag
   key under the event's `tags` array (`{ key, kind, fields, description }`); `em validate`
   flags a composite tag naming an unknown field and a duplicate tag key on one event.
+- **`renamed from "Old1", "Old2"`** (events and commands only): records the prior name(s) an
+  element, or one of its fields, was known as — codegen metadata for converting
+  already-stored payloads instead of an upcaster chain. Element-level trails the element's own
+  name (same trailing-clause family as `@Context`/`public`); field-level trails a field's type,
+  or the bare name of a typeless field, inside the `{ … }` block — event/command fields only, a
+  parse error on a view/`ui`/automation-kind field or a `type` field. The list is quoted,
+  comma-separated, most-recent-old-name first. Inside one inline `{ … }` block, a bare quoted
+  field name immediately after a renamed field is read as a CONTINUATION of that list, not a
+  new field — give the quoted-name field a type, or write fields one per line, to avoid the
+  ambiguity. `em export` carries it as `renamedFrom: string[] | null` on both the element and
+  each field. **`em diff` does not read this clause** — a rename still reports as remove+add.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured

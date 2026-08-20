@@ -237,7 +237,7 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
     `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, `public`,
-    `tags`, and `logicalRef`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
+    `tags`, `renamedFrom`, and `logicalRef`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
     annotation — a reasoned, ratified deviation between this element and its implementation;
     `null` when the element carries none. `public` (added in schema `1.2`) is `true` when the
     event carries the `public` clause — part of the model's published integration surface —
@@ -250,7 +250,11 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     names, `description: null`), or `"external"` (from `tag X external "text"`, `fields: null`,
     `description` the string). Order: inline field identity tags in field order, then
     element-level composite/external clauses in declaration order. See
-    [dsl.md](dsl.md#event-tags).
+    [dsl.md](dsl.md#event-tags). `renamedFrom` (added in schema `1.6`, MIL-68) is
+    `string[] | null` — the element's own `renamed from "Old1", "Old2"` clause (event/command
+    only), most-recent-old-name first; `null` when the element carries none, including every
+    element of a kind the clause can't parse on. Codegen/export metadata only: `em diff` does
+    not read it and keeps reporting a rename as remove+add. See [dsl.md](dsl.md#renames).
     Fields that don't apply to a given element are emitted as explicit `null` (not omitted),
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
@@ -258,9 +262,14 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   - Each **field** — on both a declared type's own `fields` and an element's `fields` — has
     `name`, `type` (the raw type string, unchanged), `typeRef` (added in schema `1.3`):
     `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`
-    otherwise (see [dsl.md](dsl.md#named-types)), and `tag` (added in schema `1.6`, MIL-66):
+    otherwise (see [dsl.md](dsl.md#named-types)), `tag` (added in schema `1.6`, MIL-66):
     `true` when the field carries a trailing `tag` clause (an identity tag), `false` otherwise
-    — always present, same `=== true` convention as `public`. See [dsl.md](dsl.md#event-tags).
+    — always present, same `=== true` convention as `public` — and `renamedFrom` (added in
+    schema `1.6`, MIL-68): `string[] | null` — the field's own trailing `renamed from "Old1",
+    "Old2"` clause (event/command fields only), most-recent-old-name first; `null` (the
+    `typeRef` nullable convention, not `tag`'s boolean-default one) when the field carries no
+    such clause, which includes every field of a declared `type` — the clause can't parse
+    there. See [dsl.md](dsl.md#event-tags) and [dsl.md](dsl.md#renames).
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
 - `diagnostics` — every diagnostic `em validate` would print, plus export-only ref-collision
   and slice-doc-join warnings. Each has `severity`, `code` (added in schema `1.4`, MIL-91 — a

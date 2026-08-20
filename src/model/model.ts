@@ -52,6 +52,10 @@ export interface Element {
   /** Element-level `tag` clauses (composite/external) — events only. Inline field identity
    *  tags live on `Field.tag` instead (see `collectTags` for the merged view). */
   tags?: TagClause[];
+  /** `renamed from "Old1", "Old2"` on the element's own name — event or command only
+   *  (MIL-68). `undefined` when absent. Purely export/codegen metadata: `em diff` never reads
+   *  this, and continues reporting a rename as remove+add. */
+  renamedFrom?: string[];
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -185,6 +189,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         divergence: el.divergence,
         fields: el.fields,
         tags: el.tags,
+        renamedFrom: el.renamedFrom,
       };
 
       if (el.kind === "ui") {

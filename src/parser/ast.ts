@@ -30,6 +30,13 @@ export interface Field {
    *  `collectTags`, rather than normalized into that array here — keeps the field's own
    *  `tag` flag visible right next to the field it marks. */
   tag?: boolean;
+  /** Trailing `renamed from "Old1", "Old2"` clause on the field line (event/command fields
+   *  only, MIL-68): the prior name(s) this field was known as, most-recent-first, for
+   *  payload-conversion codegen at handling time. `undefined` when absent — a declared
+   *  type's fields can never carry this clause (it can't parse there), so they always export
+   *  it as `null` (see `emit/json.ts`'s `fieldExport`). Purely export/codegen metadata —
+   *  `em diff` still reports a rename as remove+add (see `ElementNode.renamedFrom`). */
+  renamedFrom?: string[];
 }
 
 /** Kind of an element-level `tag` clause (`ElementNode.tags`) — the inline field `tag` (identity)
@@ -81,6 +88,12 @@ export interface ElementNode {
   /** Element-level `tag` clauses (composite/external) — events only. `undefined`/absent when
    *  none are declared; inline field identity tags live on `Field.tag` instead, not here. */
   tags?: TagClause[];
+  /** `renamed from "Old1", "Old2"` on the element's own name — event or command only (MIL-68):
+   *  the prior name(s) this element was known as, most-recent-first. Codegen/export metadata
+   *  for payload conversion — `em diff` deliberately does NOT infer a rename from this (stays
+   *  remove+add, no-inference philosophy); this is purely additive metadata a consumer opts
+   *  into reading. `undefined` when absent. */
+  renamedFrom?: string[];
   line: number;
 }
 

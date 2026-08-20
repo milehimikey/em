@@ -206,6 +206,48 @@ attaches to the most recently declared element in the slice, which must be an ev
 declare, and a duplicate tag key on one event (inline identity and element-level keys share one
 namespace) — see [validation.md](validation.md).
 
+## Renames
+
+**Event and command only.** A `renamed from "Old1", "Old2"` clause records the prior name(s) an
+element, or one of its fields, was known as — metadata a codegen tool uses to convert
+already-stored payloads written under the old name(s) to the current shape, without an
+upcaster chain. Writing it on a `ui`, `view`, an automation kind, or a `type` field is a parse
+error, the same posture as `tag`.
+
+```
+event PaymentRecorded renamed from "PaymentRegistered" @Payment {
+  paymentId: UUID
+  amountCents: long renamed from "amount"          # a field renamed too
+}
+
+command PlaceOrder renamed from "SubmitOrder"
+```
+
+- **Element-level** — `renamed from "Old1", "Old2"` trails the element's own name (its header
+  line, or wherever another trailing clause like `@Context`/`public` may go): the element
+  itself was renamed one or more times. Valid on `event` and `command` only — the two kinds
+  with a wire/API identity a consumer decodes against.
+- **Field-level** — `renamed from "Old1", "Old2"` trails a single field spec, after its type
+  (`amountCents: long renamed from "amount"`) or after the bare name of a typeless field
+  (`total renamed from "amount"`). Valid only on fields of an `event` or `command` — a parse
+  error inside a `view`/`ui`/automation-kind field block or a `type` declaration.
+- The list is quoted and comma-separated, most-recent-old-name first when a name changed more
+  than once, the same convention as a view's `from "A", "B"` list.
+- **Inline lists and field ambiguity.** Inside one `{ … }` field block written inline, a bare
+  quoted field name immediately after a `renamed from` field is read as a CONTINUATION of that
+  list, not a new field — `{ a: X renamed from "A", "B", c: Y }` is two fields (`a`, renamed
+  from both `"A"` and `"B"`, then `c`), not three. To declare an actual field with a quoted
+  name right after a renamed field, either give it a type (`"B": Type` — a bare quoted string
+  is only read as a continuation) or write the fields one per line in a multi-line block, which
+  has no such ambiguity at all.
+
+`em export` carries every renamed-from list forward as `renamedFrom: string[] | null` — on
+each element and on each field — see [cli.md](cli.md). **`em diff` does not read this clause at
+all**: a rename is still reported as a removal plus an addition, same as before this clause
+existed. `renamed from` is codegen/export metadata for payload conversion, not diff input —
+diff's no-inference philosophy is unchanged; a consumer that wants "this old name became this
+new name" reads it from the export, not from a diff run.
+
 ## Named types
 
 A top-level `type Name { field: Type, ... }` declaration names a reusable structured shape —
