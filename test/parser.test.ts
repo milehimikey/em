@@ -846,4 +846,248 @@ slice "S" {
       expect(ast.slices[0].elements[0].from).toEqual(["Order Placed", "Order {Updated}"]);
     });
   });
+
+  describe("`tag` clause (MIL-66)", () => {
+    it("parses an inline identity tag on a typed field", () => {
+      const ast = parse(`
+slice "S" {
+  event Price Designated {
+    priceId: UUID tag
+    productId: UUID
+  }
+}
+`);
+      const fields = ast.slices[0].elements[0].fields;
+      expect(fields).toEqual([
+        { name: "priceId", type: "UUID", tag: true },
+        { name: "productId", type: "UUID" },
+      ]);
+    });
+
+    it("parses an inline identity tag on a typeless field", () => {
+      const ast = parse(`slice "S" {\n  event Price Designated {\n    priceId tag\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "priceId", tag: true }]);
+    });
+
+    it("parses an inline identity tag on an inline (single-line) field block", () => {
+      const ast = parse(`slice "S" {\n  event Price Designated { priceId: UUID tag, productId: UUID }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "priceId", type: "UUID", tag: true },
+        { name: "productId", type: "UUID" },
+      ]);
+    });
+
+    it("treats a field whose entire text is just `tag` as a field NAMED tag, not a clause", () => {
+      const ast = parse(`slice "S" {\n  event E {\n    tag\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "tag" }]);
+    });
+
+    it("leaves `field.tag` undefined when no inline tag clause is present", () => {
+      const ast = parse(`slice "S" {\n  event E {\n    priceId: UUID\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields![0].tag).toBeUndefined();
+    });
+
+    it("rejects an inline field `tag` clause on a command, view, ui, and `type` block", () => {
+      expect(() => parse(`slice "S" {\n  command Do Thing {\n    orderId: UUID tag\n  }\n}`)).toThrow(
+        /`tag` is only valid on an event field/,
+      );
+      expect(() => parse(`slice "S" {\n  view Open Orders from "Order Placed" {\n    orderId: UUID tag\n  }\n}`)).toThrow(
+        /`tag` is only valid on an event field/,
+      );
+      expect(() => parse(`slice "S" {\n  ui Catalog @Customer {\n    itemId: UUID tag\n  }\n}`)).toThrow(
+        /`tag` is only valid on an event field/,
+      );
+      expect(() => parse(`type Money {\n  amount: int tag\n}`)).toThrow(
+        /`tag` is only valid on an event field/,
+      );
+    });
+
+    it("parses a composite tag as a trailing clause on the event's header line (no field block)", () => {
+      const ast = parse(`slice "S" {\n  event Price Designated tag productCurrency from productId, currency\n}`);
+      expect(ast.slices[0].elements[0]).toMatchObject({
+        name: "Price Designated",
+        tags: [{ key: "productCurrency", kind: "composite", fields: ["productId", "currency"] }],
+      });
+    });
+
+    it("parses a composite tag trailing an inline `{ … }` field block", () => {
+      const ast = parse(
+        `slice "S" {\n  event Price Designated { productId: UUID, currency: string } tag productCurrency from productId, currency\n}`,
+      );
+      const evt = ast.slices[0].elements[0];
+      expect(evt.tags).toEqual([{ key: "productCurrency", kind: "composite", fields: ["productId", "currency"], line: evt.line }]);
+    });
+
+    it("parses a composite tag trailing a multi-line `{ … }` block's closing `}` line", () => {
+      const ast = parse(`
+slice "S" {
+  event Price Designated {
+    productId: UUID
+    currency: string
+  } tag productCurrency from productId, currency
+}
+`);
+      expect(ast.slices[0].elements[0].tags).toMatchObject([
+        { key: "productCurrency", kind: "composite", fields: ["productId", "currency"] },
+      ]);
+    });
+
+    it("parses the canonical standalone `tag ... from ...` line following a closed event block", () => {
+      const ast = parse(`
+slice "S" {
+  event StandaloneSellingPriceDesignated {
+    priceId: UUID tag
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+}
+`);
+      const evt = ast.slices[0].elements[0];
+      expect(evt.fields).toEqual([
+        { name: "priceId", type: "UUID", tag: true },
+        { name: "productId", type: "UUID" },
+        { name: "currency", type: "string" },
+      ]);
+      expect(evt.tags).toEqual([
+        { key: "productCurrency", kind: "composite", fields: ["productId", "currency"], line: evt.tags![0].line },
+      ]);
+    });
+
+    it("parses an `external` tag clause, trailing and standalone, with its description never parsed", () => {
+      const trailing = parse(
+        `slice "S" {\n  event Rule Triple Recorded tag productRuleTriple external "hash of kind+source+target, order-independent — dedup check"\n}`,
+      );
+      expect(trailing.slices[0].elements[0].tags).toMatchObject([
+        {
+          key: "productRuleTriple",
+          kind: "external",
+          description: "hash of kind+source+target, order-independent — dedup check",
+        },
+      ]);
+
+      const standalone = parse(`
+slice "S" {
+  event Rule Triple Recorded
+  tag productRuleTriple external "hash of kind+source+target"
+}
+`);
+      expect(standalone.slices[0].elements[0].tags).toMatchObject([
+        { key: "productRuleTriple", kind: "external", description: "hash of kind+source+target" },
+      ]);
+    });
+
+    it("lets an `external` description safely contain `#`, `{`, `}` (lexer QUOTE_OPENER_KEYWORDS gotcha)", () => {
+      const ast = parse(
+        `slice "S" {\n  event E { a: UUID } tag t external "PUT /widgets/{id} #not-a-comment"\n}`,
+      );
+      expect(ast.slices[0].elements[0].tags).toMatchObject([
+        { key: "t", kind: "external", description: "PUT /widgets/{id} #not-a-comment" },
+      ]);
+      // the field block itself is unaffected — proves the trailing `{`/`}`/`#` were consumed
+      // as part of the quoted description, not mistaken for a second field block or a comment.
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "a", type: "UUID" }]);
+    });
+
+    it("accumulates multiple element-level tag clauses, in declaration order", () => {
+      const ast = parse(`
+slice "S" {
+  event Price Designated {
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+  tag productRuleTriple external "dedup hash"
+}
+`);
+      expect(ast.slices[0].elements[0].tags).toMatchObject([
+        { key: "productCurrency", kind: "composite", fields: ["productId", "currency"] },
+        { key: "productRuleTriple", kind: "external", description: "dedup hash" },
+      ]);
+    });
+
+    it("combines an inline identity field tag with an element-level composite tag on one event", () => {
+      const ast = parse(`
+slice "S" {
+  event Price Designated {
+    priceId: UUID tag
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+}
+`);
+      const evt = ast.slices[0].elements[0];
+      expect(evt.fields!.find((f) => f.name === "priceId")!.tag).toBe(true);
+      expect(evt.tags).toMatchObject([{ key: "productCurrency", kind: "composite", fields: ["productId", "currency"] }]);
+    });
+
+    it("rejects an element-level `tag` clause on a non-event kind, trailing form", () => {
+      expect(() => parse(`slice "S" {\n  command Do Thing tag t from a, b\n}`)).toThrow(
+        /`tag` is only valid on event/,
+      );
+      expect(() =>
+        parse(`slice "S" {\n  view Open Orders from "Order Placed" tag t external "x"\n}`),
+      ).toThrow(/`tag` is only valid on event/);
+    });
+
+    it("rejects a standalone `tag` line following a non-event element", () => {
+      expect(() =>
+        parse(`slice "S" {\n  command Do Thing\n  tag t from a, b\n}`),
+      ).toThrow(/standalone `tag` line must follow an event/);
+    });
+
+    it("rejects a standalone `tag` line with no preceding element in the slice", () => {
+      expect(() => parse(`slice "S" {\n  tag t from a, b\n}`)).toThrow(
+        /standalone `tag` line must follow an event/,
+      );
+    });
+
+    it("requires a composite tag to name at least 2 fields", () => {
+      expect(() => parse(`slice "S" {\n  event E tag t from onlyOne\n}`)).toThrow(
+        /composite tag needs at least 2 fields/,
+      );
+    });
+
+    it("does not let the unquoted composite `from` list collide with the quoted view/reaction `from` clause", () => {
+      // The general `from "..."` regex requires a quote right after `from`; the composite tag's
+      // field list never has one, so it must never be mistaken for that clause (which would
+      // otherwise throw "`from` is only valid on view or a reaction").
+      const ast = parse(`slice "S" {\n  event E tag productCurrency from productId, currency\n}`);
+      expect(ast.slices[0].elements[0].tags).toMatchObject([
+        { key: "productCurrency", kind: "composite", fields: ["productId", "currency"] },
+      ]);
+    });
+
+    it("lets a composite tag's field list stop before a trailing `public`/`@Context`, leaving those to their own clauses", () => {
+      const ast = parse(`slice "S" {\n  event E tag productCurrency from productId, currency public @Pricing\n}`);
+      const evt = ast.slices[0].elements[0];
+      expect(evt.tags).toMatchObject([
+        { key: "productCurrency", kind: "composite", fields: ["productId", "currency"] },
+      ]);
+      expect(evt.public).toBe(true);
+      expect(evt.context).toBe("Pricing");
+    });
+
+    it("keeps a title-cased `Tag` in a free-text event name out of clause parsing (MIL-82-style)", () => {
+      const ast = parse(`slice "S" {\n  event Tag Removed\n}`);
+      expect(ast.slices[0].elements[0].name).toBe("Tag Removed");
+      expect(ast.slices[0].elements[0].tags).toBeUndefined();
+    });
+
+    it("does not mistake the words `tag`/`external` inside a quoted `note`/`issue` string for clause syntax", () => {
+      const ast = parse(
+        `slice "S" {\n  event E note "see tag external docs" issue "is tag external here?"\n}`,
+      );
+      const evt = ast.slices[0].elements[0];
+      expect(evt.note).toBe("see tag external docs");
+      expect(evt.issue).toBe("is tag external here?");
+      expect(evt.tags).toBeUndefined();
+    });
+
+    it("leaves `tags` undefined on an event with no tag clauses at all", () => {
+      const ast = parse(`slice "S" {\n  event Order Placed\n}`);
+      expect(ast.slices[0].elements[0].tags).toBeUndefined();
+    });
+  });
 });

@@ -163,6 +163,49 @@ Once two connected elements both declare fields, `em validate` traces them — a
 with no matching source-event field, or an event field no same-slice command provides, gets
 a warning. See [validation.md](validation.md).
 
+## Event tags
+
+**Events only.** A `tag` declares a DCB (Dynamic Consistency Boundary) tag key on an event —
+metadata a consistency-boundary-aware event store (Axon Framework's `@EventTag`, etc.) uses to
+decide which events belong to one consistency check. Writing `tag` on a command, view, `ui`, or
+`type` field — or an element-level `tag` clause on a non-event element — is a parse error.
+
+There are three forms:
+
+```
+event Selling Price Designated {
+  priceId: UUID tag                          # identity: inline field clause
+  productId: UUID
+  currency: string
+}
+tag productCurrency from productId, currency  # composite: element-level, standalone line
+tag productRuleTriple external "hash of kind+source+target, order-independent"  # external
+```
+
+- **Identity** — a trailing `tag` keyword on a field line inside the event's `{ … }` block
+  (`priceId: UUID tag`, or on a typeless field, `priceId tag`) marks that field itself as a tag
+  key; the key defaults to the field's own name. A field whose entire text is just `tag` (no
+  type, nothing before it) is a field literally NAMED `tag`, not a clause — the keyword only
+  counts as a clause when something trails behind it.
+- **Composite** — `tag <key> from <field1>, <field2>, ...` declares a new tag key formed from
+  ≥2 of the event's own fields, named bare (unquoted, unlike a view's `from "Event"`).
+- **External** — `tag <key> external "text"` declares a tag key that's computed some other way;
+  the string is documentation only, describing the intended computation, and is never parsed.
+
+An event may carry any combination — an inline identity tag plus one or more composite/external
+clauses — and multiple element-level `tag` clauses accumulate.
+
+Element-level `tag` clauses (composite/external) can be written two ways: as a trailing clause
+on the event (its header line, after an inline `{ … }` block, or on a multi-line block's closing
+`}` line — same family as `note`/`issue`), or as one or more **standalone `tag ...` lines**
+immediately following the event inside the slice body (the form shown above) — the latter
+attaches to the most recently declared element in the slice, which must be an event.
+
+`em export` carries every tag key forward under each event's `tags` array — see
+[cli.md](cli.md). `em validate` catches a composite tag naming a field the event doesn't
+declare, and a duplicate tag key on one event (inline identity and element-level keys share one
+namespace) — see [validation.md](validation.md).
+
 ## Named types
 
 A top-level `type Name { field: Type, ... }` declaration names a reusable structured shape —

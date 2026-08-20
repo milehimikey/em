@@ -3,7 +3,7 @@
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
-import { Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
+import { collectTags, Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
 
@@ -493,6 +493,50 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       line: group[0].line,
       refs: group.map((t) => refOf(t.id)),
     });
+  }
+
+  // Event tag metadata (MIL-66): identity (inline field `tag`), composite (`tag X from a, b`),
+  // and external (`tag X external "..."`) tag keys. Only ever populated on events (`tag`
+  // clauses are a parse error on any other kind), so no kind filter is needed to make either
+  // loop below a no-op elsewhere.
+  for (const el of model.elements) {
+    // A composite tag's field list must name fields that actually exist on the event — checked
+    // against `el.tags` directly (not the merged `collectTags` view) since only composite
+    // clauses carry a field list to validate, and each needs its own `line` for the diagnostic.
+    const fieldNames = new Set((el.fields ?? []).map((f) => normalizeName(f.name)));
+    for (const t of el.tags ?? []) {
+      if (t.kind !== "composite") continue;
+      for (const fname of t.fields ?? []) {
+        if (fieldNames.has(normalizeName(fname))) continue;
+        pushDiag(diags, "tag-composite-unknown-field", {
+          message:
+            `event "${el.name}" tag "${t.key}" names field "${fname}", which isn't declared ` +
+            `on this event`,
+          line: t.line,
+          refs: [refOf(el.id)],
+        });
+      }
+    }
+
+    // Duplicate tag key — inline identity keys and element-level (composite/external) keys
+    // counted together, since they all share one namespace on the event.
+    const tags = collectTags(el);
+    if (tags.length === 0) continue;
+    const keyCounts = new Map<string, { display: string; count: number }>();
+    for (const t of tags) {
+      const k = normalizeName(t.key);
+      const entry = keyCounts.get(k);
+      if (entry) entry.count++;
+      else keyCounts.set(k, { display: t.key, count: 1 });
+    }
+    for (const { display, count } of keyCounts.values()) {
+      if (count <= 1) continue;
+      pushDiag(diags, "tag-duplicate-key", {
+        message: `event "${el.name}" declares tag key "${display}" ${count} times; tag keys must be unique per event`,
+        line: el.line,
+        refs: [refOf(el.id)],
+      });
+    }
   }
 
   // Ambiguous names (used by arrows / view sources) get a heads-up.

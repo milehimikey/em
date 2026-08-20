@@ -99,7 +99,7 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `{ fields }` |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
@@ -148,6 +148,19 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   this model). `em export` carries it as `public: true`/`false`; `em diff` reports a flip as
   `event marked public`/`event unmarked public` (the entry cites the element's kind, so a
   view flip reads `view "X"`); `em validate --list-public` audits the whole public surface.
+- **`tag`** (events only): declares a DCB (Dynamic Consistency Boundary) tag key. Three forms:
+  a trailing `tag` on a field line inside the event's `{ … }` block (`priceId: UUID tag`, or
+  typeless `priceId tag`) — an identity tag, key defaults to the field's own name; a bare field
+  whose ENTIRE text is just `tag` is a field named `tag`, not a clause. `tag <key> from a, b`
+  (composite, ≥2 bare/unquoted field names — unlike a view's quoted `from`). `tag <key>
+  external "text"` (external — the string is documentation only, never parsed). Composite/
+  external clauses are element-level: write them as a trailing clause on the event (same
+  family as `note`/`issue`), or as one or more standalone `tag ...` lines immediately following
+  the event inside the slice body (attaches to the most recently declared element, which must
+  be an event); multiple accumulate. `tag` anywhere on a command/view/`ui`/`type` field, or an
+  element-level `tag` clause on a non-event, is a parse error. `em export` carries every tag
+  key under the event's `tags` array (`{ key, kind, fields, description }`); `em validate`
+  flags a composite tag naming an unknown field and a duplicate tag key on one event.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured
@@ -480,6 +493,8 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
+| `tag-composite-unknown-field` | error | Composite tag names an unknown field | Fix the field name, or add it to the event's fields. |
+| `tag-duplicate-key` | error | Duplicate tag key | Rename one of the tags so every key on the event is unique. |
 | `translation-name-collision` | warning | Translation name reused for different producers | Use a distinct name per producer to avoid confusion. |
 | `type-cycle` | error | Cyclic type reference | Break the cycle, or route the self/mutual reference through an array. |
 | `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction | Move the `ui` to the slice that displays the read model, or drop it. |

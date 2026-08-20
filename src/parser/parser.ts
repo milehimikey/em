@@ -33,6 +33,7 @@ import {
   lastIndexOfUnquoted,
   matchQuote,
   splitQuotedList,
+  splitTopLevel,
   stripComment,
   unquote,
 } from "./lexer.js";
@@ -122,21 +123,45 @@ export function parse(source: string): ModelNode {
 
     // Inside an open field block: each line is a field declaration.
     if (currentElement) {
-      for (const f of parseInlineFields(line)) (currentElement.fields ??= []).push(f);
+      for (const f of parseInlineFields(line, lineNo, currentElement.kind))
+        (currentElement.fields ??= []).push(f);
       continue;
     }
 
     // Inside an open `type` block: each line is a field declaration too.
     if (currentTypeDecl) {
-      currentTypeDecl.fields.push(...parseInlineFields(line));
+      currentTypeDecl.fields.push(...parseInlineFields(line, lineNo, "type-decl"));
       continue;
     }
 
     const [keyword, ...rest] = splitFirstWord(line);
     const remainder = rest.join(" ").trim();
 
-    // Inside a slice: only element declarations are allowed.
+    // Inside a slice: only element declarations are allowed, plus a standalone `tag ...` line
+    // (MIL-66's canonical form), which attaches to the most recently declared element rather
+    // than opening one of its own. Checked before the element-keyword gate below since `tag`
+    // is not itself an ELEMENT_KEYWORD.
     if (currentSlice) {
+      if (keyword === "tag") {
+        const target = currentSlice.elements[currentSlice.elements.length - 1];
+        if (!target) {
+          throw new ParseError(
+            "a standalone `tag` line must follow an event declared earlier in this slice",
+            lineNo,
+          );
+        }
+        if (target.kind !== "event") {
+          throw new ParseError(
+            `a standalone \`tag\` line must follow an event — "${target.name}" is a ${target.kind}`,
+            lineNo,
+          );
+        }
+        const leftover = extractTagClauses(target, `tag ${remainder}`, lineNo);
+        if (leftover) {
+          throw new ParseError(`unrecognized trailing text in 'tag' clause: '${leftover}'`, lineNo);
+        }
+        continue;
+      }
       if (!ELEMENT_KEYWORDS.has(keyword as ElementKind)) {
         throw new ParseError(
           `'${keyword}' is not valid inside a slice (expected ui/command/view/event/automation/processor/saga/translation or '}')`,
@@ -154,7 +179,7 @@ export function parse(source: string): ModelNode {
         const after = remainder.slice(braceAt + 1);
         const closeAt = indexOfUnquoted(after, "}");
         const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
-        el.fields.push(...parseInlineFields(inner));
+        el.fields.push(...parseInlineFields(inner, lineNo, el.kind));
         if (closeAt < 0) {
           currentElement = el; // block stays open across lines
         } else {
@@ -229,7 +254,7 @@ export function parse(source: string): ModelNode {
         const after = remainder.slice(braceAt + 1);
         const closeAt = indexOfUnquoted(after, "}");
         const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
-        decl.fields.push(...parseInlineFields(inner));
+        decl.fields.push(...parseInlineFields(inner, lineNo, "type-decl"));
         if (closeAt < 0) {
           currentTypeDecl = decl; // block stays open across lines
         } else {
@@ -358,6 +383,14 @@ function extractClauses(
     rest = divergenceClause.rest;
   }
 
+  // Element-level `tag` clause(s) (event only, MIL-66): `tag <key> from a, b` (composite) or
+  // `tag <key> external "text"` (external). Extracted before `from` below — though the two
+  // never actually collide (this `from` is an unquoted bare-identifier list, the view/reaction
+  // `from` below requires a quote immediately after — see `extractTagClauses`) — so both belong
+  // in this same note/issue/divergence "extract before `from`" cluster. May match more than
+  // once: `tag` clauses accumulate, unlike every other clause here.
+  rest = extractTagClauses(node, rest, line);
+
   // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive
   // and its operand must open with a quote, so a capitalized `From` — or a bare
   // lowercase `from` — inside an element name (`event Widget Removed From
@@ -437,27 +470,160 @@ function extractClauses(
   return rest;
 }
 
-/** Parse one field spec: `name` or `name: Type`. Returns null for blanks. */
-function parseFieldSpec(raw: string): Field | null {
+/**
+ * Pulls every element-level `tag <key> from a, b` (composite) or `tag <key> external "text"`
+ * (external) clause out of `raw`, in a loop — `tag` clauses accumulate, unlike every other
+ * clause `extractClauses` handles. Applies each to `node.tags` and returns whatever text is
+ * left. Events only (event or nothing — same posture as the `public` kind check above); a
+ * non-event `node` throws as soon as a `tag` clause is actually found, so an element that
+ * merely has "tag" nowhere in its trailing text pays no penalty.
+ *
+ * Shared by `extractClauses` (the trailing-clause position, on the header line, after an
+ * inline `{ … }` block, or on a multi-line block's closing `}` line) and the standalone
+ * `tag ...` line handler in `parse()` (which prepends the literal `"tag "` back on before
+ * calling this, so both entry points share one matcher/error-message implementation).
+ *
+ * The composite field list is a bounded bare-identifier grammar (`a`, `a, b`, `a, b, c`, …),
+ * not "everything to end of line" the way the quoted `from`/`note`/etc. clauses are — so a
+ * `tag` clause never has to be the line's last token; a trailing `public`/`@Context`/etc.
+ * simply isn't valid identifier-list syntax and is left for those clauses to find afterward.
+ */
+function extractTagClauses(node: ElementNode, raw: string, line: number): string {
+  let rest = raw;
+  const IDENT = "[A-Za-z_][A-Za-z0-9_]*";
+  const compositeRe = new RegExp(`(?:^|\\s)tag\\s+(\\S+)\\s+from\\s+(${IDENT}(?:\\s*,\\s*${IDENT})*)`);
+  const externalRe = /(?:^|\s)tag\s+(\S+)\s+external\s+(?=")/;
+
+  for (;;) {
+    const cMatch = rest.match(compositeRe);
+    const eMatch = rest.match(externalRe);
+    let which: "composite" | "external" | null = null;
+    if (cMatch && eMatch) which = (cMatch.index ?? 0) <= (eMatch.index ?? 0) ? "composite" : "external";
+    else if (cMatch) which = "composite";
+    else if (eMatch) which = "external";
+    if (!which) break;
+
+    if (node.kind !== "event") {
+      throw new ParseError(
+        "`tag` is only valid on event — identity/composite/external tags describe an event's " +
+          "DCB tag, not a command/view/ui",
+        line,
+      );
+    }
+
+    if (which === "composite") {
+      const m = cMatch!;
+      const key = m[1];
+      const fields = m[2].split(",").map((s) => s.trim());
+      if (fields.length < 2)
+        throw new ParseError(
+          `tag "${key}": a composite tag needs at least 2 fields (got ${fields.length})`,
+          line,
+        );
+      (node.tags ??= []).push({ key, kind: "composite", fields, line });
+      rest = (rest.slice(0, m.index) + rest.slice((m.index ?? 0) + m[0].length)).trim();
+    } else {
+      const m = eMatch!;
+      const key = m[1];
+      const openIdx = (m.index ?? 0) + m[0].length;
+      const closeIdx = matchQuote(rest, openIdx);
+      if (closeIdx < 0)
+        throw new ParseError(`unterminated string literal in tag "${key}" external clause`, line);
+      const description = decodeQuoted(rest.slice(openIdx + 1, closeIdx));
+      (node.tags ??= []).push({ key, kind: "external", description, line });
+      rest = (rest.slice(0, m.index) + rest.slice(closeIdx + 1)).trim();
+    }
+  }
+
+  return rest;
+}
+
+/** Which enclosing block a field line lives in, passed down to `extractFieldClauses` so a
+ *  field-level clause legal only on certain element kinds (e.g. `tag`, event-only) can reject
+ *  it elsewhere. `"type-decl"` marks a field inside a top-level `type { … }` block — no
+ *  enclosing element kind at all. */
+type FieldClauseContext = ElementKind | "type-decl";
+
+/** Trailing clauses recognized on a single field spec, extracted before the `name[: Type]`
+ *  split. A new field-level clause (MIL-68's planned `renamedFrom?: string[]`, from
+ *  `renamed from "Old1", "Old2"`) is a new optional key here, not a rewrite of this shape or
+ *  of `extractFieldClauses`'s control flow. */
+interface FieldClauses {
+  /** Trailing `tag` keyword (event fields only): marks the field an identity tag. */
+  tag?: boolean;
+}
+
+/**
+ * Pulls recognized trailing clauses off one field spec's raw text (a single comma-separated
+ * entry from a `{ … }` block's inner text, BEFORE the `name`/`name: Type` split — a clause
+ * trails the type, or the bare name for a typeless field). Returns the leftover text (still to
+ * be split on `:`) plus whatever clauses were found.
+ *
+ * The reusable field-level counterpart to `extractClauses` (element-level) — kept a separate
+ * step from the name/type split below so a second field clause slots in as a new case here
+ * instead of a restructure. `context` is the enclosing block's element kind (or `"type-decl"`);
+ * a clause legal only on certain kinds throws a ParseError naming the actual context, mirroring
+ * `extractClauses`'s per-clause kind checks.
+ *
+ * Anchored as a genuinely TRAILING word requiring non-blank content before it (`/^(.*\S)\s+tag$/`)
+ * so a field literally NAMED `tag` (bare `tag`, or `tag: UUID`) is a field declaration, never a
+ * clause — the text "tag" alone can't satisfy "something, then whitespace, then tag" against
+ * itself. Same discipline `extractClauses` uses for `public`/`again` against a same-named
+ * element.
+ */
+function extractFieldClauses(raw: string, line: number, context: FieldClauseContext): { rest: string; clauses: FieldClauses } {
+  const clauses: FieldClauses = {};
+  let rest = raw;
+
+  const tagMatch = rest.match(/^(.*\S)\s+tag$/);
+  if (tagMatch) {
+    if (context !== "event") {
+      throw new ParseError(
+        "`tag` is only valid on an event field — identity/composite/external tags describe an " +
+          `event's DCB tag, not a ${context === "type-decl" ? "type" : context} field`,
+        line,
+      );
+    }
+    clauses.tag = true;
+    rest = tagMatch[1];
+  }
+
+  return { rest, clauses };
+}
+
+/** Parse one field spec: `name` or `name: Type`, plus any trailing field-level clauses
+ *  (`extractFieldClauses`). Returns null for blanks. */
+function parseFieldSpec(raw: string, line: number, context: FieldClauseContext): Field | null {
   const s = raw.trim();
   if (!s) return null;
-  const colon = s.indexOf(":");
+  const { rest, clauses } = extractFieldClauses(s, line, context);
+  const spec = rest.trim();
+  if (!spec) return null;
+
+  const colon = spec.indexOf(":");
+  let field: Field | null;
   if (colon >= 0) {
-    const name = unquote(s.slice(0, colon).trim());
-    const type = unquote(s.slice(colon + 1).trim());
-    return name ? { name, ...(type ? { type } : {}) } : null;
+    const name = unquote(spec.slice(0, colon).trim());
+    const type = unquote(spec.slice(colon + 1).trim());
+    field = name ? { name, ...(type ? { type } : {}) } : null;
+  } else {
+    const name = unquote(spec);
+    field = name ? { name } : null;
   }
-  const name = unquote(s);
-  return name ? { name } : null;
+  if (field && clauses.tag) field.tag = true;
+  return field;
 }
 
 /** Parse comma-separated field specs from the inner text of a `{ … }` block (or a single
  *  line inside an already-open one). Shared by element field blocks and `type` blocks —
- *  every field-bearing `{ … }` block in the grammar splits and parses fields the same way. */
-function parseInlineFields(inner: string): Field[] {
+ *  every field-bearing `{ … }` block in the grammar splits and parses fields the same way.
+ *  The split is quote-aware (`splitTopLevel`, identical to native `.split(",")` when `inner`
+ *  has no quotes at all) so a future field clause carrying a quoted, comma-bearing list
+ *  (MIL-68's `renamed from "Old1", "Old2"`) isn't broken apart by the split itself. */
+function parseInlineFields(inner: string, line: number, context: FieldClauseContext): Field[] {
   const fields: Field[] = [];
-  for (const spec of inner.split(",")) {
-    const f = parseFieldSpec(spec);
+  for (const spec of splitTopLevel(inner, ",")) {
+    const f = parseFieldSpec(spec, line, context);
     if (f) fields.push(f);
   }
   return fields;

@@ -32,9 +32,12 @@ export function matchQuote(s: string, openIdx: number): number {
 
 /** Keywords after which a `"` is grammar-legitimate as the start of a quoted
  *  string: a declaration's name (`model "Name"`, `slice "Name"`, `type "Name"`)
- *  or a clause's value (`note`/`issue`/`divergence`/`from`/`source "..."`). */
+ *  or a clause's value (`note`/`issue`/`divergence`/`from`/`source`/`external "..."`).
+ *  `external` (MIL-66) is here so a `#`/`{`/`}` inside a `tag X external "..."` description is
+ *  inert string content, never mistaken for a comment or block boundary (same MIL-122 discipline
+ *  every other quoted clause value gets). */
 const QUOTE_OPENER_KEYWORDS =
-  /(?:^|\s)(?:model|slice|type|note|issue|divergence|from|source)$/i;
+  /(?:^|\s)(?:model|slice|type|note|issue|divergence|from|source|external)$/i;
 
 /** True if the `"` at `s[i]` is grammar-legitimate as the START of a quoted
  *  string — the very first character of `s`, immediately after one of
@@ -127,6 +130,35 @@ export function unquote(s: string): string {
     if (close === t.length - 1) return decodeQuoted(t.slice(1, -1));
   }
   return t;
+}
+
+/** Split a comma-separated list, honouring quotes — a comma inside a quoted span is literal, not
+ *  a separator — but unlike `splitQuotedList` below, returns each segment's RAW text untrimmed
+ *  and unquoted, with the same "one entry per separator, including a trailing empty one" contract
+ *  as native `String.split(sep)` (for input with no quotes at all, output is character-for-
+ *  character identical to `s.split(sep)`). Used for field specs: `parseInlineFields` needs one
+ *  comma-separated span per field, but a field-level clause may itself contain a quoted list with
+ *  embedded commas (MIL-68's planned `renamed from "Old1", "Old2"`), which a naive `.split(",")`
+ *  would break apart mid-string. */
+export function splitTopLevel(s: string, sep: string): string[] {
+  const items: string[] = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') {
+      const close = matchQuote(s, i);
+      const end = close >= 0 ? close : s.length - 1;
+      cur += s.slice(i, end + 1);
+      i = end;
+    } else if (c === sep) {
+      items.push(cur);
+      cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  items.push(cur);
+  return items;
 }
 
 /** Split a comma-separated list, honouring quotes, returning trimmed unquoted items. */

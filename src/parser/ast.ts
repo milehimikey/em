@@ -24,6 +24,33 @@ export interface Field {
   name: string;
   /** Optional type annotation after a `:`. */
   type?: string;
+  /** Trailing `tag` clause on the field line (event fields only): marks this field as an
+   *  identity tag — the tag key defaults to the field's own name. Merged with any
+   *  element-level `tag` clauses (`ElementNode.tags`) at export time via `model/model.ts`'s
+   *  `collectTags`, rather than normalized into that array here — keeps the field's own
+   *  `tag` flag visible right next to the field it marks. */
+  tag?: boolean;
+}
+
+/** Kind of an element-level `tag` clause (`ElementNode.tags`) — the inline field `tag` (identity)
+ *  isn't one of these; it lives on `Field.tag` instead and is merged in only at export/validate
+ *  time (see `model/model.ts`'s `collectTags`). */
+export type TagClauseKind = "composite" | "external";
+
+/** An element-level `tag` clause — `tag <key> from a, b` (composite) or
+ *  `tag <key> external "text"` (external). Events only (MIL-66). Declared either as a
+ *  trailing clause on the element (same family as `note`/`issue`, via `extractClauses`) or as
+ *  one or more standalone `tag ...` lines immediately following the event inside a slice body.
+ *  Multiple accumulate, in declaration order. */
+export interface TagClause {
+  /** The declared tag key (bare identifier, unquoted). */
+  key: string;
+  kind: TagClauseKind;
+  /** composite only: the ≥2 field names forming this tag key, in declaration order. */
+  fields?: string[];
+  /** external only: free-text documentation of how this tag would be computed — never parsed. */
+  description?: string;
+  line: number;
 }
 
 export interface ElementNode {
@@ -51,6 +78,9 @@ export interface ElementNode {
    *  surface (an event as a contract, a view as a public read API's response shape), as
    *  opposed to an internal-only fact or read model. */
   public?: boolean;
+  /** Element-level `tag` clauses (composite/external) — events only. `undefined`/absent when
+   *  none are declared; inline field identity tags live on `Field.tag` instead, not here. */
+  tags?: TagClause[];
   line: number;
 }
 

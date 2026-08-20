@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
+import { collectTags, Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -34,7 +34,11 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // 1.5 (MIL-85): `slice.doc` gains `driftSignal` — the status/implementedIn coherence
 // classification (catalog/driftSignal.ts), computed from the same doc parse as `doc.status`/
 // `doc.version`/`doc.implementedIn`. Additive-only.
-export const SCHEMA_VERSION = "1.5";
+// 1.6 (MIL-66): field `tag: boolean` (identity tag marker, always present, `=== true`
+// convention like `public`), and element `tags: [{ key, kind, fields, description }] | null`
+// (identity/composite/external DCB tag metadata — events only; `null` when the element has
+// none). See `model/model.ts`'s `collectTags`. Additive-only.
+export const SCHEMA_VERSION = "1.6";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -48,6 +52,17 @@ export interface FieldExport {
   name: string;
   type: string | null;
   typeRef: { name: string; ref: string; array: boolean } | null;
+  /** `true` when the field carries a trailing `tag` clause (identity tag) — same `=== true`
+   *  convention as `public`. Always present; `false` on every field that isn't one, including
+   *  every field of a declared type (MIL-66). */
+  tag: boolean;
+}
+
+export interface TagExport {
+  key: string;
+  kind: "identity" | "composite" | "external";
+  fields: string[] | null;
+  description: string | null;
 }
 
 /**
@@ -70,6 +85,7 @@ function fieldExport(
     typeRef: resolved
       ? { name: resolved.typeDecl.name, ref: refByTypeId.get(resolved.typeDecl.id)!, array: resolved.array }
       : null,
+    tag: f.tag === true,
   };
 }
 
@@ -95,6 +111,15 @@ export function buildExport(
   const fromOf = (el: Element): { name: string; ref: string | null }[] | null => {
     if (!el.from || el.from.length === 0) return null;
     return el.from.map((name) => ({ name, ref: refOf(resolveByName(model.byName, name)) }));
+  };
+
+  // Identity/composite/external DCB tag metadata (MIL-66) — events only in practice (`tag`
+  // clauses are a parse error on any other kind), `null` when the event carries none. Order:
+  // inline field identity tags in field order, then element-level composite/external clauses
+  // in declaration order (see `model/model.ts`'s `collectTags`).
+  const tagsOf = (el: Element): TagExport[] | null => {
+    const tags = collectTags(el);
+    return tags.length > 0 ? tags : null;
   };
 
   // Built ahead of exportDoc (rather than inline) so docDiagnostics is fully populated before
@@ -142,6 +167,7 @@ export function buildExport(
         context: el.context ?? null,
         again: el.again === true,
         public: el.public === true,
+        tags: tagsOf(el),
         logicalRef:
           el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
       })),

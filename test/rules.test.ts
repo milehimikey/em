@@ -33,7 +33,7 @@ const SLICE_READY_CODES = [
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(40);
+    expect(Object.keys(RULES).length).toBe(42);
   });
 
   it("marks exactly sliceReadyValidate.ts's 4 codes as optIn — nothing else", () => {

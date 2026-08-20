@@ -1453,3 +1453,153 @@ slice "B" {
     ).toBe(true);
   });
 });
+
+describe("event tag validation (MIL-66)", () => {
+  const tagDiags = (src: string, code: string) => diagsFor(src).filter((d) => d.code === code);
+
+  it("raises no tag diagnostic for identity, composite, and external tags that are all well-formed", () => {
+    const diags = diagsFor(`
+slice "S" {
+  command Designate Price
+  event Price Designated {
+    priceId: UUID tag
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+  tag productRuleTriple external "dedup hash"
+}
+`);
+    expect(diags.filter((d) => d.code?.startsWith("tag-"))).toHaveLength(0);
+  });
+
+  it("errors when a composite tag names a field the event doesn't declare", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  command Designate Price
+  event Price Designated {
+    productId: UUID
+  }
+  tag productCurrency from productId, currency
+}
+`,
+      "tag-composite-unknown-field",
+    );
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "error" });
+    expect(diags[0].message).toContain('tag "productCurrency" names field "currency"');
+    expect(diags[0].message).toContain('isn\'t declared on this event');
+  });
+
+  it("reports one diagnostic per missing field when a composite tag names several", () => {
+    const diags = tagDiags(
+      `slice "S" {\n  event E tag t from missingOne, missingTwo\n}`,
+      "tag-composite-unknown-field",
+    );
+    expect(diags).toHaveLength(2);
+    expect(diags.map((d) => d.message).join("\n")).toContain("missingOne");
+    expect(diags.map((d) => d.message).join("\n")).toContain("missingTwo");
+  });
+
+  it("cites the tag clause's own line, not the event's header line, for a standalone tag clause", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    productId: UUID
+  }
+  tag productCurrency from productId, missingField
+}
+`,
+      "tag-composite-unknown-field",
+    );
+    expect(diags).toHaveLength(1);
+    expect(diags[0].line).toBe(6); // the standalone `tag ...` line, not the event's (line 3)
+  });
+
+  it("raises no composite-unknown-field diagnostic once the named fields all exist", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+}
+`,
+      "tag-composite-unknown-field",
+    );
+    expect(diags).toHaveLength(0);
+  });
+
+  it("errors on a duplicate tag key shared between two element-level composite/external clauses", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    productId: UUID
+    currency: string
+  }
+  tag dup from productId, currency
+  tag dup external "also named dup"
+}
+`,
+      "tag-duplicate-key",
+    );
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "error" });
+    expect(diags[0].message).toContain('tag key "dup" 2 times');
+  });
+
+  it("errors on a duplicate tag key shared between an inline identity tag and an element-level clause", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    priceId: UUID tag
+    currency: string
+  }
+  tag priceId from priceId, currency
+}
+`,
+      "tag-duplicate-key",
+    );
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('tag key "priceId" 2 times');
+  });
+
+  it("treats duplicate-key matching case/whitespace-insensitively, same as every other name match", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    ProductId: UUID tag
+    currency: string
+  }
+  tag productid external "shadowing the identity key by case"
+}
+`,
+      "tag-duplicate-key",
+    );
+    expect(diags).toHaveLength(1);
+  });
+
+  it("raises no duplicate-key diagnostic when every tag key on the event is unique", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    priceId: UUID tag
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+}
+`,
+      "tag-duplicate-key",
+    );
+    expect(diags).toHaveLength(0);
+  });
+});
