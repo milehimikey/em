@@ -27,6 +27,7 @@ import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
+import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
@@ -501,6 +502,66 @@ program
       if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
     },
   );
+
+program
+  .command("migrate")
+  .description(
+    "rewrite the old two-slice Automation/Translation shape into the merged single-slice " +
+      "shape MIL-120 made canonical (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--write", "apply the rewrite to the file (default: dry run — report only, write nothing)")
+  .action((file: string, opts: { write?: boolean }) => {
+    const source = readFileOrExit(file);
+    let plan;
+    try {
+      plan = planMigration(source);
+    } catch (e) {
+      if (e instanceof ParseError) {
+        console.error(`parse error in ${file} ${e.message}`);
+        process.exit(1);
+      }
+      throw e;
+    }
+
+    if (plan.changes.length === 0 && plan.refusals.length === 0) {
+      console.log(`nothing to migrate — ${file} has no old two-slice Automation/Translation shape`);
+      return;
+    }
+
+    if (plan.changes.length > 0) {
+      const verify = verifyMigration(source, plan.rewritten!);
+      if (!verify.ok) {
+        console.error(
+          `em migrate: aborting — the rewrite would introduce ${verify.newErrors.length} new error(s):`,
+        );
+        for (const d of verify.newErrors) console.error(`  ${formatDiagnostic(d)}`);
+        console.error(`${file} left untouched`);
+        process.exit(1);
+      }
+    }
+
+    for (const c of plan.changes) console.log(c.message);
+    for (const r of plan.refusals) console.log(r.message);
+
+    if (plan.changes.length === 0) {
+      console.log(`0 site(s) migrated, ${plan.refusals.length} refused`);
+    } else if (opts.write) {
+      writeFileSync(file, plan.rewritten!);
+      const refusedNote = plan.refusals.length > 0 ? `, ${plan.refusals.length} refused` : "";
+      console.log(`wrote ${file} — ${plan.changes.length} site(s) migrated${refusedNote}`);
+    } else {
+      const refusedNote = plan.refusals.length > 0 ? `; ${plan.refusals.length} refused` : "";
+      console.log(
+        `${plan.changes.length} site(s) would migrate (dry run — re-run with --write to apply)${refusedNote}`,
+      );
+    }
+
+    // A refusal always means the file still needs a human, whether or not other sites in the
+    // same run migrated cleanly — same "set exitCode, don't truncate stdout" rationale as
+    // em ledger/em diff, even though migrate's own output is never large.
+    if (plan.refusals.length > 0) process.exitCode = 1;
+  });
 
 program
   .command("ledger")
