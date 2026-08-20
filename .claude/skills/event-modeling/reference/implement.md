@@ -115,9 +115,10 @@ counts as content. **Do not bump `version:`** — versions bump only when a delt
 a bump here is a ledger defect. In bridge-equipped projects,
 `npx -p em-sdd-bridge em-sdd-mark-implemented <slice-key> <pr-url>` does the flip for you.
 
-Then update the model's `README.md` slice index if the project keeps one, so the one canonical
-slice table reflects the new status and link. The `implementedIn` link is what the `conform`
-phase later uses to anchor drift-checking — leaving it empty blinds the loop.
+Then, if the project keeps a model README (from `templates/model-readme.md`), run
+`em slice index <model-name>.em` so its generated Slices table reflects the new status and
+link — never hand-edit that table. The `implementedIn` link is what the `conform` phase later
+uses to anchor drift-checking — leaving it empty blinds the loop.
 
 ## 7. Spec-kit projects: the SDD adapter
 

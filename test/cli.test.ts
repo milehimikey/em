@@ -1167,3 +1167,92 @@ describe("em catalog (CLI)", () => {
     expect(r.stderr).toContain('duplicate slice name "Place Order"');
   });
 });
+
+describe("em slice index (CLI, MIL-98)", () => {
+  // Table-building/marker-rewrite coverage lives in test/sliceIndex.test.ts (pure functions);
+  // this block is exit-code/process-level only, own dir since it needs a README.md sibling
+  // none of the other fixtures above carry.
+  let sliceIndexDir: string;
+  beforeAll(() => {
+    sliceIndexDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-"));
+    writeFileSync(join(sliceIndexDir, "clean.em"), CLEAN);
+    writeFileSync(join(sliceIndexDir, "error.em"), WITH_ERROR);
+    writeFileSync(
+      join(sliceIndexDir, "README.md"),
+      "# Demo\n\n## Slices\n<!-- GENERATED:slices:start -->\n<!-- GENERATED:slices:end -->\n\n## Status\n",
+    );
+  });
+  afterAll(() => rmSync(sliceIndexDir, { recursive: true, force: true }));
+
+  it("writes the sibling README.md's Slices table and confirms on stdout", () => {
+    const r = em(["slice", "index", "clean.em"], sliceIndexDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote README.md");
+    const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("Open Orders");
+  });
+
+  it("--check exits 0 and reports up to date once the table matches", () => {
+    const r = em(["slice", "index", "clean.em", "--check"], sliceIndexDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("up to date");
+  });
+
+  it("--check exits non-zero and never writes when the table is stale", () => {
+    // Regenerate against a rename of the same file, since editing a plain .em model doesn't
+    // change the generated table without changing the model itself — instead corrupt the
+    // README's own generated block directly to simulate drift (a hand-edit or a stale commit).
+    const staleDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-stale-"));
+    try {
+      writeFileSync(join(staleDir, "clean.em"), CLEAN);
+      writeFileSync(
+        join(staleDir, "README.md"),
+        "# Demo\n\n## Slices\n<!-- GENERATED:slices:start -->\nstale content\n<!-- GENERATED:slices:end -->\n",
+      );
+      const before = readFileSync(join(staleDir, "README.md"), "utf8");
+      const r = em(["slice", "index", "clean.em", "--check"], staleDir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("stale");
+      expect(readFileSync(join(staleDir, "README.md"), "utf8")).toBe(before); // never written
+    } finally {
+      rmSync(staleDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with a clear error, naming the expected path, when README.md is missing", () => {
+    const noReadmeDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-no-readme-"));
+    try {
+      writeFileSync(join(noReadmeDir, "clean.em"), CLEAN);
+      const r = em(["slice", "index", "clean.em"], noReadmeDir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("expected a README.md");
+      expect(r.stderr).toContain("README.md");
+      expect(existsSync(join(noReadmeDir, "README.md"))).toBe(false);
+    } finally {
+      rmSync(noReadmeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with a clear error, pointing at the template, when the markers are missing", () => {
+    const noMarkersDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-no-markers-"));
+    try {
+      writeFileSync(join(noMarkersDir, "clean.em"), CLEAN);
+      writeFileSync(join(noMarkersDir, "README.md"), "# Demo\n\n## Slices\nhand-written\n");
+      const before = readFileSync(join(noMarkersDir, "README.md"), "utf8");
+      const r = em(["slice", "index", "clean.em"], noMarkersDir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("markers");
+      expect(r.stderr).toContain("model-readme.md");
+      expect(readFileSync(join(noMarkersDir, "README.md"), "utf8")).toBe(before); // never written
+    } finally {
+      rmSync(noMarkersDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses on validation errors before touching the README", () => {
+    const r = em(["slice", "index", "error.em"], sliceIndexDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not indexing");
+  });
+});

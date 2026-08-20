@@ -160,8 +160,9 @@ phase applies to field tables, below.
    both are worth raising with the user rather than leaving dangling.
 
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
-decisions, open questions) and `README.md`'s slice index. Tell the user they can stop here and
-resume with `/event-modeling model`.
+decisions, open questions), and run `em slice index <model-name>.em` to seed `README.md`'s
+Slices table (every slice already reads "no doc yet" — no slice docs exist until the `slice`
+phase writes them). Tell the user they can stop here and resume with `/event-modeling model`.
 
 ## Phase: `extract` — current-state model of an existing system
 
@@ -181,8 +182,9 @@ state).
 - **Current-state-only:** park unknowns as `# TBD` comments in the `.em`, mirrored in the state
   file's Open Questions — never guess intended design.
 
-End of phase: validated as-is model; state file updated (source mode, rounds, decisions) and
-`README.md`'s slice index seeded; then chain to `/event-modeling model` (steps 5-7).
+End of phase: validated as-is model; state file updated (source mode, rounds, decisions); run
+`em slice index <model-name>.em` to seed `README.md`'s Slices table; then chain to
+`/event-modeling model` (steps 5-7).
 
 ## Phase: `model` — steps 5-7
 
@@ -216,7 +218,8 @@ End of phase: render, update state, suggest `/event-modeling slice` to write imp
 ## Phase: `slice` — deep slice documents
 
 Goal: implementation-ready specs. Go slice by slice (let the user pick order, or follow the
-timeline). Check `README.md`'s slice index for what's already done.
+timeline). Check `README.md`'s Slices table for what's already done (run `em slice index
+<model-name>.em` first if it looks stale).
 
 This is also where **branch / unhappy-path events** are discovered and added to the model — as a
 slice's alternate/error flows surface (a rejection, removal, cancellation, decline, expiry), add
@@ -263,9 +266,9 @@ For each slice:
 4. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
    (the command for State Change, the view for State View, the processor for Automation, the
    translation for Translation).
-5. Update `README.md`'s slice index — the one canonical slice table (`draft` → `reviewed` →
-   `ready-to-implement`, later `implemented` once shipped, with its Implemented-in link
-   filled in).
+5. Run `em slice index <model-name>.em` to regenerate `README.md`'s Slices table — the one
+   canonical slice index — from the model and the doc frontmatter you just wrote (status,
+   `implementedIn` once shipped). Never hand-edit the table; it's a generated block.
 6. Re-render and `em validate`.
 
 When a slice is **ratified** — a human flips its `status` to `ready-to-implement` with every
@@ -287,8 +290,9 @@ in spec-kit projects, allocate via em-sdd-bridge (redirect mode) and never run
 `/speckit.specify`.
 
 End of phase: PR merged, slice doc flipped to `status: implemented` with `implementedIn`
-filled, `README.md`'s slice index updated. Implement doesn't chain to another phase — run it
-once per ratified slice; `conform` later checks the result against the model.
+filled, `em slice index <model-name>.em` run to refresh `README.md`'s Slices table. Implement
+doesn't chain to another phase — run it once per ratified slice; `conform` later checks the
+result against the model.
 
 ## Phase: `conform` — drift check against the codebase
 

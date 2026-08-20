@@ -684,6 +684,45 @@ em catalog checkout.em billing.em -o site         # multiple models, one site
 em catalog model.em -T png --title "Order System"
 ```
 
+## `em slice index <file>`
+
+Rewrites the marker-delimited Slices table in the model's sibling `README.md` (MIL-98) — the
+"ONE place slices are enumerated" a model README carries (see `templates/model-readme.md`).
+Every column comes from the same code paths `em export`/`em catalog` already use — export key,
+AST-derived pattern (`classifySlicePattern`), and the slice-doc frontmatter join
+(`resolveSliceDocJoin`) — never a second, hand-authored parse. This replaces hand-maintaining
+the table by the `event-modeling` skill's `slice`/`implement` phases.
+
+`README.md` is looked up next to `<file>`, same sibling convention as `slices/*.md`. Both the
+file and the `<!-- GENERATED:slices:start -->` / `<!-- GENERATED:slices:end -->` marker pair
+around the table must already exist — `em slice index` never creates either, so a missing
+README or missing markers is a clear error naming the expected path/fix rather than a silent
+file write. New models scaffolded from `templates/model-readme.md` already carry the marker
+pair around an empty table.
+
+| Column | Source |
+|---|---|
+| `#` | Row position (declaration order) |
+| `Slice` | Slice name |
+| `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
+| `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), or `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" |
+| `Implemented in` | The doc's `implementedIn`, or `—` |
+| `Design doc` | Always a link to the conventional `slices/<slice-key>.md` path, whether or not that file exists yet |
+
+| Flag | Effect |
+|---|---|
+| `--check` | Verify the table is current; exit non-zero on drift without writing (CI) |
+
+```bash
+em slice index model.em          # rewrite README.md's Slices table
+em slice index model.em --check  # CI: fail if it's stale, never writes
+```
+
+Any input-model error (parse/validation) is reported and exits 1 before touching the README, same
+as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join warning (a slice
+notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
+still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
+
 ## `em changelog <file>`
 
 Renders the model's git history as a business-readable ledger — one section per commit

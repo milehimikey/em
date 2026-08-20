@@ -19,6 +19,7 @@ import { program } from "../src/cli.js";
 import { RULES, RuleCode, RuleDef } from "../src/model/rules.js";
 import type { Severity } from "../src/model/validate.js";
 import { isMainModule } from "../src/util/isMainModule.js";
+import { applyMarker as patchMarker } from "../src/util/markers.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const EM_DSL_MD = join(ROOT, ".claude/skills/event-modeling/reference/em-dsl.md");
@@ -144,23 +145,17 @@ export function buildUsageCategories(rules: Record<RuleCode, RuleDef>, severity:
 }
 
 // ---- Marker-delimited patching ----
-
-function markerRegex(name: string): RegExp {
-  // Captures the exact start/end marker lines separately from whatever sits between them, so
-  // replacement never depends on how much whitespace happened to separate them before —
-  // matters for a freshly-added, still-empty marker pair (start line immediately followed by
-  // end line, nothing in between to non-greedily match a leading "\n" against).
-  const start = `<!-- GENERATED:${name}:start[^\\n]*-->`;
-  const end = `<!-- GENERATED:${name}:end -->`;
-  return new RegExp(`(${start})([\\s\\S]*?)(${end})`);
-}
+//
+// The regex-matching mechanics live in src/util/markers.ts (shared with the runtime `em slice
+// index` command, MIL-98). This wrapper keeps generate-skill-docs' own throw-on-missing
+// contract: a dev-tooling script wants a loud failure, not a null to check.
 
 export function applyMarker(content: string, markerName: string, newBody: string): string {
-  const re = markerRegex(markerName);
-  if (!re.test(content)) {
+  const result = patchMarker(content, markerName, newBody);
+  if (result === null) {
     throw new Error(`generate-skill-docs: marker "${markerName}" not found — did it move or get renamed?`);
   }
-  return content.replace(re, (_m, open, _old, close) => `${open}\n${newBody}\n${close}`);
+  return result;
 }
 
 interface FileEdit {

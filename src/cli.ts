@@ -42,6 +42,7 @@ import { buildGlossaryJson, GlossaryFileSide } from "./emit/glossaryJson.js";
 import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
+import { runSliceIndex } from "./cli/sliceIndex.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
 import { STARTER_EM } from "./templates.js";
@@ -323,6 +324,41 @@ program
       console.log(`wrote ${opts.out}/ (${result.models} ${modelWord}, ${result.slices} ${sliceWord})`);
     },
   );
+
+// Namespace for slice-doc authoring/maintenance subcommands — `index` today (MIL-98); `new`
+// (MIL-97, scaffolding a fresh slice doc) is planned to join it here rather than as a top-level
+// command, so both share the `em slice <verb>` shape.
+const slice = program.command("slice").description("author and maintain slice docs");
+
+slice
+  .command("index")
+  .description(
+    "rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice " +
+      "facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated",
+  )
+  .argument("<file>", "input .em file")
+  .option("--check", "verify the table is current; exit non-zero on drift without writing (CI)")
+  .action((file: string, opts: { check?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("not indexing: fix the errors above");
+      process.exit(1);
+    }
+
+    const result = runSliceIndex(model, refs, file, !!opts.check);
+    printDiagnostics(newDiagnostics(result.table.diagnostics, diagnostics));
+
+    if (!result.ok) {
+      console.error(result.message);
+      process.exit(1);
+    }
+    if (result.wrote) {
+      console.log(`wrote ${result.readmePath}`);
+    } else {
+      console.log(`ok — ${result.readmePath}'s Slices table is already up to date`);
+    }
+  });
 
 program
   .command("changelog")

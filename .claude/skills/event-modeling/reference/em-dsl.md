@@ -38,6 +38,8 @@ em catalog <files> -o, --out <dir>        # output directory
 em catalog <files> -T, --format <fmt>     # diagram format embedded in the catalog (svg or png)
 em catalog <files> --title <text>         # catalog site title
 em catalog <files> --keep-empty-lanes     # keep the API lane even when empty
+em slice index <file>                     # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
+em slice index <file> --check             # verify the table is current; exit non-zero on drift without writing (CI)
 em changelog <file>                       # render a model's git history as a business-readable ledger (see docs/cli.md)
 em changelog <file> --from <rev>          # start the walk at this revision (inclusive)
 em changelog <file> --to <rev>            # end the walk at this revision (inclusive; default HEAD)

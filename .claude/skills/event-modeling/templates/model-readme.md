@@ -32,11 +32,13 @@ never connected to one another.
 
 ## Slices
 <!-- The canonical slice index — the ONE place slices are enumerated (the state file
-     points here rather than keeping its own copy). Keep it in sync as slice docs are
-     written and as statuses move. -->
+     points here rather than keeping its own copy). Generated — run
+     `em slice index {{model-name}}.em` to (re)write the table below from the model and its
+     slice docs; never hand-edit between the markers. -->
+<!-- GENERATED:slices:start -->
 | # | Slice | Pattern | Status | Implemented in | Design doc |
 |---|-------|---------|--------|----------------|------------|
-| 1 | {{Slice Name}} | {{Pattern}} | {{no doc yet / draft / reviewed / ready-to-implement / implemented}} | {{PR/commit link once implemented, else —}} | [slices/{{slice-name}}.md](slices/{{slice-name}}.md) |
+<!-- GENERATED:slices:end -->
 
 ## Status
 See [`.event-modeling.md`](.event-modeling.md) for current phase, decisions, and open questions.
