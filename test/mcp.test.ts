@@ -234,6 +234,7 @@ describe("coverage tool", () => {
     expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
     const readySlice = doc.slices.find((s: any) => s.key === "ready-slice");
     expect(readySlice.inScope).toBe(true);
+    expect(readySlice.docReason).toBeNull();
     expect(readySlice.invariants).toContainEqual(
       expect.objectContaining({ id: "INV-1", cited: true }),
     );

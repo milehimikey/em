@@ -21,7 +21,7 @@
 //
 // Every tool takes the model file path as an input parameter; nothing is held across calls.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -284,6 +284,9 @@ export function createServer(): McpServer {
       }
       if (!existsSync(testsDir)) {
         return errorResult(`--tests directory not found: ${testsDir}`);
+      }
+      if (!statSync(testsDir).isDirectory()) {
+        return errorResult(`--tests is not a directory: ${testsDir}`);
       }
       const report = buildCoverageReport(model, refs, dirname(file), testsDir);
       return textResult(buildCoverageJson(file, testsDir, report));

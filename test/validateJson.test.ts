@@ -125,6 +125,13 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
       join(dir, "slices", "ready-slice.md"),
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n## Open Questions\n- [x] resolved\n",
     );
+    // Bound (the note resolves to a real file) but unusable: missing `status` from
+    // REQUIRED_FRONTMATTER_KEYS, so hasUsableFrontmatter() is false — distinct from
+    // "binding-missing-file" (no file at all).
+    writeFileSync(
+      join(dir, "slices", "invalid-slice.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nversion: 1\n---\nbody\n",
+    );
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -152,6 +159,18 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
       frontmatterUsable: true,
       statusReady: true,
       noUncheckedOpenQuestions: true,
+    });
+  });
+
+  it("docBound true but frontmatterUsable false when the bound doc's frontmatter is missing required keys", () => {
+    const { model, refs } = compile(
+      `slice "Invalid Slice" {\n  command Do Thing note "slices/invalid-slice.md"\n  event Thing Done\n}\n`,
+    );
+    expect(computeSliceReadyGates(model, refs, dir, "invalid-slice")).toEqual({
+      docBound: true,
+      frontmatterUsable: false,
+      statusReady: false,
+      noUncheckedOpenQuestions: false,
     });
   });
 

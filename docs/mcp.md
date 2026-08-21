@@ -124,6 +124,21 @@ No input. Returns `reference/implement.md` verbatim, from the skill directory bu
 whichever `em` package is running — the implementation contract every agent (Claude Code or
 not) should read before implementing a slice.
 
+## Trust model
+
+`em-mcp` is a local stdio server, launched by the user's own MCP client configuration — it runs
+with exactly the privileges of running `em` in a shell, as the same OS user, with the same
+filesystem access. Every tool's `file` (and `coverage`'s `testsDir`) is resolved by the server
+process the same way a CLI argument is: relative to its working directory, with **no path
+containment**. A client that lets an agent choose these paths freely can point them anywhere the
+server process can read.
+
+This is a deliberate choice, not an oversight (PR #101 review): containment/sandboxing is the
+MCP client's and the OS's job — scope what the agent can reach via your client's own controls
+(working directory, filesystem permissions, container/sandbox boundaries), not by asking `em-mcp`
+to second-guess paths it's handed. `em-mcp` stays a thin, predictable data layer over the same
+model files the CLI already reads.
+
 ## Error behavior
 
 A missing file, a parse error, or (for `export_slice`) an unknown slice key comes back as an

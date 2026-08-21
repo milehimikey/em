@@ -806,9 +806,14 @@ and every other command's own schema):
 - `ok` — `true` when every in-scope invariant ID has at least one citation (advisory verdict;
   independent of whether `--strict` was passed).
 - `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.
-- `slices` — `{ key, status, inScope, invariants }[]`, one entry per slice in the model
-  (including out-of-scope ones, for transparency):
+- `slices` — `{ key, status, docReason, inScope, invariants }[]`, one entry per slice in the
+  model (including out-of-scope ones, for transparency):
   - `status` — the joined doc's `status`, or `null` when no usable doc was found.
+  - `docReason` — the `resolveSliceDocJoin` join reason behind a `null` `status`:
+    `"no-doc-bound"`, `"binding-missing-file"`, or `"frontmatter-invalid"` — or `null` when the
+    doc joined cleanly (whether or not the slice is in scope; a `draft` slice with a perfectly
+    good doc still has `docReason: null`). Lets a reader tell "nothing bound yet" apart from
+    "bound but broken" without re-deriving the join.
   - `inScope` — `true` only when the doc was found, usable, and `status` is
     `ready-to-implement` or `implemented`.
   - `invariants` — `{ id, cited, citations }[]`, empty for an out-of-scope slice. `citations` is

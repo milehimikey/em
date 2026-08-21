@@ -145,27 +145,39 @@ describe("buildCoverageReport", () => {
     expect(report.slices.find((s) => s.key === "ship")!.inScope).toBe(true);
   });
 
-  it("marks a draft slice as out of scope, invariants empty", () => {
+  it("marks a draft slice as out of scope, invariants empty, docReason null (doc joined cleanly)", () => {
     writeDoc("draft-slice", "draft", "- **INV-1:** must hold\n");
     const report = reportFor(`slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n}`);
     const entry = report.slices.find((s) => s.key === "draft-slice")!;
     expect(entry.inScope).toBe(false);
     expect(entry.status).toBe("draft");
+    expect(entry.docReason).toBeNull();
     expect(entry.invariants).toEqual([]);
   });
 
-  it("marks a slice with no doc bound as out of scope with null status", () => {
+  it("marks a slice with no doc bound as out of scope with null status and docReason no-doc-bound", () => {
     const report = reportFor(`slice "Unbound" {\n  command Do Thing\n}`);
     const entry = report.slices.find((s) => s.key === "unbound")!;
     expect(entry.inScope).toBe(false);
     expect(entry.status).toBeNull();
+    expect(entry.docReason).toBe("no-doc-bound");
   });
 
-  it("marks a bound-but-missing-file slice as out of scope", () => {
+  it("marks a bound-but-missing-file slice as out of scope with docReason binding-missing-file", () => {
     const report = reportFor(`slice "Ghost" {\n  command Do Thing note "slices/ghost.md"\n}`);
     const entry = report.slices.find((s) => s.key === "ghost")!;
     expect(entry.inScope).toBe(false);
     expect(entry.status).toBeNull();
+    expect(entry.docReason).toBe("binding-missing-file");
+  });
+
+  it("marks a bound-but-unusable-frontmatter slice as out of scope with docReason frontmatter-invalid", () => {
+    writeFileSync(join(dir, "slices", "invalid.md"), "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nversion: 1\n---\nbody\n");
+    const report = reportFor(`slice "Invalid" {\n  command Do Thing note "slices/invalid.md"\n}`);
+    const entry = report.slices.find((s) => s.key === "invalid")!;
+    expect(entry.inScope).toBe(false);
+    expect(entry.status).toBeNull();
+    expect(entry.docReason).toBe("frontmatter-invalid");
   });
 
   it("reports cited: true with citations once a test file mentions the ID", () => {

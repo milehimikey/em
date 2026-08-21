@@ -89,6 +89,12 @@ export type ApplyFrontmatterResult =
 export function applyImplementedFrontmatter(raw: string, prUrl: string): ApplyFrontmatterResult {
   const trimmedUrl = prUrl.trim();
   if (!trimmedUrl) return { ok: false, message: "a PR URL is required" };
+  // Refuse control characters (including an embedded \r/\n, which could splice a multi-line
+  // value into the frontmatter and corrupt the fence) and internal whitespace — a URL never
+  // legitimately contains either, so this is never a false positive, only a caller bug.
+  if (/[\x00-\x1f\x7f\x20]/.test(trimmedUrl)) {
+    return { ok: false, message: "PR URL must not contain control characters or whitespace" };
+  }
 
   const range = locateFrontmatterInner(raw);
   if (!range) return { ok: false, message: "no frontmatter block found" };

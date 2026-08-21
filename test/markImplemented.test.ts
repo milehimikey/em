@@ -120,6 +120,47 @@ describe("applyImplementedFrontmatter (pure text surgery)", () => {
     expect(applyImplementedFrontmatter(READY_DOC, "   ")).toEqual({ ok: false, message: "a PR URL is required" });
   });
 
+  it("refuses a pr-url with an embedded newline, leaving content untouched", () => {
+    const result = applyImplementedFrontmatter(READY_DOC, "https://x/1\nstatus: implemented");
+    expect(result).toEqual({
+      ok: false,
+      message: "PR URL must not contain control characters or whitespace",
+    });
+  });
+
+  it("refuses a pr-url with an embedded space, leaving content untouched", () => {
+    const result = applyImplementedFrontmatter(READY_DOC, "https://x/1 extra");
+    expect(result).toEqual({
+      ok: false,
+      message: "PR URL must not contain control characters or whitespace",
+    });
+  });
+
+  it("fills in a missing implementedIn when status is already implemented (MIL-103 AC#5)", () => {
+    const alreadyImplementedNoLink =
+      "---\n" +
+      "schemaVersion: 1\n" +
+      "pattern: state-change\n" +
+      "swimlane: order\n" +
+      "status: implemented\n" +
+      "version: 3\n" +
+      "---\n" +
+      "# Slice: Already Implemented\n" +
+      "\n" +
+      "Body prose that must survive byte-for-byte.\n";
+    const result = applyImplementedFrontmatter(alreadyImplementedNoLink, "https://github.com/org/repo/pull/42");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changed).toBe(true);
+    expect(result.content).toContain("status: implemented");
+    expect(result.content).toContain("implementedIn: https://github.com/org/repo/pull/42");
+    expect(result.content).toContain("version: 3"); // untouched
+    const bodyMarker = "# Slice: Already Implemented";
+    expect(result.content.slice(result.content.indexOf(bodyMarker))).toBe(
+      alreadyImplementedNoLink.slice(alreadyImplementedNoLink.indexOf(bodyMarker)),
+    );
+  });
+
   it("keeps the file's own line-ending style for an inserted implementedIn line (CRLF)", () => {
     const crlf = READY_DOC.replace(/\n/g, "\r\n");
     const result = applyImplementedFrontmatter(crlf, "https://x/1");

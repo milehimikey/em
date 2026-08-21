@@ -693,6 +693,27 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     ]);
   });
 
+  it("--json: ready is not simply AND(gates) — all 4 gates pass yet ready is false when a diagnostic is scoped to the slice", () => {
+    // "ready-with-own-issue.em" (see beforeAll) binds ready-slice.md (bound, usable,
+    // ready-to-implement, fully checked — all 4 gates true) but its own command has no `ui`
+    // triggering it, which raises a both-ends-of-a-flow diagnostic scoped to this slice. `ready`
+    // is the AND of the 4 gates only when there's nothing ELSE scoped to the slice — this
+    // pins that distinction down at the JSON level, not just the gates themselves.
+    const r = em(["validate", "ready-with-own-issue.em", "--slice-ready", "ready-slice", "--json"], readyDir);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.gates).toEqual({
+      docBound: true,
+      frontmatterUsable: true,
+      statusReady: true,
+      noUncheckedOpenQuestions: true,
+    });
+    expect(doc.ready).toBe(false);
+    expect(doc.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "both-ends-of-a-flow/command-untriggered" })]),
+    );
+  });
+
   it("--json: stays ready despite a genuine error in an unrelated slice (regression, same as text mode)", () => {
     const r = em(["validate", "ready-with-unrelated-error.em", "--slice-ready", "ready-slice", "--json"], readyDir);
     expect(r.status).toBe(0);
@@ -1103,11 +1124,14 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     const place = doc.slices.find((s: { key: string }) => s.key === "place");
     expect(place.inScope).toBe(true);
     expect(place.status).toBe("ready-to-implement");
+    expect(place.docReason).toBeNull();
     expect(place.invariants).toContainEqual({ id: "INV-1", cited: true, citations: [{ file: "place.test.ts", line: 1 }] });
     expect(place.invariants).toContainEqual({ id: "INV-2", cited: false, citations: [] });
 
     const openOrders = doc.slices.find((s: { key: string }) => s.key === "open-orders");
     expect(openOrders.inScope).toBe(false);
+    expect(openOrders.status).toBeNull();
+    expect(openOrders.docReason).toBe("no-doc-bound");
     expect(openOrders.invariants).toEqual([]);
   });
 
@@ -1149,6 +1173,12 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     const r = em(["coverage", "model.em"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("required option '--tests <dir>' not specified");
+  });
+
+  it("gives a friendly error when --tests names a file, not a directory", () => {
+    const r = em(["coverage", "model.em", "--tests", "model.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em coverage: --tests is not a directory: model.em");
   });
 
   it("fails with model errors before even looking at --tests", () => {

@@ -72,9 +72,12 @@ export interface Citation {
   line: number;
 }
 
-// Directory segments never worth descending into for citations — same rationale as
-// skillSync.ts/skillCheck.ts's own file-tree walks, just applied post-walkDir() here since
-// walkDir() itself has no filter hook (see its own header for why it walks everything).
+// Directory segments never worth descending into for citations: dependency trees
+// (node_modules) and VCS metadata (.git) can be enormous and never contain a test file worth
+// scanning. Passed to walkDir() as a skipDir predicate so these subtrees are pruned during
+// descent rather than walked in full and filtered out afterward — the skill walkers
+// (skillSync.ts/skillCheck.ts) never encounter this problem in the first place, since the
+// bundled skill directory they walk never contains a node_modules or .git of its own.
 const SKIP_DIR_SEGMENTS = new Set(["node_modules", ".git"]);
 
 /** Cheap binary sniff: a NUL byte anywhere in the first few KB is not valid UTF-8/ASCII text —
@@ -101,8 +104,7 @@ export function scanTestCitations(testsDir: string, ids: readonly string[]): Map
   if (ids.length === 0) return citations;
   const idPatterns: Array<[string, RegExp]> = ids.map((id) => [id, new RegExp(`\\b${id}\\b`)]);
 
-  for (const rel of walkDir(testsDir)) {
-    if (rel.split("/").some((seg) => SKIP_DIR_SEGMENTS.has(seg))) continue;
+  for (const rel of walkDir(testsDir, { skipDir: (name) => SKIP_DIR_SEGMENTS.has(name) })) {
     let buf: Buffer;
     try {
       buf = readFileSync(join(testsDir, rel));
@@ -133,6 +135,12 @@ export interface SliceCoverage {
   /** The joined doc's `status`, or null when no usable doc was found — carried even for an
    *  out-of-scope slice, for transparency (a reader can see *why* it was skipped). */
   status: string | null;
+  /** The resolveSliceDocJoin() `DocReason` behind `status: null` — `"no-doc-bound"`,
+   *  `"binding-missing-file"`, or `"frontmatter-invalid"` — or null when the doc joined cleanly
+   *  (whether or not the slice ended up in scope; a draft slice with a perfectly good doc still
+   *  has `docReason: null`). Lets an out-of-scope reader tell "nothing bound yet" apart from
+   *  "bound but broken" without re-running the join themselves. */
+  docReason: string | null;
   /** True when this slice's doc was found, its frontmatter usable, and `status` is
    *  `ready-to-implement` or `implemented` — the only slices `invariants` is populated for. */
   inScope: boolean;
@@ -161,7 +169,8 @@ export function buildCoverageReport(
   baseDir: string,
   testsDir: string,
 ): CoverageReport {
-  const scoped: Array<{ key: string; status: string | null; inScope: boolean; ids: string[] }> = [];
+  const scoped: Array<{ key: string; status: string | null; docReason: string | null; inScope: boolean; ids: string[] }> =
+    [];
   const allIds = new Set<string>();
 
   for (let i = 0; i < model.slices.length; i++) {
@@ -180,7 +189,7 @@ export function buildCoverageReport(
       if (parsed) ids = extractInvariantIds(parsed.body);
     }
 
-    scoped.push({ key, status: doc.status, inScope, ids });
+    scoped.push({ key, status: doc.status, docReason: doc.reason, inScope, ids });
     for (const id of ids) allIds.add(id);
   }
 
@@ -188,14 +197,14 @@ export function buildCoverageReport(
 
   let totalInvariants = 0;
   let uncoveredCount = 0;
-  const slices: SliceCoverage[] = scoped.map(({ key, status, inScope, ids }) => {
+  const slices: SliceCoverage[] = scoped.map(({ key, status, docReason, inScope, ids }) => {
     const invariants: InvariantCoverage[] = ids.map((id) => {
       const cs = citations.get(id) ?? [];
       totalInvariants++;
       if (cs.length === 0) uncoveredCount++;
       return { id, cited: cs.length > 0, citations: cs };
     });
-    return { key, status, inScope, invariants };
+    return { key, status, docReason, inScope, invariants };
   });
 
   return { slices, totalInvariants, uncoveredCount };

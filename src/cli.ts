@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -980,6 +980,10 @@ program
     }
     if (!existsSync(opts.tests)) {
       console.error(`em coverage: --tests directory not found: ${opts.tests}`);
+      process.exit(1);
+    }
+    if (!statSync(opts.tests).isDirectory()) {
+      console.error(`em coverage: --tests is not a directory: ${opts.tests}`);
       process.exit(1);
     }
 
