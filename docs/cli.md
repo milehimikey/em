@@ -17,6 +17,7 @@
 | `em state set-phase <phase> [dir]` | Rewrite `Current phase:` (and `Current step:` with `--step`) |
 | `em state set-conformance <revision> [dir]` | Rewrite `Last conformance:` in the exact format `conform` parses |
 | `em state set-review <date> [dir]` | Rewrite `Last stakeholder review:` |
+| `em contract` | Print the packaged implementation contract (`reference/implement.md`) to stdout |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
@@ -1188,15 +1189,43 @@ write, same as every other command. A missing state file, an unparsable `Last co
 bullet, a `--repo` that isn't a git repository, or an unknown revision in `Last conformance:`
 each exit 1 with a clear message.
 
+## `em contract`
+
+Prints the packaged implementation contract — `reference/implement.md` from the skill
+directory bundled with whatever `em` package is currently installed — to stdout, verbatim
+(MIL-129).
+
+`reference/implement.md` says up front that it applies to "any implementing agent, whether or
+not the session started from `/event-modeling`" — but until this command, the only way to
+reach it was `em skill install`/`em skill sync` copying it into
+`.claude/skills/event-modeling/`, a path only Claude Code discovers. `em contract` needs no
+vendored skill copy and no `.claude/` awareness at all: any agent that can run a shell gets
+the contract straight from the installed package.
+
+```bash
+em contract                 # print the contract to stdout
+em contract > CONTRACT.md   # or capture it to a file
+```
+
+No flags, no exit code other than 0 (or a failure reading the package's own bundled files,
+which would mean a broken installation). See
+[the bundled contract itself](../.claude/skills/event-modeling/reference/implement.md) for
+its content, and the "Working with an AI agent" section below for how `em skill install`/
+`em skill sync` point a repo's `AGENTS.md` at it.
+
 ## `em skill install`
 
 Copies the bundled `event-modeling` Claude Code skill out of the npm package into
 `.claude/skills/event-modeling/` in the current directory. Prints a reminder to run
 `/event-modeling` in Claude Code afterwards. See [ai-workflow.md](ai-workflow.md).
 
+By default, also writes/updates the `AGENTS.md` agent-contract section (see "Working with an
+AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
+
 | Flag | Effect |
 |---|---|
 | `-f, --force` | Overwrite an existing installation |
+| `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
 
 ## `em skill sync [path]`
 
@@ -1221,6 +1250,13 @@ em skill sync ../other-repo   # sync a different repo's vendored copy
 
 Prints one `added:`/`modified:`/`removed:` line per changed file, or `up to date — ...` when
 the vendored copy already matches.
+
+By default, also writes/updates `[path]/AGENTS.md`'s agent-contract section (see "Working with
+an AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
+
+| Flag | Effect |
+|---|---|
+| `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
 
 ## `em skill check [path]`
 
@@ -1267,3 +1303,29 @@ package and every other command's own schema):
   `skill-check-content-drift` (one or more files differ by hash from the packaged skill —
   `driftedFiles` non-null, sorted).
 - `ok` — `true` iff `findings` is empty.
+
+## Working with an AI agent: the `AGENTS.md` managed section
+
+`em skill install` and `em skill sync` both write/update a marker-delimited section in the
+target repo's `AGENTS.md` by default (`--no-agents-md` to skip it) — the AGENTS.md-native
+counterpart to the `event-modeling` Claude Code skill, so any implementing agent, not only
+Claude Code, has a route to the implementation contract, the readiness gate, and the machine-
+readable read path (MIL-129, Slicewright story gap G5). The section points at:
+
+- **the contract**: `em contract`
+- **the gate**: `em validate <model>.em --slice-ready <slice-key> --json`
+- **the read path**: `em export <model>.em --slice <slice-key>` (and `em export <model>.em`
+  for the whole model)
+
+The markers are `<!-- GENERATED:agent-contract:start -->` / `<!-- GENERATED:agent-contract:end
+-->`, matching the `<!-- GENERATED:<name>:start/end -->` convention `em slice index` already
+uses for a model README's Slices table (`src/util/markers.ts`). Behavior:
+
+- **No `AGENTS.md`** — created with just the managed section.
+- **`AGENTS.md` exists with the markers** — only the region between them is rewritten; content
+  outside the markers (and everywhere else in the file) is untouched.
+- **`AGENTS.md` exists without the markers** — the section is appended, rather than refused;
+  unlike `em slice index`'s README gate, there's no "scaffold it first" step to point at.
+
+Every case is idempotent: a repeat `em skill sync` with nothing else changed leaves `AGENTS.md`
+byte-identical.

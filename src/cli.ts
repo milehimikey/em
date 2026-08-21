@@ -33,6 +33,8 @@ import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
+import { readContract } from "./cli/contract.js";
+import { syncAgentsMd, AgentsMdResult } from "./cli/agentsMd.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -924,6 +926,25 @@ function vendoredSkillDir(repoRoot: string): string {
   return join(resolve(repoRoot), ".claude", "skills", "event-modeling");
 }
 
+program
+  .command("contract")
+  .description(
+    "print the packaged implementation contract (reference/implement.md) to stdout — the " +
+      "agent-neutral discovery path for any agent that can run a shell, not just Claude Code " +
+      "(MIL-129); see docs/cli.md",
+  )
+  .action(() => {
+    process.stdout.write(readContract(packagedSkillDir()));
+  });
+
+/** One line reporting what `syncAgentsMd` did, shared by `skill install`/`skill sync` so both
+ *  commands describe the AGENTS.md write in the same words. */
+function agentsMdMessage(result: AgentsMdResult): string {
+  if (result.created) return `created ${result.path} with the agent-contract section (MIL-129)`;
+  if (result.wrote) return `updated the agent-contract section in ${result.path}`;
+  return `${result.path} already has an up-to-date agent-contract section`;
+}
+
 const skill = program
   .command("skill")
   .description("manage Claude Code skills bundled with em");
@@ -932,7 +953,11 @@ skill
   .command("install")
   .description("copy the event-modeling skill into .claude/skills/event-modeling/")
   .option("-f, --force", "overwrite an existing installation")
-  .action(async (opts: { force?: boolean }) => {
+  .option(
+    "--no-agents-md",
+    "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
+  )
+  .action(async (opts: { force?: boolean; agentsMd?: boolean }) => {
     const src = packagedSkillDir();
     const dest = vendoredSkillDir(process.cwd());
 
@@ -946,6 +971,10 @@ skill
     await cp(src, dest, { recursive: true });
     console.log(`installed event-modeling skill → ${dest}`);
     console.log("in Claude Code, run /event-modeling to start a guided session");
+
+    if (opts.agentsMd !== false) {
+      console.log(agentsMdMessage(syncAgentsMd(process.cwd())));
+    }
   });
 
 skill
@@ -955,18 +984,26 @@ skill
       "em package (overwrites unconditionally; local edits are never merged, MIL-93)",
   )
   .argument("[path]", "consumer repo root", ".")
-  .action(async (path: string) => {
+  .option(
+    "--no-agents-md",
+    "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
+  )
+  .action(async (path: string, opts: { agentsMd?: boolean }) => {
     const packagedDir = packagedSkillDir();
     const vendoredDir = vendoredSkillDir(path);
 
     const plan = planSkillSync(packagedDir, vendoredDir);
     if (plan.changes.length === 0) {
       console.log(`up to date — ${vendoredDir} already matches the installed skill (${plan.unchangedCount} file(s))`);
-      return;
+    } else {
+      applySkillSync(plan, packagedDir, vendoredDir);
+      for (const c of plan.changes) console.log(`${c.kind}: ${c.relPath}`);
+      console.log(`synced ${vendoredDir} — ${plan.changes.length} file(s) changed, ${plan.unchangedCount} unchanged`);
     }
-    applySkillSync(plan, packagedDir, vendoredDir);
-    for (const c of plan.changes) console.log(`${c.kind}: ${c.relPath}`);
-    console.log(`synced ${vendoredDir} — ${plan.changes.length} file(s) changed, ${plan.unchangedCount} unchanged`);
+
+    if (opts.agentsMd !== false) {
+      console.log(agentsMdMessage(syncAgentsMd(resolve(path))));
+    }
   });
 
 skill

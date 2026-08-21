@@ -1104,6 +1104,82 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   });
 });
 
+describe("em contract (CLI, MIL-129)", () => {
+  it("prints the packaged reference/implement.md verbatim", () => {
+    const r = em(["contract"], ROOT);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(
+      readFileSync(join(ROOT, ".claude", "skills", "event-modeling", "reference", "implement.md"), "utf8"),
+    );
+    expect(r.stdout).toContain("Gate: verify readiness before starting");
+    expect(r.stdout).toContain("em validate <model>.em --slice-ready <slice-key> --json");
+  });
+});
+
+describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real fs, MIL-129)", () => {
+  it("skill sync writes the AGENTS.md agent-contract section by default", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-sync-"));
+    try {
+      const r = em(["skill", "sync", target], ROOT);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("created");
+      expect(r.stdout).toContain("AGENTS.md");
+
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
+      expect(agentsMd).toContain("em contract");
+      expect(agentsMd).toContain("em validate <model>.em --slice-ready <slice-key> --json");
+      expect(agentsMd).toContain("em export <model>.em --slice <slice-key>");
+
+      // Idempotent: a second sync with nothing else changed leaves AGENTS.md byte-identical.
+      const r2 = em(["skill", "sync", target], ROOT);
+      expect(r2.status).toBe(0);
+      expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(agentsMd);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill sync --no-agents-md skips AGENTS.md entirely", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-optout-"));
+    try {
+      const r = em(["skill", "sync", target, "--no-agents-md"], ROOT);
+      expect(r.status).toBe(0);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill install also writes the AGENTS.md agent-contract section by default", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-install-"));
+    try {
+      const r = em(["skill", "install"], target);
+      expect(r.status).toBe(0);
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("em contract");
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves user content outside the markers on an existing AGENTS.md", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-preserve-"));
+    try {
+      writeFileSync(join(target, "AGENTS.md"), "# Notes\n\nHand-written project notes.\n");
+      const r = em(["skill", "sync", target], ROOT);
+      expect(r.status).toBe(0);
+
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("# Notes");
+      expect(agentsMd).toContain("Hand-written project notes.");
+      expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
   let cwd: string;
 
