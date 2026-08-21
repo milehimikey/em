@@ -1,6 +1,6 @@
 ---
 name: event-modeling
-em-version: 1.7.1
+em-version: 1.7.2
 description: >-
   Use when the user wants to event-model a business process or system: building, editing,
   updating, or maintaining a model — extending or detailing an existing one into slices,

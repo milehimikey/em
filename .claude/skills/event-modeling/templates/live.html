@@ -75,16 +75,28 @@
     }
 
     // Double-buffer: load into a hidden <object>, swap on load, so the shared screen
-    // never flashes white during a reload.
+    // never flashes white during a reload. The buffer must be attached to the document
+    // BEFORE data is set — a detached <object> never starts fetching its resource, so
+    // its load event would never fire and the swap would never happen.
+    let pending = null; // the in-flight buffer <object>, if a swap is loading
     function swap() {
+      if (pending) pending.remove(); // superseded by this newer swap
       const next = document.createElement("object");
       next.type = "image/svg+xml";
       next.style.cssText = current.style.cssText;
+      next.style.position = "absolute"; // out of flow + invisible while loading
+      next.style.visibility = "hidden";
       next.addEventListener("load", () => {
-        stage.replaceChild(next, current);
+        if (pending !== next) return; // a newer swap already replaced this one
+        pending = null;
+        next.style.position = "";
+        next.style.visibility = "";
+        stage.removeChild(current);
         current = next;
         stamp.textContent = new Date().toLocaleTimeString();
       }, { once: true });
+      stage.appendChild(next);
+      pending = next;
       next.setAttribute("data", SVG_FILE + "?t=" + Date.now());
     }
 

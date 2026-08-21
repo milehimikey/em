@@ -264,19 +264,31 @@ const VIEWER_HTML = `<!doctype html>
 
     // Double-buffer: load into a hidden <object>, swap on load, so the shared
     // screen never flashes white during a reload. Keep <object> (not <img>) so
-    // note "..." links inside the SVG stay clickable.
+    // note "..." links inside the SVG stay clickable. The buffer must be
+    // attached to the document BEFORE data is set — a detached <object> never
+    // starts fetching its resource, so its load event would never fire.
+    let pending = null; // the in-flight buffer <object>, if a reload is loading
     function reload() {
       dot.classList.add("stale");
+      if (pending) pending.remove(); // superseded by this newer reload
       const next = document.createElement("object");
       next.type = "image/svg+xml";
       next.style.cssText = current.style.cssText;
+      next.style.position = "absolute"; // out of flow + invisible while loading
+      next.style.visibility = "hidden";
       next.addEventListener("load", () => {
-        stage.replaceChild(next, current);
+        if (pending !== next) return; // a newer reload already replaced this one
+        pending = null;
+        next.style.position = "";
+        next.style.visibility = "";
+        stage.removeChild(current);
         current = next;
         stamp.textContent = new Date().toLocaleTimeString();
         dot.classList.remove("stale");
         onSvgLoaded();
       }, { once: true });
+      stage.appendChild(next);
+      pending = next;
       next.setAttribute("data", SVG_FILE + "?t=" + Date.now());
     }
 
