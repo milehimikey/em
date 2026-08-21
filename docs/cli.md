@@ -472,6 +472,65 @@ fails over an unresolvable doc, same report-not-gate philosophy as `em export`'s
 **These refs are reported, never cross-checked** — whether `checkout@v3` actually exists or
 the version is plausible is `em validate`'s job (see [validation.md#lineage](validation.md#lineage)), not `em diff`'s.
 
+## `em migrate <file>`
+
+Rewrites the pre-1.7.1 two-slice Automation/Translation shape — a reaction's read model and the
+reaction itself in one slice, that reaction's command and event in the immediately following
+slice, linked only by file-position adjacency — into the merged single-slice shape MIL-120 made
+canonical: the reaction, the command it triggers, and that command's event all in **one** slice
+(see [patterns.md#automation](patterns.md#automation)). Re-rendering an old-shape model doesn't
+fix it — the slice structure lives in the `.em` source text itself — so `em migrate` edits the
+source directly. **This is `em`'s only command that mutates a `.em` file.**
+
+Detection is narrow on purpose: a pair of adjacent slices is only considered at all once the
+leading slice has no `command` but at least one reaction-kind element
+(`automation`/`processor`/`saga`/`translation`), and the immediately following slice has at
+least one `command`. Every other adjacent pair — the overwhelming majority in a normal model —
+is left alone without comment. Once a pair clears that bar, anything short of the clean shape
+(more than one reaction in the leading slice, a leading slice with elements beyond one view and
+one reaction, a following slice that already has a reaction or more than one command, a
+reaction with a `{ fields }` block, …) is a **per-site refusal**, printed with its reason —
+never a guess. Refusals don't block other, unambiguous sites in the same file from migrating.
+
+A clean site moves the reaction's own source line down into the following slice, immediately
+before its `command`, adds an explicit `from "<view name>"` to it if the leading slice held a
+view and the reaction didn't already name it, and deletes the leading slice entirely if that
+was the only thing in it — otherwise the leading slice is left as a bare `view` slice, itself a
+valid, complete State View. Everything else in the file — comments, blank lines, indentation —
+is untouched; the rewrite is text-level and line-based, never a regeneration from the parsed
+model. Running it twice is a no-op the second time: `--write`ing an already-migrated file (or
+one with no old-shape sites at all) reports "nothing to migrate" and changes nothing.
+
+Before writing anything, the full rewrite is re-parsed and re-validated in-process; if doing so
+would introduce any error-severity diagnostic the original source didn't already have, the
+whole write is aborted and the file is left untouched (the new errors are printed). This can't
+happen for the shape the rewrite actually produces in practice — a reaction only ever legally
+points forward to a command, and moving it one slice later can't desync any of `em validate`'s
+error-tier checks — but the guard exists regardless, since this is the one command that writes.
+
+If any element in the affected pair carries a `note "slices/<key>.md"` binding, the report adds
+a pointer that doc bindings may need re-checking — merging or emptying a slice can change its
+canonical export key — without attempting to rewrite the note itself (see
+[slice-doc-schema.md](slice-doc-schema.md)).
+
+**Dry run by default.** `em migrate`'s first release is also `em`'s first command that writes
+to a `.em` file at all, so it defaults to the same posture every other command already has —
+report, don't touch — and only writes with an explicit `--write`.
+
+| Flag | Effect |
+|---|---|
+| `--write` | Apply the rewrite to the file. Without it, `em migrate` only reports what it would do. |
+
+```bash
+em migrate model.em             # dry run: report every site that would migrate, or refuse, and why
+em migrate model.em --write     # apply it
+```
+
+**Exit codes:** `0` on a clean run (including "nothing to migrate"). `1` if the file can't be
+read or doesn't parse, if the rewrite would introduce a new error and was aborted, or if any
+site was refused — even when other sites in the same run migrated cleanly, since a refusal
+means the file still needs a human.
+
 ## `em ledger <file>`
 
 Checks that a slice doc's `version:` frontmatter field and its content — body text plus the

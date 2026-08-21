@@ -26,6 +26,13 @@
 // classify a doc as `frontmatter-invalid` — no frontmatter fence at all, or
 // missing one of the keys docs/slice-doc-schema.md says are required at every
 // status — without export re-deriving frontmatter-shape rules of its own.
+//
+// `covers` (MIL-121) is a fourth optional frontmatter-only field, alongside
+// `implementedIn`/lineage: a plain list of slice keys (not `<key>@v<N>` refs) this doc also
+// ratifies coverage for, so a different slice can bind to THIS doc via a cross-slice
+// `note "slices/<this-key>.md"` instead of authoring its own. Parsed the same
+// comma-separated-list shape as `merged-from`/`superseded-by`; see docJoin.ts for the
+// two-ended handshake that actually uses it.
 
 import { marked } from "marked";
 
@@ -56,6 +63,12 @@ export interface SliceDoc {
    *  `- **Status:** ...` bullet line, or null if neither is found (a freeform
    *  doc that doesn't follow the slice.md template). */
   status: string | null;
+  /** Lowercased `pattern:` frontmatter value (`state-change`/`state-view`/`automation`/
+   *  `translation`, per the template) — frontmatter-only, no legacy body form. Authored/
+   *  informational per docs/slice-doc-schema.md, but MIL-124's doc-model-consistency check
+   *  (catalog/docModelConsistencyValidate.ts) is the first `em` consumer that reads it back, to
+   *  compare against `classify.ts`'s deterministic `classifySlicePattern()`. Null when absent. */
+  pattern: string | null;
   /** This slice's own ratified-content version, from frontmatter `version:`
    *  (e.g. `version: 1`) — a cache of git truth (docset module 06), not
    *  derived or validated against git history. Null when absent or
@@ -77,6 +90,14 @@ export interface SliceDoc {
   /** Frontmatter `implementedIn:` — free text, typically a PR/commit link — or null
    *  when absent. No legacy bullet-line form, same as `version`/lineage. */
   implementedIn: string | null;
+  /** MIL-121: slice keys (comma-separated, lowercased, plain — NOT `<key>@v<N>` refs like the
+   *  lineage keys above) this doc ratifies coverage for, from frontmatter `covers:`. This is the
+   *  other end of the two-ended cross-binding handshake: a slice with no doc of its own may
+   *  `note "slices/<this-doc's-key>.md"` on one of its elements, and docJoin.ts (`em export`'s
+   *  doc join) only honors that note as a binding when the noted doc's own `covers` list names
+   *  the noting slice back. Empty array when absent — the common case; a doc always covers its
+   *  own canonical slice key implicitly and never needs to list it here. */
+  covers: string[];
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -180,6 +201,19 @@ function parseSliceRefList(raw: string | undefined): SliceRef[] {
     .map(parseSliceRef);
 }
 
+/** Parses `covers:` (MIL-121) — a comma-separated list of plain slice-key strings, NOT the
+ *  `<slice-key>@v<N>` ref grammar `parseSliceRefList` handles: coverage isn't versioned, it's a
+ *  standing "this doc also serves that slice" declaration, so there's no version component to
+ *  parse or preserve. Lowercased to match `sliceKey` comparisons everywhere else (kebabSlug()
+ *  output, and the export keys docJoin.ts compares against). */
+function parseKeyList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function parseVersion(raw: string | undefined): number | null {
   if (!raw) return null;
   const n = Number(raw);
@@ -233,11 +267,13 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     raw: markdown,
     body,
     status,
+    pattern: fields.get("pattern")?.toLowerCase() ?? null,
     version: parseVersion(fields.get("version")),
     splitFrom: splitFromRaw ? parseSliceRef(splitFromRaw) : null,
     mergedFrom: parseSliceRefList(fields.get("merged-from")),
     supersededBy: parseSliceRefList(fields.get("superseded-by")),
     implementedIn: fields.get("implementedin") ?? null,
+    covers: parseKeyList(fields.get("covers")),
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,

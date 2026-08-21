@@ -54,6 +54,7 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `split-from` | single ref | `<slice-key>@v<N>` | joined into `em export`'s `slice.doc.splitFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 | `merged-from` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.mergedFrom` (schema `1.4`, MIL-91) and `em diff`'s `slice-added` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
 | `superseded-by` | list of refs | comma-separated `<slice-key>@v<N>, ...` | joined into `em export`'s `slice.doc.supersededBy` (schema `1.4`, MIL-91) and `em diff`'s `slice-removed` entries (schema `1.6`, MIL-84); current-tree referential checks by `em validate` (MIL-84 — see [validation.md#lineage](validation.md#lineage)) |
+| `covers` | list of slice keys | comma-separated `<slice-key>, ...` (plain keys — **not** the `<slice-key>@v<N>` ref grammar above) | ratifies a cross-slice binding (MIL-121 — see [Cross-slice coverage](#cross-slice-coverage-covers) below): read by `em export`'s doc join, `em validate --slice-ready`, and (best-effort) `em render`/`em watch`'s Slice Status legend |
 
 Five keys — `schemaVersion`/`pattern`/`swimlane`/`status`/`version` — are what
 `hasUsableFrontmatter()` requires: a doc omitting any of them is `frontmatter-invalid` to
@@ -70,6 +71,7 @@ convention, not parser-enforced.
 | `version` | required (starts at `1`) | required | required | required |
 | `implementedIn` | optional | optional | optional | required once the slice has *ever* reached `implemented` — may still name a **prior** version's PR during re-ratification, see below |
 | `split-from`, `merged-from`, `superseded-by` | optional in every state — present only on docs created by a split/merge, or on a doc that has been retired |
+| `covers` | optional in every state — present only on a doc that deliberately also serves another slice (MIL-121, see below); most docs never carry it |
 
 `em export`'s slice-doc join (MIL-91) is the first `em` command to mechanically check the
 required row above: a bound doc missing any of `schemaVersion`/`pattern`/`swimlane`/`status`/
@@ -130,6 +132,51 @@ two-revision command for the related-but-different version/content invariant):
 > ratification commit that performs the operation they record, so the PR diff contains both
 > sides of the claim (the predecessor at its final version, and the ref naming it). The review
 > airlock is the history check.
+
+## Cross-slice coverage: `covers`
+
+Since `em` 1.7.1 (MIL-120), the canonical Automation/Translation shape is two raw slices: a
+bare `view` slice, and the reaction+command+event slice that reads it. Each slice can still bind
+its own `slices/<key>.md` doc the ordinary way, but a team documenting the whole design unit as
+**one** doc needs a way to make the view-only slice count as doc-bound too, without splitting
+the write-up back into two files. `covers` (MIL-121) is that escape hatch — a deliberately
+two-ended handshake, not a one-sided claim:
+
+1. In the `.em`, an element in the *covered* slice (the one with no doc of its own) carries
+   `note "slices/<other-key>.md"` — a path in the ordinary `slices/<key>.md` shape, just naming
+   a *different* slice's canonical doc instead of its own.
+2. That other doc's own frontmatter ratifies the coverage with `covers`, naming the covered
+   slice's key back — same comma-separated, single scalar-line shape as `merged-from`/
+   `superseded-by` (this parser's frontmatter dialect has **no** real YAML list support, see
+   above):
+   ```yaml
+   covers: detect-unpaid-orders
+   ```
+   Multiple covered slices: `covers: detect-unpaid-orders, some-other-slice`.
+
+Both sides are required. A `note` naming another slice's doc with no matching `covers` entry on
+that doc — the file is missing, its frontmatter isn't usable, or `covers` doesn't list this
+slice back — leaves the noting slice exactly as unbound as if it had no note at all
+(`no-doc-bound`); em never guesses at a one-sided claim. When ratified, every consumer that
+reads a bound doc's canonical fields (`em export`'s `slice.doc`, `em validate --slice-ready`,
+`em render`/`em watch`'s Slice Status legend) reads the **covering** doc's `status`/`version`/
+`implementedIn`/lineage/Open Questions, not the covered slice's own (nonexistent) file. A doc
+covers its own canonical slice key implicitly — `covers` never needs to list it.
+
+`covers` is a plain list of slice keys (`<slice-key>`, e.g. `detect-unpaid-orders`), **not** the
+`<slice-key>@v<N>` ref grammar the lineage keys use above: coverage is a standing "this doc also
+serves that slice" declaration, with no version component — unlike lineage, which records a
+specific historical hop.
+
+**Out of scope for THIS join:** `resolveSliceDocJoin` itself never warns on a *mismatched*
+cross-note (a note naming a doc that doesn't ratify it back) — the slice's doc join still stays
+silently `no-doc-bound`, the same as never having written the note; the join's own job is
+resolving the *winning* binding, not auditing every note that didn't win. `em validate` does flag
+the mismatch, as its own separate rule (MIL-126) — see
+[validation.md#note-binding-mismatch](validation.md#note-binding-mismatch): a dangling cross-note
+(missing file), one pointing at a doc with unusable frontmatter, one pointing at a usable doc
+that just doesn't ratify (`covers` doesn't list this slice back), and an extra note doing nothing
+in a slice that's already bound elsewhere, each get their own diagnostic there.
 
 ## Delta section: grammar and lifecycle
 
@@ -262,4 +309,6 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91)
 - [cli.md](cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
 - [validation.md#lineage](validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)
+- [validation.md#slice-readiness](validation.md#slice-readiness) — `em validate --slice-ready`'s note-binding gate, including the `covers` cross-binding (MIL-121)
+- [validation.md#note-binding-mismatch](validation.md#note-binding-mismatch) — `em validate`'s check for a doc-shaped note that doesn't participate in its slice's binding (MIL-126)
 - [`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md) — the authored template

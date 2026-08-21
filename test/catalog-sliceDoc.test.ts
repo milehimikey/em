@@ -114,6 +114,21 @@ describe("parseSliceDoc", () => {
     ]);
   });
 
+  it("parses a comma-separated `covers` list as plain slice keys, not @v refs (MIL-121)", () => {
+    const doc = parseSliceDoc("---\ncovers: detect-unpaid-orders, some-other-slice\n---\n# Some Slice\n");
+    expect(doc.covers).toEqual(["detect-unpaid-orders", "some-other-slice"]);
+  });
+
+  it("lowercases `covers` entries and trims whitespace, same as other list keys", () => {
+    const doc = parseSliceDoc("---\ncovers:   Detect-Unpaid-Orders ,  OTHER-Slice\n---\n# Some Slice\n");
+    expect(doc.covers).toEqual(["detect-unpaid-orders", "other-slice"]);
+  });
+
+  it("returns an empty array when `covers` is absent — the common case", () => {
+    const doc = parseSliceDoc("---\nstatus: draft\n---\n# Some Slice\n");
+    expect(doc.covers).toEqual([]);
+  });
+
   it("parses a comma-separated list with a mix of well-formed and malformed refs", () => {
     const doc = parseSliceDoc("---\nmerged-from: checkout, apply-discount@v1\n---\n# Some Slice\n");
     expect(doc.mergedFrom).toEqual([

@@ -570,6 +570,147 @@ describe("slice-doc join (MIL-91)", () => {
   });
 });
 
+describe("slice-doc join: cross-binding (MIL-121)", () => {
+  // Same real-fs convention as the describe block above (mkdtempSync + real slice-doc
+  // fixtures), but with its own tmp dir/modelFile and its own beforeAll/afterAll — the
+  // cross-binding fixtures (a `covering-doc.md`/`covering-invalid.md` and a `checkout.md`
+  // shaped for the precedence test) are specific to this block's scenarios, not shared with
+  // the block above.
+  let dir: string;
+  let modelFile: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-export-doc-join-cross-"));
+    modelFile = join(dir, "model.em");
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "covering-doc.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: automation",
+        "swimlane: Customer -> Order",
+        "status: ready-to-implement",
+        "version: 1",
+        "covers: covered-slice, checkout",
+        "---",
+        "# Slice: Covering Doc",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "slices", "covering-invalid.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: automation",
+        "swimlane: Customer -> Order",
+        "status: ready-to-implement",
+        "covers: covered-invalid-slice",
+        "---",
+        "# Slice: Covering Invalid (missing version:, so frontmatter-invalid)",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "slices", "checkout.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: state-change",
+        "swimlane: Customer -> Order",
+        "status: implemented",
+        "version: 2",
+        "implementedIn: https://github.com/example/pr/41",
+        "---",
+        "# Slice: Checkout",
+        "",
+      ].join("\n"),
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const exportOfFile = (src: string) => {
+    const { model, refs, diagnostics } = compile(src);
+    return buildExport(model, refs, diagnostics, src, modelFile);
+  };
+  const docOfFile = (src: string) => JSON.parse(exportOfFile(src).text);
+  const docCodes = (diags: any[]) =>
+    diags.filter((d: any) => ["binding-missing-file", "frontmatter-invalid"].includes(d.code));
+
+  it("resolves a ratified cross-binding: found, with the covering doc's own path/status", () => {
+    const doc = docOfFile(
+      `slice "Covered Slice" {\n  command Do Thing note "slices/covering-doc.md"\n}`,
+    );
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toEqual({
+      found: true,
+      path: "slices/covering-doc.md",
+      reason: null,
+      status: "ready-to-implement",
+      version: 1,
+      implementedIn: null,
+      splitFrom: null,
+      mergedFrom: [],
+      supersededBy: [],
+      driftSignal: "never-implemented",
+    });
+    expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+
+  it("a mixed-case cross-note still ratifies, and `doc.path` comes back lowercased (not the note's casing)", () => {
+    // NOTE_SLICE_PATH is case-insensitive, but readSliceDoc() always reads the lowercased key —
+    // doc.path must match what was actually read, or a consumer re-deriving the key from
+    // doc.path (sliceReadyValidate.ts) would try to re-read the mixed-case path and fail.
+    const doc = docOfFile(
+      `slice "Covered Slice" {\n  command Do Thing note "slices/Covering-Doc.md"\n}`,
+    );
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({
+      found: true,
+      path: "slices/covering-doc.md",
+      status: "ready-to-implement",
+    });
+    expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+
+  it("a cross-note NOT ratified back by the target doc's `covers` stays no-doc-bound, silently", () => {
+    // "checkout.md" exists and has usable frontmatter, but doesn't list "unratified-slice" in
+    // `covers` — a one-sided note, not a binding. No mismatch diagnostic (that's MIL-126).
+    const doc = docOfFile(
+      `slice "Unratified Slice" {\n  command Do Thing note "slices/checkout.md"\n}`,
+    );
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({ found: false, reason: "no-doc-bound", path: "slices/unratified-slice.md" });
+    expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+
+  it("`covers` in an otherwise frontmatter-invalid doc doesn't ratify — stays no-doc-bound", () => {
+    const doc = docOfFile(
+      `slice "Covered Invalid Slice" {\n  command Do Thing note "slices/covering-invalid.md"\n}`,
+    );
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({ found: false, reason: "no-doc-bound" });
+    expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+
+  it("canonical binding (note naming this slice's own path) wins over a cross-binding in the same slice", () => {
+    // "checkout" IS listed in covering-doc.md's `covers` above, so if cross-binding search ran
+    // first it would (wrongly) also resolve here — canonical must be checked first and win.
+    const doc = docOfFile(
+      `slice "Checkout" {\n  command Do Thing note "slices/checkout.md"\n  event Something note "slices/covering-doc.md"\n}`,
+    );
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({
+      found: true,
+      path: "slices/checkout.md",
+      status: "implemented",
+      version: 2,
+    });
+    expect(docCodes(doc.diagnostics)).toEqual([]);
+  });
+});
+
 describe("driftSignal (MIL-85, status/implementedIn coherence)", () => {
   let dir: string;
   let modelFile: string;

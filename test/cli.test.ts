@@ -3,7 +3,7 @@
 // `--fail-on-issues`: spawns the real CLI (via tsx) so the commander wiring,
 // exit codes, and stdout/stderr split are exercised, not just the underlying
 // functions (which test/export.test.ts and test/validate.test.ts cover).
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1615,5 +1615,132 @@ describe("em slice new (CLI, MIL-97 item 3)", () => {
     const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
     expect(content).toContain("pattern: state-change\n");
     expect(content).toContain("swimlane: System → Payment v2\n");
+  });
+});
+
+// `em migrate` (MIL-125): CLI-level coverage — dry-run-by-default, `--write`, exit codes, and
+// that a real file on disk really is (or isn't) touched. Detection/rewrite-text coverage itself
+// lives in test/migrateReactionShape.test.ts; this only exercises the cli.ts wiring around it.
+describe("em migrate (CLI, real fs, MIL-125)", () => {
+  let dir: string;
+
+  const OLD_SHAPE = `slice "Payments To Process" {
+  view Payments To Process from "Payment Requested"
+  processor Payment Gateway
+}
+
+slice "Capture Payment" {
+  command Capture Payment
+  event Payment Captured @Payment
+}
+`;
+
+  const MIGRATED_SHAPE = `slice "Payments To Process" {
+  view Payments To Process from "Payment Requested"
+}
+
+slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Process"
+  command Capture Payment
+  event Payment Captured @Payment
+}
+`;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-migrate-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("dry run (default, no --write) reports the plan and writes nothing", () => {
+    writeFileSync(join(dir, "model.em"), OLD_SHAPE);
+    const r = em(["migrate", "model.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('migrated slice "Payments To Process" / "Capture Payment"');
+    expect(r.stdout).toContain("1 site(s) would migrate (dry run — re-run with --write to apply)");
+    expect(readFileSync(join(dir, "model.em"), "utf8")).toBe(OLD_SHAPE); // untouched
+  });
+
+  it("--write applies the rewrite to the file on disk", () => {
+    writeFileSync(join(dir, "model.em"), OLD_SHAPE);
+    const r = em(["migrate", "model.em", "--write"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote model.em — 1 site(s) migrated");
+    expect(readFileSync(join(dir, "model.em"), "utf8")).toBe(MIGRATED_SHAPE);
+  });
+
+  it("a second --write run is idempotent: reports nothing to migrate, changes nothing", () => {
+    writeFileSync(join(dir, "model.em"), OLD_SHAPE);
+    em(["migrate", "model.em", "--write"], dir);
+    const r = em(["migrate", "model.em", "--write"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("nothing to migrate");
+    expect(readFileSync(join(dir, "model.em"), "utf8")).toBe(MIGRATED_SHAPE);
+  });
+
+  it("nothing to migrate on a file with no Automation/Translation slices", () => {
+    writeFileSync(
+      join(dir, "model.em"),
+      'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n',
+    );
+    const r = em(["migrate", "model.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("nothing to migrate");
+  });
+
+  it("exits non-zero and writes nothing when a site is refused, even under --write", () => {
+    const ambiguous = `slice "Leading" {
+  view Read Model from "Some Event"
+  processor First
+  automation Second
+}
+
+slice "Following" {
+  command Do Thing
+  event Thing Done
+}
+`;
+    writeFileSync(join(dir, "model.em"), ambiguous);
+    const r = em(["migrate", "model.em", "--write"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("refused");
+    expect(r.stdout).toContain("more than one reaction");
+    expect(readFileSync(join(dir, "model.em"), "utf8")).toBe(ambiguous); // untouched — no clean sites either
+  });
+
+  it("still migrates unambiguous sites under --write while reporting a refusal elsewhere (exit 1)", () => {
+    const mixed =
+      `slice "Leading" {
+  view Read Model from "Some Event"
+  processor First
+  automation Second
+}
+
+slice "Following" {
+  command Do Thing
+  event Thing Done
+}
+
+` + OLD_SHAPE;
+    writeFileSync(join(dir, "model.em"), mixed);
+    const r = em(["migrate", "model.em", "--write"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("refused");
+    expect(r.stdout).toContain("migrated");
+    const written = readFileSync(join(dir, "model.em"), "utf8");
+    expect(written).toContain('processor Payment Gateway from "Payments To Process"');
+    expect(written).toContain("automation Second"); // the refused pair is untouched
+  });
+
+  it("refuses on a missing file with a clear, non-zero-exit error", () => {
+    const r = em(["migrate", "does-not-exist.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("cannot read does-not-exist.em");
+  });
+
+  it("reports a parse error and exits non-zero without writing", () => {
+    writeFileSync(join(dir, "model.em"), 'slice "Broken" {\n  command Foo\n');
+    const r = em(["migrate", "model.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("parse error in model.em");
   });
 });
