@@ -23,8 +23,11 @@ import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
+import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
+import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
+import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
@@ -93,10 +96,15 @@ program
       process.exit(1);
     }
 
-    const { dot, model, grid, diagnostics } = compileFile(file, {
+    const { dot, model, grid, diagnostics, refs } = compileFile(file, {
       keepEmptyLanes: opts.keepEmptyLanes,
     });
-    printDiagnostics(diagnostics);
+    // MIL-126: note-binding mismatches read slices/*.md alongside the model, so (like
+    // validateLineage/validateFrontmatterCoherence in `em validate`) they're computed here
+    // rather than living in compile()'s pure diagnostics. Always warning-severity — folding
+    // them in never changes whether rendering proceeds below.
+    const allDiagnostics = [...diagnostics, ...validateNoteBindings(model, refs, dirname(file))];
+    printDiagnostics(allDiagnostics);
     warnMissingNotes(file, model);
 
     if (opts.emitDot) {
@@ -109,7 +117,7 @@ program
       return;
     }
 
-    if (hasErrors(diagnostics)) {
+    if (hasErrors(allDiagnostics)) {
       console.error("not rendering: fix the errors above");
       process.exit(1);
     }
@@ -441,23 +449,29 @@ program
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
-      // Lineage-ref resolution (MIL-84) and frontmatter-coherence (MIL-85) are validate's
-      // fs-aware rules — every other check above is a pure function of the .em source. Both
-      // read slices/*.md alongside the model.
+      // Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding
+      // mismatches (MIL-126), and doc↔model consistency (MIL-124) are validate's fs-aware
+      // rules — every other check above is a pure function of the .em source. All four read
+      // slices/*.md alongside the model. Doc↔model consistency is deliberately validate-only
+      // (unlike note-binding, which `em render` also folds in) — it's a conform-phase concern,
+      // not something every render needs to recheck.
       const allDiagnostics = [
         ...diagnostics,
         ...validateLineage(model, refs, dirname(file)),
         ...validateFrontmatterCoherence(model, refs, dirname(file)),
+        ...validateNoteBindings(model, refs, dirname(file)),
+        ...validateDocModelConsistency(model, refs, dirname(file)),
       ];
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
-        // frontmatter-coherence findings for free by filtering allDiagnostics' own refs, rather
-        // than re-deriving that classification here.
+        // frontmatter-coherence findings, MIL-126's note-binding-mismatch findings, AND MIL-124's
+        // doc-model-consistency findings for free by filtering allDiagnostics' own refs, rather
+        // than re-deriving any of those classifications here.
         //
         // "Concerns this slice" means a ref that either IS the bare slice key (lineage,
-        // frontmatter-coherence, and this module's own diagnostics all tag that way) OR starts
-        // with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
+        // frontmatter-coherence, note-binding, and this module's own diagnostics all tag that
+        // way) OR starts with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
         // e.g. an unknown-event error on a view inside this slice). An earlier version gated on
         // "any error anywhere in the model," which silently failed the check — with zero
         // diagnostics printed — on an unrelated slice's breakage; scoping to this slice alone
@@ -488,6 +502,66 @@ program
       if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
     },
   );
+
+program
+  .command("migrate")
+  .description(
+    "rewrite the old two-slice Automation/Translation shape into the merged single-slice " +
+      "shape MIL-120 made canonical (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--write", "apply the rewrite to the file (default: dry run — report only, write nothing)")
+  .action((file: string, opts: { write?: boolean }) => {
+    const source = readFileOrExit(file);
+    let plan;
+    try {
+      plan = planMigration(source);
+    } catch (e) {
+      if (e instanceof ParseError) {
+        console.error(`parse error in ${file} ${e.message}`);
+        process.exit(1);
+      }
+      throw e;
+    }
+
+    if (plan.changes.length === 0 && plan.refusals.length === 0) {
+      console.log(`nothing to migrate — ${file} has no old two-slice Automation/Translation shape`);
+      return;
+    }
+
+    if (plan.changes.length > 0) {
+      const verify = verifyMigration(source, plan.rewritten!);
+      if (!verify.ok) {
+        console.error(
+          `em migrate: aborting — the rewrite would introduce ${verify.newErrors.length} new error(s):`,
+        );
+        for (const d of verify.newErrors) console.error(`  ${formatDiagnostic(d)}`);
+        console.error(`${file} left untouched`);
+        process.exit(1);
+      }
+    }
+
+    for (const c of plan.changes) console.log(c.message);
+    for (const r of plan.refusals) console.log(r.message);
+
+    if (plan.changes.length === 0) {
+      console.log(`0 site(s) migrated, ${plan.refusals.length} refused`);
+    } else if (opts.write) {
+      writeFileSync(file, plan.rewritten!);
+      const refusedNote = plan.refusals.length > 0 ? `, ${plan.refusals.length} refused` : "";
+      console.log(`wrote ${file} — ${plan.changes.length} site(s) migrated${refusedNote}`);
+    } else {
+      const refusedNote = plan.refusals.length > 0 ? `; ${plan.refusals.length} refused` : "";
+      console.log(
+        `${plan.changes.length} site(s) would migrate (dry run — re-run with --write to apply)${refusedNote}`,
+      );
+    }
+
+    // A refusal always means the file still needs a human, whether or not other sites in the
+    // same run migrated cleanly — same "set exitCode, don't truncate stdout" rationale as
+    // em ledger/em diff, even though migrate's own output is never large.
+    if (plan.refusals.length > 0) process.exitCode = 1;
+  });
 
 program
   .command("ledger")

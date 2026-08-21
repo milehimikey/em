@@ -29,6 +29,12 @@ The three lineage keys only apply when this doc was produced by a split, merge, 
 delete them otherwise; most slices never carry them. Grammar: `<slice-key>@v<N>`, where
 `<slice-key>` is the referenced slice's kebab-case filename stem.
 
+`covers` only applies when this doc is also the ratified doc for a DIFFERENT slice — typically
+the bare `view` half of the two-slice Automation/Translation shape, which has nothing of its own
+to write up. Delete it otherwise; most docs never carry it. Requires a matching
+`note "slices/{{this-slice-name}}.md"` on an element in the OTHER slice — this key alone doesn't
+bind anything. Plain slice keys, comma-separated — not the `<slice-key>@v<N>` ref grammar above.
+
 Full machine schema — required-vs-optional keys per `status`, value types/enums, the
 unknown-key policy — is documented in docs/slice-doc-schema.md.
 
@@ -49,6 +55,10 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 # split-from: <slice-key>@v<N>
 # merged-from: <slice-key>@v<N>, <slice-key>@v<N>
 # superseded-by: <slice-key>@v<N>, <slice-key>@v<N>
+# Cross-slice coverage — only when this doc also covers another slice with no doc of its own
+# (e.g. the view-only half of a two-slice Automation/Translation, MIL-121); delete otherwise.
+# Plain slice keys, comma-separated. See docs/slice-doc-schema.md#cross-slice-coverage-covers.
+# covers: <slice-key>, <slice-key>
 ---
 # Slice: {{Slice Name}}
 

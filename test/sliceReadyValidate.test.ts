@@ -129,6 +129,63 @@ describe("slice-ready-open-questions-unchecked", () => {
   });
 });
 
+describe("cross-slice binding (MIL-121)", () => {
+  // The ticket's own repro shape: a view-only slice ("Detect Unpaid Orders") with no doc of its
+  // own, covered instead by the reaction slice's doc ("Request Payment") via a ratifying
+  // `covers:` entry naming the view slice's key back.
+  it("passes the view-only slice through to a ready, no-open-questions covering doc", () => {
+    writeDoc(
+      "request-payment",
+      "status: ready-to-implement\nversion: 1\ncovers: detect-unpaid-orders\n",
+      "## Open Questions\n- [x] resolved before ratification\n",
+    );
+    const diags = readyDiagsOf(
+      [
+        'slice "Detect Unpaid Orders" {',
+        '  view Unpaid Orders from "Order Placed" note "slices/request-payment.md"',
+        "}",
+        'slice "Request Payment" {',
+        "  processor Payment Request Policy from \"Unpaid Orders\" note \"slices/request-payment.md\"",
+        "  command Request Payment",
+        "  event Payment Requested",
+        "}",
+      ].join("\n"),
+      "detect-unpaid-orders",
+    );
+    expect(diags).toEqual([]);
+  });
+
+  it("reports status-not-ready from the covering doc when it isn't ready-to-implement", () => {
+    writeDoc("draft-covering-doc", "status: draft\nversion: 1\ncovers: covered-by-draft\n");
+    const diags = readyDiagsOf(
+      `slice "Covered By Draft" {\n  view Covered By Draft from "Something" note "slices/draft-covering-doc.md"\n}`,
+      "covered-by-draft",
+    );
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "slice-ready-status-not-ready",
+        refs: ["covered-by-draft"],
+      }),
+    ]);
+  });
+
+  it("a cross-note not ratified by the target doc's `covers` is still no-doc-bound", () => {
+    writeDoc("uncovering-doc", "status: ready-to-implement\nversion: 1\n"); // no `covers:` at all
+    const diags = readyDiagsOf(
+      `slice "Not Covered" {\n  view Not Covered from "Something" note "slices/uncovering-doc.md"\n}`,
+      "not-covered",
+    );
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "slice-ready-no-doc-bound",
+        refs: ["not-covered"],
+      }),
+    ]);
+  });
+});
+
 describe("ready: the all-clear case", () => {
   it("produces zero diagnostics for a bound, usable, ready-to-implement doc with no open questions", () => {
     writeDoc(
