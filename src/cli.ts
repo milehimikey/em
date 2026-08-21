@@ -1077,13 +1077,12 @@ skill
     if (existsSync(dest) && !opts.force) {
       console.log(`skill already installed at ${dest}`);
       console.log("re-run with --force to overwrite");
-      return;
+    } else {
+      await mkdir(join(process.cwd(), ".claude", "skills"), { recursive: true });
+      await cp(src, dest, { recursive: true });
+      console.log(`installed event-modeling skill → ${dest}`);
+      console.log("in Claude Code, run /event-modeling to start a guided session");
     }
-
-    await mkdir(join(process.cwd(), ".claude", "skills"), { recursive: true });
-    await cp(src, dest, { recursive: true });
-    console.log(`installed event-modeling skill → ${dest}`);
-    console.log("in Claude Code, run /event-modeling to start a guided session");
 
     if (opts.agentsMd !== false) {
       console.log(agentsMdMessage(syncAgentsMd(process.cwd())));

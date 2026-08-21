@@ -1298,6 +1298,49 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
     }
   });
 
+  it("skill install already installed without --force still writes/updates AGENTS.md", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-install-noop-"));
+    try {
+      // First install: creates the vendored skill and AGENTS.md.
+      const r1 = em(["skill", "install"], target);
+      expect(r1.status).toBe(0);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
+
+      // Simulate a stale/hand-edited AGENTS.md so we can tell the second
+      // (no-op skill copy) install actually re-synced it.
+      writeFileSync(join(target, "AGENTS.md"), "# Notes\n\nHand-written project notes.\n");
+
+      const r2 = em(["skill", "install"], target);
+      expect(r2.status).toBe(0);
+      expect(r2.stdout).toContain("skill already installed at");
+      expect(r2.stdout).toContain("AGENTS.md");
+
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("# Notes");
+      expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
+      expect(agentsMd).toContain("em contract");
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill install --no-agents-md skips AGENTS.md even when already installed", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-install-noop-optout-"));
+    try {
+      const r1 = em(["skill", "install"], target);
+      expect(r1.status).toBe(0);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
+      rmSync(join(target, "AGENTS.md"));
+
+      const r2 = em(["skill", "install", "--no-agents-md"], target);
+      expect(r2.status).toBe(0);
+      expect(r2.stdout).toContain("skill already installed at");
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
   it("preserves user content outside the markers on an existing AGENTS.md", () => {
     const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-preserve-"));
     try {

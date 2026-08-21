@@ -1356,7 +1356,9 @@ Copies the bundled `event-modeling` Claude Code skill out of the npm package int
 `/event-modeling` in Claude Code afterwards. See [ai-workflow.md](ai-workflow.md).
 
 By default, also writes/updates the `AGENTS.md` agent-contract section (see "Working with an
-AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
+AI agent" below, MIL-129) — pass `--no-agents-md` to skip that. This happens even when the
+skill is already installed and `-f`/`--force` isn't given, so the skill copy itself is
+skipped: `install` always ensures the `AGENTS.md` section unless opted out.
 
 | Flag | Effect |
 |---|---|
