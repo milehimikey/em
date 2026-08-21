@@ -35,6 +35,11 @@ readiness gate (`em validate --slice-ready --json`) and the machine-readable rea
 (`em export --slice`). See [cli.md](cli.md#em-contract) and
 [cli.md](cli.md#working-with-an-ai-agent-the-agentsmd-managed-section).
 
+An agent that speaks MCP natively can skip the shell entirely: `em-mcp` (or `em mcp`) starts a
+stdio MCP server exposing the same contract, readiness gate, and read path — plus full
+`validate`/`export`/marker-listing access — as tools instead of CLI flags. See
+[mcp.md](mcp.md).
+
 ## Phases
 
 `/event-modeling` takes an optional phase argument. With no argument it resumes wherever

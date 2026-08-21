@@ -27,6 +27,7 @@ describe("syncAgentsMd", () => {
       expect(content).toContain("em contract");
       expect(content).toContain("em validate <model>.em --slice-ready <slice-key> --json");
       expect(content).toContain("em export <model>.em --slice <slice-key>");
+      expect(content).toContain("em-mcp");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -4,7 +4,9 @@
 // agent — Claude Code or otherwise — at the three pieces of agent-neutral discovery Slicewright
 // story gap G5 identified as missing: the implementation contract (`em contract`), the
 // slice-readiness gate (`em validate --slice-ready --json`, MIL-128), and the machine-readable
-// read path (`em export --slice`, MIL-128).
+// read path (`em export --slice`, MIL-128). MIL-21 adds a fourth pointer: `em-mcp`, the MCP
+// server exposing the same contract/gate/read-path (plus full validate/export) as tools for an
+// MCP-native agent, instead of shell commands.
 //
 // Same marker discipline as `em slice index`'s README Slices table (src/cli/sliceIndex.ts,
 // MIL-98): idempotent replace-between-markers via src/util/markers.ts, user content outside the
@@ -38,7 +40,10 @@ agent — Claude Code or otherwise — should follow this contract:
   gate pass yourself — that's a ratification decision.
 - **Read path**: \`em export <model>.em --slice <slice-key>\` exports just that slice's
   normalized JSON (pattern, fields, doc) to implement against; \`em export <model>.em\` exports
-  the whole model.`;
+  the whole model.
+- **MCP alternative**: \`em-mcp\` starts an MCP server exposing the contract, gate, and read
+  path above (plus full validate/export) as tools instead of shell commands — see
+  [docs/mcp.md](https://github.com/milehimikey/em/blob/main/docs/mcp.md).`;
 
 function markerBlock(): string {
   return `<!-- GENERATED:${AGENTS_MD_MARKER}:start -->\n${SECTION_BODY}\n<!-- GENERATED:${AGENTS_MD_MARKER}:end -->`;

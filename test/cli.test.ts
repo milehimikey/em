@@ -1116,6 +1116,35 @@ describe("em contract (CLI, MIL-129)", () => {
   });
 });
 
+describe("em mcp (CLI, MIL-21)", () => {
+  it("starts a stdio MCP server that responds to initialize + tools/list", async () => {
+    // Full end-to-end coverage of every tool's behavior lives in test/mcp.test.ts (in-memory
+    // transport, direct against createServer()); this is discoverability coverage — `em mcp`
+    // really does start the same server over real stdio, the way an MCP client config
+    // (`"command": "em"`, `"args": ["mcp"]`) would invoke it.
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [TSX, CLI, "mcp"],
+      cwd: ROOT,
+      stderr: "ignore",
+    });
+    const client = new Client({ name: "em-cli-mcp-smoke-test", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      expect(client.getServerVersion()).toMatchObject({ name: "em" });
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name).sort()).toEqual(
+        ["contract", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
+      );
+    } finally {
+      await client.close();
+    }
+  });
+});
+
 describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real fs, MIL-129)", () => {
   it("skill sync writes the AGENTS.md agent-contract section by default", () => {
     const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-sync-"));
@@ -1130,6 +1159,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(agentsMd).toContain("em contract");
       expect(agentsMd).toContain("em validate <model>.em --slice-ready <slice-key> --json");
       expect(agentsMd).toContain("em export <model>.em --slice <slice-key>");
+      expect(agentsMd).toContain("em-mcp");
 
       // Idempotent: a second sync with nothing else changed leaves AGENTS.md byte-identical.
       const r2 = em(["skill", "sync", target], ROOT);

@@ -18,6 +18,7 @@
 | `em state set-conformance <revision> [dir]` | Rewrite `Last conformance:` in the exact format `conform` parses |
 | `em state set-review <date> [dir]` | Rewrite `Last stakeholder review:` |
 | `em contract` | Print the packaged implementation contract (`reference/implement.md`) to stdout |
+| `em mcp` | Start an MCP server over stdio, exposing structured model access as tools (also available as the `em-mcp` bin) |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
@@ -1256,6 +1257,19 @@ which would mean a broken installation). See
 its content, and the "Working with an AI agent" section below for how `em skill install`/
 `em skill sync` point a repo's `AGENTS.md` at it.
 
+## `em mcp`
+
+Starts an MCP (Model Context Protocol) server over stdio, exposing the same structured JSON
+surfaces `--json`/`em export`/`em contract` print — as MCP tools instead of shell commands
+(MIL-21). A 3-line wrapper around the same server the `em-mcp` bin starts; the server itself
+lives outside the CLI core (`src/mcp/`) and never imports `cli.ts`.
+
+```bash
+em mcp   # or: em-mcp
+```
+
+See [mcp.md](mcp.md) for the full tool list, input/output shapes, and client configuration.
+
 ## `em skill install`
 
 Copies the bundled `event-modeling` Claude Code skill out of the npm package into
@@ -1359,6 +1373,8 @@ readable read path (MIL-129, Slicewright story gap G5). The section points at:
 - **the gate**: `em validate <model>.em --slice-ready <slice-key> --json`
 - **the read path**: `em export <model>.em --slice <slice-key>` (and `em export <model>.em`
   for the whole model)
+- **the MCP alternative**: `em-mcp` — the contract/gate/read-path above, plus full
+  validate/export, as MCP tools instead of shell commands (see [mcp.md](mcp.md))
 
 The markers are `<!-- GENERATED:agent-contract:start -->` / `<!-- GENERATED:agent-contract:end
 -->`, matching the `<!-- GENERATED:<name>:start/end -->` convention `em slice index` already

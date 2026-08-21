@@ -82,6 +82,7 @@ em ledger <file> --from <rev>                               # baseline revision
 em ledger <file> --to <rev>                                 # compare revision (default: current working tree)
 em ledger <file> --json                                     # print a JSON document instead of the text report (see docs/cli.md)
 em contract                                                 # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
+em mcp                                                      # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
 em skill install                                            # copy the event-modeling skill into .claude/skills/event-modeling/
 em skill install -f, --force                                # overwrite an existing installation
 em skill install --no-agents-md                             # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)

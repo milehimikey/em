@@ -34,6 +34,8 @@ import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { readContract } from "./cli/contract.js";
+import { createServer as createMcpServer } from "./mcp/server.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { syncAgentsMd, AgentsMdResult } from "./cli/agentsMd.js";
 import {
   buildGlossary,
@@ -976,6 +978,21 @@ program
   )
   .action(() => {
     process.stdout.write(readContract(packagedSkillDir()));
+  });
+
+program
+  .command("mcp")
+  .description(
+    "start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/" +
+      "list_markers/export_model/export_slice/contract as tools (MIL-21) — a structured, " +
+      "agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to " +
+      "running the `em-mcp` bin directly",
+  )
+  .action(async () => {
+    // A 3-line wrapper only, for discoverability — the server itself (src/mcp/) never imports
+    // this file or commander, matching the ticket's "outside the CLI core" constraint. The
+    // `em-mcp` bin (package.json) starts the identical server the same way.
+    await createMcpServer().connect(new StdioServerTransport());
   });
 
 /** One line reporting what `syncAgentsMd` did, shared by `skill install`/`skill sync` so both
