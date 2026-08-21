@@ -138,6 +138,28 @@ defect once you've opted into running this check, so unlike `em diff`/`em glossa
 separate `--exit-code`/`--fail-on-*` opt-in flag. See
 [cli.md](cli.md#em-ledger-file) for the full flag/output reference and `--json` shape.
 
+## `em coverage` (opt-in)
+
+`em coverage` (MIL-130) mechanizes `reference/implement.md`'s definition-of-done citation check:
+for every slice whose doc `status` is `ready-to-implement` or `implemented`, every `INV-*`
+invariant ID mentioned in the doc's body must be cited by at least one test under `--tests
+<dir>`. Advisory by default — uncovered IDs are reported but don't fail the run — because a
+freshly-added invariant with a test still in flight is a normal, transient state, not
+automatically a defect the way a ledger mismatch is. `--strict` turns it into a hard CI gate:
+
+```yaml
+      - name: Check invariant test coverage
+        run: npx @milehimikey/em coverage model.em --tests test/ --strict
+```
+
+Add this once your team wants "every invariant is cited by a test" enforced rather than left to
+review discipline — a natural pairing with the `em validate --slice-ready` gate an implementing
+agent already runs before starting work (`reference/implement.md`, §1 and §5). Like `em ledger`,
+this needs no git history — it's a pure function of the current tree (the doc bodies plus the
+test tree), so unlike `em ledger` it doesn't need `fetch-depth: 0` on checkout. See
+[cli.md](cli.md#em-coverage-file---tests-dir) for the full flag/output reference and `--json`
+shape.
+
 ## Conformance cadence (advisory)
 
 Once a model's slices are `implemented`, the bundled skill's `conform` phase can check the

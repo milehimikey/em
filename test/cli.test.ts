@@ -1056,6 +1056,111 @@ describe("em ledger: text report, working tree, and argument validation (CLI, re
   });
 });
 
+describe("em coverage (CLI, real fs, MIL-130)", () => {
+  let dir: string, tests: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-coverage-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    tests = join(dir, "tests");
+    mkdirSync(tests, { recursive: true });
+
+    writeFileSync(
+      join(dir, "model.em"),
+      `slice "Place" {\n  ui Checkout @Customer\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n` +
+        `slice "Open Orders" {\n  view Open Orders from "Order Placed"\n  ui Order List @Customer\n}\n`,
+    );
+    writeFileSync(
+      join(dir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n- **INV-2:** rejects an empty cart\n",
+    );
+    // "INV-1" is cited; "INV-2" is not.
+    writeFileSync(join(tests, "place.test.ts"), `it("rejects a negative amount (INV-1)", () => {});\n`);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("text mode reports cited/uncovered per invariant with citations, plus a summary line", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests"], dir);
+    expect(r.status).toBe(0); // advisory by default
+    expect(r.stdout).toContain('slice "place" (ready-to-implement):');
+    expect(r.stdout).toContain("cited     INV-1");
+    expect(r.stdout).toContain("place.test.ts:1");
+    expect(r.stdout).toContain("uncovered INV-2");
+    expect(r.stdout).toContain("2 invariant(s) checked, 1 uncovered");
+  });
+
+  it("--json prints a versioned document with per-slice invariant citations", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.coverageSchemaVersion).toBe("1.0");
+    expect(doc.file).toBe("model.em");
+    expect(doc.testsDir).toBe("tests");
+    expect(doc.ok).toBe(false);
+    expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
+
+    const place = doc.slices.find((s: { key: string }) => s.key === "place");
+    expect(place.inScope).toBe(true);
+    expect(place.status).toBe("ready-to-implement");
+    expect(place.invariants).toContainEqual({ id: "INV-1", cited: true, citations: [{ file: "place.test.ts", line: 1 }] });
+    expect(place.invariants).toContainEqual({ id: "INV-2", cited: false, citations: [] });
+
+    const openOrders = doc.slices.find((s: { key: string }) => s.key === "open-orders");
+    expect(openOrders.inScope).toBe(false);
+    expect(openOrders.invariants).toEqual([]);
+  });
+
+  it("advisory mode exits 0 even with uncovered IDs; --strict exits non-zero", () => {
+    const advisory = em(["coverage", "model.em", "--tests", "tests"], dir);
+    expect(advisory.status).toBe(0);
+    const strict = em(["coverage", "model.em", "--tests", "tests", "--strict"], dir);
+    expect(strict.status).toBe(1);
+  });
+
+  it("--strict exits 0 when nothing is uncovered", () => {
+    const fullyCovered = mkdtempSync(join(tmpdir(), "em-cli-coverage-full-"));
+    mkdirSync(join(fullyCovered, "slices"), { recursive: true });
+    mkdirSync(join(fullyCovered, "tests"), { recursive: true });
+    writeFileSync(
+      join(fullyCovered, "model.em"),
+      `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n` +
+        `slice "Reads" {\n  view Order List from "Order Placed"\n  ui Screen @Customer\n}\n`,
+    );
+    writeFileSync(
+      join(fullyCovered, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
+        "- **INV-1:** rejects a negative amount\n",
+    );
+    writeFileSync(join(fullyCovered, "tests", "place.test.ts"), `it("INV-1 holds", () => {});\n`);
+
+    const r = em(["coverage", "model.em", "--tests", "tests", "--strict"], fullyCovered);
+    expect(r.status).toBe(0);
+    rmSync(fullyCovered, { recursive: true, force: true });
+  });
+
+  it("errors when --tests names a directory that doesn't exist", () => {
+    const r = em(["coverage", "model.em", "--tests", "no-such-dir"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em coverage: --tests directory not found: no-such-dir");
+  });
+
+  it("requires --tests", () => {
+    const r = em(["coverage", "model.em"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("required option '--tests <dir>' not specified");
+  });
+
+  it("fails with model errors before even looking at --tests", () => {
+    const badDir = mkdtempSync(join(tmpdir(), "em-cli-coverage-bad-"));
+    writeFileSync(join(badDir, "model.em"), `slice "Broken" {\n  view Bad from "No Such Event"\n}\n`);
+    const r = em(["coverage", "model.em", "--tests", "no-such-dir"], badDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em coverage: model has errors — fix them first");
+    rmSync(badDir, { recursive: true, force: true });
+  });
+});
+
 describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   let target: string;
 
@@ -1137,7 +1242,7 @@ describe("em mcp (CLI, MIL-21)", () => {
       expect(client.getServerVersion()).toMatchObject({ name: "em" });
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(
-        ["contract", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
+        ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
       );
     } finally {
       await client.close();

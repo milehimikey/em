@@ -96,7 +96,9 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 
 ## 5. Definition of done
 
-- Every `INV-n` invariant has at least one test that cites its ID.
+- Every `INV-n` invariant has at least one test that cites its ID — checked mechanically by
+  `em coverage <model>.em --tests <dir>` (MIL-130); run it (add `--strict` in CI) rather than
+  eyeballing citations by hand.
 - Every scenario in `## Scenarios (Given / When / Then)` exists as a passing test; rejection
   scenarios assert the doc's named rejection reason.
 - Alternate/error flows (idempotency included) are covered by tests.

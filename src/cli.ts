@@ -30,6 +30,8 @@ import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReady
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
+import { buildCoverageReport } from "./cli/coverage.js";
+import { buildCoverageJson } from "./emit/coverageJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
@@ -958,6 +960,59 @@ program
     if (result.findings.length > 0) process.exitCode = 1;
   });
 
+program
+  .command("coverage")
+  .description(
+    "check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc " +
+      "is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's " +
+      "definition-of-done citation check; advisory by default, --strict for CI",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--tests <dir>", "directory to scan recursively for test files citing invariant IDs")
+  .option("--strict", "exit non-zero if any invariant ID has zero citations (CI)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { tests: string; strict?: boolean; json?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("em coverage: model has errors — fix them first");
+      process.exit(1);
+    }
+    if (!existsSync(opts.tests)) {
+      console.error(`em coverage: --tests directory not found: ${opts.tests}`);
+      process.exit(1);
+    }
+
+    const report = buildCoverageReport(model, refs, dirname(file), opts.tests);
+
+    if (opts.json) {
+      process.stdout.write(buildCoverageJson(file, opts.tests, report) + "\n");
+    } else {
+      for (const slice of report.slices) {
+        if (!slice.inScope) continue;
+        console.log(`slice "${slice.key}" (${slice.status}):`);
+        if (slice.invariants.length === 0) {
+          console.log(`  (no INV-* invariant IDs found in the doc body)`);
+          continue;
+        }
+        for (const inv of slice.invariants) {
+          if (inv.cited) {
+            console.log(`  cited     ${inv.id}`);
+            for (const c of inv.citations) console.log(`              ${c.file}:${c.line}`);
+          } else {
+            console.log(`  uncovered ${inv.id}`);
+          }
+        }
+      }
+      console.log(`${report.totalInvariants} invariant(s) checked, ${report.uncoveredCount} uncovered`);
+    }
+
+    // Advisory by default (exit 0 even with uncovered IDs) — --strict is the opt-in CI gate,
+    // same "set exitCode, don't truncate stdout" rationale as em ledger/em diff for the --json
+    // form, and consistent for the text form too.
+    if (opts.strict && report.uncoveredCount > 0) process.exitCode = 1;
+  });
+
 // Shared by install/sync/check: the skill directory bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and
 // regardless of a symlinked global install — see pkgDir's own resolution above for
@@ -984,9 +1039,9 @@ program
   .command("mcp")
   .description(
     "start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/" +
-      "list_markers/export_model/export_slice/contract as tools (MIL-21) — a structured, " +
-      "agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to " +
-      "running the `em-mcp` bin directly",
+      "list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a " +
+      "structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. " +
+      "Equivalent to running the `em-mcp` bin directly",
   )
   .action(async () => {
     // A 3-line wrapper only, for discoverability — the server itself (src/mcp/) never imports

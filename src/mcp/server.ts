@@ -21,7 +21,7 @@
 //
 // Every tool takes the model file path as an input parameter; nothing is held across calls.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -39,6 +39,8 @@ import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceVal
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
+import { buildCoverageReport } from "../cli/coverage.js";
+import { buildCoverageJson } from "../emit/coverageJson.js";
 import { readContract, contractPath } from "../cli/contract.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
@@ -118,7 +120,7 @@ const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all six MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all seven MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -253,6 +255,38 @@ export function createServer(): McpServer {
         return errorResult(`no slice with export key "${sliceKey}" in "${file}"`);
       }
       return textResult(sliceExport.text!);
+    },
+  );
+
+  server.registerTool(
+    "coverage",
+    {
+      title: "Check invariant-to-test citation coverage",
+      description:
+        "Return the same JSON document `em coverage <file> --tests <dir> --json` prints: for " +
+        "every slice whose joined doc status is ready-to-implement or implemented, each INV-* " +
+        "invariant ID found in the doc body, whether a test file under `testsDir` cites it " +
+        "(word-boundary match on the exact ID), and every citing file:line. Mechanizes " +
+        "reference/implement.md's definition-of-done citation check — confirms an ID is cited, " +
+        "not that the citing test is good or passing (that stays with review and CI). Refuses " +
+        "(tool error) if the model has errors, or if `testsDir` doesn't exist.",
+      inputSchema: {
+        file: fileParam,
+        testsDir: z.string().describe("directory to scan recursively for test files citing invariant IDs"),
+      },
+    },
+    async ({ file, testsDir }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const { model, refs, diagnostics } = compiled;
+      if (hasErrors(diagnostics)) {
+        return errorResult(`not checking coverage: "${file}" has errors — run \`validate\` first and fix them`);
+      }
+      if (!existsSync(testsDir)) {
+        return errorResult(`--tests directory not found: ${testsDir}`);
+      }
+      const report = buildCoverageReport(model, refs, dirname(file), testsDir);
+      return textResult(buildCoverageJson(file, testsDir, report));
     },
   );
 

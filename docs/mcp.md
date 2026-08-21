@@ -68,6 +68,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `list_markers` | `{ file, issues?, divergences?, public? }` (booleans, default `true`) | The `--list-issues`/`--list-divergences`/`--list-public --json` marker document |
 | `export_model` | `{ file }` | The full `em export` document — refuses (tool error) if the model has errors |
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
+| `coverage` | `{ file, testsDir }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -107,6 +108,15 @@ Same document as `em export <file> --slice <sliceKey>`. Refuses only when the na
 itself has an error, or when `sliceKey` matches no slice in the model — an unrelated slice's
 breakage elsewhere never blocks it. Use this to read one already-ratified slice while the rest
 of a large, still-WIP model has unrelated errors.
+
+### `coverage`
+
+Same document as `em coverage <file> --tests <testsDir> --json`: for every slice whose joined
+doc status is `ready-to-implement` or `implemented`, each `INV-*` invariant ID found in the
+doc body, whether a test under `testsDir` cites it, and every citing `file:line`. Refuses (a
+tool error) when the model has errors, or when `testsDir` doesn't exist — matching the CLI's own
+hard-error behavior for a missing `--tests` directory. This is a *checking* tool, not a
+*judgment* one: it confirms an ID is cited, never whether the citing test is good or passing.
 
 ### `contract`
 

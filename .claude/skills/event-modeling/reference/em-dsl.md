@@ -81,8 +81,12 @@ em ledger <file>                                            # check slice docs' 
 em ledger <file> --from <rev>                               # baseline revision
 em ledger <file> --to <rev>                                 # compare revision (default: current working tree)
 em ledger <file> --json                                     # print a JSON document instead of the text report (see docs/cli.md)
+em coverage <file>                                          # check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI
+em coverage <file> --tests <dir>                            # directory to scan recursively for test files citing invariant IDs
+em coverage <file> --strict                                 # exit non-zero if any invariant ID has zero citations (CI)
+em coverage <file> --json                                   # print a JSON document instead of the text report (see docs/cli.md)
 em contract                                                 # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
-em mcp                                                      # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
+em mcp                                                      # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
 em skill install                                            # copy the event-modeling skill into .claude/skills/event-modeling/
 em skill install -f, --force                                # overwrite an existing installation
 em skill install --no-agents-md                             # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)

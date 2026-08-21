@@ -10,6 +10,7 @@
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
+| `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in a ready-to-implement/implemented slice doc is cited by a test (advisory by default, `--strict` for CI) |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
@@ -734,6 +735,84 @@ every other command's own schema):
   `ledger-version-regression`.
 - `skipped` — `{ sliceKey, reason }[]`, `reason` one of the three above.
 - `ok` — `true` when `findings` is empty.
+
+## `em coverage <file> --tests <dir>`
+
+Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every
+`INV-n` has a test that cites its ID" (MIL-130). For each slice whose joined doc's `status` is
+`ready-to-implement` or `implemented`, extracts every `INV-*` invariant ID mentioned in the
+doc's body, then scans `--tests <dir>` recursively for lines that cite each ID. Reports, per ID,
+**cited** (every citing `file:line`) or **uncovered**. Checks that an ID is *cited* — not that
+the citing test is good or passing; test quality stays with review, and test passing stays with
+CI (see [ci.md](ci.md#em-coverage-opt-in) for the CI recipe).
+
+Doc resolution is the same note-binding join every other doc-aware command uses
+(`resolveSliceDocJoin`, [docJoin.ts](../src/catalog/docJoin.ts)) — the same join `em export`'s
+doc field and `--slice-ready` use. A slice with no doc bound, a binding pointing at a missing
+file, or unusable frontmatter is simply **not in scope** (none of those can carry a
+ready/implemented status); a bound, usable doc whose `status` isn't `ready-to-implement` or
+`implemented` is in scope for nothing (reported, `invariants: []`) rather than silently
+dropped — see the `--json` shape below.
+
+**Token format.** IDs are hand-authored per docs/slice-doc-schema.md ("give each a stable ID"),
+not machine-generated, so no single fixed shape is enforced — the extraction regex matches
+`INV-` followed by a run of alphanumeric/hyphen segments, covering both the template's bare
+numbering (`INV-1`, `INV-2`) and a per-slice mnemonic prefix (`INV-CHK-4`, `INV-CHK-3a` for a
+rename target). The whole doc body is scanned, not just the `## Invariants / Business Rules`
+section — a `## Delta` section's Added/Modified/Renamed requirement IDs are just as citable.
+Citation matching is word-boundary-anchored so `INV-KEY-1` never matches inside `INV-KEY-12`.
+
+| Flag | Effect |
+|---|---|
+| `--tests <dir>` | Directory to scan recursively for test files citing invariant IDs (**required**) |
+| `--strict` | Exit non-zero if any invariant ID has zero citations (CI) |
+| `--json` | Print a JSON document instead of the text report |
+
+```bash
+em coverage model.em --tests test/                 # advisory — exits 0 regardless of uncovered IDs
+em coverage model.em --tests test/ --strict         # CI gate — exits 1 on any uncovered ID
+em coverage model.em --tests test/ --json           # machine-readable form
+```
+
+**Advisory by default** — a model with uncovered invariant IDs is not, by itself, a build
+failure; `--strict` is the opt-in CI gate (unlike `em ledger`, where every finding is already a
+defect once you've opted into running the command at all).
+
+A model that doesn't compile is reported with its diagnostics, same as every other command — it
+can't be coverage-checked. A missing `--tests <dir>` is a hard CLI error (no default guessing).
+
+Example output:
+
+```
+$ em coverage model.em --tests test/
+slice "checkout" (ready-to-implement):
+  cited     INV-1
+              test/checkout.test.ts:42
+  uncovered INV-2
+2 invariant(s) checked, 1 uncovered
+$ echo $?
+0
+$ em coverage model.em --tests test/ --strict
+...
+$ echo $?
+1
+```
+
+**`--json` shape** (`coverageSchemaVersion: "1.0"`, versioned independently of the npm package
+and every other command's own schema):
+
+- `generator` — `{ name, version }` of the tool that produced the document.
+- `file` / `testsDir` — the inputs, verbatim.
+- `ok` — `true` when every in-scope invariant ID has at least one citation (advisory verdict;
+  independent of whether `--strict` was passed).
+- `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.
+- `slices` — `{ key, status, inScope, invariants }[]`, one entry per slice in the model
+  (including out-of-scope ones, for transparency):
+  - `status` — the joined doc's `status`, or `null` when no usable doc was found.
+  - `inScope` — `true` only when the doc was found, usable, and `status` is
+    `ready-to-implement` or `implemented`.
+  - `invariants` — `{ id, cited, citations }[]`, empty for an out-of-scope slice. `citations` is
+    `{ file, line }[]`, relative to `testsDir`.
 
 ## `em glossary <files...>`
 

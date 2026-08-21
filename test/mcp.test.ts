@@ -56,8 +56,12 @@ beforeAll(() => {
   mkdirSync(join(dir, "slices"), { recursive: true });
   writeFileSync(
     join(dir, "slices", "ready-slice.md"),
-    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n## Open Questions\n- [x] resolved\n",
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+      "## Invariants / Business Rules\n- **INV-1:** cited\n- **INV-2:** not cited\n\n## Open Questions\n- [x] resolved\n",
   );
+
+  mkdirSync(join(dir, "tests"), { recursive: true });
+  writeFileSync(join(dir, "tests", "ready-slice.test.ts"), `it("enforces INV-1", () => {});\n`);
   // Genuinely complete (ui -> command -> event -> view -> ui), so this slice's own
   // both-ends-of-a-flow diagnostics stay silent — same fixture shape as
   // test/cli.test.ts's "em validate --slice-ready" suite.
@@ -108,11 +112,11 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the six documented tools", async () => {
+  it("exposes exactly the seven documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["contract", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
+      ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
     );
     // Every tool carries a non-empty description an agent can route on.
     for (const t of tools) expect(t.description?.length ?? 0).toBeGreaterThan(20);
@@ -219,6 +223,33 @@ describe("export_slice tool", () => {
     const { result } = await callJson(client, "export_slice", { file: join(dir, "clean.em"), sliceKey: "no-such-key" });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("no-such-key");
+  });
+});
+
+describe("coverage tool", () => {
+  it("happy path: returns the same document `em coverage --json` prints", async () => {
+    const { doc } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "tests") });
+    expect(doc.coverageSchemaVersion).toBe("1.0");
+    expect(doc.ok).toBe(false); // INV-2 is uncovered
+    expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
+    const readySlice = doc.slices.find((s: any) => s.key === "ready-slice");
+    expect(readySlice.inScope).toBe(true);
+    expect(readySlice.invariants).toContainEqual(
+      expect.objectContaining({ id: "INV-1", cited: true }),
+    );
+    expect(readySlice.invariants).toContainEqual({ id: "INV-2", cited: false, citations: [] });
+  });
+
+  it("refuses (tool error) on an errored model, same as `em coverage`", async () => {
+    const { result } = await callJson(client, "coverage", { file: join(dir, "error.em"), testsDir: join(dir, "tests") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not checking coverage");
+  });
+
+  it("refuses (tool error) when testsDir doesn't exist", async () => {
+    const { result } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "no-such-dir") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("--tests directory not found");
   });
 });
 
