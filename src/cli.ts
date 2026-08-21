@@ -16,7 +16,8 @@ import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
 import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
-import { buildExport } from "./emit/json.js";
+import { buildExport, buildSliceExport } from "./emit/json.js";
+import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
 import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
@@ -25,7 +26,7 @@ import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
-import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
+import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
@@ -197,9 +198,48 @@ program
   .description("export a versioned JSON snapshot of the normalized model")
   .argument("<file>", "input .em file")
   .option("-o, --out <path>", "write to a file instead of stdout")
-  .action((file: string, opts: { out?: string }) => {
+  .option(
+    "--slice <key>",
+    "export only this slice's object (pattern/fields/doc) instead of the whole model (export " +
+      "key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage " +
+      "elsewhere in the model doesn't block it (see docs/cli.md)",
+  )
+  .action((file: string, opts: { out?: string; slice?: string }) => {
     const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
+
+    if (opts.slice) {
+      // Scoped export deliberately does NOT reuse the whole-model error guard below: the
+      // ticket's own motivation for `--slice` is an agent implementing one already-ratified
+      // slice while the rest of a large, still-WIP model has unrelated errors — the same
+      // "don't gate on breakage elsewhere" call `--slice-ready` already made (see its own
+      // scoping comment above). Only an error that concerns THIS slice (bare key, or an
+      // element ref prefixed `<key>/`) refuses.
+      const key = opts.slice;
+      const scopedErrors = diagnostics.filter(
+        (d) => d.severity === "error" && d.refs?.some((r) => r === key || r.startsWith(`${key}/`)),
+      );
+      if (scopedErrors.length > 0) {
+        console.error(`not exporting: slice "${key}" has errors — fix them first`);
+        process.exit(1);
+      }
+
+      const sliceExport = buildSliceExport(model, refs, diagnostics, source, file, key);
+      if (!sliceExport.found) {
+        console.error(`em export --slice: no slice with export key "${key}" in this model`);
+        process.exit(1);
+      }
+      printDiagnostics(newDiagnostics(sliceExport.diagnostics, diagnostics));
+
+      if (opts.out) {
+        writeFileSync(opts.out, sliceExport.text! + "\n");
+        console.log(`wrote ${opts.out}`);
+      } else {
+        process.stdout.write(sliceExport.text! + "\n");
+      }
+      return;
+    }
+
     if (hasErrors(diagnostics)) {
       console.error("not exporting: fix the errors above");
       process.exit(1);
@@ -685,6 +725,11 @@ program
     "readiness gate for one slice (export key): status ready-to-implement, doc resolvable via " +
       "note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)",
   )
+  .option(
+    "--json",
+    "print a JSON document instead of text — works on a model WITH errors, unlike `em export` " +
+      "(MIL-128, see docs/cli.md); exit codes are unchanged",
+  )
   .action(
     (
       file: string,
@@ -694,6 +739,7 @@ program
         listPublic?: boolean;
         failOnIssues?: boolean;
         sliceReady?: string;
+        json?: boolean;
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
@@ -731,17 +777,39 @@ program
         const scoped = combined.filter((d) => d.refs?.some((r) => r === key || r.startsWith(`${key}/`)));
         printDiagnostics(scoped);
         const ready = scoped.length === 0;
-        console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+        if (opts.json) {
+          // MIL-128: the 4 named gates (see computeSliceReadyGates) plus the same `scoped`
+          // diagnostics and `ready` verdict driving the exit code below — replaces both the
+          // scraped warning prose and the two hand-parsed English sentences.
+          const gates = computeSliceReadyGates(model, refs, dirname(file), key);
+          process.stdout.write(buildSliceReadyJson(file, key, gates, scoped, ready) + "\n");
+        } else {
+          console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+        }
         if (!ready) process.exit(1);
         return;
       }
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
-        if (opts.listIssues) printIssues(model);
-        if (opts.listDivergences) printDivergences(model);
-        if (opts.listPublic) printPublicElements(model);
         // Errors still fail the run below — surface them rather than exiting
         // non-zero with nothing but the list on screen.
-        printDiagnostics(allDiagnostics.filter((d) => d.severity === "error"));
+        const errorsOnly = allDiagnostics.filter((d) => d.severity === "error");
+        if (opts.json) {
+          const markers = collectMarkers(model, refs, {
+            issues: opts.listIssues,
+            divergences: opts.listDivergences,
+            public: opts.listPublic,
+          });
+          printDiagnostics(errorsOnly);
+          process.stdout.write(buildValidateListJson(file, markers, errorsOnly) + "\n");
+        } else {
+          if (opts.listIssues) printIssues(model);
+          if (opts.listDivergences) printDivergences(model);
+          if (opts.listPublic) printPublicElements(model);
+          printDiagnostics(errorsOnly);
+        }
+      } else if (opts.json) {
+        printDiagnostics(allDiagnostics);
+        process.stdout.write(buildValidateJson(file, allDiagnostics) + "\n");
       } else {
         printDiagnostics(allDiagnostics);
         if (allDiagnostics.length === 0) console.log("ok — no issues");

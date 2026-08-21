@@ -175,6 +175,7 @@ checked (and, just as deliberately, what's never flagged — a re-ratified slice
 | `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 | `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
+| `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
 ```bash
 em validate model.em                          # full diagnostics; exits non-zero only on errors
@@ -183,7 +184,84 @@ em validate model.em --list-divergences        # just the accepted `divergence` 
 em validate model.em --list-public             # just the events and views marked `public`, for an audit
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
 em validate model.em --slice-ready checkout    # is "checkout" safe to hand to an implementer?
+em validate model.em --json                    # structured diagnostics — works even with errors
 ```
+
+### `--json` (MIL-128)
+
+Unlike `em export`, `em validate --json` runs on a model **with errors** — that's the point: it's
+the only structured-diagnostics surface open precisely when the model is broken. Diagnostics are
+still printed to stderr as usual (text mode's human-readable lines); stdout carries exactly one
+JSON document, and the exit code is identical to text mode in every case. `--json` composes with
+`--slice-ready`/`--list-*`, changing that mode's own output shape rather than adding a fourth one.
+Every diagnostic in all three shapes below carries `usageCategory`, sourced from the `RULES`
+registry (the same fixed vocabulary [usage-data.md](usage-data.md)'s Categories tables draw
+from) — dedupe that field yourself rather than reaching for a separate flag; there isn't one.
+
+**Plain `em validate model.em --json`** (`validateSchemaVersion: "1.0"`):
+
+```json
+{
+  "validateSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "ok": false,
+  "summary": { "errors": 1, "warnings": 2, "total": 3 },
+  "diagnostics": [
+    { "severity": "error", "code": "view-from-unresolved", "message": "…", "line": 4, "refs": ["checkout/view.…"], "usageCategory": "view references unknown event" }
+  ]
+}
+```
+
+`ok` mirrors the exit code (`true` exactly when there are no errors — warnings never flip it).
+Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff --json`:
+`severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`.
+
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.0"`) — see the
+`--slice-ready` section below for what each gate means:
+
+```json
+{
+  "validateSliceReadySchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "sliceKey": "checkout",
+  "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false },
+  "ready": false,
+  "diagnostics": [ … ]
+}
+```
+
+`gates` names each of the 4 conditions individually, replacing both the scraped warning prose
+and the two hand-parsed English sentences ("is ready-to-implement" / "is NOT ready-to-implement").
+It's `null` when `sliceKey` matches no slice in the model (the unknown-key error case — nothing
+to gate; check `diagnostics` for `slice-ready-unknown-slice` instead). A gate not reached because
+an earlier one failed (e.g. `statusReady` when the doc itself isn't bound) reports `false`, not
+`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 4
+named gates pass, if something else concerning this slice is broken (e.g. a plain
+`both-ends-of-a-flow` diagnostic on one of its own elements); `diagnostics` carries the full
+scoped list so a consumer sees exactly why, not just the 4 named gates.
+
+**`--list-issues`/`--list-divergences`/`--list-public --json`** (`validateListSchemaVersion:
+"1.0"`) — each flag independently gates its own marker kind, same as text mode; passing more than
+one merges their markers into the same array:
+
+```json
+{
+  "validateListSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "markers": [
+    { "markerKind": "issue", "sliceKey": "checkout", "sliceName": "Checkout", "elementRef": "checkout/command.place-order", "elementKind": "command", "elementName": "Place Order", "text": "who validates the discount code?", "line": 2 }
+  ],
+  "diagnostics": [ … ]
+}
+```
+
+`elementRef` is the same export-stable ref `em export`/`em diff` use. `text` is the `issue`/
+`divergence` annotation's own text; `null` for a `public` marker, which carries no text.
+`diagnostics` is the same errors-only list text mode still prints — a genuine error still fails
+the run regardless of which `--list-*` flag was passed.
 
 ### `--slice-ready <key>` (MIL-87)
 
@@ -220,11 +298,42 @@ default (pipe-friendly); `-o` writes a file.
 | Flag | Effect |
 |---|---|
 | `-o, --out <path>` | Write to a file instead of stdout |
+| `--slice <key>` | Export only this slice's object instead of the whole model — see below (MIL-128) |
 
 ```bash
 em export model.em                    # pretty JSON on stdout
 em export model.em -o model.json      # write to a file
+em export model.em --slice checkout   # just the "checkout" slice's object
 ```
+
+### `--slice <key>` (MIL-128)
+
+Exports one slice's object (`pattern`/`fields`/`doc`/…, the exact same shape as that slice's
+entry in the full document's `model.slices`) instead of building the whole model. Written for an
+implementing agent working one ratified slice at a time: piping the entire export just to read
+one `slice.doc` is unnecessary I/O, and — more importantly — the whole-model error guard
+shouldn't block a slice that's fine just because some *other*, unrelated slice in a large,
+still-WIP model has an error. So the guard is scoped differently here: `--slice` refuses only
+when an error concerns the **named slice itself** (a bare slice-key ref, or an element ref
+prefixed `<key>/` — the same scoping `--slice-ready` uses); an error anywhere else in the model
+is printed to stderr as usual but never blocks. A full, unscoped `em export` still refuses on
+*any* error in the model, unchanged.
+
+```json
+{
+  "schemaVersion": "1.6",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "source": { "path": "model.em", "sha256": "…" },
+  "sliceKey": "checkout",
+  "slice": { "key": "checkout", "name": "Checkout", "pattern": "state-change", "doc": { … }, "elements": [ … ], … },
+  "diagnostics": [ … ]
+}
+```
+
+`schemaVersion` is the same `1.6` the full export uses — `slice` is byte-for-byte the same shape
+as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
+scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
+model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
 
 **Determinism.** The same source text always exports to byte-identical JSON: no timestamps,
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of

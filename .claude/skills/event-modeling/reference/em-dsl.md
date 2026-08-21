@@ -25,6 +25,7 @@ em render <file> --emit-dot                                 # print the generate
 em render <file> --keep-empty-lanes                         # keep the API lane even when empty
 em export <file>                                            # export a versioned JSON snapshot of the normalized model
 em export <file> -o, --out <path>                           # write to a file instead of stdout
+em export <file> --slice <key>                              # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
 em diff <old> [new]                                         # compare two models structurally (two files, or one file across git revisions)
 em diff <old> [new] --from <rev>                            # diff <old> against this git revision instead of a second file
 em diff <old> [new] --to <rev>                              # diff against this git revision instead of the current file (requires --from)
@@ -72,6 +73,7 @@ em validate <file> --list-divergences                       # print only accepte
 em validate <file> --list-public                            # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
 em validate <file> --fail-on-issues                         # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
 em validate <file> --slice-ready <key>                      # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
+em validate <file> --json                                   # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
 em migrate <file>                                           # rewrite the old two-slice Automation/Translation shape into the merged single-slice shape MIL-120 made canonical (see docs/cli.md)
 em migrate <file> --write                                   # apply the rewrite to the file (default: dry run — report only, write nothing)
 em ledger <file>                                            # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
