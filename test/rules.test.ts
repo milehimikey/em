@@ -53,6 +53,12 @@ describe("RULES registry", () => {
     }
   });
 
+  it("every rule has a non-empty usageCategory (docs/usage-data.md's fixed vocabulary, MIL-97)", () => {
+    for (const [code, rule] of RULE_ENTRIES) {
+      expect(rule.usageCategory.trim(), `${code}'s usageCategory`).not.toBe("");
+    }
+  });
+
   it("every docAnchor (when present) names a real docs/validation.md section", () => {
     for (const [code, rule] of RULE_ENTRIES) {
       if (rule.docAnchor) expect(KNOWN_DOC_ANCHORS.has(rule.docAnchor), `${code}'s docAnchor "${rule.docAnchor}"`).toBe(true);

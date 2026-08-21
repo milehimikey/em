@@ -23,8 +23,8 @@ reaction-shares-a-slice-with-its-command shape — still applies.
 
 ## Setup
 
-1. Run the SKILL.md preconditions (tool check, model location) and scaffold the standard
-   project layout if no model exists yet.
+1. Run the SKILL.md preconditions (tool check, model location). If no model exists yet, run
+   `em scaffold <model-name>` (see SKILL.md's "Project layout this skill creates").
 2. **Agree the scope line first**: which system, which part, what's out of bounds. Write it to
    the state file's Session inputs.
 3. Record in the state file: `Source mode` (after detection, below) and
@@ -126,8 +126,9 @@ accepted case, and each one is worth naming explicitly as a finding); every unkn
 `# TBD`; and the user has confirmed the model reflects today's behavior. Then:
 
 1. State file: set phase progress (extraction rounds checked), log the completion decision.
-   Seed `README.md`'s **slice index** (every slice, pattern, status "no doc yet" — no slice
-   docs exist until the `slice` phase writes them).
+   Run `em slice index <model-name>.em` to seed `README.md`'s **Slices table** — every slice,
+   its AST-derived pattern, status "no doc yet" (no slice docs exist until the `slice` phase
+   writes them).
 2. The extracted model **replaces `discover`** — suggest `/event-modeling model` next
    (steps 5-7: swimlanes, patterns, completeness). Desired-state changes belong *after* the
    as-is model is agreed — as normal `model`/`slice` evolution, clearly separated from

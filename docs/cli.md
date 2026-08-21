@@ -3,6 +3,7 @@
 | Command | What it does |
 |---|---|
 | `em init [file]` | Scaffold a starter model (default `model.em`) |
+| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `live.html`, `README.md`, `.event-modeling.md` |
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
@@ -12,6 +13,10 @@
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
+| `em state read [dir]` | Print the state file's mechanical fields as JSON |
+| `em state set-phase <phase> [dir]` | Rewrite `Current phase:` (and `Current step:` with `--step`) |
+| `em state set-conformance <revision> [dir]` | Rewrite `Last conformance:` in the exact format `conform` parses |
+| `em state set-review <date> [dir]` | Rewrite `Last stakeholder review:` |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
@@ -27,6 +32,35 @@ builds, minus fields and notes. Defaults to `model.em`.
 | Flag | Effect |
 |---|---|
 | `-f, --force` | Overwrite the file if it already exists |
+
+## `em scaffold <name>`
+
+Scaffolds a full project in one step, rather than just a starter `.em`. Kebab-slugs `<name>`
+for the directory and file names (`kebabSlug()` — lowercase, non-alphanumeric runs collapsed to
+a single `-`); the display name you passed is used as-is for titles/prose. Creates
+`<slug>/` and writes:
+
+| File | Content |
+|---|---|
+| `<slug>/<slug>.em` | The same starter model `em init` writes, titled `model "<name>"` |
+| `<slug>/live.html` | `file://` auto-refresh viewer, verbatim (see [ai-workflow.md](ai-workflow.md)) |
+| `<slug>/README.md` | Overview + slice index, `{{Model Name}}`/`{{model-name}}` filled in; the `GENERATED:slices` table stays empty (run `em slice index` once the model has slices) |
+| `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
+
+This is the machinery behind the bundled `event-modeling` Claude Code skill's "scaffold the
+project layout" setup step (see [ai-workflow.md](ai-workflow.md)) — the skill runs this
+command rather than hand-copying its `templates/*` files.
+
+| Flag | Effect |
+|---|---|
+| `-f, --force` | Overwrite the directory's contents if it already exists |
+
+```bash
+em scaffold "Order Fulfillment"   # writes order-fulfillment/{order-fulfillment.em,live.html,README.md,.event-modeling.md}
+```
+
+Refuses if `<slug>/` already exists (`refusing to overwrite <slug>/ (use --force)`), matching
+`em init`'s convention.
 
 ## `em render <file>`
 
@@ -743,6 +777,80 @@ em catalog checkout.em billing.em -o site         # multiple models, one site
 em catalog model.em -T png --title "Order System"
 ```
 
+## `em slice new <name>`
+
+Scaffolds a fresh `slices/<key>.md` doc (MIL-97) — the filename key is `<name>` run through
+`kebabSlug()`, the same slugging helper `em scaffold` uses, so the file can never drift from
+what a `note "slices/<key>.md"` binding needs to match. Writes exactly the 5 frontmatter keys
+[slice-doc-schema.md](slice-doc-schema.md#required-vs-optional-by-status) requires at
+`status: draft` — `schemaVersion`, `pattern`, `swimlane`, `status`, `version` — no more: no
+`implementedIn` (only required once a slice has ever reached `implemented`), no lineage keys
+(`split-from`/`merged-from`/`superseded-by` only apply to a split/merge/rename doc), no
+commented-out guidance. Body is just the `# Slice: <name>` heading and the diagram-image stub;
+every judgment section (Intent, Command, Scenarios, Open Questions, ...) is deliberately left
+for hand-authoring, matching `templates/slice.md` — this command mechanizes only the part that
+was silently drifting when hand-typed (a placeholder left unedited, a key forgotten).
+
+`--pattern` and `--swimlane` are both required — no placeholder fallback on omission, since a
+guessed default would reintroduce the exact drift this command exists to kill. `--pattern` is
+validated against the same 4-value enum as the schema's `pattern` key; an invalid value is a
+clear error listing the valid choices, non-zero exit.
+
+Creates `slices/` if it doesn't exist yet. Does **not** touch the model's `.em` source — writing
+a brand-new file is safe to automate blindly, but editing existing `.em` text isn't, so the
+command instead prints the exact `note "slices/<key>.md"` line to add to the slice's primary
+element by hand.
+
+| Flag | Effect |
+|---|---|
+| `--pattern <pattern>` | **Required.** `state-change` \| `state-view` \| `automation` \| `translation` |
+| `--swimlane <swimlane>` | **Required.** Free text, conventionally `<Persona> → <Context>` |
+| `-f, --force` | Overwrite the file if it already exists |
+
+```bash
+em slice new "Request Payment" --pattern automation --swimlane "System → Payment"
+# -> writes slices/request-payment.md, prints the note "slices/request-payment.md" line to add
+```
+
+## `em slice index <file>`
+
+Rewrites the marker-delimited Slices table in the model's sibling `README.md` (MIL-98) — the
+"ONE place slices are enumerated" a model README carries (see `templates/model-readme.md`).
+Every column comes from the same code paths `em export`/`em catalog` already use — export key,
+AST-derived pattern (`classifySlicePattern`), and the slice-doc frontmatter join
+(`resolveSliceDocJoin`) — never a second, hand-authored parse. This replaces hand-maintaining
+the table by the `event-modeling` skill's `slice`/`implement` phases.
+
+`README.md` is looked up next to `<file>`, same sibling convention as `slices/*.md`. Both the
+file and the `<!-- GENERATED:slices:start -->` / `<!-- GENERATED:slices:end -->` marker pair
+around the table must already exist — `em slice index` never creates either, so a missing
+README or missing markers is a clear error naming the expected path/fix rather than a silent
+file write. New models scaffolded from `templates/model-readme.md` already carry the marker
+pair around an empty table.
+
+| Column | Source |
+|---|---|
+| `#` | Row position (declaration order) |
+| `Slice` | Slice name |
+| `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
+| `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), or `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" |
+| `Implemented in` | The doc's `implementedIn`, or `—` |
+| `Design doc` | Always a link to the conventional `slices/<slice-key>.md` path, whether or not that file exists yet |
+
+| Flag | Effect |
+|---|---|
+| `--check` | Verify the table is current; exit non-zero on drift without writing (CI) |
+
+```bash
+em slice index model.em          # rewrite README.md's Slices table
+em slice index model.em --check  # CI: fail if it's stale, never writes
+```
+
+Any input-model error (parse/validation) is reported and exits 1 before touching the README, same
+as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join warning (a slice
+notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
+still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
+
 ## `em changelog <file>`
 
 Renders the model's git history as a business-readable ledger — one section per commit
@@ -800,6 +908,157 @@ carries no Decisions blocks.
 **Determinism.** Given the same commit range and the same state file content, the output
 is byte-identical — no timestamps beyond the commits' own author dates, no environment-
 derived values.
+
+## `em state`
+
+Reads and writes the **mechanical** fields of a model's state file (`.event-modeling.md`,
+see [ai-workflow.md](ai-workflow.md) and the `event-modeling` skill's `templates/state.md`):
+`Model file:`, `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Last
+stakeholder review:`. This is the enforcement point for the phase enum and for the exact
+`Last conformance:`/`Last stakeholder review:` formats the skill's `conform`/`review` phases
+depend on — hand-editing these bullets risks a typo the next resume/conform run can't parse.
+
+Everything else in the file — Session inputs, Participants, Decisions log, Usage log, Open
+questions, Slice inventory — is agent-authored prose and stays out of `em state`'s reach;
+every writer below touches only its one targeted bullet (plus `Last updated:`), leaving every
+other byte of the file untouched.
+
+**Locating the state file.** Every subcommand takes an optional `[dir]` (default: the current
+directory) — either the model directory containing `.event-modeling.md`, or a direct path to
+that file itself (its basename is checked against `.event-modeling.md` exactly). All four
+subcommands fail clearly, non-zero, if the file — or the bullet a writer targets — is missing.
+
+### `em state read [dir]`
+
+Prints the six mechanical fields as JSON on stdout:
+
+```json
+{
+  "modelPath": "order-fulfillment.em",
+  "phase": "discover",
+  "step": "1",
+  "lastUpdated": "2026-08-20",
+  "lastConformance": null,
+  "lastReview": null
+}
+```
+
+`lastConformance` is `null` for the template's `never` marker, otherwise `{ "date", "revision",
+"report" }` parsed from the `Last conformance:` bullet. `lastReview` is `null` for `never`,
+otherwise the `YYYY-MM-DD` at the start of the `Last stakeholder review:` bullet.
+
+### `em state set-phase <phase> [dir]`
+
+Rewrites `Current phase:` (and `Last updated:`) to today. `<phase>` must be one of the
+canonical phases — `discover | extract | model | slice | implement | conform | review |
+validate` (the same list `templates/state.md`'s placeholder documents) — an invalid value is
+refused with the full list. `--step <n>` additionally rewrites `Current step:`.
+
+| Flag | Effect |
+|---|---|
+| `--step <n>` | Also rewrite `Current step:` to this value |
+
+```bash
+em state set-phase slice my-model/
+em state set-phase implement my-model/ --step 3
+```
+
+### `em state set-conformance <revision> [dir]`
+
+Rewrites `Last conformance:` (and `Last updated:`) to the exact format
+[reference/conform.md](../.claude/skills/event-modeling/reference/conform.md)'s scoping step
+parses back out:
+
+```
+- **Last conformance:** <today> @ <revision> — report: <report>
+```
+
+`--report <path>` is required.
+
+| Flag | Effect |
+|---|---|
+| `--report <path>` | Path to the conformance report just written (required) |
+
+```bash
+em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
+```
+
+### `em state set-review <date> [dir]`
+
+Rewrites `Last stakeholder review:` (and `Last updated:`) to `<date> — attendees: see
+Participants`, matching `templates/state.md`'s format. `<date>` must look like `YYYY-MM-DD`
+(month/day range-checked, not a full calendar) — an invalid value is refused.
+
+```bash
+em state set-review 2026-08-20 my-model/
+```
+
+## `em conform-scope <file>`
+
+Mechanizes the mechanical half of
+[reference/conform.md](../.claude/skills/event-modeling/reference/conform.md)'s conform-phase
+step 1 ("Scope") — reading the `Last conformance:` marker, running `git diff --name-only` in
+the target repo, and mapping the changed paths to slices via each slice doc's `implementedIn` —
+so the agent no longer does this by hand. Prints one JSON document to stdout:
+
+```json
+{
+  "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
+  "changedPaths": ["src/checkout/CheckoutHandler.kt", "README.md"],
+  "candidateSlices": [
+    { "key": "checkout", "matchedBy": "implementedIn", "paths": ["src/checkout/CheckoutHandler.kt"] }
+  ],
+  "unmappedPaths": ["README.md"]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `lastConformance` | The state file's `Last conformance:` marker, parsed via `em state read`'s same `stateFile.ts` (`{ "date", "revision" }`), or `null` for the `never` marker (first run). Always echoed back as parsed, even under `--full`. |
+| `changedPaths` | `git diff --name-only <lastConformance.revision>..HEAD` in `--repo`, repo-root-relative. `[]` when scoping in full mode (see below) — not omitted, so the JSON shape stays stable across modes. |
+| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. |
+| `unmappedPaths` | `changedPaths` matched by no slice — hand to agent judgment (grep fallback, evidence walks per `reference/conform.md`). Always `[]` in full mode. |
+
+**Scoping mode.** Diff-scoped by default: when `lastConformance` is set and `--full` isn't
+passed, `changedPaths` is fetched from `--repo` and mapped to slices. Full mode — every
+`status: implemented` slice, `changedPaths`/`unmappedPaths` both `[]` — kicks in when
+`lastConformance` is `null` (first run, matching `reference/conform.md` step 1) or `--full` is
+passed.
+
+**The `implementedIn` -> path matching rule** is deliberately conservative and never guesses: a
+slice doc's `implementedIn` value counts as naming a changed path only when, after stripping a
+leading `./`/trailing `/`, it's textually equal to that path or a directory prefix of it (e.g.
+`implementedIn: src/checkout` matches `src/checkout/CheckoutHandler.kt`). A URL or SCP-style git
+remote (`https://…`, `git@host:…` — the common PR/commit-link shape) carries no repo-relative
+path information, so it deterministically matches nothing. There's no grep fallback here on
+purpose — that judgment call belongs to the agent, one level up (`reference/conform.md` step 1).
+
+| Flag | Effect |
+|---|---|
+| `--repo <path>` | Path to (or inside) the target codebase's git repository (required) |
+| `--full` | Ignore `Last conformance:`/changed paths; scope every `implemented` slice |
+| `--seed-asis` | Also seed the conform-phase scratch model (see below) |
+
+```bash
+em conform-scope my-model.em --repo ../target-repo
+em conform-scope my-model.em --repo ../target-repo --full
+em conform-scope my-model.em --repo ../target-repo --seed-asis
+```
+
+**`--seed-asis`** mechanizes the OTHER mechanical convention conform-phase step 1 describes:
+byte-copies the canonical model to `<dirname(file)>/<stem>-asis.em`, and makes sure `*-asis.em`
+is listed in the model's own repository's root `.gitignore` (creating the file, or appending the
+line, only if it isn't already present anywhere in it — never duplicated). Reports what it did
+as an additional `seeded` key in the JSON, omitted entirely when the flag isn't passed:
+
+```json
+{ "seeded": { "asisPath": "my-model-asis.em", "gitignoreUpdated": true } }
+```
+
+Any input-model error (parse/validation) is reported and exits 1 before any git call or file
+write, same as every other command. A missing state file, an unparsable `Last conformance:`
+bullet, a `--repo` that isn't a git repository, or an unknown revision in `Last conformance:`
+each exit 1 with a clear message.
 
 ## `em skill install`
 

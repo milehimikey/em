@@ -831,6 +831,114 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   });
 });
 
+describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
+  let cwd: string;
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-"));
+  });
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it("creates <slug>/ with all 4 files, correctly titled/slugged", () => {
+    const r = em(["scaffold", "Order Fulfillment"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("scaffolded order-fulfillment/");
+
+    const dir = join(cwd, "order-fulfillment");
+    expect(existsSync(join(dir, "order-fulfillment.em"))).toBe(true);
+    expect(existsSync(join(dir, "live.html"))).toBe(true);
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+    expect(existsSync(join(dir, ".event-modeling.md"))).toBe(true);
+
+    const em_ = readFileSync(join(dir, "order-fulfillment.em"), "utf8");
+    expect(em_.startsWith('model "Order Fulfillment"\n')).toBe(true);
+
+    const live = readFileSync(join(dir, "live.html"), "utf8");
+    expect(live).toBe(readFileSync(join(ROOT, ".claude", "skills", "event-modeling", "templates", "live.html"), "utf8"));
+
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme.startsWith("# Order Fulfillment\n")).toBe(true);
+    expect(readme).toContain("em watch order-fulfillment.em -o order-fulfillment.svg --serve");
+    expect(readme).toContain(
+      "<!-- GENERATED:slices:start -->\n" +
+        "| # | Slice | Pattern | Status | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|----------------|------------|\n" +
+        "<!-- GENERATED:slices:end -->",
+    );
+
+    const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
+    expect(state).toContain("# Event Modeling Progress — Order Fulfillment");
+    expect(state).toContain("- **Model file:** `order-fulfillment.em`");
+    expect(state).toContain("- **Current phase:** discover");
+    expect(state).toContain("- **Current step:** 1");
+    expect(state).toMatch(/- \*\*Last updated:\*\* \d{4}-\d{2}-\d{2}/);
+    expect(state).toContain("- **Last conformance:** never");
+    expect(state).toContain("- **Last stakeholder review:** never");
+
+    // Never leave a template placeholder in any written file.
+    for (const text of [em_, live, readme, state]) {
+      expect(text).not.toMatch(/\{\{[^}]*\}\}/);
+    }
+  });
+
+  it("refuses to overwrite an existing directory without --force", () => {
+    const r = em(["scaffold", "Order Fulfillment"], cwd);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing to overwrite order-fulfillment/ (use --force)");
+  });
+
+  it("--force overwrites the existing directory's contents", () => {
+    const dir = join(cwd, "order-fulfillment");
+    writeFileSync(join(dir, "README.md"), "hand-edited, should be clobbered");
+    const r = em(["scaffold", "Order Fulfillment", "--force"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("scaffolded order-fulfillment/");
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme.startsWith("# Order Fulfillment\n")).toBe(true);
+  });
+
+  it("kebab-slugs an already-slug-shaped name to itself, and a messy name into a clean slug", () => {
+    const r1 = em(["scaffold", "widget-returns"], cwd);
+    expect(r1.status).toBe(0);
+    expect(existsSync(join(cwd, "widget-returns", "widget-returns.em"))).toBe(true);
+
+    const r2 = em(["scaffold", "Weird!! Name_2"], cwd);
+    expect(r2.status).toBe(0);
+    expect(r2.stdout).toContain("scaffolded weird-name-2/");
+    expect(existsSync(join(cwd, "weird-name-2", "weird-name-2.em"))).toBe(true);
+    const readme = readFileSync(join(cwd, "weird-name-2", "README.md"), "utf8");
+    // Display name (untouched) is used for titles/prose; slug is used for filenames.
+    expect(readme.startsWith("# Weird!! Name_2\n")).toBe(true);
+  });
+
+  it('rejects a name containing " with a clear error, writing nothing', () => {
+    const r = em(["scaffold", 'Bob"s Orders'], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('"');
+    expect(existsSync(join(cwd, "bob-s-orders"))).toBe(false);
+  });
+
+  it("rejects a name containing {{ with a clear error, writing nothing", () => {
+    const r = em(["scaffold", "x{{y"], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("{{");
+    expect(existsSync(join(cwd, "x-y"))).toBe(false);
+  });
+
+  it("a name containing regex-replacement patterns ($&, $$) scaffolds with the literal name intact", () => {
+    const r = em(["scaffold", "Foo $& Bar $$ Baz"], cwd);
+    expect(r.status).toBe(0);
+    const dir = join(cwd, "foo-bar-baz");
+    const em_ = readFileSync(join(dir, "foo-bar-baz.em"), "utf8");
+    expect(em_.startsWith('model "Foo $& Bar $$ Baz"\n')).toBe(true);
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme.startsWith("# Foo $& Bar $$ Baz\n")).toBe(true);
+    const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
+    expect(state).toContain("Foo $& Bar $$ Baz");
+  });
+});
+
 describe("em changelog (CLI, real git repo)", () => {
   let repo: string;
 
@@ -992,6 +1100,171 @@ describe("em changelog follows renames (CLI, real git repo)", () => {
     expect(r.stdout).toContain('+ slice "Cancel"');
     // A pure rename changes nothing structurally — its section is omitted.
     expect(r.stdout).not.toContain("rename model file");
+  });
+});
+
+describe("em conform-scope (CLI, real git repo)", () => {
+  const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
+
+  // Genuinely clean, same shape as the top-of-file CLEAN fixture (ui+command+event, then a
+  // view+ui slice reading it) doubled up — so this model triggers no diagnostics on stderr and
+  // "diff-scoped..." below can assert stderr stays empty.
+  const MODEL =
+    `slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n` +
+    `slice "Open Orders" {\n  view Open Orders from "Order Placed"\n  ui Order List @Customer\n}\n` +
+    `slice "Ship Order" {\n  ui Shipping @Customer\n  command Ship Order note "slices/ship-order.md"\n  event Order Shipped\n}\n` +
+    `slice "Shipped Orders" {\n  view Shipped Orders from "Order Shipped"\n  ui Shipment List @Customer\n}\n`;
+
+  const docWithImplementedIn = (implementedIn: string) =>
+    `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: ${implementedIn}\n---\n## Intent\n`;
+
+  let modelDir: string;
+  let targetRepo: string;
+  let baseRev: string;
+
+  beforeAll(() => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-"));
+    const scaffolded = em(["scaffold", "Checkout"], cwd);
+    expect(scaffolded.status).toBe(0);
+    modelDir = join(cwd, "checkout");
+    writeFileSync(join(modelDir, "checkout.em"), MODEL);
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    writeFileSync(join(modelDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
+    writeFileSync(join(modelDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+
+    targetRepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-target-"));
+    git(["init", "-q", "-b", "main"], targetRepo);
+    mkdirSync(join(targetRepo, "src", "checkout"), { recursive: true });
+    writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
+    writeFileSync(join(targetRepo, "README.md"), "# demo\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "initial"], targetRepo);
+    baseRev = git(["rev-parse", "HEAD"], targetRepo).stdout.trim();
+
+    const setConformance = em(
+      ["state", "set-conformance", baseRev, "--report", "conformance/2026-08-01-report.md"],
+      modelDir,
+    );
+    expect(setConformance.status).toBe(0);
+
+    writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler2\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "tweak checkout handler"], targetRepo);
+
+    writeFileSync(join(targetRepo, "README.md"), "# demo, updated\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "unrelated readme edit"], targetRepo);
+  });
+  afterAll(() => {
+    rmSync(modelDir, { recursive: true, force: true });
+    rmSync(targetRepo, { recursive: true, force: true });
+  });
+
+  it("diff-scoped: maps a changed path to its slice via implementedIn, a URL-only slice matches nothing, unmatched paths come back unmapped", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    const doc = JSON.parse(r.stdout);
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.changedPaths.sort()).toEqual(["README.md", "src/checkout/Handler.kt"]);
+    expect(doc.candidateSlices).toEqual([
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+    ]);
+    expect(doc.unmappedPaths).toEqual(["README.md"]);
+  });
+
+  it("--full scopes every implemented slice regardless of Last conformance, changedPaths/unmappedPaths empty", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--full"], modelDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.changedPaths).toEqual([]);
+    expect(doc.unmappedPaths).toEqual([]);
+    expect(doc.candidateSlices.map((c: { key: string }) => c.key).sort()).toEqual(["place-order", "ship-order"]);
+    expect(doc.candidateSlices.every((c: { matchedBy: string; paths: string[] }) => c.matchedBy === "full" && c.paths.length === 0)).toBe(true);
+  });
+
+  it("first run (Last conformance: never) behaves like --full without needing the flag, and never shells out to --repo", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-firstrun-"));
+    try {
+      const scaffolded = em(["scaffold", "Checkout"], cwd);
+      expect(scaffolded.status).toBe(0);
+      const freshDir = join(cwd, "checkout");
+      writeFileSync(join(freshDir, "checkout.em"), MODEL);
+      mkdirSync(join(freshDir, "slices"), { recursive: true });
+      writeFileSync(join(freshDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
+      writeFileSync(join(freshDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+
+      // A --repo path that isn't even a git repository — proves first-run scoping never touches it.
+      const r = em(["conform-scope", "checkout.em", "--repo", cwd], freshDir);
+      expect(r.status).toBe(0);
+      const doc = JSON.parse(r.stdout);
+      expect(doc.lastConformance).toBeNull();
+      expect(doc.changedPaths).toEqual([]);
+      expect(doc.candidateSlices.map((c: { key: string }) => c.key).sort()).toEqual(["place-order", "ship-order"]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("--seed-asis writes a byte copy of the model and gitignores *-asis.em idempotently", () => {
+    const r1 = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--seed-asis"], modelDir);
+    expect(r1.status).toBe(0);
+    const doc1 = JSON.parse(r1.stdout);
+    expect(doc1.seeded.asisPath).toBe("checkout-asis.em");
+    expect(doc1.seeded.gitignoreUpdated).toBe(true);
+    expect(readFileSync(join(modelDir, "checkout-asis.em"), "utf8")).toBe(readFileSync(join(modelDir, "checkout.em"), "utf8"));
+    const gitignore = readFileSync(join(modelDir, ".gitignore"), "utf8");
+    expect(gitignore.split(/\r?\n/).filter((l) => l === "*-asis.em")).toHaveLength(1);
+
+    const r2 = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--seed-asis"], modelDir);
+    expect(r2.status).toBe(0);
+    const doc2 = JSON.parse(r2.stdout);
+    expect(doc2.seeded.gitignoreUpdated).toBe(false);
+    expect(readFileSync(join(modelDir, ".gitignore"), "utf8").split(/\r?\n/).filter((l) => l === "*-asis.em")).toHaveLength(1);
+  });
+
+  it("no --seed-asis: no scratch model/gitignore side effects, no `seeded` key", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.seeded).toBeUndefined();
+  });
+
+  it("surfaces a clear, non-zero error when --repo isn't a git repository", () => {
+    const notARepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-norepo-"));
+    try {
+      const r = em(["conform-scope", "checkout.em", "--repo", notARepo], modelDir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("is not a git repository");
+    } finally {
+      rmSync(notARepo, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces a clear, non-zero error on an unknown revision recorded in Last conformance", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-badrev-"));
+    try {
+      const scaffolded = em(["scaffold", "Checkout"], cwd);
+      expect(scaffolded.status).toBe(0);
+      const badRevDir = join(cwd, "checkout");
+      writeFileSync(join(badRevDir, "checkout.em"), MODEL);
+      mkdirSync(join(badRevDir, "slices"), { recursive: true });
+      writeFileSync(join(badRevDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
+      writeFileSync(join(badRevDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+      const setConformance = em(
+        ["state", "set-conformance", "not-a-real-rev", "--report", "conformance/2026-08-01-report.md"],
+        badRevDir,
+      );
+      expect(setConformance.status).toBe(0);
+
+      const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], badRevDir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("git diff failed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1165,6 +1438,209 @@ describe("em catalog (CLI)", () => {
     expect(r.status).toBe(0); // a collision is a warning, not an error — the build still succeeds
     expect(r.stderr).toContain("catalog-duplicate.em:");
     expect(r.stderr).toContain('duplicate slice name "Place Order"');
+  });
+});
+
+describe("em slice index (CLI, MIL-98)", () => {
+  // Table-building/marker-rewrite coverage lives in test/sliceIndex.test.ts (pure functions);
+  // this block is exit-code/process-level only, own dir since it needs a README.md sibling
+  // none of the other fixtures above carry.
+  let sliceIndexDir: string;
+  beforeAll(() => {
+    sliceIndexDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-"));
+    writeFileSync(join(sliceIndexDir, "clean.em"), CLEAN);
+    writeFileSync(join(sliceIndexDir, "error.em"), WITH_ERROR);
+    writeFileSync(
+      join(sliceIndexDir, "README.md"),
+      "# Demo\n\n## Slices\n<!-- GENERATED:slices:start -->\n<!-- GENERATED:slices:end -->\n\n## Status\n",
+    );
+  });
+  afterAll(() => rmSync(sliceIndexDir, { recursive: true, force: true }));
+
+  it("writes the sibling README.md's Slices table and confirms on stdout", () => {
+    const r = em(["slice", "index", "clean.em"], sliceIndexDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote README.md");
+    const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("Open Orders");
+  });
+
+  it("--check exits 0 and reports up to date once the table matches", () => {
+    const r = em(["slice", "index", "clean.em", "--check"], sliceIndexDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("up to date");
+  });
+
+  it("--check exits non-zero and never writes when the table is stale", () => {
+    // Regenerate against a rename of the same file, since editing a plain .em model doesn't
+    // change the generated table without changing the model itself — instead corrupt the
+    // README's own generated block directly to simulate drift (a hand-edit or a stale commit).
+    const staleDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-stale-"));
+    try {
+      writeFileSync(join(staleDir, "clean.em"), CLEAN);
+      writeFileSync(
+        join(staleDir, "README.md"),
+        "# Demo\n\n## Slices\n<!-- GENERATED:slices:start -->\nstale content\n<!-- GENERATED:slices:end -->\n",
+      );
+      const before = readFileSync(join(staleDir, "README.md"), "utf8");
+      const r = em(["slice", "index", "clean.em", "--check"], staleDir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("stale");
+      expect(readFileSync(join(staleDir, "README.md"), "utf8")).toBe(before); // never written
+    } finally {
+      rmSync(staleDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with a clear error, naming the expected path, when README.md is missing", () => {
+    const noReadmeDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-no-readme-"));
+    try {
+      writeFileSync(join(noReadmeDir, "clean.em"), CLEAN);
+      const r = em(["slice", "index", "clean.em"], noReadmeDir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("expected a README.md");
+      expect(r.stderr).toContain("README.md");
+      expect(existsSync(join(noReadmeDir, "README.md"))).toBe(false);
+    } finally {
+      rmSync(noReadmeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses with a clear error, pointing at the template, when the markers are missing", () => {
+    const noMarkersDir = mkdtempSync(join(tmpdir(), "em-cli-slice-index-no-markers-"));
+    try {
+      writeFileSync(join(noMarkersDir, "clean.em"), CLEAN);
+      writeFileSync(join(noMarkersDir, "README.md"), "# Demo\n\n## Slices\nhand-written\n");
+      const before = readFileSync(join(noMarkersDir, "README.md"), "utf8");
+      const r = em(["slice", "index", "clean.em"], noMarkersDir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("markers");
+      expect(r.stderr).toContain("model-readme.md");
+      expect(readFileSync(join(noMarkersDir, "README.md"), "utf8")).toBe(before); // never written
+    } finally {
+      rmSync(noMarkersDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses on validation errors before touching the README", () => {
+    const r = em(["slice", "index", "error.em"], sliceIndexDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not indexing");
+  });
+});
+
+describe("em slice new (CLI, MIL-97 item 3)", () => {
+  let cwd: string;
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-slice-new-"));
+  });
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it("writes slices/<key>.md with the 5-key frontmatter and body stub, creating slices/", () => {
+    expect(existsSync(join(cwd, "slices"))).toBe(false);
+    const r = em(
+      ["slice", "new", "Request Payment", "--pattern", "automation", "--swimlane", "System → Payment"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("wrote slices/request-payment.md");
+    expect(existsSync(join(cwd, "slices"))).toBe(true);
+
+    const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
+    expect(content).toBe(
+      "---\n" +
+        "schemaVersion: 1\n" +
+        "pattern: automation\n" +
+        "swimlane: System → Payment\n" +
+        "status: draft\n" +
+        "version: 1\n" +
+        "---\n" +
+        "# Slice: Request Payment\n" +
+        "\n" +
+        "![Diagram](./request-payment.svg)\n",
+    );
+  });
+
+  it("prints the note line the user must add to the .em file", () => {
+    const r = em(
+      ["slice", "new", "Some Other Slice", "--pattern", "state-view", "--swimlane", "Customer → Orders"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('note "slices/some-other-slice.md"');
+  });
+
+  it("kebab-slugs the display name for the filename, keeping the display name in the heading", () => {
+    const r = em(
+      ["slice", "new", "Weird!! Name_2", "--pattern", "translation", "--swimlane", "A → B"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slices/weird-name-2.md");
+    const content = readFileSync(join(cwd, "slices", "weird-name-2.md"), "utf8");
+    expect(content).toContain("# Slice: Weird!! Name_2");
+  });
+
+  it("fails clearly when --pattern is omitted", () => {
+    const r = em(["slice", "new", "No Pattern", "--swimlane", "A → B"], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--pattern");
+    expect(existsSync(join(cwd, "slices", "no-pattern.md"))).toBe(false);
+  });
+
+  it("fails clearly when --swimlane is omitted", () => {
+    const r = em(["slice", "new", "No Swimlane", "--pattern", "automation"], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--swimlane");
+    expect(existsSync(join(cwd, "slices", "no-swimlane.md"))).toBe(false);
+  });
+
+  it("rejects an invalid --pattern, listing the 4 valid values", () => {
+    const r = em(
+      ["slice", "new", "Bad Pattern", "--pattern", "bogus", "--swimlane", "A → B"],
+      cwd,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("bogus");
+    expect(r.stderr).toContain("state-change");
+    expect(r.stderr).toContain("state-view");
+    expect(r.stderr).toContain("automation");
+    expect(r.stderr).toContain("translation");
+    expect(existsSync(join(cwd, "slices", "bad-pattern.md"))).toBe(false);
+  });
+
+  it("refuses to overwrite an existing doc without --force", () => {
+    const r = em(
+      ["slice", "new", "Request Payment", "--pattern", "automation", "--swimlane", "System → Payment"],
+      cwd,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("refusing to overwrite slices/request-payment.md (use --force)");
+  });
+
+  it("--force overwrites an existing doc", () => {
+    writeFileSync(join(cwd, "slices", "request-payment.md"), "hand-edited, should be clobbered\n");
+    const r = em(
+      [
+        "slice",
+        "new",
+        "Request Payment",
+        "--pattern",
+        "state-change",
+        "--swimlane",
+        "System → Payment v2",
+        "--force",
+      ],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slices/request-payment.md");
+    const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
+    expect(content).toContain("pattern: state-change\n");
+    expect(content).toContain("swimlane: System → Payment v2\n");
   });
 });
 
