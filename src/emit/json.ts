@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
+import { collectTags, Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -35,7 +35,19 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // 1.5 (MIL-85): `slice.doc` gains `driftSignal` — the status/implementedIn coherence
 // classification (catalog/driftSignal.ts), computed from the same doc parse as `doc.status`/
 // `doc.version`/`doc.implementedIn`. Additive-only.
-export const SCHEMA_VERSION = "1.5";
+// 1.6 (MIL-66): field `tag: boolean` (identity tag marker, always present, `=== true`
+// convention like `public`), and element `tags: [{ key, kind, fields, description }] | null`
+// (identity/composite/external DCB tag metadata — events only; `null` when the element has
+// none). See `model/model.ts`'s `collectTags`. Additive-only.
+// Also 1.6 (MIL-68, same unreleased cycle as MIL-66 — no separate bump): field
+// `renamedFrom: string[] | null` (the prior name(s) a field was known as, most-recent-first;
+// `null` — not the `tag`-style boolean-default convention — when the field carries no
+// `renamed from` clause, which includes every field of a declared `type`, since the clause
+// can't parse there), and element `renamedFrom: string[] | null` (same shape, on the
+// element's own name; events and commands only — `null` on every other kind and on an
+// event/command that declares none). Both are purely codegen/export metadata: `em diff`
+// does not read either and keeps reporting a rename as remove+add. Additive-only.
+export const SCHEMA_VERSION = "1.6";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -50,6 +62,22 @@ export interface FieldExport {
   name: string;
   type: string | null;
   typeRef: { name: string; ref: string; array: boolean } | null;
+  /** `true` when the field carries a trailing `tag` clause (identity tag) — same `=== true`
+   *  convention as `public`. Always present; `false` on every field that isn't one, including
+   *  every field of a declared type (MIL-66). */
+  tag: boolean;
+  /** The prior name(s) this field was known as, most-recent-first, from a trailing
+   *  `renamed from "Old1", "Old2"` clause (event/command fields only, MIL-68) — `typeRef`-style
+   *  nullable, not the `tag` boolean-default convention. `null` when the field carries no such
+   *  clause, which includes every field of a declared `type` (the clause can't parse there). */
+  renamedFrom: string[] | null;
+}
+
+export interface TagExport {
+  key: string;
+  kind: "identity" | "composite" | "external";
+  fields: string[] | null;
+  description: string | null;
 }
 
 /**
@@ -72,6 +100,8 @@ function fieldExport(
     typeRef: resolved
       ? { name: resolved.typeDecl.name, ref: refByTypeId.get(resolved.typeDecl.id)!, array: resolved.array }
       : null,
+    tag: f.tag === true,
+    renamedFrom: f.renamedFrom ?? null,
   };
 }
 
@@ -97,6 +127,15 @@ export function buildExport(
   const fromOf = (el: Element): { name: string; ref: string | null }[] | null => {
     if (!el.from || el.from.length === 0) return null;
     return el.from.map((name) => ({ name, ref: refOf(resolveByName(model.byName, name)) }));
+  };
+
+  // Identity/composite/external DCB tag metadata (MIL-66) — events only in practice (`tag`
+  // clauses are a parse error on any other kind), `null` when the event carries none. Order:
+  // inline field identity tags in field order, then element-level composite/external clauses
+  // in declaration order (see `model/model.ts`'s `collectTags`).
+  const tagsOf = (el: Element): TagExport[] | null => {
+    const tags = collectTags(el);
+    return tags.length > 0 ? tags : null;
   };
 
   // Built ahead of exportDoc (rather than inline) so docDiagnostics is fully populated before
@@ -144,6 +183,8 @@ export function buildExport(
         context: el.context ?? null,
         again: el.again === true,
         public: el.public === true,
+        tags: tagsOf(el),
+        renamedFrom: el.renamedFrom ?? null,
         logicalRef:
           el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
       })),

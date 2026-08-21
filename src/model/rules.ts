@@ -198,6 +198,18 @@ export const RULES = {
     fix: "Rename one of the duplicate `type` declarations.",
     usageCategory: "duplicate type name",
   },
+  "tag-composite-unknown-field": {
+    severity: "error",
+    title: "Composite tag names an unknown field",
+    fix: "Fix the field name, or add it to the event's fields.",
+    usageCategory: "composite tag references unknown field",
+  },
+  "tag-duplicate-key": {
+    severity: "error",
+    title: "Duplicate tag key",
+    fix: "Rename one of the tags so every key on the event is unique.",
+    usageCategory: "duplicate tag key",
+  },
   "type-cycle": {
     severity: "error",
     title: "Cyclic type reference",

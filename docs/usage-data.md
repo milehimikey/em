@@ -91,6 +91,8 @@ into two in the aggregation recipe below.
 |---|
 | arrow endpoint unresolved |
 | arrow points backward |
+| composite tag references unknown field |
+| duplicate tag key |
 | event feeds earlier view instance |
 | illegal connection |
 | lineage forward dangling |

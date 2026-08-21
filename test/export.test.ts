@@ -29,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.5");
+    expect(doc.schemaVersion).toBe("1.6");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -117,8 +117,12 @@ describe("nullable fields are explicit null, not omitted", () => {
     expect(el.logicalRef).toBeNull();
     expect(el.again).toBe(false);
     expect(el.public).toBe(false);
+    expect(el.tags).toBeNull();
+    expect(el.renamedFrom).toBeNull();
     expect("fields" in el).toBe(true); // key present with null, not sniffed via absence
     expect("divergence" in el).toBe(true);
+    expect("tags" in el).toBe(true);
+    expect("renamedFrom" in el).toBe(true);
   });
 
   it("emits null for a slice's source when absent", () => {
@@ -165,6 +169,184 @@ slice "S" {
   });
 });
 
+describe("`tag` round-trip (MIL-66)", () => {
+  it("exports `tag: true` for a field carrying an inline identity tag, `false` otherwise", () => {
+    const doc = docOf(`
+slice "S" {
+  event Price Designated {
+    priceId: UUID tag
+    productId: UUID
+  }
+}
+`);
+    const fields = doc.model.slices[0].elements[0].fields;
+    expect(fields).toEqual([
+      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null },
+      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
+    ]);
+  });
+
+  it("exports `tag: false` on every field of a declared type (types carry no tag clause)", () => {
+    const doc = docOf(`type Money { amount: int, currency: String }`);
+    expect(doc.model.types[0].fields).toEqual([
+      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null },
+      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null },
+    ]);
+  });
+
+  it("materializes an inline identity tag as a `tags` entry keyed by the field's own name", () => {
+    const doc = docOf(`
+slice "S" {
+  event Price Designated {
+    priceId: UUID tag
+    productId: UUID
+  }
+}
+`);
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.tags).toEqual([{ key: "priceId", kind: "identity", fields: ["priceId"], description: null }]);
+  });
+
+  it("exports a composite tag with its field list and null description", () => {
+    const doc = docOf(`
+slice "S" {
+  event Price Designated {
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+}
+`);
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.tags).toEqual([
+      { key: "productCurrency", kind: "composite", fields: ["productId", "currency"], description: null },
+    ]);
+  });
+
+  it("exports an external tag with its description and null fields", () => {
+    const doc = docOf(`slice "S" {\n  event Rule Triple Recorded tag productRuleTriple external "dedup hash"\n}`);
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.tags).toEqual([
+      { key: "productRuleTriple", kind: "external", fields: null, description: "dedup hash" },
+    ]);
+  });
+
+  it("orders `tags`: inline identity tags in field order, then element-level clauses in declaration order", () => {
+    const doc = docOf(`
+slice "S" {
+  event Price Designated {
+    priceId: UUID tag
+    productId: UUID
+    currency: string
+  }
+  tag productCurrency from productId, currency
+  tag productRuleTriple external "dedup hash"
+}
+`);
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.tags).toEqual([
+      { key: "priceId", kind: "identity", fields: ["priceId"], description: null },
+      { key: "productCurrency", kind: "composite", fields: ["productId", "currency"], description: null },
+      { key: "productRuleTriple", kind: "external", fields: null, description: "dedup hash" },
+    ]);
+  });
+
+  it("exports `tags: null` on an event with no tag clauses, and on non-event elements", () => {
+    const doc = docOf(`
+slice "S" {
+  command Do Thing
+  event Order Placed
+  view Open Orders from "Order Placed"
+}
+`);
+    for (const el of doc.model.slices[0].elements) {
+      expect(el.tags).toBeNull();
+    }
+  });
+});
+
+describe("`renamed from` round-trip (MIL-68)", () => {
+  it("exports an element-level renamed-from list on an event", () => {
+    const doc = docOf(`
+slice "S" {
+  event PaymentRecorded renamed from "PaymentRegistered" {
+    paymentId: UUID
+  }
+}
+`);
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.renamedFrom).toEqual(["PaymentRegistered"]);
+  });
+
+  it("exports a multi-item element-level renamed-from list, in declaration order", () => {
+    const doc = docOf(
+      `slice "S" {\n  event PaymentRecorded renamed from "PaymentRegistered", "PaymentCreated"\n}`,
+    );
+    expect(doc.model.slices[0].elements[0].renamedFrom).toEqual([
+      "PaymentRegistered",
+      "PaymentCreated",
+    ]);
+  });
+
+  it("exports an element-level renamed-from list on a command", () => {
+    const doc = docOf(`slice "S" {\n  command PlaceOrder renamed from "SubmitOrder"\n}`);
+    expect(doc.model.slices[0].elements[0].renamedFrom).toEqual(["SubmitOrder"]);
+  });
+
+  it("exports `renamedFrom: null` on an element with no renamed-from clause", () => {
+    const doc = docOf(`slice "S" {\n  event Order Placed\n  command Place Order\n}`);
+    for (const el of doc.model.slices[0].elements) {
+      expect(el.renamedFrom).toBeNull();
+    }
+  });
+
+  it("exports a field-level renamed-from list, single and multi-item", () => {
+    const doc = docOf(`
+slice "S" {
+  event PaymentRecorded {
+    paymentId: UUID
+    amountCents: long renamed from "amount", "amt"
+  }
+}
+`);
+    expect(doc.model.slices[0].elements[0].fields).toEqual([
+      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
+      {
+        name: "amountCents",
+        type: "long",
+        typeRef: null,
+        tag: false,
+        renamedFrom: ["amount", "amt"],
+      },
+    ]);
+  });
+
+  it("exports `renamedFrom: null` on every field of a declared type (the clause can't parse there)", () => {
+    const doc = docOf(`type Money { amount: int, currency: String }`);
+    for (const f of doc.model.types[0].fields) {
+      expect(f.renamedFrom).toBeNull();
+    }
+  });
+
+  it("exports `renamedFrom: null` on a field with no renamed-from clause", () => {
+    const doc = docOf(`slice "S" {\n  event E {\n    productId: UUID\n  }\n}`);
+    expect(doc.model.slices[0].elements[0].fields[0].renamedFrom).toBeNull();
+  });
+
+  it("BLOCKER: a multi-item `renamed from` list followed by trailing `tag` text exports ONE field with ONE identity tag, no phantom field", () => {
+    const doc = docOf(
+      `slice "S" {\n  event PaymentRecorded { paymentId: UUID renamed from "id", "pid" tag }\n}`,
+    );
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.fields).toEqual([
+      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"] },
+    ]);
+    expect(evt.tags).toEqual([
+      { key: "paymentId", kind: "identity", fields: ["paymentId"], description: null },
+    ]);
+  });
+});
+
 describe("note / issue / fields / from round-trip", () => {
   const SRC = `
 slice "Receive" {
@@ -187,8 +369,8 @@ slice "Catalog" {
     expect(event.note).toBe("notes/stock.md");
     expect(event.issue).toBe("still open?");
     expect(event.fields).toEqual([
-      { name: "sku", type: null, typeRef: null },
-      { name: "qty", type: "Int", typeRef: null },
+      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null },
+      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null },
     ]);
   });
 
@@ -355,9 +537,9 @@ slice "Accept" {
     expect(t.name).toBe("QuoteAcceptedLine");
     expect(typeof t.line).toBe("number");
     expect(t.fields).toEqual([
-      { name: "lineId", type: "UUID", typeRef: null },
-      { name: "unitPrice", type: "Money", typeRef: null },
-      { name: "discountIds", type: "UUID[]", typeRef: null },
+      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
+      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null },
+      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null },
     ]);
   });
 
@@ -365,16 +547,20 @@ slice "Accept" {
     const doc = docOf(SRC);
     const eventFields = doc.model.slices[0].elements[1].fields;
     expect(eventFields).toEqual([
-      { name: "quoteId", type: "UUID", typeRef: null },
+      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
       {
         name: "lines",
         type: "QuoteAcceptedLine[]",
         typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: true },
+        tag: false,
+        renamedFrom: null,
       },
       {
         name: "winner",
         type: "QuoteAcceptedLine",
         typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: false },
+        tag: false,
+        renamedFrom: null,
       },
     ]);
   });
@@ -390,6 +576,8 @@ type Order { billing: Address }
         name: "billing",
         type: "Address",
         typeRef: { name: "Address", ref: "types/address", array: false },
+        tag: false,
+        renamedFrom: null,
       },
     ]);
   });
@@ -398,12 +586,12 @@ type Order { billing: Address }
     const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
     expect(doc.model.types).toEqual([]);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "a", type: "Money", typeRef: null },
+      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null },
     ]);
   });
 
-  it("bumps schemaVersion to 1.5, additive over 1.4", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.5");
+  it("bumps schemaVersion to 1.6, additive over 1.5", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.6");
   });
 });
 

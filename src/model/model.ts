@@ -2,7 +2,7 @@
 // Normalizes a parsed AST into a resolved model: stable ids, resolved
 // persona/context lanes, and lookup indexes used by layout and validation.
 
-import { AUTOMATION_KINDS, ElementKind, Field, ModelNode } from "../parser/ast.js";
+import { AUTOMATION_KINDS, ElementKind, Field, ModelNode, TagClause } from "../parser/ast.js";
 import { dedupe, slug } from "../util/slug.js";
 
 /** A declared named type (`type Name { … }`) — its own top-level namespace, separate from
@@ -49,8 +49,50 @@ export interface Element {
   again?: boolean;
   /** event or view: marks this element as part of the published integration surface. */
   public?: boolean;
+  /** Element-level `tag` clauses (composite/external) — events only. Inline field identity
+   *  tags live on `Field.tag` instead (see `collectTags` for the merged view). */
+  tags?: TagClause[];
+  /** `renamed from "Old1", "Old2"` on the element's own name — event or command only
+   *  (MIL-68). `undefined` when absent. Purely export/codegen metadata: `em diff` never reads
+   *  this, and continues reporting a rename as remove+add. */
+  renamedFrom?: string[];
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
+}
+
+export type TagEntryKind = "identity" | "composite" | "external";
+
+/** One tag key in an event's merged tag set, as both `emit/json.ts` (the `tags` export array)
+ *  and `validate.ts` (duplicate-key / composite-field-exists rules) need to see it. */
+export interface TagEntry {
+  key: string;
+  kind: TagEntryKind;
+  /** identity: `[fieldName]`. composite: the listed field names. external: `null`. */
+  fields: string[] | null;
+  /** external: the documentation string. identity/composite: `null`. */
+  description: string | null;
+}
+
+/**
+ * Every tag key an element carries, merged from its two sources and ordered per the export
+ * contract: inline field identity tags first (`Field.tag === true`, in field declaration
+ * order), then element-level `tag` clauses — composite and external — in declaration order
+ * (`Element.tags`). Returns `[]` for an element with no tags at all (never null — callers
+ * decide their own "no tags" representation, e.g. `emit/json.ts` exports `null` instead).
+ * Shared by `emit/json.ts` and `validate.ts` so both see the identical merged view; in
+ * practice only ever meaningful for `kind === "event"` (the only kind `tag` clauses can attach
+ * to — enforced at parse time), but takes no kind dependency itself.
+ */
+export function collectTags(element: Element): TagEntry[] {
+  const entries: TagEntry[] = [];
+  for (const f of element.fields ?? []) {
+    if (f.tag === true) entries.push({ key: f.name, kind: "identity", fields: [f.name], description: null });
+  }
+  for (const t of element.tags ?? []) {
+    if (t.kind === "composite") entries.push({ key: t.key, kind: "composite", fields: t.fields ?? [], description: null });
+    else entries.push({ key: t.key, kind: "external", fields: null, description: t.description ?? null });
+  }
+  return entries;
 }
 
 export interface Slice {
@@ -146,6 +188,8 @@ export function normalize(ast: ModelNode): NormalizedModel {
         issue: el.issue,
         divergence: el.divergence,
         fields: el.fields,
+        tags: el.tags,
+        renamedFrom: el.renamedFrom,
       };
 
       if (el.kind === "ui") {
