@@ -332,6 +332,19 @@ slice "S" {
     const doc = docOf(`slice "S" {\n  event E {\n    productId: UUID\n  }\n}`);
     expect(doc.model.slices[0].elements[0].fields[0].renamedFrom).toBeNull();
   });
+
+  it("BLOCKER: a multi-item `renamed from` list followed by trailing `tag` text exports ONE field with ONE identity tag, no phantom field", () => {
+    const doc = docOf(
+      `slice "S" {\n  event PaymentRecorded { paymentId: UUID renamed from "id", "pid" tag }\n}`,
+    );
+    const evt = doc.model.slices[0].elements[0];
+    expect(evt.fields).toEqual([
+      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"] },
+    ]);
+    expect(evt.tags).toEqual([
+      { key: "paymentId", kind: "identity", fields: ["paymentId"], description: null },
+    ]);
+  });
 });
 
 describe("note / issue / fields / from round-trip", () => {

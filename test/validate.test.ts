@@ -1551,6 +1551,9 @@ slice "S" {
     expect(diags).toHaveLength(1);
     expect(diags[0]).toMatchObject({ severity: "error" });
     expect(diags[0].message).toContain('tag key "dup" 2 times');
+    // Anchored to the LAST matching element-level clause's own line (the `external` one, line
+    // 8), not the event's header line (line 3) — same courtesy as `tag-composite-unknown-field`.
+    expect(diags[0].line).toBe(8);
   });
 
   it("errors on a duplicate tag key shared between an inline identity tag and an element-level clause", () => {
@@ -1568,6 +1571,9 @@ slice "S" {
     );
     expect(diags).toHaveLength(1);
     expect(diags[0].message).toContain('tag key "priceId" 2 times');
+    // The inline field tag carries no line of its own — anchor to the element-level clause's
+    // line (7), not the event's header line (3).
+    expect(diags[0].line).toBe(7);
   });
 
   it("treats duplicate-key matching case/whitespace-insensitively, same as every other name match", () => {
@@ -1584,6 +1590,25 @@ slice "S" {
       "tag-duplicate-key",
     );
     expect(diags).toHaveLength(1);
+    // Same anchoring courtesy under case/whitespace-insensitive matching: the element-level
+    // clause's own line (7), not the event's header line (3).
+    expect(diags[0].line).toBe(7);
+  });
+
+  it("falls back to the event's header line when every occurrence of a duplicate key is an inline field tag (fields carry no line of their own)", () => {
+    const diags = tagDiags(
+      `
+slice "S" {
+  event E {
+    priceId: UUID tag
+    priceId: UUID tag
+  }
+}
+`,
+      "tag-duplicate-key",
+    );
+    expect(diags).toHaveLength(1);
+    expect(diags[0].line).toBe(3); // the event's own header line — no element-level clause to anchor to
   });
 
   it("raises no duplicate-key diagnostic when every tag key on the event is unique", () => {

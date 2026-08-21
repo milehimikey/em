@@ -1089,6 +1089,109 @@ slice "S" {
       const ast = parse(`slice "S" {\n  event Order Placed\n}`);
       expect(ast.slices[0].elements[0].tags).toBeUndefined();
     });
+
+    describe("standalone element-level tag line written INSIDE an open field block", () => {
+      it("rejects a composite `tag ... from ...` line inside an event's own open field block", () => {
+        expect(() =>
+          parse(`
+slice "S" {
+  event Designated {
+    priceId: UUID tag
+    tag productCurrency from productId, currency
+  }
+}
+`),
+        ).toThrow(/belongs after the event's closing '}'/);
+      });
+
+      it("rejects an external `tag ... external \"...\"` line inside an event's own open field block", () => {
+        expect(() =>
+          parse(`
+slice "S" {
+  event Designated {
+    priceId: UUID
+    tag productRuleTriple external "dedup hash"
+  }
+}
+`),
+        ).toThrow(/belongs after the event's closing '}'/);
+      });
+
+      it("rejects a `tag ... from ...` line inside an open COMMAND field block (events-only)", () => {
+        expect(() =>
+          parse(`
+slice "S" {
+  command Do Thing {
+    orderId: UUID
+    tag orderKey from orderId, customerId
+  }
+}
+`),
+        ).toThrow(/`tag` is only valid on event/);
+      });
+
+      it("rejects a `tag ... from ...` line inside an open `type` block (events-only)", () => {
+        expect(() =>
+          parse(`
+type Money {
+  amount: int
+  tag moneyKey from amount, currency
+}
+`),
+        ).toThrow(/`tag` is only valid on event/);
+      });
+
+      it("still parses a field literally named `tag` inside an open block, undisturbed", () => {
+        const ast = parse(`
+slice "S" {
+  event E {
+    productId: UUID
+    tag
+  }
+}
+`);
+        expect(ast.slices[0].elements[0].fields).toEqual([
+          { name: "productId", type: "UUID" },
+          { name: "tag" },
+        ]);
+      });
+
+      it("still parses a field named `tag` with a type inside an open block, undisturbed", () => {
+        const ast = parse(`
+slice "S" {
+  event E {
+    productId: UUID
+    tag: UUID
+  }
+}
+`);
+        expect(ast.slices[0].elements[0].fields).toEqual([
+          { name: "productId", type: "UUID" },
+          { name: "tag", type: "UUID" },
+        ]);
+      });
+    });
+
+    describe("composite/external tag key must be a bare identifier (MIL-66 hardening)", () => {
+      it("rejects a quoted composite tag key", () => {
+        expect(() => parse(`slice "S" {\n  event E tag "quoted" from a, b\n}`)).toThrow(
+          /tag.*clause's key must be a bare identifier/,
+        );
+      });
+
+      it("rejects a punctuated composite tag key", () => {
+        expect(() => parse(`slice "S" {\n  event E tag pro-duct from a, b\n}`)).toThrow(
+          /tag.*clause's key must be a bare identifier/,
+        );
+      });
+
+      it("still parses a valid underscored composite tag key", () => {
+        const ast = parse(`slice "S" {\n  event E tag product_currency from a, b\n}`);
+        expect(ast.slices[0].elements[0].tags).toMatchObject([
+          { key: "product_currency", kind: "composite", fields: ["a", "b"] },
+        ]);
+      });
+    });
   });
 
   describe("`renamed from` clause (MIL-68)", () => {
@@ -1271,6 +1374,64 @@ slice "S" {
         expect(second.slices[0].elements[0].fields).toEqual([
           { name: "paymentId", type: "UUID", tag: true, renamedFrom: ["id"] },
         ]);
+      });
+
+      it("combines `tag` and a MULTI-ITEM `renamed from` list on one field, in either order (the gap that let the phantom-field blocker through)", () => {
+        const first = parse(
+          `slice "S" {\n  event E {\n    paymentId: UUID renamed from "id", "pid" tag\n  }\n}`,
+        );
+        expect(first.slices[0].elements[0].fields).toEqual([
+          { name: "paymentId", type: "UUID", tag: true, renamedFrom: ["id", "pid"] },
+        ]);
+
+        const second = parse(
+          `slice "S" {\n  event E {\n    paymentId: UUID tag renamed from "id", "pid"\n  }\n}`,
+        );
+        expect(second.slices[0].elements[0].fields).toEqual([
+          { name: "paymentId", type: "UUID", tag: true, renamedFrom: ["id", "pid"] },
+        ]);
+      });
+
+      it("BLOCKER: a multi-item `renamed from` list followed by trailing `tag` text is one field, not a phantom second field", () => {
+        // `{ paymentId: UUID renamed from "id", "pid" tag }` used to silently parse as field
+        // `paymentId` with `renamedFrom: ["id"]` PLUS a fabricated field `pid` with `tag: true` —
+        // a phantom identity tag with no diagnostic. The continuation fragment (`"pid" tag`)
+        // must fold in WHOLE, not just the bare quoted string.
+        const ast = parse(
+          `slice "S" {\n  event PaymentRecorded { paymentId: UUID renamed from "id", "pid" tag }\n}`,
+        );
+        expect(ast.slices[0].elements[0].fields).toEqual([
+          { name: "paymentId", type: "UUID", renamedFrom: ["id", "pid"], tag: true },
+        ]);
+      });
+
+      it("BLOCKER (multi-line block line): the same trailing-`tag`-after-list fragment is one field on a single line inside an open block", () => {
+        const ast = parse(`
+slice "S" {
+  event PaymentRecorded {
+    paymentId: UUID renamed from "id", "pid" tag
+  }
+}
+`);
+        expect(ast.slices[0].elements[0].fields).toEqual([
+          { name: "paymentId", type: "UUID", renamedFrom: ["id", "pid"], tag: true },
+        ]);
+      });
+
+      it("still parses a quoted-name field WITH a type after a renamed-from field as two separate fields (colon escape hatch), field list variant", () => {
+        const ast = parse(
+          `slice "S" {\n  event E { a renamed from "A", "B": UUID }\n}`,
+        );
+        expect(ast.slices[0].elements[0].fields).toEqual([
+          { name: "a", renamedFrom: ["A"] },
+          { name: "B", type: "UUID" },
+        ]);
+      });
+
+      it("errors when `tag` trails a renamed-from continuation fragment on a COMMAND field (tag is events-only)", () => {
+        expect(() =>
+          parse(`slice "S" {\n  command Do Thing {\n    x renamed from "a", "b" tag\n  }\n}`),
+        ).toThrow(/`tag` is only valid on an event field/);
       });
 
       it("resolves the ambiguous inline case (a bare quoted field name right after a renamed-from field) as a list continuation", () => {

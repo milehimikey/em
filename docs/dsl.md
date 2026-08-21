@@ -188,7 +188,9 @@ tag productRuleTriple external "hash of kind+source+target, order-independent"  
   type, nothing before it) is a field literally NAMED `tag`, not a clause — the keyword only
   counts as a clause when something trails behind it.
 - **Composite** — `tag <key> from <field1>, <field2>, ...` declares a new tag key formed from
-  ≥2 of the event's own fields, named bare (unquoted, unlike a view's `from "Event"`).
+  ≥2 of the event's own fields, named bare (unquoted, unlike a view's `from "Event"`). The key
+  itself must be a bare identifier too (letters, digits, underscore) — a quoted or punctuated
+  key is a parse error, not silently folded into the exported key.
 - **External** — `tag <key> external "text"` declares a tag key that's computed some other way;
   the string is documentation only, describing the intended computation, and is never parsed.
 
@@ -199,7 +201,9 @@ Element-level `tag` clauses (composite/external) can be written two ways: as a t
 on the event (its header line, after an inline `{ … }` block, or on a multi-line block's closing
 `}` line — same family as `note`/`issue`), or as one or more **standalone `tag ...` lines**
 immediately following the event inside the slice body (the form shown above) — the latter
-attaches to the most recently declared element in the slice, which must be an event.
+attaches to the most recently declared element in the slice, which must be an event. A `tag ...`
+line written INSIDE the event's still-open `{ … }` block — before its closing `}` — is a parse
+error naming where it belongs, not a silently-swallowed field.
 
 `em export` carries every tag key forward under each event's `tags` array — see
 [cli.md](cli.md). `em validate` catches a composite tag naming a field the event doesn't
@@ -233,13 +237,19 @@ command PlaceOrder renamed from "SubmitOrder"
   error inside a `view`/`ui`/automation-kind field block or a `type` declaration.
 - The list is quoted and comma-separated, most-recent-old-name first when a name changed more
   than once, the same convention as a view's `from "A", "B"` list.
-- **Inline lists and field ambiguity.** Inside one `{ … }` field block written inline, a bare
-  quoted field name immediately after a `renamed from` field is read as a CONTINUATION of that
-  list, not a new field — `{ a: X renamed from "A", "B", c: Y }` is two fields (`a`, renamed
-  from both `"A"` and `"B"`, then `c`), not three. To declare an actual field with a quoted
-  name right after a renamed field, either give it a type (`"B": Type` — a bare quoted string
-  is only read as a continuation) or write the fields one per line in a multi-line block, which
-  has no such ambiguity at all.
+- **Inline lists and field ambiguity.** On one LINE — whether that's an inline `{ … }` field
+  block or a single line inside a multi-line one — a fragment right after a `renamed from`
+  field's list that starts with a quoted string, and isn't immediately followed by `:`, is read
+  as a CONTINUATION of that list rather than a new field, whatever else trails the quote —
+  `{ a: X renamed from "A", "B", c: Y }` is two fields (`a`, renamed from both `"A"` and `"B"`,
+  then `c`), not three, and `{ paymentId: UUID renamed from "id", "pid" tag }` is ONE field
+  (`paymentId`, renamed from both `"id"` and `"pid"`, also tagged), not a real field plus a
+  fabricated `pid`. To declare an actual field with a quoted name right after a renamed field,
+  either give it a type (`"B": Type` — a bare quoted string is only read as a continuation) or
+  put it on its OWN line in a multi-line block: continuation-folding only ever happens between
+  fragments that shared a single line to begin with, so a field on its own separate line is
+  never a candidate for it — but a single line still carries the full list-continuation rule
+  for its own trailing commas, multi-line block or not.
 
 `em export` carries every renamed-from list forward as `renamedFrom: string[] | null` — on
 each element and on each field — see [cli.md](cli.md). **`em diff` does not read this clause at

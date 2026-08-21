@@ -531,9 +531,16 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     }
     for (const { display, count } of keyCounts.values()) {
       if (count <= 1) continue;
+      // Anchor to the offending clause's own line, like `tag-composite-unknown-field` does,
+      // rather than the event's header line — look up the LAST element-level `tag` clause
+      // (`el.tags`, which carries a `line`) whose key normalizes to this duplicate, falling
+      // back to `el.line` when every occurrence is an inline field `tag` instead (fields carry
+      // no line of their own).
+      const normalizedKey = normalizeName(display);
+      const lastClause = [...(el.tags ?? [])].reverse().find((t) => normalizeName(t.key) === normalizedKey);
       pushDiag(diags, "tag-duplicate-key", {
         message: `event "${el.name}" declares tag key "${display}" ${count} times; tag keys must be unique per event`,
-        line: el.line,
+        line: lastClause?.line ?? el.line,
         refs: [refOf(el.id)],
       });
     }

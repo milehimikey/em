@@ -121,15 +121,37 @@ export function parse(source: string): ModelNode {
       throw new ParseError("unexpected '}'", lineNo);
     }
 
-    // Inside an open field block: each line is a field declaration.
+    // Inside an open field block: each line is a field declaration — except a line that is
+    // itself an element-level `tag <key> from …`/`tag <key> external "…` clause, which reads
+    // as a standalone `tag` line's canonical position (after the event's closing `}`, MIL-66)
+    // and would otherwise be silently swallowed as junk fields (e.g. a bare identifier list
+    // parsed as one-field-per-name) with no diagnostic at all.
     if (currentElement) {
+      if (isTagClauseLineShape(line)) {
+        throw new ParseError(
+          currentElement.kind === "event"
+            ? "a `tag` clause belongs after the event's closing '}', not inside its field block " +
+                "— move this line below the '}'"
+            : "`tag` is only valid on event — identity/composite/external tags describe an " +
+                `event's DCB tag, not a ${currentElement.kind} field`,
+          lineNo,
+        );
+      }
       for (const f of parseInlineFields(line, lineNo, currentElement.kind))
         (currentElement.fields ??= []).push(f);
       continue;
     }
 
-    // Inside an open `type` block: each line is a field declaration too.
+    // Inside an open `type` block: each line is a field declaration too, with the same guard —
+    // `tag` is events-only, so a `type` block never has a legal position for it at all.
     if (currentTypeDecl) {
+      if (isTagClauseLineShape(line)) {
+        throw new ParseError(
+          "`tag` is only valid on event — identity/composite/external tags describe an event's " +
+            "DCB tag, not a type field",
+          lineNo,
+        );
+      }
       currentTypeDecl.fields.push(...parseInlineFields(line, lineNo, "type-decl"));
       continue;
     }
@@ -526,6 +548,51 @@ function extractClauses(
   return rest;
 }
 
+/** Bare-identifier grammar shared by every element-level `tag` clause: the composite/external
+ *  tag key itself, and each field name in a composite tag's field list. */
+const TAG_IDENT = "[A-Za-z_][A-Za-z0-9_]*";
+
+/** Matches an element-level composite tag clause, `tag <key> from a, b[, c …]`, anywhere in a
+ *  clause-text string — group 1 is the key, group 2 the raw (still comma-joined) field list.
+ *  The key is constrained to `TAG_IDENT`, not `\S+`: a quoted or punctuated key (`tag "x" from
+ *  a, b`, `tag pro-duct from a, b`) must never silently match with the junk folded into the
+ *  exported key — see `TAG_CLAUSE_LEFTOVER_RE` below. Shared between `extractTagClauses` (which
+ *  matches anywhere via the `(?:^|\s)` alternation) and `isTagClauseLineShape` (which requires
+ *  the match to start at index 0) so both recognize the exact same clause shape. */
+const TAG_COMPOSITE_RE = new RegExp(
+  `(?:^|\\s)tag\\s+(${TAG_IDENT})\\s+from\\s+(${TAG_IDENT}(?:\\s*,\\s*${TAG_IDENT})*)`,
+);
+
+/** Matches an element-level external tag clause, `tag <key> external "…`, anywhere in a
+ *  clause-text string, up to (not including) the opening quote — same key constraint and
+ *  sharing rationale as `TAG_COMPOSITE_RE`. */
+const TAG_EXTERNAL_RE = new RegExp(`(?:^|\\s)tag\\s+(${TAG_IDENT})\\s+external\\s+(?=")`);
+
+/** Catches a malformed tag key — quoted, punctuated, or otherwise not a bare identifier — that
+ *  `TAG_COMPOSITE_RE`/`TAG_EXTERNAL_RE` deliberately never match, so it would otherwise sit
+ *  unmentioned in a clause's leftover text (silently folding into the element's free-text name,
+ *  or surfacing only as a confusing downstream "unrecognized trailing text"). Checked once,
+ *  after `extractTagClauses`'s extraction loop has taken everything a well-formed clause could
+ *  give it: anything still shaped like `tag <junk> from …`/`tag <junk> external …` at that point
+ *  can only be a malformed key. */
+const TAG_CLAUSE_LEFTOVER_RE = /(?:^|\s)tag\s+\S+\s+(?:from\b|external\b)/;
+
+/** True when `line` — already trimmed, the full text of one field-block line — OPENS with an
+ *  element-level `tag <key> from …`/`tag <key> external "…` clause shape. Used to reject a
+ *  standalone element-level tag line written INSIDE an open element/type field block (MIL-66's
+ *  canonical standalone form only follows the event's closing `}`, at the slice level, or
+ *  trails an inline block on the same line) instead of silently swallowing it as junk fields.
+ *  Anchored to the START of `line` — unlike `extractTagClauses`'s `(?:^|\s)` match-anywhere,
+ *  which is right for scanning trailing clause text — so a field merely NAMED `tag` (bare
+ *  `tag`, `tag: UUID`) or a field like `tagline: string` never trips this: neither has the
+ *  clause shape starting at position 0. */
+function isTagClauseLineShape(line: string): boolean {
+  const c = line.match(TAG_COMPOSITE_RE);
+  if (c && c.index === 0) return true;
+  const e = line.match(TAG_EXTERNAL_RE);
+  return !!e && e.index === 0;
+}
+
 /**
  * Pulls every element-level `tag <key> from a, b` (composite) or `tag <key> external "text"`
  * (external) clause out of `raw`, in a loop — `tag` clauses accumulate, unlike every other
@@ -546,13 +613,10 @@ function extractClauses(
  */
 function extractTagClauses(node: ElementNode, raw: string, line: number): string {
   let rest = raw;
-  const IDENT = "[A-Za-z_][A-Za-z0-9_]*";
-  const compositeRe = new RegExp(`(?:^|\\s)tag\\s+(\\S+)\\s+from\\s+(${IDENT}(?:\\s*,\\s*${IDENT})*)`);
-  const externalRe = /(?:^|\s)tag\s+(\S+)\s+external\s+(?=")/;
 
   for (;;) {
-    const cMatch = rest.match(compositeRe);
-    const eMatch = rest.match(externalRe);
+    const cMatch = rest.match(TAG_COMPOSITE_RE);
+    const eMatch = rest.match(TAG_EXTERNAL_RE);
     let which: "composite" | "external" | null = null;
     if (cMatch && eMatch) which = (cMatch.index ?? 0) <= (eMatch.index ?? 0) ? "composite" : "external";
     else if (cMatch) which = "composite";
@@ -589,6 +653,14 @@ function extractTagClauses(node: ElementNode, raw: string, line: number): string
       (node.tags ??= []).push({ key, kind: "external", description, line });
       rest = (rest.slice(0, m.index) + rest.slice(closeIdx + 1)).trim();
     }
+  }
+
+  if (TAG_CLAUSE_LEFTOVER_RE.test(rest)) {
+    throw new ParseError(
+      "a `tag` clause's key must be a bare identifier (letters, digits, underscore) — " +
+        "quoted or punctuated keys aren't supported",
+      line,
+    );
   }
 
   return rest;
@@ -711,32 +783,49 @@ function parseFieldSpec(raw: string, line: number, context: FieldClauseContext):
 const RENAMED_FROM_TAIL =
   /(?:^|\s)renamed\s+from\s+"(?:[^"\\]|\\.)*"(?:\s*,\s*"(?:[^"\\]|\\.)*")*$/;
 
-/** Matches a fragment that, trimmed, is EXACTLY one quoted string and nothing else — no
- *  colon, no type, no other clause text (see `mergeRenamedFromContinuations`). */
-const BARE_QUOTED_STRING = /^"(?:[^"\\]|\\.)*"$/;
+/** Matches a fragment that, trimmed, STARTS with a quoted string — capturing that leading
+ *  quoted span so the caller can inspect what (if anything) follows it (see
+ *  `mergeRenamedFromContinuations`). */
+const LEADING_QUOTED_STRING = /^"(?:[^"\\]|\\.)*"/;
 
 /**
  * Re-merges `splitTopLevel`'s fragments across a field-level `renamed from "Old1", "Old2"`
  * list's own internal commas (MIL-68, hazard 4). `splitTopLevel` only treats a comma as
  * literal WHILE INSIDE a single quoted span — the commas BETWEEN two list items are
  * themselves top-level separators, so `{ a: X renamed from "A", "B", b: Y }` splits into
- * THREE raw fragments (`a: X renamed from "A"`, `"B"`, `b: Y`), not two fields.
+ * THREE raw fragments (`a: X renamed from "A"`, `"B"`, `b: Y`), not two fields. Worse, a
+ * continuation fragment need not be JUST the quoted string — `{ paymentId: UUID renamed from
+ * "id", "pid" tag }` splits into `paymentId: UUID renamed from "id"` and `"pid" tag`, and that
+ * second fragment must fold in WHOLE (quote and trailing ` tag` both) or the ` tag` survives as
+ * a fabricated field of its own — a phantom identity tag flowing into the export with no
+ * diagnostic.
  *
- * A fragment that, trimmed, is exactly one quoted string is folded back into the PREVIOUS
- * fragment (`prev + ", " + frag`) whenever that previous fragment's own trailing text is
- * itself an in-progress `renamed from` list; otherwise it's left alone, because a bare quoted
- * fragment that does NOT follow a rename list is an ordinary field with a quoted name
- * (`{ a: X, "B" }`), unchanged from pre-MIL-68 behavior. This makes the ambiguous case — a
- * bare quoted field name immediately following a renamed-from field, in an inline list — always
- * resolve to "continuation of the rename list", never "next field"; see docs/dsl.md for the
- * two escape hatches (multi-line field blocks, or giving the quoted-name field a type).
+ * A fragment whose trimmed text STARTS with a quoted string is folded back into the PREVIOUS
+ * fragment in full (`prev + ", " + frag`) whenever both (a) that previous fragment's own
+ * trailing text is itself an in-progress `renamed from` list, and (b) the text right after the
+ * fragment's leading quote is not a `:` (allowing leading whitespace) — otherwise it's left
+ * alone. Condition (b) preserves the documented escape hatch: a quoted field name immediately
+ * followed by `: Type` (`{ a: X renamed from "A", "B": Type }`) is an ordinary field with a
+ * quoted name, not a list continuation, unchanged from pre-MIL-68 behavior. Anything else
+ * trailing the quote (a bare quoted field, or trailing clause text like ` tag`) is swept into
+ * the list fragment and left for `extractFieldClauses`'s fixpoint loop to sort out — this makes
+ * the ambiguous case always resolve to "continuation of the rename list", never "next field
+ * (or fields)"; see docs/dsl.md for the two escape hatches (multi-line field blocks, or giving
+ * the quoted-name field a type).
  */
 function mergeRenamedFromContinuations(fragments: string[]): string[] {
   const merged: string[] = [];
   for (const raw of fragments) {
     const trimmed = raw.trim();
     const prev = merged.length > 0 ? merged[merged.length - 1] : undefined;
-    if (prev !== undefined && BARE_QUOTED_STRING.test(trimmed) && RENAMED_FROM_TAIL.test(prev)) {
+    const leadingQuote = trimmed.match(LEADING_QUOTED_STRING);
+    const afterQuote = leadingQuote ? trimmed.slice(leadingQuote[0].length).trimStart() : undefined;
+    if (
+      prev !== undefined &&
+      leadingQuote !== null &&
+      !afterQuote!.startsWith(":") &&
+      RENAMED_FROM_TAIL.test(prev)
+    ) {
       merged[merged.length - 1] = `${prev}, ${trimmed}`;
     } else {
       merged.push(trimmed);
