@@ -18,6 +18,7 @@ import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
+import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 
 // Read once from package.json (two levels up from src/emit/ and dist/emit/
 // alike) so `generator.version` can never drift from the released version.
@@ -51,8 +52,9 @@ export const SCHEMA_VERSION = "1.6";
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
   text: string;
-  /** validate()'s diagnostics, refs' ref-collision warnings, and the doc-join's
-   *  binding-missing-file/frontmatter-invalid warnings raised while exporting. */
+  /** validate()'s diagnostics, refs' ref-collision warnings, the doc-join's
+   *  binding-missing-file/frontmatter-invalid warnings, and (MIL-126) any note-binding-mismatch
+   *  warnings, raised while exporting. */
   diagnostics: Diagnostic[];
 }
 
@@ -189,7 +191,13 @@ export function buildExport(
     };
   });
 
-  const allDiagnostics = [...diagnostics, ...docDiagnostics];
+  // MIL-126: a note that looks like a doc binding but doesn't actually participate in one
+  // (already-bound slice, dangling/unusable/unratified cross-note) — computed once per model,
+  // not once per slice like the per-slice docDiagnostics loop above, since it needs to see every
+  // element on a slice at once to tell "extra" from "dangling" from "unratified".
+  const noteBindingDiagnostics = validateNoteBindings(model, refs, baseDir);
+
+  const allDiagnostics = [...diagnostics, ...docDiagnostics, ...noteBindingDiagnostics];
 
   const exportDoc = {
     schemaVersion: SCHEMA_VERSION,

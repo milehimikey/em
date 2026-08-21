@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,8 +23,11 @@ import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
+import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
+import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
+import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
@@ -42,9 +45,25 @@ import { buildGlossaryJson, GlossaryFileSide } from "./emit/glossaryJson.js";
 import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
+import { runSliceIndex } from "./cli/sliceIndex.js";
+import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
+import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
-import { STARTER_EM } from "./templates.js";
+import {
+  STATE_FILE_NAME,
+  PHASES,
+  isPhase,
+  loadStateFile,
+  parseState,
+  setPhase,
+  setConformance,
+  setReview,
+  isValidDateString,
+  PatchResult,
+} from "./cli/stateFile.js";
+import { STARTER_EM, LIVE_HTML_TEMPLATE, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
+import { kebabSlug } from "./util/slug.js";
 
 const program = new Command();
 
@@ -75,6 +94,35 @@ program
   });
 
 program
+  .command("scaffold")
+  .description(
+    "scaffold a full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md " +
+      "(see docs/cli.md — for just a starter .em, use `em init`)",
+  )
+  .argument("<name>", "model display name — kebab-cased for the directory and file names, used as-is for titles/prose")
+  .option("-f, --force", "overwrite the directory's contents if it already exists")
+  .action(async (name: string, opts: { force?: boolean }) => {
+    if (name.includes('"') || name.includes("{{")) {
+      console.error(
+        `em scaffold: name must not contain '"' or '{{' (breaks the generated .em/README/state files): ${name}`,
+      );
+      process.exit(1);
+    }
+    const dirName = kebabSlug(name);
+    if (existsSync(dirName) && !opts.force) {
+      console.error(`refusing to overwrite ${dirName}/ (use --force)`);
+      process.exit(1);
+    }
+    await mkdir(dirName, { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+    writeFileSync(join(dirName, `${dirName}.em`), starterEmFor(name));
+    writeFileSync(join(dirName, "live.html"), LIVE_HTML_TEMPLATE);
+    writeFileSync(join(dirName, "README.md"), scaffoldReadme(name, dirName));
+    writeFileSync(join(dirName, STATE_FILE_NAME), scaffoldStateFile(name, dirName, today));
+    console.log(`scaffolded ${dirName}/`);
+  });
+
+program
   .command("render")
   .description("transpile a model and render it (or emit DOT)")
   .argument("<file>", "input .em file")
@@ -93,10 +141,15 @@ program
       process.exit(1);
     }
 
-    const { dot, model, grid, diagnostics } = compileFile(file, {
+    const { dot, model, grid, diagnostics, refs } = compileFile(file, {
       keepEmptyLanes: opts.keepEmptyLanes,
     });
-    printDiagnostics(diagnostics);
+    // MIL-126: note-binding mismatches read slices/*.md alongside the model, so (like
+    // validateLineage/validateFrontmatterCoherence in `em validate`) they're computed here
+    // rather than living in compile()'s pure diagnostics. Always warning-severity — folding
+    // them in never changes whether rendering proceeds below.
+    const allDiagnostics = [...diagnostics, ...validateNoteBindings(model, refs, dirname(file))];
+    printDiagnostics(allDiagnostics);
     warnMissingNotes(file, model);
 
     if (opts.emitDot) {
@@ -109,7 +162,7 @@ program
       return;
     }
 
-    if (hasErrors(diagnostics)) {
+    if (hasErrors(allDiagnostics)) {
       console.error("not rendering: fix the errors above");
       process.exit(1);
     }
@@ -324,6 +377,76 @@ program
     },
   );
 
+// Namespace for slice-doc authoring/maintenance subcommands: `new` (MIL-97, scaffolds a fresh
+// slice doc's frontmatter) and `index` (MIL-98, regenerates the model README's Slices table)
+// share the `em slice <verb>` shape rather than living as separate top-level commands.
+const slice = program.command("slice").description("author and maintain slice docs");
+
+slice
+  .command("new")
+  .description(
+    "scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` " +
+      "plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, " +
+      "Scenarios, Open Questions, ...) stay hand-authored (see docs/slice-doc-schema.md, " +
+      "templates/slice.md)",
+  )
+  .argument("<name>", "slice display name (e.g. \"Request Payment\") — kebab-cased for the filename")
+  .requiredOption("--pattern <pattern>", `slice pattern: ${SLICE_PATTERNS.join(" | ")}`)
+  .requiredOption("--swimlane <swimlane>", 'swimlane, e.g. "Persona → Context"')
+  .option("-f, --force", "overwrite the file if it already exists")
+  .action((name: string, opts: { pattern: string; swimlane: string; force?: boolean }) => {
+    if (!isSlicePattern(opts.pattern)) {
+      console.error(
+        `em slice new: invalid --pattern "${opts.pattern}" — expected one of: ${SLICE_PATTERNS.join(", ")}`,
+      );
+      process.exit(1);
+    }
+
+    const key = sliceDocKey(name);
+    const dir = "slices";
+    const path = join(dir, `${key}.md`);
+    if (existsSync(path) && !opts.force) {
+      console.error(`refusing to overwrite ${path} (use --force)`);
+      process.exit(1);
+    }
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, buildSliceDocContent(name, key, opts.pattern, opts.swimlane));
+    console.log(`wrote ${path}`);
+    console.log(`add this to the slice's primary element in the .em file:`);
+    console.log(`  note "${path}"`);
+  });
+
+slice
+  .command("index")
+  .description(
+    "rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice " +
+      "facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated",
+  )
+  .argument("<file>", "input .em file")
+  .option("--check", "verify the table is current; exit non-zero on drift without writing (CI)")
+  .action((file: string, opts: { check?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("not indexing: fix the errors above");
+      process.exit(1);
+    }
+
+    const result = runSliceIndex(model, refs, file, !!opts.check);
+    printDiagnostics(newDiagnostics(result.table.diagnostics, diagnostics));
+
+    if (!result.ok) {
+      console.error(result.message);
+      process.exit(1);
+    }
+    if (result.wrote) {
+      console.log(`wrote ${result.readmePath}`);
+    } else {
+      console.log(`ok — ${result.readmePath}'s Slices table is already up to date`);
+    }
+  });
+
 program
   .command("changelog")
   .description("render a model's git history as a business-readable ledger (see docs/cli.md)")
@@ -345,6 +468,139 @@ program
     } else {
       process.stdout.write(markdown + "\n");
     }
+  });
+
+const STATE_DIR_HELP =
+  "model directory containing .event-modeling.md, or a direct path to that file (default: current directory)";
+
+/** Shared by every `em state` writer: load, apply the pure patch, write, report — the only
+ *  difference between set-phase/set-conformance/set-review is which `mutate` closure they pass. */
+function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: string, today: string) => PatchResult): void {
+  const loaded = loadStateFile(dirOrFile);
+  if (!loaded.ok) {
+    console.error(loaded.message);
+    process.exit(1);
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const result = mutate(loaded.text, today);
+  if (!result.ok) {
+    console.error(`${cmdLabel}: ${result.message}`);
+    process.exit(1);
+  }
+  writeFileSync(loaded.path, result.text);
+  console.log(`wrote ${loaded.path}`);
+}
+
+const state = program
+  .command("state")
+  .description("read/write the state file's mechanical fields deterministically (see docs/cli.md)");
+
+state
+  .command("read")
+  .description("print the state file's mechanical fields as JSON")
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .action((dir: string) => {
+    const loaded = loadStateFile(dir);
+    if (!loaded.ok) {
+      console.error(loaded.message);
+      process.exit(1);
+    }
+    const parsed = parseState(loaded.text);
+    if (!parsed.ok) {
+      console.error(`em state read: ${parsed.message}`);
+      process.exit(1);
+    }
+    console.log(JSON.stringify(parsed.state, null, 2));
+  });
+
+state
+  .command("set-phase")
+  .description("rewrite Current phase: (and Last updated:); --step also rewrites Current step:")
+  .argument("<phase>", `phase: ${PHASES.join(" | ")}`)
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .option("--step <n>", "also set Current step: to this value")
+  .action((phase: string, dir: string, opts: { step?: string }) => {
+    if (!isPhase(phase)) {
+      console.error(`em state set-phase: invalid phase "${phase}" — expected one of: ${PHASES.join(", ")}`);
+      process.exit(1);
+    }
+    writeStateUpdate(dir, "em state set-phase", (text, today) => setPhase(text, phase, today, opts.step));
+  });
+
+state
+  .command("set-conformance")
+  .description("rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses")
+  .argument("<revision>", "target-repo revision just diffed against")
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .requiredOption("--report <path>", "path to the conformance report just written")
+  .action((revision: string, dir: string, opts: { report: string }) => {
+    writeStateUpdate(dir, "em state set-conformance", (text, today) => setConformance(text, revision, opts.report, today));
+  });
+
+state
+  .command("set-review")
+  .description("rewrite Last stakeholder review: (and Last updated:)")
+  .argument("<date>", "review date, YYYY-MM-DD")
+  .argument("[dir]", STATE_DIR_HELP, ".")
+  .action((date: string, dir: string) => {
+    if (!isValidDateString(date)) {
+      console.error(`em state set-review: invalid date "${date}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+    writeStateUpdate(dir, "em state set-review", (text, today) => setReview(text, date, today));
+  });
+
+program
+  .command("conform-scope")
+  .description(
+    "mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths " +
+      "since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — " +
+      "--seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--repo <path>", "path to (or inside) the target codebase's git repository")
+  .option("--full", "ignore Last conformance:/changed paths; scope every implemented slice")
+  .option("--seed-asis", "write <model>-asis.em as a byte copy of the canonical model and ensure it's gitignored")
+  .action((file: string, opts: { repo: string; full?: boolean; seedAsis?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("not scoping: fix the errors above");
+      process.exit(1);
+    }
+
+    const loaded = loadStateFile(dirname(file));
+    if (!loaded.ok) {
+      console.error(loaded.message);
+      process.exit(1);
+    }
+    const parsed = parseState(loaded.text);
+    if (!parsed.ok) {
+      console.error(`em conform-scope: ${parsed.message}`);
+      process.exit(1);
+    }
+    const { lastConformance } = parsed.state;
+
+    const { facts, diagnostics: docDiags } = resolveSliceDocFacts(model, refs, dirname(file));
+    printDiagnostics(newDiagnostics(docDiags, diagnostics));
+
+    const skipGit = !!opts.full || lastConformance === null;
+    let changedPaths: string[] = [];
+    if (!skipGit) {
+      const result = changedPathsSince(opts.repo, lastConformance!.revision);
+      if (!result.ok) {
+        console.error(result.message);
+        process.exit(1);
+      }
+      changedPaths = result.paths;
+    }
+
+    const scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full);
+    const output: Record<string, unknown> = { ...scope };
+    if (opts.seedAsis) {
+      output.seeded = seedAsisModel(file);
+    }
+    console.log(JSON.stringify(output, null, 2));
   });
 
 program
@@ -441,23 +697,29 @@ program
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
-      // Lineage-ref resolution (MIL-84) and frontmatter-coherence (MIL-85) are validate's
-      // fs-aware rules — every other check above is a pure function of the .em source. Both
-      // read slices/*.md alongside the model.
+      // Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding
+      // mismatches (MIL-126), and doc↔model consistency (MIL-124) are validate's fs-aware
+      // rules — every other check above is a pure function of the .em source. All four read
+      // slices/*.md alongside the model. Doc↔model consistency is deliberately validate-only
+      // (unlike note-binding, which `em render` also folds in) — it's a conform-phase concern,
+      // not something every render needs to recheck.
       const allDiagnostics = [
         ...diagnostics,
         ...validateLineage(model, refs, dirname(file)),
         ...validateFrontmatterCoherence(model, refs, dirname(file)),
+        ...validateNoteBindings(model, refs, dirname(file)),
+        ...validateDocModelConsistency(model, refs, dirname(file)),
       ];
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
-        // frontmatter-coherence findings for free by filtering allDiagnostics' own refs, rather
-        // than re-deriving that classification here.
+        // frontmatter-coherence findings, MIL-126's note-binding-mismatch findings, AND MIL-124's
+        // doc-model-consistency findings for free by filtering allDiagnostics' own refs, rather
+        // than re-deriving any of those classifications here.
         //
         // "Concerns this slice" means a ref that either IS the bare slice key (lineage,
-        // frontmatter-coherence, and this module's own diagnostics all tag that way) OR starts
-        // with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
+        // frontmatter-coherence, note-binding, and this module's own diagnostics all tag that
+        // way) OR starts with `<sliceKey>/` (every element-level ref from computeRefs()/model/validate.ts,
         // e.g. an unknown-event error on a view inside this slice). An earlier version gated on
         // "any error anywhere in the model," which silently failed the check — with zero
         // diagnostics printed — on an unrelated slice's breakage; scoping to this slice alone
@@ -488,6 +750,66 @@ program
       if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
     },
   );
+
+program
+  .command("migrate")
+  .description(
+    "rewrite the old two-slice Automation/Translation shape into the merged single-slice " +
+      "shape MIL-120 made canonical (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--write", "apply the rewrite to the file (default: dry run — report only, write nothing)")
+  .action((file: string, opts: { write?: boolean }) => {
+    const source = readFileOrExit(file);
+    let plan;
+    try {
+      plan = planMigration(source);
+    } catch (e) {
+      if (e instanceof ParseError) {
+        console.error(`parse error in ${file} ${e.message}`);
+        process.exit(1);
+      }
+      throw e;
+    }
+
+    if (plan.changes.length === 0 && plan.refusals.length === 0) {
+      console.log(`nothing to migrate — ${file} has no old two-slice Automation/Translation shape`);
+      return;
+    }
+
+    if (plan.changes.length > 0) {
+      const verify = verifyMigration(source, plan.rewritten!);
+      if (!verify.ok) {
+        console.error(
+          `em migrate: aborting — the rewrite would introduce ${verify.newErrors.length} new error(s):`,
+        );
+        for (const d of verify.newErrors) console.error(`  ${formatDiagnostic(d)}`);
+        console.error(`${file} left untouched`);
+        process.exit(1);
+      }
+    }
+
+    for (const c of plan.changes) console.log(c.message);
+    for (const r of plan.refusals) console.log(r.message);
+
+    if (plan.changes.length === 0) {
+      console.log(`0 site(s) migrated, ${plan.refusals.length} refused`);
+    } else if (opts.write) {
+      writeFileSync(file, plan.rewritten!);
+      const refusedNote = plan.refusals.length > 0 ? `, ${plan.refusals.length} refused` : "";
+      console.log(`wrote ${file} — ${plan.changes.length} site(s) migrated${refusedNote}`);
+    } else {
+      const refusedNote = plan.refusals.length > 0 ? `; ${plan.refusals.length} refused` : "";
+      console.log(
+        `${plan.changes.length} site(s) would migrate (dry run — re-run with --write to apply)${refusedNote}`,
+      );
+    }
+
+    // A refusal always means the file still needs a human, whether or not other sites in the
+    // same run migrated cleanly — same "set exitCode, don't truncate stdout" rationale as
+    // em ledger/em diff, even though migrate's own output is never large.
+    if (plan.refusals.length > 0) process.exitCode = 1;
+  });
 
 program
   .command("ledger")
@@ -738,7 +1060,7 @@ function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]
   const intro: ChangelogIntro | null = models[0] ? { slices: models[0].slices.length, elements: models[0].elements.length } : null;
   const introError = models[0] ? undefined : (errors[0] ?? undefined);
 
-  const stateFile = join(dirname(file), ".event-modeling.md");
+  const stateFile = join(dirname(file), STATE_FILE_NAME);
   const decisions = existsSync(stateFile) ? parseDecisionsLog(readFileSync(stateFile, "utf8")) : [];
 
   return buildChangelog(entries, decisions, { file, intro, introError });

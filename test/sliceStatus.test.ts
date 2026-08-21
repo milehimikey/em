@@ -57,6 +57,69 @@ slice "Refund Order" {
     });
   });
 
+  it("MIL-121: a slice with no own doc picks up a sibling doc's status via a ratifying `covers:` entry", () => {
+    withTmpDir((dir) => {
+      const model = normalize(
+        parse(`
+slice "Detect Unpaid Orders" {
+  view Unpaid Orders from "Order Placed"
+}
+slice "Request Payment" {
+  processor Payment Request Policy from "Unpaid Orders" note "slices/request-payment.md"
+  command Request Payment
+  event Payment Requested
+}
+`),
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(
+        join(dir, "slices", "request-payment.md"),
+        "---\nstatus: ready-to-implement\ncovers: detect-unpaid-orders\n---\nbody\n",
+      );
+
+      expect(readSliceStatuses(model, dir)).toEqual(["ready-to-implement", "ready-to-implement"]);
+    });
+  });
+
+  it("MIL-121: a slice's own doc always wins over a sibling's `covers:` claim on the same key", () => {
+    withTmpDir((dir) => {
+      const model = normalize(
+        parse(`
+slice "Covered" {
+  command Do Thing
+}
+`),
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(join(dir, "slices", "covered.md"), "- **Status:** Reviewed\n");
+      writeFileSync(
+        join(dir, "slices", "other.md"),
+        "---\nstatus: draft\ncovers: covered\n---\nbody\n",
+      );
+
+      expect(readSliceStatuses(model, dir)).toEqual(["reviewed"]);
+    });
+  });
+
+  it("MIL-121: an uncovered slice with no own doc still gets null, ignoring unrelated `covers:` docs", () => {
+    withTmpDir((dir) => {
+      const model = normalize(
+        parse(`
+slice "Uncovered" {
+  command Do Thing
+}
+`),
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(
+        join(dir, "slices", "other.md"),
+        "---\nstatus: draft\ncovers: some-other-slice\n---\nbody\n",
+      );
+
+      expect(readSliceStatuses(model, dir)).toEqual([null]);
+    });
+  });
+
   it("resolves a duplicate slice name's status doc the same way em catalog resolves its doc: only the first gets the plain key", () => {
     withTmpDir((dir) => {
       const model = normalize(

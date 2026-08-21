@@ -1112,6 +1112,96 @@ slice "Queue Again" {
 `);
     expect(diags).toHaveLength(2);
   });
+
+  // MIL-75: an accumulating read model is legitimately written as several instances (em's
+  // span-1/wire-once DSL rules force a new instance per newly-adjacent event), and the
+  // consuming reaction only ever sits at the LAST one. Crediting just the nearest instance
+  // (pre-MIL-75) left every earlier "fold" instance falsely warning "no consumer" even though
+  // it feeds the one the reaction reads.
+  it("doesn't warn on any fold instance of an accumulating view whose reaction reads the last one — the ticket's literal shape", () => {
+    const diags = unconsumed(`
+context Orders
+slice "Orders To Contract - Order Created" {
+  command Create Order
+  event Order Created @Orders
+  view Orders To Contract from "Order Created"
+}
+slice "Orders To Contract - Subscription Action Added" {
+  command Add Subscription Action
+  event CreateSubscription Action Added @Orders
+  view Orders To Contract again from "CreateSubscription Action Added"
+}
+slice "Executed Orders To Contract" {
+  command Execute Order
+  event Order Executed @Orders
+  view Orders To Contract again from "Order Executed"
+  processor Create Contract On Order Executed from "Orders To Contract"
+  command Create Contract
+}
+`);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("still warns on a fold instance declared after the consuming reaction's slice — the rule keeps its teeth", () => {
+    const diags = unconsumed(`
+context Orders
+slice "Orders To Contract - Order Created" {
+  command Create Order
+  event Order Created @Orders
+  view Orders To Contract from "Order Created"
+}
+slice "Orders To Contract - Subscription Action Added" {
+  command Add Subscription Action
+  event CreateSubscription Action Added @Orders
+  view Orders To Contract again from "CreateSubscription Action Added"
+}
+slice "Executed Orders To Contract" {
+  command Execute Order
+  event Order Executed @Orders
+  view Orders To Contract again from "Order Executed"
+  processor Create Contract On Order Executed from "Orders To Contract"
+  command Create Contract
+}
+slice "Orders To Contract - Late Update" {
+  command Update Order
+  event Order Updated @Orders
+  view Orders To Contract again from "Order Updated"
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('read model "Orders To Contract"');
+  });
+
+  it("preserves the reaction-before-any-instance fallback: only the first instance is credited, no backward propagation from it", () => {
+    // The processor's `from` resolves before any instance of "Ticket Queue" exists (separately
+    // flagged by reaction-from-future-view). The pre-MIL-75 fallback credited the first instance
+    // as consumed — that stays true — but MIL-75's backward propagation doesn't apply here:
+    // there's no instance at-or-before the reaction to propagate from, so later instances still
+    // warn on their own.
+    const diags = unconsumed(`
+context Ticket
+slice "React" {
+  processor Auto Assign from "Ticket Queue"
+}
+slice "Open" {
+  ui Ticket Form @Agent
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue from "Ticket Opened"
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].line).toBeGreaterThan(0);
+  });
 });
 
 describe("translation naming collision across producers", () => {

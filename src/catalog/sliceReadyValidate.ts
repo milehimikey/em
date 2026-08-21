@@ -90,7 +90,12 @@ export function validateSliceReady(
   // resolveSliceDocJoin's SliceDocExport deliberately never carries Open Questions counts (same
   // hard boundary that keeps doc.html/doc.raw out of it) — re-read via readSliceDoc for the
   // full SliceDoc. Non-null: doc.reason === null already implies the file exists and parses.
-  const parsed = readSliceDoc(baseDir, sliceKey)!;
+  // Re-derive the key to read from `doc.path` rather than assuming it's `sliceKey`'s own
+  // conventional path — MIL-121's ratified cross-binding can resolve `doc` to a DIFFERENT
+  // slice's doc (`slices/<other-key>.md`), and Open Questions must come from whichever doc
+  // actually supplied status/version above, not always this slice's own file.
+  const boundKey = doc.path.replace(/^slices\//, "").replace(/\.md$/, "");
+  const parsed = readSliceDoc(baseDir, boundKey)!;
   if (parsed.openQuestionsUnchecked > 0) {
     pushDiag(diags, "slice-ready-open-questions-unchecked", {
       message: `slice "${sliceKey}" has ${parsed.openQuestionsUnchecked} of ${parsed.openQuestionsTotal} Open Question(s) unchecked`,

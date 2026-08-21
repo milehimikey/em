@@ -36,55 +36,79 @@ structured category field to copy from, and the runtime message text doesn't mat
 element names interpolated in). Logging the raw message would also risk leaking domain
 content the rest of this convention deliberately excludes.
 
-So the category is a fixed vocabulary instead: the strings below, one per row of
-[validation.md](validation.md)'s Errors and Warnings tables, article stripped and lowercased.
+So the category is a fixed vocabulary instead: a `usageCategory` string on every entry in the
+`RULES` registry (`src/model/rules.ts`), generated below by `scripts/generate-skill-docs.ts` —
+the same mechanism that keeps [em-dsl.md](../.claude/skills/event-modeling/reference/em-dsl.md)'s
+validate-rules appendix current (MIL-92, extended for this table by MIL-97). A new rule shows up
+here the moment it's registered; don't hand-edit these tables — run `npm run docs:generate`.
 **Use one of these exact strings** — a session that writes "read model with no source" and
 another that writes "read model has no source" for the same rule silently splits one count
 into two in the aggregation recipe below.
 
 **Warnings**
 
+<!-- GENERATED:usage-categories-warnings:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Category |
 |---|
-| reaction triggers no command |
-| ui shares slice with reaction |
 | command nothing triggers |
 | command produces no event |
+| cross-slice note not ratified by target doc |
+| cross-slice note points nowhere |
+| cross-slice note targets unusable doc |
+| doc binding points at missing file |
+| doc element missing from model |
+| doc field table disagrees with model |
+| doc pattern disagrees with model |
+| duplicate element ref |
+| duplicate name referenced |
+| duplicate slice name |
+| duplicate type name |
+| duplicate type ref |
+| event field not provided by command |
 | event has no producing command |
 | event not read by any read model |
-| read model has no source |
-| read model has no consumer |
-| ui with no view or command |
-| translation name collision |
-| duplicate name referenced |
-| duplicate type name |
-| public event unread |
-| public view unconsumed |
-| open issue |
-| view field no source |
-| event field not provided by command |
+| extra doc-binding note ignored |
 | implemented without link |
+| invalid or missing frontmatter |
+| model element missing from doc |
+| open issue |
+| reaction triggers no command |
+| read model has no consumer |
+| read model has no source |
+| slice-ready slice has no doc bound |
+| slice-ready slice has unchecked open questions |
+| slice-ready slice not ready-to-implement |
+| translation name collision |
+| ui shares slice with reaction |
+| ui with no view or command |
+| view field no source |
+<!-- GENERATED:usage-categories-warnings:end -->
 
 **Errors**
 
+<!-- GENERATED:usage-categories-errors:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Category |
 |---|
-| same-band collision |
-| view references unknown event |
-| event feeds earlier view instance |
-| reaction references unknown read model |
-| reaction reads view before it exists |
-| view again with no earlier declaration |
 | arrow endpoint unresolved |
 | arrow points backward |
+| composite tag references unknown field |
+| duplicate tag key |
+| event feeds earlier view instance |
 | illegal connection |
-| type cycle |
-| lineage ref malformed |
-| lineage ref cycle |
 | lineage forward dangling |
+| lineage ref cycle |
+| lineage ref malformed |
 | lineage version impossible |
+| reaction reads view before it exists |
+| reaction references unknown read model |
+| same-band collision |
+| slice-ready key does not exist |
+| type cycle |
+| view again with no earlier declaration |
+| view references unknown event |
+<!-- GENERATED:usage-categories-errors:end -->
 
-If a genuinely new rule shows up that doesn't fit, add its category here first — don't
+A genuinely new rule gets its `usageCategory` added in `src/model/rules.ts` first — never
 freelance a new string in a state file.
 
 ## Why this shape, not CLI telemetry

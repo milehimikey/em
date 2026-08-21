@@ -334,16 +334,34 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   // complete State View is event -> read model -> ui (or -> reaction, the Automation pattern).
   const consumedViews = new Set<string>();
   for (const el of model.elements) {
-    // A reaction's `from` binds to the nearest instance at-or-before it, same as the renderer.
+    // The renderer draws a reaction's `from` arrow to the nearest view instance at-or-before
+    // it — that resolution is unchanged. But em's span-1/wire-once DSL rules force an
+    // accumulating view across multiple slice instances, each re-declaring it with `from`
+    // naming only the newly adjacent event, and the consuming reaction legitimately sits only
+    // at the LAST instance. Crediting just that nearest instance (as before MIL-75) left every
+    // earlier "fold" instance falsely warning "no consumer," even though it feeds the instance
+    // the reaction reads. So for a reaction (AUTOMATION_KINDS), every instance at-or-before it
+    // counts as consumed, not just the nearest one (MIL-75). Instances strictly after the last
+    // consuming reaction still warn — they accumulate state nothing later reads — and a
+    // logical view no reaction ever reads still warns on every instance.
     if (el.kind === "view") continue;
     for (const name of el.from ?? []) {
       const bucket = model.byName.get(normalizeName(name));
       if (!bucket) continue;
-      const src =
-        bucket
-          .filter((x) => x.kind === "view" && x.sliceIndex <= el.sliceIndex)
-          .sort((a, b) => b.sliceIndex - a.sliceIndex)[0] ?? bucket.find((x) => x.kind === "view");
-      if (src) consumedViews.add(src.id);
+      const views = bucket.filter((x) => x.kind === "view");
+      const atOrBefore = views
+        .filter((x) => x.sliceIndex <= el.sliceIndex)
+        .sort((a, b) => b.sliceIndex - a.sliceIndex);
+      if (atOrBefore.length === 0) {
+        // A reaction before any instance of the view (separately flagged by
+        // reaction-from-future-view) — credit the first instance, same as pre-MIL-75 behavior.
+        // There's no instance at-or-before to propagate backward from.
+        if (views[0]) consumedViews.add(views[0].id);
+      } else if (AUTOMATION_KINDS.has(el.kind)) {
+        for (const v of atOrBefore) consumedViews.add(v.id);
+      } else {
+        consumedViews.add(atOrBefore[0].id);
+      }
     }
   }
   for (const a of model.arrows) {

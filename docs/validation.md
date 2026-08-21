@@ -153,8 +153,16 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   slice or reads it by name from a later slice (Automation/Translation), or via an explicit
   `arrow` out of it. In a headless model the consumer is the `ui` tagged to the API-caller
   persona — same rule, no special case. Each instance of a repeated read model needs its own
-  consumer: if you repeat a view next to an event purely to keep the arrow short, bring its screen
-  along, or don't add the instance.
+  consumer, but a reaction's isn't limited to the single instance nearest it (MIL-75): em's
+  span-1/wire-once DSL rules force an accumulating read model across several instances, each
+  re-declaring it with `from` naming only the newly adjacent event, and the consuming reaction
+  legitimately sits only at the last one — so every instance at-or-before a consuming reaction
+  counts as consumed, not just the nearest. (Rendering still draws the reaction's arrow to the
+  nearest instance at-or-before it — that resolution is unchanged; only which instances count as
+  *consumed* broadens.) An instance strictly after the last consuming reaction still needs its
+  own consumer: nothing later reads what it accumulates. If you repeat a view next to an event
+  purely to keep the arrow short, and no reaction ever reads that far, bring its screen along or
+  don't add the instance.
   **Exemption:** A view marked `public` is a published read API or webhook response shape for
   an external consumer — its reader is outside this model. The warning is suppressed; document
   it as part of the integration surface.
@@ -266,19 +274,111 @@ semantics.
 | Code | Severity | Meaning |
 |---|---|---|
 | `slice-ready-unknown-slice` | error | The given key names no slice in this model — a bad argument, not a model-quality finding |
-| `slice-ready-no-doc-bound` | warning | No element declares `note "slices/<key>.md"` — the note-binding gate `em export`'s doc join (MIL-91) also uses |
+| `slice-ready-no-doc-bound` | warning | No element declares `note "slices/<key>.md"` (or a ratified `covers` cross-binding to a different slice's doc, MIL-121 — see below) — the note-binding gate `em export`'s doc join (MIL-91) also uses |
 | `binding-missing-file` / `frontmatter-invalid` | warning | Reused verbatim from `em export`'s doc join (see [slice-doc-schema.md](slice-doc-schema.md)) — the note names a path with no file there, or the file exists but its frontmatter isn't usable |
 | `slice-ready-status-not-ready` | warning | The doc's `status` isn't `ready-to-implement` |
 | `slice-ready-open-questions-unchecked` | warning | The doc's `## Open Questions` section has one or more unchecked (`- [ ]`) items |
 
-Also folds in any [frontmatter coherence](#frontmatter-coherence) finding already scoped to the
-same slice (status/`implementedIn` incoherence) — not re-derived, just surfaced alongside the
-above when present. `--slice-ready` exits non-zero if any diagnostic (warning or error) concerns
-this slice — either the bare slice key (every code above, plus frontmatter coherence) or an
-element ref inside it (`<key>/<kind>.<name>`, e.g. an unrelated model rule tripping on an
-element within the slice itself). Diagnostics from **other** slices never block this check —
-the gate is deliberately single-slice-scoped, matching the ticket's own scenario of checking one
-slice while the rest of a large, actively-evolving model is still WIP.
+**Cross-slice binding (MIL-121):** since the two-slice Automation/Translation shape means a
+bare `view` slice can have nothing of its own to document, an element in it may instead
+`note "slices/<other-key>.md"` — a *different* slice's canonical doc path — and that other
+doc's frontmatter `covers` list can ratify the borrow by naming this slice's key back. When
+ratified, every check above (status, Open Questions) reads the **covering** doc, exactly as if
+it were this slice's own; when NOT ratified (missing file, unusable frontmatter, or no matching
+`covers` entry), the slice is silently `slice-ready-no-doc-bound` — same as no note at all, from
+*this* check's point of view. The mismatch itself — why that cross-note didn't ratify, or an
+extra note doing nothing in an already-bound slice — gets its own diagnostic below
+([Note-binding mismatch](#note-binding-mismatch), MIL-126), and folds into `--slice-ready`'s
+output the same way frontmatter coherence does (next paragraph), since it's part of the same
+unconditional `allDiagnostics` set the scoped filter draws from. See
+[slice-doc-schema.md#cross-slice-coverage-covers](slice-doc-schema.md#cross-slice-coverage-covers).
+
+Also folds in any [frontmatter coherence](#frontmatter-coherence) and
+[note-binding mismatch](#note-binding-mismatch) finding already scoped to the same slice — not
+re-derived, just surfaced alongside the above when present. `--slice-ready` exits non-zero if
+any diagnostic (warning or error) concerns this slice — either the bare slice key (every code
+above, plus frontmatter coherence and note-binding mismatch) or an element ref inside it
+(`<key>/<kind>.<name>`, e.g. an unrelated model rule tripping on an element within the slice
+itself). Diagnostics from **other** slices never block this check — the gate is deliberately
+single-slice-scoped, matching the ticket's own scenario of checking one slice while the rest of
+a large, actively-evolving model is still WIP.
+
+### Note-binding mismatch
+
+`em validate`'s third fs-aware rule (MIL-126), alongside lineage and frontmatter coherence
+above: a `note` shaped like `slices/<key>.md` (the doc-binding convention, case-insensitively)
+that doesn't actually participate in the slice's resolved doc binding no longer vanishes
+silently. Follow-on to [cross-slice binding](#slice-readiness) above — MIL-121
+deliberately left every non-ratifying cross-note silent; this is where that silence ends. A
+`note` pointing at anything else — a freeform annotation, a path outside `slices/`, any file at
+all — is never this rule's business; `note` remains a general-purpose annotation mechanism
+rendered on diagrams (see [dsl.md](dsl.md)), not exclusively a doc-binding declaration.
+
+| Code | Meaning |
+|---|---|
+| `note-binding-extra` | The slice is already bound (canonically, or via a ratified MIL-121 cross-binding) and this note names a *different* doc path — ignored. Also covers a second, later cross-note that would itself have ratified, losing to an earlier one under MIL-121's "first wins" rule — from that note's own point of view, the slice is simply already bound elsewhere. |
+| `note-binding-dangling` | The slice is unbound, and this cross-note names a `slices/<key>.md` path with no file there. |
+| `note-binding-unusable` | The slice is unbound, and this cross-note's target doc exists but its frontmatter isn't usable (same gate as `frontmatter-invalid`), so it can't ratify anything. |
+| `note-binding-unratified` | The slice is unbound, and this cross-note's target doc exists and is usable, but its `covers:` list doesn't name this slice — add `covers: <this-key>` to that doc, or correct the note's path. |
+
+Never warns on: a canonical note (`note "slices/<own-key>.md"`) whose file is missing or whose
+frontmatter is unusable — `binding-missing-file`/`frontmatter-invalid` already cover that, and
+duplicating them here would be noise; multiple elements carrying the same winning note (canonical
+or cross); or a note whose `slices/<key>.md`-shaped target happens to name this slice's own key
+in the wrong case — an existing, unrelated case-sensitivity quirk of the exact-match canonical
+check, not something this ticket set out to police.
+
+### Doc-model consistency
+
+`em validate`'s fourth fs-aware rule (MIL-124), alongside lineage, frontmatter coherence, and
+note-binding mismatch above: the conform phase's "internal surface" check — does a bound slice
+doc's structured claims still agree with the `.em` model? — used to be entirely a matter of
+agent judgment. This rule makes the mechanically-checkable core of that judgment deterministic.
+It only looks at a slice's **resolved** doc binding (`docJoin.ts`'s `resolveSliceDocJoin`, the
+same MIL-91/MIL-121-aware resolution `em export` and `--slice-ready` use) with usable
+frontmatter — an unbound slice, a dangling/unratified note, or a doc with unusable frontmatter
+are all silent here (already covered by `binding-missing-file`/`frontmatter-invalid`/note-binding
+mismatch above).
+
+Every check is **declare-gated**: a doc that says nothing structured about a given kind or field
+stays silent for it. Partial/draft docs are the normal case; disagreement between what a doc
+*does* declare and what the model actually has is the genuine anomaly this rule exists to catch.
+
+| Code | Meaning |
+|---|---|
+| `doc-model-pattern-mismatch` | The doc's frontmatter `pattern:` doesn't match `classify.ts`'s `classifySlicePattern()` for the doc's owning slice — the same classification `em export` publishes as `slice.pattern`. Silent when the slice classifies as unclassified (nothing to compare against). |
+| `doc-model-element-not-in-model` | The doc declares a `**Command:**`/`**Event:**`/`- **View:**` marker naming a command/event/view the model doesn't have — checked only for kinds the doc declares at least one marker of. |
+| `doc-model-element-not-in-doc` | The model has a command/event/view the doc never mentions — checked only for kinds the doc declares at least one marker of (a kind with zero markers is silent entirely, not "the doc is missing everything"). |
+| `doc-model-field-mismatch` | A matched Command/Event's field table (first column = field name) disagrees with the model element's `{ fields }` block — a field name on one side but not the other, or a type declared on both sides that differs (case-insensitive). Checked only when *both* sides declare at least one field. |
+
+**Name comparison** uses `model.ts`'s own `normalizeName()` — the same case/spacing-insensitive
+comparison the DSL itself uses to resolve names — for element names and field names alike, never
+a second, independently-invented comparison.
+
+**Body markers** are the slice.md template's own stable shapes:
+`` **Command:** `Name` ``, `` **Event:** `Name` `` (optionally followed by `` → context `Ctx` ``),
+and `` - **View:** `Name` ... ``. A field table is the markdown table (`| Field | Type | ... |`)
+found between a Command/Event marker and the next `##` heading or marker. Parsing is tolerant by
+construction: only these exact shapes are recognized at all — prose, a differently-shaped table,
+an unfilled `{{field}}` placeholder row — is simply not matched, never a parse error.
+
+**Out of scope, deliberately:** GWT scenarios, invariants (`INV-*`), status coherence (already
+[frontmatter coherence](#frontmatter-coherence)), swimlane, the `Read by:`/`Consumed by:` prose
+lines, and comparing a doc's `` → context `Ctx` `` against the model's `@Context` tag — all of
+these need judgment (or, for `@Context`, were judged not worth a first cut) rather than a
+mechanical name/shape comparison, and stay part of the agent-judgment side of the conform phase.
+
+**MIL-121 cross-covered docs:** a doc bound to more than one slice (its own canonical slice, plus
+any slice whose ratified `covers:` cross-note points at it) is checked **once**, against the
+union of elements across every slice it's the resolved binding for — not once per slice, which
+would double-report the same disagreement. A finding with a specific model element to point at
+(`doc-model-element-not-in-doc`, field mismatches) anchors there; a finding with nothing model-side
+to point at (`doc-model-pattern-mismatch`, `doc-model-element-not-in-model`) anchors at the doc's
+*owning* slice — the one canonically bound to the doc's own path.
+
+`--slice-ready` folds these findings in for free, same as frontmatter coherence and note-binding
+mismatch — every diagnostic here tags `refs` with the bare slice key (or `<sliceKey>/<kind>.<name>`
+element refs), so the existing ref filter picks them up without this module re-deriving anything.
 
 ## What the validator can't catch
 

@@ -22,6 +22,8 @@ const KNOWN_DOC_ANCHORS = new Set([
   "fields-completeness",
   "frontmatter-coherence",
   "slice-readiness",
+  "note-binding-mismatch",
+  "doc-model-consistency",
 ]);
 
 const SLICE_READY_CODES = [
@@ -33,7 +35,7 @@ const SLICE_READY_CODES = [
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(42);
+    expect(Object.keys(RULES).length).toBe(50);
   });
 
   it("marks exactly sliceReadyValidate.ts's 4 codes as optIn — nothing else", () => {
@@ -48,6 +50,12 @@ describe("RULES registry", () => {
     for (const [code, rule] of RULE_ENTRIES) {
       expect(rule.title.trim(), `${code}'s title`).not.toBe("");
       expect(rule.fix.trim(), `${code}'s fix`).not.toBe("");
+    }
+  });
+
+  it("every rule has a non-empty usageCategory (docs/usage-data.md's fixed vocabulary, MIL-97)", () => {
+    for (const [code, rule] of RULE_ENTRIES) {
+      expect(rule.usageCategory.trim(), `${code}'s usageCategory`).not.toBe("");
     }
   });
 

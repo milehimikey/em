@@ -17,11 +17,14 @@ import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { program } from "../src/cli.js";
 import { RULES, RuleCode, RuleDef } from "../src/model/rules.js";
+import type { Severity } from "../src/model/validate.js";
 import { isMainModule } from "../src/util/isMainModule.js";
+import { applyMarker as patchMarker } from "../src/util/markers.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const EM_DSL_MD = join(ROOT, ".claude/skills/event-modeling/reference/em-dsl.md");
 export const SKILL_MD = join(ROOT, ".claude/skills/event-modeling/SKILL.md");
+export const USAGE_DATA_MD = join(ROOT, "docs/usage-data.md");
 
 // ---- CLI reference (full) — every command/option, walked from the real commander tree ----
 
@@ -67,6 +70,10 @@ export function buildCliReferenceFull(prog: Command): string {
 const QUICK_CLI_LINES: ReadonlyArray<{ line: string; command: string; flags?: string[] }> = [
   { line: "em --version", command: "--version" },
   { line: "em init <name>.em                          # optional starter scaffold", command: "init" },
+  {
+    line: "em scaffold <name>                         # full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md",
+    command: "scaffold",
+  },
   { line: "em validate <name>.em                      # check rules; exit 0 if clean/warnings only", command: "validate" },
   { line: "em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)", command: "render", flags: ["-o"] },
   { line: "em render <name>.em --emit-dot             # inspect generated Graphviz DOT", command: "render", flags: ["--emit-dot"] },
@@ -122,24 +129,37 @@ export function buildRuleReferenceAppendix(rules: Record<RuleCode, RuleDef>): st
   return [header, ...rows].join("\n");
 }
 
-// ---- Marker-delimited patching ----
-
-function markerRegex(name: string): RegExp {
-  // Captures the exact start/end marker lines separately from whatever sits between them, so
-  // replacement never depends on how much whitespace happened to separate them before —
-  // matters for a freshly-added, still-empty marker pair (start line immediately followed by
-  // end line, nothing in between to non-greedily match a leading "\n" against).
-  const start = `<!-- GENERATED:${name}:start[^\\n]*-->`;
-  const end = `<!-- GENERATED:${name}:end -->`;
-  return new RegExp(`(${start})([\\s\\S]*?)(${end})`);
+// ---- Usage-log Categories tables — docs/usage-data.md's fixed vocabulary from src/model/rules.ts ----
+//
+// Every RULES entry's `usageCategory` (including the 4 `--slice-ready`-only codes — unlike the
+// validate-rules appendix above, a session using `--slice-ready` can still hit one, so it needs
+// to be a valid Usage log entry too). Several codes deliberately share one category string
+// (e.g. `arrow-unresolved-source`/`arrow-unresolved-target` both read "arrow endpoint
+// unresolved") — the table lists the fixed vocabulary itself, one row per distinct string, not
+// one row per code.
+export function buildUsageCategories(rules: Record<RuleCode, RuleDef>, severity: Severity): string {
+  const categories = new Set<string>();
+  for (const code of Object.keys(rules) as RuleCode[]) {
+    if (rules[code].severity === severity) categories.add(rules[code].usageCategory);
+  }
+  const sorted = [...categories].sort((a, b) => a.localeCompare(b));
+  const header = "| Category |\n|---|";
+  const rows = sorted.map((c) => `| ${c} |`);
+  return [header, ...rows].join("\n");
 }
 
+// ---- Marker-delimited patching ----
+//
+// The regex-matching mechanics live in src/util/markers.ts (shared with the runtime `em slice
+// index` command, MIL-98). This wrapper keeps generate-skill-docs' own throw-on-missing
+// contract: a dev-tooling script wants a loud failure, not a null to check.
+
 export function applyMarker(content: string, markerName: string, newBody: string): string {
-  const re = markerRegex(markerName);
-  if (!re.test(content)) {
+  const result = patchMarker(content, markerName, newBody);
+  if (result === null) {
     throw new Error(`generate-skill-docs: marker "${markerName}" not found — did it move or get renamed?`);
   }
-  return content.replace(re, (_m, open, _old, close) => `${open}\n${newBody}\n${close}`);
+  return result;
 }
 
 interface FileEdit {
@@ -159,6 +179,13 @@ function buildEdits(): FileEdit[] {
     {
       path: SKILL_MD,
       markers: [{ name: "cli-quick", body: buildCliReferenceQuick(program) }],
+    },
+    {
+      path: USAGE_DATA_MD,
+      markers: [
+        { name: "usage-categories-warnings", body: buildUsageCategories(RULES, "warning") },
+        { name: "usage-categories-errors", body: buildUsageCategories(RULES, "error") },
+      ],
     },
   ];
 }

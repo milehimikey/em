@@ -1,6 +1,6 @@
 ---
 name: event-modeling
-em-version: 1.7.1
+em-version: 1.7.2
 description: >-
   Use when the user wants to event-model a business process or system: building, editing,
   updating, or maintaining a model — extending or detailing an existing one into slices,
@@ -87,11 +87,13 @@ vendored alongside this skill.
 1. Check the tool: `em --version`. If missing, tell the user to run `npm i -g @milehimikey/em`
    and stop until installed.
 2. Locate the model. Look for an existing `<dir>/.event-modeling.md` and `*.em` in the working
-   directory (or a `models/` subfolder). If found, read the state file. If not, and the phase
-   needs one, ask the user for the model name and where to create it.
-3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, read the
-   state file and resume the recorded phase/step; if no model exists, propose starting `discover`
-   (greenfield) or `extract` (modeling an existing system).
+   directory (or a `models/` subfolder). If found, run `em state read <dir>` to read the state
+   file's mechanical fields (model path, phase, step, last updated, last conformance, last
+   review) as JSON — don't parse the bullets by hand. If not, and the phase needs one, ask the
+   user for the model name and where to create it.
+3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, use
+   `em state read <dir>`'s `phase`/`step` to resume the recorded phase/step; if no model exists,
+   propose starting `discover` (greenfield) or `extract` (modeling an existing system).
 4. Populate the state file's Participants section at session start. For a live workshop, ask for
    a single human proxy to relay questions to the room, and attribute every answer/decision in
    the Decisions log to a named participant.
@@ -111,14 +113,20 @@ vendored alongside this skill.
   <model-name>-asis.em     # conform-phase scratch model, regenerated per run — git-ignore this
 ```
 
-When creating a new model, scaffold the directory and copy the templates in (filling the
-placeholders). Copy `live.html` **verbatim** — it takes the SVG name from its URL query
-(`live.html?svg=<model-name>.svg`), so there's nothing to edit. You may use `em init` for a
-starter `.em`, but usually you'll build it up from the discovery conversation instead. Fill
-template placeholders — never leave `{{...}}` in delivered files. The `conformance/` directory
-and `<model-name>-asis.em` only appear once the `conform` phase runs; add the pattern `*-asis.em`
-to the repository's `.gitignore` the first time one is created (see `reference/conform.md`) —
-it's scratch, never committed.
+When creating a new model, run `em scaffold <model-name>` — it creates `<model-name>/` and
+writes all four starter files in one step (`<model-name>.em`, `live.html`, `README.md`,
+`.event-modeling.md`), filling the Model Name/model-name placeholders and the state file's
+mechanical fields (model path, `Current phase: discover`, `Current step: 1`, dates) for you, so
+there's nothing left to hand-copy or fill in. Refuses if `<model-name>/` already exists; pass
+`--force` to overwrite. `live.html` is written **verbatim** — it takes the SVG name from its
+URL query (`live.html?svg=<model-name>.svg`), so there's nothing to edit there either. You'll
+usually replace the scaffolded `.em`'s content as the discovery conversation builds up the real
+model — it starts out as the same starter model `em init` writes, titled from `<model-name>`.
+`slices/*.md` and `conformance/` aren't part of `em scaffold`; they come from the `slice` and
+`conform` phases below. The `conformance/` directory
+and `<model-name>-asis.em` only appear once the `conform` phase runs; `em conform-scope
+--seed-asis` creates `<model-name>-asis.em` and gitignores `*-asis.em` for you (see
+`reference/conform.md`) — it's scratch, never committed.
 
 ---
 
@@ -160,8 +168,10 @@ phase applies to field tables, below.
    both are worth raising with the user rather than leaving dangling.
 
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
-decisions, open questions) and `README.md`'s slice index. Tell the user they can stop here and
-resume with `/event-modeling model`.
+decisions, open questions — run `em state set-phase model` rather than hand-editing `Current
+phase:`), and run `em slice index <model-name>.em` to seed `README.md`'s Slices table (every
+slice already reads "no doc yet" — no slice docs exist until the `slice` phase writes them).
+Tell the user they can stop here and resume with `/event-modeling model`.
 
 ## Phase: `extract` — current-state model of an existing system
 
@@ -181,8 +191,9 @@ state).
 - **Current-state-only:** park unknowns as `# TBD` comments in the `.em`, mirrored in the state
   file's Open Questions — never guess intended design.
 
-End of phase: validated as-is model; state file updated (source mode, rounds, decisions) and
-`README.md`'s slice index seeded; then chain to `/event-modeling model` (steps 5-7).
+End of phase: validated as-is model; state file updated (source mode, rounds, decisions; `em
+state set-phase model` for `Current phase:`); run `em slice index <model-name>.em` to seed
+`README.md`'s Slices table; then chain to `/event-modeling model` (steps 5-7).
 
 ## Phase: `model` — steps 5-7
 
@@ -211,12 +222,14 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    this fact and what they do with it. The honest answers are "here's the read model we missed" or
    "nobody — so why are we recording it", and both improve the model.
 
-End of phase: render, update state, suggest `/event-modeling slice` to write implementation specs.
+End of phase: render, update state (`em state set-phase slice`), suggest `/event-modeling slice`
+to write implementation specs.
 
 ## Phase: `slice` — deep slice documents
 
 Goal: implementation-ready specs. Go slice by slice (let the user pick order, or follow the
-timeline). Check `README.md`'s slice index for what's already done.
+timeline). Check `README.md`'s Slices table for what's already done (run `em slice index
+<model-name>.em` first if it looks stale).
 
 This is also where **branch / unhappy-path events** are discovered and added to the model — as a
 slice's alternate/error flows surface (a rejection, removal, cancellation, decline, expiry), add
@@ -245,27 +258,36 @@ For each slice:
    adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling
    contexts) before finalizing field names/types or invariants — don't guess a shape that's
    already defined elsewhere.
-2. Write the doc to `slices/<slice-name>.md` (kebab-case the slice name), with the YAML
-   frontmatter block at the very top — all five of `schemaVersion`/`pattern`/`swimlane`/
-   `status`/`version` (kebab-case `pattern` value, `schemaVersion: 1`, `version` starting at
-   `1`; omitting any of the five makes the doc `frontmatter-invalid` to `em export` and the
-   readiness gate), plus `implementedIn` once shipped — the canonical, machine-read
-   metadata dialect (`- **Status:** ...` bullet lines are legacy/accepted input only; never
-   write new docs that way). When this doc exists because of a split, merge, or rename, add the
-   matching lineage key(s) too (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>`
-   grammar — see `docs/slice-doc-schema.md` for the full schema). On a re-ratification (step 0),
-   bump `version` and flip `status` here instead of setting them fresh. Record the originating
-   need (ticket/conversation link) in the Intent section when one exists.
+2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
+   frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
+   translation> --swimlane "<Persona> → <Context>"` writes `slices/<slice-name>.md`
+   (kebab-cased to match, via the same slugging `em` uses everywhere else) with the canonical
+   `schemaVersion`/`pattern`/`swimlane`/`status: draft`/`version: 1` frontmatter — exactly the
+   five keys `em export` and the readiness gate require, no more — and the `# Slice:` heading +
+   diagram-image stub already in place. Both `--pattern` and `--swimlane` are required; an
+   invalid `--pattern` is refused with the valid choices listed. Never hand-type this block, and
+   never fall back to a placeholder pattern/swimlane to dodge the flags. Then fill in every
+   judgment section below the stub from step 1 (Intent, Command, Event(s), Invariants,
+   Scenarios, ...) — the doc's prose is still entirely hand-authored, only the frontmatter/
+   heading scaffold is mechanized. Record the originating need (ticket/conversation link) in the
+   Intent section when one exists. When this doc exists because of a split, merge, or rename,
+   add the matching lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`,
+   `<slice-key>@v<N>` grammar — see `docs/slice-doc-schema.md` for the full schema).
+   **Re-ratification (step 0):** the doc already exists, so `em slice new` doesn't apply here
+   (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
+   doc's authored body) — bump `version` and flip `status` back to `ready-to-implement` by hand
+   in the existing frontmatter instead.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
-   slices/<slice-name>.svg` (kebab-case, matching the doc's filename) — redraws just this slice
-   in its own canonical pattern shape, and add `![Diagram](./<slice-name>.svg)` near the top of
-   the doc, right after the `# Slice:` heading (below the frontmatter block).
-4. Wire it into the `.em`: add `note "slices/<slice-name>.md"` to the slice's primary element
-   (the command for State Change, the view for State View, the processor for Automation, the
-   translation for Translation).
-5. Update `README.md`'s slice index — the one canonical slice table (`draft` → `reviewed` →
-   `ready-to-implement`, later `implemented` once shipped, with its Implemented-in link
-   filled in).
+   slices/<slice-name>.svg` (kebab-case, matching the doc's filename and the `![Diagram]` stub
+   `em slice new` already wrote) — redraws just this slice in its own canonical pattern shape.
+4. Wire it into the `.em`: `em slice new` (step 2) printed the exact `note
+   "slices/<slice-name>.md"` line to add to the slice's primary element (the command for State
+   Change, the view for State View, the processor for Automation, the translation for
+   Translation) — `em slice new` only writes the new doc file, never edits the `.em` source
+   itself, so add that line by hand.
+5. Run `em slice index <model-name>.em` to regenerate `README.md`'s Slices table — the one
+   canonical slice index — from the model and the doc frontmatter you just wrote (status,
+   `implementedIn` once shipped). Never hand-edit the table; it's a generated block.
 6. Re-render and `em validate`.
 
 When a slice is **ratified** — a human flips its `status` to `ready-to-implement` with every
@@ -287,8 +309,9 @@ in spec-kit projects, allocate via em-sdd-bridge (redirect mode) and never run
 `/speckit.specify`.
 
 End of phase: PR merged, slice doc flipped to `status: implemented` with `implementedIn`
-filled, `README.md`'s slice index updated. Implement doesn't chain to another phase — run it
-once per ratified slice; `conform` later checks the result against the model.
+filled, `em slice index <model-name>.em` run to refresh `README.md`'s Slices table. Implement
+doesn't chain to another phase — run it once per ratified slice; `conform` later checks the
+result against the model.
 
 ## Phase: `conform` — drift check against the codebase
 
@@ -300,16 +323,20 @@ and report where they've drifted — advisory only, never a gate, never an unpro
 stance guardrails (evidence-first, uncertainty is never drift, propose-don't-edit). It reuses
 `extract`'s sourcing/mode rules for reading the target codebase rather than duplicating them.
 
-In short: for each in-scope slice, gather code evidence *before* comparing to the model or doc;
-write the as-is picture into a scratch model (`<model-name>-asis.em`, reusing the canonical
-model's names wherever the code matches them); run `em diff <model-name>.em
+In short: run `em conform-scope <model-name>.em --repo <target-repo-path> --seed-asis` to
+compute the in-scope slice set (diff-scoped by default, via `Last conformance:` + the target
+repo's changed paths mapped through each slice doc's `implementedIn:`) and seed the scratch
+model in one step; for each in-scope slice, gather code evidence *before* comparing to the model
+or doc; write the as-is picture into that scratch model (`<model-name>-asis.em`, reusing the
+canonical model's names wherever the code matches them); run `em diff <model-name>.em
 <model-name>-asis.em --json` and let `em` decide the structural deltas; classify every finding
 (real drift / model gap / internal inconsistency / uncertainty) with cited evidence; write
 `conformance/<date>-report.md` with proposed `issue "conformance: …"` red notes; apply only the
-proposals the user ratifies, then re-render and validate; update the state file's
-`Last conformance:` marker.
+proposals the user ratifies, then re-render and validate; run `em state set-conformance
+<revision> --report <path>` to update the state file's `Last conformance:` marker.
 
-End of phase: state file's `Last conformance:` marker updated, Decisions log entry if any
+End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance`),
+Decisions log entry if any
 proposals were applied. Conform doesn't chain to another phase — it's a recurring loop, run
 again whenever the codebase has moved.
 
@@ -349,8 +376,8 @@ losing the current slice or resetting review mode.
 
 Wrap-up: run `em validate --list-issues` to sweep everything captured during the session and
 walk each one with the user, same as any open issue. Update the state file's Participants
-section with who attended, and set a `Last stakeholder review:` marker (mirrors `Last
-conformance:`).
+section with who attended, and run `em state set-review <date>` to set the `Last stakeholder
+review:` marker (mirrors `Last conformance:`).
 
 End of phase: state file's `Last stakeholder review:` marker updated, every issue captured
 live triaged (resolved on the spot, moved to Open questions / parking lot, or left open on
@@ -393,6 +420,7 @@ command instead.
 ```bash
 em --version
 em init <name>.em                          # optional starter scaffold
+em scaffold <name>                         # full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md
 em validate <name>.em                      # check rules; exit 0 if clean/warnings only
 em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
@@ -404,5 +432,6 @@ em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-rel
 <!-- GENERATED:cli-quick:end -->
 
 Always finish a working session by: re-rendering, running `em validate`, and updating
-`.event-modeling.md` with the current phase/step, decisions, open questions, and a Usage log
-entry (phases touched + validate diagnostic categories hit).
+`.event-modeling.md` — `em state set-phase <phase> [--step <n>]` for the current phase/step,
+decisions and open questions by hand, and a Usage log entry (phases touched + validate
+diagnostic categories hit).
