@@ -267,6 +267,24 @@ describe("round-trip: set then read", () => {
     });
   });
 
+  it("a revision containing regex-replacement patterns ($&, $$, $') round-trips literally", () => {
+    // Regression: applyBulletUpdates used to pass the value through String.replace's pattern
+    // string, where $&/$$/$' etc. expand against the match instead of being inserted literally.
+    const revision = "feat/$&x";
+    const written = setConformance(SCAFFOLDED, revision, "report.md", "2026-08-21");
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    expect(written.text).toContain(`- **Last conformance:** 2026-08-21 @ ${revision} — report: report.md`);
+    const read = parseState(written.text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.state.lastConformance).toEqual({
+      date: "2026-08-21",
+      revision,
+      report: "report.md",
+    });
+  });
+
   it("setReview's output parses back to the value just written", () => {
     const written = setReview(SCAFFOLDED, "2026-08-21", "2026-08-21");
     expect(written.ok).toBe(true);

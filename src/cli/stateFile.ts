@@ -168,7 +168,10 @@ function applyBulletUpdates(text: string, updates: Array<{ label: string; value:
       missing.push(label);
       continue;
     }
-    result = result.replace(re, `- **${label}:** ${value}`);
+    // Replacer function, not a string pattern — a string replacement would let `$&`/`$'`/`$$`
+    // etc. in a user-supplied value (revision, report path, step) expand against the matched
+    // line and corrupt the file. A function's return value is inserted literally.
+    result = result.replace(re, () => `- **${label}:** ${value}`);
   }
   if (missing.length > 0) {
     return { ok: false, message: `missing bullet line(s): ${missing.map((l) => `"- **${l}:**"`).join(", ")}` };

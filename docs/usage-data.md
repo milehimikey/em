@@ -52,7 +52,13 @@ into two in the aggregation recipe below.
 |---|
 | command nothing triggers |
 | command produces no event |
+| cross-slice note not ratified by target doc |
+| cross-slice note points nowhere |
+| cross-slice note targets unusable doc |
 | doc binding points at missing file |
+| doc element missing from model |
+| doc field table disagrees with model |
+| doc pattern disagrees with model |
 | duplicate element ref |
 | duplicate name referenced |
 | duplicate slice name |
@@ -61,8 +67,10 @@ into two in the aggregation recipe below.
 | event field not provided by command |
 | event has no producing command |
 | event not read by any read model |
+| extra doc-binding note ignored |
 | implemented without link |
 | invalid or missing frontmatter |
+| model element missing from doc |
 | open issue |
 | reaction triggers no command |
 | read model has no consumer |

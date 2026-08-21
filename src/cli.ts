@@ -102,6 +102,12 @@ program
   .argument("<name>", "model display name — kebab-cased for the directory and file names, used as-is for titles/prose")
   .option("-f, --force", "overwrite the directory's contents if it already exists")
   .action(async (name: string, opts: { force?: boolean }) => {
+    if (name.includes('"') || name.includes("{{")) {
+      console.error(
+        `em scaffold: name must not contain '"' or '{{' (breaks the generated .em/README/state files): ${name}`,
+      );
+      process.exit(1);
+    }
     const dirName = kebabSlug(name);
     if (existsSync(dirName) && !opts.force) {
       console.error(`refusing to overwrite ${dirName}/ (use --force)`);

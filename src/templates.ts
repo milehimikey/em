@@ -140,16 +140,28 @@ export const LIVE_HTML_TEMPLATE = `<!doctype html>
     }
 
     // Double-buffer: load into a hidden <object>, swap on load, so the shared screen
-    // never flashes white during a reload.
+    // never flashes white during a reload. The buffer must be attached to the document
+    // BEFORE data is set — a detached <object> never starts fetching its resource, so
+    // its load event would never fire and the swap would never happen.
+    let pending = null; // the in-flight buffer <object>, if a swap is loading
     function swap() {
+      if (pending) pending.remove(); // superseded by this newer swap
       const next = document.createElement("object");
       next.type = "image/svg+xml";
       next.style.cssText = current.style.cssText;
+      next.style.position = "absolute"; // out of flow + invisible while loading
+      next.style.visibility = "hidden";
       next.addEventListener("load", () => {
-        stage.replaceChild(next, current);
+        if (pending !== next) return; // a newer swap already replaced this one
+        pending = null;
+        next.style.position = "";
+        next.style.visibility = "";
+        stage.removeChild(current);
         current = next;
         stamp.textContent = new Date().toLocaleTimeString();
       }, { once: true });
+      stage.appendChild(next);
+      pending = next;
       next.setAttribute("data", SVG_FILE + "?t=" + Date.now());
     }
 
@@ -292,7 +304,10 @@ See \`README.md\` → **Slices** for the slice index and per-slice doc status.
 /** Same STARTER_EM content `em init` writes, titled from an arbitrary display name — used by
  *  `em scaffold`, which (unlike `em init`) knows a name to title the model with. */
 export function starterEmFor(title: string): string {
-  return STARTER_EM.replace('model "Order Fulfillment"', `model "${title}"`);
+  // Replacer function, not a string pattern — a string replacement would let `$&`/`$$`/etc.
+  // in `title` expand against the match instead of being inserted literally (the CLI layer
+  // separately rejects a `"` in the name, since that would break the .em string literal here).
+  return STARTER_EM.replace('model "Order Fulfillment"', () => `model "${title}"`);
 }
 
 /** Fill MODEL_README_TEMPLATE's Model Name / model-name placeholders from `em scaffold`'s
@@ -301,8 +316,10 @@ export function starterEmFor(title: string): string {
  *  marker block is untouched: it's already header-only in the template (MIL-98), so there's
  *  nothing to fill and no placeholder row to hand-write. */
 export function scaffoldReadme(displayName: string, slugName: string): string {
-  return MODEL_README_TEMPLATE.replace(/\{\{Model Name\}\}/g, displayName)
-    .replace(/\{\{model-name\}\}/g, slugName)
+  // Replacer functions, not string patterns — a string replacement would let `$&`/`$$`/etc. in
+  // displayName expand against the match instead of being inserted literally.
+  return MODEL_README_TEMPLATE.replace(/\{\{Model Name\}\}/g, () => displayName)
+    .replace(/\{\{model-name\}\}/g, () => slugName)
     .replace(
       "{{One-paragraph description of the business process(es) this event model covers.}}",
       "<!-- One-paragraph description of the business process(es) this event model covers. -->",
@@ -315,8 +332,11 @@ export function scaffoldReadme(displayName: string, slugName: string): string {
  *  the template's own guidance comment intact where it has one — per the skill's "don't guess,
  *  park it" principle, never a fabricated example. Never leaves \`{{...}}\` in the result. */
 export function scaffoldStateFile(displayName: string, slugName: string, today: string): string {
-  const filled = STATE_TEMPLATE.replace("{{Model Name}}", displayName)
-    .replace("{{model-name}}", slugName)
+  // Replacer functions for the display-name/slug fills, not string patterns — a string
+  // replacement would let `$&`/`$$`/etc. in the value expand against the match instead of
+  // being inserted literally.
+  const filled = STATE_TEMPLATE.replace("{{Model Name}}", () => displayName)
+    .replace("{{model-name}}", () => slugName)
     .replace("{{discover | extract | model | slice | implement | conform | review | validate}}", "discover")
     .replace("{{1\u20137, see methodology; or extraction round R1\u2013R7}}", "1")
     .replace("{{YYYY-MM-DD}}", today) // "Last updated" — the first occurrence; later ones belong to

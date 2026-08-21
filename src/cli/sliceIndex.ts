@@ -30,7 +30,10 @@ const TABLE_HEADER =
  *  newlines (a slice name is always one line, but a doc's freeform `implementedIn` text isn't
  *  guaranteed to be). */
 function escapeCell(s: string): string {
-  return s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  // Backslashes first: escaping `|` alone would let a pre-existing `\` in the source text
+  // combine with the newly-inserted `\` (e.g. a literal `\|`) and un-escape the pipe again
+  // once Markdown unescapes the backslash sequence (CodeQL "incomplete string escaping").
+  return s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
 /** Status cell wording: mirrors `em catalog`'s own found/status split (catalog/pages.ts's

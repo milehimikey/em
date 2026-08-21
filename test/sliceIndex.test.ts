@@ -130,6 +130,15 @@ describe("buildSliceIndexTable", () => {
     const { markdown } = buildSliceIndexTable(model, refs, dir);
     expect(markdown).toContain("Weird \\| Name");
   });
+
+  it("escapes a pre-existing backslash before escaping `|`, so the pipe can't be un-escaped", () => {
+    // Escaping `|` alone on `Weird \| Name` would leave the single backslash already in the
+    // name adjacent to the newly-inserted one, producing `\\|` — which Markdown reads as an
+    // escaped backslash followed by a live, table-breaking `|`. Backslashes must escape first.
+    const { model, refs } = compile('slice "Weird \\| Name" {\n  command Do Thing\n}\n');
+    const { markdown } = buildSliceIndexTable(model, refs, dir);
+    expect(markdown).toContain("Weird \\\\\\| Name");
+  });
 });
 
 describe("runSliceIndex", () => {

@@ -72,6 +72,8 @@ em validate <file> --list-divergences                       # print only accepte
 em validate <file> --list-public                            # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
 em validate <file> --fail-on-issues                         # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
 em validate <file> --slice-ready <key>                      # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
+em migrate <file>                                           # rewrite the old two-slice Automation/Translation shape into the merged single-slice shape MIL-120 made canonical (see docs/cli.md)
+em migrate <file> --write                                   # apply the rewrite to the file (default: dry run — report only, write nothing)
 em ledger <file>                                            # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
 em ledger <file> --from <rev>                               # baseline revision
 em ledger <file> --to <rev>                                 # compare revision (default: current working tree)

@@ -911,6 +911,32 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     // Display name (untouched) is used for titles/prose; slug is used for filenames.
     expect(readme.startsWith("# Weird!! Name_2\n")).toBe(true);
   });
+
+  it('rejects a name containing " with a clear error, writing nothing', () => {
+    const r = em(["scaffold", 'Bob"s Orders'], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('"');
+    expect(existsSync(join(cwd, "bob-s-orders"))).toBe(false);
+  });
+
+  it("rejects a name containing {{ with a clear error, writing nothing", () => {
+    const r = em(["scaffold", "x{{y"], cwd);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("{{");
+    expect(existsSync(join(cwd, "x-y"))).toBe(false);
+  });
+
+  it("a name containing regex-replacement patterns ($&, $$) scaffolds with the literal name intact", () => {
+    const r = em(["scaffold", "Foo $& Bar $$ Baz"], cwd);
+    expect(r.status).toBe(0);
+    const dir = join(cwd, "foo-bar-baz");
+    const em_ = readFileSync(join(dir, "foo-bar-baz.em"), "utf8");
+    expect(em_.startsWith('model "Foo $& Bar $$ Baz"\n')).toBe(true);
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme.startsWith("# Foo $& Bar $$ Baz\n")).toBe(true);
+    const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
+    expect(state).toContain("Foo $& Bar $$ Baz");
+  });
 });
 
 describe("em changelog (CLI, real git repo)", () => {
