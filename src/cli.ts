@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,8 @@ import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
 import { watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
-import { buildExport } from "./emit/json.js";
+import { buildExport, buildSliceExport } from "./emit/json.js";
+import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
 import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
@@ -25,13 +26,19 @@ import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
-import { validateSliceReady } from "./catalog/sliceReadyValidate.js";
+import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
+import { buildCoverageReport } from "./cli/coverage.js";
+import { buildCoverageJson } from "./emit/coverageJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
+import { readContract } from "./cli/contract.js";
+import { createServer as createMcpServer } from "./mcp/server.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { syncAgentsMd, AgentsMdResult } from "./cli/agentsMd.js";
 import {
   buildGlossary,
   detectKindConflicts,
@@ -46,6 +53,7 @@ import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
+import { runMarkImplemented } from "./cli/markImplemented.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
@@ -197,9 +205,48 @@ program
   .description("export a versioned JSON snapshot of the normalized model")
   .argument("<file>", "input .em file")
   .option("-o, --out <path>", "write to a file instead of stdout")
-  .action((file: string, opts: { out?: string }) => {
+  .option(
+    "--slice <key>",
+    "export only this slice's object (pattern/fields/doc) instead of the whole model (export " +
+      "key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage " +
+      "elsewhere in the model doesn't block it (see docs/cli.md)",
+  )
+  .action((file: string, opts: { out?: string; slice?: string }) => {
     const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
+
+    if (opts.slice) {
+      // Scoped export deliberately does NOT reuse the whole-model error guard below: the
+      // ticket's own motivation for `--slice` is an agent implementing one already-ratified
+      // slice while the rest of a large, still-WIP model has unrelated errors — the same
+      // "don't gate on breakage elsewhere" call `--slice-ready` already made (see its own
+      // scoping comment above). Only an error that concerns THIS slice (bare key, or an
+      // element ref prefixed `<key>/`) refuses.
+      const key = opts.slice;
+      const scopedErrors = diagnostics.filter(
+        (d) => d.severity === "error" && d.refs?.some((r) => r === key || r.startsWith(`${key}/`)),
+      );
+      if (scopedErrors.length > 0) {
+        console.error(`not exporting: slice "${key}" has errors — fix them first`);
+        process.exit(1);
+      }
+
+      const sliceExport = buildSliceExport(model, refs, diagnostics, source, file, key);
+      if (!sliceExport.found) {
+        console.error(`em export --slice: no slice with export key "${key}" in this model`);
+        process.exit(1);
+      }
+      printDiagnostics(newDiagnostics(sliceExport.diagnostics, diagnostics));
+
+      if (opts.out) {
+        writeFileSync(opts.out, sliceExport.text! + "\n");
+        console.log(`wrote ${opts.out}`);
+      } else {
+        process.stdout.write(sliceExport.text! + "\n");
+      }
+      return;
+    }
+
     if (hasErrors(diagnostics)) {
       console.error("not exporting: fix the errors above");
       process.exit(1);
@@ -447,6 +494,46 @@ slice
     }
   });
 
+slice
+  .command("mark-implemented")
+  .description(
+    "flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the " +
+      "one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the " +
+      "em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). " +
+      "Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` " +
+      "or the doc body",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .argument("<pr-url>", "merged PR (or commit) URL")
+  .action((file: string, sliceKey: string, prUrl: string) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    // Scoped the same way `em export --slice`/`em validate --slice-ready` are: only an error
+    // concerning THIS slice (bare key, or an element ref prefixed `<key>/`) refuses — an
+    // unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block marking
+    // this one implemented.
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice mark-implemented: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const result = runMarkImplemented(model, refs, dirname(file), sliceKey, prUrl);
+    if (!result.ok) {
+      console.error(`em slice mark-implemented: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(
+      result.changed
+        ? `marked implemented: ${result.path} (implementedIn: ${prUrl})`
+        : `already implemented (no-op): ${result.path}`,
+    );
+  });
+
 program
   .command("changelog")
   .description("render a model's git history as a business-readable ledger (see docs/cli.md)")
@@ -685,6 +772,11 @@ program
     "readiness gate for one slice (export key): status ready-to-implement, doc resolvable via " +
       "note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)",
   )
+  .option(
+    "--json",
+    "print a JSON document instead of text — works on a model WITH errors, unlike `em export` " +
+      "(MIL-128, see docs/cli.md); exit codes are unchanged",
+  )
   .action(
     (
       file: string,
@@ -694,6 +786,7 @@ program
         listPublic?: boolean;
         failOnIssues?: boolean;
         sliceReady?: string;
+        json?: boolean;
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
@@ -731,17 +824,39 @@ program
         const scoped = combined.filter((d) => d.refs?.some((r) => r === key || r.startsWith(`${key}/`)));
         printDiagnostics(scoped);
         const ready = scoped.length === 0;
-        console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+        if (opts.json) {
+          // MIL-128: the 4 named gates (see computeSliceReadyGates) plus the same `scoped`
+          // diagnostics and `ready` verdict driving the exit code below — replaces both the
+          // scraped warning prose and the two hand-parsed English sentences.
+          const gates = computeSliceReadyGates(model, refs, dirname(file), key);
+          process.stdout.write(buildSliceReadyJson(file, key, gates, scoped, ready) + "\n");
+        } else {
+          console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+        }
         if (!ready) process.exit(1);
         return;
       }
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
-        if (opts.listIssues) printIssues(model);
-        if (opts.listDivergences) printDivergences(model);
-        if (opts.listPublic) printPublicElements(model);
         // Errors still fail the run below — surface them rather than exiting
         // non-zero with nothing but the list on screen.
-        printDiagnostics(allDiagnostics.filter((d) => d.severity === "error"));
+        const errorsOnly = allDiagnostics.filter((d) => d.severity === "error");
+        if (opts.json) {
+          const markers = collectMarkers(model, refs, {
+            issues: opts.listIssues,
+            divergences: opts.listDivergences,
+            public: opts.listPublic,
+          });
+          printDiagnostics(errorsOnly);
+          process.stdout.write(buildValidateListJson(file, markers, errorsOnly) + "\n");
+        } else {
+          if (opts.listIssues) printIssues(model);
+          if (opts.listDivergences) printDivergences(model);
+          if (opts.listPublic) printPublicElements(model);
+          printDiagnostics(errorsOnly);
+        }
+      } else if (opts.json) {
+        printDiagnostics(allDiagnostics);
+        process.stdout.write(buildValidateJson(file, allDiagnostics) + "\n");
       } else {
         printDiagnostics(allDiagnostics);
         if (allDiagnostics.length === 0) console.log("ok — no issues");
@@ -845,6 +960,63 @@ program
     if (result.findings.length > 0) process.exitCode = 1;
   });
 
+program
+  .command("coverage")
+  .description(
+    "check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc " +
+      "is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's " +
+      "definition-of-done citation check; advisory by default, --strict for CI",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--tests <dir>", "directory to scan recursively for test files citing invariant IDs")
+  .option("--strict", "exit non-zero if any invariant ID has zero citations (CI)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { tests: string; strict?: boolean; json?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("em coverage: model has errors — fix them first");
+      process.exit(1);
+    }
+    if (!existsSync(opts.tests)) {
+      console.error(`em coverage: --tests directory not found: ${opts.tests}`);
+      process.exit(1);
+    }
+    if (!statSync(opts.tests).isDirectory()) {
+      console.error(`em coverage: --tests is not a directory: ${opts.tests}`);
+      process.exit(1);
+    }
+
+    const report = buildCoverageReport(model, refs, dirname(file), opts.tests);
+
+    if (opts.json) {
+      process.stdout.write(buildCoverageJson(file, opts.tests, report) + "\n");
+    } else {
+      for (const slice of report.slices) {
+        if (!slice.inScope) continue;
+        console.log(`slice "${slice.key}" (${slice.status}):`);
+        if (slice.invariants.length === 0) {
+          console.log(`  (no INV-* invariant IDs found in the doc body)`);
+          continue;
+        }
+        for (const inv of slice.invariants) {
+          if (inv.cited) {
+            console.log(`  cited     ${inv.id}`);
+            for (const c of inv.citations) console.log(`              ${c.file}:${c.line}`);
+          } else {
+            console.log(`  uncovered ${inv.id}`);
+          }
+        }
+      }
+      console.log(`${report.totalInvariants} invariant(s) checked, ${report.uncoveredCount} uncovered`);
+    }
+
+    // Advisory by default (exit 0 even with uncovered IDs) — --strict is the opt-in CI gate,
+    // same "set exitCode, don't truncate stdout" rationale as em ledger/em diff for the --json
+    // form, and consistent for the text form too.
+    if (opts.strict && report.uncoveredCount > 0) process.exitCode = 1;
+  });
+
 // Shared by install/sync/check: the skill directory bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and
 // regardless of a symlinked global install — see pkgDir's own resolution above for
@@ -856,6 +1028,40 @@ function vendoredSkillDir(repoRoot: string): string {
   return join(resolve(repoRoot), ".claude", "skills", "event-modeling");
 }
 
+program
+  .command("contract")
+  .description(
+    "print the packaged implementation contract (reference/implement.md) to stdout — the " +
+      "agent-neutral discovery path for any agent that can run a shell, not just Claude Code " +
+      "(MIL-129); see docs/cli.md",
+  )
+  .action(() => {
+    process.stdout.write(readContract(packagedSkillDir()));
+  });
+
+program
+  .command("mcp")
+  .description(
+    "start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/" +
+      "list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a " +
+      "structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. " +
+      "Equivalent to running the `em-mcp` bin directly",
+  )
+  .action(async () => {
+    // A 3-line wrapper only, for discoverability — the server itself (src/mcp/) never imports
+    // this file or commander, matching the ticket's "outside the CLI core" constraint. The
+    // `em-mcp` bin (package.json) starts the identical server the same way.
+    await createMcpServer().connect(new StdioServerTransport());
+  });
+
+/** One line reporting what `syncAgentsMd` did, shared by `skill install`/`skill sync` so both
+ *  commands describe the AGENTS.md write in the same words. */
+function agentsMdMessage(result: AgentsMdResult): string {
+  if (result.created) return `created ${result.path} with the agent-contract section (MIL-129)`;
+  if (result.wrote) return `updated the agent-contract section in ${result.path}`;
+  return `${result.path} already has an up-to-date agent-contract section`;
+}
+
 const skill = program
   .command("skill")
   .description("manage Claude Code skills bundled with em");
@@ -864,20 +1070,27 @@ skill
   .command("install")
   .description("copy the event-modeling skill into .claude/skills/event-modeling/")
   .option("-f, --force", "overwrite an existing installation")
-  .action(async (opts: { force?: boolean }) => {
+  .option(
+    "--no-agents-md",
+    "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
+  )
+  .action(async (opts: { force?: boolean; agentsMd?: boolean }) => {
     const src = packagedSkillDir();
     const dest = vendoredSkillDir(process.cwd());
 
     if (existsSync(dest) && !opts.force) {
       console.log(`skill already installed at ${dest}`);
       console.log("re-run with --force to overwrite");
-      return;
+    } else {
+      await mkdir(join(process.cwd(), ".claude", "skills"), { recursive: true });
+      await cp(src, dest, { recursive: true });
+      console.log(`installed event-modeling skill → ${dest}`);
+      console.log("in Claude Code, run /event-modeling to start a guided session");
     }
 
-    await mkdir(join(process.cwd(), ".claude", "skills"), { recursive: true });
-    await cp(src, dest, { recursive: true });
-    console.log(`installed event-modeling skill → ${dest}`);
-    console.log("in Claude Code, run /event-modeling to start a guided session");
+    if (opts.agentsMd !== false) {
+      console.log(agentsMdMessage(syncAgentsMd(process.cwd())));
+    }
   });
 
 skill
@@ -887,18 +1100,26 @@ skill
       "em package (overwrites unconditionally; local edits are never merged, MIL-93)",
   )
   .argument("[path]", "consumer repo root", ".")
-  .action(async (path: string) => {
+  .option(
+    "--no-agents-md",
+    "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
+  )
+  .action(async (path: string, opts: { agentsMd?: boolean }) => {
     const packagedDir = packagedSkillDir();
     const vendoredDir = vendoredSkillDir(path);
 
     const plan = planSkillSync(packagedDir, vendoredDir);
     if (plan.changes.length === 0) {
       console.log(`up to date — ${vendoredDir} already matches the installed skill (${plan.unchangedCount} file(s))`);
-      return;
+    } else {
+      applySkillSync(plan, packagedDir, vendoredDir);
+      for (const c of plan.changes) console.log(`${c.kind}: ${c.relPath}`);
+      console.log(`synced ${vendoredDir} — ${plan.changes.length} file(s) changed, ${plan.unchangedCount} unchanged`);
     }
-    applySkillSync(plan, packagedDir, vendoredDir);
-    for (const c of plan.changes) console.log(`${c.kind}: ${c.relPath}`);
-    console.log(`synced ${vendoredDir} — ${plan.changes.length} file(s) changed, ${plan.unchangedCount} unchanged`);
+
+    if (opts.agentsMd !== false) {
+      console.log(agentsMdMessage(syncAgentsMd(resolve(path))));
+    }
   });
 
 skill

@@ -22,6 +22,7 @@ agent can carry with human review.
 | Run a guided modeling session with Claude | [ai-workflow.md](ai-workflow.md) |
 | Check whether the code still matches the model | [workflow.md](workflow.md#6-check-the-model-against-the-code) |
 | Feed a model to other tooling (JSON export, structural diff) | [cli.md](cli.md#em-export-file) |
+| Give an MCP client (Claude Code, Cursor, ...) structured tool access to a model | [mcp.md](mcp.md) |
 | Check vocabulary consistency across multiple models | [cli.md](cli.md#em-glossary-files) |
 | Validate models in CI, or run conformance on a schedule | [ci.md](ci.md) |
 | Know what's bundled vs. what needs a system install | [dependencies.md](dependencies.md) |

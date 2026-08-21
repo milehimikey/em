@@ -106,3 +106,48 @@ export function validateSliceReady(
 
   return diags;
 }
+
+/** The 4 named gate conditions `em validate --slice-ready <key> --json` reports individually
+ *  (MIL-128): doc bound, frontmatter usable, status ready-to-implement, no unchecked Open
+ *  Questions — the exact facts `validateSliceReady` above already derives from the same doc
+ *  join and parse, exposed as independent pass/fail booleans instead of collapsed into
+ *  short-circuited diagnostics, so a JSON consumer sees exactly which gate(s) failed without
+ *  re-deriving anything or parsing prose. `null` when `sliceKey` names no slice in the model —
+ *  mirrors `slice-ready-unknown-slice`'s error case, which has no gates to report. A gate not
+ *  reached because an earlier one failed (e.g. status/open-questions when the doc itself isn't
+ *  usable) reports `false`, not `null` — "not confirmed ready" either way, and consistent with
+ *  the overall verdict being the AND of all four. No new judgment: same reads, same rules,
+ *  reshaped for direct consumption instead of scraped from stderr prose. */
+export interface SliceReadyGates {
+  docBound: boolean;
+  frontmatterUsable: boolean;
+  statusReady: boolean;
+  noUncheckedOpenQuestions: boolean;
+}
+
+export function computeSliceReadyGates(
+  model: NormalizedModel,
+  refs: RefsResult,
+  baseDir: string,
+  sliceKey: string,
+): SliceReadyGates | null {
+  const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
+  if (sliceIndex === -1) return null;
+  const slice = model.slices[sliceIndex];
+  const { doc } = resolveSliceDocJoin(slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
+
+  const docBound = doc.reason !== "no-doc-bound";
+  const frontmatterUsable = doc.reason === null;
+  if (!frontmatterUsable) {
+    return { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false };
+  }
+
+  const statusReady = doc.status === "ready-to-implement";
+  // Same re-derivation of the bound key from doc.path as validateSliceReady above — see its
+  // own comment for why (MIL-121 cross-binding can resolve to a different slice's doc).
+  const boundKey = doc.path.replace(/^slices\//, "").replace(/\.md$/, "");
+  const parsed = readSliceDoc(baseDir, boundKey)!;
+  const noUncheckedOpenQuestions = parsed.openQuestionsUnchecked === 0;
+
+  return { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions };
+}

@@ -10,6 +10,7 @@
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
+| `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in a ready-to-implement/implemented slice doc is cited by a test (advisory by default, `--strict` for CI) |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
@@ -17,6 +18,8 @@
 | `em state set-phase <phase> [dir]` | Rewrite `Current phase:` (and `Current step:` with `--step`) |
 | `em state set-conformance <revision> [dir]` | Rewrite `Last conformance:` in the exact format `conform` parses |
 | `em state set-review <date> [dir]` | Rewrite `Last stakeholder review:` |
+| `em contract` | Print the packaged implementation contract (`reference/implement.md`) to stdout |
+| `em mcp` | Start an MCP server over stdio, exposing structured model access as tools (also available as the `em-mcp` bin) |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
@@ -175,6 +178,7 @@ checked (and, just as deliberately, what's never flagged — a re-ratified slice
 | `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 | `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
+| `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
 ```bash
 em validate model.em                          # full diagnostics; exits non-zero only on errors
@@ -183,7 +187,84 @@ em validate model.em --list-divergences        # just the accepted `divergence` 
 em validate model.em --list-public             # just the events and views marked `public`, for an audit
 em validate model.em --fail-on-issues          # CI gate: fail while any issue remains open
 em validate model.em --slice-ready checkout    # is "checkout" safe to hand to an implementer?
+em validate model.em --json                    # structured diagnostics — works even with errors
 ```
+
+### `--json` (MIL-128)
+
+Unlike `em export`, `em validate --json` runs on a model **with errors** — that's the point: it's
+the only structured-diagnostics surface open precisely when the model is broken. Diagnostics are
+still printed to stderr as usual (text mode's human-readable lines); stdout carries exactly one
+JSON document, and the exit code is identical to text mode in every case. `--json` composes with
+`--slice-ready`/`--list-*`, changing that mode's own output shape rather than adding a fourth one.
+Every diagnostic in all three shapes below carries `usageCategory`, sourced from the `RULES`
+registry (the same fixed vocabulary [usage-data.md](usage-data.md)'s Categories tables draw
+from) — dedupe that field yourself rather than reaching for a separate flag; there isn't one.
+
+**Plain `em validate model.em --json`** (`validateSchemaVersion: "1.0"`):
+
+```json
+{
+  "validateSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "ok": false,
+  "summary": { "errors": 1, "warnings": 2, "total": 3 },
+  "diagnostics": [
+    { "severity": "error", "code": "view-from-unresolved", "message": "…", "line": 4, "refs": ["checkout/view.…"], "usageCategory": "view references unknown event" }
+  ]
+}
+```
+
+`ok` mirrors the exit code (`true` exactly when there are no errors — warnings never flip it).
+Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff --json`:
+`severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`.
+
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.0"`) — see the
+`--slice-ready` section below for what each gate means:
+
+```json
+{
+  "validateSliceReadySchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "sliceKey": "checkout",
+  "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false },
+  "ready": false,
+  "diagnostics": [ … ]
+}
+```
+
+`gates` names each of the 4 conditions individually, replacing both the scraped warning prose
+and the two hand-parsed English sentences ("is ready-to-implement" / "is NOT ready-to-implement").
+It's `null` when `sliceKey` matches no slice in the model (the unknown-key error case — nothing
+to gate; check `diagnostics` for `slice-ready-unknown-slice` instead). A gate not reached because
+an earlier one failed (e.g. `statusReady` when the doc itself isn't bound) reports `false`, not
+`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 4
+named gates pass, if something else concerning this slice is broken (e.g. a plain
+`both-ends-of-a-flow` diagnostic on one of its own elements); `diagnostics` carries the full
+scoped list so a consumer sees exactly why, not just the 4 named gates.
+
+**`--list-issues`/`--list-divergences`/`--list-public --json`** (`validateListSchemaVersion:
+"1.0"`) — each flag independently gates its own marker kind, same as text mode; passing more than
+one merges their markers into the same array:
+
+```json
+{
+  "validateListSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "markers": [
+    { "markerKind": "issue", "sliceKey": "checkout", "sliceName": "Checkout", "elementRef": "checkout/command.place-order", "elementKind": "command", "elementName": "Place Order", "text": "who validates the discount code?", "line": 2 }
+  ],
+  "diagnostics": [ … ]
+}
+```
+
+`elementRef` is the same export-stable ref `em export`/`em diff` use. `text` is the `issue`/
+`divergence` annotation's own text; `null` for a `public` marker, which carries no text.
+`diagnostics` is the same errors-only list text mode still prints — a genuine error still fails
+the run regardless of which `--list-*` flag was passed.
 
 ### `--slice-ready <key>` (MIL-87)
 
@@ -220,11 +301,42 @@ default (pipe-friendly); `-o` writes a file.
 | Flag | Effect |
 |---|---|
 | `-o, --out <path>` | Write to a file instead of stdout |
+| `--slice <key>` | Export only this slice's object instead of the whole model — see below (MIL-128) |
 
 ```bash
 em export model.em                    # pretty JSON on stdout
 em export model.em -o model.json      # write to a file
+em export model.em --slice checkout   # just the "checkout" slice's object
 ```
+
+### `--slice <key>` (MIL-128)
+
+Exports one slice's object (`pattern`/`fields`/`doc`/…, the exact same shape as that slice's
+entry in the full document's `model.slices`) instead of building the whole model. Written for an
+implementing agent working one ratified slice at a time: piping the entire export just to read
+one `slice.doc` is unnecessary I/O, and — more importantly — the whole-model error guard
+shouldn't block a slice that's fine just because some *other*, unrelated slice in a large,
+still-WIP model has an error. So the guard is scoped differently here: `--slice` refuses only
+when an error concerns the **named slice itself** (a bare slice-key ref, or an element ref
+prefixed `<key>/` — the same scoping `--slice-ready` uses); an error anywhere else in the model
+is printed to stderr as usual but never blocks. A full, unscoped `em export` still refuses on
+*any* error in the model, unchanged.
+
+```json
+{
+  "schemaVersion": "1.6",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "source": { "path": "model.em", "sha256": "…" },
+  "sliceKey": "checkout",
+  "slice": { "key": "checkout", "name": "Checkout", "pattern": "state-change", "doc": { … }, "elements": [ … ], … },
+  "diagnostics": [ … ]
+}
+```
+
+`schemaVersion` is the same `1.6` the full export uses — `slice` is byte-for-byte the same shape
+as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
+scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
+model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
 
 **Determinism.** The same source text always exports to byte-identical JSON: no timestamps,
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
@@ -624,6 +736,89 @@ every other command's own schema):
 - `skipped` — `{ sliceKey, reason }[]`, `reason` one of the three above.
 - `ok` — `true` when `findings` is empty.
 
+## `em coverage <file> --tests <dir>`
+
+Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every
+`INV-n` has a test that cites its ID" (MIL-130). For each slice whose joined doc's `status` is
+`ready-to-implement` or `implemented`, extracts every `INV-*` invariant ID mentioned in the
+doc's body, then scans `--tests <dir>` recursively for lines that cite each ID. Reports, per ID,
+**cited** (every citing `file:line`) or **uncovered**. Checks that an ID is *cited* — not that
+the citing test is good or passing; test quality stays with review, and test passing stays with
+CI (see [ci.md](ci.md#em-coverage-opt-in) for the CI recipe).
+
+Doc resolution is the same note-binding join every other doc-aware command uses
+(`resolveSliceDocJoin`, [docJoin.ts](../src/catalog/docJoin.ts)) — the same join `em export`'s
+doc field and `--slice-ready` use. A slice with no doc bound, a binding pointing at a missing
+file, or unusable frontmatter is simply **not in scope** (none of those can carry a
+ready/implemented status); a bound, usable doc whose `status` isn't `ready-to-implement` or
+`implemented` is in scope for nothing (reported, `invariants: []`) rather than silently
+dropped — see the `--json` shape below.
+
+**Token format.** IDs are hand-authored per docs/slice-doc-schema.md ("give each a stable ID"),
+not machine-generated, so no single fixed shape is enforced — the extraction regex matches
+`INV-` followed by a run of alphanumeric/hyphen segments, covering both the template's bare
+numbering (`INV-1`, `INV-2`) and a per-slice mnemonic prefix (`INV-CHK-4`, `INV-CHK-3a` for a
+rename target). The whole doc body is scanned, not just the `## Invariants / Business Rules`
+section — a `## Delta` section's Added/Modified/Renamed requirement IDs are just as citable.
+Citation matching is word-boundary-anchored so `INV-KEY-1` never matches inside `INV-KEY-12`.
+
+| Flag | Effect |
+|---|---|
+| `--tests <dir>` | Directory to scan recursively for test files citing invariant IDs (**required**) |
+| `--strict` | Exit non-zero if any invariant ID has zero citations (CI) |
+| `--json` | Print a JSON document instead of the text report |
+
+```bash
+em coverage model.em --tests test/                 # advisory — exits 0 regardless of uncovered IDs
+em coverage model.em --tests test/ --strict         # CI gate — exits 1 on any uncovered ID
+em coverage model.em --tests test/ --json           # machine-readable form
+```
+
+**Advisory by default** — a model with uncovered invariant IDs is not, by itself, a build
+failure; `--strict` is the opt-in CI gate (unlike `em ledger`, where every finding is already a
+defect once you've opted into running the command at all).
+
+A model that doesn't compile is reported with its diagnostics, same as every other command — it
+can't be coverage-checked. A missing `--tests <dir>` is a hard CLI error (no default guessing).
+
+Example output:
+
+```
+$ em coverage model.em --tests test/
+slice "checkout" (ready-to-implement):
+  cited     INV-1
+              test/checkout.test.ts:42
+  uncovered INV-2
+2 invariant(s) checked, 1 uncovered
+$ echo $?
+0
+$ em coverage model.em --tests test/ --strict
+...
+$ echo $?
+1
+```
+
+**`--json` shape** (`coverageSchemaVersion: "1.0"`, versioned independently of the npm package
+and every other command's own schema):
+
+- `generator` — `{ name, version }` of the tool that produced the document.
+- `file` / `testsDir` — the inputs, verbatim.
+- `ok` — `true` when every in-scope invariant ID has at least one citation (advisory verdict;
+  independent of whether `--strict` was passed).
+- `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.
+- `slices` — `{ key, status, docReason, inScope, invariants }[]`, one entry per slice in the
+  model (including out-of-scope ones, for transparency):
+  - `status` — the joined doc's `status`, or `null` when no usable doc was found.
+  - `docReason` — the `resolveSliceDocJoin` join reason behind a `null` `status`:
+    `"no-doc-bound"`, `"binding-missing-file"`, or `"frontmatter-invalid"` — or `null` when the
+    doc joined cleanly (whether or not the slice is in scope; a `draft` slice with a perfectly
+    good doc still has `docReason: null`). Lets a reader tell "nothing bound yet" apart from
+    "bound but broken" without re-deriving the join.
+  - `inScope` — `true` only when the doc was found, usable, and `status` is
+    `ready-to-implement` or `implemented`.
+  - `invariants` — `{ id, cited, citations }[]`, empty for an out-of-scope slice. `citations` is
+    `{ file, line }[]`, relative to `testsDir`.
+
 ## `em glossary <files...>`
 
 Aggregates the terms declared across N independently-compiled `.em` models — element
@@ -870,6 +1065,49 @@ as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join 
 notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
 still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
 
+## `em slice mark-implemented <file> <slice-key> <pr-url>`
+
+The lifecycle flip a ratified slice's doc gets at merge (MIL-103) — see
+[reference/implement.md §6](../.claude/skills/event-modeling/reference/implement.md). Sets
+exactly two frontmatter fields on the doc resolved from `<slice-key>` via the same note-binding
+join `--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121 cross-binding included, so
+the file actually edited may be a *different* slice's doc when this slice's doc is only reached
+via a ratified `covers:` entry):
+
+```yaml
+status: implemented
+implementedIn: <pr-url>
+```
+
+Never touches `version:` — a bump here is an `em ledger` defect, since `version` moves only when
+a delta is ratified, not at merge — and never touches the doc body: the write is a surgical
+in-place edit of just the `status:`/`implementedIn:` lines (inserting `implementedIn:` fresh,
+right after `status:`, if the doc doesn't have one yet), not a parse-and-re-serialize, so every
+other line — key order, spacing, comments, the whole body — survives byte-for-byte.
+
+Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exits 0). Refuses,
+non-zero exit, leaving the file untouched, if the doc is already `status: implemented` with a
+**different** `implementedIn` — this command never silently overwrites provenance. There's no
+starting-status precondition otherwise (unlike `--slice-ready`, which gates *starting*
+implementation on `ready-to-implement`): this is supply-loop mechanics, not a ratification gate,
+so it flips from whatever status the doc is currently in.
+
+Scoped the same way `em export --slice`/`em validate --slice-ready` are: only a model error
+concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`) refuses —
+an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
+| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
+| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
+| `already marked implemented with a different URL` | The idempotent/refusal guard — see above |
+
+```bash
+em slice mark-implemented model.em request-payment https://github.com/org/repo/pull/42
+```
+
 ## `em changelog <file>`
 
 Renders the model's git history as a business-readable ledger — one section per commit
@@ -1079,15 +1317,58 @@ write, same as every other command. A missing state file, an unparsable `Last co
 bullet, a `--repo` that isn't a git repository, or an unknown revision in `Last conformance:`
 each exit 1 with a clear message.
 
+## `em contract`
+
+Prints the packaged implementation contract — `reference/implement.md` from the skill
+directory bundled with whatever `em` package is currently installed — to stdout, verbatim
+(MIL-129).
+
+`reference/implement.md` says up front that it applies to "any implementing agent, whether or
+not the session started from `/event-modeling`" — but until this command, the only way to
+reach it was `em skill install`/`em skill sync` copying it into
+`.claude/skills/event-modeling/`, a path only Claude Code discovers. `em contract` needs no
+vendored skill copy and no `.claude/` awareness at all: any agent that can run a shell gets
+the contract straight from the installed package.
+
+```bash
+em contract                 # print the contract to stdout
+em contract > CONTRACT.md   # or capture it to a file
+```
+
+No flags, no exit code other than 0 (or a failure reading the package's own bundled files,
+which would mean a broken installation). See
+[the bundled contract itself](../.claude/skills/event-modeling/reference/implement.md) for
+its content, and the "Working with an AI agent" section below for how `em skill install`/
+`em skill sync` point a repo's `AGENTS.md` at it.
+
+## `em mcp`
+
+Starts an MCP (Model Context Protocol) server over stdio, exposing the same structured JSON
+surfaces `--json`/`em export`/`em contract` print — as MCP tools instead of shell commands
+(MIL-21). A 3-line wrapper around the same server the `em-mcp` bin starts; the server itself
+lives outside the CLI core (`src/mcp/`) and never imports `cli.ts`.
+
+```bash
+em mcp   # or: em-mcp
+```
+
+See [mcp.md](mcp.md) for the full tool list, input/output shapes, and client configuration.
+
 ## `em skill install`
 
 Copies the bundled `event-modeling` Claude Code skill out of the npm package into
 `.claude/skills/event-modeling/` in the current directory. Prints a reminder to run
 `/event-modeling` in Claude Code afterwards. See [ai-workflow.md](ai-workflow.md).
 
+By default, also writes/updates the `AGENTS.md` agent-contract section (see "Working with an
+AI agent" below, MIL-129) — pass `--no-agents-md` to skip that. This happens even when the
+skill is already installed and `-f`/`--force` isn't given, so the skill copy itself is
+skipped: `install` always ensures the `AGENTS.md` section unless opted out.
+
 | Flag | Effect |
 |---|---|
 | `-f, --force` | Overwrite an existing installation |
+| `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
 
 ## `em skill sync [path]`
 
@@ -1112,6 +1393,13 @@ em skill sync ../other-repo   # sync a different repo's vendored copy
 
 Prints one `added:`/`modified:`/`removed:` line per changed file, or `up to date — ...` when
 the vendored copy already matches.
+
+By default, also writes/updates `[path]/AGENTS.md`'s agent-contract section (see "Working with
+an AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
+
+| Flag | Effect |
+|---|---|
+| `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
 
 ## `em skill check [path]`
 
@@ -1158,3 +1446,31 @@ package and every other command's own schema):
   `skill-check-content-drift` (one or more files differ by hash from the packaged skill —
   `driftedFiles` non-null, sorted).
 - `ok` — `true` iff `findings` is empty.
+
+## Working with an AI agent: the `AGENTS.md` managed section
+
+`em skill install` and `em skill sync` both write/update a marker-delimited section in the
+target repo's `AGENTS.md` by default (`--no-agents-md` to skip it) — the AGENTS.md-native
+counterpart to the `event-modeling` Claude Code skill, so any implementing agent, not only
+Claude Code, has a route to the implementation contract, the readiness gate, and the machine-
+readable read path (MIL-129, Slicewright story gap G5). The section points at:
+
+- **the contract**: `em contract`
+- **the gate**: `em validate <model>.em --slice-ready <slice-key> --json`
+- **the read path**: `em export <model>.em --slice <slice-key>` (and `em export <model>.em`
+  for the whole model)
+- **the MCP alternative**: `em-mcp` — the contract/gate/read-path above, plus full
+  validate/export, as MCP tools instead of shell commands (see [mcp.md](mcp.md))
+
+The markers are `<!-- GENERATED:agent-contract:start -->` / `<!-- GENERATED:agent-contract:end
+-->`, matching the `<!-- GENERATED:<name>:start/end -->` convention `em slice index` already
+uses for a model README's Slices table (`src/util/markers.ts`). Behavior:
+
+- **No `AGENTS.md`** — created with just the managed section.
+- **`AGENTS.md` exists with the markers** — only the region between them is rewritten; content
+  outside the markers (and everywhere else in the file) is untouched.
+- **`AGENTS.md` exists without the markers** — the section is appended, rather than refused;
+  unlike `em slice index`'s README gate, there's no "scaffold it first" step to point at.
+
+Every case is idempotent: a repeat `em skill sync` with nothing else changed leaves `AGENTS.md`
+byte-identical.
