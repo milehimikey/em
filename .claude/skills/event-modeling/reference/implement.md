@@ -117,8 +117,12 @@ implementedIn: <PR or commit URL>
 This is supply-loop mechanics, not ratification — it's the one edit an implementing agent makes
 to a slice doc, and it's why `em ledger` deliberately excludes these two fields from what
 counts as content. **Do not bump `version:`** — versions bump only when a delta is ratified;
-a bump here is a ledger defect. In bridge-equipped projects,
-`npx -p em-sdd-bridge em-sdd-mark-implemented <slice-key> <pr-url>` does the flip for you.
+a bump here is a ledger defect.
+
+`em slice mark-implemented <model>.em <slice-key> <pr-url>` does the flip for you (MIL-103) —
+resolves the doc via the same note-binding join `--slice-ready` uses, is idempotent on a re-run
+with the same URL, and refuses (never silently overwrites) if the doc is already `implemented`
+with a different URL. Prefer it over hand-editing the doc's frontmatter.
 
 Then, if the project keeps a model README (from `templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and

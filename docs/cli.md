@@ -980,6 +980,49 @@ as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join 
 notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
 still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
 
+## `em slice mark-implemented <file> <slice-key> <pr-url>`
+
+The lifecycle flip a ratified slice's doc gets at merge (MIL-103) — see
+[reference/implement.md §6](../.claude/skills/event-modeling/reference/implement.md). Sets
+exactly two frontmatter fields on the doc resolved from `<slice-key>` via the same note-binding
+join `--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121 cross-binding included, so
+the file actually edited may be a *different* slice's doc when this slice's doc is only reached
+via a ratified `covers:` entry):
+
+```yaml
+status: implemented
+implementedIn: <pr-url>
+```
+
+Never touches `version:` — a bump here is an `em ledger` defect, since `version` moves only when
+a delta is ratified, not at merge — and never touches the doc body: the write is a surgical
+in-place edit of just the `status:`/`implementedIn:` lines (inserting `implementedIn:` fresh,
+right after `status:`, if the doc doesn't have one yet), not a parse-and-re-serialize, so every
+other line — key order, spacing, comments, the whole body — survives byte-for-byte.
+
+Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exits 0). Refuses,
+non-zero exit, leaving the file untouched, if the doc is already `status: implemented` with a
+**different** `implementedIn` — this command never silently overwrites provenance. There's no
+starting-status precondition otherwise (unlike `--slice-ready`, which gates *starting*
+implementation on `ready-to-implement`): this is supply-loop mechanics, not a ratification gate,
+so it flips from whatever status the doc is currently in.
+
+Scoped the same way `em export --slice`/`em validate --slice-ready` are: only a model error
+concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`) refuses —
+an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
+| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
+| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
+| `already marked implemented with a different URL` | The idempotent/refusal guard — see above |
+
+```bash
+em slice mark-implemented model.em request-payment https://github.com/org/repo/pull/42
+```
+
 ## `em changelog <file>`
 
 Renders the model's git history as a business-readable ledger — one section per commit

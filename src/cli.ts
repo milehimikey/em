@@ -49,6 +49,7 @@ import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
+import { runMarkImplemented } from "./cli/markImplemented.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
@@ -487,6 +488,46 @@ slice
     } else {
       console.log(`ok — ${result.readmePath}'s Slices table is already up to date`);
     }
+  });
+
+slice
+  .command("mark-implemented")
+  .description(
+    "flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the " +
+      "one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the " +
+      "em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). " +
+      "Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` " +
+      "or the doc body",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .argument("<pr-url>", "merged PR (or commit) URL")
+  .action((file: string, sliceKey: string, prUrl: string) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    // Scoped the same way `em export --slice`/`em validate --slice-ready` are: only an error
+    // concerning THIS slice (bare key, or an element ref prefixed `<key>/`) refuses — an
+    // unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block marking
+    // this one implemented.
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice mark-implemented: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const result = runMarkImplemented(model, refs, dirname(file), sliceKey, prUrl);
+    if (!result.ok) {
+      console.error(`em slice mark-implemented: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(
+      result.changed
+        ? `marked implemented: ${result.path} (implementedIn: ${prUrl})`
+        : `already implemented (no-op): ${result.path}`,
+    );
   });
 
 program

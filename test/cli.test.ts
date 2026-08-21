@@ -1879,6 +1879,88 @@ describe("em slice index (CLI, MIL-98)", () => {
   });
 });
 
+describe("em slice mark-implemented (CLI, MIL-103)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/markImplemented.test.ts;
+  // this block is exit-code/process-level only, same split as `em slice index`.
+  let dir: string;
+  const READY_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n# Slice: Ready Slice\n\nbody\n";
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-mark-implemented-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "ready-slice.md"), READY_DOC);
+    writeFileSync(
+      join(dir, "ready.em"),
+      'slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
+    // Genuine error in an UNRELATED slice — regression coverage that marking one slice
+    // implemented doesn't gate on breakage elsewhere in a large, still-WIP model (same "scoped
+    // to this slice" call `em export --slice`/`em validate --slice-ready` already made).
+    writeFileSync(
+      join(dir, "slices", "good.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "scoped.em"),
+      'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("flips status/implementedIn and confirms on stdout", () => {
+    const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/42"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("marked implemented: slices/ready-slice.md");
+    expect(r.stdout).toContain("https://github.com/org/repo/pull/42");
+    const content = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+    expect(content).toContain("status: implemented");
+    expect(content).toContain("implementedIn: https://github.com/org/repo/pull/42");
+    expect(content).toContain("version: 1"); // never bumped
+  });
+
+  it("is idempotent: re-running with the same URL is a no-op, exit 0", () => {
+    const before = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+    const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/42"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already implemented (no-op)");
+    expect(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses a different URL once implemented, exit non-zero, file untouched", () => {
+    const before = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+    const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/999"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("already marked implemented with a different URL");
+    expect(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("errors clearly for a key that names no slice in the model", () => {
+    const r = em(["slice", "mark-implemented", "ready.em", "no-such-key", "https://x/1"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
+  });
+
+  it("errors clearly when no doc is bound via note", () => {
+    const r = em(["slice", "mark-implemented", "unbound.em", "unbound", "https://x/1"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("stays scoped to the named slice: a genuine error in an unrelated slice doesn't block it", () => {
+    const r = em(["slice", "mark-implemented", "scoped.em", "good", "https://github.com/org/repo/pull/1"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("marked implemented: slices/good.md");
+  });
+
+  it("refuses on an error concerning the named slice itself", () => {
+    const r = em(["slice", "mark-implemented", "scoped.em", "bad", "https://x/1"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('slice "bad" has errors');
+  });
+});
+
 describe("em slice new (CLI, MIL-97 item 3)", () => {
   let cwd: string;
 
