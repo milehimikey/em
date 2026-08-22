@@ -3,7 +3,7 @@
 | Command | What it does |
 |---|---|
 | `em init [file]` | Scaffold a starter model (default `model.em`) |
-| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `live.html`, `README.md`, `.event-modeling.md` |
+| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md` |
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
@@ -46,7 +46,6 @@ a single `-`); the display name you passed is used as-is for titles/prose. Creat
 | File | Content |
 |---|---|
 | `<slug>/<slug>.em` | The same starter model `em init` writes, titled `model "<name>"` |
-| `<slug>/live.html` | `file://` auto-refresh viewer, verbatim (see [ai-workflow.md](ai-workflow.md)) |
 | `<slug>/README.md` | Overview + slice index, `{{Model Name}}`/`{{model-name}}` filled in; the `GENERATED:slices` table stays empty (run `em slice index` once the model has slices) |
 | `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
 
@@ -59,7 +58,7 @@ command rather than hand-copying its `templates/*` files.
 | `-f, --force` | Overwrite the directory's contents if it already exists |
 
 ```bash
-em scaffold "Order Fulfillment"   # writes order-fulfillment/{order-fulfillment.em,live.html,README.md,.event-modeling.md}
+em scaffold "Order Fulfillment"   # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md}
 ```
 
 Refuses if `<slug>/` already exists (`refusing to overwrite <slug>/ (use --force)`), matching
@@ -143,7 +142,10 @@ With `--serve`, `em` starts a loopback HTTP server on the output directory and p
 like `http://localhost:5173/?svg=model.svg`. After each successful re-render it pushes a
 reload over Server-Sent Events, so the browser updates the moment you save, with no polling
 and no flicker. The server serves the directory the SVG is written to, which is what keeps
-`note` links inside the SVG clickable.
+`note` links inside the SVG clickable. The viewer navigates like a map — drag to pan,
+scroll/pinch to zoom, **Fit** to reset — and never goes blank: a save that fails to render
+(or a load that breaks mid-transfer) keeps the last good diagram on screen behind an error
+banner, and the viewer retries on its own until a render succeeds.
 
 The served viewer's header also carries **Review mode** — a slice-by-slice storyboard
 walkthrough for stakeholder sessions: Prev/Next (or the arrow keys) steps through slices in

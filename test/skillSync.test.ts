@@ -15,7 +15,7 @@ function makePackagedDir(): string {
   mkdirSync(join(dir, "reference"));
   writeFileSync(join(dir, "reference", "em-dsl.md"), "dsl reference");
   mkdirSync(join(dir, "templates"));
-  writeFileSync(join(dir, "templates", "live.html"), "<html></html>");
+  writeFileSync(join(dir, "templates", "viewer-notes.html"), "<html></html>");
   return dir;
 }
 
@@ -27,7 +27,11 @@ describe("planSkillSync", () => {
       const plan = planSkillSync(packaged, vendored);
       expect(plan.unchangedCount).toBe(0);
       expect(plan.changes.map((c) => c.kind)).toEqual(["added", "added", "added"]);
-      expect(plan.changes.map((c) => c.relPath).sort()).toEqual(["SKILL.md", "reference/em-dsl.md", "templates/live.html"]);
+      expect(plan.changes.map((c) => c.relPath).sort()).toEqual([
+        "SKILL.md",
+        "reference/em-dsl.md",
+        "templates/viewer-notes.html",
+      ]);
     } finally {
       rmSync(packaged, { recursive: true, force: true });
     }

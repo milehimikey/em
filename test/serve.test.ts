@@ -46,25 +46,65 @@ describe("live server", () => {
     expect(body).toContain('id="nextSlice"');
     expect(body).toContain("ArrowLeft");
     expect(body).toContain("ArrowRight");
+    expect(body).toContain("Escape");
+    expect(body).toContain("Home");
+    expect(body).toContain("End");
     // reads what sliceOverlay.ts embeds in the SVG
     expect(body).toContain('getElementById("em-slices")');
     expect(body).toContain("data-slice");
-    // state lives outside reload()'s closure — see the file's header comment —
-    // so an SSE-triggered reload re-applies it instead of resetting to slice 0
-    expect(body).toContain("onSvgLoaded()");
+    expect(body).toContain("em-slice-dim");
   });
 
-  it("attaches the reload buffer <object> to the DOM before setting data", async () => {
-    // Regression for MIL-136 (GitHub #96): a detached <object> never starts
-    // fetching its data resource, so its load event never fires and the viewer
-    // stays blank forever. The buffer must be appended to the stage first.
+  it("sanitizes ?svg= and inlines the SVG via validate-before-swap (no <object>)", async () => {
+    // Successor to the MIL-136 <object> regression test: the viewer now inlines
+    // the SVG (fetch → DOMParser → validate → swap), so a truncated or malformed
+    // file is rejected before it can touch the DOM and blank the screen.
     const res = await fetch(`${base}/`);
     const body = await res.text();
-    const attach = body.indexOf("stage.appendChild(next)");
-    const setData = body.indexOf('next.setAttribute("data"');
-    expect(attach).toBeGreaterThan(-1);
-    expect(setData).toBeGreaterThan(-1);
-    expect(attach).toBeLessThan(setData);
+    // MIL-140: the ?svg= param must survive only as a bare *.svg filename —
+    // no path separator, no drive/scheme colon. Spaces/unicode stay legal:
+    // `em watch` prints whatever the output file is called.
+    expect(body).toContain("[^/\\\\:]+\\.svg$");
+    expect(body).not.toContain("<object");
+    expect(body).toContain("DOMParser");
+    expect(body).toContain("parsererror");
+    expect(body).toContain("importNode");
+  });
+
+  it("serves the error banner and retry-with-backoff path", async () => {
+    const res = await fetch(`${base}/`);
+    const body = await res.text();
+    expect(body).toContain('id="errorBanner"');
+    expect(body).toContain("retrying");
+    // failed-render pushes land in the same banner (see notifyError below)
+    expect(body).toContain('addEventListener("renderError"');
+  });
+
+  it("embeds syntactically valid viewer JS (template-literal escaping)", async () => {
+    // The viewer script lives inside a TS template literal; a missed escape
+    // level compiles fine and ships a page that throws on load. Extract the
+    // script and parse it for real.
+    const res = await fetch(`${base}/`);
+    const body = await res.text();
+    const script = /<script>([\s\S]*)<\/script>/.exec(body);
+    expect(script).not.toBeNull();
+    // Unresolved template-literal syntax leaking into the page is the classic
+    // failure — it must never appear in the emitted HTML.
+    expect(body).not.toContain("${");
+    expect(() => new Function(script![1])).not.toThrow();
+  });
+
+  it("serves the pan/zoom camera surface", async () => {
+    const res = await fetch(`${base}/`);
+    const body = await res.text();
+    // the camera is the svg's viewBox, driven directly
+    expect(body).toContain('setAttribute("viewBox"');
+    expect(body).toContain('addEventListener("wheel"');
+    expect(body).toContain('addEventListener("pointerdown"');
+    expect(body).toContain("setPointerCapture");
+    expect(body).toContain('id="fitBtn"');
+    // flyTo animation for slice navigation / fit / double-click
+    expect(body).toContain("requestAnimationFrame");
   });
 
   it("serves a model file with no-store caching and the right type", async () => {
@@ -97,6 +137,15 @@ describe("live server", () => {
     expect(res.status).toBe(403);
   });
 
+  it("400s a malformed percent-escape instead of crashing the process", async () => {
+    // decodeURIComponent throws a URIError on %zz; uncaught, it would take down
+    // the watcher and the live view mid-session.
+    const res = await fetch(`${base}/%zz`);
+    expect(res.status).toBe(400);
+    // The server must still be alive afterwards.
+    expect((await fetch(`${base}/model.svg`)).status).toBe(200);
+  });
+
   it("pushes a reload over SSE when notify() is called", async () => {
     const res = await fetch(`${base}/__events`, {
       headers: { accept: "text/event-stream" },
@@ -117,5 +166,27 @@ describe("live server", () => {
     }
     await reader.cancel();
     expect(buf).toContain("data: reload");
+  });
+
+  it("pushes a one-line renderError over SSE when notifyError() is called", async () => {
+    const res = await fetch(`${base}/__events`, {
+      headers: { accept: "text/event-stream" },
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    await reader.read(); // drain ": connected"
+    // Multi-line diagnostics must be flattened — a newline would break SSE framing.
+    server.notifyError("error :3 event \"X\" is unreadable\nsecond line");
+
+    let buf = "";
+    for (let i = 0; i < 5 && !buf.includes("renderError"); i++) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+    expect(buf).toContain("event: renderError");
+    expect(buf).toContain('data: error :3 event "X" is unreadable · second line');
   });
 });

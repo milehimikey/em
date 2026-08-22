@@ -10,8 +10,9 @@ em watch {{model-name}}.em -o {{model-name}}.svg --serve   # re-render + instant
 # then open the URL it prints (http://localhost:5173/?svg={{model-name}}.svg) and share the screen
 ```
 
-No server? Run `em watch {{model-name}}.em -o {{model-name}}.svg` and open
-`live.html?svg={{model-name}}.svg` in a browser (polls ~2s; share the screen).
+Pan/zoom to navigate the diagram (drag, scroll; **Fit** resets), and click **Review mode** in
+the header for a slice-by-slice walkthrough. If a save fails to render, the viewer keeps the
+last good diagram and shows an error banner until the next successful load.
 
 Static render: `em render {{model-name}}.em -o {{model-name}}.svg`
 

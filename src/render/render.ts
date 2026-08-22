@@ -12,7 +12,7 @@
 // formats aren't worth a bespoke in-process path. No system Graphviz is required.
 
 import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Graphviz } from "@hpcc-js/wasm-graphviz";
 import { Resvg } from "@resvg/resvg-js";
@@ -77,33 +77,38 @@ export async function writeRendered(
   outPath: string,
   format = formatFromPath(outPath),
 ): Promise<void> {
-  if (format === "svg") {
-    await writeFile(outPath, svg, "utf8");
-    return;
+  // Write to a tmp sibling, then rename over outPath: rename within one directory
+  // (same filesystem) is atomic, so a concurrent reader — the live viewer fetching
+  // mid-render, an open editor preview — never sees a truncated file. On any
+  // failure the tmp is unlinked best-effort so a crashed render leaves no litter.
+  // The pid in the tmp name keeps concurrent em processes targeting the same
+  // output (an `em watch --serve` plus a one-off `em render`) from promoting
+  // each other's half-written bytes; within one process, watch already
+  // serializes builds.
+  const tmp = `${outPath}.${process.pid}.tmp`;
+  try {
+    if (format === "svg") {
+      await writeFile(tmp, svg, "utf8");
+    } else if (format === "png") {
+      await writeFile(tmp, new Resvg(svg).render().asPng());
+    } else if (format === "pdf") {
+      await writeFile(tmp, await svgToPdfBuffer(svg));
+    } else if (await hasBin(RSVG_BIN)) {
+      // Anything else (ps, eps, …) isn't built in; a system rsvg-convert writes the
+      // tmp itself (--format is explicit, so the .tmp extension doesn't mislead it)
+      // and the rename below only happens after a clean exit.
+      await rsvgConvert(svg, tmp, format);
+    } else {
+      throw new Error(
+        `format '${format}' is not built in (svg, png, and pdf are). Install librsvg ` +
+          `(provides '${RSVG_BIN}') to render '${format}', or use -o file.svg / -o file.png / -o file.pdf.`,
+      );
+    }
+    await rename(tmp, outPath);
+  } catch (e) {
+    await unlink(tmp).catch(() => {});
+    throw e;
   }
-
-  if (format === "png") {
-    const png = new Resvg(svg).render().asPng();
-    await writeFile(outPath, png);
-    return;
-  }
-
-  if (format === "pdf") {
-    const pdf = await svgToPdfBuffer(svg);
-    await writeFile(outPath, pdf);
-    return;
-  }
-
-  // Anything else (ps, eps, …) isn't built in; use a system rsvg-convert if present.
-  if (await hasBin(RSVG_BIN)) {
-    await rsvgConvert(svg, outPath, format);
-    return;
-  }
-
-  throw new Error(
-    `format '${format}' is not built in (svg, png, and pdf are). Install librsvg ` +
-      `(provides '${RSVG_BIN}') to render '${format}', or use -o file.svg / -o file.png / -o file.pdf.`,
-  );
 }
 
 /**

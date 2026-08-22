@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect } from "vitest";
-import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { compile } from "../src/pipeline.js";
@@ -161,6 +161,23 @@ slice "Ship Order" {
       // on directly — same smoke-test depth as the PNG magic-number check above).
       expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
       expect(pdf.toString("latin1")).toContain("%%EOF");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // MIL-141: writeRendered goes through tmp-then-rename so the live viewer never
+  // fetches a half-written file — a clean render must leave only the real outputs.
+  it("writes atomically: a successful render leaves no *.tmp sibling", async () => {
+    const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-atomic-"));
+    try {
+      await renderDot(dot, model, grid, join(dir, "out.svg"), "svg", dirname(EXAMPLE));
+      await renderDot(dot, model, grid, join(dir, "out.png"), "png", dirname(EXAMPLE));
+      await renderDot(dot, model, grid, join(dir, "out.pdf"), "pdf", dirname(EXAMPLE));
+      expect(readdirSync(dir).sort()).toEqual(["out.pdf", "out.png", "out.svg"]);
+      // renamed file is the complete render, not a placeholder
+      expect(readFileSync(join(dir, "out.svg"), "utf8").trim().endsWith("</svg>")).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

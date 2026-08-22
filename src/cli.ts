@@ -13,7 +13,7 @@ import { ParseError } from "./parser/parser.js";
 import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from "./render/render.js";
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
 import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
-import { watchFile } from "./render/watch.js";
+import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { buildExport, buildSliceExport } from "./emit/json.js";
@@ -70,7 +70,7 @@ import {
   isValidDateString,
   PatchResult,
 } from "./cli/stateFile.js";
-import { STARTER_EM, LIVE_HTML_TEMPLATE, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
+import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
 
 const program = new Command();
@@ -104,7 +104,7 @@ program
 program
   .command("scaffold")
   .description(
-    "scaffold a full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md " +
+    "scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md " +
       "(see docs/cli.md — for just a starter .em, use `em init`)",
   )
   .argument("<name>", "model display name — kebab-cased for the directory and file names, used as-is for titles/prose")
@@ -124,7 +124,6 @@ program
     await mkdir(dirName, { recursive: true });
     const today = new Date().toISOString().slice(0, 10);
     writeFileSync(join(dirName, `${dirName}.em`), starterEmFor(name));
-    writeFileSync(join(dirName, "live.html"), LIVE_HTML_TEMPLATE);
     writeFileSync(join(dirName, "README.md"), scaffoldReadme(name, dirName));
     writeFileSync(join(dirName, STATE_FILE_NAME), scaffoldStateFile(name, dirName, today));
     console.log(`scaffolded ${dirName}/`);
@@ -705,16 +704,27 @@ program
 
     let server: LiveServer | undefined;
 
-    const build = async () => {
+    // serializeBuilds: chokidar can fire several events for one save (and an
+    // editor's write can land while a slow png/pdf render is still in flight) —
+    // overlapping builds would race each other writing the same output file.
+    const build = serializeBuilds(async () => {
       const started = Date.now();
       try {
-        const { dot, model, grid, diagnostics } = compileFile(file, {
-          keepEmptyLanes: opts.keepEmptyLanes,
-        });
+        const { dot, model, grid, diagnostics } = compileFile(
+          file,
+          { keepEmptyLanes: opts.keepEmptyLanes },
+          // A bad save must not kill the watcher: the error is reported below
+          // and pushed to the live view's banner instead.
+          { survive: true },
+        );
         printDiagnostics(diagnostics);
         warnMissingNotes(file, model);
         if (hasErrors(diagnostics)) {
           console.error("skipped render (errors above)");
+          // The shared screen must say WHY it's stale, not silently show an
+          // outdated model — push the first error into the viewer's banner.
+          const first = diagnostics.find((d) => d.severity === "error");
+          server?.notifyError(first ? formatDiagnostic(first).trim() : "model has errors — see terminal");
           return;
         }
         await renderDot(dot, model, grid, out, fmt, dirname(file));
@@ -722,8 +732,9 @@ program
         server?.notify();
       } catch (e) {
         reportError(e);
+        server?.notifyError(e instanceof Error ? e.message : String(e));
       }
-    };
+    });
 
     await build();
 
@@ -732,8 +743,15 @@ program
         // Serve the directory the SVG is written to — that's what the browser
         // fetches, and note "..." links inside the SVG resolve relative to it.
         server = await startLiveServer({ dir: dirname(resolve(out)), port: opts.port });
-        console.log(`→ live view: ${server.url}/?svg=${encodeURIComponent(basename(out))}`);
-        console.log("  open it in a browser and share your screen");
+        // The viewer inlines SVG only — for png/pdf watches there's nothing
+        // live to embed, so don't print a ?svg= URL that can't work.
+        if (fmt === "svg") {
+          console.log(`→ live view: ${server.url}/?svg=${encodeURIComponent(basename(out))}`);
+          console.log("  open it in a browser and share your screen");
+        } else {
+          console.log(`→ serving ${dirname(resolve(out))} at ${server.url}`);
+          console.log("  (the live viewer needs an .svg output — add -o <name>.svg to use it)");
+        }
       } catch (e) {
         reportError(e);
       }
@@ -744,6 +762,7 @@ program
     // the .em file. The glob still fires for docs authored after watch starts.
     watchFile([file, join(dirname(file), "slices", "*.md")], build);
     console.log(`watching ${file} … (ctrl-c to stop)`);
+    if (!opts.serve) console.log("tip: add --serve for the live browser view");
   });
 
 program
@@ -1164,11 +1183,19 @@ if (isMainModule(import.meta.url)) {
 
 // ---- helpers ----
 
-function compileFile(file: string, opts: CompileOptions = {}) {
+function compileFile(
+  file: string,
+  opts: CompileOptions = {},
+  // `em watch` must OUTLIVE a bad save — a mid-edit syntax error killing the
+  // watcher (and the --serve live view with it) is a session-ending failure.
+  // One-shot commands keep the exit-with-message behavior.
+  { survive = false } = {},
+) {
   let source: string;
   try {
     source = readFileSync(file, "utf8");
   } catch {
+    if (survive) throw new Error(`cannot read ${file}`);
     console.error(`cannot read ${file}`);
     process.exit(1);
   }
@@ -1176,6 +1203,7 @@ function compileFile(file: string, opts: CompileOptions = {}) {
     return { ...compile(source, opts), source };
   } catch (e) {
     if (e instanceof ParseError) {
+      if (survive) throw new Error(`parse error in ${file} ${e.message}`);
       console.error(`parse error in ${file} ${e.message}`);
       process.exit(1);
     }
