@@ -201,7 +201,7 @@ inside** the section instead, as display text — not a frontmatter key, not par
 **v1 → v2, ratified 2026-08-12** — one-line summary of the ratified change.
 
 ### Added
-#### Requirement: {{title}} ({{stable ID, e.g. an INV-n from ## Invariants}})
+#### Requirement: {{title}} ({{stable ID, e.g. an INV-<MNEMONIC>-n from ## Invariants}})
 {{requirement text}}
 ##### Scenario: {{name}}
 - **GIVEN** {{...}} **WHEN** {{...}} **THEN** {{...}}
@@ -216,6 +216,13 @@ inside** the section instead, as display text — not a frontmatter key, not par
 ### Renamed
 - {{old title}} ({{old ID}}) → {{new title}} ({{new ID}})
 ```
+
+Stable IDs follow `INV-<MNEMONIC>-<n>` — a short (2-4 uppercase letters/digits) abbreviation of
+the slice's key, unique among the model's slices, then a small integer, optionally letter-suffixed
+for a closely-related sub-invariant (`INV-CHK-3a`) — see the Invariants section guidance in
+[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md). Per-slice prefixes
+make IDs globally unique across the model, so an `em coverage` citation is exact instead of
+ambiguous across slices.
 
 **Four `###` subsections, in that fixed order, Title Case singular words** — `Added`, `Modified`,
 `Removed`, `Renamed` — not OpenSpec's shouting-case `ADDED Requirements` grouping. This is the

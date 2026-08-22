@@ -25,7 +25,7 @@ A `Customer`, acting on the **Checkout Screen**.
 
 | Field | Type | Required | Rules / Validation |
 |-------|------|----------|--------------------|
-| orderId | UUID | yes | Must reference an order that exists and hasn't already had a payment requested for it (INV-1). |
+| orderId | UUID | yes | Must reference an order that exists and hasn't already had a payment requested for it (INV-CHK-1). |
 | amount | Money | yes | Must equal that order's `total` — this command doesn't accept partial payment. |
 
 ## Trigger
@@ -53,7 +53,7 @@ looks like.
 
 ## Invariants / Business Rules
 
-- **INV-1:** An order may have at most one `Payment Requested` outstanding at a time —
+- **INV-CHK-1:** An order may have at most one `Payment Requested` outstanding at a time —
   submitting payment twice for the same order before it's captured is rejected, not
   recorded as a second request.
 
@@ -62,14 +62,14 @@ looks like.
 - **Happy path** — Given an order with no outstanding payment request, When `Submit
   Payment` is issued for its full total, Then `Payment Requested` is recorded and the
   payment becomes visible to both **Manager Review** and the **Capture Payment** automation.
-- **Rejected (INV-1)** — Given an order that already has a `Payment Requested` outstanding,
+- **Rejected (INV-CHK-1)** — Given an order that already has a `Payment Requested` outstanding,
   When `Submit Payment` is issued for it again, Then rejected; no second event.
 - **Rejected** — Given a `Submit Payment` amount that doesn't match the order's total, When
   it's issued, Then rejected with an amount-mismatch error; no event.
 
 ## Alternate & Error Flows
 
-- Idempotency: covered by INV-1 — a resubmit while a request is outstanding is rejected
+- Idempotency: covered by INV-CHK-1 — a resubmit while a request is outstanding is rejected
   outright rather than silently deduplicated, so the customer sees the state clearly instead
   of wondering if their second click did anything.
 
