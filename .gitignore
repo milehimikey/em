@@ -4,9 +4,14 @@ dist/
 # rendered output
 *.svg
 *.png
-# keep canonical reference renders for the examples (SVG is the default format)
+# keep canonical reference renders for the examples (SVG is the default format) — the flat
+# example files, and examples/order-fulfillment/ (a full project directory, not a bare
+# model file), including its own slices/*.svg per-slice renders.
 !examples/*.svg
 !examples/*.png
+!examples/order-fulfillment/*.svg
+!examples/order-fulfillment/*.png
+!examples/order-fulfillment/slices/*.svg
 
 # em catalog's default --out directory (index.html + per-slice pages aren't
 # covered by the *.svg/*.png rules above, since it's a whole site, not a

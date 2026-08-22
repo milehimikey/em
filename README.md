@@ -7,7 +7,9 @@ AI to write and edit as it is for a person, and `em validate` keeps either one h
 
 ![An order-fulfillment event model rendered by em](https://raw.githubusercontent.com/milehimikey/em/main/examples/order-fulfillment.svg)
 
-The source for that diagram is [about 70 lines of text](examples/order-fulfillment.em).
+The source for that diagram is [about 70 lines of text](examples/order-fulfillment.em) — or
+see it as a [full project](examples/order-fulfillment/), slice docs and all, for a guided
+tour of the rest of the toolchain.
 
 ## Install
 

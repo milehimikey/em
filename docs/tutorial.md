@@ -14,7 +14,10 @@ captures the payment automatically, and a receipt appears. It exercises three of
 [four patterns](patterns.md) — State Change, State View, and Automation. (The fourth,
 Translation, works the same way as Automation; patterns.md covers it.)
 
-The finished source lives at [examples/order-fulfillment.em](../examples/order-fulfillment.em).
+The finished source lives at [examples/order-fulfillment.em](../examples/order-fulfillment.em) —
+or, for the full project this tutorial's model lives inside once real work starts on it
+(slice docs, resumable state, a generated README), see
+[examples/order-fulfillment/](../examples/order-fulfillment/).
 
 ## 1. Setup
 
@@ -43,8 +46,9 @@ em render order-fulfillment.em    # -> order-fulfillment.svg
 
 Open the SVG in a web browser. It's an empty grid of swimlanes — a stage with no story yet.
 
-(If you'd rather explore a finished model than type one, `em init` scaffolds the structure
-this tutorial builds. Building it by hand is the point here.)
+(If you'd rather explore a finished model than type one, see
+[examples/order-fulfillment/](../examples/order-fulfillment/) — the full project this same
+model grows into. Building it by hand here first is still the point of this tutorial.)
 
 ## 2. Keep a live view open
 
@@ -397,6 +401,11 @@ genuinely missing, that same warning is how you find out before an engineer does
 
 ## Where to go next
 
+- [examples/order-fulfillment/](../examples/order-fulfillment/) — this same model as a
+  **full project**: slice docs (some ready-to-implement, some honestly not — see its own
+  README for a guided tour), a resumable state file with a real decisions log, and the
+  generated README slice index — everything `em scaffold` and the rest of the workflow
+  commands produce, worked through end to end.
 - [patterns.md](patterns.md) — the Translation pattern this tutorial skipped, and modeling
   headless/API systems with a caller persona instead of screens.
 - [timeline.md](timeline.md) — the Two Laws of the Timeline, and `view … again` for read

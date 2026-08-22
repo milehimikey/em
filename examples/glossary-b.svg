@@ -5,7 +5,7 @@
  -->
 <!-- Title: EventModel Pages: 1 -->
 <svg width="408pt" height="320pt"
- viewBox="0.00 0.00 408.00 320.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs>
+ viewBox="0.00 0.00 408.00 320.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs><metadata id="em-slices">{"slices":[{"index":0,"name":"Show Invoice","x0":90.75,"x1":234.75},{"index":1,"name":"Confirm Invoice","x0":259.75,"x1":403.75}],"rowLabels":{"x0":-4.25,"x1":75.75}}</metadata><style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 315.84)">
 <title>EventModel</title>
 <polygon fill="white" stroke="none" points="-4,4 -4,-315.84 403.75,-315.84 403.75,4 -4,4"/>
@@ -44,7 +44,7 @@
 <!-- __ph_2_0 -->
 <!-- __row_2&#45;&gt;__ph_2_0 -->
 <!-- invoice_issued -->
-<g id="node11" class="node">
+<g data-slice="0" id="node11" class="node">
 <title>invoice_issued</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M218.75,-44.64C218.75,-44.64 98.75,-44.64 98.75,-44.64 92.75,-44.64 86.75,-38.64 86.75,-32.64 86.75,-32.64 86.75,-12 86.75,-12 86.75,-6 92.75,0 98.75,0 98.75,0 218.75,0 218.75,0 224.75,0 230.75,-6 230.75,-12 230.75,-12 230.75,-32.64 230.75,-32.64 230.75,-38.64 224.75,-44.64 218.75,-44.64"/>
 <text xml:space="preserve" text-anchor="middle" x="158.75" y="-19.02" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#3f2a06">Invoice Issued</text>
@@ -59,7 +59,7 @@
 <!-- __hdr_0&#45;&gt;__hdr_1 -->
 <!-- __hdr_0&#45;&gt;__ph_1_0 -->
 <!-- invoice_review -->
-<g id="node8" class="node">
+<g data-slice="1" id="node8" class="node">
 <title>invoice_review</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="399.75,-205.92 255.75,-205.92 255.75,-161.28 399.75,-161.28 399.75,-205.92"/>
 <text xml:space="preserve" text-anchor="middle" x="327.75" y="-180.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Invoice Review</text>
@@ -68,7 +68,7 @@
 <!-- __ph_1_0&#45;&gt;invoice_review -->
 <!-- __ph_1_0&#45;&gt;__ph_2_0 -->
 <!-- order_confirmed -->
-<g id="node10" class="node">
+<g data-slice="1" id="node10" class="node">
 <title>order_confirmed</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M387.75,-120.96C387.75,-120.96 267.75,-120.96 267.75,-120.96 261.75,-120.96 255.75,-114.96 255.75,-108.96 255.75,-108.96 255.75,-96.96 255.75,-96.96 255.75,-90.96 261.75,-84.96 267.75,-84.96 267.75,-84.96 387.75,-84.96 387.75,-84.96 393.75,-84.96 399.75,-90.96 399.75,-96.96 399.75,-96.96 399.75,-108.96 399.75,-108.96 399.75,-114.96 393.75,-120.96 387.75,-120.96"/>
 <text xml:space="preserve" text-anchor="start" x="283.74" y="-107.06" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#173f25">Order Confirmed</text>
