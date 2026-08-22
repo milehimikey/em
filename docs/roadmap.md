@@ -58,16 +58,18 @@ status `ready-to-implement`, open questions all checked), typed `## Delta` opera
 tags parsing without quotes, and an agent guide
 ([reference/implement.md](../.claude/skills/event-modeling/reference/implement.md)) shipped
 inside the bundled skill so implementing agents follow one contract from ratified slice to
-merged PR. [workflow.md](workflow.md) is the resulting picture.
+merged PR. [workflow.md](workflow.md) is the resulting picture. Most recently (MIL-26): every
+no-fields box in a swimlane row now shares the row's tallest natural height instead of each
+sizing independently (a wrapped 3-line label no longer leaves its short row-mates looking
+short and misaligned); note/issue/divergence corner markers gained a white halo so they read
+clearly against any element-kind fill, not just the ones with enough contrast by luck; and
+PDF is now composed in-process with pdfkit + svg-to-pdfkit — no system `rsvg-convert`/librsvg
+needed for PDF anymore (see [dependencies.md](dependencies.md)).
 
 **Modeling and rendering**
 
 - **UI-field tracing** — extend fields-completeness validation (shipped for view←event and
   event←command) to trace `ui` fields back to the read model they display.
-- **Uniform-per-lane box height** — optional rigid alignment when field counts differ a lot
-  within a lane (the current default is Graphviz center alignment).
-- **Theming / palette options** and additional export niceties.
-- **Pure-JS PDF** so PDF needs no system dependency either.
 
 **The conformance loop**
 

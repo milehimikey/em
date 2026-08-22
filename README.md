@@ -15,9 +15,9 @@ The source for that diagram is [about 70 lines of text](examples/order-fulfillme
 npm install -g @milehimikey/em
 ```
 
-Requires Node ≥ 18. SVG and PNG rendering are fully self-contained (Graphviz runs as
-bundled WebAssembly); nothing else to install. PDF is optional — see
-[docs/dependencies.md](docs/dependencies.md).
+Requires Node ≥ 18. SVG, PNG, and PDF rendering are all fully self-contained (Graphviz runs
+as bundled WebAssembly); nothing else to install. Only rarer formats (ps, eps, ...) need an
+optional system dependency — see [docs/dependencies.md](docs/dependencies.md).
 
 ## Quickstart
 

@@ -47,8 +47,9 @@ behind the tool's clean, stable diagrams.
 2. WASM Graphviz lays out the grid and renders boxes/labels → **SVG**.
 3. `em` reads each box rectangle from the SVG and injects self-drawn arrows and note
    markers/legend (`src/render/{svgGeometry,drawEdges,drawNotes}.ts`).
-4. Output: write the SVG directly, rasterize to PNG with resvg, or convert to PDF/other
-   via an optional system `rsvg-convert`.
+4. Output: write the SVG directly, rasterize to PNG with resvg, compose a PDF with
+   pdfkit + svg-to-pdfkit, or convert to any other format via an optional system
+   `rsvg-convert`.
 
 Everything in steps 1–3 is bundled with the npm package; see
 [dependencies.md](dependencies.md) for what's in-process versus optional.

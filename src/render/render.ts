@@ -5,14 +5,19 @@
 // to SVG; it does NOT route the arrows. We read each box's rectangle back out of
 // that SVG, draw the edges ourselves (straight within a slice, curved across
 // slices) plus the note markers, and inject them. SVG is written directly; PNG
-// is rasterized in-process with resvg. PDF/other formats use an optional system
-// `rsvg-convert` if one is installed. No system Graphviz is required.
+// is rasterized in-process with resvg; PDF is composed in-process with pdfkit +
+// svg-to-pdfkit (MIL-26 — both pure JS, no native deps, same "self-contained
+// rendering" posture as resvg's PNG path). Any other format (ps, eps, ...) falls
+// back to an optional system `rsvg-convert` if one is installed — genuinely rare
+// formats aren't worth a bespoke in-process path. No system Graphviz is required.
 
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Graphviz } from "@hpcc-js/wasm-graphviz";
 import { Resvg } from "@resvg/resvg-js";
+import PDFDocument from "pdfkit";
+import SVGtoPDF from "svg-to-pdfkit";
 import { Element, NormalizedModel } from "../model/model.js";
 import { Grid } from "../layout/grid.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
@@ -83,16 +88,66 @@ export async function writeRendered(
     return;
   }
 
-  // Other formats (pdf, ps, …) aren't built in; use a system rsvg-convert if present.
+  if (format === "pdf") {
+    const pdf = await svgToPdfBuffer(svg);
+    await writeFile(outPath, pdf);
+    return;
+  }
+
+  // Anything else (ps, eps, …) isn't built in; use a system rsvg-convert if present.
   if (await hasBin(RSVG_BIN)) {
     await rsvgConvert(svg, outPath, format);
     return;
   }
 
   throw new Error(
-    `format '${format}' is not built in (svg and png are). Install librsvg ` +
-      `(provides '${RSVG_BIN}') to render '${format}', or use -o file.svg / -o file.png.`,
+    `format '${format}' is not built in (svg, png, and pdf are). Install librsvg ` +
+      `(provides '${RSVG_BIN}') to render '${format}', or use -o file.svg / -o file.png / -o file.pdf.`,
   );
+}
+
+/**
+ * Render a composed SVG string to a PDF buffer, in-process — pdfkit + svg-to-pdfkit,
+ * both pure JS, no native deps or system binary (MIL-26). Page size matches the SVG's
+ * own viewBox/width/height exactly (Graphviz's "pt" units already map 1:1 to PDF points),
+ * so the PDF isn't cropped or rescaled relative to the PNG/SVG siblings of the same render.
+ */
+function svgToPdfBuffer(svg: string): Promise<Buffer> {
+  const { width, height } = svgDimensions(svg);
+  const doc = new PDFDocument({ size: [width, height], margin: 0, autoFirstPage: true });
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve, reject) => {
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+  SVGtoPDF(doc, svg, 0, 0, {
+    // Graphviz's own SVG output is in points already — treat px-less numeric
+    // coordinates as pt directly instead of applying the library's default
+    // 96dpi assumption, or the whole diagram would render at the wrong scale.
+    assumePt: true,
+    // svg-to-pdfkit's default warningCallback is `console.warn` — anything it can't
+    // render (an unsupported feature, a malformed value) would otherwise print
+    // straight to the terminal on every `em render -o file.pdf`. Swallow instead:
+    // the composed SVG is em's own output, not untrusted input, so a best-effort
+    // PDF sibling to the SVG/PNG outputs is the right default, not a build failure
+    // or unsolicited console noise over one draw call it couldn't translate.
+    warningCallback: () => {},
+  });
+  doc.end();
+  return done;
+}
+
+/** Pixel/point dimensions of a composed SVG, from its viewBox (falls back to the
+ *  width/height attributes if viewBox is somehow absent) — same regexes svgGeometry.ts
+ *  uses for the same attributes, kept local since this is the only pdf-path consumer. */
+function svgDimensions(svg: string): { width: number; height: number } {
+  const vb = /viewBox="[\d.eE+-]+\s+[\d.eE+-]+\s+([\d.eE+-]+)\s+([\d.eE+-]+)"/.exec(svg);
+  if (vb) return { width: +vb[1], height: +vb[2] };
+  const w = /width="([\d.eE+-]+)pt"/.exec(svg);
+  const h = /height="([\d.eE+-]+)pt"/.exec(svg);
+  if (w && h) return { width: +w[1], height: +h[1] };
+  throw new Error("svgToPdfBuffer: composed SVG has neither a viewBox nor width/height in pt");
 }
 
 export async function renderDot(

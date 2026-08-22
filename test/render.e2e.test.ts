@@ -145,4 +145,24 @@ slice "Ship Order" {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // MIL-26: PDF is now composed in-process (pdfkit + svg-to-pdfkit) — no system
+  // rsvg-convert involved, same self-contained posture as the PNG path above.
+  it("composes a PDF in-process, no system rsvg-convert required", async () => {
+    const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-"));
+    try {
+      const out = join(dir, "out.pdf");
+      await renderDot(dot, model, grid, out, "pdf", dirname(EXAMPLE));
+      const pdf = readFileSync(out);
+      expect(pdf.length).toBeGreaterThan(1000);
+      // PDF magic header, and a well-formed trailer (pdfkit's content streams are
+      // Flate-compressed by default, so there's no readable diagram text to assert
+      // on directly — same smoke-test depth as the PNG magic-number check above).
+      expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      expect(pdf.toString("latin1")).toContain("%%EOF");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

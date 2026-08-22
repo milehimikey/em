@@ -127,6 +127,12 @@ function cornerGlyph(
   const numY = vAlign === "top" ? y + 9 : y - 5;
   const anchor = corner === "right" ? "end" : "start";
   return (
+    // MIL-26 (theming): a white halo behind the triangle, independent of note/issue/
+    // divergence color, so the marker reads clearly on every element-kind fill —
+    // amber-on-orange (a note on an `event` box) was the specific low-contrast case
+    // that motivated this; the halo fixes it for all five box colors at once instead
+    // of special-casing that one pairing.
+    `<path d="${tri}" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round"/>` +
     `<path d="${tri}" fill="${fill}" stroke="${stroke}" stroke-width="1" stroke-linejoin="round"/>` +
     `<path d="${crease}" fill="none" stroke="${stroke}" stroke-width="0.7"/>` +
     `<text x="${n(numX)}" y="${n(numY)}" text-anchor="${anchor}" font-family="Helvetica" ` +

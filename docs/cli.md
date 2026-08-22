@@ -69,9 +69,8 @@ Refuses if `<slug>/` already exists (`refusing to overwrite <slug>/ (use --force
 
 Renders the model. The output format is `-T` when given, otherwise it's derived from the
 `-o` extension; with neither, the output is `<basename>.svg` next to where you run the
-command. SVG and
-PNG are fully in-process; PDF and other formats shell out to a system `rsvg-convert` (see
-[dependencies.md](dependencies.md)). If validation finds errors, `em render` prints them
+command. SVG, PNG, and PDF are fully in-process; any other format shells out to a system
+`rsvg-convert` (see [dependencies.md](dependencies.md)). If validation finds errors, `em render` prints them
 and refuses to render. A `note` clause pointing at a missing file gets a warning but still
 renders.
 
