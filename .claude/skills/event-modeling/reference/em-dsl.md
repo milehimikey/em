@@ -86,8 +86,8 @@ em skill check [path] --json                                # print a JSON docum
 ```
 <!-- GENERATED:cli:end -->
 
-Install if missing: `npm i -g @milehimikey/em`. PNG works with no system deps; PDF needs
-`rsvg-convert`.
+Install if missing: `npm i -g @milehimikey/em`. SVG, PNG, and PDF all work with no system
+deps; only rarer formats (ps, eps, ...) need `rsvg-convert`.
 
 ---
 

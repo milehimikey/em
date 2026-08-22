@@ -54,12 +54,20 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
   // ---- cell nodes ----
   L.push("  // cells");
   grid.rows.forEach((row, r) => {
+    // MIL-26: every no-fields box in a swimlane shares one height — the tallest any of
+    // them needs — so a row with one wrapped 3-line label doesn't leave its neighbors
+    // (including the invisible empty-cell spacers) looking shorter and misaligned.
+    // Fields-bearing boxes are deliberately excluded: their HTML-table height is fixed
+    // by Graphviz during layout, not something computable here before that pass runs,
+    // so they keep their existing independent auto-grow behavior (docs/dsl.md already
+    // documents this as acceptable — "tops drift slightly when field counts differ").
+    const rowHeight = row.band === "header" ? HEADER_H : rowBoxHeight(grid, r);
     for (let c = 0; c < grid.cols; c++) {
       if (row.band === "header") {
         L.push("  " + headerCell(c, grid.sliceNames[c]));
       } else {
         const el = grid.cells[r][c];
-        L.push("  " + (el ? elementCell(el) : emptyCell(r, c)));
+        L.push("  " + (el ? elementCell(el, rowHeight) : emptyCell(r, c, rowHeight)));
       }
     }
   });
@@ -86,28 +94,54 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
   return L.join("\n");
 }
 
-function elementCell(el: Element): string {
+// inches, ~13.2pt at fontsize 11
+const LINE_H = 0.1833;
+// inches, ~12pt top+bottom padding inside a fixedsize box
+const V_PAD = 0.1667;
+
+/** A no-fields box's own natural height — CELL_H, or taller if its wrapped label
+ *  needs more than one line. The per-row max of this (see rowBoxHeight) is what
+ *  every no-fields box and empty-cell spacer in that row actually renders at. */
+function naturalBoxHeight(name: string): number {
+  const lineCount = wrap(name, 18).length;
+  return Math.max(CELL_H, lineCount * LINE_H + V_PAD);
+}
+
+/** The uniform height for every no-fields box (and empty-cell spacer) in row `r` —
+ *  the tallest natural height among that row's no-fields elements, or CELL_H if the
+ *  row has none. Fields-bearing elements don't contribute: their real rendered
+ *  height is decided by Graphviz's HTML-table layout, not known at DOT-emission
+ *  time, so they're excluded from this max (see the call site's comment). */
+function rowBoxHeight(grid: Grid, r: number): number {
+  let max = CELL_H;
+  for (let c = 0; c < grid.cols; c++) {
+    const el = grid.cells[r][c];
+    if (el && !(el.fields && el.fields.length > 0)) {
+      max = Math.max(max, naturalBoxHeight(el.name));
+    }
+  }
+  return max;
+}
+
+function elementCell(el: Element, rowHeight: number): string {
   const s = styleFor(el.kind);
   const shape = el.kind === "ui" ? `"filled"` : `"filled,rounded"`;
   if (el.fields && el.fields.length > 0) {
     // UML-style box: title, a divider rule, then the fields. The HTML table
     // auto-sizes the box (height grows with the field count); width stays at
     // CELL_W as a minimum so columns stay aligned. Arrows still anchor to the
-    // box edges read back from the SVG, so they remain stable.
+    // box edges read back from the SVG, so they remain stable. Deliberately NOT
+    // sized to rowHeight — see rowBoxHeight's doc comment.
     return (
       `${el.id} [label=${fieldLabel(el)}, fillcolor="${s.fill}", ` +
       `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
       `shape=box, fixedsize=false, width=${CELL_W}, margin="0.04,0.03"];`
     );
   }
-  const lineCount = wrap(el.name, 18).length;
-  const LINE_H = 0.1833; // inches, ~13.2pt at fontsize 11
-  const V_PAD = 0.1667; // inches, ~12pt top+bottom padding inside a fixedsize box
-  const height = Math.max(CELL_H, lineCount * LINE_H + V_PAD);
   return (
     `${el.id} [label=${q(wrapLabel(el.name))}, fillcolor="${s.fill}", ` +
     `color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
-    `fixedsize=true, width=${CELL_W}, height=${height}];`
+    `fixedsize=true, width=${CELL_W}, height=${rowHeight}];`
   );
 }
 
@@ -135,8 +169,8 @@ function esc(s: string): string {
 }
 
 /** Empty cells are invisible spacers that hold the column width and row height. */
-function emptyCell(r: number, c: number): string {
-  return `${placeholderId(r, c)} [label="", style=invis, fixedsize=true, width=${CELL_W}, height=${CELL_H}];`;
+function emptyCell(r: number, c: number, rowHeight: number): string {
+  return `${placeholderId(r, c)} [label="", style=invis, fixedsize=true, width=${CELL_W}, height=${rowHeight}];`;
 }
 
 /** Fixed-size title cell per slice (same width as cells, so columns line up). */

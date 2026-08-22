@@ -12,19 +12,23 @@
   a Rust SVG renderer with prebuilt native binaries shipped as platform-specific optional
   dependencies (npm installs only the one matching your OS/arch). No `librsvg` required for
   PNG.
+- **PDF composition** (MIL-26) — [`pdfkit`](https://www.npmjs.com/package/pdfkit) +
+  [`svg-to-pdfkit`](https://www.npmjs.com/package/svg-to-pdfkit), both pure JS with no
+  native bindings. No `librsvg`/`rsvg-convert` required for PDF.
 - **Markdown rendering** — [`marked`](https://www.npmjs.com/package/marked), pure JS with no
   transitive dependencies. Used only by `em catalog` to render a slice's slice doc
   (`slices/<name>.md`) to HTML for the per-slice page.
 
 These are regular `dependencies`, so a global install pulls them automatically.
 
-## Optional: PDF and other formats
+## Optional: formats beyond SVG/PNG/PDF
 
-PDF (and other Graphviz raster/vector formats) are **not** bundled. If you ask for one
-(`-o diagram.pdf` / `-T pdf`), `em` shells out to a system **`rsvg-convert`** (librsvg) if it
-finds one, otherwise it errors and tells you SVG/PNG are built in.
+Any other Graphviz raster/vector format (`ps`, `eps`, ...) is **not** bundled — these are
+rare enough that a bespoke in-process path isn't worth it. If you ask for one, `em` shells
+out to a system **`rsvg-convert`** (librsvg) if it finds one, otherwise it errors and tells
+you SVG/PNG/PDF are built in.
 
-Install librsvg only if you need PDF:
+Install librsvg only if you need one of these rarer formats:
 
 | Platform | Command |
 |---|---|

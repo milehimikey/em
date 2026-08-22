@@ -40,6 +40,23 @@ slice "S" {
     expect(group).toContain(">1</text>");
   });
 
+  it("MIL-26: draws a white halo behind the marker so it reads on any box color", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed note "notes/order-placed.md"
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const group = buildNoteMarkers(model, new Map([[id, box(100, 100)]]));
+
+    // two triangle paths: a white-stroked halo first, then the colored marker on top.
+    const paths = [...group.matchAll(/<path d="[^"]*Z" [^/]*\/>/g)];
+    expect(paths).toHaveLength(2);
+    expect(paths[0][0]).toContain('stroke="#FFFFFF"');
+    expect(paths[0][0]).toContain('fill="none"');
+    expect(paths[1][0]).toContain(`fill="#F4C430"`);
+  });
+
   it("emits nothing for an element without a note", () => {
     const model = modelFrom(`
 slice "S" {
