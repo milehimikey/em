@@ -10,6 +10,7 @@ agent can carry with human review.
 | I want to… | Read |
 |---|---|
 | Learn the tool from scratch | [tutorial.md](tutorial.md) |
+| See a complete, worked project — not just a bare model file | [examples/order-fulfillment/](../examples/order-fulfillment/) |
 | See how the pieces fit together over the life of a model | [workflow.md](workflow.md) |
 | Know which steps need humans, and which an agent can do | [process.md](process.md) |
 | Hand a ratified slice to an agent to implement | [process.md](process.md#handing-a-slice-to-an-agent), and the [agent guide](../.claude/skills/event-modeling/reference/implement.md) it points to |
@@ -31,6 +32,8 @@ agent can carry with human review.
 | Cut a release (version, notes, npm, Linear) | [release.md](release.md) |
 | See what's planned | [roadmap.md](roadmap.md) |
 
-Worked models live in [examples/](../examples/), and a full-scale AI-built model (a
-headless CPQ system, ~50 slices) in the
+Worked models live in [examples/](../examples/) — most are single `.em` files, but
+[examples/order-fulfillment/](../examples/order-fulfillment/) is a full project directory
+(slice docs, resumable state, generated README) for exploring the whole toolchain in one
+place — and a full-scale AI-built model (a headless CPQ system, ~50 slices) in the
 [em-with-ai repository](https://github.com/milehimikey/em-with-ai).
