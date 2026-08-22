@@ -153,9 +153,9 @@ plan/tasks as FEATURE_SPEC. The rules that keep redirect mode safe:
 - `/speckit.plan` and `/speckit.tasks` may run against the slice doc directly; the preset's
   redirect preambles map spec-kit's section vocabulary onto the slice doc's sections.
 - **Emission fallback**: where redirect can't work (Windows checkouts without symlink
-  privileges, two-doc pattern-pair bundles, a toolchain that mutates its spec files), run the
-  bridge without `--symlink` to render `spec.md` from the slice doc. The generated file is a
-  rendering — never hand-edit it; regenerate it from the slice doc instead.
+  privileges, a toolchain that mutates its spec files), run the bridge without `--symlink` to
+  render `spec.md` from the slice doc. The generated file is a rendering — never hand-edit it;
+  regenerate it from the slice doc instead.
 - Everything under `specs/NNN-*/` is an **ephemeral work container** — one per change effort,
   discardable; the PR is the durable record of the effort, the slice doc the durable
   definition of the behavior.
