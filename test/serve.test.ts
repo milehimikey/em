@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startLiveServer, LiveServer } from "../src/render/serve.js";
+import { splitViewerHtml } from "./helpers/viewerScript.js";
 
 // Exercises the `em watch --serve` dev server: static serving, the SSE stream,
 // and path-traversal safety. Port 0 lets the OS pick a free port per test.
@@ -80,22 +81,13 @@ describe("live server", () => {
     expect(body).toContain('addEventListener("renderError"');
   });
 
-  it("embeds syntactically valid viewer JS (template-literal escaping)", async () => {
-    // The viewer script lives inside a TS template literal; a missed escape
-    // level compiles fine and ships a page that throws on load. Extract the
-    // script and parse it for real.
+  it("serves syntactically valid viewer JS", async () => {
+    // The served constant is GENERATED from src/render/viewer.html
+    // (scripts/generate-viewer-html.ts); a stale or mangled generation ships a
+    // page that throws on load. Extract the script and parse it for real.
     const res = await fetch(`${base}/`);
     const body = await res.text();
-    // Index-slice rather than regex the tags out (also keeps CodeQL's
-    // js/bad-tag-filter quiet) — the page has exactly one script element.
-    const open = body.indexOf("<script>");
-    const close = body.lastIndexOf("</script>");
-    expect(open).toBeGreaterThan(-1);
-    expect(close).toBeGreaterThan(open);
-    const script = body.slice(open + "<script>".length, close);
-    // Unresolved template-literal syntax leaking into the page is the classic
-    // failure — it must never appear in the emitted HTML.
-    expect(body).not.toContain("${");
+    const { script } = splitViewerHtml(body);
     expect(() => new Function(script)).not.toThrow();
   });
 
