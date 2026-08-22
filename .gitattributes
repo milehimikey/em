@@ -1,0 +1,5 @@
+# Byte-for-byte template sync tests (test/viewerHtmlSync.test.ts,
+# test/scaffoldTemplatesSync.test.ts) compare checked-out files against
+# string constants committed with LF endings — a CRLF-normalizing checkout
+# (core.autocrlf=true) would fail them on a pristine clone. Pin LF everywhere.
+* text=auto eol=lf

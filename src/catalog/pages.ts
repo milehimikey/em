@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // HTML-string builders for `em catalog`'s static site: an index page and one
 // per-slice detail page. Hand-written template literals, no templating
-// library — same convention as the live-viewer page in
-// src/render/serve.ts's VIEWER_HTML, just as functions instead of one static
-// template, since these pages vary per model/slice.
+// library. (The live-viewer page went the other way — a real HTML file,
+// src/render/viewer.html, shipped as a generated constant — because it is one
+// static 600-line page; these stay literals since they vary per model/slice.)
 
 import { Element, Slice } from "../model/model.js";
 import { SlicePattern, slicePatternLabel } from "./classify.js";
