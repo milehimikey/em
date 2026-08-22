@@ -104,7 +104,6 @@ vendored alongside this skill.
 <model-name>/
   <model-name>.em          # the model (slice docs linked via note "...")
   <model-name>.svg         # render target for em watch
-  live.html                # file:// auto-refresh viewer (copy of templates/live.html, verbatim)
   README.md                # overview + slice index (from templates/model-readme.md)
   .event-modeling.md       # resumable state (from templates/state.md)
   slices/<slice-name>.md   # one rich slice doc per slice (from templates/slice.md)
@@ -114,12 +113,11 @@ vendored alongside this skill.
 ```
 
 When creating a new model, run `em scaffold <model-name>` — it creates `<model-name>/` and
-writes all four starter files in one step (`<model-name>.em`, `live.html`, `README.md`,
+writes all three starter files in one step (`<model-name>.em`, `README.md`,
 `.event-modeling.md`), filling the Model Name/model-name placeholders and the state file's
 mechanical fields (model path, `Current phase: discover`, `Current step: 1`, dates) for you, so
 there's nothing left to hand-copy or fill in. Refuses if `<model-name>/` already exists; pass
-`--force` to overwrite. `live.html` is written **verbatim** — it takes the SVG name from its
-URL query (`live.html?svg=<model-name>.svg`), so there's nothing to edit there either. You'll
+`--force` to overwrite. You'll
 usually replace the scaffolded `.em`'s content as the discovery conversation builds up the real
 model — it starts out as the same starter model `em init` writes, titled from `<model-name>`.
 `slices/*.md` and `conformance/` aren't part of `em scaffold`; they come from the `slice` and
@@ -342,16 +340,16 @@ again whenever the codebase has moved.
 
 ## Phase: `watch` — live team view
 
-**Recommended (instant push, no polling):** start the watcher with `--serve` in the background:
+Start the watcher with `--serve` in the background:
 `em watch <model-name>.em -o <model-name>.svg --serve` (run_in_background). It re-renders on every
 save and pushes an instant reload to the browser over Server-Sent Events. Tell the user to open the
 URL it prints (e.g. `http://localhost:5173/?svg=<model-name>.svg`) and share their screen — updates
-appear the moment you save, with no idle churn between edits.
+appear the moment you save, with no polling and no idle churn between edits.
 
-**No-server fallback (`file://`):** if the user prefers not to run a server, start the plain watcher
-`em watch <model-name>.em -o <model-name>.svg` (run_in_background) and have them open the copied
-`live.html?svg=<model-name>.svg` in a browser. It polls every ~2s and reloads without flicker. No
-editing of `live.html` is needed — the `?svg=` query picks the model.
+The viewer navigates like a map — drag to pan, scroll/pinch to zoom, **Fit** to reset — and its
+**Review mode** steps through slices one at a time (see the `review` phase). A save that fails to
+render never blanks the shared screen: the last good diagram stays up, an error banner explains
+what went wrong, and the viewer recovers on its own at the next successful render.
 
 ## Phase: `review` — stakeholder walkthrough
 
@@ -420,13 +418,13 @@ command instead.
 ```bash
 em --version
 em init <name>.em                          # optional starter scaffold
-em scaffold <name>                         # full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md
+em scaffold <name>                         # full project: <slug>/<slug>.em, README.md, .event-modeling.md
 em validate <name>.em                      # check rules; exit 0 if clean/warnings only
 em render <name>.em -o <name>.svg          # render (svg/png/pdf by extension)
 em render <name>.em --emit-dot             # inspect generated Graphviz DOT
 em render <name>.em --slice "<slice-name>" -o slices/<slug>.svg   # this slice's own diagram
 em watch <name>.em -o <name>.svg           # re-render on save (run in background)
-em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-reload (--port N)
+em watch <name>.em -o <name>.svg --serve   # + the live browser viewer: instant push-reload, pan/zoom (--port N)
                                             #   click "Review mode" for a slice-by-slice storyboard walkthrough
 ```
 <!-- GENERATED:cli-quick:end -->

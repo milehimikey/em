@@ -12,7 +12,8 @@ if you'd rather build this same model from scratch instead of reading a finished
 **What to look at, and in what order**, if you're exploring this as a tour of `em` rather
 than just reading the model:
 
-1. **The diagram** — `order-fulfillment.svg` (or open `live.html?svg=order-fulfillment.svg`).
+1. **The diagram** — `order-fulfillment.svg` (or run `em watch order-fulfillment.em -o
+   order-fulfillment.svg --serve` and open the URL it prints for the live pan/zoom viewer).
    Notice the note markers (amber) and how one slice (Capture Payment) has no `ui` at all —
    it's triggered by the `Payment Gateway` processor instead of a person.
 2. **The model file**, `order-fulfillment.em` — see `tag`/`renamed from` in
@@ -57,8 +58,9 @@ em watch order-fulfillment.em -o order-fulfillment.svg --serve   # re-render + i
 # then open the URL it prints (http://localhost:5173/?svg=order-fulfillment.svg) and share the screen
 ```
 
-No server? Run `em watch order-fulfillment.em -o order-fulfillment.svg` and open
-`live.html?svg=order-fulfillment.svg` in a browser (polls ~2s; share the screen).
+Pan/zoom to navigate the diagram (drag, scroll; **Fit** resets), and click **Review mode** in
+the header for a slice-by-slice walkthrough. If a save fails to render, the viewer keeps the
+last good diagram and shows an error banner until the next successful load.
 
 Static render: `em render order-fulfillment.em -o order-fulfillment.svg`
 

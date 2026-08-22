@@ -15,7 +15,7 @@ Keep `.em` files focused on **structure**; put deep design in markdown linked vi
 em --version                                                # print the installed em version
 em init [file]                                              # scaffold a starter .em model
 em init [file] -f, --force                                  # overwrite if the file exists
-em scaffold <name>                                          # scaffold a full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md (see docs/cli.md — for just a starter .em, use `em init`)
+em scaffold <name>                                          # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md (see docs/cli.md — for just a starter .em, use `em init`)
 em scaffold <name> -f, --force                              # overwrite the directory's contents if it already exists
 em render <file>                                            # transpile a model and render it (or emit DOT)
 em render <file> -o, --out <path>                           # output path (extension picks the format)

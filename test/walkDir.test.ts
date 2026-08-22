@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Coverage for src/util/walkDir.ts — the recursive file-tree walker shared by
 // em skill sync/check. The one behavior worth pinning down beyond "finds nested files": it
-// must include non-`.md` files (e.g. templates/live.html-shaped entries), unlike
+// must include non-`.md` files (e.g. templates/*.html-shaped entries), unlike
 // test/skillExamples.test.ts's skillFiles(), which deliberately only walks `.md` files.
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
@@ -17,10 +17,15 @@ describe("walkDir", () => {
       mkdirSync(join(dir, "reference"));
       writeFileSync(join(dir, "reference", "em-dsl.md"), "b");
       mkdirSync(join(dir, "templates"));
-      writeFileSync(join(dir, "templates", "live.html"), "c");
+      writeFileSync(join(dir, "templates", "viewer-notes.html"), "c");
       writeFileSync(join(dir, "templates", "slice.md"), "d");
 
-      expect(walkDir(dir)).toEqual(["SKILL.md", "reference/em-dsl.md", "templates/live.html", "templates/slice.md"]);
+      expect(walkDir(dir)).toEqual([
+        "SKILL.md",
+        "reference/em-dsl.md",
+        "templates/slice.md",
+        "templates/viewer-notes.html",
+      ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

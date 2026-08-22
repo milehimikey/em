@@ -1396,7 +1396,7 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
   });
   afterAll(() => rmSync(cwd, { recursive: true, force: true }));
 
-  it("creates <slug>/ with all 4 files, correctly titled/slugged", () => {
+  it("creates <slug>/ with all 3 files, correctly titled/slugged", () => {
     const r = em(["scaffold", "Order Fulfillment"], cwd);
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
@@ -1404,15 +1404,13 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
 
     const dir = join(cwd, "order-fulfillment");
     expect(existsSync(join(dir, "order-fulfillment.em"))).toBe(true);
-    expect(existsSync(join(dir, "live.html"))).toBe(true);
     expect(existsSync(join(dir, "README.md"))).toBe(true);
     expect(existsSync(join(dir, ".event-modeling.md"))).toBe(true);
+    // The retired static file:// viewer (MIL-141) must NOT come back.
+    expect(existsSync(join(dir, "live.html"))).toBe(false);
 
     const em_ = readFileSync(join(dir, "order-fulfillment.em"), "utf8");
     expect(em_.startsWith('model "Order Fulfillment"\n')).toBe(true);
-
-    const live = readFileSync(join(dir, "live.html"), "utf8");
-    expect(live).toBe(readFileSync(join(ROOT, ".claude", "skills", "event-modeling", "templates", "live.html"), "utf8"));
 
     const readme = readFileSync(join(dir, "README.md"), "utf8");
     expect(readme.startsWith("# Order Fulfillment\n")).toBe(true);
@@ -1434,7 +1432,7 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(state).toContain("- **Last stakeholder review:** never");
 
     // Never leave a template placeholder in any written file.
-    for (const text of [em_, live, readme, state]) {
+    for (const text of [em_, readme, state]) {
       expect(text).not.toMatch(/\{\{[^}]*\}\}/);
     }
   });

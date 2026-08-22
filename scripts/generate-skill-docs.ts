@@ -71,7 +71,7 @@ const QUICK_CLI_LINES: ReadonlyArray<{ line: string; command: string; flags?: st
   { line: "em --version", command: "--version" },
   { line: "em init <name>.em                          # optional starter scaffold", command: "init" },
   {
-    line: "em scaffold <name>                         # full project: <slug>/<slug>.em, live.html, README.md, .event-modeling.md",
+    line: "em scaffold <name>                         # full project: <slug>/<slug>.em, README.md, .event-modeling.md",
     command: "scaffold",
   },
   { line: "em validate <name>.em                      # check rules; exit 0 if clean/warnings only", command: "validate" },
@@ -85,7 +85,7 @@ const QUICK_CLI_LINES: ReadonlyArray<{ line: string; command: string; flags?: st
   { line: "em watch <name>.em -o <name>.svg           # re-render on save (run in background)", command: "watch", flags: ["-o"] },
   {
     line:
-      "em watch <name>.em -o <name>.svg --serve   # + live viewer with instant push-reload (--port N)\n" +
+      "em watch <name>.em -o <name>.svg --serve   # + the live browser viewer: instant push-reload, pan/zoom (--port N)\n" +
       '                                            #   click "Review mode" for a slice-by-slice storyboard walkthrough',
     command: "watch",
     flags: ["-o", "--serve"],
