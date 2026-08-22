@@ -77,10 +77,10 @@ vendored alongside this skill.
   is missing an **element**, not an arrow.
 - **Validate continuously.** Run `em validate` and fix errors/warnings as you go (see DSL ref).
 - **Save state at the end of every session** so work resumes cleanly. Also append one line to
-  the Usage log: the phase(s) touched and the `em validate` diagnostic *categories* that fired
-  (the exact fixed strings from `docs/usage-data.md`, e.g. "read model has no consumer" —
-  never the full message or domain content). This is the team's only usage signal today (`docs/usage-data.md`) — keep it cheap
-  and habitual, not a task to skip.
+  the Usage log: the phase(s) touched and the diagnostic *categories* that fired — run `em
+  validate <model>.em --json` and dedupe each diagnostic's `usageCategory` field directly
+  (never the full message or domain content). This is the team's only usage signal today
+  (`docs/usage-data.md`) — keep it cheap and habitual, not a task to skip.
 
 ## Preconditions (run first)
 

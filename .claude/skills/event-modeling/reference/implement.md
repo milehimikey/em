@@ -22,18 +22,22 @@ with this skill.)
 ## 1. Gate: verify readiness before starting
 
 ```bash
-em validate <model>.em --slice-ready <slice-key>
+em validate <model>.em --slice-ready <slice-key> --json
 ```
 
 `<slice-key>` is the slice's export key — the kebab-case slug of its name (`"Place Order"` →
-`place-order`). Exit 0 means: the slice has a doc bound via `note "slices/<key>.md"`, its
-frontmatter is usable, `status: ready-to-implement`, every `## Open Questions` checkbox is
-checked, and no status/version/link incoherence is flagged.
+`place-order`). Read the JSON document's `ready` field — don't infer it from the exit code or
+any printed text. `ready: true` means: the slice has a doc bound via `note "slices/<key>.md"`,
+its frontmatter is usable, `status: ready-to-implement`, every `## Open Questions` checkbox is
+checked, and no status/version/link incoherence is flagged — `gates` names each of those 4
+conditions individually (`docBound`/`frontmatterUsable`/`statusReady`/
+`noUncheckedOpenQuestions`) if you need to say which one is blocking.
 
-**Non-zero exit means stop.** Report which checks failed and hand the slice back to the humans.
-Never make the gate pass yourself — checking an open-question box, flipping `status`, or
-editing frontmatter are ratification decisions, and ratification happens in a facilitated
-session, not in an implementation branch.
+**`ready: false` means stop.** Report which `gates` entries are `false` (and any `diagnostics`
+entries concerning this slice) and hand the slice back to the humans. Never make the gate pass
+yourself — checking an open-question box, flipping `status`, or editing frontmatter are
+ratification decisions, and ratification happens in a facilitated session, not in an
+implementation branch.
 
 ## 2. Read the spec
 
@@ -51,9 +55,10 @@ Read `slices/<slice-key>.md` end to end — every section is load-bearing:
 
 For timeline context, read the slice's surroundings in the `.em` (what triggers it, what
 consumes its output) — the slice's own diagram (`slices/<slice-key>.svg`) shows its canonical
-pattern shape. For machine-readable facts, use `em export <model>.em` rather than parsing the
-DSL or the doc's frontmatter yourself: it carries the slice's `pattern`, element refs, fields,
-and the joined doc metadata (`slice.doc.status`, `version`, `driftSignal`).
+pattern shape. For machine-readable facts, use `em export <model>.em --slice <slice-key>`
+rather than parsing the DSL or the doc's frontmatter yourself: it returns just this slice's
+object — `pattern`, element refs, fields, and the joined doc metadata (`slice.doc.status`,
+`version`, `driftSignal`) — without piping the whole model's export to find one `slice.doc`.
 
 If the project ships pattern-specific implementation skills (for example an Axon/DCB skill
 set keyed on a slice doc's `pattern:` frontmatter), route by the slice's pattern and follow
@@ -91,7 +96,9 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 
 ## 5. Definition of done
 
-- Every `INV-n` invariant has at least one test that cites its ID.
+- Every `INV-n` invariant has at least one test that cites its ID — checked mechanically by
+  `em coverage <model>.em --tests <dir>` (MIL-130); run it (add `--strict` in CI) rather than
+  eyeballing citations by hand.
 - Every scenario in `## Scenarios (Given / When / Then)` exists as a passing test; rejection
   scenarios assert the doc's named rejection reason.
 - Alternate/error flows (idempotency included) are covered by tests.
@@ -112,8 +119,12 @@ implementedIn: <PR or commit URL>
 This is supply-loop mechanics, not ratification — it's the one edit an implementing agent makes
 to a slice doc, and it's why `em ledger` deliberately excludes these two fields from what
 counts as content. **Do not bump `version:`** — versions bump only when a delta is ratified;
-a bump here is a ledger defect. In bridge-equipped projects,
-`npx -p em-sdd-bridge em-sdd-mark-implemented <slice-key> <pr-url>` does the flip for you.
+a bump here is a ledger defect.
+
+`em slice mark-implemented <model>.em <slice-key> <pr-url>` does the flip for you (MIL-103) —
+resolves the doc via the same note-binding join `--slice-ready` uses, is idempotent on a re-run
+with the same URL, and refuses (never silently overwrites) if the doc is already `implemented`
+with a different URL. Prefer it over hand-editing the doc's frontmatter.
 
 Then, if the project keeps a model README (from `templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and

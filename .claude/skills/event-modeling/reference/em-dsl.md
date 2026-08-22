@@ -25,6 +25,7 @@ em render <file> --emit-dot                                 # print the generate
 em render <file> --keep-empty-lanes                         # keep the API lane even when empty
 em export <file>                                            # export a versioned JSON snapshot of the normalized model
 em export <file> -o, --out <path>                           # write to a file instead of stdout
+em export <file> --slice <key>                              # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
 em diff <old> [new]                                         # compare two models structurally (two files, or one file across git revisions)
 em diff <old> [new] --from <rev>                            # diff <old> against this git revision instead of a second file
 em diff <old> [new] --to <rev>                              # diff against this git revision instead of the current file (requires --from)
@@ -46,6 +47,7 @@ em slice new <name> --swimlane <swimlane>                   # swimlane, e.g. "Pe
 em slice new <name> -f, --force                             # overwrite the file if it already exists
 em slice index <file>                                       # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
 em slice index <file> --check                               # verify the table is current; exit non-zero on drift without writing (CI)
+em slice mark-implemented <file> <slice-key> <pr-url>       # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` or the doc body
 em changelog <file>                                         # render a model's git history as a business-readable ledger (see docs/cli.md)
 em changelog <file> --from <rev>                            # start the walk at this revision (inclusive)
 em changelog <file> --to <rev>                              # end the walk at this revision (inclusive; default HEAD)
@@ -72,15 +74,24 @@ em validate <file> --list-divergences                       # print only accepte
 em validate <file> --list-public                            # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
 em validate <file> --fail-on-issues                         # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
 em validate <file> --slice-ready <key>                      # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
+em validate <file> --json                                   # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
 em migrate <file>                                           # rewrite the old two-slice Automation/Translation shape into the merged single-slice shape MIL-120 made canonical (see docs/cli.md)
 em migrate <file> --write                                   # apply the rewrite to the file (default: dry run — report only, write nothing)
 em ledger <file>                                            # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
 em ledger <file> --from <rev>                               # baseline revision
 em ledger <file> --to <rev>                                 # compare revision (default: current working tree)
 em ledger <file> --json                                     # print a JSON document instead of the text report (see docs/cli.md)
+em coverage <file>                                          # check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI
+em coverage <file> --tests <dir>                            # directory to scan recursively for test files citing invariant IDs
+em coverage <file> --strict                                 # exit non-zero if any invariant ID has zero citations (CI)
+em coverage <file> --json                                   # print a JSON document instead of the text report (see docs/cli.md)
+em contract                                                 # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
+em mcp                                                      # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
 em skill install                                            # copy the event-modeling skill into .claude/skills/event-modeling/
 em skill install -f, --force                                # overwrite an existing installation
+em skill install --no-agents-md                             # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
 em skill sync [path]                                        # update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
+em skill sync [path] --no-agents-md                         # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
 em skill check [path]                                       # check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
 em skill check [path] --json                                # print a JSON document instead of the text report (see docs/cli.md)
 ```

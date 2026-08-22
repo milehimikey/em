@@ -24,6 +24,22 @@ running `em validate` to keep the diagram honest.
 `em skill install` copies the skill into your project (`--force` to overwrite an existing
 copy), so it's versioned with your repo and works for anyone who opens it in Claude Code.
 
+## Implementing outside Claude Code
+
+The facilitation phases (`discover`/`extract` → `model` → `slice`) are Claude Code sessions,
+but the `implement` phase's [agent guide](../.claude/skills/event-modeling/reference/implement.md)
+is written to apply to *any* implementing agent. `em contract` prints that guide to stdout —
+no `.claude/` awareness or vendored skill copy required — and `em skill install`/`em skill
+sync` write a matching pointer into the repo's `AGENTS.md` by default, alongside the
+readiness gate (`em validate --slice-ready --json`) and the machine-readable read path
+(`em export --slice`). See [cli.md](cli.md#em-contract) and
+[cli.md](cli.md#working-with-an-ai-agent-the-agentsmd-managed-section).
+
+An agent that speaks MCP natively can skip the shell entirely: `em-mcp` (or `em mcp`) starts a
+stdio MCP server exposing the same contract, readiness gate, and read path — plus full
+`validate`/`export`/marker-listing access — as tools instead of CLI flags. See
+[mcp.md](mcp.md).
+
 ## Phases
 
 `/event-modeling` takes an optional phase argument. With no argument it resumes wherever

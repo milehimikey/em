@@ -30,11 +30,15 @@ what's already in the state file's Participants/Decisions sections you already c
 
 ## Categories
 
-`em validate`'s `Diagnostic` type carries only `{severity, message, line}` — there's no
-structured category field to copy from, and the runtime message text doesn't match
-[validation.md](validation.md)'s table wording verbatim (it's generated per-instance, with
-element names interpolated in). Logging the raw message would also risk leaking domain
-content the rest of this convention deliberately excludes.
+`em validate`'s `Diagnostic` type carries only `{severity, code, message, line, refs}` — no
+`usageCategory` field of its own on the plain (non-`--json`) run, and the runtime message text
+doesn't match [validation.md](validation.md)'s table wording verbatim (it's generated
+per-instance, with element names interpolated in). Logging the raw message would also risk
+leaking domain content the rest of this convention deliberately excludes. `em validate --json`
+(MIL-128, see [cli.md](cli.md)) *does* carry `usageCategory` on every diagnostic, sourced from
+this same table — dedupe the values straight off that array for the Usage log line below instead
+of re-deriving a category from the message text or the `code`. There's no separate
+`--usage-categories` flag; the fixed vocabulary lives in this one field.
 
 So the category is a fixed vocabulary instead: a `usageCategory` string on every entry in the
 `RULES` registry (`src/model/rules.ts`), generated below by `scripts/generate-skill-docs.ts` —

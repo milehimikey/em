@@ -269,7 +269,10 @@ unconditionally — it's opt-in, scoped to a single named slice, and exists to a
 question: is this slice safe to hand to an implementer? Native `em` form of the check that used
 to live only in em-sdd-bridge's `assertReadyToImplement`. See
 [cli.md#--slice-ready-key-mil-87](cli.md#--slice-ready-key-mil-87) for usage and exit-code
-semantics.
+semantics. Add `--json` (MIL-128) for a machine verdict naming each of the 4 gates below
+individually (`docBound`/`frontmatterUsable`/`statusReady`/`noUncheckedOpenQuestions`) plus the
+overall `ready` boolean, instead of scraping this table's codes out of stderr prose — see
+[cli.md#--json-mil-128](cli.md#--json-mil-128).
 
 | Code | Severity | Meaning |
 |---|---|---|

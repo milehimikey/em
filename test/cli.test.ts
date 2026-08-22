@@ -74,6 +74,19 @@ const WITH_ERROR = `slice "Read" {
 }
 `;
 
+// `em export --slice`/`em validate --slice-ready` scoping fixture (MIL-128): one genuinely
+// complete slice ("Good") and a second, unrelated slice ("Bad") with its own real error — the
+// case where scoping to one slice must not be blocked by breakage elsewhere in the model.
+const SCOPED_ERROR = `slice "Good" {
+  ui Screen @Customer
+  command Do Thing
+  event Thing Done
+}
+slice "Bad" {
+  view Broken View from "No Such Event"
+}
+`;
+
 // The accepted divergence is the only annotation. Line 6 (the view, in its own slice so it
 // doesn't collide with the command in the api/view lane) is pinned by the --list-divergences
 // assertion, same convention as WITH_ISSUE above.
@@ -147,6 +160,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "warn.em"), WARNING_ONLY);
   writeFileSync(join(dir, "issue.em"), WITH_ISSUE);
   writeFileSync(join(dir, "error.em"), WITH_ERROR);
+  writeFileSync(join(dir, "scoped-error.em"), SCOPED_ERROR);
   writeFileSync(join(dir, "divergence.em"), WITH_DIVERGENCE);
   writeFileSync(join(dir, "public.em"), WITH_PUBLIC);
   writeFileSync(join(dir, "glossary-a.em"), GLOSSARY_A);
@@ -178,6 +192,71 @@ describe("em export (CLI)", () => {
     const r = em(["export", "error.em"], dir);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("not exporting");
+  });
+});
+
+describe("em export --slice <key> (CLI, MIL-128)", () => {
+  it("exports just the named slice's object — same pattern/fields/doc shape as the full export's slice entry", () => {
+    const r = em(["export", "clean.em", "--slice", "place"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.schemaVersion).toBe("1.6");
+    expect(doc.sliceKey).toBe("place");
+    expect(doc.slice.key).toBe("place");
+    expect(doc.slice.name).toBe("Place");
+    expect(doc.slice.pattern).toBe("state-change");
+    expect(doc.slice.elements.map((e: { kind: string }) => e.kind)).toEqual(["ui", "command", "event"]);
+    expect(doc.slice.doc).toEqual({
+      found: false,
+      path: "slices/place.md",
+      reason: "no-doc-bound",
+      status: null,
+      version: null,
+      implementedIn: null,
+      splitFrom: null,
+      mergedFrom: [],
+      supersededBy: [],
+      driftSignal: null,
+    });
+    // Only the one slice's object — never the whole model's slices array.
+    expect(doc.model).toBeUndefined();
+  });
+
+  it("errors with a clear message for an unknown export key", () => {
+    const r = em(["export", "clean.em", "--slice", "no-such-slice"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no slice with export key "no-such-slice"');
+  });
+
+  it("refuses when the named slice itself has an error", () => {
+    const r = em(["export", "error.em", "--slice", "read"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('slice "read" has errors');
+  });
+
+  it("still exports the named slice despite a genuine error in an unrelated slice (the whole point of scoping)", () => {
+    const r = em(["export", "scoped-error.em", "--slice", "good"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.sliceKey).toBe("good");
+    expect(doc.slice.name).toBe("Good");
+    // The unrelated slice's own error is real and still printed to stderr (visible, just not
+    // blocking) — same "surfaced but not gating" shape as `--slice-ready`'s own regression test.
+    expect(r.stderr).toContain('unknown event "No Such Event"');
+  });
+
+  it("refuses that same file scoped to the broken slice itself", () => {
+    const r = em(["export", "scoped-error.em", "--slice", "bad"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('slice "bad" has errors');
+  });
+
+  it("-o writes just the scoped document to a file", () => {
+    const r = em(["export", "clean.em", "--slice", "place", "-o", "slice-out.json"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slice-out.json");
+    const doc = JSON.parse(readFileSync(join(dir, "slice-out.json"), "utf8"));
+    expect(doc.sliceKey).toBe("place");
   });
 });
 
@@ -252,6 +331,128 @@ describe("em validate --list-public (CLI)", () => {
   it("--list-public never affects the exit code", () => {
     expect(em(["validate", "--list-public", "public.em"], dir).status).toBe(0);
     expect(em(["validate", "--list-public", "clean.em"], dir).status).toBe(0);
+  });
+});
+
+describe("em validate --json (CLI, MIL-128)", () => {
+  it("prints a clean, parseable diagnostics document on a fully clean model", () => {
+    const r = em(["validate", "clean.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.validateSchemaVersion).toBe("1.0");
+    expect(doc.file).toBe("clean.em");
+    expect(doc.ok).toBe(true);
+    expect(doc.summary).toEqual({ errors: 0, warnings: 0, total: 0 });
+    expect(doc.diagnostics).toEqual([]);
+  });
+
+  it("carries usageCategory (sourced from RULES) alongside code/refs/line on a warning-only model", () => {
+    const r = em(["validate", "warn.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.ok).toBe(true);
+    expect(doc.summary.errors).toBe(0);
+    expect(doc.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "warning",
+          code: "both-ends-of-a-flow/command-no-event",
+          usageCategory: "command produces no event",
+        }),
+      ]),
+    );
+    // Every diagnostic in the array carries usageCategory, not just the one asserted above.
+    for (const d of doc.diagnostics) expect(typeof d.usageCategory).toBe("string");
+  });
+
+  it("works on a model WITH errors — the whole point of MIL-128 (em export refuses; this doesn't)", () => {
+    const r = em(["validate", "error.em", "--json"], dir);
+    expect(r.status).toBe(1); // same exit code as text mode
+    const doc = JSON.parse(r.stdout); // stdout stays clean JSON even though the run "fails"
+    expect(doc.ok).toBe(false);
+    expect(doc.summary.errors).toBe(1);
+    expect(doc.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          code: "view-from-unresolved",
+          usageCategory: "view references unknown event",
+        }),
+      ]),
+    );
+    // Warnings/errors are still printed to stderr too, same convention as em export/em diff --json.
+    expect(r.stderr).toContain('unknown event "No Such Event"');
+  });
+
+  it("exits identically to text mode (errors gate, warnings don't)", () => {
+    expect(em(["validate", "clean.em", "--json"], dir).status).toBe(0);
+    expect(em(["validate", "warn.em", "--json"], dir).status).toBe(0);
+    expect(em(["validate", "error.em", "--json"], dir).status).toBe(1);
+  });
+});
+
+describe("em validate --list-issues/--list-divergences/--list-public --json (CLI, MIL-128)", () => {
+  it("--list-issues --json emits a structured marker instead of the eyeball line", () => {
+    const r = em(["validate", "--list-issues", "issue.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.validateListSchemaVersion).toBe("1.0");
+    expect(doc.markers).toEqual([
+      {
+        markerKind: "issue",
+        sliceKey: "place",
+        sliceName: "Place",
+        elementRef: "place/command.place-order",
+        elementKind: "command",
+        elementName: "Place Order",
+        text: "who validates the discount code?",
+        line: 2,
+      },
+    ]);
+  });
+
+  it("--list-divergences --json", () => {
+    const r = em(["validate", "--list-divergences", "divergence.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.markers).toEqual([
+      expect.objectContaining({
+        markerKind: "divergence",
+        sliceKey: "retire",
+        elementKind: "view",
+        elementName: "Retired Orders",
+        text: "tracking token covers idempotency",
+        line: 6,
+      }),
+    ]);
+  });
+
+  it("--list-public --json — only the public elements, with elementRef", () => {
+    const r = em(["validate", "--list-public", "public.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.markers).toHaveLength(2);
+    expect(doc.markers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ markerKind: "public", elementKind: "event", elementName: "Order Placed", text: null }),
+        expect.objectContaining({ markerKind: "public", elementKind: "view", elementName: "Open Orders", text: null }),
+      ]),
+    );
+    expect(doc.markers.some((m: { elementName: string }) => m.elementName === "Internal Retry")).toBe(false);
+  });
+
+  it("an empty list reports an empty markers array, not an error", () => {
+    const r = em(["validate", "--list-issues", "clean.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).markers).toEqual([]);
+  });
+
+  it("still reports errors (JSON diagnostics + non-zero exit) alongside the list", () => {
+    const r = em(["validate", "--list-issues", "error.em", "--json"], dir);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.markers).toEqual([]);
+    expect(doc.diagnostics).toEqual([expect.objectContaining({ severity: "error", code: "view-from-unresolved" })]);
   });
 });
 
@@ -431,6 +632,99 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toContain('slice "ready-slice" is NOT ready-to-implement');
     expect(r.stderr).toContain("nothing that triggers it");
+  });
+
+  it("--json: all 4 gates pass and the verdict is ready, for a bound/ready/fully-checked doc (MIL-128)", () => {
+    const r = em(["validate", "ready.em", "--slice-ready", "ready-slice", "--json"], readyDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.validateSliceReadySchemaVersion).toBe("1.0");
+    expect(doc.sliceKey).toBe("ready-slice");
+    expect(doc.gates).toEqual({
+      docBound: true,
+      frontmatterUsable: true,
+      statusReady: true,
+      noUncheckedOpenQuestions: true,
+    });
+    expect(doc.ready).toBe(true);
+    expect(doc.diagnostics).toEqual([]);
+  });
+
+  it("--json: names each failing gate individually for status: draft with unchecked Open Questions", () => {
+    const r = em(["validate", "draft.em", "--slice-ready", "draft-slice", "--json"], readyDir);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.gates).toEqual({
+      docBound: true,
+      frontmatterUsable: true,
+      statusReady: false,
+      noUncheckedOpenQuestions: false,
+    });
+    expect(doc.ready).toBe(false);
+    expect(doc.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "slice-ready-status-not-ready", usageCategory: expect.any(String) }),
+        expect.objectContaining({ code: "slice-ready-open-questions-unchecked" }),
+      ]),
+    );
+  });
+
+  it("--json: docBound is false, other gates false, when no note binds a doc", () => {
+    const r = em(["validate", "unbound.em", "--slice-ready", "unbound", "--json"], readyDir);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.gates).toEqual({
+      docBound: false,
+      frontmatterUsable: false,
+      statusReady: false,
+      noUncheckedOpenQuestions: false,
+    });
+    expect(doc.ready).toBe(false);
+  });
+
+  it("--json: gates is null for a key that names no slice", () => {
+    const r = em(["validate", "ready.em", "--slice-ready", "no-such-key", "--json"], readyDir);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.gates).toBeNull();
+    expect(doc.ready).toBe(false);
+    expect(doc.diagnostics).toEqual([
+      expect.objectContaining({ code: "slice-ready-unknown-slice" }),
+    ]);
+  });
+
+  it("--json: ready is not simply AND(gates) — all 4 gates pass yet ready is false when a diagnostic is scoped to the slice", () => {
+    // "ready-with-own-issue.em" (see beforeAll) binds ready-slice.md (bound, usable,
+    // ready-to-implement, fully checked — all 4 gates true) but its own command has no `ui`
+    // triggering it, which raises a both-ends-of-a-flow diagnostic scoped to this slice. `ready`
+    // is the AND of the 4 gates only when there's nothing ELSE scoped to the slice — this
+    // pins that distinction down at the JSON level, not just the gates themselves.
+    const r = em(["validate", "ready-with-own-issue.em", "--slice-ready", "ready-slice", "--json"], readyDir);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.gates).toEqual({
+      docBound: true,
+      frontmatterUsable: true,
+      statusReady: true,
+      noUncheckedOpenQuestions: true,
+    });
+    expect(doc.ready).toBe(false);
+    expect(doc.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "both-ends-of-a-flow/command-untriggered" })]),
+    );
+  });
+
+  it("--json: stays ready despite a genuine error in an unrelated slice (regression, same as text mode)", () => {
+    const r = em(["validate", "ready-with-unrelated-error.em", "--slice-ready", "ready-slice", "--json"], readyDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.ready).toBe(true);
+    expect(doc.gates).toEqual({
+      docBound: true,
+      frontmatterUsable: true,
+      statusReady: true,
+      noUncheckedOpenQuestions: true,
+    });
   });
 });
 
@@ -783,6 +1077,120 @@ describe("em ledger: text report, working tree, and argument validation (CLI, re
   });
 });
 
+describe("em coverage (CLI, real fs, MIL-130)", () => {
+  let dir: string, tests: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-coverage-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    tests = join(dir, "tests");
+    mkdirSync(tests, { recursive: true });
+
+    writeFileSync(
+      join(dir, "model.em"),
+      `slice "Place" {\n  ui Checkout @Customer\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n` +
+        `slice "Open Orders" {\n  view Open Orders from "Order Placed"\n  ui Order List @Customer\n}\n`,
+    );
+    writeFileSync(
+      join(dir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n- **INV-2:** rejects an empty cart\n",
+    );
+    // "INV-1" is cited; "INV-2" is not.
+    writeFileSync(join(tests, "place.test.ts"), `it("rejects a negative amount (INV-1)", () => {});\n`);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("text mode reports cited/uncovered per invariant with citations, plus a summary line", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests"], dir);
+    expect(r.status).toBe(0); // advisory by default
+    expect(r.stdout).toContain('slice "place" (ready-to-implement):');
+    expect(r.stdout).toContain("cited     INV-1");
+    expect(r.stdout).toContain("place.test.ts:1");
+    expect(r.stdout).toContain("uncovered INV-2");
+    expect(r.stdout).toContain("2 invariant(s) checked, 1 uncovered");
+  });
+
+  it("--json prints a versioned document with per-slice invariant citations", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.coverageSchemaVersion).toBe("1.0");
+    expect(doc.file).toBe("model.em");
+    expect(doc.testsDir).toBe("tests");
+    expect(doc.ok).toBe(false);
+    expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
+
+    const place = doc.slices.find((s: { key: string }) => s.key === "place");
+    expect(place.inScope).toBe(true);
+    expect(place.status).toBe("ready-to-implement");
+    expect(place.docReason).toBeNull();
+    expect(place.invariants).toContainEqual({ id: "INV-1", cited: true, citations: [{ file: "place.test.ts", line: 1 }] });
+    expect(place.invariants).toContainEqual({ id: "INV-2", cited: false, citations: [] });
+
+    const openOrders = doc.slices.find((s: { key: string }) => s.key === "open-orders");
+    expect(openOrders.inScope).toBe(false);
+    expect(openOrders.status).toBeNull();
+    expect(openOrders.docReason).toBe("no-doc-bound");
+    expect(openOrders.invariants).toEqual([]);
+  });
+
+  it("advisory mode exits 0 even with uncovered IDs; --strict exits non-zero", () => {
+    const advisory = em(["coverage", "model.em", "--tests", "tests"], dir);
+    expect(advisory.status).toBe(0);
+    const strict = em(["coverage", "model.em", "--tests", "tests", "--strict"], dir);
+    expect(strict.status).toBe(1);
+  });
+
+  it("--strict exits 0 when nothing is uncovered", () => {
+    const fullyCovered = mkdtempSync(join(tmpdir(), "em-cli-coverage-full-"));
+    mkdirSync(join(fullyCovered, "slices"), { recursive: true });
+    mkdirSync(join(fullyCovered, "tests"), { recursive: true });
+    writeFileSync(
+      join(fullyCovered, "model.em"),
+      `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n` +
+        `slice "Reads" {\n  view Order List from "Order Placed"\n  ui Screen @Customer\n}\n`,
+    );
+    writeFileSync(
+      join(fullyCovered, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
+        "- **INV-1:** rejects a negative amount\n",
+    );
+    writeFileSync(join(fullyCovered, "tests", "place.test.ts"), `it("INV-1 holds", () => {});\n`);
+
+    const r = em(["coverage", "model.em", "--tests", "tests", "--strict"], fullyCovered);
+    expect(r.status).toBe(0);
+    rmSync(fullyCovered, { recursive: true, force: true });
+  });
+
+  it("errors when --tests names a directory that doesn't exist", () => {
+    const r = em(["coverage", "model.em", "--tests", "no-such-dir"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em coverage: --tests directory not found: no-such-dir");
+  });
+
+  it("requires --tests", () => {
+    const r = em(["coverage", "model.em"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("required option '--tests <dir>' not specified");
+  });
+
+  it("gives a friendly error when --tests names a file, not a directory", () => {
+    const r = em(["coverage", "model.em", "--tests", "model.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em coverage: --tests is not a directory: model.em");
+  });
+
+  it("fails with model errors before even looking at --tests", () => {
+    const badDir = mkdtempSync(join(tmpdir(), "em-cli-coverage-bad-"));
+    writeFileSync(join(badDir, "model.em"), `slice "Broken" {\n  view Bad from "No Such Event"\n}\n`);
+    const r = em(["coverage", "model.em", "--tests", "no-such-dir"], badDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("em coverage: model has errors — fix them first");
+    rmSync(badDir, { recursive: true, force: true });
+  });
+});
+
 describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   let target: string;
 
@@ -828,6 +1236,155 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
       "skill-check-content-drift",
       "skill-check-stamp-missing",
     ]);
+  });
+});
+
+describe("em contract (CLI, MIL-129)", () => {
+  it("prints the packaged reference/implement.md verbatim", () => {
+    const r = em(["contract"], ROOT);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(
+      readFileSync(join(ROOT, ".claude", "skills", "event-modeling", "reference", "implement.md"), "utf8"),
+    );
+    expect(r.stdout).toContain("Gate: verify readiness before starting");
+    expect(r.stdout).toContain("em validate <model>.em --slice-ready <slice-key> --json");
+  });
+});
+
+describe("em mcp (CLI, MIL-21)", () => {
+  it("starts a stdio MCP server that responds to initialize + tools/list", async () => {
+    // Full end-to-end coverage of every tool's behavior lives in test/mcp.test.ts (in-memory
+    // transport, direct against createServer()); this is discoverability coverage — `em mcp`
+    // really does start the same server over real stdio, the way an MCP client config
+    // (`"command": "em"`, `"args": ["mcp"]`) would invoke it.
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [TSX, CLI, "mcp"],
+      cwd: ROOT,
+      stderr: "ignore",
+    });
+    const client = new Client({ name: "em-cli-mcp-smoke-test", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      expect(client.getServerVersion()).toMatchObject({ name: "em" });
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name).sort()).toEqual(
+        ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
+      );
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real fs, MIL-129)", () => {
+  it("skill sync writes the AGENTS.md agent-contract section by default", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-sync-"));
+    try {
+      const r = em(["skill", "sync", target], ROOT);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("created");
+      expect(r.stdout).toContain("AGENTS.md");
+
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
+      expect(agentsMd).toContain("em contract");
+      expect(agentsMd).toContain("em validate <model>.em --slice-ready <slice-key> --json");
+      expect(agentsMd).toContain("em export <model>.em --slice <slice-key>");
+      expect(agentsMd).toContain("em-mcp");
+
+      // Idempotent: a second sync with nothing else changed leaves AGENTS.md byte-identical.
+      const r2 = em(["skill", "sync", target], ROOT);
+      expect(r2.status).toBe(0);
+      expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(agentsMd);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill sync --no-agents-md skips AGENTS.md entirely", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-optout-"));
+    try {
+      const r = em(["skill", "sync", target, "--no-agents-md"], ROOT);
+      expect(r.status).toBe(0);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill install also writes the AGENTS.md agent-contract section by default", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-install-"));
+    try {
+      const r = em(["skill", "install"], target);
+      expect(r.status).toBe(0);
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("em contract");
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill install already installed without --force still writes/updates AGENTS.md", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-install-noop-"));
+    try {
+      // First install: creates the vendored skill and AGENTS.md.
+      const r1 = em(["skill", "install"], target);
+      expect(r1.status).toBe(0);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
+
+      // Simulate a stale/hand-edited AGENTS.md so we can tell the second
+      // (no-op skill copy) install actually re-synced it.
+      writeFileSync(join(target, "AGENTS.md"), "# Notes\n\nHand-written project notes.\n");
+
+      const r2 = em(["skill", "install"], target);
+      expect(r2.status).toBe(0);
+      expect(r2.stdout).toContain("skill already installed at");
+      expect(r2.stdout).toContain("AGENTS.md");
+
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("# Notes");
+      expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
+      expect(agentsMd).toContain("em contract");
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("skill install --no-agents-md skips AGENTS.md even when already installed", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-install-noop-optout-"));
+    try {
+      const r1 = em(["skill", "install"], target);
+      expect(r1.status).toBe(0);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
+      rmSync(join(target, "AGENTS.md"));
+
+      const r2 = em(["skill", "install", "--no-agents-md"], target);
+      expect(r2.status).toBe(0);
+      expect(r2.stdout).toContain("skill already installed at");
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves user content outside the markers on an existing AGENTS.md", () => {
+    const target = mkdtempSync(join(tmpdir(), "em-cli-agentsmd-preserve-"));
+    try {
+      writeFileSync(join(target, "AGENTS.md"), "# Notes\n\nHand-written project notes.\n");
+      const r = em(["skill", "sync", target], ROOT);
+      expect(r.status).toBe(0);
+
+      const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
+      expect(agentsMd).toContain("# Notes");
+      expect(agentsMd).toContain("Hand-written project notes.");
+      expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1527,6 +2084,88 @@ describe("em slice index (CLI, MIL-98)", () => {
     const r = em(["slice", "index", "error.em"], sliceIndexDir);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("not indexing");
+  });
+});
+
+describe("em slice mark-implemented (CLI, MIL-103)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/markImplemented.test.ts;
+  // this block is exit-code/process-level only, same split as `em slice index`.
+  let dir: string;
+  const READY_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n# Slice: Ready Slice\n\nbody\n";
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-mark-implemented-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "ready-slice.md"), READY_DOC);
+    writeFileSync(
+      join(dir, "ready.em"),
+      'slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
+    // Genuine error in an UNRELATED slice — regression coverage that marking one slice
+    // implemented doesn't gate on breakage elsewhere in a large, still-WIP model (same "scoped
+    // to this slice" call `em export --slice`/`em validate --slice-ready` already made).
+    writeFileSync(
+      join(dir, "slices", "good.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "scoped.em"),
+      'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("flips status/implementedIn and confirms on stdout", () => {
+    const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/42"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("marked implemented: slices/ready-slice.md");
+    expect(r.stdout).toContain("https://github.com/org/repo/pull/42");
+    const content = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+    expect(content).toContain("status: implemented");
+    expect(content).toContain("implementedIn: https://github.com/org/repo/pull/42");
+    expect(content).toContain("version: 1"); // never bumped
+  });
+
+  it("is idempotent: re-running with the same URL is a no-op, exit 0", () => {
+    const before = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+    const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/42"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already implemented (no-op)");
+    expect(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses a different URL once implemented, exit non-zero, file untouched", () => {
+    const before = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+    const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/999"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("already marked implemented with a different URL");
+    expect(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("errors clearly for a key that names no slice in the model", () => {
+    const r = em(["slice", "mark-implemented", "ready.em", "no-such-key", "https://x/1"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
+  });
+
+  it("errors clearly when no doc is bound via note", () => {
+    const r = em(["slice", "mark-implemented", "unbound.em", "unbound", "https://x/1"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("stays scoped to the named slice: a genuine error in an unrelated slice doesn't block it", () => {
+    const r = em(["slice", "mark-implemented", "scoped.em", "good", "https://github.com/org/repo/pull/1"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("marked implemented: slices/good.md");
+  });
+
+  it("refuses on an error concerning the named slice itself", () => {
+    const r = em(["slice", "mark-implemented", "scoped.em", "bad", "https://x/1"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('slice "bad" has errors');
   });
 });
 

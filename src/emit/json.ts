@@ -58,6 +58,37 @@ export interface ExportResult {
   diagnostics: Diagnostic[];
 }
 
+/** The `em export` document's shape, pre-stringify — what `buildExportDoc` returns and
+ *  `buildExport` serializes. Exported so `buildSliceExport` (MIL-128) can pick one slice's
+ *  object back out without re-parsing JSON text or re-deriving the doc join. */
+export interface ExportDoc {
+  schemaVersion: string;
+  generator: { name: string; version: string };
+  source: { path: string; sha256: string };
+  model: {
+    name: string | null;
+    personas: string[];
+    contexts: string[];
+    hasAutomation: boolean;
+    types: unknown[];
+    slices: Array<{ key: string; [k: string]: unknown }>;
+    arrows: unknown[];
+  };
+  diagnostics: ReturnType<typeof serializeDiagnostic>[];
+}
+
+export interface SliceExportResult {
+  /** Pretty-printed JSON, no trailing newline — `null` when `sliceKey` names no slice
+   *  (`found` is `false`). */
+  text: string | null;
+  /** Whether `sliceKey` matched a slice in the model. */
+  found: boolean;
+  /** Same diagnostics `buildExport` would have raised for the whole model — the caller
+   *  decides how to gate/print these; `buildSliceExport` never refuses on them itself
+   *  (see cli.ts's `--slice` handling for the scoping decision, MIL-128). */
+  diagnostics: Diagnostic[];
+}
+
 export interface FieldExport {
   name: string;
   type: string | null;
@@ -117,6 +148,62 @@ export function buildExport(
   source: string,
   path: string,
 ): ExportResult {
+  const { doc, diagnostics: allDiagnostics } = buildExportDoc(model, refs, diagnostics, source, path);
+  return { text: JSON.stringify(doc, null, 2), diagnostics: allDiagnostics };
+}
+
+/** Build one slice's `em export` object, scoped (MIL-128): same `pattern`/`fields`/`doc` shape
+ *  as that slice's entry in the full `em export` document (`ExportDoc.model.slices[i]`), plus
+ *  the envelope fields (`schemaVersion`, `generator`, `source`) every em JSON surface carries.
+ *  Reuses `buildExportDoc` wholesale rather than re-deriving the doc join for one slice — the
+ *  cost of computing every slice's join even though only one is returned is the same tradeoff
+ *  `validateSliceReady` already accepts for a single-slice check, and keeps this function from
+ *  drifting from the full export's own slice shape. `diagnostics` in the result is the same
+ *  scan `buildExport` would have raised for the whole model (unfiltered) — deciding whether an
+ *  error elsewhere in the model should block a *scoped* export is the caller's call (cli.ts
+ *  scopes the refusal to diagnostics that concern this slice, so an unrelated slice's breakage
+ *  never closes the structured path for one that's fine — the whole point of MIL-128). Returns
+ *  `found: false` (and a `null` `text`) when `sliceKey` matches no slice — the caller reports
+ *  that as a CLI error. */
+export function buildSliceExport(
+  model: NormalizedModel,
+  refs: RefsResult,
+  diagnostics: Diagnostic[],
+  source: string,
+  path: string,
+  sliceKey: string,
+): SliceExportResult {
+  const { doc, diagnostics: allDiagnostics } = buildExportDoc(model, refs, diagnostics, source, path);
+  const slice = doc.model.slices.find((s) => s.key === sliceKey);
+  if (!slice) return { text: null, found: false, diagnostics: allDiagnostics };
+
+  const sliceDoc = {
+    schemaVersion: doc.schemaVersion,
+    generator: doc.generator,
+    source: doc.source,
+    sliceKey,
+    slice,
+    // Same scoping predicate as `em validate --slice-ready`'s own filter (cli.ts): a bare
+    // sliceKey ref (slice-level facts) or an element ref prefixed `<sliceKey>/` — never a
+    // second identifier scheme, always the refs the `slice` object above already uses.
+    diagnostics: doc.diagnostics.filter(
+      (d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    ),
+  };
+  return { text: JSON.stringify(sliceDoc, null, 2), found: true, diagnostics: allDiagnostics };
+}
+
+/** The shared body of `buildExport`/`buildSliceExport`: builds the full export document as a
+ *  JS object (pre-stringify) so a scoped export can pick one slice back out without
+ *  re-parsing JSON text or re-deriving the doc join. See `buildExport`'s own docstring for the
+ *  parameter contract — unchanged here, just split out. */
+function buildExportDoc(
+  model: NormalizedModel,
+  refs: RefsResult,
+  diagnostics: Diagnostic[],
+  source: string,
+  path: string,
+): { doc: ExportDoc; diagnostics: Diagnostic[] } {
   const { sliceKeys, refById, refByTypeId } = refs;
   const baseDir = dirname(path);
   const docDiagnostics: Diagnostic[] = [];
@@ -228,5 +315,5 @@ export function buildExport(
     diagnostics: allDiagnostics.map(serializeDiagnostic),
   };
 
-  return { text: JSON.stringify(exportDoc, null, 2), diagnostics: allDiagnostics };
+  return { doc: exportDoc, diagnostics: allDiagnostics };
 }
