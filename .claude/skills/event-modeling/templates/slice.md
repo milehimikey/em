@@ -78,7 +78,7 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 **v{{X}} → v{{Y}}, ratified {{date}}** — {{one-line summary of the ratified change}}
 
 ### Added
-#### Requirement: {{title}} ({{stable ID, e.g. an INV-n from Invariants below}})
+#### Requirement: {{title}} ({{stable ID, e.g. an INV-{{MNEMONIC}}-n from Invariants below}})
 {{requirement text — same voice as an Invariants entry}}
 ##### Scenario: {{name}}
 - **GIVEN** {{...}} **WHEN** {{...}} **THEN** {{...}}
@@ -142,15 +142,19 @@ an event directly.}}
 - **Freshness / consistency expectation:** {{real-time | eventual | on-demand}}
 
 ## Invariants / Business Rules
-<!-- What must ALWAYS hold. Give each a stable ID so tests and code can reference it. -->
-- **INV-1:** {{rule that the command enforces; violation ⇒ rejection}}
-- **INV-2:** {{...}}
+<!-- What must ALWAYS hold. Give each a stable ID so tests and code can reference it:
+     `INV-<MNEMONIC>-<n>`, where `<MNEMONIC>` is a short (2-4 letter/digit), slice-unique
+     abbreviation of this slice's key (e.g. slice `checkout` -> `INV-CHK-1`) — see
+     docs/slice-doc-schema.md. Add a letter suffix for a closely-related sub-invariant
+     (`INV-CHK-3a`). -->
+- **INV-{{MNEMONIC}}-1:** {{rule that the command enforces; violation ⇒ rejection}}
+- **INV-{{MNEMONIC}}-2:** {{...}}
 
 ## Scenarios (Given / When / Then)
 <!-- The executable specification. Cover the happy path AND the key rule boundaries. -->
 - **Happy path** — Given {{starting state / prior events}}, When {{command/trigger}},
   Then {{event(s) recorded}} and {{resulting read-model change}}.
-- **Rejected (INV-1)** — Given {{state}}, When {{command}}, Then {{rejected with reason}}; no event.
+- **Rejected (INV-{{MNEMONIC}}-1)** — Given {{state}}, When {{command}}, Then {{rejected with reason}}; no event.
 - **{{Edge case}}** — Given {{...}}, When {{...}}, Then {{...}}.
 
 ## Alternate & Error Flows

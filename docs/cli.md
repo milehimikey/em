@@ -740,7 +740,7 @@ every other command's own schema):
 ## `em coverage <file> --tests <dir>`
 
 Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every
-`INV-n` has a test that cites its ID" (MIL-130). For each slice whose joined doc's `status` is
+`INV-<MNEMONIC>-n` has a test that cites its ID" (MIL-130). For each slice whose joined doc's `status` is
 `ready-to-implement` or `implemented`, extracts every `INV-*` invariant ID mentioned in the
 doc's body, then scans `--tests <dir>` recursively for lines that cite each ID. Reports, per ID,
 **cited** (every citing `file:line`) or **uncovered**. Checks that an ID is *cited* — not that
@@ -757,9 +757,10 @@ dropped — see the `--json` shape below.
 
 **Token format.** IDs are hand-authored per docs/slice-doc-schema.md ("give each a stable ID"),
 not machine-generated, so no single fixed shape is enforced — the extraction regex matches
-`INV-` followed by a run of alphanumeric/hyphen segments, covering both the template's bare
-numbering (`INV-1`, `INV-2`) and a per-slice mnemonic prefix (`INV-CHK-4`, `INV-CHK-3a` for a
-rename target). The whole doc body is scanned, not just the `## Invariants / Business Rules`
+`INV-` followed by a run of alphanumeric/hyphen segments, covering both the documented per-slice
+mnemonic prefix (`INV-CHK-4`, `INV-CHK-3a` for a rename target — the convention the template
+now demonstrates) and older docs' bare running-number IDs (`INV-1`, `INV-2`) predating that
+convention. The whole doc body is scanned, not just the `## Invariants / Business Rules`
 section — a `## Delta` section's Added/Modified/Renamed requirement IDs are just as citable.
 Citation matching is word-boundary-anchored so `INV-KEY-1` never matches inside `INV-KEY-12`.
 
@@ -787,9 +788,9 @@ Example output:
 ```
 $ em coverage model.em --tests test/
 slice "checkout" (ready-to-implement):
-  cited     INV-1
+  cited     INV-CHK-1
               test/checkout.test.ts:42
-  uncovered INV-2
+  uncovered INV-CHK-2
 2 invariant(s) checked, 1 uncovered
 $ echo $?
 0

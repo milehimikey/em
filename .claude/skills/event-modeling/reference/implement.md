@@ -47,7 +47,7 @@ Read `slices/<slice-key>.md` end to end — every section is load-bearing:
 |---|---|
 | frontmatter `pattern:` | Which of the four patterns' implementation shapes to build (State Change / State View / Automation / Translation) |
 | Command / Event field tables | The contracts — names, types, validation rules, immutable-fact markers |
-| `## Invariants / Business Rules` (INV-n IDs) | The non-negotiable rules; every one needs a test citing its ID |
+| `## Invariants / Business Rules` (`INV-<MNEMONIC>-n` IDs) | The non-negotiable rules; every one needs a test citing its ID |
 | `## Scenarios (Given / When / Then)` | The acceptance tests, already written — compile them, don't reinvent them |
 | `## Alternate & Error Flows` | Retries, idempotency, compensations — real requirements, not appendix |
 | `## Non-Functional Requirements` | Authz, PII, performance — implement or consciously surface, never skip |
@@ -96,7 +96,7 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 
 ## 5. Definition of done
 
-- Every `INV-n` invariant has at least one test that cites its ID — checked mechanically by
+- Every `INV-<MNEMONIC>-n` invariant has at least one test that cites its ID — checked mechanically by
   `em coverage <model>.em --tests <dir>` (MIL-130); run it (add `--strict` in CI) rather than
   eyeballing citations by hand.
 - Every scenario in `## Scenarios (Given / When / Then)` exists as a passing test; rejection

@@ -38,7 +38,7 @@ command-and-event sense.
 
 ## Invariants / Business Rules
 
-- **INV-1:** An order appears in this view exactly once per `Order Placed` it's projected
+- **INV-VOO-1:** An order appears in this view exactly once per `Order Placed` it's projected
   from — this view is never repeated (`view … again`) elsewhere in the model, so there's
   only one instance to keep in sync.
 

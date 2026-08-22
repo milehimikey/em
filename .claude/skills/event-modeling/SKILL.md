@@ -302,7 +302,7 @@ where the agent builds rather than facilitates.
 contract.** In short: gate on `em validate <model>.em --slice-ready <key>` (stop and hand
 back if it fails — never edit the doc to make the gate pass); treat the slice doc as the
 spec (read-only, except the merge-time `status`/`implementedIn` flip); surface every gap to
-the user instead of deciding it silently; cover every INV-n and every scenario with tests;
+the user instead of deciding it silently; cover every INV-<MNEMONIC>-n and every scenario with tests;
 in spec-kit projects, allocate via em-sdd-bridge (redirect mode) and never run
 `/speckit.specify`.
 
