@@ -5,7 +5,7 @@
  -->
 <!-- Title: EventModel Pages: 1 -->
 <svg width="416pt" height="320pt"
- viewBox="0.00 0.00 416.00 320.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs>
+ viewBox="0.00 0.00 416.00 320.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><marker id="em-arrow-3C4043" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#3C4043"/></marker><marker id="em-arrow-2B6CB0" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2B6CB0"/></marker><marker id="em-arrow-2F855A" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#2F855A"/></marker><marker id="em-arrow-B7791F" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#B7791F"/></marker></defs><metadata id="em-slices">{"slices":[{"index":0,"name":"Submit Order","x0":98.63,"x1":242.63},{"index":1,"name":"Review Order","x0":267.63,"x1":411.63}],"rowLabels":{"x0":-5.369999999999997,"x1":82.63}}</metadata><style>.em-slice-dim{opacity:.15;transition:opacity .15s ease}</style>
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 315.84)">
 <title>EventModel</title>
 <polygon fill="white" stroke="none" points="-4,4 -4,-315.84 411.63,-315.84 411.63,4 -4,4"/>
@@ -34,7 +34,7 @@
 </g>
 <!-- __row_1&#45;&gt;__row_2 -->
 <!-- checkout_screen -->
-<g id="node7" class="node">
+<g data-slice="0" id="node7" class="node">
 <title>checkout_screen</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="238.63,-205.92 94.63,-205.92 94.63,-161.28 238.63,-161.28 238.63,-205.92"/>
 <text xml:space="preserve" text-anchor="middle" x="166.63" y="-180.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Checkout Screen</text>
@@ -47,14 +47,14 @@
 </g>
 <!-- __row_2&#45;&gt;__row_3 -->
 <!-- submit_order -->
-<g id="node9" class="node">
+<g data-slice="0" id="node9" class="node">
 <title>submit_order</title>
 <path fill="#b8d0f5" stroke="#2b6cb0" stroke-width="1.3" d="M226.63,-125.28C226.63,-125.28 106.63,-125.28 106.63,-125.28 100.63,-125.28 94.63,-119.28 94.63,-113.28 94.63,-113.28 94.63,-92.64 94.63,-92.64 94.63,-86.64 100.63,-80.64 106.63,-80.64 106.63,-80.64 226.63,-80.64 226.63,-80.64 232.63,-80.64 238.63,-86.64 238.63,-92.64 238.63,-92.64 238.63,-113.28 238.63,-113.28 238.63,-119.28 232.63,-125.28 226.63,-125.28"/>
 <text xml:space="preserve" text-anchor="middle" x="166.63" y="-99.66" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#10243e">Submit Order</text>
 </g>
 <!-- __row_2&#45;&gt;submit_order -->
 <!-- order_confirmed -->
-<g id="node11" class="node">
+<g data-slice="0" id="node11" class="node">
 <title>order_confirmed</title>
 <path fill="#f6b26b" stroke="#b7791f" stroke-width="1.3" d="M226.63,-40.32C226.63,-40.32 106.63,-40.32 106.63,-40.32 100.63,-40.32 94.63,-34.32 94.63,-28.32 94.63,-28.32 94.63,-16.32 94.63,-16.32 94.63,-10.32 100.63,-4.32 106.63,-4.32 106.63,-4.32 226.63,-4.32 226.63,-4.32 232.63,-4.32 238.63,-10.32 238.63,-16.32 238.63,-16.32 238.63,-28.32 238.63,-28.32 238.63,-34.32 232.63,-40.32 226.63,-40.32"/>
 <text xml:space="preserve" text-anchor="start" x="122.63" y="-26.42" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#3f2a06">Order Confirmed</text>
@@ -72,7 +72,7 @@
 <!-- __hdr_0&#45;&gt;__hdr_1 -->
 <!-- __hdr_0&#45;&gt;checkout_screen -->
 <!-- order_review -->
-<g id="node8" class="node">
+<g data-slice="1" id="node8" class="node">
 <title>order_review</title>
 <polygon fill="#ffffff" stroke="#9aa0a6" stroke-width="1.3" points="407.63,-205.92 263.63,-205.92 263.63,-161.28 407.63,-161.28 407.63,-205.92"/>
 <text xml:space="preserve" text-anchor="middle" x="335.63" y="-180.3" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#202124">Order Review</text>
@@ -81,7 +81,7 @@
 <!-- checkout_screen&#45;&gt;order_review -->
 <!-- checkout_screen&#45;&gt;submit_order -->
 <!-- order_summary -->
-<g id="node10" class="node">
+<g data-slice="1" id="node10" class="node">
 <title>order_summary</title>
 <path fill="#c6e7c6" stroke="#2f855a" stroke-width="1.3" d="M395.63,-120.96C395.63,-120.96 275.63,-120.96 275.63,-120.96 269.63,-120.96 263.63,-114.96 263.63,-108.96 263.63,-108.96 263.63,-96.96 263.63,-96.96 263.63,-90.96 269.63,-84.96 275.63,-84.96 275.63,-84.96 395.63,-84.96 395.63,-84.96 401.63,-84.96 407.63,-90.96 407.63,-96.96 407.63,-96.96 407.63,-108.96 407.63,-108.96 407.63,-114.96 401.63,-120.96 395.63,-120.96"/>
 <text xml:space="preserve" text-anchor="start" x="294.06" y="-107.06" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#173f25">Order Summary</text>
