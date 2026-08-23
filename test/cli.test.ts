@@ -1437,6 +1437,17 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     }
   });
 
+  // MIL-147: the starter model once hard-coded the pre-MIL-120 two-slice Automation split
+  // (a bare `processor` in the read-model slice, paired with a same-named command slice) —
+  // `em validate` rejected it out of the box. Gate on the merged single-slice shape so a
+  // regression here is caught the same way a hand-authored model's would be.
+  it("scaffolds a starter model that passes `em validate` with zero diagnostics", () => {
+    const dir = join(cwd, "order-fulfillment");
+    const r = em(["validate", "order-fulfillment.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+  });
+
   it("refuses to overwrite an existing directory without --force", () => {
     const r = em(["scaffold", "Order Fulfillment"], cwd);
     expect(r.status).toBe(1);
