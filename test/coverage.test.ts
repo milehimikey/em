@@ -19,7 +19,7 @@ describe("extractInvariantIds", () => {
   });
 
   it("extracts the per-slice mnemonic form (reference/conform.md's own example)", () => {
-    const body = "- **INV-CHK-3:** must not exceed the limit\n- **INV-CHK-4:** must be positive\n";
+    const body = "## Invariants\n- **INV-CHK-3:** must not exceed the limit\n- **INV-CHK-4:** must be positive\n";
     expect(extractInvariantIds(body)).toEqual(["INV-CHK-3", "INV-CHK-4"]);
   });
 
@@ -29,12 +29,12 @@ describe("extractInvariantIds", () => {
   });
 
   it("does not merge INV-KEY-1 and INV-KEY-12 into one token", () => {
-    const body = "- **INV-KEY-1:** short\n- **INV-KEY-12:** long\n";
+    const body = "## Invariants\n- **INV-KEY-1:** short\n- **INV-KEY-12:** long\n";
     expect(extractInvariantIds(body)).toEqual(["INV-KEY-1", "INV-KEY-12"]);
   });
 
   it("handles a rename target with a trailing letter (INV-CHK-3a)", () => {
-    const body = "### Renamed\n- Old Title (INV-CHK-3) -> New Title (INV-CHK-3a)\n";
+    const body = "## Delta\n### Renamed\n- Old Title (INV-CHK-3) -> New Title (INV-CHK-3a)\n";
     expect(extractInvariantIds(body)).toEqual(["INV-CHK-3", "INV-CHK-3a"]);
   });
 
@@ -43,7 +43,31 @@ describe("extractInvariantIds", () => {
   });
 
   it("doesn't false-positive on a word that merely contains INV as a substring", () => {
-    expect(extractInvariantIds("This involves nothing invariant-shaped.\n")).toEqual([]);
+    expect(extractInvariantIds("## Invariants\nThis involves nothing invariant-shaped.\n")).toEqual([]);
+  });
+
+  // MIL-149: an ID mentioned only in another section's prose isn't this doc's own — it's a
+  // citation of someone else's invariant, not a declaration of this slice's.
+  it("does not attribute an ID mentioned only in a non-ownership section (e.g. Dependencies)", () => {
+    const body =
+      "## Invariants\n- **INV-A-1:** must hold\n\n## Dependencies & Read Models Affected\nRelies on checkout's INV-CHK-1 also holding.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-A-1"]);
+  });
+
+  it("does not attribute an ID mentioned only in Open Questions prose", () => {
+    const body = "## Open Questions\nDoes this need to re-check INV-OTHER-9 too?\n";
+    expect(extractInvariantIds(body)).toEqual([]);
+  });
+
+  it("still attributes IDs declared under a `## Delta` Added/Modified subsection", () => {
+    const body =
+      "## Delta\n### Added\n#### Requirement: New step (INV-CHK-5)\n##### Scenario: happy path\ndetails\n### Modified\n- **INV-CHK-2:** now stricter\n\n## Invariants\n- **INV-CHK-2:** now stricter\n- **INV-CHK-5:** must hold\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-CHK-5", "INV-CHK-2"]);
+  });
+
+  it("stops collecting at the next top-level heading after Invariants", () => {
+    const body = "## Invariants\n- **INV-1:** must hold\n\n## Scenarios (Given / When / Then)\nSee INV-2 covered elsewhere.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-1"]);
   });
 });
 
@@ -181,12 +205,31 @@ describe("buildCoverageReport", () => {
   });
 
   it("reports cited: true with citations once a test file mentions the ID", () => {
-    writeDoc("cited-slice", "implemented", "- **INV-1:** must hold\n");
+    writeDoc("cited-slice", "implemented", "## Invariants\n- **INV-1:** must hold\n");
     writeFileSync(join(testsDir, "cited.test.ts"), `// covers INV-1\n`);
     const report = reportFor(`slice "Cited Slice" {\n  command Do Thing note "slices/cited-slice.md"\n}`);
     const entry = report.slices.find((s) => s.key === "cited-slice")!;
     expect(entry.invariants).toEqual([{ id: "INV-1", cited: true, citations: [{ file: "cited.test.ts", line: 1 }] }]);
     expect(report.totalInvariants).toBeGreaterThanOrEqual(1);
     expect(report.uncoveredCount).toBe(report.slices.flatMap((s) => s.invariants).filter((i) => !i.cited).length);
+  });
+
+  // MIL-149: a doc's prose narratively citing another slice's invariant ID must not have that ID
+  // cross-credited into its own coverage ledger — only the slice whose own Invariants section
+  // declares the ID should list it.
+  it("does not cross-credit an ID another slice's doc only mentions in prose", () => {
+    writeDoc("origin", "implemented", "## Invariants\n- **INV-A-1:** must hold\n");
+    writeDoc(
+      "mentioner",
+      "implemented",
+      "## Dependencies & Read Models Affected\nRelies on origin's INV-A-1 also holding.\n",
+    );
+    const report = reportFor(
+      `slice "Origin" {\n  command Do Thing note "slices/origin.md"\n}\nslice "Mentioner" {\n  command Do Other note "slices/mentioner.md"\n}`,
+    );
+    const origin = report.slices.find((s) => s.key === "origin")!;
+    const mentioner = report.slices.find((s) => s.key === "mentioner")!;
+    expect(origin.invariants.map((i) => i.id)).toEqual(["INV-A-1"]);
+    expect(mentioner.invariants).toEqual([]);
   });
 });
