@@ -34,14 +34,14 @@ slice "Manager Review" {
   ui Payment Dashboard @Manager
 }
 
-# --- Automation slice: only the read model it reads + the processor ---
+# --- Read model the automation watches, in its own slice ---
 slice "Payments To Process" {
   view Payments To Process from "Payment Requested"
-  processor Payment Gateway
 }
 
-# --- Command slice: the command the automation triggers + its event ---
+# --- Automation slice: the processor, the command it triggers, and that command's event ---
 slice "Capture Payment" {
+  processor Payment Gateway from "Payments To Process"
   command Capture Payment
   event Payment Captured @Payment
 }
