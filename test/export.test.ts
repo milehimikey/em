@@ -29,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.6");
+    expect(doc.schemaVersion).toBe("1.7");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -181,16 +181,16 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[0].fields;
     expect(fields).toEqual([
-      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null },
-      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
+      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null, assigned: false },
+      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
     ]);
   });
 
   it("exports `tag: false` on every field of a declared type (types carry no tag clause)", () => {
     const doc = docOf(`type Money { amount: int, currency: String }`);
     expect(doc.model.types[0].fields).toEqual([
-      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null },
-      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null },
+      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null, assigned: false },
     ]);
   });
 
@@ -310,13 +310,14 @@ slice "S" {
 }
 `);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
+      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
       {
         name: "amountCents",
         type: "long",
         typeRef: null,
         tag: false,
         renamedFrom: ["amount", "amt"],
+        assigned: false,
       },
     ]);
   });
@@ -339,11 +340,57 @@ slice "S" {
     );
     const evt = doc.model.slices[0].elements[0];
     expect(evt.fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"] },
+      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false },
     ]);
     expect(evt.tags).toEqual([
       { key: "paymentId", kind: "identity", fields: ["paymentId"], description: null },
     ]);
+  });
+});
+
+describe("`assigned` round-trip (MIL-148)", () => {
+  it("exports `assigned: true` for a field carrying a trailing `assigned` clause, `false` otherwise", () => {
+    const doc = docOf(`
+slice "S" {
+  command Place Order {
+    customerId
+  }
+  event Order Placed {
+    orderId assigned
+    customerId
+    placedAt: Instant assigned
+  }
+}
+`);
+    const fields = doc.model.slices[0].elements[1].fields;
+    expect(fields).toEqual([
+      { name: "orderId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: true },
+      { name: "customerId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "placedAt", type: "Instant", typeRef: null, tag: false, renamedFrom: null, assigned: true },
+    ]);
+  });
+
+  it("exports `assigned: false` on every field of a declared type (the clause can't parse there)", () => {
+    const doc = docOf(`type Money { amount: int, currency: String }`);
+    for (const f of doc.model.types[0].fields) {
+      expect(f.assigned).toBe(false);
+    }
+  });
+
+  it("an `assigned` event field still traces to a view — the marker narrows event←command completeness only, not view←event", () => {
+    const doc = docOf(`
+slice "S" {
+  event Order Placed {
+    orderId assigned
+  }
+}
+slice "T" {
+  view Open Orders from "Order Placed" {
+    orderId
+  }
+}
+`);
+    expect(doc.diagnostics.filter((d: any) => d.code.startsWith("fields-completeness"))).toEqual([]);
   });
 });
 
@@ -369,8 +416,8 @@ slice "Catalog" {
     expect(event.note).toBe("notes/stock.md");
     expect(event.issue).toBe("still open?");
     expect(event.fields).toEqual([
-      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null },
-      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null },
+      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null, assigned: false },
     ]);
   });
 
@@ -537,9 +584,9 @@ slice "Accept" {
     expect(t.name).toBe("QuoteAcceptedLine");
     expect(typeof t.line).toBe("number");
     expect(t.fields).toEqual([
-      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
-      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null },
-      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null },
+      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null, assigned: false },
     ]);
   });
 
@@ -547,13 +594,14 @@ slice "Accept" {
     const doc = docOf(SRC);
     const eventFields = doc.model.slices[0].elements[1].fields;
     expect(eventFields).toEqual([
-      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null },
+      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
       {
         name: "lines",
         type: "QuoteAcceptedLine[]",
         typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: true },
         tag: false,
         renamedFrom: null,
+        assigned: false,
       },
       {
         name: "winner",
@@ -561,6 +609,7 @@ slice "Accept" {
         typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: false },
         tag: false,
         renamedFrom: null,
+        assigned: false,
       },
     ]);
   });
@@ -578,6 +627,7 @@ type Order { billing: Address }
         typeRef: { name: "Address", ref: "types/address", array: false },
         tag: false,
         renamedFrom: null,
+        assigned: false,
       },
     ]);
   });
@@ -586,12 +636,12 @@ type Order { billing: Address }
     const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
     expect(doc.model.types).toEqual([]);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null },
+      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false },
     ]);
   });
 
   it("bumps schemaVersion to 1.6, additive over 1.5", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.6");
+    expect(docOf(SRC).schemaVersion).toBe("1.7");
   });
 });
 

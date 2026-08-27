@@ -325,7 +325,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.6",
+  "schemaVersion": "1.7",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "sliceKey": "checkout",
@@ -334,7 +334,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.6` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.7` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -343,7 +343,7 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.6"`):
+**Schema summary** (`schemaVersion: "1.7"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -416,7 +416,13 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     "Old2"` clause (event/command fields only), most-recent-old-name first; `null` (the
     `typeRef` nullable convention, not `tag`'s boolean-default one) when the field carries no
     such clause, which includes every field of a declared `type` — the clause can't parse
-    there. See [dsl.md](dsl.md#event-tags) and [dsl.md](dsl.md#renames).
+    there. See [dsl.md](dsl.md#event-tags) and [dsl.md](dsl.md#renames). `assigned` (added in
+    schema `1.7`, MIL-148): `true` when the field carries a trailing `assigned` clause (event
+    fields only — system-assigned, set by the server/handler rather than the triggering
+    command), `false` otherwise — always present, same `=== true` convention as `tag`. Excludes
+    the field from `em validate`'s event ← command fields-completeness check (and, since the
+    diagnostic never fires, from `--slice-ready` as well); does not narrow view ← event
+    tracing. See [validation.md#fields-completeness](validation.md#fields-completeness).
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
 - `diagnostics` — every diagnostic `em validate` would print, plus export-only ref-collision
   and slice-doc-join warnings. Each has `severity`, `code` (added in schema `1.4`, MIL-91 — a

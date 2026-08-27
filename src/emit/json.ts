@@ -47,7 +47,11 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // element's own name; events and commands only — `null` on every other kind and on an
 // event/command that declares none). Both are purely codegen/export metadata: `em diff`
 // does not read either and keeps reporting a rename as remove+add. Additive-only.
-export const SCHEMA_VERSION = "1.6";
+// 1.7 (MIL-148): field `assigned: boolean` (system-assigned marker, always present, `=== true`
+// convention like `tag`) — event fields only; a trailing `assigned` clause records that the
+// server/handler sets the field rather than the triggering command supplying it, and exempts
+// it from `fields-completeness/event-field-no-source`. See `model/validate.ts`. Additive-only.
+export const SCHEMA_VERSION = "1.7";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -102,6 +106,11 @@ export interface FieldExport {
    *  nullable, not the `tag` boolean-default convention. `null` when the field carries no such
    *  clause, which includes every field of a declared `type` (the clause can't parse there). */
   renamedFrom: string[] | null;
+  /** `true` when the field carries a trailing `assigned` clause (system-assigned — the
+   *  server/handler sets it, not the triggering command; event fields only, MIL-148) — same
+   *  `=== true` convention as `tag`. Always present; `false` on every field that isn't one,
+   *  including every field of a declared type. */
+  assigned: boolean;
 }
 
 export interface TagExport {
@@ -133,6 +142,7 @@ function fieldExport(
       : null,
     tag: f.tag === true,
     renamedFrom: f.renamedFrom ?? null,
+    assigned: f.assigned === true,
   };
 }
 

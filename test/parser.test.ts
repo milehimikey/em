@@ -1493,4 +1493,63 @@ slice "S" {
       });
     });
   });
+
+  describe("`assigned` clause (MIL-148)", () => {
+    it("parses a trailing `assigned` clause on a typed event field", () => {
+      const ast = parse(`
+slice "S" {
+  event Order Placed {
+    orderId
+    placedAt: Instant assigned
+  }
+}
+`);
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "orderId" },
+        { name: "placedAt", type: "Instant", assigned: true },
+      ]);
+    });
+
+    it("parses a trailing `assigned` clause on a typeless event field", () => {
+      const ast = parse(`slice "S" {\n  event Order Placed {\n    orderId assigned\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "orderId", assigned: true }]);
+    });
+
+    it("treats a field whose entire text is just `assigned` as a field NAMED assigned, not a clause", () => {
+      const ast = parse(`slice "S" {\n  event E {\n    assigned\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "assigned" }]);
+    });
+
+    it("leaves `field.assigned` undefined when no trailing assigned clause is present", () => {
+      const ast = parse(`slice "S" {\n  event E {\n    orderId: UUID\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields![0].assigned).toBeUndefined();
+    });
+
+    it("rejects an `assigned` clause on a command, view, ui, and `type` block", () => {
+      expect(() => parse(`slice "S" {\n  command Do Thing {\n    orderId: UUID assigned\n  }\n}`)).toThrow(
+        /`assigned` is only valid on an event field/,
+      );
+      expect(() => parse(`slice "S" {\n  view Open Orders from "Order Placed" {\n    orderId: UUID assigned\n  }\n}`)).toThrow(
+        /`assigned` is only valid on an event field/,
+      );
+      expect(() => parse(`slice "S" {\n  ui Catalog @Customer {\n    itemId: UUID assigned\n  }\n}`)).toThrow(
+        /`assigned` is only valid on an event field/,
+      );
+      expect(() => parse(`type Money {\n  amount: int assigned\n}`)).toThrow(
+        /`assigned` is only valid on an event field/,
+      );
+    });
+
+    it("composes with `tag` and `renamed from` in any order", () => {
+      const orderA = parse(
+        `slice "S" {\n  event PaymentRecorded { paymentId: UUID renamed from "id" tag assigned }\n}`,
+      );
+      const orderB = parse(
+        `slice "S" {\n  event PaymentRecorded { paymentId: UUID assigned tag renamed from "id" }\n}`,
+      );
+      const expected = [{ name: "paymentId", type: "UUID", renamedFrom: ["id"], tag: true, assigned: true }];
+      expect(orderA.slices[0].elements[0].fields).toEqual(expected);
+      expect(orderB.slices[0].elements[0].fields).toEqual(expected);
+    });
+  });
 });

@@ -680,6 +680,8 @@ interface FieldClauses {
   /** Trailing `renamed from "Old1", "Old2"` clause (event/command fields only, MIL-68): the
    *  prior name(s) this field was known as. */
   renamedFrom?: string[];
+  /** Trailing `assigned` keyword (event fields only, MIL-148): marks the field system-assigned. */
+  assigned?: boolean;
 }
 
 /**
@@ -700,12 +702,12 @@ interface FieldClauses {
  * itself. Same discipline `extractClauses` uses for `public`/`again` against a same-named
  * element.
  *
- * Runs as a fixpoint loop over both clauses so `tag` and `renamed from` may trail a field in
- * EITHER order (`paymentId: UUID renamed from "id" tag` and `paymentId: UUID tag renamed from
- * "id"` both work, MIL-68): each pass tries whichever clause hasn't been found yet, and stops
- * once a pass finds nothing new. At most two passes ever do real work (one clause can only
- * unblock the other once), so this never loops meaningfully longer than a fixed two-clause
- * chain would.
+ * Runs as a fixpoint loop over all clauses so `tag`, `renamed from`, and `assigned` may trail a
+ * field in ANY order (`paymentId: UUID renamed from "id" tag` and `paymentId: UUID tag renamed
+ * from "id"` both work, MIL-68): each pass tries whichever clause hasn't been found yet, and
+ * stops once a pass finds nothing new. At most as many passes as there are clauses ever do real
+ * work (each clause can only unblock another once), so this never loops meaningfully longer than
+ * a fixed clause chain would.
  */
 function extractFieldClauses(raw: string, line: number, context: FieldClauseContext): { rest: string; clauses: FieldClauses } {
   const clauses: FieldClauses = {};
@@ -746,6 +748,22 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
       }
     }
 
+    if (clauses.assigned === undefined) {
+      const assignedMatch = rest.match(/^(.*\S)\s+assigned$/);
+      if (assignedMatch) {
+        if (context !== "event") {
+          throw new ParseError(
+            "`assigned` is only valid on an event field — it marks a field the server/handler " +
+              `sets, not one the triggering command supplies, so it can't describe a ${context === "type-decl" ? "type" : context} field`,
+            line,
+          );
+        }
+        clauses.assigned = true;
+        rest = assignedMatch[1];
+        progressed = true;
+      }
+    }
+
     if (!progressed) break;
   }
 
@@ -773,6 +791,7 @@ function parseFieldSpec(raw: string, line: number, context: FieldClauseContext):
   }
   if (field && clauses.tag) field.tag = true;
   if (field && clauses.renamedFrom) field.renamedFrom = clauses.renamedFrom;
+  if (field && clauses.assigned) field.assigned = true;
   return field;
 }
 

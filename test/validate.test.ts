@@ -190,6 +190,37 @@ slice "S" {
     expect(gapDiags(src)).toHaveLength(0);
   });
 
+  it("event field marked `assigned` (MIL-148): no warning even though it's absent from the command", () => {
+    const src = `
+slice "S" {
+  command Place Order { customerId }
+  event Order Placed { customerId, orderId assigned, placedAt: Instant assigned }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("`assigned` narrows the event←command check only — the same field still traces to a view (MIL-148)", () => {
+    const src = `
+slice "S" {
+  command Place Order { customerId }
+  event Order Placed { customerId, orderId assigned }
+}
+slice "T" {
+  view Open Orders from "Order Placed" {
+    orderId
+    status
+  }
+}
+`;
+    const diags = gapDiags(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      severity: "warning",
+      message: 'view "Open Orders" field "status" has no source in "Order Placed"',
+    });
+  });
+
   it("neither side declares fields: no warnings (both-sides-undeclared skip)", () => {
     const src = `
 slice "S" {

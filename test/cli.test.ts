@@ -177,14 +177,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.6");
+    expect(doc.schemaVersion).toBe("1.7");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.6");
+    expect(doc.schemaVersion).toBe("1.7");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -200,7 +200,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.6");
+    expect(doc.schemaVersion).toBe("1.7");
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
     expect(doc.slice.name).toBe("Place");
@@ -590,6 +590,20 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       join(readyDir, "ready-with-own-issue.em"),
       `slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n`,
     );
+    // MIL-148: an otherwise fully-ready slice (same complete ui -> command -> event -> view ->
+    // ui flow as `ready.em`, so no both-ends-of-a-flow warnings) whose event carries a field
+    // the command never supplies — the system-assigned-field pattern (server-minted ID,
+    // decision-time timestamp). `withoutMarker` reproduces the bug (fields-completeness blocks
+    // a slice with nothing else wrong); `withMarker` is the same slice with `assigned` added,
+    // demonstrating the fix.
+    writeFileSync(
+      join(readyDir, "assigned-without-marker.em"),
+      `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md" { customerId }\n  event Thing Done { customerId, thingId }\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n`,
+    );
+    writeFileSync(
+      join(readyDir, "assigned-with-marker.em"),
+      `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md" { customerId }\n  event Thing Done { customerId, thingId assigned }\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n`,
+    );
   });
   afterAll(() => rmSync(readyDir, { recursive: true, force: true }));
 
@@ -632,6 +646,19 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toContain('slice "ready-slice" is NOT ready-to-implement');
     expect(r.stderr).toContain("nothing that triggers it");
+  });
+
+  it("blocks (exit 1) on a system-assigned event field with no `assigned` marker (MIL-148)", () => {
+    const r = em(["validate", "assigned-without-marker.em", "--slice-ready", "ready-slice"], readyDir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('slice "ready-slice" is NOT ready-to-implement');
+    expect(r.stderr).toContain('event "Thing Done" field "thingId" not provided by command "Do Thing"');
+  });
+
+  it("stays ready (exit 0) once the system-assigned field is marked `assigned` (MIL-148)", () => {
+    const r = em(["validate", "assigned-with-marker.em", "--slice-ready", "ready-slice"], readyDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('slice "ready-slice" is ready-to-implement');
   });
 
   it("--json: all 4 gates pass and the verdict is ready, for a bound/ready/fully-checked doc (MIL-128)", () => {

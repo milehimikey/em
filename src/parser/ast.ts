@@ -37,6 +37,12 @@ export interface Field {
    *  it as `null` (see `emit/json.ts`'s `fieldExport`). Purely export/codegen metadata —
    *  `em diff` still reports a rename as remove+add (see `ElementNode.renamedFrom`). */
   renamedFrom?: string[];
+  /** Trailing `assigned` clause on the field line (event fields only, MIL-148): marks this
+   *  field as system-assigned — set by the server/handler, never supplied by a triggering
+   *  command — so `fields-completeness/event-field-no-source` never checks it against the
+   *  slice's commands. Still visible to view↔event field tracing; the marker only narrows
+   *  the event↔command completeness check, not the view-facing one. */
+  assigned?: boolean;
 }
 
 /** Kind of an element-level `tag` clause (`ElementNode.tags`) — the inline field `tag` (identity)

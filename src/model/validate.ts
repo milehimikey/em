@@ -156,7 +156,9 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     // Fields completeness: every event field in a slice should trace to a field on
     // one of that slice's commands (unioned) — again, only once both sides declare
     // `{ fields }`: the event, and *every* command in the slice. A fieldless
-    // command may be the field's provider, so a mixed slice stays silent.
+    // command may be the field's provider, so a mixed slice stays silent. A field
+    // marked `assigned` (MIL-148) opts out of this check entirely — it's the
+    // model's own record that the server/handler sets the field, not the command.
     if (commands.length > 0) {
       const commandsDeclareFields = commands.every((c) => (c.fields ?? []).length > 0);
       if (commandsDeclareFields) {
@@ -169,6 +171,11 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         for (const evt of events) {
           if (!evt.fields || evt.fields.length === 0) continue;
           for (const f of evt.fields) {
+            // `assigned` fields (MIL-148) are system-assigned — set by the server/handler,
+            // never supplied by the triggering command — so they never trace to a command
+            // field and never warn here. They stay fully visible to the view↔event check
+            // above, which is a separate loop this one doesn't touch.
+            if (f.assigned) continue;
             if (!commandFieldUnion.has(normalizeName(f.name))) {
               pushDiag(diags, "fields-completeness/event-field-no-source", {
                 message: `event "${evt.name}" field "${f.name}" not provided by ${byCommands}`,

@@ -17,10 +17,10 @@ slice "Browse Catalog" source "https://linear.app/team/issue/MIL-60" {
     total: Money
   }
   event Order Placed @Order note "notes/order-placed.md" {
-    orderId
+    orderId assigned
     customerId
     total: Money
-    placedAt: Instant
+    placedAt: Instant assigned
   }
 }
 
@@ -65,9 +65,9 @@ slice "Capture Payment" {
     amount: Money
   }
   event Payment Captured @Payment {
-    orderId
+    orderId assigned
     amount: Money
-    capturedAt: Instant
+    capturedAt: Instant assigned
   }
 }
 
