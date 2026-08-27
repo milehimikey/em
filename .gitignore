@@ -27,3 +27,4 @@ dist/
 # Private working notes / engagements — kept in the private project-notes vault,
 # never in this public repo
 internal/
+.DS_Store
