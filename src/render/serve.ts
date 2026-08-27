@@ -33,6 +33,10 @@ const CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".pdf": "application/pdf",
+  // MIL-153: without this, a note marker's link to a `.md` file falls through to
+  // the default application/octet-stream below and the browser downloads it
+  // instead of opening it — text/markdown displays it inline like any other text.
+  ".md": "text/markdown; charset=utf-8",
 };
 
 export interface LiveServer {

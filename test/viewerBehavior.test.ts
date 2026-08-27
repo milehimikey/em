@@ -340,6 +340,29 @@ describe("review-state survival across reloads", () => {
   });
 });
 
+describe("review mode frames a slice's own measured content, not the model's full height", () => {
+  it("zooms tightly around what the slice actually contains when its elements' geometry is measurable", async () => {
+    await boot(slicedSvg("v1"), "v1");
+    // jsdom never lays anything out — getBoundingClientRect defaults to all-
+    // zero — so this stub stands in for what a real browser reports for slice
+    // 0's own element. Chosen so every figure below is a whole number by hand.
+    const rect = { left: 100, top: 120, right: 460, bottom: 360, width: 360, height: 240, x: 100, y: 120 };
+    stageSvg().querySelector('[data-slice="0"]').getBoundingClientRect = () => rect;
+
+    byId("reviewToggle").click();
+    await settleFly();
+
+    // toSvg under FIT_800x600 (x = (cx-100)/6, y = cy/6 — see toSvg's own
+    // derivation) maps client (100,120)->(0,20) and (460,360)->(60,60); padded
+    // by 24 and clamped to the natural 0..100 box gives a content frame of
+    // x:[0,84] y:[0,84] — a SQUARE, not the model's full h=100 the old code
+    // always forced regardless of what the slice actually contains — then
+    // frameRect widens it to the stage's 4/3 aspect (84 * 4/3 = 112), centered:
+    // {x:-14, y:0, w:112, h:84}.
+    expectBoxClose(camBox(), { x: -14, y: 0, w: 112, h: 84 });
+  });
+});
+
 describe("doc flyout", () => {
   const clickSlice = (index: number): void => {
     const node = stageSvg().querySelector(`[data-slice="${index}"]`);
@@ -428,6 +451,24 @@ describe("doc flyout", () => {
     es().onmessage!({});
     await untilShows("v2");
     expect(flyoutOpen()).toBe(false);
+  });
+
+  it("lets the flyout scroll natively instead of panning the camera on wheel", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    clickSlice(0);
+    const before = camBox();
+    const evt = new g.WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 40 });
+    byId("docFlyoutBody").dispatchEvent(evt);
+    expectBoxClose(camBox(), before); // the stage's own wheel-pan never ran
+    expect(evt.defaultPrevented).toBe(false); // and didn't block the browser's native scroll
+  });
+
+  it("does not fly/zoom the camera on a double-click inside the flyout", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    clickSlice(0);
+    const before = camBox();
+    byId("docFlyoutBody").dispatchEvent(new g.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expectBoxClose(camBox(), before);
   });
 
   it("stays open and untouched across a transient bad reload (no metadata at all)", async () => {

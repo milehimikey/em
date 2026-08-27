@@ -161,6 +161,51 @@ slice "Ship Order" {
     }
   });
 
+  it("MIL-153: rewrites a slice doc's relative asset links (e.g. its own diagram image) relative to outDir, not the doc's own directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-docassets-"));
+    try {
+      const modelFile = join(dir, "model.em");
+      writeFileSync(
+        modelFile,
+        `slice "Place Order" {
+  command Place Order note "slices/place-order.md"
+}
+`,
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(
+        join(dir, "slices", "place-order.md"),
+        "# Place Order\n\n![Diagram](./place-order.svg)\n\n[external](https://example.com/x)\n",
+      );
+
+      const { model, grid, dot } = compile(readFileSync(modelFile, "utf8"));
+
+      const docHtmlOf = (svg: string): string => {
+        const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(svg)![1];
+        const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+        return payload.slices[0].docHtml;
+      };
+
+      // full diagram: outDir == baseDir == dir -> the doc's own image is one dir
+      // down, at slices/place-order.svg relative to outDir
+      const rawFull = await layoutDot(dot);
+      const fullSvg = composeSvg(rawFull, model, grid, dir, dir);
+      const fullHtml = docHtmlOf(fullSvg);
+      expect(fullHtml).toContain('src="slices/place-order.svg"');
+      expect(fullHtml).toContain('href="https://example.com/x"'); // absolute URL passed through untouched
+
+      // slice diagram: outDir == dir/slices, one level deeper than baseDir -> the
+      // doc's image (itself in slices/) is now a sibling of outDir, not "slices/..."
+      const sliceDir = join(dir, "slices");
+      const { model: sm, grid: sg, dot: sd } = buildSliceDiagram(model, 0);
+      const rawSlice = await layoutDot(sd);
+      const sliceSvg = composeSvg(rawSlice, sm, sg, dir, sliceDir);
+      expect(docHtmlOf(sliceSvg)).toContain('src="place-order.svg"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("renders identically whether or not a slices/ dir exists, when no slice has a doc (non-breaking default)", async () => {
     const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
     const raw = await layoutDot(dot);
