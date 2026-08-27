@@ -3,8 +3,9 @@
 // line "every INV-n has a test that cites its ID" — until now a pure honor system, since no `em`
 // command related a slice doc's invariant IDs to a test suite. Both sides are stable strings
 // (the doc's `INV-*` tokens, a test file's source text), so the citation check is deterministic
-// and grep-shaped: extract every invariant ID a slice doc's body mentions, then scan a test tree
-// for lines that cite it.
+// and grep-shaped: extract every invariant ID a slice doc's own Invariants/Delta sections define
+// (MIL-149: not every ID its prose merely mentions — a doc narratively citing another slice's ID
+// doesn't own it), then scan a test tree for lines that cite it.
 //
 // Deliberately a *second*, independent reader of doc bodies, alongside `em export`'s doc join
 // (docJoin.ts, MIL-91) — not a change to it. `em export`'s frontmatter-only contract is
@@ -32,13 +33,20 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { walkDir } from "../util/walkDir.js";
 
-/** The stable INV token format, scanned across a slice doc's whole body (not just the
- *  `## Invariants / Business Rules` section — a `## Delta` section's Added/Modified/Renamed
- *  requirement IDs are just as citable, see templates/slice.md). `INV-` then one or more
- *  alphanumeric/hyphen segments — matches both `INV-1`/`INV-2` (the template's bare numbering)
- *  and `INV-CHK-4`/`INV-CHK-3a` (the per-slice mnemonic style reference/conform.md's own example
- *  uses). Exported so tests can assert against the exact grammar. */
+/** The stable INV token format. `INV-` then one or more alphanumeric/hyphen segments — matches
+ *  both `INV-1`/`INV-2` (the template's bare numbering) and `INV-CHK-4`/`INV-CHK-3a` (the
+ *  per-slice mnemonic style reference/conform.md's own example uses). Exported so tests can
+ *  assert against the exact grammar. */
 export const INV_TOKEN_RE = /\bINV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b/g;
+
+/** Headings whose content *defines* (or, for `## Delta`, legitimately re-declares) an invariant
+ *  ID for the slice doc it appears in — `## Invariants / Business Rules` itself, and `## Delta`'s
+ *  Added/Modified/Renamed requirement subsections, which introduce/rename IDs "from Invariants
+ *  below" on re-ratification (see templates/slice.md). Every other section — Intent, Scenarios,
+ *  Trigger & Actor, Dependencies & Read Models Affected, Open Questions, ... — is prose that may
+ *  narratively *cite* another slice's ID without this doc owning it (MIL-149: such a mention was
+ *  being cross-credited to the citing slice's own coverage ledger). */
+const OWNERSHIP_HEADING_RE = /^##\s+(?:Invariants(?:\s*\/\s*Business Rules)?|Delta)\s*$/i;
 
 /** Statuses `reference/implement.md`'s coverage gate applies to — a slice hasn't reached the
  *  point of needing test citations before `ready-to-implement`, and stays in scope forever after
@@ -47,18 +55,30 @@ export const INV_TOKEN_RE = /\bINV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b/g;
 const IN_SCOPE_STATUSES = new Set(["ready-to-implement", "implemented"]);
 
 /**
- * Extract every distinct `INV-*` token from a slice doc's body text, in first-occurrence order
- * (a rule stated once in `## Invariants` and mentioned again in a later `## Delta` section dedupes
- * to its first appearance — order is for stable, readable output, not a claim about which mention
- * is canonical).
+ * Extract every distinct `INV-*` token this slice doc *defines*, in first-occurrence order (a
+ * rule stated once in `## Invariants` and re-declared in a later `## Delta` section dedupes to
+ * its first appearance — order is for stable, readable output, not a claim about which mention is
+ * canonical). Scoped to `OWNERSHIP_HEADING_RE`'s sections only, so a doc's prose narratively
+ * citing another slice's ID elsewhere (Dependencies, Open Questions, ...) doesn't cross-credit
+ * that ID as this slice's own (MIL-149) — the section ends at the next `#`/`##` heading or EOF,
+ * same boundary rule sliceDoc.ts's countOpenQuestions() uses, so a `### Added`/`#### Requirement`
+ * subheading under `## Delta` stays in scope while a sibling `## Scenarios` does not.
  */
 export function extractInvariantIds(body: string): string[] {
   const seen = new Set<string>();
   const ids: string[] = [];
-  for (const m of body.matchAll(INV_TOKEN_RE)) {
-    if (!seen.has(m[0])) {
-      seen.add(m[0]);
-      ids.push(m[0]);
+  let inOwnershipSection = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (/^#{1,2}\s/.test(line)) {
+      inOwnershipSection = OWNERSHIP_HEADING_RE.test(line);
+      continue;
+    }
+    if (!inOwnershipSection) continue;
+    for (const m of line.matchAll(INV_TOKEN_RE)) {
+      if (!seen.has(m[0])) {
+        seen.add(m[0]);
+        ids.push(m[0]);
+      }
     }
   }
   return ids;

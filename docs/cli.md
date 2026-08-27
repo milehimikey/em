@@ -747,8 +747,10 @@ every other command's own schema):
 
 Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every
 `INV-<MNEMONIC>-n` has a test that cites its ID" (MIL-130). For each slice whose joined doc's `status` is
-`ready-to-implement` or `implemented`, extracts every `INV-*` invariant ID mentioned in the
-doc's body, then scans `--tests <dir>` recursively for lines that cite each ID. Reports, per ID,
+`ready-to-implement` or `implemented`, extracts every `INV-*` invariant ID the doc's own
+`## Invariants / Business Rules` or `## Delta` sections *define* (MIL-149; not every ID its prose
+elsewhere merely mentions — see **Token format** below), then scans `--tests <dir>` recursively
+for lines that cite each ID. Reports, per ID,
 **cited** (every citing `file:line`) or **uncovered**. Checks that an ID is *cited* — not that
 the citing test is good or passing; test quality stays with review, and test passing stays with
 CI (see [ci.md](ci.md#em-coverage-opt-in) for the CI recipe).
@@ -766,9 +768,13 @@ not machine-generated, so no single fixed shape is enforced — the extraction r
 `INV-` followed by a run of alphanumeric/hyphen segments, covering both the documented per-slice
 mnemonic prefix (`INV-CHK-4`, `INV-CHK-3a` for a rename target — the convention the template
 now demonstrates) and older docs' bare running-number IDs (`INV-1`, `INV-2`) predating that
-convention. The whole doc body is scanned, not just the `## Invariants / Business Rules`
-section — a `## Delta` section's Added/Modified/Renamed requirement IDs are just as citable.
-Citation matching is word-boundary-anchored so `INV-KEY-1` never matches inside `INV-KEY-12`.
+convention. Only the doc's own `## Invariants / Business Rules` section and `## Delta` section
+(whose Added/Modified/Renamed requirement subsections legitimately introduce/rename IDs "from
+Invariants below") count as *defining* an ID for that slice — an ID appearing only in another
+section's prose (Dependencies, Open Questions, ...) is a citation-worthy mention, not an
+attribution, and is **not** collected into that slice's own coverage ledger; the ID still belongs
+to whichever slice's doc actually declares it under its own `## Invariants` (MIL-149). Citation
+matching is word-boundary-anchored so `INV-KEY-1` never matches inside `INV-KEY-12`.
 
 | Flag | Effect |
 |---|---|
