@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { compile } from "../src/pipeline.js";
 import { diffModels, ChangeEntry, ChangeType, DiffCounts, ModelDiff } from "../src/model/diff.js";
-import { buildDiffJson, DiffSide, DIFF_SCHEMA_VERSION } from "../src/emit/diffJson.js";
+import { buildDiffJson, DeltaOp, DiffSide, DIFF_SCHEMA_VERSION } from "../src/emit/diffJson.js";
 
 const PKG_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
@@ -86,8 +86,10 @@ const OPTIONAL_FIELDS = [
 ] as const;
 
 /** Expand a partial entry into the full explicit-null shape the serializer should produce. */
-function expectedEntry(partial: { type: ChangeType } & Partial<Record<(typeof OPTIONAL_FIELDS)[number], unknown>>) {
-  const full: Record<string, unknown> = { type: partial.type };
+function expectedEntry(
+  partial: { type: ChangeType; op: DeltaOp } & Partial<Record<(typeof OPTIONAL_FIELDS)[number], unknown>>,
+) {
+  const full: Record<string, unknown> = { type: partial.type, op: partial.op };
   for (const f of OPTIONAL_FIELDS) full[f] = f in partial ? partial[f] : null;
   return full;
 }
@@ -195,9 +197,9 @@ describe("explicit nulls", () => {
       counts: emptyCounts(),
     };
     const doc = docFor(diff);
-    expect(doc.changes).toEqual([expectedEntry({ type: "slice-added", name: "Fulfillment" })]);
+    expect(doc.changes).toEqual([expectedEntry({ type: "slice-added", op: "Added", name: "Fulfillment" })]);
     // Every optional key is present (not omitted) even though most are null.
-    expect(Object.keys(doc.changes[0])).toEqual(["type", ...OPTIONAL_FIELDS]);
+    expect(Object.keys(doc.changes[0])).toEqual(["type", "op", ...OPTIONAL_FIELDS]);
   });
 });
 
@@ -205,11 +207,11 @@ describe("one correctly-serialized entry per ChangeType", () => {
   const cases: Record<ChangeType, { entry: ChangeEntry; expected: Record<string, unknown> }> = {
     "slice-added": {
       entry: { type: "slice-added", name: "Fulfillment", sliceKey: "fulfillment" },
-      expected: expectedEntry({ type: "slice-added", name: "Fulfillment", sliceKey: "fulfillment" }),
+      expected: expectedEntry({ type: "slice-added", op: "Added", name: "Fulfillment", sliceKey: "fulfillment" }),
     },
     "slice-removed": {
       entry: { type: "slice-removed", name: "Legacy", sliceKey: "legacy" },
-      expected: expectedEntry({ type: "slice-removed", name: "Legacy", sliceKey: "legacy" }),
+      expected: expectedEntry({ type: "slice-removed", op: "Removed", name: "Legacy", sliceKey: "legacy" }),
     },
     "source-added": {
       entry: {
@@ -220,6 +222,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "source-added",
+        op: "Added",
         sliceName: "Checkout",
         sliceKey: "checkout",
         newSource: "https://linear.app/team/issue/MIL-60",
@@ -234,6 +237,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "source-removed",
+        op: "Removed",
         sliceName: "Checkout",
         sliceKey: "checkout",
         oldSource: "https://linear.app/team/issue/MIL-60",
@@ -249,6 +253,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "source-changed",
+        op: "Modified",
         sliceName: "Checkout",
         sliceKey: "checkout",
         oldSource: "https://linear.app/team/issue/MIL-60",
@@ -266,6 +271,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "element-added",
+        op: "Added",
         kind: "event",
         name: "Discount Applied",
         ref: "checkout/event.discount-applied",
@@ -284,6 +290,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "element-removed",
+        op: "Removed",
         kind: "event",
         name: "Discount Applied",
         ref: "checkout/event.discount-applied",
@@ -304,6 +311,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "element-moved",
+        op: "Modified",
         kind: "event",
         name: "Payment Failed",
         ref: "payment/event.payment-failed",
@@ -326,6 +334,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "field-added",
+        op: "Added",
         kind: "command",
         name: "Do Thing",
         ref: "s/command.do-thing",
@@ -348,6 +357,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "field-removed",
+        op: "Removed",
         kind: "command",
         name: "Do Thing",
         ref: "s/command.do-thing",
@@ -371,6 +381,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "field-changed",
+        op: "Modified",
         kind: "command",
         name: "Do Thing",
         ref: "s/command.do-thing",
@@ -393,6 +404,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "from-added",
+        op: "Added",
         kind: "view",
         name: "Availability",
         ref: "catalog/view.availability",
@@ -413,6 +425,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "from-removed",
+        op: "Removed",
         kind: "view",
         name: "Availability",
         ref: "catalog/view.availability",
@@ -433,6 +446,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "note-added",
+        op: "Added",
         kind: "event",
         name: "Thing Happened",
         ref: "s/event.thing-happened",
@@ -453,6 +467,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "note-removed",
+        op: "Removed",
         kind: "event",
         name: "Thing Happened",
         ref: "s/event.thing-happened",
@@ -474,6 +489,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "note-changed",
+        op: "Modified",
         kind: "event",
         name: "Thing Happened",
         ref: "s/event.thing-happened",
@@ -495,6 +511,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "issue-opened",
+        op: "Added",
         kind: "command",
         name: "Do Thing",
         ref: "s/command.do-thing",
@@ -515,6 +532,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "issue-resolved",
+        op: "Removed",
         kind: "command",
         name: "Do Thing",
         ref: "s/command.do-thing",
@@ -536,6 +554,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "issue-changed",
+        op: "Modified",
         kind: "command",
         name: "Do Thing",
         ref: "s/command.do-thing",
@@ -556,6 +575,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "event-marked-public",
+        op: "Modified",
         kind: "event",
         name: "Order Placed",
         ref: "place-order/event.order-placed",
@@ -574,6 +594,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "event-unmarked-public",
+        op: "Modified",
         kind: "event",
         name: "Order Placed",
         ref: "place-order/event.order-placed",
@@ -583,19 +604,19 @@ describe("one correctly-serialized entry per ChangeType", () => {
     },
     "arrow-added": {
       entry: { type: "arrow-added", from: "Orders", to: "Screen" },
-      expected: expectedEntry({ type: "arrow-added", from: "Orders", to: "Screen" }),
+      expected: expectedEntry({ type: "arrow-added", op: "Added", from: "Orders", to: "Screen" }),
     },
     "arrow-removed": {
       entry: { type: "arrow-removed", from: "Orders", to: "Screen" },
-      expected: expectedEntry({ type: "arrow-removed", from: "Orders", to: "Screen" }),
+      expected: expectedEntry({ type: "arrow-removed", op: "Removed", from: "Orders", to: "Screen" }),
     },
     "type-added": {
       entry: { type: "type-added", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" },
-      expected: expectedEntry({ type: "type-added", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" }),
+      expected: expectedEntry({ type: "type-added", op: "Added", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" }),
     },
     "type-removed": {
       entry: { type: "type-removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" },
-      expected: expectedEntry({ type: "type-removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" }),
+      expected: expectedEntry({ type: "type-removed", op: "Removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" }),
     },
     "type-field-added": {
       entry: {
@@ -607,6 +628,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "type-field-added",
+        op: "Added",
         name: "QuoteAcceptedLine",
         ref: "types/quoteacceptedline",
         field: "discountIds",
@@ -623,6 +645,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "type-field-removed",
+        op: "Removed",
         name: "QuoteAcceptedLine",
         ref: "types/quoteacceptedline",
         field: "memo",
@@ -640,6 +663,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       },
       expected: expectedEntry({
         type: "type-field-changed",
+        op: "Modified",
         name: "QuoteAcceptedLine",
         ref: "types/quoteacceptedline",
         field: "quantity",
@@ -658,6 +682,16 @@ describe("one correctly-serialized entry per ChangeType", () => {
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 
+  // `op` (MIL-131) never reads "Renamed": em diff has no rename detection (deliberate — a
+  // rename reads as remove+add, see the ChangeType comment in src/model/diff.ts), so none of
+  // the 28 ChangeTypes map onto it. `DeltaOp` keeps "Renamed" in its union only for vocabulary
+  // parity with the `## Delta` section's own grammar (docs/slice-doc-schema.md).
+  it("never emits op: \"Renamed\" — em diff doesn't detect renames", () => {
+    const ops = new Set(Object.values(cases).map((c) => c.expected.op));
+    expect(ops.has("Renamed")).toBe(false);
+    expect([...ops].sort()).toEqual(["Added", "Modified", "Removed"]);
+  });
+
   for (const [type, { entry, expected }] of Object.entries(cases)) {
     it(`serializes ${type} with explicit nulls on every unused field`, () => {
       const diff: ModelDiff = { changes: [entry], removals: [], counts: emptyCounts() };
@@ -668,7 +702,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
       const diff: ModelDiff = { changes: [], removals: [entry], counts: emptyCounts() };
       const doc = docFor(diff);
       expect(doc.removals).toEqual([expected]);
-      expect(Object.keys(doc.removals[0])).toEqual(["type", ...OPTIONAL_FIELDS]);
+      expect(Object.keys(doc.removals[0])).toEqual(["type", "op", ...OPTIONAL_FIELDS]);
     });
   }
 });
@@ -687,6 +721,7 @@ describe("lineage annotations (MIL-84)", () => {
     expect(doc.changes[0]).toEqual(
       expectedEntry({
         type: "slice-added",
+        op: "Added",
         name: "Discount Rules",
         sliceKey: "discount-rules",
         splitFrom: { raw: "checkout@v3", sliceKey: "checkout", version: 3 },
@@ -722,8 +757,8 @@ describe("lineage annotations (MIL-84)", () => {
     ]);
   });
 
-  it("bumps DIFF_SCHEMA_VERSION to 1.6", () => {
-    expect(DIFF_SCHEMA_VERSION).toBe("1.6");
+  it("bumps DIFF_SCHEMA_VERSION to 1.7", () => {
+    expect(DIFF_SCHEMA_VERSION).toBe("1.7");
   });
 });
 

@@ -532,7 +532,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.6"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.7"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -594,6 +594,18 @@ A `~2`/`~3`-style dedupe suffix on a colliding name flows through automatically,
 values are read straight from the same `computeRefs()` `em export` already uses — a consumer
 can join a diff entry straight to the matching `em export` document's slice `key` or
 element/type `ref` without re-deriving the slug or reimplementing dedupe.
+
+**Delta vocabulary join** (`op`, added in schema `1.7`, MIL-131): every entry also carries a
+coarsened `op: "Added" | "Modified" | "Removed" | "Renamed"`, the same four Title Case operation
+words a slice doc's `## Delta` section uses (MIL-88, see
+[slice-doc-schema.md](slice-doc-schema.md#delta-section-grammar-and-lifecycle)) — shared
+vocabulary so a structural diff and an authored delta can eventually be checked against each
+other (a separate, not-yet-built decision). Every `*-added` type (plus `issue-opened`) maps to
+`"Added"`; every `*-removed` type (plus `issue-resolved`) maps to `"Removed"`; every `*-changed`
+type, `element-moved`, and `event-marked-public`/`event-unmarked-public` map to `"Modified"`.
+`"Renamed"` is never emitted — `em diff` still has no rename detection (see "Renames are out of
+scope" above), so `op` reports the same honest read the rest of the entry already does, just in
+the Delta section's own words.
 
 **Lineage annotation** (`splitFrom`, `mergedFrom`, `supersededBy`, added in schema `1.6`,
 MIL-84): when a `slice-added` entry's *new*-side slice doc declares `split-from`/`merged-from`

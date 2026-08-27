@@ -69,7 +69,12 @@ trailing `assigned` clause marks an event field as system-assigned (server-minte
 decision-time timestamps) — it's excluded from the event ← command fields-completeness check
 entirely, so `em validate --slice-ready` no longer permanently blocks on the exact pattern the
 shipped example model itself uses (`schemaVersion` `1.7`; see
-[validation.md#fields-completeness](validation.md#fields-completeness)).
+[validation.md#fields-completeness](validation.md#fields-completeness)). Most recently
+(MIL-131): `em diff --json` entries now carry `op`, each `ChangeType` coarsened onto the same
+Added/Modified/Removed/Renamed vocabulary a slice doc's `## Delta` section uses (MIL-88) —
+shared vocabulary only, `diffSchemaVersion` `1.7`; comparing an authored `## Delta` against the
+structural diff it claims to describe is still a separate, not-yet-built decision (see
+[slice-doc-schema.md#delta-section-grammar-and-lifecycle](slice-doc-schema.md#delta-section-grammar-and-lifecycle)).
 
 **Modeling and rendering**
 

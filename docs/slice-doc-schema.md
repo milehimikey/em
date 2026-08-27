@@ -183,10 +183,14 @@ in a slice that's already bound elsewhere, each get their own diagnostic there.
 `## Delta` is the body section that pairs with a re-ratification (see "`status` under
 re-ratification" below) — a structured record of what changed to produce the version currently
 in the frontmatter, in typed operation blocks (MIL-88) rather than a one-line summary. Like the
-lineage keys above, it's currently authored, not parsed — no `em` command reads it — but it's
-documented here rather than left purely to the skill template because its shape is a structural
-contract other tooling may parse later (the ticket's named stretch goal is `em diff` emitting
-this same vocabulary for slice docs), same reasoning as the lineage grammar.
+lineage keys above, it's currently authored, not parsed — no `em` command reads *this section*
+— but it's documented here rather than left purely to the skill template because its shape is a
+structural contract other tooling may parse later, same reasoning as the lineage grammar.
+`em diff --json` now emits the same four-word vocabulary on its own structural entries (`op:
+"Added" | "Modified" | "Removed" | "Renamed"`, schema `1.7`, MIL-131 — see
+[cli.md](cli.md#em-diff-old-new)), so the two sides speak the same language; comparing an
+authored `## Delta` against the structural diff of the revisions it claims to describe is still
+a separate, not-yet-built decision.
 
 **The heading is always the literal string `## Delta` — never a variable heading** (e.g. never
 `## Delta: v1 → v2`). Several consumers key on exact `##` text when locating sections in a slice
