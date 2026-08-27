@@ -5,6 +5,7 @@ import { normalize } from "../src/model/model.js";
 import { layout } from "../src/layout/grid.js";
 import { parseNodeRects } from "../src/render/svgGeometry.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "../src/render/sliceOverlay.js";
+import { SliceDoc } from "../src/catalog/sliceDoc.js";
 
 // Two slices, three bands (ui/api/event) — enough to exercise element tagging
 // across slices, header-cell ranges, and a multi-row swimlane label range.
@@ -69,22 +70,22 @@ describe("buildSliceOverlay", () => {
   it("emits one slice range per header cell, in index order", () => {
     const { model, grid } = build();
     const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
-    const out = buildSliceOverlay(SVG, grid, rects);
+    const out = buildSliceOverlay(SVG, grid, rects, [null, null]);
 
     expect(out).toContain('<metadata id="em-slices">');
     expect(out).toContain("<style>.em-slice-dim{opacity:.15");
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     const payload = JSON.parse(json);
     expect(payload.slices).toEqual([
-      { index: 0, name: "Place Order", x0: 0, x1: 100 },
-      { index: 1, name: "Ship Order", x0: 120, x1: 220 },
+      { index: 0, name: "Place Order", x0: 0, x1: 100, docHtml: null },
+      { index: 1, name: "Ship Order", x0: 120, x1: 220, docHtml: null },
     ]);
   });
 
   it("unions the row-label column's x-range across every labeled row, skipping the label-less header row", () => {
     const { model, grid } = build();
     const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
-    const out = buildSliceOverlay(SVG, grid, rects);
+    const out = buildSliceOverlay(SVG, grid, rects, [null, null]);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     const payload = JSON.parse(json);
 
@@ -97,7 +98,7 @@ describe("buildSliceOverlay", () => {
 
   it("returns '' when no slice has a header-cell rect", () => {
     const { grid } = build();
-    const out = buildSliceOverlay("<svg></svg>", grid, new Map());
+    const out = buildSliceOverlay("<svg></svg>", grid, new Map(), []);
     expect(out).toBe("");
   });
 
@@ -115,17 +116,32 @@ describe("buildSliceOverlay", () => {
     );
     const { model, grid } = build();
     const rects = parseNodeRects(TRANSFORMED, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
-    const out = buildSliceOverlay(TRANSFORMED, grid, rects);
+    const out = buildSliceOverlay(TRANSFORMED, grid, rects, [null, null]);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     const payload = JSON.parse(json);
 
     // toRoot(x) = sx * (x + tx) = 2 * (x + 4)
     expect(payload.slices).toEqual([
-      { index: 0, name: "Place Order", x0: 8, x1: 208 }, // 2*(0+4), 2*(100+4)
-      { index: 1, name: "Ship Order", x0: 248, x1: 448 }, // 2*(120+4), 2*(220+4)
+      { index: 0, name: "Place Order", x0: 8, x1: 208, docHtml: null }, // 2*(0+4), 2*(100+4)
+      { index: 1, name: "Ship Order", x0: 248, x1: 448, docHtml: null }, // 2*(120+4), 2*(220+4)
     ]);
     // Row-label range shifts/scales the same way as the untransformed-fixture
     // test's {x0: -94, x1: 59}: 2*(-94+4)=-180, 2*(59+4)=126.
     expect(payload.rowLabels).toEqual({ x0: -180, x1: 126 });
+  });
+
+  it("MIL-153: embeds each slice's resolved doc as rendered HTML, by index, null when it has none", () => {
+    const { model, grid } = build();
+    const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
+    const docs = [{ html: "<p>Place Order doc</p>" } as SliceDoc, null];
+    const out = buildSliceOverlay(SVG, grid, rects, docs);
+    const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
+    // Real XML/DOM parsing decodes entities on the way back out of a text node
+    // (viewer.html reads it via metaEl.textContent); mirror that unescaping here
+    // since this test reads the raw metadata text with a regex instead.
+    const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+
+    expect(payload.slices[0].docHtml).toBe("<p>Place Order doc</p>");
+    expect(payload.slices[1].docHtml).toBeNull();
   });
 });

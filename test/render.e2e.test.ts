@@ -123,6 +123,44 @@ slice "Ship Order" {
     }
   });
 
+  it("MIL-153: embeds a real on-disk slice doc as em-slices metadata HTML, and drops its own doc-binding note marker", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-docflyout-"));
+    try {
+      const modelFile = join(dir, "model.em");
+      writeFileSync(
+        modelFile,
+        `slice "Place Order" {
+  command Place Order note "slices/place-order.md"
+}
+slice "Ship Order" {
+  command Ship Order note "notes/ship-order.md"
+}
+`,
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(join(dir, "slices", "place-order.md"), "# Place Order\n\nSome body text.\n");
+      mkdirSync(join(dir, "notes"), { recursive: true });
+      writeFileSync(join(dir, "notes", "ship-order.md"), "# Ship Order notes\n");
+
+      const { model, grid, dot } = compile(readFileSync(modelFile, "utf8"));
+      const raw = await layoutDot(dot);
+      const svg = composeSvg(raw, model, grid, dir, dir);
+
+      const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(svg)![1];
+      const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+      expect(payload.slices[0].docHtml).toContain("Some body text.");
+      expect(payload.slices[1].docHtml).toBeNull(); // "Ship Order" has no slices/ship-order.md of its own
+
+      // The doc-binding self-reference on "Place Order" produced no marker/legend
+      // row; the genuine note on "Ship Order" still did.
+      expect(svg).toContain('class="em-notes"');
+      expect(svg).toContain('href="notes/ship-order.md"');
+      expect(svg).not.toContain("slices/place-order.md");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("renders identically whether or not a slices/ dir exists, when no slice has a doc (non-breaking default)", async () => {
     const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
     const raw = await layoutDot(dot);

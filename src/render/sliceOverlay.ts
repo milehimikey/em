@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Tags each element's rendered node group with its slice index, and embeds a
-// <metadata> block describing every slice's name and x-range in the SVG.
+// <metadata> block describing every slice's name, x-range, and resolved design
+// doc (as rendered HTML) in the SVG.
 //
 // This is what lets the storyboard mode in the live viewer (`em watch --serve`,
-// see src/render/serve.ts) highlight and pan/zoom to one slice at a time
-// entirely client-side, with no separate data fetch — everything the browser
-// needs travels inside the SVG it already loads.
+// see src/render/serve.ts) highlight and pan/zoom to one slice at a time, and
+// (MIL-153) open a flyout with a slice's own doc on click — entirely
+// client-side, with no separate data fetch — everything the browser needs
+// travels inside the SVG it already loads.
 //
 // A slice's x-range comes from its header-cell rect (headerCellId), not from
 // element rects — a slice can have empty rows, which would give an element-based
@@ -26,6 +28,7 @@
 import { NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId } from "../layout/grid.js";
 import { rowLabelId } from "../emit/dot.js";
+import { SliceDoc } from "../catalog/sliceDoc.js";
 import { decode, readGraphTransform, NODE_GROUP, TITLE, Rect } from "./svgGeometry.js";
 
 const TEXT = /<text\b([^>]*)>([^<]*)<\/text>/;
@@ -53,6 +56,10 @@ interface SliceRange {
   name: string;
   x0: number;
   x1: number;
+  /** The slice's resolved design doc, rendered to HTML (see catalog/sliceDoc.ts's
+   *  marked-based `.html`), or null if it has none yet — the live view's slice-click
+   *  flyout (MIL-153) renders this directly, with no separate fetch. */
+  docHtml: string | null;
 }
 
 /** `<metadata>` (slice ranges, as JSON) + `<style>` (the dim class) block, spliced
@@ -66,8 +73,17 @@ interface SliceRange {
  *  `<g class="graph" transform="scale(...) translate(...)">` wrapper — not the root
  *  SVG/viewBox space the served viewer sets `viewBox` in. Every x0/x1 here goes
  *  through readGraphTransform()'s toRoot() before it's embedded, the same
- *  conversion fitCanvas() applies to the edge-detour bbox for the same reason. */
-export function buildSliceOverlay(svg: string, grid: Grid, rects: Map<string, Rect>): string {
+ *  conversion fitCanvas() applies to the edge-detour bbox for the same reason.
+ *
+ *  `docs` is each slice's resolved doc (or null), same order as `grid`'s columns —
+ *  see render/sliceStatus.ts's `readSliceDocs`, the same resolution that colors the
+ *  slice's header by status. */
+export function buildSliceOverlay(
+  svg: string,
+  grid: Grid,
+  rects: Map<string, Rect>,
+  docs: (SliceDoc | null)[],
+): string {
   const transform = readGraphTransform(svg);
   const toRootX = (x: number): number => transform.toRoot(x, 0).x;
 
@@ -75,7 +91,13 @@ export function buildSliceOverlay(svg: string, grid: Grid, rects: Map<string, Re
   for (let c = 0; c < grid.cols; c++) {
     const r = rects.get(headerCellId(c));
     if (!r) continue;
-    slices.push({ index: c, name: grid.sliceNames[c], x0: toRootX(r.left), x1: toRootX(r.right) });
+    slices.push({
+      index: c,
+      name: grid.sliceNames[c],
+      x0: toRootX(r.left),
+      x1: toRootX(r.right),
+      docHtml: docs[c]?.html ?? null,
+    });
   }
   if (slices.length === 0) return "";
 

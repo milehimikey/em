@@ -19,12 +19,13 @@ import { Resvg } from "@resvg/resvg-js";
 import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
 import { Element, NormalizedModel } from "../model/model.js";
+import { SliceDoc } from "../catalog/sliceDoc.js";
 import { Grid } from "../layout/grid.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, buildIssueMarkers, buildDivergenceMarkers, appendNoteLegend } from "./drawNotes.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
-import { readSliceStatuses } from "./sliceStatus.js";
+import { readSliceDocs } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
@@ -66,8 +67,8 @@ export function composeSvg(
   outDir: string,
 ): string {
   const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
-  const statuses = readSliceStatuses(model, baseDir);
-  return withOverlays(rawSvg, model, grid, hrefOf, statuses);
+  const docs = readSliceDocs(model, baseDir);
+  return withOverlays(rawSvg, model, grid, hrefOf, docs);
 }
 
 /** Serialize a composed SVG string to `outPath` in the requested format — split out
@@ -187,13 +188,14 @@ function withOverlays(
   model: NormalizedModel,
   grid: Grid,
   hrefOf: (el: Element) => string,
-  statuses: (string | null)[],
+  docs: (SliceDoc | null)[],
 ): string {
   const rects = parseNodeRects(svg, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
   const divergences = buildDivergenceMarkers(model, rects);
+  const statuses = docs.map((doc) => doc?.status ?? null);
 
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
   // room before anything else measures or appends to the viewBox
@@ -206,7 +208,7 @@ function withOverlays(
   // viewer (`em watch --serve`) can highlight/zoom to one slice at a time
   // client-side, purely from what's already in the SVG.
   out = tagSliceAttrs(out, model);
-  const sliceOverlay = buildSliceOverlay(out, grid, rects);
+  const sliceOverlay = buildSliceOverlay(out, grid, rects, docs);
   // arrowhead markers + slice metadata/style go just inside <svg …>
   out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}${sliceOverlay}`);
   // edges go under the boxes: just before the first node group

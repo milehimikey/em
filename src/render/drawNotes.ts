@@ -27,8 +27,15 @@
 // Marker coordinates come from parseNodeRects (the box coordinate space, inside
 // Graphviz's transform group). The legend is laid out in the SVG's root/viewBox
 // space, so it is appended after the diagram and the canvas is grown to fit.
+//
+// MIL-153: a note that's only a slice's own doc-binding self-reference (`note
+// "slices/<key>.md"`, see catalog/docJoin.ts's NOTE_SLICE_PATH) never gets a marker or
+// legend row — see notedElements()'s own comment. Since the live view's slice click
+// (src/render/sliceOverlay.ts) opens that same doc directly, flagging the binding note
+// too would just be clutter.
 
 import { Element, NormalizedModel } from "../model/model.js";
+import { computeRefs } from "../model/refs.js";
 import { Rect } from "./svgGeometry.js";
 
 const FOLD = 13; // leg length of the dog-ear, in user units
@@ -40,9 +47,20 @@ const ISSUE_STROKE = "#8B0000"; // dark red
 const DIVERGENCE_FILL = "#26A69A"; // muted teal (accepted divergences — settled, not open)
 const DIVERGENCE_STROKE = "#00695C"; // dark teal
 
-/** Elements carrying a note, in document order. Index + 1 is the footnote number. */
+/**
+ * Elements carrying a note, in document order, EXCLUDING an element whose `.note` is its
+ * own slice's canonical doc-binding self-reference (`note "slices/<key>.md"` naming this
+ * same element's slice — see `catalog/docJoin.ts`'s `NOTE_SLICE_PATH`/`resolveSliceDocJoin`).
+ * That's bookkeeping metadata for `em export`/`sliceReadyValidate` to join the element to
+ * its slice's design doc, not a real annotation — since MIL-153 the doc itself is directly
+ * reachable by clicking the slice in the live view, so flagging it here would just be
+ * clutter. A `.note` naming any OTHER path (including a different slice's doc, e.g. a
+ * MIL-121 cross-binding) is a genuine note and still renders normally.
+ * Index + 1 is the footnote number.
+ */
 export function notedElements(model: NormalizedModel): Element[] {
-  return model.elements.filter((el) => el.note);
+  const { sliceKeys } = computeRefs(model);
+  return model.elements.filter((el) => el.note && el.note !== `slices/${sliceKeys[el.sliceIndex]}.md`);
 }
 
 /** Elements carrying an open issue, in document order. Index + 1 is the footnote number. */
