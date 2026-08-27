@@ -161,7 +161,8 @@ element.
 
 Once two connected elements both declare fields, `em validate` traces them — a view field
 with no matching source-event field, or an event field no same-slice command provides, gets
-a warning. See [validation.md](validation.md).
+a warning (unless the event field is marked `assigned` — see [below](#assigned-fields)). See
+[validation.md](validation.md).
 
 ## Event tags
 
@@ -257,6 +258,39 @@ all**: a rename is still reported as a removal plus an addition, same as before 
 existed. `renamed from` is codegen/export metadata for payload conversion, not diff input —
 diff's no-inference philosophy is unchanged; a consumer that wants "this old name became this
 new name" reads it from the export, not from a diff run.
+
+## Assigned fields
+
+**Event fields only.** A trailing `assigned` clause marks a field as system-assigned — set by
+the server or handler that turns the command into the event, never supplied by the triggering
+command itself. An identifier the server mints, a `…At` timestamp taken at decision time: these
+legitimately appear on the event with no matching command field, and `assigned` records that as
+a modeling fact instead of leaving `em validate` to guess. Writing it on a `command`, `view`,
+`ui`, or `type` field — or an element-level clause on a non-event element — is a parse error,
+the same posture as `tag`.
+
+```
+event Order Placed {
+  orderId assigned
+  customerId
+  total: Money
+  placedAt: Instant assigned
+}
+```
+
+- Trails a single field spec, after its type (`placedAt: Instant assigned`) or after the bare
+  name of a typeless field (`orderId assigned`) — same trailing-clause family as `tag` and
+  `renamed from`, and composes with either in any order.
+- A field whose entire text is just `assigned` (no type, nothing before it) is a field literally
+  NAMED `assigned`, not a clause — same anchoring rule `tag` uses.
+- Excludes the field from `em validate`'s event ← command fields-completeness check (see
+  [validation.md](validation.md)) — no warning, and it no longer counts against
+  `em validate --slice-ready` either, since the diagnostic never fires. It stays fully visible
+  to view ← event field tracing: the marker narrows only what the command is expected to
+  supply, not what a downstream view is allowed to read.
+
+`em export` carries the marker forward as `assigned: boolean` on each field (`true`/`false`,
+always present, same convention as `tag`) — see [cli.md](cli.md).
 
 ## Named types
 

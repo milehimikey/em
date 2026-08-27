@@ -201,7 +201,8 @@ consistently instead of trusting it by eye.
   event field gets a warning.
 - **Event ← command** — every field on an `event` should trace back to a field on a command
   in the same slice (unioned across commands, in the rare case a slice has more than one).
-  An event field the command never mentions gets a warning.
+  An event field the command never mentions gets a warning — unless the field carries a
+  trailing `assigned` clause (below).
 
 Both checks only fire when **both sides declare `{ fields }`** — the view/event being
 checked, and *every* element on the contributing side (every source event of the view;
@@ -214,14 +215,34 @@ normalization as `from`/`arrow` references (trim, lowercase, collapse whitespace
 not compared. UI fields, cross-slice/automation tracing, and rename detection are out of
 scope for now.
 
-**Expect some of these warnings to be correct and permanent.** System-generated data —
-identifiers the server mints, `…At` timestamps taken at decision time, values a read model
-derives rather than copies — legitimately appears on an event or view without appearing on
-the command that triggered it. The example model shipped with `em` warns for exactly this
-reason. The rule can't tell "the system supplies this" from "somebody forgot this", so it
-reports both and leaves the judgment to you: confirm it's intentional and move on, or add
-the field where it was genuinely missing. That's also why these are warnings and never
-block a render or a merge.
+**`assigned` — mark a system-assigned event field (MIL-148).** An identifier the server
+mints, an `…At` timestamp taken at decision time — these legitimately appear on an event
+without appearing on the command that triggered it, because the client never supplied them;
+the handler did. Mark such a field with a trailing `assigned` clause (event fields only,
+same trailing-clause family as `tag` and `renamed from`) and it's excluded from the event ←
+command check entirely — no warning, and (unlike a warning) it no longer counts against
+`em validate --slice-ready` either:
+
+```
+event Order Placed {
+  orderId assigned
+  customerId
+  total: Money
+  placedAt: Instant assigned
+}
+```
+
+An `assigned` field stays fully visible to view ← event tracing — the marker narrows only
+the event ← command check, not what a downstream view is allowed to read.
+
+**Everything else in this section is still just a warning, and some of it will be correct
+and permanent.** A read-model field a view *derives* rather than copies straight from a
+single source event (a computed status, an aggregate) has no field-level escape hatch today
+— the rule can't tell "the view legitimately derives this" from "somebody forgot this", so
+it reports both and leaves the judgment to you: confirm it's intentional and move on, or add
+the field where it was genuinely missing. These warnings never block a render or a merge —
+but note that unlike an `assigned` field, an un-marked warning **does** still count against
+`--slice-ready` if it's scoped to that slice (see [cli.md](cli.md)).
 
 An `issue` warning never blocks by default, same as every other warning — `em render`,
 `em watch`, and `em validate` all still succeed on a model with open issues. Use

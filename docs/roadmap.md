@@ -64,7 +64,12 @@ sizing independently (a wrapped 3-line label no longer leaves its short row-mate
 short and misaligned); note/issue/divergence corner markers gained a white halo so they read
 clearly against any element-kind fill, not just the ones with enough contrast by luck; and
 PDF is now composed in-process with pdfkit + svg-to-pdfkit — no system `rsvg-convert`/librsvg
-needed for PDF anymore (see [dependencies.md](dependencies.md)).
+needed for PDF anymore (see [dependencies.md](dependencies.md)). Most recently (MIL-148): a
+trailing `assigned` clause marks an event field as system-assigned (server-minted IDs,
+decision-time timestamps) — it's excluded from the event ← command fields-completeness check
+entirely, so `em validate --slice-ready` no longer permanently blocks on the exact pattern the
+shipped example model itself uses (`schemaVersion` `1.7`; see
+[validation.md#fields-completeness](validation.md#fields-completeness)).
 
 **Modeling and rendering**
 

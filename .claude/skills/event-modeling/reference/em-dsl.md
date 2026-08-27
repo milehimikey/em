@@ -130,7 +130,7 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `renamed from`, `{ fields }` |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, field-level `assigned`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
@@ -203,6 +203,18 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   new field — give the quoted-name field a type, or write fields one per line, to avoid the
   ambiguity. `em export` carries it as `renamedFrom: string[] | null` on both the element and
   each field. **`em diff` does not read this clause** — a rename still reports as remove+add.
+- **`assigned`** (event fields only): marks a field as system-assigned — set by the server/
+  handler, never supplied by the triggering command (a minted ID, a decision-time timestamp).
+  Trails a field's type, or the bare name of a typeless field (`orderId assigned`,
+  `placedAt: Instant assigned`) — same trailing-clause family as `tag`/`renamed from`, composes
+  with either in any order. A field whose ENTIRE text is just `assigned` is a field named
+  `assigned`, not a clause. `assigned` on a command/view/`ui`/`type` field is a parse error.
+  Excludes the field from `em validate`'s event ← command fields-completeness check (and thus
+  from `--slice-ready`, since the diagnostic never fires) without narrowing view ← event
+  tracing. `em export` carries it as `assigned: boolean` on the field, always present, same
+  `=== true` convention as `tag`. **Reach for this before echoing a server-set field onto the
+  command just to silence a fields-completeness warning** — that misrepresents what the client
+  actually sends.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured
