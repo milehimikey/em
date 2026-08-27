@@ -29,6 +29,15 @@
   src/render/sliceOverlay.ts embeds in every rendered SVG. Review state lives
   outside the load pipeline and is re-applied after every SSE-triggered swap -
   a facilitator hand-editing the model live must not lose their place.
+
+  Doc flyout (MIL-153): clicking any element belonging to a slice opens a
+  side panel with that slice's own design doc, rendered server-side to HTML
+  and carried in the same em-slices metadata (no separate fetch — see
+  src/render/sliceOverlay.ts's docHtml field). Independent of review mode: a
+  slice click never moves the camera, and stepping/navigating never touches
+  the flyout. Like review state, which slice's doc is open lives outside the
+  load pipeline, refreshed (or closed, if the slice vanished) after every
+  reload rather than reset by one.
 -->
 <html lang="en">
 <head>
@@ -85,6 +94,48 @@
     }
     #stage.dragging { cursor: grabbing; }
     #stage svg { width: 100%; height: 100%; display: block; }
+    #docFlyout {
+      position: absolute; top: 0; right: 0; bottom: 0; width: min(640px, 94%);
+      background: #fff; border-left: 1px solid #d0d3d7; box-shadow: -2px 0 10px rgba(0, 0, 0, .15);
+      display: flex; flex-direction: column; z-index: 5;
+      transform: translateX(100%); transition: transform .2s ease;
+      /* #stage sets these for its own drag-to-pan surface; the flyout is a normal
+         panel — its text should be selectable and its cursor should look normal. */
+      user-select: text; -webkit-user-select: text; cursor: auto; touch-action: auto;
+    }
+    #docFlyout.open { transform: translateX(0); }
+    #docFlyout .docHead {
+      display: flex; align-items: center; gap: .5rem; flex: none;
+      padding: .55rem .9rem; background: #1f2933; color: #fff; font-size: 14px; font-weight: 600;
+    }
+    #docFlyout .docHead span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #docFlyout .docHead button {
+      margin-left: auto; background: none; border: 0; color: #fff;
+      font-size: 18px; line-height: 1; cursor: pointer; opacity: .8; flex: none;
+    }
+    #docFlyout .docBody {
+      /* min-height: 0 overrides a flex item's default min-height: auto, which would
+         otherwise let this grow to fit all its content instead of scrolling — the
+         actual cause of "no way to scroll it": without it the body just spills past
+         the flyout's bottom edge, clipped invisibly by #stage's own overflow:hidden. */
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+      padding: .9rem 1.1rem; font-size: 13px; line-height: 1.55; color: #202124;
+    }
+    #docFlyout .docBody.empty { color: #5f6368; font-style: italic; }
+    #docFlyout .docBody img { max-width: 100%; height: auto; display: block; margin: .5em 0; }
+    #docFlyout .docBody :is(h1, h2, h3, h4, h5, h6) { margin: 1em 0 .35em; line-height: 1.3; }
+    #docFlyout .docBody :is(h1, h2, h3, h4, h5, h6):first-child { margin-top: 0; }
+    #docFlyout .docBody p, #docFlyout .docBody ul, #docFlyout .docBody ol { margin: .5em 0; }
+    #docFlyout .docBody ul, #docFlyout .docBody ol { padding-left: 1.3em; }
+    #docFlyout .docBody a { color: #2f6fed; }
+    #docFlyout .docBody code { background: #f0f1f3; padding: .1em .3em; border-radius: 3px; font-size: 12px; }
+    #docFlyout .docBody pre { background: #f0f1f3; padding: .6rem; border-radius: 4px; overflow-x: auto; }
+    #docFlyout .docBody pre code { background: none; padding: 0; }
+    #docFlyout .docBody blockquote {
+      margin: .5em 0; padding-left: .8em; border-left: 3px solid #d0d3d7; color: #5f6368;
+    }
+    #docFlyout .docBody table { border-collapse: collapse; margin: .5em 0; }
+    #docFlyout .docBody :is(th, td) { border: 1px solid #d0d3d7; padding: .3em .5em; }
   </style>
 </head>
 <body>
@@ -109,7 +160,15 @@
     <div id="filmstrip"></div>
     <button class="nav" id="nextSlice" aria-label="Next slice">›</button>
   </nav>
-  <div id="stage"></div>
+  <div id="stage">
+    <aside id="docFlyout">
+      <div class="docHead">
+        <span id="docFlyoutTitle"></span>
+        <button id="docFlyoutClose" aria-label="Close">×</button>
+      </div>
+      <div class="docBody" id="docFlyoutBody"></div>
+    </aside>
+  </div>
   <script>
     // ?svg=<name>.svg picks the model file (default model.svg), so one server
     // serves any model without editing this page. The allowlist keeps the
@@ -132,13 +191,21 @@
     const prevBtn = document.getElementById("prevSlice");
     const nextBtn = document.getElementById("nextSlice");
     const zoomPct = document.getElementById("zoomPct");
+    const docFlyout = document.getElementById("docFlyout");
+    const docFlyoutTitle = document.getElementById("docFlyoutTitle");
+    const docFlyoutBody = document.getElementById("docFlyoutBody");
+    const docFlyoutClose = document.getElementById("docFlyoutClose");
 
     // --- review-mode state: outside the load pipeline on purpose, see the
     // file-level comment above — a reload re-applies it, never resets it. ---
     let reviewMode = false;
     let activeSlice = null; // slice index, or null for "show all"
-    let slices = []; // [{index, name, x0, x1}], from this load's <metadata>
+    let slices = []; // [{index, name, x0, x1, docHtml}], from this load's <metadata>
     let rowLabels = null; // {x0, x1} | null, the swimlane label column's range
+
+    // --- doc flyout state: independent of review mode, outside the load
+    // pipeline for the same reason review state is — see the file comment. ---
+    let openSliceIndex = null; // slice index whose doc the flyout shows, or null when closed
 
     // --- camera state ---
     let svgEl = null; // the inline <svg>, null until the first good load
@@ -320,6 +387,14 @@
           activeSlice = slices[0].index;
         }
         if (reviewMode && activeSlice === null) activeSlice = slices[0].index;
+        // Same survives-a-reload treatment for the doc flyout: refresh its
+        // content (the doc may have changed) if its slice is still here,
+        // close it if the slice is gone — but only on a reload that actually
+        // carries real slice metadata, never on a transient bad render.
+        if (openSliceIndex !== null) {
+          if (slices.some(function (s) { return s.index === openSliceIndex; })) renderDocFlyout();
+          else closeDoc();
+        }
       }
       renderChrome();
       applyDim();
@@ -355,16 +430,59 @@
     }
 
     // --- review mode / storyboard ---
+
+    // The union, in natural/model coordinates, of every element actually
+    // belonging to slice `index` — lets sliceFrame zoom tightly around what a
+    // slice contains instead of always keeping the model's FULL height in
+    // frame. Always requiring the full height meant a model with few slices
+    // but several swimlane rows could never zoom in tighter than Fit: letting
+    // frameRect grow the frame's width to preserve that full height, on a
+    // landscape stage, routinely produced a frame wider than the whole
+    // diagram. getBoundingClientRect() + toSvg() reuses the exact camera math
+    // already trusted for zoom-about-cursor, so this needs no new server-side
+    // geometry or metadata. Returns null when there's no usable geometry yet
+    // (nothing tagged, or a non-layout test environment) — sliceFrame falls
+    // back to the old full-height framing in that case.
+    function sliceContentBox(index) {
+      if (!svgEl || !cam) return null;
+      const nodes = svgEl.querySelectorAll('[data-slice="' + index + '"]');
+      let box = null;
+      nodes.forEach(function (node) {
+        const r = node.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
+        const p0 = toSvg(r.left, r.top);
+        const p1 = toSvg(r.right, r.bottom);
+        const nx0 = Math.min(p0.x, p1.x), nx1 = Math.max(p0.x, p1.x);
+        const ny0 = Math.min(p0.y, p1.y), ny1 = Math.max(p0.y, p1.y);
+        box = box
+          ? { x0: Math.min(box.x0, nx0), x1: Math.max(box.x1, nx1), y0: Math.min(box.y0, ny0), y1: Math.max(box.y1, ny1) }
+          : { x0: nx0, x1: nx1, y0: ny0, y1: ny1 };
+      });
+      return box;
+    }
+
     function sliceFrame(index) {
       let slice = null;
       for (const s of slices) if (s.index === index) slice = s;
       if (!slice || !natural) return fitCam();
       const PAD = 24; // breathing room around the framed slice
+      const content = sliceContentBox(index);
       let x0 = rowLabels ? Math.min(rowLabels.x0, slice.x0) : slice.x0;
       let x1 = slice.x1;
+      // Vertically, frame just the slice's own content when we can measure it;
+      // otherwise fall back to the model's full height (every swimlane row).
+      let y0 = natural.y, y1 = natural.y + natural.h;
+      if (content) {
+        x0 = Math.min(x0, content.x0);
+        x1 = Math.max(x1, content.x1);
+        y0 = content.y0;
+        y1 = content.y1;
+      }
       x0 = Math.max(natural.x, x0 - PAD);
       x1 = Math.min(natural.x + natural.w, x1 + PAD);
-      return frameRect(x0, natural.y, Math.max(1, x1 - x0), natural.h);
+      y0 = Math.max(natural.y, y0 - PAD);
+      y1 = Math.min(natural.y + natural.h, y1 + PAD);
+      return frameRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
     }
 
     function renderChrome() {
@@ -391,6 +509,33 @@
           Number(node.getAttribute("data-slice")) !== activeSlice;
         node.classList.toggle("em-slice-dim", dim);
       });
+    }
+
+    // --- doc flyout: click a slice's own node to see its design doc, purely
+    // an overlay — it never moves the camera or touches review state. ---
+    function sliceByIndex(index) {
+      for (const s of slices) if (s.index === index) return s;
+      return null;
+    }
+
+    function renderDocFlyout() {
+      const s = sliceByIndex(openSliceIndex);
+      if (!s) { docFlyout.classList.remove("open"); return; }
+      docFlyoutTitle.textContent = s.name;
+      docFlyoutBody.classList.toggle("empty", !s.docHtml);
+      if (s.docHtml) docFlyoutBody.innerHTML = s.docHtml;
+      else docFlyoutBody.textContent = "No design doc yet for this slice.";
+      docFlyout.classList.add("open");
+    }
+
+    function openDoc(index) {
+      openSliceIndex = index;
+      renderDocFlyout();
+    }
+
+    function closeDoc() {
+      openSliceIndex = null;
+      docFlyout.classList.remove("open");
     }
 
     function goTo(index) {
@@ -431,13 +576,23 @@
     document.getElementById("errorDismiss").addEventListener("click", function () {
       banner.hidden = true; // retries keep going quietly
     });
+    docFlyoutClose.addEventListener("click", closeDoc);
 
     // --- direct manipulation: drag pan, wheel pan, ctrl+wheel / pinch zoom ---
     const pointers = new Map(); // pointerId -> last client {x, y}
     let drag = null; // { id, startX, startY, active } — single-pointer pan
     let suppressClick = false; // swallow the click that ends a drag/pinch
 
+    // The doc flyout is a normal interactive DOM panel stacked over the stage
+    // (see #docFlyout's z-index) — its own scrolling, text selection, and link
+    // clicks must behave normally, not get hijacked by the stage's direct-
+    // manipulation gestures (drag-pan, wheel-pan/zoom, double-click-to-zoom).
+    function overFlyout(e) {
+      return !!(e.target.closest && e.target.closest("#docFlyout"));
+    }
+
     stage.addEventListener("pointerdown", function (e) {
+      if (overFlyout(e)) return;
       if (e.button !== 0) return;
       cancelFly(); // direct manipulation takes over from any animation
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -526,7 +681,17 @@
       if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); }
     }, true);
 
+    // A plain click landing on an element's own node group (not a note/issue/
+    // divergence marker — those live in separate groups with no data-slice
+    // ancestor) opens that slice's doc flyout. A drag/pinch's trailing click
+    // never reaches here: the capturing listener above stops it first.
+    stage.addEventListener("click", function (e) {
+      const node = e.target.closest && e.target.closest("[data-slice]");
+      if (node) openDoc(Number(node.getAttribute("data-slice")));
+    });
+
     stage.addEventListener("wheel", function (e) {
+      if (overFlyout(e)) return; // let the flyout's own overflow-y:auto scroll natively
       e.preventDefault(); // the page itself must never scroll or browser-zoom
       if (!cam) return;
       cancelFly();
@@ -545,6 +710,7 @@
     }, { passive: false });
 
     stage.addEventListener("dblclick", function (e) {
+      if (overFlyout(e)) return;
       if (!cam) return;
       e.preventDefault();
       markMoved();
@@ -560,7 +726,10 @@
       if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomStep(1.5); }
       else if (e.key === "-") { e.preventDefault(); zoomStep(1 / 1.5); }
       else if (e.key === "0" || e.key === "f") { e.preventDefault(); goFit(); }
-      else if (e.key === "Escape" && reviewMode) { exitReview(); }
+      else if (e.key === "Escape") {
+        if (openSliceIndex !== null) closeDoc();
+        else if (reviewMode) exitReview();
+      }
       else if (reviewMode) {
         if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
         else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }

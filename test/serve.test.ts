@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startLiveServer, LiveServer } from "../src/render/serve.js";
@@ -110,6 +110,15 @@ describe("live server", () => {
     expect(res.headers.get("content-type")).toMatch(/image\/svg\+xml/);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.text()).toContain("<svg>");
+  });
+
+  it("MIL-153: serves a .md note file as text/markdown, not a download", async () => {
+    mkdirSync(join(dir, "notes"), { recursive: true });
+    writeFileSync(join(dir, "notes", "order-placed.md"), "# Order Placed\n");
+    const res = await fetch(`${base}/notes/order-placed.md`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/text\/markdown/);
+    expect(await res.text()).toBe("# Order Placed\n");
   });
 
   it("serves a slice-tagged SVG (data-slice + <metadata id=\"em-slices\">) byte-for-byte, unmangled", async () => {

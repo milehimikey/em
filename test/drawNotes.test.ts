@@ -80,6 +80,30 @@ slice "S" {
     expect(group).toContain("a&amp;b.md");
     expect(group).not.toContain('href="a&b.md"');
   });
+
+  it("MIL-153: excludes a slice's own doc-binding self-reference (note \"slices/<key>.md\")", () => {
+    const model = modelFrom(`
+slice "Request Payment" {
+  command Request Payment note "slices/request-payment.md"
+}
+`);
+    const id = model.byName.get("request payment")![0].id;
+    const group = buildNoteMarkers(model, new Map([[id, box(100, 100)]]));
+    expect(group).not.toContain("<a");
+    expect(group).not.toContain("<path");
+  });
+
+  it("MIL-153: still renders a note naming a DIFFERENT slice's doc (cross-binding) normally", () => {
+    const model = modelFrom(`
+slice "Request Payment" {
+  command Request Payment note "slices/capture-payment.md"
+}
+`);
+    const id = model.byName.get("request payment")![0].id;
+    const group = buildNoteMarkers(model, new Map([[id, box(100, 100)]]));
+    expect(group).toContain("<a");
+    expect(group).toContain('href="slices/capture-payment.md"');
+  });
 });
 
 describe("buildIssueMarkers", () => {
@@ -303,5 +327,32 @@ slice "S" {
     expect(out).toContain("known idiom");
     expect(out).not.toContain(">Notes<");
     expect(out).not.toContain(">Issues<");
+  });
+
+  it("MIL-153: leaves the SVG untouched when the only note is a slice's own doc-binding self-reference", () => {
+    const model = modelFrom(`
+slice "Request Payment" {
+  command Request Payment note "slices/request-payment.md"
+}
+`);
+    const svg = fakeSvg(400, 200);
+    expect(appendNoteLegend(svg, model)).toBe(svg);
+  });
+
+  it("MIL-153: omits a doc-binding self-reference from the Notes list while keeping a genuine note alongside it", () => {
+    const model = modelFrom(`
+slice "Request Payment" {
+  command Request Payment note "slices/request-payment.md"
+  event Payment Requested note "notes/payment-requested.md"
+}
+`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    expect(out).toContain("Notes");
+    expect(out).toContain("Payment Requested");
+    expect(out).toContain("notes/payment-requested.md");
+    expect(out).not.toContain("slices/request-payment.md");
+    // only one note row rendered, not two
+    expect(out).toContain(">1.</tspan>");
+    expect(out).not.toContain(">2.</tspan>");
   });
 });

@@ -123,6 +123,89 @@ slice "Ship Order" {
     }
   });
 
+  it("MIL-153: embeds a real on-disk slice doc as em-slices metadata HTML, and drops its own doc-binding note marker", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-docflyout-"));
+    try {
+      const modelFile = join(dir, "model.em");
+      writeFileSync(
+        modelFile,
+        `slice "Place Order" {
+  command Place Order note "slices/place-order.md"
+}
+slice "Ship Order" {
+  command Ship Order note "notes/ship-order.md"
+}
+`,
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(join(dir, "slices", "place-order.md"), "# Place Order\n\nSome body text.\n");
+      mkdirSync(join(dir, "notes"), { recursive: true });
+      writeFileSync(join(dir, "notes", "ship-order.md"), "# Ship Order notes\n");
+
+      const { model, grid, dot } = compile(readFileSync(modelFile, "utf8"));
+      const raw = await layoutDot(dot);
+      const svg = composeSvg(raw, model, grid, dir, dir);
+
+      const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(svg)![1];
+      const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+      expect(payload.slices[0].docHtml).toContain("Some body text.");
+      expect(payload.slices[1].docHtml).toBeNull(); // "Ship Order" has no slices/ship-order.md of its own
+
+      // The doc-binding self-reference on "Place Order" produced no marker/legend
+      // row; the genuine note on "Ship Order" still did.
+      expect(svg).toContain('class="em-notes"');
+      expect(svg).toContain('href="notes/ship-order.md"');
+      expect(svg).not.toContain("slices/place-order.md");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("MIL-153: rewrites a slice doc's relative asset links (e.g. its own diagram image) relative to outDir, not the doc's own directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-e2e-docassets-"));
+    try {
+      const modelFile = join(dir, "model.em");
+      writeFileSync(
+        modelFile,
+        `slice "Place Order" {
+  command Place Order note "slices/place-order.md"
+}
+`,
+      );
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(
+        join(dir, "slices", "place-order.md"),
+        "# Place Order\n\n![Diagram](./place-order.svg)\n\n[external](https://example.com/x)\n",
+      );
+
+      const { model, grid, dot } = compile(readFileSync(modelFile, "utf8"));
+
+      const docHtmlOf = (svg: string): string => {
+        const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(svg)![1];
+        const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
+        return payload.slices[0].docHtml;
+      };
+
+      // full diagram: outDir == baseDir == dir -> the doc's own image is one dir
+      // down, at slices/place-order.svg relative to outDir
+      const rawFull = await layoutDot(dot);
+      const fullSvg = composeSvg(rawFull, model, grid, dir, dir);
+      const fullHtml = docHtmlOf(fullSvg);
+      expect(fullHtml).toContain('src="slices/place-order.svg"');
+      expect(fullHtml).toContain('href="https://example.com/x"'); // absolute URL passed through untouched
+
+      // slice diagram: outDir == dir/slices, one level deeper than baseDir -> the
+      // doc's image (itself in slices/) is now a sibling of outDir, not "slices/..."
+      const sliceDir = join(dir, "slices");
+      const { model: sm, grid: sg, dot: sd } = buildSliceDiagram(model, 0);
+      const rawSlice = await layoutDot(sd);
+      const sliceSvg = composeSvg(rawSlice, sm, sg, dir, sliceDir);
+      expect(docHtmlOf(sliceSvg)).toContain('src="place-order.svg"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("renders identically whether or not a slices/ dir exists, when no slice has a doc (non-breaking default)", async () => {
     const { dot, model, grid } = compile(readFileSync(EXAMPLE, "utf8"));
     const raw = await layoutDot(dot);

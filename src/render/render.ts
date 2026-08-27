@@ -13,18 +13,19 @@
 
 import { spawn } from "node:child_process";
 import { rename, unlink, writeFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Graphviz } from "@hpcc-js/wasm-graphviz";
 import { Resvg } from "@resvg/resvg-js";
 import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
 import { Element, NormalizedModel } from "../model/model.js";
+import { SliceDoc } from "../catalog/sliceDoc.js";
 import { Grid } from "../layout/grid.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import { buildNoteMarkers, buildIssueMarkers, buildDivergenceMarkers, appendNoteLegend } from "./drawNotes.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
-import { readSliceStatuses } from "./sliceStatus.js";
+import { readSliceDocs } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
@@ -66,8 +67,14 @@ export function composeSvg(
   outDir: string,
 ): string {
   const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
-  const statuses = readSliceStatuses(model, baseDir);
-  return withOverlays(rawSvg, model, grid, hrefOf, statuses);
+  // MIL-153: a doc's own relative asset/link references (e.g. `![Diagram](./foo.svg)`, read
+  // relative to slices/, the doc's own directory) need the same baseDir->outDir rewrite
+  // noteHref gives a `note` path — otherwise an embedded <img src="./foo.svg"> resolves
+  // against the live viewer's own page URL instead of slices/, and 404s.
+  const docs = readSliceDocs(model, baseDir).map((doc) =>
+    doc ? { ...doc, html: rewriteDocLinks(doc.html, baseDir, outDir) } : null,
+  );
+  return withOverlays(rawSvg, model, grid, hrefOf, docs);
 }
 
 /** Serialize a composed SVG string to `outPath` in the requested format — split out
@@ -181,19 +188,41 @@ export function noteHref(note: string, baseDir: string, outDir: string): string 
   return rel.split(sep).join("/"); // posix separators for URLs
 }
 
+/**
+ * Rewrite a slice doc's own relative link/asset references (`<img src>`, `<a href>` — e.g.
+ * the `![Diagram](./foo.svg)` every slice-doc template carries) from being relative to the
+ * doc's own directory (`baseDir/slices/`) to being relative to `outDir` — the same job
+ * noteHref does for a `note` path, just applied to a whole rendered-HTML doc body instead of
+ * one bare string. Without this, an `<img src="./foo.svg">` embedded verbatim in the live
+ * viewer resolves against the page's own URL, not `slices/`, and 404s.
+ * Fragment-only (`#...`), scheme'd (`http:`, `data:`, `mailto:`, ...), and absolute values
+ * pass through untouched, same as noteHref does for those cases.
+ */
+function rewriteDocLinks(html: string, baseDir: string, outDir: string): string {
+  const docsDir = join(baseDir, "slices");
+  return html.replace(/\b(src|href)="([^"]*)"/g, (_m, attr: string, value: string) => {
+    if (!value || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value) || isAbsolute(value)) {
+      return `${attr}="${value}"`;
+    }
+    const rel = relative(outDir, resolve(docsDir, value)) || value;
+    return `${attr}="${rel.split(sep).join("/")}"`;
+  });
+}
+
 /** Draw the semantic edges and note markers into a Graphviz-rendered SVG. */
 function withOverlays(
   svg: string,
   model: NormalizedModel,
   grid: Grid,
   hrefOf: (el: Element) => string,
-  statuses: (string | null)[],
+  docs: (SliceDoc | null)[],
 ): string {
   const rects = parseNodeRects(svg, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
   const divergences = buildDivergenceMarkers(model, rects);
+  const statuses = docs.map((doc) => doc?.status ?? null);
 
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
   // room before anything else measures or appends to the viewBox
@@ -206,7 +235,7 @@ function withOverlays(
   // viewer (`em watch --serve`) can highlight/zoom to one slice at a time
   // client-side, purely from what's already in the SVG.
   out = tagSliceAttrs(out, model);
-  const sliceOverlay = buildSliceOverlay(out, grid, rects);
+  const sliceOverlay = buildSliceOverlay(out, grid, rects, docs);
   // arrowhead markers + slice metadata/style go just inside <svg …>
   out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}${sliceOverlay}`);
   // edges go under the boxes: just before the first node group

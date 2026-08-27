@@ -49,6 +49,27 @@ const slicedSvg = (marker: string): string =>
   `<metadata id="em-slices">${SLICE_META}</metadata>` +
   `<g data-slice="0" id="${marker}"><rect width="50" height="100"/></g>` +
   `<g data-slice="1"><rect x="50" width="50" height="100"/></g></svg>`;
+/** Same shape, but slice A carries a doc (rendered HTML) and slice B has none —
+ *  what src/render/sliceOverlay.ts's docHtml field looks like once MIL-153 embeds it.
+ *  XML-escaped the same way sliceOverlay.ts's escXml escapes the whole metadata
+ *  payload, since docHtml itself can contain `<`/`>` that a real XML parse (this
+ *  test's DOMParser included) would otherwise choke on. */
+const docA = (html: string | null): string =>
+  JSON.stringify({
+    slices: [
+      { index: 0, name: "A", x0: 0, x1: 50, docHtml: html },
+      { index: 1, name: "B", x0: 50, x1: 100, docHtml: null },
+    ],
+    rowLabels: null,
+  })
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+const slicedSvgWithDoc = (marker: string, html: string | null): string =>
+  `<svg ${SVG_NS} viewBox="0 0 100 100">` +
+  `<metadata id="em-slices">${docA(html)}</metadata>` +
+  `<g data-slice="0" id="${marker}"><rect width="50" height="100"/></g>` +
+  `<g data-slice="1"><rect x="50" width="50" height="100"/></g></svg>`;
 /** Truncated mid-attribute — jsdom's DOMParser yields a parsererror root for this. */
 const TRUNCATED_SVG = '<svg viewBox="0 0 100 100"><g><rect x="1';
 
@@ -316,6 +337,150 @@ describe("review-state survival across reloads", () => {
     expect(dimmed(0)).toBe(false);
     expect(dimmed(1)).toBe(true);
     expectBoxClose(camBox(), SLICE_A_FRAME);
+  });
+});
+
+describe("review mode frames a slice's own measured content, not the model's full height", () => {
+  it("zooms tightly around what the slice actually contains when its elements' geometry is measurable", async () => {
+    await boot(slicedSvg("v1"), "v1");
+    // jsdom never lays anything out — getBoundingClientRect defaults to all-
+    // zero — so this stub stands in for what a real browser reports for slice
+    // 0's own element. Chosen so every figure below is a whole number by hand.
+    const rect = { left: 100, top: 120, right: 460, bottom: 360, width: 360, height: 240, x: 100, y: 120 };
+    stageSvg().querySelector('[data-slice="0"]').getBoundingClientRect = () => rect;
+
+    byId("reviewToggle").click();
+    await settleFly();
+
+    // toSvg under FIT_800x600 (x = (cx-100)/6, y = cy/6 — see toSvg's own
+    // derivation) maps client (100,120)->(0,20) and (460,360)->(60,60); padded
+    // by 24 and clamped to the natural 0..100 box gives a content frame of
+    // x:[0,84] y:[0,84] — a SQUARE, not the model's full h=100 the old code
+    // always forced regardless of what the slice actually contains — then
+    // frameRect widens it to the stage's 4/3 aspect (84 * 4/3 = 112), centered:
+    // {x:-14, y:0, w:112, h:84}.
+    expectBoxClose(camBox(), { x: -14, y: 0, w: 112, h: 84 });
+  });
+});
+
+describe("doc flyout", () => {
+  const clickSlice = (index: number): void => {
+    const node = stageSvg().querySelector(`[data-slice="${index}"]`);
+    node.dispatchEvent(new g.MouseEvent("click", { bubbles: true, cancelable: true }));
+  };
+  const flyoutOpen = (): boolean => byId("docFlyout").classList.contains("open");
+
+  it("opens with a slice's rendered doc on click, titled with the slice's name", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    expect(flyoutOpen()).toBe(false);
+
+    clickSlice(0);
+    expect(flyoutOpen()).toBe(true);
+    expect(byId("docFlyoutTitle").textContent).toBe("A");
+    expect(byId("docFlyoutBody").innerHTML).toBe("<p>Doc A body</p>");
+    expect(byId("docFlyoutBody").classList.contains("empty")).toBe(false);
+  });
+
+  it("shows a placeholder for a slice with no doc yet", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    clickSlice(1); // slice B has docHtml: null
+    expect(flyoutOpen()).toBe(true);
+    expect(byId("docFlyoutTitle").textContent).toBe("B");
+    expect(byId("docFlyoutBody").textContent).toBe("No design doc yet for this slice.");
+    expect(byId("docFlyoutBody").classList.contains("empty")).toBe(true);
+  });
+
+  it("switches content when a different slice is clicked, without any camera movement", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    const before = camBox();
+    clickSlice(0);
+    clickSlice(1);
+    expect(byId("docFlyoutTitle").textContent).toBe("B");
+    expectBoxClose(camBox(), before); // purely an overlay — never moves the camera
+  });
+
+  it("closes via the × button, and via Escape", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    clickSlice(0);
+    expect(flyoutOpen()).toBe(true);
+    byId("docFlyoutClose").click();
+    expect(flyoutOpen()).toBe(false);
+
+    clickSlice(0);
+    expect(flyoutOpen()).toBe(true);
+    g.document.dispatchEvent(new g.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(flyoutOpen()).toBe(false);
+  });
+
+  it("does not open when a note/issue/divergence marker (no data-slice ancestor) is clicked", async () => {
+    const svg =
+      `<svg ${SVG_NS} viewBox="0 0 100 100">` +
+      `<metadata id="em-slices">${docA("<p>Doc A</p>")}</metadata>` +
+      `<g data-slice="0" id="node"><rect width="50" height="100"/></g>` +
+      `<g class="em-notes"><a id="noteLink" href="notes/x.md"><rect id="marker" width="5" height="5"/></a></g>` +
+      `</svg>`;
+    await boot(svg, "node");
+    const marker = stageSvg().querySelector("#marker");
+    marker.dispatchEvent(new g.MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(flyoutOpen()).toBe(false);
+  });
+
+  it("refreshes content across a reload when the open slice is still present", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A v1</p>"), "v1");
+    clickSlice(0);
+    expect(byId("docFlyoutBody").innerHTML).toBe("<p>Doc A v1</p>");
+
+    // Same slice, updated content: the flyout refreshes rather than going stale.
+    responses.push({ text: slicedSvgWithDoc("v2", "<p>Doc A v2</p>") });
+    es().onmessage!({});
+    await untilShows("v2");
+    expect(flyoutOpen()).toBe(true);
+    expect(byId("docFlyoutBody").innerHTML).toBe("<p>Doc A v2</p>");
+  });
+
+  it("closes when the open slice vanishes from a reload's metadata", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A</p>"), "v1");
+    clickSlice(0);
+    expect(flyoutOpen()).toBe(true);
+
+    const onlyB =
+      `<svg ${SVG_NS} viewBox="0 0 100 100">` +
+      `<metadata id="em-slices">{"slices":[{"index":1,"name":"B","x0":50,"x1":100,"docHtml":null}],"rowLabels":null}</metadata>` +
+      `<g data-slice="1" id="v2"><rect x="50" width="50" height="100"/></g></svg>`;
+    responses.push({ text: onlyB });
+    es().onmessage!({});
+    await untilShows("v2");
+    expect(flyoutOpen()).toBe(false);
+  });
+
+  it("lets the flyout scroll natively instead of panning the camera on wheel", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    clickSlice(0);
+    const before = camBox();
+    const evt = new g.WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 40 });
+    byId("docFlyoutBody").dispatchEvent(evt);
+    expectBoxClose(camBox(), before); // the stage's own wheel-pan never ran
+    expect(evt.defaultPrevented).toBe(false); // and didn't block the browser's native scroll
+  });
+
+  it("does not fly/zoom the camera on a double-click inside the flyout", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A body</p>"), "v1");
+    clickSlice(0);
+    const before = camBox();
+    byId("docFlyoutBody").dispatchEvent(new g.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expectBoxClose(camBox(), before);
+  });
+
+  it("stays open and untouched across a transient bad reload (no metadata at all)", async () => {
+    await boot(slicedSvgWithDoc("v1", "<p>Doc A</p>"), "v1");
+    clickSlice(0);
+    expect(flyoutOpen()).toBe(true);
+
+    responses.push({ text: plainSvg("v2") }); // no <metadata id="em-slices"> at all
+    es().onmessage!({});
+    await untilShows("v2");
+    expect(flyoutOpen()).toBe(true);
+    expect(byId("docFlyoutBody").innerHTML).toBe("<p>Doc A</p>");
   });
 });
 
