@@ -39,9 +39,19 @@ import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceVal
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
-import { buildCoverageReport } from "../cli/coverage.js";
+import { buildCoverageReport, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
 import { readContract, contractPath } from "../cli/contract.js";
+import {
+  resolveSliceStatusFacts,
+  countOpenIssues,
+  resolveConformanceEntry,
+  aggregateInvariantTotals,
+  buildStatusReport,
+  SliceStatusFact,
+  StatusDiagnostic,
+} from "../cli/status.js";
+import { buildStatusJson } from "../emit/statusJson.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
  *  `GENERATOR_VERSION` `em export`'s `generator.version` field already reads from package.json,
@@ -311,6 +321,66 @@ export function createServer(): McpServer {
       } catch {
         return errorResult(`cannot read the packaged contract at ${contractPath(packagedSkillDir())} — broken em installation`);
       }
+    },
+  );
+
+  server.registerTool(
+    "status",
+    {
+      title: "Deterministic state-of-the-system rollup",
+      description:
+        "Return the same JSON document `em status <files...> --json` prints (MIL-163): slices " +
+        "by lifecycle status, driftSignal breakdown, invariant coverage totals (when testsDir " +
+        "is given), open `issue` markers + unchecked Open Questions, and last-conformance " +
+        "commits-behind-HEAD per model. Refuses (tool error) when any model has errors, same " +
+        "as the CLI — call `validate` first, or use `export_slice` for one broken model.",
+      inputSchema: {
+        files: z.array(fileParam).min(1).describe("one or more .em model file paths"),
+        testsDir: z
+          .string()
+          .optional()
+          .describe("directory to scan for INV-* test citations — enables invariant coverage totals"),
+        repo: z
+          .string()
+          .optional()
+          .describe("git repo to compute commits-behind-HEAD in (default: each model's own directory)"),
+      },
+    },
+    async ({ files, testsDir, repo }) => {
+      if (testsDir !== undefined) {
+        if (!existsSync(testsDir)) return errorResult(`--tests directory not found: ${testsDir}`);
+        if (!statSync(testsDir).isDirectory()) return errorResult(`--tests is not a directory: ${testsDir}`);
+      }
+
+      const compiledFiles: Array<{ file: string; compiled: CompiledSource }> = [];
+      for (const file of files) {
+        const compiled = compileFile(file);
+        if ("error" in compiled) return errorResult(compiled.error);
+        if (hasErrors(compiled.diagnostics)) {
+          return errorResult(`not reporting status: "${file}" has errors — run \`validate\` first and fix them`);
+        }
+        compiledFiles.push({ file, compiled });
+      }
+
+      const sliceFacts: SliceStatusFact[] = [];
+      const statusDiagnostics: StatusDiagnostic[] = [];
+      let openIssuesCount = 0;
+      const coverageReports: CoverageReport[] = [];
+      for (const { file, compiled } of compiledFiles) {
+        const { model, refs } = compiled;
+        const baseDir = dirname(file);
+        const { facts, diagnostics: docDiags } = resolveSliceStatusFacts(file, model, refs, baseDir);
+        sliceFacts.push(...facts);
+        for (const d of docDiags) statusDiagnostics.push({ file, ...d });
+        openIssuesCount += countOpenIssues(model);
+        if (testsDir !== undefined) coverageReports.push(buildCoverageReport(model, refs, baseDir, testsDir));
+      }
+      const invariants = testsDir !== undefined ? aggregateInvariantTotals(testsDir, coverageReports) : null;
+
+      const conformance = compiledFiles.map(({ file }) => resolveConformanceEntry(file, repo));
+
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
+      return textResult(buildStatusJson(report));
     },
   );
 

@@ -69,6 +69,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `export_model` | `{ file }` | The full `em export` document — refuses (tool error) if the model has errors |
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
 | `coverage` | `{ file, testsDir }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
+| `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -119,6 +120,21 @@ whether a test under `testsDir` cites it, and every citing `file:line`. Refuses 
 tool error) when the model has errors, or when `testsDir` doesn't exist — matching the CLI's own
 hard-error behavior for a missing `--tests` directory. This is a *checking* tool, not a
 *judgment* one: it confirms an ID is cited, never whether the citing test is good or passing.
+
+### `status`
+
+Same document as `em status <files...> --tests <testsDir> --repo <repo> --json` (MIL-163): a
+deterministic state-of-the-system rollup across one or more models — slices by lifecycle status,
+`driftSignal` breakdown, invariant coverage totals, open `issue` markers + unchecked Open
+Questions, and last-conformance commits-behind-HEAD per model. `files` takes one or more `.em`
+paths (same resolution convention as every other tool's `file`); `testsDir`/`repo` are optional,
+mirroring the CLI's `--tests`/`--repo` flags — `invariants` comes back `null` when `testsDir` is
+omitted. Refuses (tool error) when any input model has errors, or when `testsDir` is given but
+doesn't exist — matching `em status`'s own CLI refusal. Doc-join warnings
+(`binding-missing-file`/`frontmatter-invalid`) reach this tool's `diagnostics` field exactly as
+they reach the CLI's stderr-plus-JSON pair — an MCP tool call has no stderr channel of its own,
+so the document is the only place they surface here. See [`em status`](cli.md#em-status-files)
+for the full JSON shape.
 
 ### `contract`
 

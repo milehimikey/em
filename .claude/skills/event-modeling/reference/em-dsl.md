@@ -88,6 +88,13 @@ em coverage <file>                                          # check that every I
 em coverage <file> --tests <dir>                            # directory to scan recursively for test files citing invariant IDs
 em coverage <file> --strict                                 # exit non-zero if any invariant ID has zero citations (CI)
 em coverage <file> --json                                   # print a JSON document instead of the text report (see docs/cli.md)
+em status <files>                                           # deterministic state-of-the-system rollup over one or more .em models: slices by lifecycle status, driftSignal breakdown, invariant coverage totals (with --tests), open issue markers + unchecked Open Questions, and last-conformance commits-behind-HEAD (MIL-163, see docs/cli.md)
+em status <files> --tests <dir>                             # directory to scan for INV-* test citations — enables invariant coverage totals
+em status <files> --repo <path>                             # git repo to compute commits-behind-HEAD in (default: each model's own directory)
+em status <files> --json                                    # print a JSON document instead of the text report (see docs/cli.md)
+em status <files> --md                                      # print a markdown block suited for README embedding
+em status <files> --badge                                   # print a generated SVG badge
+em status <files> -o, --out <path>                          # write output to a file instead of stdout
 em contract                                                 # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
 em mcp                                                      # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
 em skill install                                            # copy the event-modeling skill into .claude/skills/event-modeling/
