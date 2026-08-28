@@ -49,6 +49,12 @@ than just reading the model:
    `INV-*` mention in the docs look like a citation, which defeats the check). With no real
    test tree, all 3 of `browse-catalog`'s invariants correctly report `uncovered` — the
    honest answer for a docs-only sample, not a tool bug.
+7. **`em typespec order-fulfillment.em`** (experimental/POC, MIL-159) — generates a TypeSpec
+   contract from this model's integration surface: `Order Placed` and `Open Orders` are both
+   marked `public`, so they (plus `Place Order`, same slice as `Order Placed`) are what shows
+   up. `LineItem` (a declared `type`, referenced as `items: LineItem[]` on `Place Order`)
+   demonstrates the named-type-to-`model` mapping in the same run. See
+   [docs/cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-typespec-file).
 
 ## Live view
 While modeling, run the live view so the team can watch the diagram update:

@@ -66,9 +66,56 @@ export interface ExportResult {
   diagnostics: Diagnostic[];
 }
 
+/** One declared `type` block's exported shape (`model.types[]`). */
+export interface TypeExport {
+  ref: string;
+  name: string;
+  line: number;
+  fields: FieldExport[];
+}
+
+/** One slice element's exported shape (`model.slices[].elements[]`). Exported (MIL-159)
+ *  alongside `TypeExport`/`SliceExport` so `emit/typespec.ts` gets real property types instead
+ *  of the `[k: string]: unknown` catch-all this interface used to fall back to — every field
+ *  here is exactly what `buildExportDoc`'s own `slices.map(...)` below constructs. */
+export interface ElementExport {
+  ref: string;
+  kind: Element["kind"];
+  name: string;
+  line: number;
+  fields: FieldExport[] | null;
+  note: string | null;
+  issue: string | null;
+  divergence: string | null;
+  from: { name: string; ref: string | null }[] | null;
+  persona: string | null;
+  context: string | null;
+  again: boolean;
+  public: boolean;
+  tags: TagExport[] | null;
+  renamedFrom: string[] | null;
+  logicalRef: string | null;
+}
+
+/** One slice's exported shape (`model.slices[]`). `doc`/`pattern` are left loosely typed
+ *  (`unknown`/`string`) here — no current consumer of this type reads either field through it,
+ *  and giving `doc` its full doc-join shape would mean re-declaring `resolveSliceDocJoin`'s
+ *  return type a second time for no reader. */
+export interface SliceExport {
+  key: string;
+  name: string;
+  index: number;
+  source: string | null;
+  line: number;
+  pattern: string;
+  doc: unknown;
+  elements: ElementExport[];
+}
+
 /** The `em export` document's shape, pre-stringify — what `buildExportDoc` returns and
  *  `buildExport` serializes. Exported so `buildSliceExport` (MIL-128) can pick one slice's
- *  object back out without re-parsing JSON text or re-deriving the doc join. */
+ *  object back out without re-parsing JSON text or re-deriving the doc join, and so
+ *  `emit/typespec.ts` (MIL-159) can walk `types`/`slices[].elements` with real types. */
 export interface ExportDoc {
   schemaVersion: string;
   generator: { name: string; version: string };
@@ -78,8 +125,8 @@ export interface ExportDoc {
     personas: string[];
     contexts: string[];
     hasAutomation: boolean;
-    types: unknown[];
-    slices: Array<{ key: string; [k: string]: unknown }>;
+    types: TypeExport[];
+    slices: SliceExport[];
     arrows: unknown[];
   };
   diagnostics: ReturnType<typeof serializeDiagnostic>[];
@@ -210,8 +257,10 @@ export function buildSliceExport(
 /** The shared body of `buildExport`/`buildSliceExport`: builds the full export document as a
  *  JS object (pre-stringify) so a scoped export can pick one slice back out without
  *  re-parsing JSON text or re-deriving the doc join. See `buildExport`'s own docstring for the
- *  parameter contract — unchanged here, just split out. */
-function buildExportDoc(
+ *  parameter contract — unchanged here, just split out. Exported (MIL-159) so `emit/typespec.ts`
+ *  can walk the same already-resolved `ExportDoc` object (typeRef/tags/renamedFrom/assigned/
+ *  public, all in one place) instead of re-deriving any of it from the raw model a second time. */
+export function buildExportDoc(
   model: NormalizedModel,
   refs: RefsResult,
   diagnostics: Diagnostic[],
