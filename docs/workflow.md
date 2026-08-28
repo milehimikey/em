@@ -108,10 +108,12 @@ brief.
 
 The handoff has a gate: a slice goes out only once it's **ratified** — a human flips its
 `status` to `ready-to-implement` with every open question resolved
-([process.md](process.md#what-ratified-means)). That's mechanically checkable:
+([process.md](process.md#what-ratified-means)). `em slice ratify` (MIL-165) makes the flip
+itself, and *who* did it and *when*, mechanically recorded rather than an unnamed manual edit:
 
 ```bash
-em validate model.em --slice-ready <key>    # exits non-zero until the slice is safe to hand off
+em slice ratify model.em <key> --by "Alex Rivera"   # flips status, records ratifiedBy/ratifiedOn
+em validate model.em --slice-ready <key>            # exits non-zero until the slice is safe to hand off
 ```
 
 For an agent implementer, the bundled skill ships the full contract to follow —

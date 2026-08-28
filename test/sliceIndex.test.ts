@@ -31,6 +31,8 @@ swimlane: order
 status: implemented
 version: 2
 implementedIn: https://github.com/example/repo/pull/42
+ratifiedBy: Alex Rivera
+ratifiedOn: 2026-08-01
 ---
 ## Intent
 Let customers place orders.
@@ -40,8 +42,8 @@ const README_WITH_MARKERS = `# Demo
 
 ## Slices
 <!-- GENERATED:${SLICE_INDEX_MARKER}:start -->
-| # | Slice | Pattern | Status | Implemented in | Design doc |
-|---|-------|---------|--------|----------------|------------|
+| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |
+|---|-------|---------|--------|-------------|----------------|------------|
 <!-- GENERATED:${SLICE_INDEX_MARKER}:end -->
 
 ## Status
@@ -77,16 +79,17 @@ describe("buildSliceIndexTable", () => {
       name: "Place Order",
       pattern: "State Change",
       status: "implemented",
+      ratifiedBy: "Alex Rivera",
       implementedIn: "https://github.com/example/repo/pull/42",
       docPath: "slices/place-order.md",
     });
     expect(markdown).toContain(
-      "| 1 | Place Order | State Change | implemented | https://github.com/example/repo/pull/42 | " +
+      "| 1 | Place Order | State Change | implemented | Alex Rivera | https://github.com/example/repo/pull/42 | " +
         "[slices/place-order.md](slices/place-order.md) |",
     );
   });
 
-  it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Implemented in", () => {
+  it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Ratified by/Implemented in", () => {
     const { model, refs } = compile(MODEL);
     const { rows } = buildSliceIndexTable(model, refs, dir);
 
@@ -95,6 +98,7 @@ describe("buildSliceIndexTable", () => {
       name: "Open Orders",
       pattern: "State View",
       status: "no doc yet",
+      ratifiedBy: "—",
       implementedIn: "—",
       docPath: "slices/open-orders.md",
     });
@@ -120,8 +124,8 @@ describe("buildSliceIndexTable", () => {
     const { markdown, rows } = buildSliceIndexTable(model, refs, dir);
     expect(rows).toEqual([]);
     expect(markdown).toBe(
-      "| # | Slice | Pattern | Status | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|----------------|------------|",
+      "| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|----------------|------------|",
     );
   });
 

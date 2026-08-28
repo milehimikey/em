@@ -177,14 +177,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.7");
+    expect(doc.schemaVersion).toBe("1.8");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.7");
+    expect(doc.schemaVersion).toBe("1.8");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -200,7 +200,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.7");
+    expect(doc.schemaVersion).toBe("1.8");
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
     expect(doc.slice.name).toBe("Place");
@@ -217,6 +217,8 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       mergedFrom: [],
       supersededBy: [],
       driftSignal: null,
+      ratifiedBy: null,
+      ratifiedOn: null,
     });
     // Only the one slice's object — never the whole model's slices array.
     expect(doc.model).toBeUndefined();
@@ -1444,8 +1446,8 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(readme).toContain("em watch order-fulfillment.em -o order-fulfillment.svg --serve");
     expect(readme).toContain(
       "<!-- GENERATED:slices:start -->\n" +
-        "| # | Slice | Pattern | Status | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|----------------|------------|\n" +
+        "| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|----------------|------------|\n" +
         "<!-- GENERATED:slices:end -->",
     );
 
@@ -2055,7 +2057,7 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote README.md");
     const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
-    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | [slices/place.md](slices/place.md) |");
     expect(readme).toContain("Open Orders");
   });
 
@@ -2202,6 +2204,106 @@ describe("em slice mark-implemented (CLI, MIL-103)", () => {
     const r = em(["slice", "mark-implemented", "scoped.em", "bad", "https://x/1"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('slice "bad" has errors');
+  });
+});
+
+describe("em slice ratify (CLI, MIL-165)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/ratify.test.ts; this
+  // block is exit-code/process-level only, same split as `em slice mark-implemented`.
+  let dir: string;
+  const DRAFT_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n# Slice: Draft Slice\n\nbody\n";
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-ratify-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "draft-slice.md"), DRAFT_DOC);
+    writeFileSync(
+      join(dir, "draft.em"),
+      'slice "Draft Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
+    // Genuine error in an UNRELATED slice — same scoping regression coverage mark-implemented's
+    // CLI block has.
+    writeFileSync(
+      join(dir, "slices", "good.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "scoped.em"),
+      'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("flips status and records ratifiedBy/ratifiedOn (default --on today), confirms on stdout", () => {
+    const r = em(["slice", "ratify", "draft.em", "draft-slice", "--by", "Alex Rivera"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ratified: slices/draft-slice.md");
+    expect(r.stdout).toContain("ratifiedBy: Alex Rivera");
+    const content = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    expect(content).toContain("status: ready-to-implement");
+    expect(content).toContain("ratifiedBy: Alex Rivera");
+    expect(content).toMatch(/ratifiedOn: \d{4}-\d{2}-\d{2}/);
+    expect(content).toContain("version: 1"); // never bumped
+  });
+
+  it("is idempotent: re-running with the same --by/--on is a no-op, exit 0", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const onMatch = before.match(/ratifiedOn: (\d{4}-\d{2}-\d{2})/);
+    expect(onMatch).not.toBeNull();
+    const r = em(["slice", "ratify", "draft.em", "draft-slice", "--by", "Alex Rivera", "--on", onMatch![1]], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already ratified (no-op)");
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses a different ratifier once ready-to-implement, exit non-zero, file untouched", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const r = em(["slice", "ratify", "draft.em", "draft-slice", "--by", "Jordan Lee", "--on", "2026-08-28"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("already ratified by Alex Rivera");
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("accepts an explicit --on date", () => {
+    const r = em(["slice", "ratify", "scoped.em", "good", "--by", "Alex Rivera", "--on", "2026-08-28"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ratifiedOn: 2026-08-28");
+    const content = readFileSync(join(dir, "slices", "good.md"), "utf8");
+    expect(content).toContain("ratifiedOn: 2026-08-28");
+  });
+
+  it("rejects a malformed --on date before touching the file", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const r = em(["slice", "ratify", "draft.em", "draft-slice", "--by", "Alex Rivera", "--on", "not-a-date"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('invalid --on date "not-a-date"');
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("errors clearly for a key that names no slice in the model", () => {
+    const r = em(["slice", "ratify", "draft.em", "no-such-key", "--by", "Alex Rivera"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
+  });
+
+  it("errors clearly when no doc is bound via note", () => {
+    const r = em(["slice", "ratify", "unbound.em", "unbound", "--by", "Alex Rivera"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("refuses on an error concerning the named slice itself", () => {
+    const r = em(["slice", "ratify", "scoped.em", "bad", "--by", "Alex Rivera"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('slice "bad" has errors');
+  });
+
+  it("requires --by", () => {
+    const r = em(["slice", "ratify", "draft.em", "draft-slice"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--by");
   });
 });
 

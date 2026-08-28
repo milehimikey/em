@@ -265,3 +265,42 @@ Ground rules, matching the phase's own stance (see
   deliberately rather than passing a bare `Bash`.
 - If the model and code live in different repos, check both out and point the phase at the
   code path when it asks for the target repo (the state file's `Existing system refs`).
+
+## CODEOWNERS: routing ratification review
+
+`em slice ratify` (MIL-165) mechanizes the *edit* — flipping `status` to `ready-to-implement`
+and recording `ratifiedBy:`/`ratifiedOn:` in one command
+([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) — but a mechanized edit is still
+just an edit: anyone with commit access can run it, or hand-edit the same frontmatter, unless
+the platform itself routes the review. A [CODEOWNERS
+file](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+is the mechanical half of that: with **"Require review from Code Owners"** enabled on the
+branch's protection rule, GitHub refuses to let a PR touching `slices/**` merge without an
+approval from someone the file names — the same enforcement a repo already leans on for any
+other reviewed path.
+
+```text
+# CODEOWNERS — route slice-doc changes through your designated ratifier(s)
+# (docs/process.md#what-ratified-means — the E3 playbook's "ratifier" role, made mechanical)
+slices/**  @your-org/ratifiers
+```
+
+Notes on the recipe:
+
+- **Route the directory, not the command.** There's no way for CODEOWNERS (or any git hook) to
+  distinguish "`ratifiedBy` was set by running `em slice ratify`" from "someone typed the same
+  YAML by hand" — both are just a diff to `slices/*.md`. The enforcement point is the *path*:
+  every ratification, mechanized or not, touches a file under `slices/**`, so gating that glob
+  gates every route to the same edit.
+- **List a team, not a person**, where your platform supports it (`@org/team-slug`) — a named
+  individual as sole owner becomes a bottleneck (and a single point of failure) the moment
+  they're out; GitHub accepts either, but a team survives roster changes without editing the
+  file.
+- **This is a convention, not something `em` checks.** `em` stays git-only, account-free, and
+  server-free (no concept of "who is a ratifier" lives in the tool or the model) — CODEOWNERS
+  enforcement lives entirely in your git host's branch protection, alongside whatever other
+  required reviews and status checks (e.g. the `em validate` gate above) already apply to the
+  same PR.
+- **Split the glob further** if different slice groups need different ratifiers (e.g. a
+  `payments/` swimlane with its own sign-off) — CODEOWNERS matches the *last* pattern that
+  applies to a path, so put narrower patterns after `slices/**`, not before it.

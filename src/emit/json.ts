@@ -51,7 +51,11 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // convention like `tag`) — event fields only; a trailing `assigned` clause records that the
 // server/handler sets the field rather than the triggering command supplying it, and exempts
 // it from `fields-completeness/event-field-no-source`. See `model/validate.ts`. Additive-only.
-export const SCHEMA_VERSION = "1.7";
+// 1.8 (MIL-165): `slice.doc` gains `ratifiedBy`/`ratifiedOn` — who ratified this doc's current
+// `status`/`version`, and when (frontmatter `ratifiedBy:`/`ratifiedOn:`), written only by
+// `em slice ratify`. Both null when absent, same as every other optional doc-join field. See
+// catalog/docJoin.ts. Additive-only.
+export const SCHEMA_VERSION = "1.8";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

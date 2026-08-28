@@ -37,8 +37,8 @@ never connected to one another.
      `em slice index {{model-name}}.em` to (re)write the table below from the model and its
      slice docs; never hand-edit between the markers. -->
 <!-- GENERATED:slices:start -->
-| # | Slice | Pattern | Status | Implemented in | Design doc |
-|---|-------|---------|--------|----------------|------------|
+| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |
+|---|-------|---------|--------|-------------|----------------|------------|
 <!-- GENERATED:slices:end -->
 
 ## Status

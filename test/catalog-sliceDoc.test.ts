@@ -147,6 +147,20 @@ describe("parseSliceDoc", () => {
     expect(doc.covers).toEqual([]);
   });
 
+  it("parses `ratifiedBy`/`ratifiedOn` (MIL-165), free text and unlowercased", () => {
+    const doc = parseSliceDoc(
+      "---\nstatus: ready-to-implement\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-28\n---\n# Some Slice\n",
+    );
+    expect(doc.ratifiedBy).toBe("Alex Rivera");
+    expect(doc.ratifiedOn).toBe("2026-08-28");
+  });
+
+  it("returns null for `ratifiedBy`/`ratifiedOn` when absent — a doc predating MIL-165", () => {
+    const doc = parseSliceDoc("---\nstatus: draft\n---\n# Some Slice\n");
+    expect(doc.ratifiedBy).toBeNull();
+    expect(doc.ratifiedOn).toBeNull();
+  });
+
   it("parses a comma-separated list with a mix of well-formed and malformed refs", () => {
     const doc = parseSliceDoc("---\nmerged-from: checkout, apply-discount@v1\n---\n# Some Slice\n");
     expect(doc.mergedFrom).toEqual([

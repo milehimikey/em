@@ -33,6 +33,12 @@
 // `note "slices/<this-key>.md"` instead of authoring its own. Parsed the same
 // comma-separated-list shape as `merged-from`/`superseded-by`; see docJoin.ts for the
 // two-ended handshake that actually uses it.
+//
+// `ratifiedBy`/`ratifiedOn` (MIL-165) are a fifth and sixth optional frontmatter-only field:
+// who ratified this doc's current `status`/`version`, and when, written by `em slice ratify`
+// (cli/ratify.ts) alone — same "one write path" discipline `implementedIn` has with `em slice
+// mark-implemented`. Additive, tolerate-unknown-fields: a doc that predates this feature (or was
+// hand-ratified) simply has neither key, same as any other optional field's absence.
 
 import { marked } from "marked";
 
@@ -98,6 +104,13 @@ export interface SliceDoc {
    *  the noting slice back. Empty array when absent — the common case; a doc always covers its
    *  own canonical slice key implicitly and never needs to list it here. */
   covers: string[];
+  /** MIL-165: `ratifiedBy:` — free text, typically a person's name — or null when absent.
+   *  Written only by `em slice ratify`; no legacy bullet-line form. */
+  ratifiedBy: string | null;
+  /** MIL-165: `ratifiedOn:` — a `YYYY-MM-DD` date string, or null when absent. Written only by
+   *  `em slice ratify`; validated by the CLI layer, not re-validated here (this parser stays as
+   *  lenient about value shape as every other frontmatter field). */
+  ratifiedOn: string | null;
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -274,6 +287,8 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     supersededBy: parseSliceRefList(fields.get("superseded-by")),
     implementedIn: fields.get("implementedin") ?? null,
     covers: parseKeyList(fields.get("covers")),
+    ratifiedBy: fields.get("ratifiedby") ?? null,
+    ratifiedOn: fields.get("ratifiedon") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,
