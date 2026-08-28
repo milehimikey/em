@@ -43,6 +43,19 @@ behind the tool's clean, stable diagrams.
 
 ## How a render flows
 
+```mermaid
+flowchart LR
+    SRC[".em source"] --> DOT["strict-grid DOT<br/>src/emit/dot.ts"]
+    DOT --> WASM["WASM Graphviz<br/>lays out the grid,<br/>renders boxes & labels"]
+    WASM --> BOXES["SVG<br/>(boxes/labels only)"]
+    BOXES --> GEOM["em reads each box's rectangle<br/>src/render/svgGeometry.ts"]
+    GEOM --> DRAW["em draws arrows & note markers<br/>src/render/drawEdges.ts, drawNotes.ts"]
+    DRAW --> SVG["final SVG"]
+    SVG --> PNG["PNG<br/>(resvg, in-process)"]
+    SVG --> PDF["PDF<br/>(pdfkit + svg-to-pdfkit)"]
+    SVG --> OTHER["other formats<br/>(optional system rsvg-convert)"]
+```
+
 1. `.em` → AST → normalized model → strict-grid **DOT** (`src/emit/dot.ts`).
 2. WASM Graphviz lays out the grid and renders boxes/labels → **SVG**.
 3. `em` reads each box rectangle from the SVG and injects self-drawn arrows and note
