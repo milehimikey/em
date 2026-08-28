@@ -28,3 +28,7 @@ dist/
 # never in this public repo
 internal/
 .DS_Store
+
+# MIL-162 portal spike's demo output — regenerate with
+# `tsx prototypes/portal-spike/spike.ts`, never checked in (see that directory's README).
+/prototypes/portal-spike/demo-output.html

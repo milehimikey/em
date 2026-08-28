@@ -115,6 +115,7 @@ built this way.
 | [docs/usage-data.md](docs/usage-data.md) | What usage data em captures, and how to roll it up for a retro |
 | [docs/architecture.md](docs/architecture.md) | How rendering works; why Graphviz, not PlantUML |
 | [docs/roadmap.md](docs/roadmap.md) | What's planned |
+| [docs/decisions/](docs/decisions/) | Write-ups for open design questions (starts with [MIL-162](docs/decisions/mil-162-teachable-navigator.md), the stakeholder-portal decision) |
 
 ## Development
 
