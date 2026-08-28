@@ -43,10 +43,12 @@ import {
   formatStatusText,
   formatStatusMarkdown,
   buildStatusBadge,
+  formatConformancePart,
   SliceStatusFact,
   StatusDiagnostic,
 } from "./cli/status.js";
 import { buildStatusJson } from "./emit/statusJson.js";
+import { buildFreshnessJson } from "./emit/freshnessJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
@@ -70,7 +72,8 @@ import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
 import { runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify } from "./cli/ratify.js";
-import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
+import { runConformSupersede } from "./cli/conformSupersede.js";
+import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
@@ -803,6 +806,41 @@ program
   });
 
 program
+  .command("conform-supersede")
+  .description(
+    "stamp a conformance report with a \"superseded as of <rev>\" banner once its findings have " +
+      "been ruled on (MIL-164, docs/process.md#what-ratified-means) — the companion step to run " +
+      "at ratification time so a reader following the report's file:line citations knows they " +
+      "describe an ancestor of the current model. Additive-only splice, never a rewrite of the " +
+      "report; idempotent on the same --as-of/--findings/--on stamp; refuses if the report " +
+      "doesn't exist",
+  )
+  .argument("<file>", "input .em file (used only to resolve the report path's base directory)")
+  .argument("<report-path>", "path to the conformance report, relative to the model's directory")
+  .requiredOption("--as-of <rev>", "the revision this ruling was made against — same value passed to `em state set-conformance`")
+  .requiredOption("--findings <spec>", 'which finding number(s) this stamps as ruled, e.g. "1-3" or "1,2,4"')
+  .option("--on <date>", "ruling date, YYYY-MM-DD (default: today)")
+  .action((file: string, reportPath: string, opts: { asOf: string; findings: string; on?: string }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const on = opts.on ?? today;
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em conform-supersede: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+
+    const result = runConformSupersede(dirname(file), reportPath, opts.asOf, opts.findings, on);
+    if (!result.ok) {
+      console.error(`em conform-supersede: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(
+      result.changed
+        ? `stamped superseded: ${result.path} (as of ${opts.asOf}, findings ${opts.findings}, on ${on})`
+        : `already stamped (no-op): ${result.path}`,
+    );
+  });
+
+program
   .command("watch")
   .description("re-render on every save")
   .argument("<file>", "input .em file")
@@ -1199,6 +1237,7 @@ program
       }
 
       const sliceFacts: SliceStatusFact[] = [];
+      const factsByFile = new Map<string, SliceStatusFact[]>();
       const statusDiagnostics: StatusDiagnostic[] = [];
 
       // MIL-160: a multi-model run is exactly the case where two `.em` files could share a
@@ -1218,13 +1257,20 @@ program
         const { facts, diagnostics: docDiags } = resolveSliceStatusFacts(file, model, refs, baseDir);
         printDiagnosticsFor(file, docDiags);
         sliceFacts.push(...facts);
+        factsByFile.set(file, facts);
         for (const d of docDiags) statusDiagnostics.push({ file, ...d });
         openIssuesCount += countOpenIssues(model);
         if (opts.tests) coverageReports.push(buildCoverageReport(model, refs, baseDir, opts.tests));
       }
       const invariants = opts.tests ? aggregateInvariantTotals(opts.tests, coverageReports) : null;
 
-      const conformance = compiled.map(({ file }) => resolveConformanceEntry(file, opts.repo));
+      // MIL-164: slice-PRs-behind-HEAD is scoped per model — THIS model's own facts, not the
+      // merged `sliceFacts` above (which spans every input file when several are given).
+      const conformance = compiled.map(({ file }) => {
+        const facts = factsByFile.get(file) ?? [];
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn }));
+        return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
+      });
 
       const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
 
@@ -1242,6 +1288,38 @@ program
       }
     },
   );
+
+program
+  .command("freshness")
+  .description(
+    "standalone freshness signal for one model's conformance record (MIL-164): \"last conformed " +
+      "<rev> — N commits and M slice-PRs behind HEAD\", computed from the same conform-scope " +
+      "machinery `em status`'s conformance clause uses — for when you want just this fact, no " +
+      "full state-of-the-system rollup (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--repo <path>", "git repo to compute behind-HEAD in (default: the model's own directory)")
+  .option("--json", "print a JSON document instead of the text line")
+  .action((file: string, opts: { repo?: string; json?: boolean }) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("em freshness: not reporting freshness — fix the errors above");
+      process.exit(1);
+    }
+
+    const baseDir = dirname(file);
+    const { facts, diagnostics: docDiags } = resolveSliceDocFacts(model, refs, baseDir);
+    printDiagnostics(docDiags);
+
+    const entry = resolveConformanceEntry(file, opts.repo, facts);
+
+    if (opts.json) {
+      process.stdout.write(buildFreshnessJson(entry) + "\n");
+    } else {
+      console.log(formatConformancePart(entry));
+    }
+  });
 
 // Shared by install/sync/check: the skill directory bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and

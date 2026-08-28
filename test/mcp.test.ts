@@ -210,7 +210,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the twelve documented tools", async () => {
+  it("exposes exactly the thirteen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -222,6 +222,7 @@ describe("tools/list", () => {
         "diff",
         "export_model",
         "export_slice",
+        "freshness",
         "glossary",
         "list_markers",
         "slice_ready",
@@ -368,7 +369,7 @@ describe("coverage tool", () => {
 describe("status tool", () => {
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.0");
+    expect(doc.statusSchemaVersion).toBe("1.1");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -376,6 +377,7 @@ describe("status tool", () => {
     expect(doc.invariants).toEqual({ testsDir: join(dir, "tests"), total: 2, cited: 1, uncovered: 1 });
     expect(doc.conformance).toHaveLength(1);
     expect(doc.conformance[0].hasStateFile).toBe(false); // no .event-modeling.md next to ready.em
+    expect(doc.conformance[0].slicePRsBehindHead).toBeNull(); // MIL-164 — no state file, nothing to compute
   });
 
   it("omits invariants (null) when testsDir isn't given", async () => {
@@ -417,6 +419,34 @@ describe("status tool", () => {
     expect(doc.driftSignal.frontmatterInvalid).toBe(1);
     expect(doc.diagnostics).toHaveLength(1);
     expect(doc.diagnostics[0]).toMatchObject({ file: join(dir, "status-broken-doc.em"), code: "frontmatter-invalid" });
+  });
+});
+
+describe("freshness tool (MIL-164)", () => {
+  it("happy path: returns the same document `em freshness --json` prints, byte-identical to status's own conformance[0]", async () => {
+    const { doc: statusDoc } = await callJson(client, "status", { files: [join(dir, "ready.em")] });
+    const { doc } = await callJson(client, "freshness", { file: join(dir, "ready.em") });
+    expect(doc.freshnessSchemaVersion).toBe("1.0");
+    expect(doc.file).toBe(join(dir, "ready.em"));
+    expect(doc.hasStateFile).toBe(false);
+    expect(doc.slicePRsBehindHead).toBeNull();
+    // Parity: same facts either surface reports for this model's conformance entry.
+    expect(doc.hasStateFile).toBe(statusDoc.conformance[0].hasStateFile);
+    expect(doc.lastConformance).toEqual(statusDoc.conformance[0].lastConformance);
+    expect(doc.commitsBehindHead).toEqual(statusDoc.conformance[0].commitsBehindHead);
+    expect(doc.slicePRsBehindHead).toEqual(statusDoc.conformance[0].slicePRsBehindHead);
+  });
+
+  it("refuses (tool error) on an errored model, same as `em freshness`", async () => {
+    const { result } = await callJson(client, "freshness", { file: join(dir, "error.em") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not reporting freshness");
+  });
+
+  it("a missing file is a tool error, not a crash", async () => {
+    const { result } = await callJson(client, "freshness", { file: join(dir, "no-such-file.em") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot read");
   });
 });
 

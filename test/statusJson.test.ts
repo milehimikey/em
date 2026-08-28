@@ -23,7 +23,16 @@ function sampleReport(): StatusReport {
     invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
     issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
     conformance: [
-      { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, error: null },
+      {
+        file: "model.em",
+        modelDir: ".",
+        hasStateFile: true,
+        lastConformance: { date: "2026-08-01", revision: "abc123f" },
+        repo: ".",
+        commitsBehindHead: 3,
+        slicePRsBehindHead: 1,
+        error: null,
+      },
     ],
     diagnostics: [{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3 }],
   };
@@ -34,6 +43,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
+    expect(STATUS_SCHEMA_VERSION).toBe("1.1");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);

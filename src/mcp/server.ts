@@ -60,8 +60,9 @@ import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, GlossaryM
 import { buildGlossaryJson, GlossaryFileSide } from "../emit/glossaryJson.js";
 import { listModelCommits } from "../cli/changelog-git.js";
 import { buildChangelogDoc } from "../cli/changelogBuild.js";
-import { buildConformScope, changedPathsSince, resolveSliceDocFacts } from "../cli/conformScope.js";
+import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
 import { loadStateFile, parseState } from "../cli/stateFile.js";
+import { buildFreshnessJson } from "../emit/freshnessJson.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
  *  `GENERATOR_VERSION` `em export`'s `generator.version` field already reads from package.json,
@@ -153,7 +154,7 @@ const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all seven MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all thirteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -386,6 +387,7 @@ export function createServer(): McpServer {
       }
 
       const sliceFacts: SliceStatusFact[] = [];
+      const factsByFile = new Map<string, SliceStatusFact[]>();
       const statusDiagnostics: StatusDiagnostic[] = [];
       let openIssuesCount = 0;
       const coverageReports: CoverageReport[] = [];
@@ -394,13 +396,20 @@ export function createServer(): McpServer {
         const baseDir = dirname(file);
         const { facts, diagnostics: docDiags } = resolveSliceStatusFacts(file, model, refs, baseDir);
         sliceFacts.push(...facts);
+        factsByFile.set(file, facts);
         for (const d of docDiags) statusDiagnostics.push({ file, ...d });
         openIssuesCount += countOpenIssues(model);
         if (testsDir !== undefined) coverageReports.push(buildCoverageReport(model, refs, baseDir, testsDir));
       }
       const invariants = testsDir !== undefined ? aggregateInvariantTotals(testsDir, coverageReports) : null;
 
-      const conformance = compiledFiles.map(({ file }) => resolveConformanceEntry(file, repo));
+      // MIL-164: slice-PRs-behind-HEAD is scoped per model — THIS model's own facts, not the
+      // merged `sliceFacts` above (which spans every input file when several are given).
+      const conformance = compiledFiles.map(({ file }) => {
+        const facts = factsByFile.get(file) ?? [];
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn }));
+        return resolveConformanceEntry(file, repo, sliceDocFacts);
+      });
 
       const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
       return textResult(buildStatusJson(report));
@@ -594,6 +603,34 @@ export function createServer(): McpServer {
 
       const scope = buildConformScope(facts, lastConformance, changedPaths, full);
       return textResult(JSON.stringify(scope, null, 2));
+    },
+  );
+
+  server.registerTool(
+    "freshness",
+    {
+      title: "Standalone conformance freshness signal",
+      description:
+        "Return the same JSON document `em freshness <file> --json` prints (MIL-164): one " +
+        "model's conformance record — last-conformed revision, commits behind HEAD, and slice-" +
+        "PRs behind HEAD — without the rest of `em status`'s rollup. Refuses (tool error) when " +
+        "the model has errors, same as the CLI.",
+      inputSchema: {
+        file: fileParam,
+        repo: z.string().optional().describe("git repo to compute behind-HEAD in (default: the model's own directory)"),
+      },
+    },
+    async ({ file, repo }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      if (hasErrors(compiled.diagnostics)) {
+        return errorResult(`not reporting freshness: "${file}" has errors — run \`validate\` first and fix them`);
+      }
+      const { model, refs } = compiled;
+      const baseDir = dirname(file);
+      const { facts } = resolveSliceDocFacts(model, refs, baseDir);
+      const entry = resolveConformanceEntry(file, repo, facts);
+      return textResult(buildFreshnessJson(entry));
     },
   );
 
