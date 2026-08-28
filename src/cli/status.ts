@@ -482,6 +482,19 @@ export function formatStatusText(report: StatusReport): string {
   return `${formatStatusSummary(report)}\n\n${formatStatusDetail(report)}`;
 }
 
+/** Escape characters that would break a markdown table cell: `|` (the column separator) and
+ *  newlines — plus backslashes, escaped FIRST. Escaping `|` alone would let a pre-existing `\`
+ *  in the source text (a Windows path in `entry.file`, or free text inside a conformance
+ *  `error` string) combine with the newly-inserted `\` (e.g. a literal `\|`) and un-escape the
+ *  pipe again once Markdown unescapes the backslash sequence — a CodeQL
+ *  `js/incomplete-sanitization` finding (PR #116 review). Same convention `em slice index`'s
+ *  own `escapeCell` (sliceIndex.ts) already uses for exactly this reason. Applied to both the
+ *  key and value columns: the multi-model `Last conformed (${entry.file})` row embeds
+ *  `entry.file`, which is CLI-argument/glob-controlled, not just the value column. */
+function escapeCell(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
 /** A markdown block suited for pasting into a README (MIL-163's `--md`) — a small table,
  *  same spirit as `em slice index`'s GENERATED Slices table, but not marker-managed: `--md`
  *  just prints the block, leaving where/whether to embed it to the caller. */
@@ -502,7 +515,7 @@ export function formatStatusMarkdown(report: StatusReport): string {
     }
   }
   const header = "| Metric | Value |\n|---|---|";
-  const body = rows.map(([k, v]) => `| ${k} | ${v.replace(/\|/g, "\\|")} |`).join("\n");
+  const body = rows.map(([k, v]) => `| ${escapeCell(k)} | ${escapeCell(v)} |`).join("\n");
   return `${header}\n${body}`;
 }
 

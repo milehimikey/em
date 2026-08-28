@@ -612,6 +612,34 @@ describe("text/markdown/badge formatting", () => {
     expect(md).toContain("| Last conformed (b.em) |");
   });
 
+  // CodeQL js/incomplete-sanitization, PR #116 review: escaping `|` alone on a value already
+  // containing `\` (a Windows path, or free text inside a conformance `error` string) would
+  // leave the pre-existing backslash adjacent to the newly-inserted one, producing `\\|` —
+  // which Markdown reads as an escaped backslash followed by a live, table-breaking `|`.
+  // Backslashes must escape first. Same convention/assertion shape as sliceIndex.test.ts's own
+  // "escapes a pre-existing backslash before escaping `|`" test.
+  it("escapes a pre-existing backslash before escaping `|` in table VALUES, so the pipe can't be un-escaped", () => {
+    const report = makeReport({
+      conformance: [
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: "weird \\| value" },
+      ],
+    });
+    const md = formatStatusMarkdown(report);
+    expect(md).toContain("weird \\\\\\| value");
+  });
+
+  it("escapes a pre-existing backslash before escaping `|` in table KEYS (the multi-model `Last conformed (<file>)` row)", () => {
+    const report = makeReport({
+      files: ["a.em", "weird \\| file.em"],
+      conformance: [
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, error: null },
+        { file: "weird \\| file.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, error: null },
+      ],
+    });
+    const md = formatStatusMarkdown(report);
+    expect(md).toContain("Last conformed (weird \\\\\\| file.em)");
+  });
+
   it("renderBadgeSvg produces a well-formed, deterministic two-segment SVG", () => {
     const svg1 = renderBadgeSvg("em status", "8/8 implemented", "#4c1");
     const svg2 = renderBadgeSvg("em status", "8/8 implemented", "#4c1");
