@@ -2769,6 +2769,89 @@ describe("em slice ratify (CLI, MIL-165)", () => {
   });
 });
 
+describe("em slice reratify (CLI, MIL-161)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/reratify.test.ts; this
+  // block is exit-code/process-level only, same split as `em slice ratify`.
+  let dir: string;
+  const IMPLEMENTED_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n" +
+    "implementedIn: https://github.com/org/repo/pull/1\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-01\n---\n" +
+    "# Slice: Shipped Slice\n\nbody\n";
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-reratify-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "shipped-slice.md"), IMPLEMENTED_DOC);
+    writeFileSync(
+      join(dir, "shipped.em"),
+      'slice "Shipped Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/shipped-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
+    // Genuine error in an UNRELATED slice — same scoping regression coverage ratify's CLI block has.
+    writeFileSync(
+      join(dir, "slices", "good.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: https://x/1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "scoped.em"),
+      'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("bumps version, flips status, clears stale ratifiedBy/ratifiedOn, confirms on stdout", () => {
+    const r = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("reratified: slices/shipped-slice.md");
+    expect(r.stdout).toContain("version: 2");
+    const content = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
+    expect(content).toContain("status: ready-to-implement");
+    expect(content).toContain("version: 2");
+    expect(content).toContain("implementedIn: https://github.com/org/repo/pull/1"); // untouched
+    expect(content).not.toContain("ratifiedBy:");
+    expect(content).not.toContain("ratifiedOn:");
+  });
+
+  it("a follow-up em slice ratify --by applies cleanly (no false 'already ratified' refusal)", () => {
+    const r = em(["slice", "ratify", "shipped.em", "shipped-slice", "--by", "Jordan Lee", "--on", "2026-08-28"], dir);
+    expect(r.status).toBe(0);
+    const content = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
+    expect(content).toContain("ratifiedBy: Jordan Lee");
+    expect(content).toContain("status: ready-to-implement");
+    expect(content).toContain("version: 2"); // ratify never bumps version
+  });
+
+  it("refuses a second reratify run — status is no longer implemented", () => {
+    const r = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("status: ready-to-implement");
+  });
+
+  it("errors clearly for a key that names no slice in the model", () => {
+    const r = em(["slice", "reratify", "shipped.em", "no-such-key"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
+  });
+
+  it("errors clearly when no doc is bound via note", () => {
+    const r = em(["slice", "reratify", "unbound.em", "unbound"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("stays scoped to the named slice: a genuine error in an unrelated slice doesn't block it", () => {
+    const r = em(["slice", "reratify", "scoped.em", "good"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("reratified: slices/good.md");
+  });
+
+  it("refuses on an error concerning the named slice itself", () => {
+    const r = em(["slice", "reratify", "scoped.em", "bad"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('slice "bad" has errors');
+  });
+});
+
 describe("em slice new (CLI, MIL-97 item 3)", () => {
   let cwd: string;
 
@@ -2880,6 +2963,88 @@ describe("em slice new (CLI, MIL-97 item 3)", () => {
     const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
     expect(content).toContain("pattern: state-change\n");
     expect(content).toContain("swimlane: System → Payment v2\n");
+  });
+});
+
+describe("em slice new --wire (CLI, MIL-161)", () => {
+  // Pure logic (resolvePrimaryElement/insertNoteClause/wireSliceNote) is covered by
+  // test/sliceLink.test.ts; this block is exit-code/process-level only, same split as the rest
+  // of `em slice new`.
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-slice-new-wire-"));
+    writeFileSync(
+      join(dir, "model.em"),
+      [
+        'slice "Checkout" {',
+        "  ui Checkout Screen",
+        "  command Submit Payment",
+        "  event Payment Requested",
+        "}",
+        'slice "Manager Review" {',
+        '  view Pending Payments from "Payment Requested"',
+        "  ui Payment Dashboard",
+        "}",
+        'slice "Already Wired" {',
+        '  command Do Thing note "slices/pre-existing.md"',
+        "  event Thing Done",
+        "}",
+      ].join("\n"),
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("writes the doc AND inserts the note line into the .em file", () => {
+    const r = em(
+      ["slice", "new", "Checkout", "--pattern", "state-change", "--swimlane", "Customer → Payment", "--wire", "model.em"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slices/checkout.md");
+    expect(r.stdout).toContain('wired slices/checkout.md onto Submit Payment in slice "Checkout"');
+    expect(existsSync(join(dir, "slices", "checkout.md"))).toBe(true);
+    const emContent = readFileSync(join(dir, "model.em"), "utf8");
+    expect(emContent).toContain('command Submit Payment note "slices/checkout.md"');
+  });
+
+  it("resolves the view for a state-view slice", () => {
+    const r = em(
+      ["slice", "new", "Manager Review", "--pattern", "state-view", "--swimlane", "Manager → Payment", "--wire", "model.em"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    const emContent = readFileSync(join(dir, "model.em"), "utf8");
+    expect(emContent).toContain('view Pending Payments from "Payment Requested" note "slices/manager-review.md"');
+  });
+
+  it("fails without writing the doc when the .em has no matching slice", () => {
+    const r = em(
+      ["slice", "new", "No Such Slice", "--pattern", "state-change", "--swimlane", "A → B", "--wire", "model.em"],
+      dir,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no slice with export key "no-such-slice" in this model');
+    expect(existsSync(join(dir, "slices", "no-such-slice.md"))).toBe(false);
+  });
+
+  it("fails without writing the doc when the element already has a note clause", () => {
+    const r = em(
+      ["slice", "new", "Already Wired", "--pattern", "state-change", "--swimlane", "A → B", "--wire", "model.em"],
+      dir,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("already has a `note` clause");
+    expect(existsSync(join(dir, "slices", "already-wired.md"))).toBe(false);
+    const emContent = readFileSync(join(dir, "model.em"), "utf8");
+    expect(emContent).toContain('note "slices/pre-existing.md"'); // untouched
+  });
+
+  it("without --wire, falls back to printing the note line (existing behavior)", () => {
+    const r = em(["slice", "new", "Yet Another", "--pattern", "automation", "--swimlane", "A → B"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('note "slices/yet-another.md"');
+    expect(r.stdout).not.toContain("wired ");
   });
 });
 

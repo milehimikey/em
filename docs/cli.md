@@ -1482,21 +1482,55 @@ guessed default would reintroduce the exact drift this command exists to kill. `
 validated against the same 4-value enum as the schema's `pattern` key; an invalid value is a
 clear error listing the valid choices, non-zero exit.
 
-Creates `slices/` if it doesn't exist yet. Does **not** touch the model's `.em` source — writing
-a brand-new file is safe to automate blindly, but editing existing `.em` text isn't, so the
-command instead prints the exact `note "slices/<key>.md"` line to add to the slice's primary
-element by hand.
+Creates `slices/` if it doesn't exist yet. Without `--wire`, does **not** touch the model's `.em`
+source — writing a brand-new file is safe to automate blindly, but editing existing `.em` text
+isn't by default, so the command instead prints the exact `note "slices/<key>.md"` line to add to
+the slice's primary element by hand.
 
 | Flag | Effect |
 |---|---|
 | `--pattern <pattern>` | **Required.** `state-change` \| `state-view` \| `automation` \| `translation` |
 | `--swimlane <swimlane>` | **Required.** Free text, conventionally `<Persona> → <Context>` |
 | `-f, --force` | Overwrite the file if it already exists |
+| `--wire <model-file>` | Also insert the `note "slices/<key>.md"` line into this `.em` file (MIL-161) — see below |
 
 ```bash
 em slice new "Request Payment" --pattern automation --swimlane "System → Payment"
 # -> writes slices/request-payment.md, prints the note "slices/request-payment.md" line to add
+
+em slice new "Request Payment" --pattern automation --swimlane "System → Payment" --wire model.em
+# -> writes slices/request-payment.md AND inserts the note line into model.em directly
 ```
+
+### `--wire <model-file>` (MIL-161)
+
+Resolves `<name>`'s export key against `<model-file>`'s slices, finds that slice's **primary**
+element for `--pattern` (the `command` for State Change, the `view` for State View, the reactor
+— `processor`/`automation`/`saga` — for Automation, the `translation` for Translation), and
+inserts `note "slices/<key>.md"` directly onto that element's own declaration line — the
+mechanical edit SKILL.md's `slice` phase (step 4) used to describe as "add this line by hand."
+
+Edits ONLY that one physical source line, never anything else in the file — no general `.em`
+serializer exists (or is needed): the insertion point follows the DSL grammar exactly (a `note`
+clause is recognized by the keyword anywhere on the line, not by position), so it's placed
+immediately before an opening `{` that keeps a field block open past this line (matching every
+existing `event X note "..." { ... }` example), or appended at the end of the line otherwise
+(bare element, or an already-closed inline `{ ... }` block) — either way, everything else on the
+line, and every other line in the file, is preserved byte-for-byte.
+
+Resolution is deliberately conservative: it refuses — writing **neither** the doc nor the `.em`
+edit, so nothing is left half-done — when `<model-file>` has no slice matching `<name>`'s export
+key, when that slice has zero or more than one candidate element of the primary kind (ambiguous;
+wire it by hand instead), or when the target line already carries a `note` clause. On any of
+these, drop `--wire` and re-run — the doc still gets written and the line still gets printed to
+paste by hand.
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<model-file>` has no slice matching `<name>`'s export key |
+| `slice "<name>" has no <kind> element to wire the note onto` | The slice has zero elements of the pattern's primary kind |
+| `slice "<name>" has N <kind> elements — ambiguous, wire the note by hand` | More than one candidate — which one is genuine judgment |
+| `this line already has a note clause — edit it by hand instead` | The primary element is already wired (or has a conflicting `note`) |
 
 ## `em slice index <file>`
 
@@ -1648,6 +1682,61 @@ an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't bloc
 em slice mark-implemented model.em request-payment https://github.com/org/repo/pull/42
 ```
 
+## `em slice reratify <file> <slice-key>`
+
+The mechanical bump/flip a re-ratified slice doc gets (MIL-161), mirroring `em slice
+mark-implemented`'s shape at the OTHER end of the lifecycle. Sets exactly two frontmatter fields
+on the doc resolved from `<slice-key>` via the same note-binding join `ratify`/
+`mark-implemented`/`--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121 cross-binding
+included):
+
+```yaml
+version: <current + 1>
+status: ready-to-implement
+```
+
+Only applies to a doc currently `status: implemented` — the precondition
+[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)
+describes ("a new version is ratified for a slice whose previous version already shipped").
+Refuses, non-zero exit, leaving the file untouched, for any other current status: a
+`draft`/`reviewed`/`ready-to-implement` doc hasn't shipped yet (first-time authoring uses
+`em slice new`, not this command), and a doc already `ready-to-implement` may already have been
+reratified — re-running would silently double-increment `version`, which this command never does
+(unlike `ratify`/`mark-implemented`'s idempotent same-value no-op, a version bump has no natural
+idempotent form, so the refusal is the safety net instead).
+
+Also clears `ratifiedBy:`/`ratifiedOn:` if either is present, since they describe who signed off
+the PRIOR version — leaving them in place would make the brand-new, not-yet-reviewed version read
+as already ratified. Clearing them is also what lets a follow-up `em slice ratify --by <name>`
+apply cleanly afterward: without this, `ratify`'s own idempotent-refusal guard would read the
+leftover prior `ratifiedBy`/`ratifiedOn` as "already ratified by someone else" and refuse.
+
+Never touches `implementedIn:` (kept pointing at the prior version's PR on purpose — see
+[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)'s
+drift-signal framing) or the doc body: the write is a surgical in-place edit of just the
+`version:`/`status:` lines (and, when present, removing the `ratifiedBy:`/`ratifiedOn:` lines
+entirely), not a parse-and-re-serialize, so every other line — key order, spacing, comments, the
+whole body — survives byte-for-byte.
+
+Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
+`em validate --slice-ready` are: only a model error concerning THIS slice (its bare export key,
+or an element ref prefixed `<key>/`) refuses — an unrelated slice's breakage elsewhere in a large,
+still-WIP model doesn't block it.
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
+| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
+| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
+| `doc is status: <x>, not implemented — ...` | The precondition guard — see above |
+| `doc's version: "<x>" isn't a positive integer` | Refuses rather than guess a bump when `version:` isn't parseable |
+
+```bash
+em slice reratify model.em request-payment
+# -> reratified: slices/request-payment.md (version: 2, status: ready-to-implement)
+```
+
 ## `em changelog <file>`
 
 Renders the model's git history as a business-readable ledger — one section per commit
@@ -1715,15 +1804,20 @@ stakeholder review:`. This is the enforcement point for the phase enum and for t
 `Last conformance:`/`Last stakeholder review:` formats the skill's `conform`/`review` phases
 depend on — hand-editing these bullets risks a typo the next resume/conform run can't parse.
 
-Everything else in the file — Session inputs, Participants, Decisions log, Usage log, Open
-questions, Slice inventory — is agent-authored prose and stays out of `em state`'s reach;
-every writer below touches only its one targeted bullet (plus `Last updated:`), leaving every
-other byte of the file untouched.
+Everything else in the file — Session inputs, Participants, Decisions log, Open questions, Slice
+inventory — is agent-authored prose and stays out of `em state`'s reach; every mechanical-field
+writer below touches only its one targeted bullet (plus `Last updated:`), leaving every other
+byte of the file untouched. The one exception is the **Usage log** (`log-usage` below, MIL-161):
+it's still agent-*facing* content in the sense that no `em` command ever edits a past entry, but
+appending a fresh, canonically-formatted line is itself mechanical — see `log-usage`'s own
+section for why it's the one write that lives here despite the line above.
 
 **Locating the state file.** Every subcommand takes an optional `[dir]` (default: the current
 directory) — either the model directory containing `.event-modeling.md`, or a direct path to
-that file itself (its basename is checked against `.event-modeling.md` exactly). All four
-subcommands fail clearly, non-zero, if the file — or the bullet a writer targets — is missing.
+that file itself (its basename is checked against `.event-modeling.md` exactly); `log-usage`
+instead takes the model's `.em` file directly (see its own section) and resolves the sibling
+state file the same way `em conform-scope` does. Every subcommand fails clearly, non-zero, if the
+file — or the section/bullet it targets — is missing.
 
 ### `em state read [dir]`
 
@@ -1788,6 +1882,77 @@ Participants`, matching `templates/state.md`'s format. `<date>` must look like `
 
 ```bash
 em state set-review 2026-08-20 my-model/
+```
+
+### `em state log-usage <file> --phases <list>` (MIL-161)
+
+Appends one canonically-formatted line to the state file's **Usage log** section — the mechanical
+half of "save state at the end of every session, and log a Usage log entry" that used to mean
+hand-running `em validate --json`, deduping each diagnostic's `usageCategory` by eye, and
+hand-formatting the result (see [usage-data.md](usage-data.md)).
+
+`<file>` is the model's `.em` file (not the state-file directory — the state file is resolved
+next to it, same `dirname(file)` convention `em conform-scope` uses). It's compiled with the
+SAME diagnostic set `em validate` reports (parse diagnostics plus the fs-aware lineage/
+frontmatter-coherence/note-binding/doc-model-consistency rules), and every diagnostic's
+`usageCategory` (from the `RULES` registry, `src/model/rules.ts`) is deduped and sorted
+alphabetically — `["none"]` when the model is clean. `--phases` is deduped and sorted into
+[usage-data.md](usage-data.md)'s own canonical phase order (`discover, extract, model, slice,
+implement, conform, review, validate, watch`), not input order, so two sessions naming the same
+phases in a different order log an identical line.
+
+```markdown
+## Usage log
+- 2026-08-28: phases: model, slice — validate: read model has no consumer
+```
+
+Only ever APPENDS — never edits, re-reads, or reformats an existing line, so a hand-authored
+history predating this command is left exactly as written. Fails clearly, non-zero, without
+writing anything, if `--phases` names something outside the fixed vocabulary, or if the state
+file (or its `## Usage log` heading) is missing.
+
+| Flag | Effect |
+|---|---|
+| `--phases <list>` | **Required.** Comma-separated phase(s) touched this session |
+
+```bash
+em state log-usage model.em --phases slice,model
+# -> wrote .event-modeling.md — phases: model, slice — validate: none
+```
+
+## `em usage-report [root]`
+
+Aggregates every `.event-modeling.md`'s Usage log under `root` (default the current directory,
+searched recursively, `node_modules`/`.git` pruned) into phase and diagnostic-category tallies
+(MIL-161) — replaces [usage-data.md](usage-data.md#aggregating-across-models-for-a-retro)'s
+hand-rolled `grep`/`awk`/`sort` pipeline (and its `LC_ALL=C` + UTF-8 em-dash locale caveat) with a
+plain, locale-independent parse.
+
+A Usage log line that doesn't match the canonical `- YYYY-MM-DD: phases: ... — validate: ...`
+shape (hand-authored before `em state log-usage` existed, or hand-edited since) is reported under
+`unparseableLines` rather than silently mistallied or dropped — same "surface the uncertainty,
+never guess" posture the rest of `em` holds. `"none"` category entries are excluded from the
+category tally (a session with nothing to report isn't a category worth counting), matching the
+prior aggregation recipe's own `grep -v '^none$'`.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print a versioned JSON document instead of the text report |
+
+```bash
+em usage-report .
+# 3 state file(s) under ., 7 logged session(s)
+#
+# Phases touched:
+#   4	slice
+#   2	model
+#   1	discover
+#
+# Validate diagnostic categories hit:
+#   2	read model has no consumer
+#   1	command nothing triggers
+
+em usage-report . --json   # { "usageReportSchemaVersion": "1.0", "sessions": 7, "phaseCounts": [...], "categoryCounts": [...], "unparseableLines": [...] }
 ```
 
 ## `em conform-scope <file>`

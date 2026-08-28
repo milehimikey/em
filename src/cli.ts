@@ -75,8 +75,10 @@ import { runRatify } from "./cli/ratify.js";
 import { runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
+import { wireSliceNote } from "./cli/sliceLink.js";
 import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
+import { runReratify } from "./cli/reratify.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -105,6 +107,17 @@ import {
   CONFORM_WORKFLOW_MARKER,
   CiFileStatus,
 } from "./cli/ciInit.js";
+import { RULES, RuleCode } from "./model/rules.js";
+import {
+  USAGE_PHASES,
+  isUsagePhase,
+  sortUsagePhases,
+  appendUsageLogEntry,
+  findStateFiles,
+  aggregateUsageReport,
+  formatUsageReportText,
+} from "./cli/usageLog.js";
+import { buildUsageReportJson } from "./emit/usageReportJson.js";
 
 const program = new Command();
 
@@ -510,7 +523,12 @@ slice
   .requiredOption("--pattern <pattern>", `slice pattern: ${SLICE_PATTERNS.join(" | ")}`)
   .requiredOption("--swimlane <swimlane>", 'swimlane, e.g. "Persona → Context"')
   .option("-f, --force", "overwrite the file if it already exists")
-  .action((name: string, opts: { pattern: string; swimlane: string; force?: boolean }) => {
+  .option(
+    "--wire <model-file>",
+    "also insert the `note \"slices/<key>.md\"` line onto the slice's primary element in this " +
+      ".em file (matched by export key), instead of just printing it to paste by hand (MIL-161)",
+  )
+  .action((name: string, opts: { pattern: string; swimlane: string; force?: boolean; wire?: string }) => {
     if (!isSlicePattern(opts.pattern)) {
       console.error(
         `em slice new: invalid --pattern "${opts.pattern}" — expected one of: ${SLICE_PATTERNS.join(", ")}`,
@@ -526,11 +544,36 @@ slice
       process.exit(1);
     }
 
+    // Resolve (never write anything yet) BEFORE touching the doc file, so a --wire failure
+    // (no matching slice, ambiguous primary element, already wired) leaves nothing written at
+    // all rather than a doc with no wiring and a non-zero exit.
+    let wired: { content: string; sliceName: string; elementName: string } | null = null;
+    if (opts.wire) {
+      const { model, refs, diagnostics, source } = compileFile(opts.wire);
+      printDiagnostics(diagnostics);
+      if (hasErrors(diagnostics)) {
+        console.error(`em slice new --wire: not wiring — fix the errors in ${opts.wire} above`);
+        process.exit(1);
+      }
+      const result = wireSliceNote(source, model, refs, key, opts.pattern, path);
+      if (!result.ok) {
+        console.error(`em slice new --wire: ${result.message}`);
+        process.exit(1);
+      }
+      wired = result;
+    }
+
     mkdirSync(dir, { recursive: true });
     writeFileSync(path, buildSliceDocContent(name, key, opts.pattern, opts.swimlane));
     console.log(`wrote ${path}`);
-    console.log(`add this to the slice's primary element in the .em file:`);
-    console.log(`  note "${path}"`);
+
+    if (wired) {
+      writeFileSync(opts.wire!, wired.content);
+      console.log(`wired ${path} onto ${wired.elementName} in slice "${wired.sliceName}" (${opts.wire})`);
+    } else {
+      console.log(`add this to the slice's primary element in the .em file:`);
+      console.log(`  note "${path}"`);
+    }
   });
 
 slice
@@ -649,6 +692,39 @@ slice
     );
   });
 
+slice
+  .command("reratify")
+  .description(
+    "bump `version:` and flip a shipped slice doc's frontmatter back to `status: " +
+      "ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice " +
+      "mark-implemented`). Only applies to a doc at `status: implemented`; clears any stale " +
+      "`ratifiedBy:`/`ratifiedOn:` (they describe the PRIOR version's sign-off) so a follow-up " +
+      "`em slice ratify --by` applies cleanly; never touches `implementedIn:` or the doc body",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .action((file: string, sliceKey: string) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    // Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
+    // `em validate --slice-ready` are: only an error concerning THIS slice refuses.
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice reratify: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const result = runReratify(model, refs, dirname(file), sliceKey);
+    if (!result.ok) {
+      console.error(`em slice reratify: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(`reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement)`);
+  });
+
 program
   .command("changelog")
   .description("render a model's git history as a business-readable ledger (see docs/cli.md)")
@@ -750,6 +826,79 @@ state
       process.exit(1);
     }
     writeStateUpdate(dir, "em state set-review", (text, today) => setReview(text, date, today));
+  });
+
+state
+  .command("log-usage")
+  .description(
+    "append one Usage log line — phase(s) touched + em validate's diagnostic categories hit, " +
+      "deduped and canonically formatted (MIL-161, docs/usage-data.md) — the mechanical half of " +
+      "'save state at the end of every session' that used to be run-validate-then-hand-format; " +
+      "state file resolved next to <file>, same convention as em conform-scope",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--phases <list>", `comma-separated phase(s) touched this session: ${USAGE_PHASES.join(", ")}`)
+  .action((file: string, opts: { phases: string }) => {
+    const rawPhases = opts.phases
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (rawPhases.length === 0) {
+      console.error("em state log-usage: --phases must name at least one phase");
+      process.exit(1);
+    }
+    const invalid = rawPhases.filter((p) => !isUsagePhase(p));
+    if (invalid.length > 0) {
+      console.error(
+        `em state log-usage: invalid phase(s) ${invalid.map((p) => `"${p}"`).join(", ")} — expected one of: ${USAGE_PHASES.join(", ")}`,
+      );
+      process.exit(1);
+    }
+    const phases = sortUsagePhases(rawPhases);
+
+    const { model, diagnostics, refs } = compileFile(file);
+    const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics);
+    const categorySet = new Set(allDiagnostics.map((d) => RULES[d.code as RuleCode].usageCategory));
+    const categories = categorySet.size > 0 ? [...categorySet].sort() : ["none"];
+
+    const loaded = loadStateFile(dirname(file));
+    if (!loaded.ok) {
+      console.error(loaded.message);
+      process.exit(1);
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const result = appendUsageLogEntry(loaded.text, today, phases, categories);
+    if (!result.ok) {
+      console.error(`em state log-usage: ${result.message}`);
+      process.exit(1);
+    }
+    writeFileSync(loaded.path, result.text);
+    console.log(`wrote ${loaded.path} — phases: ${phases.join(", ")} — validate: ${categories.join(", ")}`);
+  });
+
+program
+  .command("usage-report")
+  .description(
+    "aggregate every .event-modeling.md's Usage log under [root] into phase/diagnostic-category " +
+      "tallies (MIL-161) — replaces docs/usage-data.md's hand-rolled grep/awk/sort pipeline; a " +
+      "logged line that doesn't match the canonical em state log-usage format is reported under " +
+      "unparseableLines rather than silently mistallied or dropped",
+  )
+  .argument("[root]", "directory to search recursively for .event-modeling.md files", ".")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((root: string, opts: { json?: boolean }) => {
+    const files = findStateFiles(root);
+    const entries = files.map((relPath) => ({
+      file: relPath,
+      text: readFileSync(join(root, relPath), "utf8"),
+    }));
+    const report = aggregateUsageReport(root, entries);
+
+    if (opts.json) {
+      process.stdout.write(buildUsageReportJson(report) + "\n");
+    } else {
+      console.log(formatUsageReportText(report));
+    }
   });
 
 program
@@ -960,19 +1109,7 @@ program
       },
     ) => {
       const { model, diagnostics, refs } = compileFile(file);
-      // Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding
-      // mismatches (MIL-126), and doc↔model consistency (MIL-124) are validate's fs-aware
-      // rules — every other check above is a pure function of the .em source. All four read
-      // slices/*.md alongside the model. Doc↔model consistency is deliberately validate-only
-      // (unlike note-binding, which `em render` also folds in) — it's a conform-phase concern,
-      // not something every render needs to recheck.
-      const allDiagnostics = [
-        ...diagnostics,
-        ...validateLineage(model, refs, dirname(file)),
-        ...validateFrontmatterCoherence(model, refs, dirname(file)),
-        ...validateNoteBindings(model, refs, dirname(file)),
-        ...validateDocModelConsistency(model, refs, dirname(file)),
-      ];
+      const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics);
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
@@ -1577,6 +1714,24 @@ function compileFile(
     }
     throw e;
   }
+}
+
+/** Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding mismatches
+ *  (MIL-126), and doc↔model consistency (MIL-124) are `em validate`'s fs-aware rules — every
+ *  other diagnostic in `diagnostics` (from `compileFile`) is a pure function of the .em source.
+ *  All four read `slices/*.md` alongside the model. Doc↔model consistency is deliberately
+ *  validate-only (unlike note-binding, which `em render` also folds in) — it's a conform-phase
+ *  concern, not something every render needs to recheck. Shared by `em validate` and
+ *  `em state log-usage` (MIL-161) — the latter needs the exact same diagnostic set `em validate
+ *  --json` would report, since its whole job is logging which categories fired. */
+function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsResult, diagnostics: Diagnostic[]): Diagnostic[] {
+  return [
+    ...diagnostics,
+    ...validateLineage(model, refs, dirname(file)),
+    ...validateFrontmatterCoherence(model, refs, dirname(file)),
+    ...validateNoteBindings(model, refs, dirname(file)),
+    ...validateDocModelConsistency(model, refs, dirname(file)),
+  ];
 }
 
 /** Read a file's text, or exit with a clear error — shared by `em diff` (both forms) and

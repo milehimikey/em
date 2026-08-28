@@ -48,12 +48,14 @@ em slice new <name>                                           # scaffold a fresh
 em slice new <name> --pattern <pattern>                       # slice pattern: state-change | state-view | automation | translation
 em slice new <name> --swimlane <swimlane>                     # swimlane, e.g. "Persona → Context"
 em slice new <name> -f, --force                               # overwrite the file if it already exists
+em slice new <name> --wire <model-file>                       # also insert the `note "slices/<key>.md"` line onto the slice's primary element in this .em file (matched by export key), instead of just printing it to paste by hand (MIL-161)
 em slice index <file>                                         # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
 em slice index <file> --check                                 # verify the table is current; exit non-zero on drift without writing (CI)
 em slice mark-implemented <file> <slice-key> <pr-url>         # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` or the doc body
 em slice ratify <file> <slice-key>                            # flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#what-ratified-means) that makes who ratified, and when, a first-class recorded fact. Idempotent on the same --by/--on pair; refuses to overwrite a different one already recorded; never touches `version:` or the doc body
 em slice ratify <file> <slice-key> --by <name>                # the ratifier's name
 em slice ratify <file> <slice-key> --on <date>                # ratification date, YYYY-MM-DD (default: today)
+em slice reratify <file> <slice-key>                          # bump `version:` and flip a shipped slice doc's frontmatter back to `status: ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice mark-implemented`). Only applies to a doc at `status: implemented`; clears any stale `ratifiedBy:`/`ratifiedOn:` (they describe the PRIOR version's sign-off) so a follow-up `em slice ratify --by` applies cleanly; never touches `implementedIn:` or the doc body
 em changelog <file>                                           # render a model's git history as a business-readable ledger (see docs/cli.md)
 em changelog <file> --from <rev>                              # start the walk at this revision (inclusive)
 em changelog <file> --to <rev>                                # end the walk at this revision (inclusive; default HEAD)
@@ -64,6 +66,10 @@ em state set-phase <phase> [dir] --step <n>                   # also set Current
 em state set-conformance <revision> [dir]                     # rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses
 em state set-conformance <revision> [dir] --report <path>     # path to the conformance report just written
 em state set-review <date> [dir]                              # rewrite Last stakeholder review: (and Last updated:)
+em state log-usage <file>                                     # append one Usage log line — phase(s) touched + em validate's diagnostic categories hit, deduped and canonically formatted (MIL-161, docs/usage-data.md) — the mechanical half of 'save state at the end of every session' that used to be run-validate-then-hand-format; state file resolved next to <file>, same convention as em conform-scope
+em state log-usage <file> --phases <list>                     # comma-separated phase(s) touched this session: discover, extract, model, slice, implement, conform, review, validate, watch
+em usage-report [root]                                        # aggregate every .event-modeling.md's Usage log under [root] into phase/diagnostic-category tallies (MIL-161) — replaces docs/usage-data.md's hand-rolled grep/awk/sort pipeline; a logged line that doesn't match the canonical em state log-usage format is reported under unparseableLines rather than silently mistallied or dropped
+em usage-report [root] --json                                 # print a JSON document instead of the text report
 em conform-scope <file>                                       # mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — --seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)
 em conform-scope <file> --repo <path>                         # path to (or inside) the target codebase's git repository
 em conform-scope <file> --full                                # ignore Last conformance:/changed paths; scope every implemented slice
