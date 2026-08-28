@@ -81,7 +81,9 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 #### Requirement: {{title}} ({{stable ID, e.g. an INV-{{MNEMONIC}}-n from Invariants below}})
 {{requirement text — same voice as an Invariants entry}}
 ##### Scenario: {{name}}
-- **GIVEN** {{...}} **WHEN** {{...}} **THEN** {{...}}
+- **Given:** {{...}}
+- **When:** {{...}}
+- **Then:** {{...}}
 
 ### Modified
 <!-- Same shape as Added — the stable ID names the requirement that changed. -->
@@ -146,16 +148,33 @@ an event directly.}}
      `INV-<MNEMONIC>-<n>`, where `<MNEMONIC>` is a short (2-4 letter/digit), slice-unique
      abbreviation of this slice's key (e.g. slice `checkout` -> `INV-CHK-1`) — see
      docs/slice-doc-schema.md. Add a letter suffix for a closely-related sub-invariant
-     (`INV-CHK-3a`). -->
+     (`INV-CHK-3a`). Keep the rule statement itself to one line. If it needs more — why the rule
+     exists, what "violation" looks like in practice, an edge case worth calling out — add that as
+     a nested bullet under the rule instead of one long run-on sentence: this section renders as
+     HTML (`em catalog`/`em render`/`em watch`), and a nested bullet stays visually distinct where
+     a wrapped sentence collapses into a wall of text. The ID must stay on the rule's own
+     top-level bullet line — `em coverage` extracts INV IDs from that line only, never from a
+     nested elaboration bullet underneath it. -->
 - **INV-{{MNEMONIC}}-1:** {{rule that the command enforces; violation ⇒ rejection}}
+  - {{optional: rationale, edge-case detail, or what "violation" means here — its own bullet}}
 - **INV-{{MNEMONIC}}-2:** {{...}}
 
 ## Scenarios (Given / When / Then)
-<!-- The executable specification. Cover the happy path AND the key rule boundaries. -->
-- **Happy path** — Given {{starting state / prior events}}, When {{command/trigger}},
-  Then {{event(s) recorded}} and {{resulting read-model change}}.
-- **Rejected (INV-{{MNEMONIC}}-1)** — Given {{state}}, When {{command}}, Then {{rejected with reason}}; no event.
-- **{{Edge case}}** — Given {{...}}, When {{...}}, Then {{...}}.
+<!-- The executable specification. Cover the happy path AND the key rule boundaries. Each
+     scenario is a case-label bullet with Given/When/Then as nested sub-bullets — not one run-on
+     sentence — so the case reads as distinct beats once rendered instead of a dense paragraph. -->
+- **Happy path**
+  - **Given:** {{starting state / prior events}}
+  - **When:** {{command/trigger}}
+  - **Then:** {{event(s) recorded}} and {{resulting read-model change}}.
+- **Rejected (INV-{{MNEMONIC}}-1)**
+  - **Given:** {{state}}
+  - **When:** {{command}}
+  - **Then:** rejected with reason; no event.
+- **{{Edge case}}**
+  - **Given:** {{...}}
+  - **When:** {{...}}
+  - **Then:** {{...}}
 
 ## Alternate & Error Flows
 <!-- Failure paths, retries, compensations, timeouts, idempotency. -->
@@ -174,5 +193,15 @@ an event directly.}}
 - **Downstream read models / slices affected:** {{...}}
 
 ## Open Questions
-<!-- Park unresolved items here instead of guessing. Mirror them into .event-modeling.md. -->
+<!-- Park unresolved items here instead of guessing. Mirror them into .event-modeling.md.
+
+     Lifecycle across versions: while THIS version is still being worked, a resolved item
+     (`- [x]`) can stay checked here as a visible record of what's already been decided this
+     round. On the same commit that ratifies the NEXT version (bumps `version`, rewrites
+     `## Delta` above) — prune every already-checked item from this list; keep only what's still
+     open, plus anything new the delta itself surfaced. Same "replace, never accumulate" stance
+     as `## Delta`, for the same reason: an ever-growing scroll of resolved questions goes stale
+     exactly like an accumulating Delta log would, and full history already lives in git
+     (`git log -p slices/<name>.md`) — this section is a live worklist, not an audit trail. See
+     docs/slice-doc-schema.md#open-questions-section-lifecycle. -->
 - [ ] {{question}}

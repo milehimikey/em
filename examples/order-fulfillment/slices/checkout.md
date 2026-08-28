@@ -53,19 +53,25 @@ looks like.
 
 ## Invariants / Business Rules
 
-- **INV-CHK-1:** An order may have at most one `Payment Requested` outstanding at a time —
-  submitting payment twice for the same order before it's captured is rejected, not
-  recorded as a second request.
+- **INV-CHK-1:** An order may have at most one `Payment Requested` outstanding at a time.
+  - Submitting payment twice for the same order before it's captured is rejected, not
+    recorded as a second request.
 
 ## Scenarios (Given / When / Then)
 
-- **Happy path** — Given an order with no outstanding payment request, When `Submit
-  Payment` is issued for its full total, Then `Payment Requested` is recorded and the
-  payment becomes visible to both **Manager Review** and the **Capture Payment** automation.
-- **Rejected (INV-CHK-1)** — Given an order that already has a `Payment Requested` outstanding,
-  When `Submit Payment` is issued for it again, Then rejected; no second event.
-- **Rejected** — Given a `Submit Payment` amount that doesn't match the order's total, When
-  it's issued, Then rejected with an amount-mismatch error; no event.
+- **Happy path**
+  - **Given:** an order with no outstanding payment request
+  - **When:** `Submit Payment` is issued for its full total
+  - **Then:** `Payment Requested` is recorded and the payment becomes visible to both
+    **Manager Review** and the **Capture Payment** automation.
+- **Rejected (INV-CHK-1)**
+  - **Given:** an order that already has a `Payment Requested` outstanding
+  - **When:** `Submit Payment` is issued for it again
+  - **Then:** rejected; no second event.
+- **Rejected (amount mismatch)**
+  - **Given:** a `Submit Payment` amount that doesn't match the order's total
+  - **When:** it's issued
+  - **Then:** rejected with an amount-mismatch error; no event.
 
 ## Alternate & Error Flows
 

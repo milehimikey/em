@@ -95,6 +95,19 @@ describe("extractInvariantIds", () => {
     expect(extractInvariantIds(body)).toEqual(["INV-CO-2"]);
   });
 
+  // MIL-156: templates/slice.md now suggests an optional nested elaboration bullet under an
+  // Invariants rule (rationale/edge-case detail, kept out of the rule's own one-line sentence for
+  // HTML-render readability). That sub-bullet is indented, so it's excluded the same way any
+  // other continuation line already is — it must never itself contribute (or steal credit for)
+  // an ID, whether the sub-bullet mentions this rule's own ID again or a sibling's.
+  it("does not attribute an ID from a nested elaboration bullet under an Invariants rule", () => {
+    const body =
+      "## Invariants\n- **INV-CHK-1:** must hold.\n" +
+      "  - elaboration that mentions INV-CHK-1 again and, for context, sibling slice's INV-OTHER-9.\n" +
+      "- **INV-CHK-2:** also holds.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-CHK-1", "INV-CHK-2"]);
+  });
+
   it("still attributes both IDs on a Renamed bullet even with a mnemonic label before the colon", () => {
     const body = "## Delta\n### Renamed\n- **MODIFIED (v1 -> v2):** INV-CO-1 supersedes nothing, just tightens scope.\n";
     expect(extractInvariantIds(body)).toEqual(["INV-CO-1"]);
