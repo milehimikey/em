@@ -9,6 +9,6 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src", "test", "scripts"],
+  "include": ["src", "test", "scripts", "prototypes"],
   "exclude": ["dist", "node_modules"]
 }

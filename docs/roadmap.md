@@ -89,7 +89,13 @@ open `issue` markers + unchecked Open Questions, and last-conformance commits-be
 (`statusSchemaVersion` `1.0`), a `--md` block for README embedding, and a generated `--badge`
 SVG, plus a byte-identical MCP `status` tool (see [mcp.md](mcp.md)). The first surface built for
 1.9.0, "the communication layer": everything downstream (a portal, notifications, metrics, CI)
-consumes this rollup rather than re-deriving it.
+consumes this rollup rather than re-deriving it. MIL-162 ("explore: interactive, teachable
+navigator for event models") explored what that portal should be and decided: a separate add-on
+tool (working name **em-portal**) consuming `em export --json` + `em status --json`, not a
+rework of `em catalog` — see
+[docs/decisions/mil-162-teachable-navigator.md](decisions/mil-162-teachable-navigator.md) for
+the reasoning, the onboarding/cross-model-navigation design, and prototype scale numbers up to
+1,200+ slices across 20 models. Follow-up work lives in the em-portal Linear project, not here.
 
 **Modeling and rendering**
 
