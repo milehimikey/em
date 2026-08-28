@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Coverage for `em state log-usage` / `em usage-report`'s pure logic (src/cli/usageLog.ts,
 // MIL-161): the Usage log section locator/writer, the canonical-line parser (including the
-// malformed-line escape hatch), phase sorting/validation, and report aggregation. CLI-level
-// exit-code/process coverage (argument wiring, --phases validation errors, directory walking,
-// --json) lives in test/cli.test.ts.
-import { describe, it, expect } from "vitest";
+// malformed-line escape hatch), phase sorting/validation, report aggregation, and the
+// `findStateFiles` directory walk (including that it prunes `node_modules`/`.git` — a real fs
+// walk, but a fast, targeted one, unlike the CLI-level `em usage-report` tests in
+// test/cli-state.test.ts, which spawn a real process and exist for argument-wiring/exit-code
+// coverage, not to re-prove the walk's own pruning). CLI-level exit-code/process coverage
+// (argument wiring, --phases validation errors, --json) lives in test/cli-state.test.ts.
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   USAGE_PHASES,
   isUsagePhase,
@@ -14,6 +20,7 @@ import {
   parseUsageLogSection,
   aggregateUsageReport,
   formatUsageReportText,
+  findStateFiles,
 } from "../src/cli/usageLog.js";
 
 const STATE_TEMPLATE_SNIPPET =
@@ -53,6 +60,52 @@ describe("sortUsagePhases", () => {
 
   it("sorts watch after validate", () => {
     expect(sortUsagePhases(["watch", "discover"])).toEqual(["discover", "watch"]);
+  });
+});
+
+describe("findStateFiles", () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-find-state-files-"));
+    // Two real, findable state files at different depths.
+    mkdirSync(join(dir, "model-one"), { recursive: true });
+    writeFileSync(join(dir, "model-one", ".event-modeling.md"), "state\n");
+    mkdirSync(join(dir, "nested", "model-two"), { recursive: true });
+    writeFileSync(join(dir, "nested", "model-two", ".event-modeling.md"), "state\n");
+    // A `node_modules` tree deep enough, and with enough files, that an unpruned walk would be
+    // both slow and (if it somehow contained a same-named file) wrong — same failure mode a
+    // real project's `node_modules` risks for a repo-rooted `em usage-report .`.
+    mkdirSync(join(dir, "node_modules", "some-pkg", "sub"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "some-pkg", ".event-modeling.md"), "should never be found\n");
+    writeFileSync(join(dir, "node_modules", "some-pkg", "sub", "readme.md"), "noise\n");
+    // A `.git` tree — real repos keep object/pack files here that a walk has no business
+    // descending into.
+    mkdirSync(join(dir, ".git", "objects"), { recursive: true });
+    writeFileSync(join(dir, ".git", "objects", "somehash"), "not a state file\n");
+    // A non-.event-modeling.md file at top level, to confirm the filter (not just the walk)
+    // does its job too.
+    writeFileSync(join(dir, "README.md"), "not a state file\n");
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("finds every .event-modeling.md recursively, as root-relative POSIX paths, sorted", () => {
+    expect(findStateFiles(dir)).toEqual(["model-one/.event-modeling.md", "nested/model-two/.event-modeling.md"]);
+  });
+
+  it("prunes node_modules — never walks into it, never returns anything from inside it", () => {
+    const found = findStateFiles(dir);
+    expect(found.some((f) => f.includes("node_modules"))).toBe(false);
+  });
+
+  it("prunes .git — never walks into it", () => {
+    const found = findStateFiles(dir);
+    expect(found.some((f) => f.includes(".git"))).toBe(false);
+  });
+
+  it("ignores files that aren't named exactly .event-modeling.md", () => {
+    const found = findStateFiles(dir);
+    expect(found.some((f) => f.endsWith("README.md"))).toBe(false);
   });
 });
 

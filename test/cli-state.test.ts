@@ -192,19 +192,29 @@ describe("em usage-report (CLI, MIL-161)", () => {
   });
   afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
-  it("aggregates across every .event-modeling.md found under the root, text report", () => {
-    em(["scaffold", "Model One"], cwd);
-    em(["scaffold", "Model Two"], cwd);
-    em(["state", "log-usage", join(cwd, "model-one", "model-one.em"), "--phases", "discover"], cwd);
-    em(["state", "log-usage", join(cwd, "model-two", "model-two.em"), "--phases", "discover,model"], cwd);
+  // 5 real CLI subprocess spawns (2x scaffold, 2x log-usage, 1x usage-report) in one test —
+  // each is a fresh `tsx` process, not a function call, so this is inherently slower than the
+  // rest of the file. ~1.9s locally leaves too little headroom against vitest's 5000ms default
+  // once a CI runner's spawn overhead runs 3-4x slower than local (observed: this test alone
+  // timed out in CI while passing locally) — an explicit timeout, not a smaller one hidden in
+  // vitest.config.ts, so the "why" travels with the test that needs it.
+  it(
+    "aggregates across every .event-modeling.md found under the root, text report",
+    () => {
+      em(["scaffold", "Model One"], cwd);
+      em(["scaffold", "Model Two"], cwd);
+      em(["state", "log-usage", join(cwd, "model-one", "model-one.em"), "--phases", "discover"], cwd);
+      em(["state", "log-usage", join(cwd, "model-two", "model-two.em"), "--phases", "discover,model"], cwd);
 
-    const r = em(["usage-report", cwd], cwd);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("2 state file(s)");
-    expect(r.stdout).toContain("2 logged session(s)");
-    expect(r.stdout).toContain("2\tdiscover");
-    expect(r.stdout).toContain("1\tmodel");
-  });
+      const r = em(["usage-report", cwd], cwd);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("2 state file(s)");
+      expect(r.stdout).toContain("2 logged session(s)");
+      expect(r.stdout).toContain("2\tdiscover");
+      expect(r.stdout).toContain("1\tmodel");
+    },
+    20000,
+  );
 
   it("--json prints a versioned document with the same counts", () => {
     em(["scaffold", "Model One"], cwd);
