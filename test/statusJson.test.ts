@@ -18,13 +18,14 @@ const PKG_VERSION: string = JSON.parse(
 function sampleReport(): StatusReport {
   return {
     files: ["model.em"],
-    slices: { total: 8, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, noDoc: 0, unknown: 0 } },
-    driftSignal: { inSync: 8, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, notApplicable: 0 },
+    slices: { total: 8, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, noDoc: 0, frontmatterInvalid: 0, unknown: 0 } },
+    driftSignal: { inSync: 8, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, notApplicable: 0, frontmatterInvalid: 0 },
     invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
     issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
     conformance: [
       { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, error: null },
     ],
+    diagnostics: [{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3 }],
   };
 }
 
@@ -40,6 +41,14 @@ describe("buildStatusJson", () => {
     expect(doc.invariants).toEqual(report.invariants);
     expect(doc.issues).toEqual(report.issues);
     expect(doc.conformance).toEqual(report.conformance);
+    expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
+  });
+
+  it("serializes an empty diagnostics list as []", () => {
+    const report = sampleReport();
+    report.diagnostics = [];
+    const doc = JSON.parse(buildStatusJson(report));
+    expect(doc.diagnostics).toEqual([]);
   });
 
   it("carries invariants: null verbatim when --tests wasn't given", () => {

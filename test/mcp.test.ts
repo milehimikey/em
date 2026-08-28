@@ -69,6 +69,11 @@ beforeAll(() => {
     join(dir, "ready.em"),
     `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n`,
   );
+
+  // PR #116 review finding 2 (MCP parity): a doc that's bound but has no usable frontmatter —
+  // the status tool should surface the join warning in its `diagnostics` field, same as the CLI.
+  writeFileSync(join(dir, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
+  writeFileSync(join(dir, "status-broken-doc.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -295,6 +300,17 @@ describe("status tool", () => {
     const { result } = await callJson(client, "status", { files: [join(dir, "no-such-file.em")] });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+
+  // PR #116 review finding 2 (MCP parity): the doc-join diagnostic reaches the tool's JSON
+  // output — the MCP tool has no stderr channel of its own, so the document is the only place
+  // this can surface for an MCP client.
+  it("surfaces frontmatter-invalid doc-join diagnostics in the document, same as `em status --json`", async () => {
+    const { doc } = await callJson(client, "status", { files: [join(dir, "status-broken-doc.em")] });
+    expect(doc.slices.byStatus.frontmatterInvalid).toBe(1);
+    expect(doc.driftSignal.frontmatterInvalid).toBe(1);
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0]).toMatchObject({ file: join(dir, "status-broken-doc.em"), code: "frontmatter-invalid" });
   });
 });
 

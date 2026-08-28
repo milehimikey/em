@@ -18,12 +18,13 @@
 // same inputs. Text/markdown/badge are formatting layers over one aggregated StatusReport; the
 // JSON document (emit/statusJson.ts) is a versioned envelope around the exact same object.
 
-import { dirname } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin, DocReason } from "../catalog/docJoin.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { DriftSignalKind } from "../catalog/driftSignal.js";
+import { Diagnostic } from "../model/validate.js";
 import { CoverageReport } from "./coverage.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState } from "./stateFile.js";
@@ -34,13 +35,18 @@ export const CANONICAL_STATUSES = ["draft", "reviewed", "ready-to-implement", "i
 export type CanonicalStatus = (typeof CANONICAL_STATUSES)[number];
 
 /** Bucket a slice's lifecycle status falls into for the rollup: one of the 4 canonical values,
- *  `"no-doc"` (no doc found at all — `resolveSliceDocJoin`'s `found: false`, any reason), or
- *  `"unknown"` (a doc was found and usable but its `status` isn't one of the 4 canonical
- *  strings — a freeform doc, matching `em slice index`'s own "unknown" convention). */
-export type StatusBucket = CanonicalStatus | "no-doc" | "unknown";
+ *  `"no-doc"` (no doc bound at all, or the binding names a missing file — `resolveSliceDocJoin`'s
+ *  `found: false`), `"frontmatter-invalid"` (a doc WAS found — a note binds it — but its
+ *  frontmatter is missing or malformed, so nothing reliable can be read from it; kept distinct
+ *  from `"no-doc"` because "nothing was ever referenced" and "something's referenced but broken"
+ *  are different states worth telling apart in a rollup), or `"unknown"` (a doc was found and its
+ *  frontmatter usable, but `status` isn't one of the 4 canonical strings — a freeform doc,
+ *  matching `em slice index`'s own "unknown" convention). */
+export type StatusBucket = CanonicalStatus | "no-doc" | "frontmatter-invalid" | "unknown";
 
-export function classifyStatusBucket(found: boolean, status: string | null): StatusBucket {
+export function classifyStatusBucket(found: boolean, reason: DocReason, status: string | null): StatusBucket {
   if (!found) return "no-doc";
+  if (reason === "frontmatter-invalid") return "frontmatter-invalid";
   if (status !== null && (CANONICAL_STATUSES as readonly string[]).includes(status)) return status as CanonicalStatus;
   return "unknown";
 }
@@ -52,11 +58,26 @@ export interface SliceStatusFact {
   key: string;
   docFound: boolean;
   docReason: DocReason;
+  /** Resolved absolute path to the bound doc file, or null when none was found. Two slices can
+   *  legitimately resolve to the SAME doc (MIL-121 `covers:` cross-binding, one doc ratifying
+   *  coverage for several slices) — this is how `buildStatusReport` dedupes doc-body-derived
+   *  counts (Open Questions) so a shared doc's single unresolved question isn't counted once per
+   *  covered slice. */
+  docPath: string | null;
   rawStatus: string | null;
   bucket: StatusBucket;
   driftSignal: DriftSignalKind | null;
   openQuestionsTotal: number;
   openQuestionsUnchecked: number;
+}
+
+export interface SliceStatusFactsResult {
+  facts: SliceStatusFact[];
+  /** Doc-join diagnostics (`binding-missing-file`/`frontmatter-invalid` warnings) raised while
+   *  resolving each slice's doc — the same diagnostics `em export`'s doc join raises. Carried
+   *  back rather than dropped: a state-of-the-system report shouldn't silently swallow "this
+   *  slice's doc reference is broken." */
+  diagnostics: Diagnostic[];
 }
 
 /**
@@ -67,15 +88,19 @@ export interface SliceStatusFact {
  * different slice's doc, same re-derivation `em coverage`/`--slice-ready` use) rather than a
  * second independent parse.
  */
-export function resolveSliceStatusFacts(file: string, model: NormalizedModel, refs: RefsResult, baseDir: string): SliceStatusFact[] {
-  return model.slices.map((slice, i) => {
+export function resolveSliceStatusFacts(file: string, model: NormalizedModel, refs: RefsResult, baseDir: string): SliceStatusFactsResult {
+  const diagnostics: Diagnostic[] = [];
+  const facts = model.slices.map((slice, i) => {
     const key = refs.sliceKeys[i];
-    const { doc } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
+    const { doc, diagnostics: docDiags } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
+    diagnostics.push(...docDiags);
 
+    let docPath: string | null = null;
     let openQuestionsTotal = 0;
     let openQuestionsUnchecked = 0;
     if (doc.found) {
       const boundKey = doc.path.replace(/^slices\//, "").replace(/\.md$/, "");
+      docPath = resolve(baseDir, doc.path);
       const parsed = readSliceDoc(baseDir, boundKey);
       if (parsed) {
         openQuestionsTotal = parsed.openQuestionsTotal;
@@ -88,13 +113,15 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       key,
       docFound: doc.found,
       docReason: doc.reason,
+      docPath,
       rawStatus: doc.status,
-      bucket: classifyStatusBucket(doc.found, doc.status),
+      bucket: classifyStatusBucket(doc.found, doc.reason, doc.status),
       driftSignal: doc.driftSignal,
       openQuestionsTotal,
       openQuestionsUnchecked,
     };
   });
+  return { facts, diagnostics };
 }
 
 /** Open `issue "text"` markers in a model — the same predicate `em validate --list-issues`
@@ -154,6 +181,14 @@ export function commitsBehindHead(repo: string, revision: string, runGit: GitRun
  * compute commits-behind-HEAD when `Last conformance:` is set. `repoOverride` is `--repo`;
  * omitted, each model's own directory is used as the repo to walk (the common single-repo
  * project case — see `repo` field doc above).
+ *
+ * A state file is shared by every `.em` file in its directory (`.event-modeling.md` has no
+ * per-model namespacing), but its `Model file:` bullet names exactly ONE of them — so a sibling
+ * file it does NOT describe (the common case: a `conform-scope --seed-asis` scratch copy like
+ * `checkout-asis.em` sitting next to `checkout.em`) must not inherit `checkout.em`'s conformance
+ * record just because it lives in the same directory. When `Model file:` is set and doesn't match
+ * `basename(file)`, the record is reported as unattributed (via `error`, the same non-fatal
+ * channel a git failure uses) rather than silently misattributed.
  */
 export function resolveConformanceEntry(file: string, repoOverride: string | undefined, runGit: GitRunner = realGit): ConformanceEntry {
   const modelDir = dirname(file);
@@ -165,6 +200,17 @@ export function resolveConformanceEntry(file: string, repoOverride: string | und
   const parsed = parseState(loaded.text);
   if (!parsed.ok) {
     return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, error: `state file: ${parsed.message}` };
+  }
+  if (parsed.state.modelPath && parsed.state.modelPath !== basename(file)) {
+    return {
+      file,
+      modelDir,
+      hasStateFile: true,
+      lastConformance: null,
+      repo,
+      commitsBehindHead: null,
+      error: `state file describes "${parsed.state.modelPath}", not "${basename(file)}" — not attributing its conformance record`,
+    };
   }
   if (!parsed.state.lastConformance) {
     return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, error: null };
@@ -187,6 +233,11 @@ export interface StatusSliceCounts {
     readyToImplement: number;
     implemented: number;
     noDoc: number;
+    /** A doc IS bound (a `note` names it) but its frontmatter is missing/malformed — see
+     *  `StatusBucket`'s `"frontmatter-invalid"` doc comment. Kept apart from `noDoc` (nothing
+     *  bound at all) and `unknown` (bound, usable, just a freeform `status` value), and always
+     *  equal to `driftSignal.frontmatterInvalid` below — same slices, two dimensions. */
+    frontmatterInvalid: number;
     unknown: number;
   };
 }
@@ -196,9 +247,16 @@ export interface StatusDriftCounts {
   neverImplemented: number;
   unpropagatedDelta: number;
   implementedWithoutLink: number;
-  /** Slices with no doc at all — driftSignal is null (nothing to classify), tallied separately
-   *  so the 4 named buckets always sum to the slices that actually have a usable doc. */
+  /** Slices with no doc bound at all (or a binding naming a missing file) — driftSignal is null
+   *  because there's nothing to classify. Distinct from `frontmatterInvalid` below: THIS bucket
+   *  is `resolveSliceDocJoin`'s `found: false`, in either dimension. */
   notApplicable: number;
+  /** A doc IS bound and found (`found: true`) but its frontmatter is missing/malformed, so
+   *  `driftSignal` couldn't be classified — always equal to `slices.byStatus.frontmatterInvalid`
+   *  (same slices). Kept apart from `notApplicable` so "nothing was ever referenced" and
+   *  "something's referenced but broken" don't collapse into one ambiguous bucket (a doc that
+   *  IS found shouldn't tally the same as one that plain doesn't exist). */
+  frontmatterInvalid: number;
 }
 
 export interface StatusInvariantTotals {
@@ -214,6 +272,11 @@ export interface StatusIssueTotals {
   openQuestionsUnchecked: number;
 }
 
+/** One doc-join diagnostic, tagged with the input file it came from — `em status` can aggregate
+ *  several models in one run, so (unlike `em export`'s single-model diagnostics) each entry
+ *  needs to say which file it concerns. */
+export type StatusDiagnostic = { file: string } & Diagnostic;
+
 export interface StatusReport {
   files: string[];
   slices: StatusSliceCounts;
@@ -224,6 +287,11 @@ export interface StatusReport {
   invariants: StatusInvariantTotals | null;
   issues: StatusIssueTotals;
   conformance: ConformanceEntry[];
+  /** Doc-join diagnostics (`binding-missing-file`/`frontmatter-invalid` warnings) collected
+   *  while resolving every slice's doc, across every input file — carried here rather than
+   *  discarded, so a state-of-the-system report doesn't hide a broken doc reference just
+   *  because it also folded that slice into `frontmatterInvalid`/`noDoc` above. */
+  diagnostics: StatusDiagnostic[];
 }
 
 /** Aggregate everything `em status` reports into one `StatusReport` — pure, no I/O. Callers
@@ -235,11 +303,25 @@ export function buildStatusReport(
   openIssuesCount: number,
   invariants: StatusInvariantTotals | null,
   conformance: ConformanceEntry[],
+  diagnostics: StatusDiagnostic[],
 ): StatusReport {
-  const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, noDoc: 0, unknown: 0 };
-  const drift: StatusDriftCounts = { inSync: 0, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, notApplicable: 0 };
+  const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
+  const drift: StatusDriftCounts = {
+    inSync: 0,
+    neverImplemented: 0,
+    unpropagatedDelta: 0,
+    implementedWithoutLink: 0,
+    notApplicable: 0,
+    frontmatterInvalid: 0,
+  };
   let openQuestionsTotal = 0;
   let openQuestionsUnchecked = 0;
+  // MIL-121 `covers:` cross-binding lets several slices resolve to the SAME doc file — a doc's
+  // own Open Questions belong to the doc, not to each slice covered by it, so a shared doc is
+  // only counted once regardless of how many slices are bound to it (keyed by resolved absolute
+  // path, since two different input models' `slices/` dirs could otherwise collide on the same
+  // relative path string without actually being the same file).
+  const countedDocPaths = new Set<string>();
 
   for (const f of sliceFacts) {
     switch (f.bucket) {
@@ -257,6 +339,9 @@ export function buildStatusReport(
         break;
       case "no-doc":
         byStatus.noDoc++;
+        break;
+      case "frontmatter-invalid":
+        byStatus.frontmatterInvalid++;
         break;
       case "unknown":
         byStatus.unknown++;
@@ -276,11 +361,16 @@ export function buildStatusReport(
         drift.implementedWithoutLink++;
         break;
       case null:
-        drift.notApplicable++;
+        if (f.docReason === "frontmatter-invalid") drift.frontmatterInvalid++;
+        else drift.notApplicable++;
         break;
     }
-    openQuestionsTotal += f.openQuestionsTotal;
-    openQuestionsUnchecked += f.openQuestionsUnchecked;
+    const alreadyCounted = f.docPath !== null && countedDocPaths.has(f.docPath);
+    if (f.docPath !== null) countedDocPaths.add(f.docPath);
+    if (!alreadyCounted) {
+      openQuestionsTotal += f.openQuestionsTotal;
+      openQuestionsUnchecked += f.openQuestionsUnchecked;
+    }
   }
 
   return {
@@ -290,6 +380,7 @@ export function buildStatusReport(
     invariants,
     issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked },
     conformance,
+    diagnostics,
   };
 }
 
@@ -357,12 +448,13 @@ export function formatStatusDetail(report: StatusReport): string {
   const lines: string[] = [];
   lines.push(
     `slices: ${report.slices.total} total — ${byStatus.implemented} implemented, ${byStatus.readyToImplement} ready-to-implement, ` +
-      `${byStatus.reviewed} reviewed, ${byStatus.draft} draft, ${byStatus.noDoc} no doc, ${byStatus.unknown} unknown status`,
+      `${byStatus.reviewed} reviewed, ${byStatus.draft} draft, ${byStatus.noDoc} no doc, ${byStatus.frontmatterInvalid} frontmatter invalid, ` +
+      `${byStatus.unknown} unknown status`,
   );
   const d = report.driftSignal;
   lines.push(
     `driftSignal: ${d.inSync} in-sync, ${d.neverImplemented} never-implemented, ${d.unpropagatedDelta} unpropagated-delta, ` +
-      `${d.implementedWithoutLink} implemented-without-link, ${d.notApplicable} n/a (no doc)`,
+      `${d.implementedWithoutLink} implemented-without-link, ${d.notApplicable} n/a (no doc), ${d.frontmatterInvalid} n/a (frontmatter invalid)`,
   );
   lines.push(
     report.invariants
@@ -377,6 +469,9 @@ export function formatStatusDetail(report: StatusReport): string {
   for (const entry of report.conformance) {
     const label = multi ? `conformance (${entry.file}): ` : "conformance: ";
     lines.push(`${label}${formatConformancePart(entry)}`);
+  }
+  if (report.diagnostics.length > 0) {
+    lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);
   }
   return lines.join("\n");
 }
@@ -468,22 +563,37 @@ function badgeMessage(report: StatusReport): string {
   return parts.join(" · ");
 }
 
-/** Badge color: red when there's a genuine problem (an open issue, an uncovered invariant, or
- *  `implemented-without-link` drift — a doc claiming `implemented` with nothing linking to
- *  it); yellow when things are merely in flight (not every slice implemented yet, an unchecked
- *  Open Question, or any model behind on conformance); green otherwise. Deliberately NOT keyed
- *  on "every slice implemented" alone — most projects spend most of their life not fully
- *  implemented, and that's not a problem a badge should flag red. */
+/** Badge color contract (documented here AND in docs/cli.md — keep both in sync):
+ *
+ *  - **red** `#e05d44` — a genuine problem: an open issue, an uncovered invariant, a
+ *    `frontmatter-invalid` doc, or `implemented-without-link` drift (a doc claiming
+ *    `implemented` with nothing linking to it).
+ *  - **yellow** `#dfb317` — things are merely in flight, OR conformance couldn't be verified:
+ *    not every slice implemented yet, an unchecked Open Question, any model with
+ *    `commitsBehindHead > 0`, or — MIL-163 review — any conformance entry carrying a non-null
+ *    `error` (an unresolvable revision, an unparseable state file, a `--repo` that isn't a git
+ *    repo, or a state file describing a different model). An unverifiable conformance state must
+ *    never be indistinguishable from a verified, current one — `commitsBehindHead: null` from an
+ *    `error` is NOT the same fact as "0 commits behind", so it can't be allowed to coalesce to 0
+ *    and read as healthy.
+ *  - **green** `#4c1` — otherwise. Deliberately NOT keyed on "every slice implemented" alone —
+ *    most projects spend most of their life not fully implemented, and that's not a problem a
+ *    badge should flag. A model with NO conformance history yet (`hasStateFile: false`, or
+ *    `Last conformance: never` — both `error: null`) is a legitimate, unremarkable state too
+ *    ("hasn't reached the conform phase", not "broken") and stays eligible for green — only an
+ *    actual `error` demotes a conformance entry out of green.
+ */
 function badgeColor(report: StatusReport): string {
   const hasProblem =
     report.issues.openIssues > 0 ||
     (report.invariants !== null && report.invariants.uncovered > 0) ||
-    report.driftSignal.implementedWithoutLink > 0;
+    report.driftSignal.implementedWithoutLink > 0 ||
+    report.driftSignal.frontmatterInvalid > 0;
   if (hasProblem) return "#e05d44"; // red
   const inFlight =
     report.slices.byStatus.implemented < report.slices.total ||
     report.issues.openQuestionsUnchecked > 0 ||
-    report.conformance.some((c) => (c.commitsBehindHead ?? 0) > 0);
+    report.conformance.some((c) => (c.commitsBehindHead ?? 0) > 0 || c.error !== null);
   if (inFlight) return "#dfb317"; // yellow
   return "#4c1"; // green
 }

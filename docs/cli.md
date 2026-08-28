@@ -863,18 +863,26 @@ nothing here re-derives a rule another module owns:
 
 - **slices by lifecycle status** — the same doc join `em export`/`em coverage` use
   (`resolveSliceDocJoin`), bucketed into the 4 canonical statuses
-  (`draft`/`reviewed`/`ready-to-implement`/`implemented`) plus `no-doc` (nothing bound) and
-  `unknown` (a found, usable doc whose `status` isn't one of the 4 canonical strings).
+  (`draft`/`reviewed`/`ready-to-implement`/`implemented`) plus `no-doc` (nothing bound at all, or
+  a binding naming a missing file) and `frontmatterInvalid` (a doc *was* bound and found, but its
+  frontmatter is missing or malformed — kept distinct from `no-doc`, since "nothing was ever
+  referenced" and "something's referenced but broken" are different states worth telling apart)
+  and `unknown` (a found, *usable* doc whose `status` isn't one of the 4 canonical strings).
 - **`driftSignal` breakdown** — the same status/`implementedIn` coherence classification
-  `em export`'s `slice.doc.driftSignal` carries (`catalog/driftSignal.ts`): `in-sync`,
-  `never-implemented`, `unpropagated-delta`, `implemented-without-link`, tallied across every
-  slice with a usable doc; a slice with no doc at all (`driftSignal: null`) tallies separately
-  as `notApplicable`.
+  `em export`'s `slice.doc.driftSignal` carries (`catalog/driftSignal.ts`): `inSync`,
+  `neverImplemented`, `unpropagatedDelta`, `implementedWithoutLink`, tallied across every slice
+  with a usable doc. Two buckets exist for "nothing to classify," mirroring the status split
+  above: `notApplicable` (no doc found at all) and `frontmatterInvalid` (a doc found, but
+  unusable) — always equal to `slices.byStatus.frontmatterInvalid`, since it's the same slices in
+  both dimensions.
 - **invariant coverage totals** — `em coverage`'s own report builder, summed across every input
   model. Opt-in: only computed when `--tests <dir>` is given (see below).
 - **open `issue` markers + unchecked Open Questions** — the same `issue "text"` predicate
   `em validate --list-issues` counts, and the same GFM-task-list count
-  (`slices/<key>.md`'s `## Open Questions`) `--slice-ready`'s gate reads.
+  (`slices/<key>.md`'s `## Open Questions`) `--slice-ready`'s gate reads. A doc shared by several
+  slices via MIL-121 `covers:` cross-binding (one doc ratifying coverage for more than one slice)
+  is only counted **once** — an Open Question belongs to the doc, not to each slice bound to it,
+  so a shared doc's single unresolved question doesn't inflate the total once per covering slice.
 - **last-conformance revision, with computed commits-behind-HEAD** — reads each model's sibling
   state file's `Last conformance:` marker (`stateFile.ts`, same parser `em conform-scope`/
   `em state read` use), then walks `git rev-list --count <revision>..HEAD` in the target repo
@@ -883,14 +891,24 @@ nothing here re-derives a rule another module owns:
 
 A missing sibling state file is routine, not an error (not every model has reached the
 `conform` phase) — that model's conformance entry just reports `hasStateFile: false`. A git
-failure (not a repo, unknown revision) or an unparseable state file is carried as that entry's
-own `error` string rather than aborting the whole rollup — `em status` is a soft report, not a
-gate, and one model's broken conformance history shouldn't hide every other model's numbers.
+failure (not a repo, unknown revision), an unparseable state file, or a state file whose own
+`Model file:` bullet names a *different* file are all carried as that entry's own `error` string
+rather than aborting the whole rollup — `em status` is a soft report, not a gate, and one model's
+broken conformance history shouldn't hide every other model's numbers. The `Model file:` check
+matters because a state file is shared by every `.em` in its directory but describes exactly one
+of them: without it, a `conform-scope --seed-asis` scratch copy (`checkout-asis.em`, sitting next
+to `checkout.em`) would silently inherit `checkout.em`'s own conformance record just for being a
+sibling file — `em status checkout-asis.em` instead reports `lastConformance: null` and an
+`error` naming the mismatch.
 
 Every input model must still compile without errors — same convention as `em glossary`/
 `em catalog`: `em status` refuses (exits non-zero, prints each offending file's diagnostics)
 if any input file has one, since there's no slice list to aggregate from a model that didn't
-compile.
+compile. Doc-join diagnostics (`binding-missing-file`/`frontmatter-invalid` warnings, the same
+ones `em export`'s doc join raises) are never fatal, but they're never silently dropped either —
+each is printed to stderr (tagged with the file it concerns) and carried in `diagnostics` in the
+JSON document below, so a `frontmatterInvalid` count in `slices.byStatus` always has a matching
+diagnostic explaining exactly which doc is broken and why.
 
 **Deterministic core.** No LLM calls, no wall-clock timestamps in the output — byte-identical
 for the same models/tests/git state, same posture as `em export`/`em diff`.
@@ -922,12 +940,16 @@ Example text report:
 $ em status model.em --tests test/
 8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f, 0 commits behind HEAD
 
-slices: 8 total — 8 implemented, 0 ready-to-implement, 0 reviewed, 0 draft, 0 no doc, 0 unknown status
-driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc)
+slices: 8 total — 8 implemented, 0 ready-to-implement, 0 reviewed, 0 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status
+driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc), 0 n/a (frontmatter invalid)
 invariants: 20/20 covered (0 uncovered) — test/
 issues: 0 open issues, 0/0 open question(s) unchecked
 conformance: last conformed abc123f, 0 commits behind HEAD
 ```
+
+A `doc issues: N warning(s) — see diagnostics (<codes>)` line is appended when any doc-join
+diagnostic was raised (see `diagnostics` below) — omitted entirely when there are none, same
+"nothing to report" convention as the rest of the detail block.
 
 The first line is the rollup MIL-163 was written to make printable — `8/8 implemented · 20/20
 invariants covered · 0 open issues · last conformed <rev>, N commits behind HEAD`. For more than
@@ -946,9 +968,15 @@ see [mcp.md](mcp.md)):
   "files": ["model.em"],
   "slices": {
     "total": 8,
-    "byStatus": { "draft": 0, "reviewed": 0, "readyToImplement": 0, "implemented": 8, "noDoc": 0, "unknown": 0 }
+    "byStatus": {
+      "draft": 0, "reviewed": 0, "readyToImplement": 0, "implemented": 8,
+      "noDoc": 0, "frontmatterInvalid": 0, "unknown": 0
+    }
   },
-  "driftSignal": { "inSync": 8, "neverImplemented": 0, "unpropagatedDelta": 0, "implementedWithoutLink": 0, "notApplicable": 0 },
+  "driftSignal": {
+    "inSync": 8, "neverImplemented": 0, "unpropagatedDelta": 0, "implementedWithoutLink": 0,
+    "notApplicable": 0, "frontmatterInvalid": 0
+  },
   "invariants": { "testsDir": "test/", "total": 20, "cited": 20, "uncovered": 0 },
   "issues": { "openIssues": 0, "openQuestionsTotal": 0, "openQuestionsUnchecked": 0 },
   "conformance": [
@@ -961,14 +989,24 @@ see [mcp.md](mcp.md)):
       "commitsBehindHead": 0,
       "error": null
     }
-  ]
+  ],
+  "diagnostics": []
 }
 ```
 
 `invariants` is `null` when `--tests <dir>` wasn't given. `conformance` has one entry per input
 file, in argument order; a model with no sibling state file reports `hasStateFile: false`,
 `lastConformance: null`, `commitsBehindHead: null`, `error: null` — not an error, just nothing to
-report yet.
+report yet. `error` is also set (non-null) — with `lastConformance`/`commitsBehindHead` both
+`null` — when the state file's own `Model file:` bullet names a different file than the one being
+reported on (see above); a consumer that needs to tell "no history yet" apart from "history
+exists but couldn't be attributed/verified" should check `error`, not just `lastConformance`.
+
+`diagnostics` (added for the PR #116 review pass) carries every doc-join warning
+(`binding-missing-file`/`frontmatter-invalid`) raised while resolving each slice's doc, across
+every input file: `{ file, severity, code, message, line, refs }` — the same serialized shape
+`em export`/`em diff --json` use, plus `file` since this is a multi-model surface. Empty when
+every bound doc joined cleanly.
 
 **`--md`** prints a small `| Metric | Value |` table — one row each for slices, invariants, open
 issues, open questions, and one "Last conformed" row per input model (a single label when there's
@@ -977,10 +1015,22 @@ not marker-managed like `em slice index`'s README table — where (or whether) t
 to the caller.
 
 **`--badge`** prints a self-contained, dependency-free flat-style SVG badge (`em status` on the
-left, a compact `N/M implemented · N/M invariants · N issues` message on the right), colored red
-when there's a genuine problem (an open issue, an uncovered invariant, or `implemented-without-
-link` drift), yellow when things are merely in flight (not every slice implemented yet, an
-unchecked Open Question, or any model behind on conformance), green otherwise. Text width is a
+left, a compact `N/M implemented · N/M invariants · N issues` message on the right). Color
+contract:
+
+| Color | Meaning |
+|---|---|
+| red `#e05d44` | A genuine problem: an open issue, an uncovered invariant, a `frontmatterInvalid` doc, or `implementedWithoutLink` drift (a doc claiming `implemented` with nothing linking to it). |
+| yellow `#dfb317` | Things are merely in flight, **or conformance couldn't be verified**: not every slice implemented yet, an unchecked Open Question, any model with `commitsBehindHead > 0`, or any conformance entry carrying a non-null `error` (an unresolvable revision, an unparseable state file, a `--repo` that isn't a git repo, or a state-file `Model file:` mismatch). |
+| green `#4c1` | Otherwise. |
+
+The yellow/`error` rule (added for the PR #116 review pass) matters because `commitsBehindHead`
+is `null` both when conformance is genuinely current-and-unverified-for-another-reason *and* when
+it simply couldn't be computed — those are different facts, and `null ?? 0` must never be allowed
+to read as "0 commits behind" and paint the badge green. A model with **no conformance history at
+all** (`hasStateFile: false`, or `Last conformance: never` — both `error: null`) is deliberately
+NOT covered by that rule: it's a legitimate, unremarkable state ("hasn't reached the `conform`
+phase yet," not "broken"), so it stays eligible for green same as before. Badge text width is a
 fixed per-character estimate, not a real font-metrics table — legible, not a claim of pixel parity
 with shields.io.
 

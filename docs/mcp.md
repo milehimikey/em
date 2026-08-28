@@ -130,7 +130,10 @@ Questions, and last-conformance commits-behind-HEAD per model. `files` takes one
 paths (same resolution convention as every other tool's `file`); `testsDir`/`repo` are optional,
 mirroring the CLI's `--tests`/`--repo` flags — `invariants` comes back `null` when `testsDir` is
 omitted. Refuses (tool error) when any input model has errors, or when `testsDir` is given but
-doesn't exist — matching `em status`'s own CLI refusal. See [`em status`](cli.md#em-status-files)
+doesn't exist — matching `em status`'s own CLI refusal. Doc-join warnings
+(`binding-missing-file`/`frontmatter-invalid`) reach this tool's `diagnostics` field exactly as
+they reach the CLI's stderr-plus-JSON pair — an MCP tool call has no stderr channel of its own,
+so the document is the only place they surface here. See [`em status`](cli.md#em-status-files)
 for the full JSON shape.
 
 ### `contract`

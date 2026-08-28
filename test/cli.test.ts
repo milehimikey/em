@@ -1926,8 +1926,12 @@ slice "Billing" {
       `1/2 implemented · 1/2 invariants covered · 1 open issue, 1 unchecked open question · last conformed ${baseRev}, 1 commit behind HEAD`,
     );
     const detail = rest.join("\n\n");
-    expect(detail).toContain("slices: 2 total — 1 implemented, 0 ready-to-implement, 0 reviewed, 1 draft, 0 no doc, 0 unknown status");
-    expect(detail).toContain("driftSignal: 1 in-sync, 1 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc)");
+    expect(detail).toContain(
+      "slices: 2 total — 1 implemented, 0 ready-to-implement, 0 reviewed, 1 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status",
+    );
+    expect(detail).toContain(
+      "driftSignal: 1 in-sync, 1 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc), 0 n/a (frontmatter invalid)",
+    );
     expect(detail).toContain("invariants: 1/2 covered (1 uncovered) — tests");
     expect(detail).toContain("issues: 1 open issue, 1/2 open question(s) unchecked");
     expect(detail).toContain(`conformance: last conformed ${baseRev}, 1 commit behind HEAD`);
@@ -1942,9 +1946,16 @@ slice "Billing" {
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
       total: 2,
-      byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, noDoc: 0, unknown: 0 },
+      byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, noDoc: 0, frontmatterInvalid: 0, unknown: 0 },
     });
-    expect(doc.driftSignal).toEqual({ inSync: 1, neverImplemented: 1, unpropagatedDelta: 0, implementedWithoutLink: 0, notApplicable: 0 });
+    expect(doc.driftSignal).toEqual({
+      inSync: 1,
+      neverImplemented: 1,
+      unpropagatedDelta: 0,
+      implementedWithoutLink: 0,
+      notApplicable: 0,
+      frontmatterInvalid: 0,
+    });
     expect(doc.invariants).toEqual({ testsDir: "tests", total: 2, cited: 1, uncovered: 1 });
     expect(doc.issues).toEqual({ openIssues: 1, openQuestionsTotal: 2, openQuestionsUnchecked: 1 });
     expect(doc.conformance).toHaveLength(1);
@@ -2065,6 +2076,118 @@ slice "Billing" {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  // PR #116 review findings — end-to-end regressions through the real CLI wiring (the pure
+  // aggregation logic itself is covered exhaustively in test/status.test.ts).
+  describe("PR #116 review fixes (end-to-end)", () => {
+    it("finding 2: a frontmatter-invalid doc buckets distinctly and its join warning reaches both stderr and --json diagnostics", () => {
+      const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-invalid-doc-"));
+      try {
+        writeFileSync(join(cwd, "model.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
+        mkdirSync(join(cwd, "slices"), { recursive: true });
+        writeFileSync(join(cwd, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
+
+        const r = em(["status", "model.em", "--json"], cwd);
+        expect(r.status).toBe(0);
+        expect(r.stderr).toContain("frontmatter"); // the join warning printed to stderr
+
+        const doc = JSON.parse(r.stdout);
+        expect(doc.slices.byStatus.frontmatterInvalid).toBe(1);
+        expect(doc.slices.byStatus.noDoc).toBe(0);
+        expect(doc.slices.byStatus.unknown).toBe(0);
+        expect(doc.driftSignal.frontmatterInvalid).toBe(1);
+        expect(doc.driftSignal.notApplicable).toBe(0);
+        expect(doc.diagnostics).toHaveLength(1);
+        expect(doc.diagnostics[0]).toMatchObject({ file: "model.em", code: "frontmatter-invalid" });
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+
+    it("finding 3: a covers:-shared doc's Open Questions count once across both covering slices", () => {
+      const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-shared-doc-"));
+      try {
+        writeFileSync(
+          join(cwd, "model.em"),
+          'slice "Owner" {\n  command Own Thing note "slices/owner.md"\n  event Thing Owned\n}\n' +
+            'slice "Other" {\n  ui Other Screen @Customer note "slices/owner.md"\n}\n',
+        );
+        mkdirSync(join(cwd, "slices"), { recursive: true });
+        writeFileSync(
+          join(cwd, "slices", "owner.md"),
+          "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\ncovers: other\n---\n" +
+            "## Open Questions\n- [ ] shared, unresolved\n",
+        );
+
+        const r = em(["status", "model.em", "--json"], cwd);
+        expect(r.status).toBe(0);
+        const doc = JSON.parse(r.stdout);
+        expect(doc.slices.byStatus.reviewed).toBe(2); // both slices genuinely count
+        expect(doc.issues.openQuestionsTotal).toBe(1); // the doc's own count, not 2
+        expect(doc.issues.openQuestionsUnchecked).toBe(1);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+
+    it("finding 4: a conform-scope --seed-asis scratch copy doesn't inherit its sibling's conformance record", () => {
+      const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-asis-"));
+      try {
+        const scaffolded = em(["scaffold", "Checkout"], cwd);
+        expect(scaffolded.status).toBe(0);
+        const modelDir2 = join(cwd, "checkout");
+        writeFileSync(join(modelDir2, "checkout.em"), 'slice "A" {\n  ui Dashboard @Customer\n}\n');
+
+        // A real --seed-asis scratch copy, same convention conform-scope itself writes.
+        const seeded = em(["conform-scope", "checkout.em", "--repo", modelDir2, "--full", "--seed-asis"], modelDir2);
+        expect(seeded.status).toBe(0);
+        expect(existsSync(join(modelDir2, "checkout-asis.em"))).toBe(true);
+
+        const setConformance = em(["state", "set-conformance", "deadbeef", "--report", "r.md"], modelDir2);
+        expect(setConformance.status).toBe(0);
+
+        // checkout.em: attributed normally (though "deadbeef" isn't a real revision in this
+        // directory, which isn't a git repo at all here — resolveConformanceEntry reports that
+        // as its own non-fatal error, distinct from the modelPath-mismatch message below).
+        const forCheckout = em(["status", "checkout.em", "--json"], modelDir2);
+        expect(forCheckout.status).toBe(0);
+        const checkoutDoc = JSON.parse(forCheckout.stdout);
+        expect(checkoutDoc.conformance[0].lastConformance.revision).toBe("deadbeef");
+
+        // checkout-asis.em: the state file names "checkout.em", not "checkout-asis.em" — must
+        // NOT inherit the record.
+        const forAsis = em(["status", "checkout-asis.em", "--json"], modelDir2);
+        expect(forAsis.status).toBe(0);
+        const asisDoc = JSON.parse(forAsis.stdout);
+        expect(asisDoc.conformance[0].hasStateFile).toBe(true);
+        expect(asisDoc.conformance[0].lastConformance).toBeNull();
+        expect(asisDoc.conformance[0].error).toContain('describes "checkout.em"');
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+
+    it("finding 1: an unresolvable --repo makes the badge yellow, never green", () => {
+      const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-badge-unverifiable-"));
+      const notARepo = mkdtempSync(join(tmpdir(), "em-cli-status-badge-notarepo-"));
+      try {
+        const scaffolded = em(["scaffold", "Checkout"], cwd);
+        expect(scaffolded.status).toBe(0);
+        const modelDir3 = join(cwd, "checkout");
+        writeFileSync(join(modelDir3, "checkout.em"), 'slice "A" {\n  ui Dashboard @Customer\n}\n');
+        const setConformance = em(["state", "set-conformance", "abc123f", "--report", "r.md"], modelDir3);
+        expect(setConformance.status).toBe(0);
+
+        const r = em(["status", "checkout.em", "--repo", notARepo, "--badge"], modelDir3);
+        expect(r.status).toBe(0);
+        expect(r.stdout).not.toContain("#4c1");
+        expect(r.stdout).toContain("#dfb317");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+        rmSync(notARepo, { recursive: true, force: true });
+      }
+    });
   });
 });
 

@@ -7,6 +7,7 @@
 // function, so there is exactly one schema for this surface (MCP parity, MIL-163).
 
 import { StatusReport } from "../cli/status.js";
+import { serializeDiagnostic } from "../model/validate.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (MIL-163): initial shape.
@@ -26,6 +27,10 @@ export function buildStatusJson(report: StatusReport): string {
     invariants: report.invariants,
     issues: report.issues,
     conformance: report.conformance,
+    // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
+    // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,
+    // message, line, refs), plus `file` since this is a multi-model surface.
+    diagnostics: report.diagnostics.map((d) => ({ file: d.file, ...serializeDiagnostic(d) })),
   };
   return JSON.stringify(doc, null, 2);
 }

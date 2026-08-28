@@ -42,6 +42,7 @@ import {
   formatStatusMarkdown,
   buildStatusBadge,
   SliceStatusFact,
+  StatusDiagnostic,
 } from "./cli/status.js";
 import { buildStatusJson } from "./emit/statusJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
@@ -1145,11 +1146,15 @@ program
       }
 
       const sliceFacts: SliceStatusFact[] = [];
+      const statusDiagnostics: StatusDiagnostic[] = [];
       let openIssuesCount = 0;
       const coverageReports: CoverageReport[] = [];
       for (const { file, model, refs } of compiled) {
         const baseDir = dirname(file);
-        sliceFacts.push(...resolveSliceStatusFacts(file, model, refs, baseDir));
+        const { facts, diagnostics: docDiags } = resolveSliceStatusFacts(file, model, refs, baseDir);
+        printDiagnosticsFor(file, docDiags);
+        sliceFacts.push(...facts);
+        for (const d of docDiags) statusDiagnostics.push({ file, ...d });
         openIssuesCount += countOpenIssues(model);
         if (opts.tests) coverageReports.push(buildCoverageReport(model, refs, baseDir, opts.tests));
       }
@@ -1157,7 +1162,7 @@ program
 
       const conformance = compiled.map(({ file }) => resolveConformanceEntry(file, opts.repo));
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
 
       let output: string;
       if (opts.json) output = buildStatusJson(report);

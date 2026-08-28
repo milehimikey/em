@@ -49,6 +49,7 @@ import {
   aggregateInvariantTotals,
   buildStatusReport,
   SliceStatusFact,
+  StatusDiagnostic,
 } from "../cli/status.js";
 import { buildStatusJson } from "../emit/statusJson.js";
 
@@ -362,12 +363,15 @@ export function createServer(): McpServer {
       }
 
       const sliceFacts: SliceStatusFact[] = [];
+      const statusDiagnostics: StatusDiagnostic[] = [];
       let openIssuesCount = 0;
       const coverageReports: CoverageReport[] = [];
       for (const { file, compiled } of compiledFiles) {
         const { model, refs } = compiled;
         const baseDir = dirname(file);
-        sliceFacts.push(...resolveSliceStatusFacts(file, model, refs, baseDir));
+        const { facts, diagnostics: docDiags } = resolveSliceStatusFacts(file, model, refs, baseDir);
+        sliceFacts.push(...facts);
+        for (const d of docDiags) statusDiagnostics.push({ file, ...d });
         openIssuesCount += countOpenIssues(model);
         if (testsDir !== undefined) coverageReports.push(buildCoverageReport(model, refs, baseDir, testsDir));
       }
@@ -375,7 +379,7 @@ export function createServer(): McpServer {
 
       const conformance = compiledFiles.map(({ file }) => resolveConformanceEntry(file, repo));
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
       return textResult(buildStatusJson(report));
     },
   );
