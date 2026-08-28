@@ -85,3 +85,64 @@ export function checkSkillSync(packagedDir: string, vendoredDir: string, install
 
   return { findings, ok: findings.length === 0 };
 }
+
+// ---- Bundle variant (MIL-157) — the em skill ships as several sibling directories under
+// `.claude/skills/` (see src/cli/skillDirs.ts): the stamp-checked skill directories (each with
+// its own SKILL.md) and the shared, non-skill directories (reference/template material with no
+// SKILL.md, so no stamp to check — content drift only). Findings from every directory are
+// prefixed with `[<dirName>]` and their `driftedFiles` with `<dirName>/`, so a single aggregated
+// report still tells you exactly which directory each finding concerns.
+
+function prefixFinding(dirName: string, f: SkillCheckFinding): SkillCheckFinding {
+  return {
+    ...f,
+    message: `[${dirName}] ${f.message}`,
+    driftedFiles: f.driftedFiles?.map((p) => `${dirName}/${p}`),
+  };
+}
+
+/**
+ * Pure: checkSkillSync for every stamp-checked skill directory, plus content-drift-only
+ * (planSkillSync) for every shared directory. Same `SkillCheckResult` shape as checkSkillSync
+ * itself — a bundle check is just several single-directory checks with prefixed findings.
+ */
+export function checkSkillSyncBundle(
+  packagedRoot: string,
+  vendoredRoot: string,
+  installedVersion: string,
+  skillDirNames: readonly string[],
+  sharedDirNames: readonly string[],
+): SkillCheckResult {
+  const findings: SkillCheckFinding[] = [];
+
+  for (const name of skillDirNames) {
+    const result = checkSkillSync(join(packagedRoot, name), join(vendoredRoot, name), installedVersion);
+    for (const f of result.findings) findings.push(prefixFinding(name, f));
+  }
+
+  for (const name of sharedDirNames) {
+    const vendoredDir = join(vendoredRoot, name);
+    if (!existsSync(vendoredDir)) {
+      findings.push(
+        prefixFinding(name, {
+          code: "skill-check-not-installed",
+          message: `no vendored skill found at ${vendoredDir} — run \`em skill sync\` first`,
+        }),
+      );
+      continue;
+    }
+    const plan = planSkillSync(join(packagedRoot, name), vendoredDir);
+    if (plan.changes.length > 0) {
+      const driftedFiles = plan.changes.map((c) => c.relPath).sort();
+      findings.push(
+        prefixFinding(name, {
+          code: "skill-check-content-drift",
+          message: `vendored skill differs from the packaged skill in ${driftedFiles.length} file(s) — run \`em skill sync\``,
+          driftedFiles,
+        }),
+      );
+    }
+  }
+
+  return { findings, ok: findings.length === 0 };
+}

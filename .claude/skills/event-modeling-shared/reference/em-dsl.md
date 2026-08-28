@@ -1,4 +1,4 @@
-<!-- DSL behavior change? Update BOTH docs/dsl.md and .claude/skills/event-modeling/reference/em-dsl.md -->
+<!-- DSL behavior change? Update BOTH docs/dsl.md and .claude/skills/event-modeling-shared/reference/em-dsl.md -->
 
 # `em` DSL Reference & Cheatsheet
 
@@ -113,12 +113,12 @@ em freshness <file> --repo <path>                             # git repo to comp
 em freshness <file> --json                                    # print a JSON document instead of the text line
 em contract                                                   # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
 em mcp                                                        # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
-em skill install                                              # copy the event-modeling skill into .claude/skills/event-modeling/
+em skill install                                              # copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared)
 em skill install -f, --force                                  # overwrite an existing installation
 em skill install --no-agents-md                               # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
-em skill sync [path]                                          # update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
+em skill sync [path]                                          # update the vendored .claude/skills/ event-modeling skill bundle in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
 em skill sync [path] --no-agents-md                           # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
-em skill check [path]                                         # check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
+em skill check [path]                                         # check the vendored .claude/skills/ event-modeling skill bundle in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
 em skill check [path] --json                                  # print a JSON document instead of the text report (see docs/cli.md)
 em ci init <model>                                            # install .github/workflows/em-ci.yml (PR gates: em validate, em slice index --check, em coverage --strict, em ledger, em skill check, em glossary --fail-on-conflicts, plus a push-triggered status-badge rebuild) and em-conform.yml (scheduled, advisory-only conformance cadence) — same install discipline as `em skill install`: marker-delimited, idempotent, --check for CI self-verification (MIL-166, see docs/ci.md)
 em ci init <model> --tests <dir>                              # test directory the coverage/status steps scan for INV-* citations

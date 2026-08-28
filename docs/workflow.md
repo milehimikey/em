@@ -117,7 +117,7 @@ em validate model.em --slice-ready <key>            # exits non-zero until the s
 ```
 
 For an agent implementer, the bundled skill ships the full contract to follow —
-[the agent guide](../.claude/skills/event-modeling/reference/implement.md): the readiness
+[the agent guide](../.claude/skills/event-modeling-implement/reference/implement.md): the readiness
 gate, the read-only rule on ratified docs, propose-don't-decide for gaps, the merge-time
 status flip, and the spec-kit adapter (em-sdd-bridge) where one applies.
 

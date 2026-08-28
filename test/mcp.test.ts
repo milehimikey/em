@@ -457,7 +457,7 @@ describe("contract tool", () => {
     const text = (result.content[0] as { type: "text"; text: string }).text;
     // Compare against the real packaged contract via readContract, same helper `em contract`
     // itself uses, resolved from this repo's own checkout (test runs from the repo root).
-    expect(text).toBe(readContract(join(process.cwd(), ".claude", "skills", "event-modeling")));
+    expect(text).toBe(readContract(join(process.cwd(), ".claude", "skills", "event-modeling-implement")));
   });
 });
 

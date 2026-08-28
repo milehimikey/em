@@ -213,9 +213,10 @@ state change anyone can think of. No commands, no UI yet — just facts.
     User Clicked Button, User Viewed Page, User Logged In.
 - Model the process the business **needs**, not how the current system happens to work. Existing
   system behavior is a common source of fake events — screens and tables leaking in as facts.
-  (**Extract mode inverts this**: in the skill's `extract` phase the existing system *is* the
-  subject and this caution is deliberately suspended — see the "Extract" section below and
-  `reference/extract.md`. The derived-value and telemetry filters still apply there.)
+  (**Extract mode inverts this**: in the `event-modeling-discover` skill's `extract` phase the
+  existing system *is* the subject and this caution is deliberately suspended — see the
+  "Extract" section below and `event-modeling-discover`'s own `reference/extract.md`. The
+  derived-value and telemetry filters still apply there.)
 - Output: a flat list of candidate `event` names.
 
 ### Step 2 — The Plot / Storyboard  *(discover)*
@@ -251,7 +252,7 @@ or automation never records an event directly; it triggers a command.
 ### Step 6 — Elaborate Scenarios  *(model first pass, slice deep pass)*
 For each slice, write **Given / When / Then** scenarios and surface **invariants**, **critical
 fields**, and **alternate / error flows**. In the `model` phase do a light first pass; the
-dedicated `slice` phase writes the full rich spec (see `templates/slice.md`).
+dedicated `slice` phase writes the full rich spec (see `../templates/slice.md`).
 - Prompts: *"Given what starting state, when this command/trigger fires, then what event(s)
   result? What must always be true? What are the failure paths? Which fields are essential and
   what are their rules?"*
@@ -311,7 +312,7 @@ Desired-state improvements belong to the `model` and `slice` phases, after the a
 agreed.
 
 Procedure, source modes (event-driven vs. procedural synthesis), and the round-by-round loop:
-`reference/extract.md`.
+the `event-modeling-discover` skill's own `reference/extract.md`.
 
 ---
 

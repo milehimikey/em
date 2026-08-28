@@ -3,7 +3,8 @@
 Read this **before doing any conform work**. It governs the `conform` phase: checking a
 **ratified** model (and its slice docs) against the codebase that is supposed to implement it,
 and reporting where they've drifted apart. Conform reuses `extract`'s sourcing/mode rules
-(`reference/extract.md`) for reading the target codebase rather than duplicating them — the
+(the `event-modeling-discover` skill's `reference/extract.md`) for reading the target codebase
+rather than duplicating them — the
 difference is what you do with what you find: extract *builds* a model from the code; conform
 *compares* code evidence against a model that already exists.
 
@@ -33,7 +34,7 @@ difference is what you do with what you find: extract *builds* a model from the 
 ## Preconditions
 
 1. A canonical `.em` model with a state file (`.event-modeling.md`), reachable the same way the
-   SKILL.md preconditions locate it.
+   shared preconditions locate it — see `../../event-modeling-shared/reference/operating-principles.md`.
 2. The slices you're about to check should be **implemented** — docs at `status: implemented`
    (or the status the user says corresponds to shipped code) for whichever slices are in scope.
    Checking a `draft` or `ready-to-implement` slice against code is a wasted walk — ratified or
@@ -239,7 +240,7 @@ structural findings) — a finding with no citation isn't ready to report.
 ### 5. Report + proposals
 
 Write `conformance/<YYYY-MM-DD>-report.md` in the model directory, from
-`templates/conformance-report.md`. For a real-drift or model-gap finding, propose a
+`../../event-modeling-shared/templates/conformance-report.md`. For a real-drift or model-gap finding, propose a
 ready-to-apply red note — `issue "conformance: <text>"` on the right element, written out in
 the report exactly as it should be pasted into the `.em` — when a model-side marker is the
 right fix; when the fix is purely doc wording (or the finding is an internal inconsistency

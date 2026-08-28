@@ -1,4 +1,4 @@
-<!-- DSL behavior change? Update BOTH docs/dsl.md and .claude/skills/event-modeling/reference/em-dsl.md -->
+<!-- DSL behavior change? Update BOTH docs/dsl.md and .claude/skills/event-modeling-shared/reference/em-dsl.md -->
 
 # DSL reference
 

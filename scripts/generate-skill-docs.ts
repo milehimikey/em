@@ -22,7 +22,11 @@ import { isMainModule } from "../src/util/isMainModule.js";
 import { applyMarker as patchMarker } from "../src/util/markers.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EM_DSL_MD = join(ROOT, ".claude/skills/event-modeling/reference/em-dsl.md");
+// The DSL/CLI reference lives in the shared, non-skill directory (MIL-157) — every
+// event-modeling-* skill points back to this one copy instead of duplicating it.
+export const EM_DSL_MD = join(ROOT, ".claude/skills/event-modeling-shared/reference/em-dsl.md");
+// The quick CLI cheatsheet lives in the router skill's own SKILL.md — the one file every session
+// sees regardless of which phase-specific skill ends up handling the work.
 export const SKILL_MD = join(ROOT, ".claude/skills/event-modeling/SKILL.md");
 export const USAGE_DATA_MD = join(ROOT, "docs/usage-data.md");
 

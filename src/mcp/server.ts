@@ -70,13 +70,16 @@ import { buildFreshnessJson } from "../emit/freshnessJson.js";
 export const SERVER_NAME = "em";
 export const SERVER_VERSION = GENERATOR_VERSION;
 
-/** Path to the packaged skill directory bundled with whatever em package is actually running —
- *  same resolution as src/cli.ts's own packagedSkillDir(), computed independently here (this
- *  module never imports cli.ts) since `contract` needs it for readContract()/contractPath().
- *  One directory level deeper than cli.ts's own version (src/mcp/server.ts, not src/cli.ts, so
- *  dist/mcp/server.js sits one level further from the package root than dist/cli.js does). */
+/** Path to the packaged `event-modeling-implement` skill directory bundled with whatever em
+ *  package is actually running — same resolution as src/cli.ts's own packagedSkillsRoot(),
+ *  computed independently here (this module never imports cli.ts) since `contract` needs it for
+ *  readContract()/contractPath(). One directory level deeper than cli.ts's own version
+ *  (src/mcp/server.ts, not src/cli.ts, so dist/mcp/server.js sits one level further from the
+ *  package root than dist/cli.js does). The implementation contract (reference/implement.md,
+ *  MIL-129) lives specifically under `event-modeling-implement/` since the skill split
+ *  (MIL-157) — see src/cli/skillDirs.ts. */
 function packagedSkillDir(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".claude", "skills", "event-modeling");
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".claude", "skills", "event-modeling-implement");
 }
 
 function textResult(text: string): CallToolResult {
