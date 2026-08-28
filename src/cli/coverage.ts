@@ -5,7 +5,9 @@
 // (the doc's `INV-*` tokens, a test file's source text), so the citation check is deterministic
 // and grep-shaped: extract every invariant ID a slice doc's own Invariants/Delta sections define
 // (MIL-149: not every ID its prose merely mentions — a doc narratively citing another slice's ID
-// doesn't own it), then scan a test tree for lines that cite it.
+// doesn't own it; MIL-155: including a citation embedded inside those very sections, e.g. an
+// Invariants bullet's explanation pointing at a sibling slice's ID), then scan a test tree for
+// lines that cite it.
 //
 // Deliberately a *second*, independent reader of doc bodies, alongside `em export`'s doc join
 // (docJoin.ts, MIL-91) — not a change to it. `em export`'s frontmatter-only contract is
@@ -48,6 +50,20 @@ export const INV_TOKEN_RE = /\bINV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b/g;
  *  being cross-credited to the citing slice's own coverage ledger). */
 const OWNERSHIP_HEADING_RE = /^##\s+(?:Invariants(?:\s*\/\s*Business Rules)?|Delta)\s*$/i;
 
+/** A line contributes INV tokens only when it's *structural* — a top-level bullet/list item
+ *  (`- ...` / `* ...`, no leading indentation) or a subheading (`### ...` and deeper, since only
+ *  `#`/`##` toggles `inOwnershipSection` above) — never an indented continuation line wrapping a
+ *  multi-line bullet, nor a standalone prose paragraph with no bullet marker (MIL-155). Every
+ *  cross-credit MIL-149 missed turned out to have exactly this shape: a slice's own Invariants
+ *  bullet legitimately explains its rule across several wrapped lines, and a later wrapped line
+ *  names a sibling slice's ID for context — e.g. `request-payment`'s `INV-RP-1` bullet wraps onto
+ *  a line citing `payments-to-request`'s `INV-PTR-2` by way of explaining the exactly-once
+ *  mechanism. The bullet's own *opening* line is structural and trusted for every ID it mentions
+ *  (this also covers `## Delta`'s Renamed bullets, which legitimately declare two IDs — old and
+ *  new — on one line, and its `**MODIFIED (...):** INV-X — ...` bullets, whose bold label isn't
+ *  itself an ID); each wrapped continuation line is prose and contributes nothing. */
+const STRUCTURAL_LINE_RE = /^(?:[-*]\s|#{3,6}\s)/;
+
 /** Statuses `reference/implement.md`'s coverage gate applies to — a slice hasn't reached the
  *  point of needing test citations before `ready-to-implement`, and stays in scope forever after
  *  once `implemented` (tests shouldn't regress away from citing an invariant just because the
@@ -62,7 +78,12 @@ const IN_SCOPE_STATUSES = new Set(["ready-to-implement", "implemented"]);
  * citing another slice's ID elsewhere (Dependencies, Open Questions, ...) doesn't cross-credit
  * that ID as this slice's own (MIL-149) — the section ends at the next `#`/`##` heading or EOF,
  * same boundary rule sliceDoc.ts's countOpenQuestions() uses, so a `### Added`/`#### Requirement`
- * subheading under `## Delta` stays in scope while a sibling `## Scenarios` does not.
+ * subheading under `## Delta` stays in scope while a sibling `## Scenarios` does not. Within that
+ * scope, only `STRUCTURAL_LINE_RE`'s bullet/subheading lines contribute — MIL-155 — so a wrapped
+ * continuation line that legitimately *cites* a sibling slice's ID while explaining this doc's own
+ * (e.g. an Invariants bullet's exactly-once rule wrapping onto a line naming another slice's
+ * queue-draining ID) doesn't cross-credit that citation just because it sits inside the ownership
+ * section too.
  */
 export function extractInvariantIds(body: string): string[] {
   const seen = new Set<string>();
@@ -73,7 +94,7 @@ export function extractInvariantIds(body: string): string[] {
       inOwnershipSection = OWNERSHIP_HEADING_RE.test(line);
       continue;
     }
-    if (!inOwnershipSection) continue;
+    if (!inOwnershipSection || !STRUCTURAL_LINE_RE.test(line)) continue;
     for (const m of line.matchAll(INV_TOKEN_RE)) {
       if (!seen.has(m[0])) {
         seen.add(m[0]);

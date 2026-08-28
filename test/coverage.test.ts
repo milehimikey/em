@@ -69,6 +69,36 @@ describe("extractInvariantIds", () => {
     const body = "## Invariants\n- **INV-1:** must hold\n\n## Scenarios (Given / When / Then)\nSee INV-2 covered elsewhere.\n";
     expect(extractInvariantIds(body)).toEqual(["INV-1"]);
   });
+
+  // MIL-155: MIL-149 only gated on section heading, so a sibling ID cited *inside* the doc's own
+  // Invariants/Delta section — not just in some other section entirely — was still cross-credited.
+  // The real-world shape (confirmed against the Meridian Goods repo): a bulleted definition wraps
+  // across multiple lines, and a later wrapped line cites a sibling slice's ID for context — e.g.
+  // request-payment's INV-RP-1 bullet wrapping onto a line naming payments-to-request's INV-PTR-2.
+  it("does not attribute a sibling ID cited in a wrapped continuation line of another bullet", () => {
+    const body =
+      "## Invariants\n- **INV-RP-1 (exactly-once liveness):** at most one event is ever recorded,\n" +
+      "  which is also what lets `Payments To Request` — once removed via INV-PTR-2 — never retry.\n" +
+      "- **INV-RP-2:** amount fidelity holds.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-RP-1", "INV-RP-2"]);
+  });
+
+  it("does not attribute a sibling ID cited in a standalone prose paragraph inside Invariants", () => {
+    const body =
+      "## Invariants\n- **INV-CO-2:** idempotent cancel.\n\nUnlike place-order's INV-PO-1, there's no conflicting payload to reject.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-CO-2"]);
+  });
+
+  it("does not attribute a sibling ID cited in a Requirement heading's unindented body paragraph", () => {
+    const body =
+      "## Delta\n### Added\n#### Requirement: New step (INV-CO-2)\nSame timing as place-order's INV-PO-1.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-CO-2"]);
+  });
+
+  it("still attributes both IDs on a Renamed bullet even with a mnemonic label before the colon", () => {
+    const body = "## Delta\n### Renamed\n- **MODIFIED (v1 -> v2):** INV-CO-1 supersedes nothing, just tightens scope.\n";
+    expect(extractInvariantIds(body)).toEqual(["INV-CO-1"]);
+  });
 });
 
 describe("scanTestCitations", () => {
