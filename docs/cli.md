@@ -1821,6 +1821,54 @@ package and every other command's own schema):
   `driftedFiles` non-null, sorted).
 - `ok` — `true` iff `findings` is empty.
 
+## `em ci init <model>`
+
+Installs the CI enforcement preset [docs/ci.md](ci.md) describes as a cookbook — two plain
+GitHub Actions workflow files under `.github/workflows/`, wiring `em`'s own checks so a repo
+gets them by running one command instead of copy-pasting YAML (MIL-166):
+
+| File | Triggers | Jobs |
+|---|---|---|
+| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check`, `glossary` — all PR merge gates; `status-badge` — push-triggered, publish-only, never a gate |
+| `em-conform.yml` | `schedule` (weekly), `workflow_dispatch` | `conform` — advisory only, see [ci.md#conformance-cadence-advisory](ci.md#conformance-cadence-advisory) |
+
+`<model>` is the anchor `.em` file the `slice index`/`coverage`/`ledger`/`status-badge` steps
+point at (they each resolve `slices/` relative to it, the same convention every other
+file-scoped command uses). `--tests <dir>` (default `test`) is the directory the `coverage` and
+`status-badge` steps scan for `INV-*` citations.
+
+| Flag | Effect |
+|---|---|
+| `--tests <dir>` | Test directory for the `coverage`/`status-badge` steps (default `test`) |
+| `-f, --force` | Replace an existing workflow file that has no `GENERATED` markers |
+| `--check` | Verify both files match the current preset; exit non-zero on drift without writing (CI) |
+
+```bash
+em ci init order-fulfillment/order-fulfillment.em
+# installed .github/workflows/em-ci.yml
+# installed .github/workflows/em-conform.yml
+```
+
+**Same install discipline as `em skill install`/`em slice index`:**
+
+- **Marker-delimited.** Each file's job list sits between `# GENERATED:em-ci:start` /
+  `# GENERATED:em-ci:end` (or `em-conform`) comment markers at column 0. Add your own jobs
+  above or below the markers, at the same indent under `jobs:`, and a future `em ci init`
+  (e.g. after upgrading `em`) refreshes only what's between them — your additions survive.
+- **Idempotent.** Re-running with nothing changed leaves both files byte-identical. A file
+  that already exists without the marker pair (a hand-written workflow at the same path) is
+  left alone and reported, not an error — pass `-f`/`--force` to replace it wholesale.
+- **`--check` for CI self-verification.** Never writes; reports `missing` / `stale` /
+  `can't verify` (no markers) / `ok` for each file, CI-ready the same way `em slice index
+  --check` is. The generated files are handed to the repo, not owned by `em` forever — past
+  the initial `em ci init`, edit them freely. `--check` is there for a team that would rather
+  pin the vanilla preset and gate on drift, the same opt-in posture `em skill check` already
+  has in the cookbook above ("if you'd rather pin ... add `em skill check` as its own gate").
+
+Every argument is validated against the shell-injection-relevant characters it would otherwise
+carry into the generated workflow's `run:` steps (`"`, `` ` ``, `$`, a newline) — `em ci init`
+refuses rather than emit a file with a broken (or exploitable) shell command.
+
 ## Working with an AI agent: the `AGENTS.md` managed section
 
 `em skill install` and `em skill sync` both write/update a marker-delimited section in the

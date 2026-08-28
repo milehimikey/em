@@ -3012,3 +3012,124 @@ describe("em scaffold --under (CLI, real fs, MIL-160)", () => {
     expect(existsSync(join(cwd, "standalone", "standalone.em"))).toBe(true);
   });
 });
+
+describe("em ci init (CLI, real fs, MIL-166)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-ci-init-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("installs both workflow files under .github/workflows/", () => {
+    const r = em(["ci", "init", "model.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(join(dir, ".github", "workflows", "em-ci.yml"));
+    expect(r.stdout).toContain(join(dir, ".github", "workflows", "em-conform.yml"));
+
+    const ci = readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8");
+    expect(ci).toContain("name: em ci");
+    expect(ci).toContain('npx @milehimikey/em validate "$f"');
+    expect(ci).toContain('npx @milehimikey/em slice index "model.em" --check');
+    expect(ci).toContain('npx @milehimikey/em coverage "model.em" --tests "test" --strict');
+    expect(ci).toContain('npx @milehimikey/em glossary $(git ls-files \'*.em\') --fail-on-conflicts');
+
+    const conform = readFileSync(join(dir, ".github", "workflows", "em-conform.yml"), "utf8");
+    expect(conform).toContain("name: model-conformance");
+    expect(conform).toContain('/event-modeling conform"');
+  });
+
+  it("--tests changes the coverage/status-badge steps' --tests argument", () => {
+    const r = em(["ci", "init", "model.em", "--tests", "spec"], dir);
+    expect(r.status).toBe(0);
+    const ci = readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8");
+    expect(ci).toContain('--tests "spec"');
+    expect(ci).not.toContain('--tests "test"');
+  });
+
+  it("a second run with the same arguments is idempotent (byte-identical, no error)", () => {
+    em(["ci", "init", "model.em"], dir);
+    const before = readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8");
+
+    const r = em(["ci", "init", "model.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already up to date");
+    expect(readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8")).toBe(before);
+  });
+
+  it("--check exits 0 and reports ok when both files match the current preset", () => {
+    em(["ci", "init", "model.em"], dir);
+    const r = em(["ci", "init", "model.em", "--check"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ok — both workflow files match the current preset");
+  });
+
+  it("--check exits non-zero without writing when a file is missing", () => {
+    const r = em(["ci", "init", "model.em", "--check"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("missing:");
+    expect(existsSync(join(dir, ".github", "workflows", "em-ci.yml"))).toBe(false);
+  });
+
+  it("--check exits non-zero and reports stale after the args change, without writing", () => {
+    em(["ci", "init", "model.em"], dir);
+    const before = readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8");
+
+    const r = em(["ci", "init", "model.em", "--tests", "spec", "--check"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("stale:");
+    expect(readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8")).toBe(before);
+  });
+
+  it("re-running after a repo adds its own job outside the markers preserves that job", () => {
+    em(["ci", "init", "model.em"], dir);
+    const ciPath = join(dir, ".github", "workflows", "em-ci.yml");
+    const withCustomJob = readFileSync(ciPath, "utf8").replace(
+      "jobs:\n",
+      "jobs:\n  my-custom-job:\n    runs-on: ubuntu-latest\n    steps: []\n\n",
+    );
+    writeFileSync(ciPath, withCustomJob, "utf8");
+
+    const r = em(["ci", "init", "model.em", "--tests", "spec"], dir);
+    expect(r.status).toBe(0);
+    const updated = readFileSync(ciPath, "utf8");
+    expect(updated).toContain("my-custom-job");
+    expect(updated).toContain('--tests "spec"');
+  });
+
+  it("a pre-existing file with no GENERATED markers is left alone without --force (exit 0)", () => {
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "name: my-hand-written-ci\n");
+
+    const r = em(["ci", "init", "model.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already exists — re-run with --force to overwrite");
+    expect(readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8")).toBe("name: my-hand-written-ci\n");
+    // The other file (no conflict) still gets installed.
+    expect(existsSync(join(dir, ".github", "workflows", "em-conform.yml"))).toBe(true);
+  });
+
+  it("--force replaces a pre-existing markerless file wholesale", () => {
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "name: my-hand-written-ci\n");
+
+    const r = em(["ci", "init", "model.em", "--force"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("replaced");
+    const ci = readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8");
+    expect(ci).toContain("name: em ci");
+  });
+
+  it("rejects a model path containing a shell-injection-relevant character", () => {
+    const r = em(["ci", "init", 'model".em'], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("must not contain");
+    expect(existsSync(join(dir, ".github"))).toBe(false);
+  });
+
+  it("rejects an unsafe --tests value", () => {
+    const r = em(["ci", "init", "model.em", "--tests", "te$st"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("must not contain");
+  });
+});

@@ -105,6 +105,10 @@ em skill sync [path]                                        # update the vendore
 em skill sync [path] --no-agents-md                         # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
 em skill check [path]                                       # check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)
 em skill check [path] --json                                # print a JSON document instead of the text report (see docs/cli.md)
+em ci init <model>                                          # install .github/workflows/em-ci.yml (PR gates: em validate, em slice index --check, em coverage --strict, em ledger, em skill check, em glossary --fail-on-conflicts, plus a push-triggered status-badge rebuild) and em-conform.yml (scheduled, advisory-only conformance cadence) — same install discipline as `em skill install`: marker-delimited, idempotent, --check for CI self-verification (MIL-166, see docs/ci.md)
+em ci init <model> --tests <dir>                            # test directory the coverage/status steps scan for INV-* citations
+em ci init <model> -f, --force                              # replace an existing workflow file that has no GENERATED markers
+em ci init <model> --check                                  # verify both files match the current preset; exit non-zero on drift without writing (CI)
 ```
 <!-- GENERATED:cli:end -->
 

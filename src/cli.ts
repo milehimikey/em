@@ -87,6 +87,20 @@ import {
 } from "./cli/stateFile.js";
 import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
+import {
+  ciWorkflowPath,
+  conformWorkflowPath,
+  buildCiWorkflowFile,
+  buildConformWorkflowFile,
+  ciManagedBody,
+  conformManagedBody,
+  planCiFile,
+  applyCiFile,
+  findUnsafeCiInitArg,
+  CI_WORKFLOW_MARKER,
+  CONFORM_WORKFLOW_MARKER,
+  CiFileStatus,
+} from "./cli/ciInit.js";
 
 const program = new Command();
 
@@ -1328,6 +1342,89 @@ skill
     // Set the code rather than process.exit(): same rationale as em ledger/em diff — stdout to
     // a pipe (a --json document) shouldn't risk truncation.
     if (!result.ok) process.exitCode = 1;
+  });
+
+const ci = program.command("ci").description("scaffold/check the CI enforcement preset (MIL-166, see docs/ci.md)");
+
+ci.command("init")
+  .description(
+    "install .github/workflows/em-ci.yml (PR gates: em validate, em slice index --check, em " +
+      "coverage --strict, em ledger, em skill check, em glossary --fail-on-conflicts, plus a " +
+      "push-triggered status-badge rebuild) and em-conform.yml (scheduled, advisory-only " +
+      "conformance cadence) — same install discipline as `em skill install`: marker-delimited, " +
+      "idempotent, --check for CI self-verification (MIL-166, see docs/ci.md)",
+  )
+  .argument("<model>", "anchor .em file the coverage/ledger/slice-index/status steps point at")
+  .option("--tests <dir>", "test directory the coverage/status steps scan for INV-* citations", "test")
+  .option("-f, --force", "replace an existing workflow file that has no GENERATED markers")
+  .option("--check", "verify both files match the current preset; exit non-zero on drift without writing (CI)")
+  .action((model: string, opts: { tests: string; force?: boolean; check?: boolean }) => {
+    const unsafe = findUnsafeCiInitArg(model) ?? findUnsafeCiInitArg(opts.tests);
+    if (unsafe) {
+      console.error(
+        `em ci init: argument must not contain '"', '\`', '$', or a newline (breaks the ` +
+          `generated workflow's shell steps): ${unsafe}`,
+      );
+      process.exit(1);
+    }
+
+    const repoRoot = process.cwd();
+    const ciPath = ciWorkflowPath(repoRoot);
+    const conformPath = conformWorkflowPath(repoRoot);
+
+    const files: Array<[string, CiFileStatus]> = [
+      [
+        ciPath,
+        planCiFile(
+          ciPath,
+          buildCiWorkflowFile(model, opts.tests, PKG_VERSION),
+          ciManagedBody(model, opts.tests),
+          CI_WORKFLOW_MARKER,
+          !!opts.force,
+        ),
+      ],
+      [
+        conformPath,
+        planCiFile(
+          conformPath,
+          buildConformWorkflowFile(model, PKG_VERSION),
+          conformManagedBody(model),
+          CONFORM_WORKFLOW_MARKER,
+          !!opts.force,
+        ),
+      ],
+    ];
+
+    if (opts.check) {
+      let drift = false;
+      for (const [path, status] of files) {
+        if (status.kind === "create") {
+          console.log(`missing: ${path} — run \`em ci init ${model}\` to create it`);
+          drift = true;
+        } else if (status.kind === "missing-markers") {
+          console.log(`can't verify: ${path} exists without GENERATED markers (re-run with --force to replace it)`);
+          drift = true;
+        } else if (status.kind === "stale") {
+          console.log(`stale: ${path} — run \`em ci init ${model}\` and commit the result`);
+          drift = true;
+        } else {
+          console.log(`ok: ${path}`);
+        }
+      }
+      console.log(drift ? "em ci init --check: drift found" : "ok — both workflow files match the current preset");
+      if (drift) process.exitCode = 1;
+      return;
+    }
+
+    mkdirSync(dirname(ciPath), { recursive: true });
+    for (const [path, status] of files) {
+      applyCiFile(path, status);
+      if (status.kind === "create") console.log(`installed ${path}`);
+      else if (status.kind === "stale") console.log(`updated ${path}`);
+      else if (status.kind === "would-replace") console.log(`replaced ${path} (--force)`);
+      else if (status.kind === "missing-markers") console.log(`${path} already exists — re-run with --force to overwrite`);
+      else console.log(`${path} already up to date`);
+    }
   });
 
 // Exported so dev tooling (e.g. scripts/generate-skill-docs.ts) can introspect the registered
