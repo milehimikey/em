@@ -83,14 +83,16 @@ flowchart LR
 
 ## Model with AI
 
-`em` ships a Claude Code skill that runs a facilitated Event Modeling session: the AI asks
-the questions, you supply the domain, and the model renders live as it grows.
+`em` ships a Claude Code skill bundle — one router skill plus five focused, SDLC-stage skills
+(discover/extract, model/slice, implement, conform/validate, watch/review) — that runs a
+facilitated Event Modeling session: the AI asks the questions, you supply the domain, and the
+model renders live as it grows.
 
 ```bash
-em skill install          # copy the skill into .claude/skills/event-modeling/
+em skill install          # copy the skill bundle into .claude/skills/
 ```
 
-Then run `/event-modeling` in Claude Code. The same skill also runs the reverse direction:
+Then run `/event-modeling` in Claude Code. The same bundle also runs the reverse direction:
 `extract` derives a model from a system that already exists, and `conform` checks a model
 against the code implementing it and reports where they've drifted. See
 [docs/ai-workflow.md](docs/ai-workflow.md) for the phases and what a session produces, and the

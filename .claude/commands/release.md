@@ -28,8 +28,10 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
 ## 3. Bump versions and run gates locally
 
 - Set `version` in package.json (`npm version <x.y.z> --no-git-tag-version`).
-- Update the `em-version:` stamp in `.claude/skills/event-modeling/SKILL.md` to
-  match — CI's skill-version-stamp gate requires they agree.
+- Update the `em-version:` stamp in every `.claude/skills/event-modeling*/SKILL.md`
+  (six files — the router skill plus the five focused phase skills, MIL-157) to
+  match — CI's skill-version-stamp gate (`npm run check:skill-version`) requires
+  every one of them to agree with package.json.
 - Regenerate skill docs and verify no drift: `npm run docs:generate` then
   `git diff --stat` to see what changed; include any regenerated files in the
   release commit.

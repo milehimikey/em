@@ -1228,11 +1228,14 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   });
   afterAll(() => rmSync(target, { recursive: true, force: true }));
 
-  it("sync materializes the packaged skill into [path]/.claude/skills/event-modeling/", () => {
+  it("sync materializes the packaged skill bundle into [path]/.claude/skills/", () => {
     const r = em(["skill", "sync", target], ROOT);
     expect(r.status).toBe(0);
     expect(existsSync(join(target, ".claude", "skills", "event-modeling", "SKILL.md"))).toBe(true);
-    expect(r.stdout).toContain("added: SKILL.md");
+    expect(existsSync(join(target, ".claude", "skills", "event-modeling-discover", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(target, ".claude", "skills", "event-modeling-shared", "reference", "em-dsl.md"))).toBe(true);
+    expect(r.stdout).toContain("added: event-modeling/SKILL.md");
+    expect(r.stdout).toContain("added: event-modeling-shared/reference/em-dsl.md");
   });
 
   it("re-running sync reports up to date and makes no changes", () => {
@@ -1253,6 +1256,7 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("has no em-version: stamp");
     expect(r.stdout).toContain("differs from the packaged skill");
+    expect(r.stdout).toContain("[event-modeling]");
   });
 
   it("check --json prints the documented envelope", () => {
@@ -1269,11 +1273,11 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
 });
 
 describe("em contract (CLI, MIL-129)", () => {
-  it("prints the packaged reference/implement.md verbatim", () => {
+  it("prints the packaged event-modeling-implement/reference/implement.md verbatim", () => {
     const r = em(["contract"], ROOT);
     expect(r.status).toBe(0);
     expect(r.stdout).toBe(
-      readFileSync(join(ROOT, ".claude", "skills", "event-modeling", "reference", "implement.md"), "utf8"),
+      readFileSync(join(ROOT, ".claude", "skills", "event-modeling-implement", "reference", "implement.md"), "utf8"),
     );
     expect(r.stdout).toContain("Gate: verify readiness before starting");
     expect(r.stdout).toContain("em validate <model>.em --slice-ready <slice-key> --json");

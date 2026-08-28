@@ -4,7 +4,7 @@ This documents the machine-read YAML frontmatter dialect `src/catalog/sliceDoc.t
 of `slices/<slice-key>.md` — the contract `em export`'s slice-frontmatter join reads. It covers
 the **frontmatter block only**. Body/prose authoring conventions (Intent, Scenarios, Open
 Questions, …) live in the event-modeling skill's
-[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md), not here — with two
+[`templates/slice.md`](../.claude/skills/event-modeling-shared/templates/slice.md), not here — with two
 exceptions:
 
 - The `## Open Questions` section's GFM checkboxes (`- [ ]` / `- [x]`) *are* now machine-parsed
@@ -231,7 +231,7 @@ inside** the section instead, as display text — not a frontmatter key, not par
 Stable IDs follow `INV-<MNEMONIC>-<n>` — a short (2-4 uppercase letters/digits) abbreviation of
 the slice's key, unique among the model's slices, then a small integer, optionally letter-suffixed
 for a closely-related sub-invariant (`INV-CHK-3a`) — see the Invariants section guidance in
-[`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md). Per-slice prefixes
+[`templates/slice.md`](../.claude/skills/event-modeling-shared/templates/slice.md). Per-slice prefixes
 make IDs globally unique across the model, so an `em coverage` citation is exact instead of
 ambiguous across slices.
 
@@ -369,4 +369,4 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [validation.md#slice-readiness](validation.md#slice-readiness) — `em validate --slice-ready`'s note-binding gate, including the `covers` cross-binding (MIL-121)
 - [cli.md#em-coverage-file---tests-dir](cli.md#em-coverage-file---tests-dir) — `em coverage`'s INV-ID extraction, scoped to the Invariants/Delta sections' structural (non-nested) bullet lines (MIL-149/MIL-155/MIL-156)
 - [validation.md#note-binding-mismatch](validation.md#note-binding-mismatch) — `em validate`'s check for a doc-shaped note that doesn't participate in its slice's binding (MIL-126)
-- [`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md) — the authored template
+- [`templates/slice.md`](../.claude/skills/event-modeling-shared/templates/slice.md) — the authored template

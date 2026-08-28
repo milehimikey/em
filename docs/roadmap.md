@@ -56,7 +56,7 @@ the same wave: `em validate --slice-ready <key>` as the native handoff gate (doc
 status `ready-to-implement`, open questions all checked), typed `## Delta` operation blocks
 (Added/Modified/Removed/Renamed) for re-ratified slices, multi-word `@Persona`/`@Context`
 tags parsing without quotes, and an agent guide
-([reference/implement.md](../.claude/skills/event-modeling/reference/implement.md)) shipped
+([reference/implement.md](../.claude/skills/event-modeling-implement/reference/implement.md)) shipped
 inside the bundled skill so implementing agents follow one contract from ratified slice to
 merged PR. [workflow.md](workflow.md) is the resulting picture. Most recently (MIL-26): every
 no-fields box in a swimlane row now shares the row's tallest natural height instead of each

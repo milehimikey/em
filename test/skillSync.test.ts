@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planSkillSync, applySkillSync } from "../src/cli/skillSync.js";
+import { planSkillSync, applySkillSync, planSkillSyncBundle, applySkillSyncBundle } from "../src/cli/skillSync.js";
 
 function makePackagedDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "em-skillsync-packaged-"));
@@ -140,6 +140,45 @@ describe("applySkillSync", () => {
     } finally {
       rmSync(packaged, { recursive: true, force: true });
       rmSync(vendored, { recursive: true, force: true });
+    }
+  });
+});
+
+// MIL-157: the em skill ships as several sibling directories under a shared root rather than
+// one — these cover the aggregating loop, not per-file diffing (already covered above).
+describe("planSkillSyncBundle / applySkillSyncBundle", () => {
+  function makeBundleRoot(dirNames: string[]): string {
+    const root = mkdtempSync(join(tmpdir(), "em-skillsync-bundleroot-"));
+    for (const name of dirNames) {
+      const dir = join(root, name);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\n---\nbody\n`);
+    }
+    return root;
+  }
+
+  it("plans one directory-scoped SkillSyncPlan per named directory, unrelated sibling directories untouched", () => {
+    const packagedRoot = makeBundleRoot(["alpha", "beta"]);
+    const vendoredRoot = mkdtempSync(join(tmpdir(), "em-skillsync-bundlevendored-"));
+    // A directory that isn't part of the bundle at all — must survive every bundle operation.
+    mkdirSync(join(vendoredRoot, "unrelated-skill"), { recursive: true });
+    writeFileSync(join(vendoredRoot, "unrelated-skill", "SKILL.md"), "not part of the em bundle");
+    try {
+      const bundlePlan = planSkillSyncBundle(packagedRoot, vendoredRoot, ["alpha", "beta"]);
+      expect(bundlePlan.map((p) => p.dirName)).toEqual(["alpha", "beta"]);
+      expect(bundlePlan.every((p) => p.plan.changes.length === 1 && p.plan.changes[0].kind === "added")).toBe(true);
+
+      applySkillSyncBundle(bundlePlan, packagedRoot, vendoredRoot);
+      expect(existsSync(join(vendoredRoot, "alpha", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(vendoredRoot, "beta", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(vendoredRoot, "unrelated-skill", "SKILL.md"))).toBe(true);
+
+      // Re-planning after apply reports no further changes for the bundle's own directories.
+      const replanned = planSkillSyncBundle(packagedRoot, vendoredRoot, ["alpha", "beta"]);
+      expect(replanned.every((p) => p.plan.changes.length === 0)).toBe(true);
+    } finally {
+      rmSync(packagedRoot, { recursive: true, force: true });
+      rmSync(vendoredRoot, { recursive: true, force: true });
     }
   });
 });

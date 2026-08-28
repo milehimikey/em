@@ -50,7 +50,7 @@ separate `--usage-categories` flag; the fixed vocabulary lives in this one field
 
 So the category is a fixed vocabulary instead: a `usageCategory` string on every entry in the
 `RULES` registry (`src/model/rules.ts`), generated below by `scripts/generate-skill-docs.ts` —
-the same mechanism that keeps [em-dsl.md](../.claude/skills/event-modeling/reference/em-dsl.md)'s
+the same mechanism that keeps [em-dsl.md](../.claude/skills/event-modeling-shared/reference/em-dsl.md)'s
 validate-rules appendix current (MIL-92, extended for this table by MIL-97). A new rule shows up
 here the moment it's registered; don't hand-edit these tables — run `npm run docs:generate`.
 Because `em state log-usage` writes the line itself straight from this table, the historical

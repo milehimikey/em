@@ -23,8 +23,9 @@ reaction-shares-a-slice-with-its-command shape — still applies.
 
 ## Setup
 
-1. Run the SKILL.md preconditions (tool check, model location). If no model exists yet, run
-   `em scaffold <model-name>` (see SKILL.md's "Project layout this skill creates").
+1. Run the shared preconditions (tool check, model location) — see
+   `../../event-modeling-shared/reference/operating-principles.md`. If no model exists yet, run
+   `em scaffold <model-name>` (see that doc's "Project layout this skill creates").
 2. **Agree the scope line first**: which system, which part, what's out of bounds. Write it to
    the state file's Session inputs.
 3. Record in the state file: `Source mode` (after detection, below) and

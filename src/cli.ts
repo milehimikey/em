@@ -49,10 +49,11 @@ import {
 } from "./cli/status.js";
 import { buildStatusJson } from "./emit/statusJson.js";
 import { buildFreshnessJson } from "./emit/freshnessJson.js";
-import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
-import { checkSkillSync } from "./cli/skillCheck.js";
+import { planSkillSyncBundle, applySkillSyncBundle } from "./cli/skillSync.js";
+import { checkSkillSyncBundle } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { readContract } from "./cli/contract.js";
+import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { syncAgentsMd, AgentsMdResult } from "./cli/agentsMd.js";
@@ -1458,15 +1459,19 @@ program
     }
   });
 
-// Shared by install/sync/check: the skill directory bundled with whatever em package is
+// Shared by install/sync/check: the `.claude/skills/` root bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and
 // regardless of a symlinked global install — see pkgDir's own resolution above for
-// PKG_VERSION) and the skill directory a consumer repo vendors it into.
-function packagedSkillDir(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "..", ".claude", "skills", "event-modeling");
+// PKG_VERSION) and the `.claude/skills/` root a consumer repo vendors it into. The em skill
+// itself lives under several named directories inside this root (MIL-157, src/cli/skillDirs.ts)
+// rather than being this whole root's only occupant — install/sync/check only ever touch those
+// named directories, never the root wholesale, so an unrelated skill already vendored alongside
+// em's is never at risk.
+function packagedSkillsRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", ".claude", "skills");
 }
-function vendoredSkillDir(repoRoot: string): string {
-  return join(resolve(repoRoot), ".claude", "skills", "event-modeling");
+function vendoredSkillsRoot(repoRoot: string): string {
+  return join(resolve(repoRoot), ".claude", "skills");
 }
 
 program
@@ -1477,7 +1482,7 @@ program
       "(MIL-129); see docs/cli.md",
   )
   .action(() => {
-    process.stdout.write(readContract(packagedSkillDir()));
+    process.stdout.write(readContract(join(packagedSkillsRoot(), "event-modeling-implement")));
   });
 
 program
@@ -1509,23 +1514,26 @@ const skill = program
 
 skill
   .command("install")
-  .description("copy the event-modeling skill into .claude/skills/event-modeling/")
+  .description("copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared)")
   .option("-f, --force", "overwrite an existing installation")
   .option(
     "--no-agents-md",
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
   )
   .action(async (opts: { force?: boolean; agentsMd?: boolean }) => {
-    const src = packagedSkillDir();
-    const dest = vendoredSkillDir(process.cwd());
+    const srcRoot = packagedSkillsRoot();
+    const destRoot = vendoredSkillsRoot(process.cwd());
+    const anchor = join(destRoot, EM_SKILL_ANCHOR_DIR);
 
-    if (existsSync(dest) && !opts.force) {
-      console.log(`skill already installed at ${dest}`);
+    if (existsSync(anchor) && !opts.force) {
+      console.log(`skill already installed at ${anchor}`);
       console.log("re-run with --force to overwrite");
     } else {
-      await mkdir(join(process.cwd(), ".claude", "skills"), { recursive: true });
-      await cp(src, dest, { recursive: true });
-      console.log(`installed event-modeling skill → ${dest}`);
+      await mkdir(destRoot, { recursive: true });
+      for (const name of EM_ALL_SKILL_BUNDLE_DIRS) {
+        await cp(join(srcRoot, name), join(destRoot, name), { recursive: true });
+      }
+      console.log(`installed event-modeling skill bundle → ${destRoot}`);
       console.log("in Claude Code, run /event-modeling to start a guided session");
     }
 
@@ -1537,8 +1545,8 @@ skill
 skill
   .command("sync")
   .description(
-    "update the vendored .claude/skills/event-modeling/ copy in [path] to match the installed " +
-      "em package (overwrites unconditionally; local edits are never merged, MIL-93)",
+    "update the vendored .claude/skills/ event-modeling skill bundle in [path] to match the " +
+      "installed em package (overwrites unconditionally; local edits are never merged, MIL-93)",
   )
   .argument("[path]", "consumer repo root", ".")
   .option(
@@ -1546,16 +1554,21 @@ skill
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
   )
   .action(async (path: string, opts: { agentsMd?: boolean }) => {
-    const packagedDir = packagedSkillDir();
-    const vendoredDir = vendoredSkillDir(path);
+    const packagedRoot = packagedSkillsRoot();
+    const vendoredRoot = vendoredSkillsRoot(path);
 
-    const plan = planSkillSync(packagedDir, vendoredDir);
-    if (plan.changes.length === 0) {
-      console.log(`up to date — ${vendoredDir} already matches the installed skill (${plan.unchangedCount} file(s))`);
+    const bundlePlan = planSkillSyncBundle(packagedRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
+    const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
+    const totalUnchanged = bundlePlan.reduce((n, { plan }) => n + plan.unchangedCount, 0);
+
+    if (totalChanges === 0) {
+      console.log(`up to date — ${vendoredRoot} already matches the installed skill bundle (${totalUnchanged} file(s))`);
     } else {
-      applySkillSync(plan, packagedDir, vendoredDir);
-      for (const c of plan.changes) console.log(`${c.kind}: ${c.relPath}`);
-      console.log(`synced ${vendoredDir} — ${plan.changes.length} file(s) changed, ${plan.unchangedCount} unchanged`);
+      applySkillSyncBundle(bundlePlan, packagedRoot, vendoredRoot);
+      for (const { dirName, plan } of bundlePlan) {
+        for (const c of plan.changes) console.log(`${c.kind}: ${dirName}/${c.relPath}`);
+      }
+      console.log(`synced ${vendoredRoot} — ${totalChanges} file(s) changed, ${totalUnchanged} unchanged`);
     }
 
     if (opts.agentsMd !== false) {
@@ -1566,19 +1579,19 @@ skill
 skill
   .command("check")
   .description(
-    "check the vendored .claude/skills/event-modeling/ copy in [path] for drift against the " +
-      "installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)",
+    "check the vendored .claude/skills/ event-modeling skill bundle in [path] for drift against " +
+      "the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)",
   )
   .argument("[path]", "consumer repo root", ".")
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
   .action((path: string, opts: { json?: boolean }) => {
-    const packagedDir = packagedSkillDir();
-    const vendoredDir = vendoredSkillDir(path);
+    const packagedRoot = packagedSkillsRoot();
+    const vendoredRoot = vendoredSkillsRoot(path);
 
-    const result = checkSkillSync(packagedDir, vendoredDir, PKG_VERSION);
+    const result = checkSkillSyncBundle(packagedRoot, vendoredRoot, PKG_VERSION, EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES);
 
     if (opts.json) {
-      process.stdout.write(buildSkillCheckJson(result, vendoredDir, PKG_VERSION) + "\n");
+      process.stdout.write(buildSkillCheckJson(result, vendoredRoot, PKG_VERSION) + "\n");
     } else {
       for (const f of result.findings) console.log(f.message);
       console.log(result.ok ? `ok — vendored skill matches em ${PKG_VERSION}` : `${result.findings.length} mismatch(es)`);

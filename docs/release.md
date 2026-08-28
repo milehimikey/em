@@ -11,9 +11,10 @@ record of it and of the one-time setup it depends on.
 1. **Preflight** — clean main, up to date, CI green.
 2. **Scope + version** — everything since the last tag; semver bump (features →
    minor, fixes/docs → patch, breaking DSL/CLI changes → major).
-3. **Bump** — `version` in package.json **and** the `em-version:` stamp in
-   `.claude/skills/event-modeling/SKILL.md` (CI's skill-version-stamp gate requires
-   they agree); regenerate skill docs; run build + typecheck + tests.
+3. **Bump** — `version` in package.json **and** the `em-version:` stamp in every
+   `.claude/skills/event-modeling*/SKILL.md` (six files — the router skill plus the
+   five focused phase skills; CI's skill-version-stamp gate requires all of them to
+   agree with package.json); regenerate skill docs; run build + typecheck + tests.
 4. **Notes** — title `X.Y.Z: <short narrative theme>`; body: theme paragraph, then
    Features / Fixes / Docs bullets with PR numbers and MIL-* ids.
 5. **Ship** — commit `release: vX.Y.Z` to main, push, then

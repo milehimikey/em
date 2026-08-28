@@ -122,7 +122,7 @@ mechanical gate with no judgment call in it.
   agent-suitable end to end: the slice doc is a complete brief, the invariants and scenarios
   compile to tests, and the PR review is the human checkpoint. The bundled skill ships the
   full contract an implementing agent must follow —
-  [the agent guide](../.claude/skills/event-modeling/reference/implement.md) — including the
+  [the agent guide](../.claude/skills/event-modeling-implement/reference/implement.md) — including the
   readiness gate, the read-only rule on ratified docs, the propose-don't-decide rule for
   gaps, the lifecycle flip at merge, and the spec-kit adapter.
 - **The conform sweep (stage 6)** — an agent gathers the evidence and writes the report;
@@ -130,7 +130,7 @@ mechanical gate with no judgment call in it.
 
 ## Handing a slice to an agent
 
-The short version of the [agent guide](../.claude/skills/event-modeling/reference/implement.md),
+The short version of the [agent guide](../.claude/skills/event-modeling-implement/reference/implement.md),
 for the human doing the handing:
 
 1. Ratify the slice — `em slice ratify <model>.em <key> --by <name>` (status →

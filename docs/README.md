@@ -14,7 +14,7 @@ agent can carry with human review.
 | See a multi-model project laid out correctly (one directory per model) | [examples/multi-model/](../examples/multi-model/), and [cli.md#multi-model-projects](cli.md#multi-model-projects) |
 | See how the pieces fit together over the life of a model | [workflow.md](workflow.md) |
 | Know which steps need humans, and which an agent can do | [process.md](process.md) |
-| Hand a ratified slice to an agent to implement | [process.md](process.md#handing-a-slice-to-an-agent), and the [agent guide](../.claude/skills/event-modeling/reference/implement.md) it points to |
+| Hand a ratified slice to an agent to implement | [process.md](process.md#handing-a-slice-to-an-agent), and the [agent guide](../.claude/skills/event-modeling-implement/reference/implement.md) it points to |
 | Understand the four Event Modeling patterns | [patterns.md](patterns.md) |
 | Look up DSL syntax (keywords, `from`, `again`, fields, notes, issues) | [dsl.md](dsl.md) |
 | Look up the slice-doc frontmatter schema (version, lineage, required-vs-optional keys) | [slice-doc-schema.md](slice-doc-schema.md) |

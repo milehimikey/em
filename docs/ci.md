@@ -257,7 +257,7 @@ diverges from the packaged skill even with a matching stamp (e.g. a hand-edited 
 [cli.md](cli.md#em-skill-check-path) for the full flag/output reference and `--json` shape.
 
 Ground rules, matching the phase's own stance (see
-`.claude/skills/event-modeling/reference/conform.md` once the skill is installed):
+`.claude/skills/event-modeling-conform/reference/conform.md` once the skill is installed):
 
 - **The job never fails on drift.** Findings land in the report/issue; humans ratify any
   red notes in a normal PR. Fail the job only on infrastructure errors (tool missing, model

@@ -83,3 +83,35 @@ export function applySkillSync(plan: SkillSyncPlan, packagedDir: string, vendore
     }
   }
 }
+
+// ---- Bundle variants (MIL-157) — the em skill ships as several sibling directories under
+// `.claude/skills/` (see src/cli/skillDirs.ts) rather than one. These loop the pure per-directory
+// functions above over a fixed, named set of directories instead of walking `.claude/skills/`
+// wholesale — the whole point being that an unrelated skill already living in a consumer repo's
+// `.claude/skills/` is never touched, only the directories this bundle actually owns.
+
+export interface SkillSyncBundleDirPlan {
+  dirName: string;
+  plan: SkillSyncPlan;
+}
+
+/** Pure: one planSkillSync call per named directory, paired with the directory name so the
+ *  caller can report/apply per directory. No fs writes. */
+export function planSkillSyncBundle(
+  packagedRoot: string,
+  vendoredRoot: string,
+  dirNames: readonly string[],
+): SkillSyncBundleDirPlan[] {
+  return dirNames.map((dirName) => ({
+    dirName,
+    plan: planSkillSync(join(packagedRoot, dirName), join(vendoredRoot, dirName)),
+  }));
+}
+
+/** Shell: applies every directory's plan from planSkillSyncBundle. Same idempotency/no-merge
+ *  contract as applySkillSync, just looped. */
+export function applySkillSyncBundle(bundlePlan: SkillSyncBundleDirPlan[], packagedRoot: string, vendoredRoot: string): void {
+  for (const { dirName, plan } of bundlePlan) {
+    applySkillSync(plan, join(packagedRoot, dirName), join(vendoredRoot, dirName));
+  }
+}

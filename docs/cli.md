@@ -1642,7 +1642,7 @@ entry naming your team's ratifiers so the platform enforces the review — see
 ## `em slice mark-implemented <file> <slice-key> <pr-url>`
 
 The lifecycle flip a ratified slice's doc gets at merge (MIL-103) — see
-[reference/implement.md §6](../.claude/skills/event-modeling/reference/implement.md). Sets
+[reference/implement.md §6](../.claude/skills/event-modeling-implement/reference/implement.md). Sets
 exactly two frontmatter fields on the doc resolved from `<slice-key>` via the same note-binding
 join `--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121 cross-binding included, so
 the file actually edited may be a *different* slice's doc when this slice's doc is only reached
@@ -1857,7 +1857,7 @@ em state set-phase implement my-model/ --step 3
 ### `em state set-conformance <revision> [dir]`
 
 Rewrites `Last conformance:` (and `Last updated:`) to the exact format
-[reference/conform.md](../.claude/skills/event-modeling/reference/conform.md)'s scoping step
+[reference/conform.md](../.claude/skills/event-modeling-conform/reference/conform.md)'s scoping step
 parses back out:
 
 ```
@@ -1958,7 +1958,7 @@ em usage-report . --json   # { "usageReportSchemaVersion": "1.0", "sessions": 7,
 ## `em conform-scope <file>`
 
 Mechanizes the mechanical half of
-[reference/conform.md](../.claude/skills/event-modeling/reference/conform.md)'s conform-phase
+[reference/conform.md](../.claude/skills/event-modeling-conform/reference/conform.md)'s conform-phase
 step 1 ("Scope") — reading the `Last conformance:` marker, running `git diff --name-only` in
 the target repo, and mapping the changed paths to slices via each slice doc's `implementedIn` —
 so the agent no longer does this by hand. Prints one JSON document to stdout:
@@ -2081,16 +2081,16 @@ and MCP parity in this codebase covers *read* surfaces with `--json` (see docs/m
 
 ## `em contract`
 
-Prints the packaged implementation contract — `reference/implement.md` from the skill
-directory bundled with whatever `em` package is currently installed — to stdout, verbatim
-(MIL-129).
+Prints the packaged implementation contract — `reference/implement.md` from the
+`event-modeling-implement` skill directory bundled with whatever `em` package is currently
+installed — to stdout, verbatim (MIL-129).
 
 `reference/implement.md` says up front that it applies to "any implementing agent, whether or
 not the session started from `/event-modeling`" — but until this command, the only way to
 reach it was `em skill install`/`em skill sync` copying it into
-`.claude/skills/event-modeling/`, a path only Claude Code discovers. `em contract` needs no
-vendored skill copy and no `.claude/` awareness at all: any agent that can run a shell gets
-the contract straight from the installed package.
+`.claude/skills/event-modeling-implement/`, a path only Claude Code discovers. `em contract`
+needs no vendored skill copy and no `.claude/` awareness at all: any agent that can run a shell
+gets the contract straight from the installed package.
 
 ```bash
 em contract                 # print the contract to stdout
@@ -2099,7 +2099,7 @@ em contract > CONTRACT.md   # or capture it to a file
 
 No flags, no exit code other than 0 (or a failure reading the package's own bundled files,
 which would mean a broken installation). See
-[the bundled contract itself](../.claude/skills/event-modeling/reference/implement.md) for
+[the bundled contract itself](../.claude/skills/event-modeling-implement/reference/implement.md) for
 its content, and the "Working with an AI agent" section below for how `em skill install`/
 `em skill sync` point a repo's `AGENTS.md` at it.
 
@@ -2118,14 +2118,19 @@ See [mcp.md](mcp.md) for the full tool list, input/output shapes, and client con
 
 ## `em skill install`
 
-Copies the bundled `event-modeling` Claude Code skill out of the npm package into
-`.claude/skills/event-modeling/` in the current directory. Prints a reminder to run
-`/event-modeling` in Claude Code afterwards. See [ai-workflow.md](ai-workflow.md).
+Copies the bundled event-modeling Claude Code skill bundle out of the npm package into
+`.claude/skills/` in the current directory: the `event-modeling` router skill (the
+`/event-modeling` entry point), five focused phase skills (`event-modeling-discover`, `-design`,
+`-implement`, `-conform`, `-review`, MIL-157), and the shared, non-skill
+`event-modeling-shared/` directory (reference/templates every skill points back to) — one
+command installs the whole bundle. Prints a reminder to run `/event-modeling` in Claude Code
+afterwards. See [ai-workflow.md](ai-workflow.md).
 
 By default, also writes/updates the `AGENTS.md` agent-contract section (see "Working with an
 AI agent" below, MIL-129) — pass `--no-agents-md` to skip that. This happens even when the
-skill is already installed and `-f`/`--force` isn't given, so the skill copy itself is
-skipped: `install` always ensures the `AGENTS.md` section unless opted out.
+skill is already installed (checked via the `event-modeling` router directory) and `-f`/
+`--force` isn't given, so the skill copy itself is skipped: `install` always ensures the
+`AGENTS.md` section unless opted out.
 
 | Flag | Effect |
 |---|---|
@@ -2138,8 +2143,11 @@ The downstream half of the skill-drift problem the in-repo MIL-92 gates (the `em
 version stamp, skill doctests, and generated reference sections) cover only in this repo: a
 repo that vendored the skill via `em skill install` has
 no way to know its copy has gone stale as the source skill in the `em` npm package moves on.
-`em skill sync` closes that gap — it updates `[path]/.claude/skills/event-modeling/` to
-exactly match the skill bundled with whatever `em` is currently installed (MIL-93).
+`em skill sync` closes that gap — it updates every directory in `[path]/.claude/skills/` that
+belongs to the em skill bundle (`event-modeling`, `event-modeling-discover`/`-design`/
+`-implement`/`-conform`/`-review`, `event-modeling-shared`; unrelated skills already vendored
+alongside them are left untouched) to exactly match the bundle shipped with whatever `em` is
+currently installed (MIL-93).
 
 `[path]` defaults to the current directory. **The vendored copy is read-only** — sync always
 overwrites unconditionally; a local edit is never merged, only clobbered on the next sync. This
@@ -2149,12 +2157,13 @@ If that's not the contract you want, don't run `sync` — stick with `install --
 occasional, deliberate refresh instead.
 
 ```bash
-em skill sync                 # sync ./.claude/skills/event-modeling/ against the installed em
+em skill sync                 # sync ./.claude/skills/ (the em bundle) against the installed em
 em skill sync ../other-repo   # sync a different repo's vendored copy
 ```
 
-Prints one `added:`/`modified:`/`removed:` line per changed file, or `up to date — ...` when
-the vendored copy already matches.
+Prints one `added:`/`modified:`/`removed:` line per changed file (prefixed with which bundle
+directory it's in, e.g. `modified: event-modeling-conform/reference/conform.md`), or
+`up to date — ...` when the vendored copy already matches.
 
 By default, also writes/updates `[path]/AGENTS.md`'s agent-contract section (see "Working with
 an AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
@@ -2165,16 +2174,20 @@ an AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
 
 ## `em skill check [path]`
 
-Checks `[path]/.claude/skills/event-modeling/` for drift against the skill bundled with the
-installed `em`, without changing anything — the CI-gate counterpart to `sync`. Two independent
-signals are checked and reported together (never short-circuited on the first):
+Checks every directory in `[path]/.claude/skills/` that belongs to the em skill bundle for
+drift against the bundle shipped with the installed `em`, without changing anything — the
+CI-gate counterpart to `sync`. Two independent signals are checked and reported together (never
+short-circuited on the first), per directory:
 
-- the vendored `SKILL.md`'s `em-version:` frontmatter stamp vs. the installed `em`'s own
-  version (`em --version`)
-- a full content diff against the packaged skill (same per-file hash comparison `sync` uses),
-  which catches a hand-edited vendored file even when its stamp still happens to match
+- for each of the five phase skills plus the router (each with its own `SKILL.md`): the
+  vendored `SKILL.md`'s `em-version:` frontmatter stamp vs. the installed `em`'s own version
+  (`em --version`)
+- for every bundle directory, including the shared, non-skill `event-modeling-shared/`: a full
+  content diff against the packaged skill (same per-file hash comparison `sync` uses), which
+  catches a hand-edited vendored file even when its stamp still happens to match
 
-`[path]` defaults to the current directory, same convention as `sync`.
+Findings are prefixed with `[<directory>]` so a mismatch always names which part of the bundle
+it concerns. `[path]` defaults to the current directory, same convention as `sync`.
 
 | Flag | Effect |
 |---|---|
@@ -2182,7 +2195,7 @@ signals are checked and reported together (never short-circuited on the first):
 
 ```
 $ em skill check
-vendored skill's em-version: stamp (1.6.0) doesn't match installed em (1.7.0) — run `em skill sync`
+[event-modeling-conform] vendored skill's em-version: stamp (1.6.0) doesn't match installed em (1.7.0) — run `em skill sync`
 1 mismatch(es)
 $ echo $?
 1
@@ -2196,17 +2209,19 @@ same no-opt-in-flag-needed convention as `em ledger`.
 package and every other command's own schema):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
-- `vendoredDir` — the vendored skill directory that was checked.
+- `vendoredDir` — `[path]/.claude/skills`, the root the whole bundle was checked under.
 - `installedVersion` — the installed `em`'s own version (`em --version`).
-- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles }[]`, every key
+- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles }[]` across every
+  bundle directory, `message` and `driftedFiles` prefixed with `[<directory>]`/`<directory>/`
+  respectively so a finding always names which part of the bundle it's about. Every key is
   always present (explicit `null` when unused by `code`, so a consumer can destructure without
   sniffing for key presence — same convention as `em diff`/`em export`'s schemas). `code` is one
-  of `skill-check-not-installed` (nothing vendored at `[path]` at all — findings stop there,
-  nothing else is checked), `skill-check-stamp-missing` (vendored `SKILL.md` has no
-  `em-version:` stamp), `skill-check-stamp-mismatch` (stamp present but doesn't match the
-  installed version — `vendoredStamp`/`installedVersion` non-null), or
-  `skill-check-content-drift` (one or more files differ by hash from the packaged skill —
-  `driftedFiles` non-null, sorted).
+  of `skill-check-not-installed` (nothing vendored for that directory at all — its own findings
+  stop there, other directories are still checked), `skill-check-stamp-missing` (a vendored
+  `SKILL.md` has no `em-version:` stamp), `skill-check-stamp-mismatch` (stamp present but
+  doesn't match the installed version — `vendoredStamp`/`installedVersion` non-null), or
+  `skill-check-content-drift` (one or more files in that directory differ by hash from the
+  packaged skill — `driftedFiles` non-null, sorted).
 - `ok` — `true` iff `findings` is empty.
 
 ## `em ci init <model>`

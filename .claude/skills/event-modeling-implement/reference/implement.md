@@ -126,7 +126,7 @@ resolves the doc via the same note-binding join `--slice-ready` uses, is idempot
 with the same URL, and refuses (never silently overwrites) if the doc is already `implemented`
 with a different URL. Prefer it over hand-editing the doc's frontmatter.
 
-Then, if the project keeps a model README (from `templates/model-readme.md`), run
+Then, if the project keeps a model README (from `../../event-modeling-shared/templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and
 link — never hand-edit that table. The `implementedIn` link is what the `conform` phase later
 uses to anchor drift-checking — leaving it empty blinds the loop.
@@ -179,6 +179,7 @@ everything a spec holds. Don't introduce an intermediate spec document of your o
 
 Implementation isn't the end of the slice's story. On a cadence — or whenever someone asks —
 the `conform` phase checks implemented slices against the code, using the `implementedIn` link
-you recorded, and reports drift for humans to rule on (see `reference/conform.md`). Your two
+you recorded, and reports drift for humans to rule on (see the `event-modeling-conform` skill's
+`reference/conform.md`). Your two
 duties to that future loop are already behind you if you followed this doc: an accurate
 lifecycle flip, and zero silent decisions.

@@ -14,7 +14,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("parseSliceDoc", () => {
   it("extracts the frontmatter status from the real slice.md template, lowercased", () => {
-    const template = readFileSync(join(ROOT, ".claude/skills/event-modeling/templates/slice.md"), "utf8");
+    const template = readFileSync(join(ROOT, ".claude/skills/event-modeling-shared/templates/slice.md"), "utf8");
     // Simulate a finished doc: the template instructs authors to delete the
     // leading guidance comment before finishing, which is what puts the
     // frontmatter fence at the very start of the file.
@@ -43,7 +43,7 @@ describe("parseSliceDoc", () => {
   // visibly separated without needing `breaks: true` (a doc-wide option change this test would
   // also catch, since it isn't set — see sliceDoc.ts's `marked.parse` call).
   it("renders the real template's Scenarios section as a nested list, not a run-on paragraph", () => {
-    const template = readFileSync(join(ROOT, ".claude/skills/event-modeling/templates/slice.md"), "utf8");
+    const template = readFileSync(join(ROOT, ".claude/skills/event-modeling-shared/templates/slice.md"), "utf8");
     const withoutComment = template.replace(/^<!--[\s\S]*?-->\n\n/, "");
     const doc = parseSliceDoc(withoutComment);
     // The outer "Happy path" bullet's own <li> contains a nested <ul> — visible structure,

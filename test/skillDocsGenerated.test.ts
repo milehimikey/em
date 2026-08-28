@@ -45,7 +45,7 @@ describe("skill docs match generation (gate 2 — MIL-92)", () => {
     // If a marker is renamed/removed, applyMarker() throws rather than silently no-op'ing —
     // exercised implicitly above, but assert the files actually contain them too, so a broken
     // check here reads as "marker missing" rather than a confusing generic diff failure.
-    const emDsl = readFileSync(join(".claude/skills/event-modeling/reference/em-dsl.md"), "utf8");
+    const emDsl = readFileSync(join(".claude/skills/event-modeling-shared/reference/em-dsl.md"), "utf8");
     const skillMd = readFileSync(join(".claude/skills/event-modeling/SKILL.md"), "utf8");
     const usageData = readFileSync(join("docs/usage-data.md"), "utf8");
     expect(emDsl).toContain("<!-- GENERATED:cli:start");
