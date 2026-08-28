@@ -57,11 +57,19 @@ named invariants, Given/When/Then scenarios). Conform checks all three surfaces 
 |---|---|---|---|
 | **Structural** — `.em` ↔ code | slices/elements/fields/flow | `em` (deterministic) | `em diff --json` on canonical vs. an as-is scratch model |
 | **Spec** — slice doc ↔ code | field rules not enforced, named invariants (`INV-*`) without enforcement/test sites, GWT scenarios without test sites | you (judgment) | per-slice evidence walk: each checkable claim in the doc mapped to a code/test site by name (`INV-CHK-4` → its enforcement site + its test) |
-| **Internal** — slice doc ↔ `.em` | the doc's frontmatter (`pattern:`, `status:`) or its Command/Event/Read Model sections and field tables disagreeing with the model's own elements/fields | you (judgment, v1) | cross-check the doc's structured sections against the slice's model elements |
+| **Internal** — slice doc ↔ `.em` | the doc's frontmatter `pattern:` or its Command/Event/Read Model sections and field tables disagreeing with the model's own elements/fields | `em` (deterministic) | `em validate`'s `doc-model-*` diagnostics, unconditionally in the default list |
 
-The internal surface is deterministically checkable in principle (structured doc sections +
-`{ fields }` blocks) — promoting it to an `em validate` rule is a natural follow-up; file it as
-its own issue rather than growing this phase's scope. For now it's agent judgment, same as spec.
+The internal surface is deterministically checked by `em validate` itself (MIL-124) — four
+diagnostics, always on, no flag needed: `doc-model-pattern-mismatch` (frontmatter `pattern:` vs.
+the model's own classification), `doc-model-element-not-in-model` / `doc-model-element-not-in-doc`
+(the doc's Command/Event/Read Model markers vs. the slice's actual elements, each direction), and
+`doc-model-field-mismatch` (a matched Command/Event's field table vs. the model's `{ fields }`
+block). Run `em validate <model-name>.em --json` and read each entry's `code`/`refs`/`message`
+(`docs/validation.md#doc-model-consistency` documents exactly what each one checks and
+when it stays silent — every rule is declare-gated, so a thin/draft doc doesn't nag); consume it
+the same way step 3 below consumes `em diff --json` — parse the structured findings, don't
+re-derive them by eye. Fold any that fire for an in-scope slice into that slice's internal-surface
+findings for step 4's classification, citing the diagnostic directly as the evidence.
 
 **Internal inconsistency is its own class, not drift.** When a doc and the `.em` disagree with
 each other, neither one is "the code" — you don't know which is stale. Report it as internal
@@ -171,11 +179,13 @@ For each slice in scope:
    granularity than the `.em` declares — e.g. event fields documented only in a slice doc's
    table — are checked on the **spec surface** against the doc, not smuggled into the
    structural diff.
-4. Cross-check the doc's header metadata and Command/Event/Read Model sections against the
-   slice's actual `.em` elements and fields for the internal surface — this doesn't need code
-   evidence, just doc-vs-`.em` reading. Narrative sections (Intent, Open Questions, notes)
-   count too when the contradiction is unambiguous — a stale sentence that flatly contradicts
-   the `.em` is an internal inconsistency; a vague or interpretable one is not a finding.
+4. Read the in-scope slice's `doc-model-*` findings straight off the `em validate --json` run
+   from precondition 4 (or re-run it here) — no code evidence needed, `em` already did the
+   doc-vs-`.em` comparison for frontmatter `pattern:` and the Command/Event/Read Model rosters
+   and field tables. The only judgment left on this surface is narrative sections `em validate`
+   can't parse (Intent, Open Questions, notes): count a contradiction here too when it's
+   unambiguous — a stale sentence that flatly contradicts the `.em` is an internal
+   inconsistency; a vague or interpretable one is not a finding.
 
 Do this for every in-scope slice before moving on to diffing. The evidence you record here is
 what every finding in the report will cite — file paths, not vibes.

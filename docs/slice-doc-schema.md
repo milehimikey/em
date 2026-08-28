@@ -362,6 +362,7 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](cli.md#em-render-file) — slice status colors
 - [cli.md](cli.md#em-catalog-files) — pattern / doc lookup
 - [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name) — `em slice ratify`, the mechanized ratification act (`ratifiedBy`/`ratifiedOn`, schema `1.8`, MIL-165)
+- [cli.md](cli.md#em-slice-reratify-file-slice-key) — `em slice reratify`, the mechanized re-ratification version bump/status flip (MIL-161)
 - [cli.md](cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91)
 - [cli.md](cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
 - [validation.md#lineage](validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)

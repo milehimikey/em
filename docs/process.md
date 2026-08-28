@@ -42,9 +42,11 @@ three specific points:
    ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) — pair it with a
    [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**` so the edit
    itself can't merge without review by a designated ratifier.
-   **Re-ratifying** a slice that already shipped is the same act for a change: bump
-   `version:`, record the hop in the `## Delta` section, flip `status` back to
-   `ready-to-implement` ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
+   **Re-ratifying** a slice that already shipped is the same act for a change: record the hop
+   in the `## Delta` section, then `em slice reratify <model>.em <key>` (MIL-161,
+   [cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:` and flips `status` back to
+   `ready-to-implement` mechanically — mirroring `em slice mark-implemented`'s shape at the other
+   end of the lifecycle ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
 2. **Ratifying model changes** — every edit to a committed `.em` or slice doc is a ratified
    decision, made in (or reviewed out of) a facilitated session. The PR review of a model
    change is part of this: the diff *is* the decision record.

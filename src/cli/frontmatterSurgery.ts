@@ -32,6 +32,16 @@ export function normalizeFieldValue(raw: string | undefined): string | null {
   return v === "" ? null : v;
 }
 
+/** Same anchor as `fieldLineRegex`, but captures through the line's own trailing EOL (or
+ *  end-of-string, for a field that happens to be the frontmatter's last line) so a match can be
+ *  spliced out ENTIRELY — key, value, and terminator — rather than just replaced. Used by
+ *  `em slice reratify` (reratify.ts) to drop a now-stale `ratifiedBy:`/`ratifiedOn:` pair: those
+ *  fields describe who signed off the PRIOR version, and silently leaving them in place would
+ *  make a fresh version look already ratified. */
+export function fieldLineWithEolRegex(key: string): RegExp {
+  return new RegExp(`^${key}[ \\t]*:[ \\t]*[^\\r\\n]*\\r?\\n?`, "im");
+}
+
 /** Byte offsets of the frontmatter block's inner lines (between the two `---` fences), located
  *  by walking lines with `indexOf` rather than `split(/\r?\n/)` — a rewrite can't afford the
  *  line-ending normalization a split/join would silently perform across the WHOLE file the

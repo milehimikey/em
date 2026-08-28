@@ -76,11 +76,11 @@ vendored alongside this skill.
   above all `command → read model` (the CQRS violation) or `read model → command` — means the model
   is missing an **element**, not an arrow.
 - **Validate continuously.** Run `em validate` and fix errors/warnings as you go (see DSL ref).
-- **Save state at the end of every session** so work resumes cleanly. Also append one line to
-  the Usage log: the phase(s) touched and the diagnostic *categories* that fired — run `em
-  validate <model>.em --json` and dedupe each diagnostic's `usageCategory` field directly
-  (never the full message or domain content). This is the team's only usage signal today
-  (`docs/usage-data.md`) — keep it cheap and habitual, not a task to skip.
+- **Save state at the end of every session** so work resumes cleanly. Also log a Usage log
+  line: `em state log-usage <model>.em --phases <phase1,phase2,...>` computes and dedupes the
+  diagnostic *categories* that fired for you and appends the canonically-formatted line — never
+  hand-run `em validate --json` and format the line yourself. This is the team's only usage
+  signal today (`docs/usage-data.md`) — keep it cheap and habitual, not a task to skip.
 
 ## Preconditions (run first)
 
@@ -288,31 +288,40 @@ For each slice:
    already defined elsewhere.
 2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
    frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
-   translation> --swimlane "<Persona> → <Context>"` writes `slices/<slice-name>.md`
+   translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes `slices/<slice-name>.md`
    (kebab-cased to match, via the same slugging `em` uses everywhere else) with the canonical
    `schemaVersion`/`pattern`/`swimlane`/`status: draft`/`version: 1` frontmatter — exactly the
    five keys `em export` and the readiness gate require, no more — and the `# Slice:` heading +
-   diagram-image stub already in place. Both `--pattern` and `--swimlane` are required; an
-   invalid `--pattern` is refused with the valid choices listed. Never hand-type this block, and
-   never fall back to a placeholder pattern/swimlane to dodge the flags. Then fill in every
-   judgment section below the stub from step 1 (Intent, Command, Event(s), Invariants,
-   Scenarios, ...) — the doc's prose is still entirely hand-authored, only the frontmatter/
-   heading scaffold is mechanized. Record the originating need (ticket/conversation link) in the
-   Intent section when one exists. When this doc exists because of a split, merge, or rename,
-   add the matching lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`,
-   `<slice-key>@v<N>` grammar — see `docs/slice-doc-schema.md` for the full schema).
+   diagram-image stub already in place. `--wire` also inserts the `note
+   "slices/<slice-name>.md"` line straight into the `.em`, onto the slice's primary element (the
+   command for State Change, the view for State View, the processor for Automation, the
+   translation for Translation), matched by export key — see step 4 for when it refuses instead.
+   Both `--pattern` and `--swimlane` are required; an invalid `--pattern` is refused with the
+   valid choices listed. Never hand-type this block, and never fall back to a placeholder
+   pattern/swimlane to dodge the flags. Then fill in every judgment section below the stub from
+   step 1 (Intent, Command, Event(s), Invariants, Scenarios, ...) — the doc's prose is still
+   entirely hand-authored, only the frontmatter/heading scaffold and the `.em` wiring are
+   mechanized. Record the originating need (ticket/conversation link) in the Intent section when
+   one exists. When this doc exists because of a split, merge, or rename, add the matching
+   lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar
+   — see `docs/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
+   after the fact, see the `lineage-*` rules below).
    **Re-ratification (step 0):** the doc already exists, so `em slice new` doesn't apply here
    (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
-   doc's authored body) — bump `version` and flip `status` back to `ready-to-implement` by hand
-   in the existing frontmatter instead.
+   doc's authored body) — run `em slice reratify <model>.em <slice-key>` instead: it bumps
+   `version` and flips `status` back to `ready-to-implement` in the existing frontmatter,
+   clearing any stale `ratifiedBy:`/`ratifiedOn:` from the prior version so a follow-up
+   `em slice ratify --by <name>` (if the team records that) applies cleanly.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
    slices/<slice-name>.svg` (kebab-case, matching the doc's filename and the `![Diagram]` stub
    `em slice new` already wrote) — redraws just this slice in its own canonical pattern shape.
-4. Wire it into the `.em`: `em slice new` (step 2) printed the exact `note
-   "slices/<slice-name>.md"` line to add to the slice's primary element (the command for State
-   Change, the view for State View, the processor for Automation, the translation for
-   Translation) — `em slice new` only writes the new doc file, never edits the `.em` source
-   itself, so add that line by hand.
+4. Confirm it's wired into the `.em`: `em slice new --wire` (step 2) already inserted the `note
+   "slices/<slice-name>.md"` line onto the slice's primary element's own declaration line — it
+   only ever edits that one line, and only when doing so is unambiguous, so it refuses (writing
+   NEITHER the doc nor the `.em` edit) rather than guess when the slice has zero or more than one
+   candidate element of the primary kind, or when that line already carries a `note` clause. On a
+   refusal, re-run step 2 without `--wire` — it prints the exact line to add, paste it onto the
+   slice's primary element by hand.
 5. Run `em slice index <model-name>.em` to regenerate `README.md`'s Slices table — the one
    canonical slice index — from the model and the doc frontmatter you just wrote (status,
    `implementedIn` once shipped). Never hand-edit the table; it's a generated block.
@@ -461,5 +470,5 @@ em watch <name>.em -o <name>.svg --serve   # + the live browser viewer: instant 
 
 Always finish a working session by: re-rendering, running `em validate`, and updating
 `.event-modeling.md` — `em state set-phase <phase> [--step <n>]` for the current phase/step,
-decisions and open questions by hand, and a Usage log entry (phases touched + validate
-diagnostic categories hit).
+decisions and open questions by hand, and `em state log-usage <model>.em --phases <phases>` for
+the Usage log entry.

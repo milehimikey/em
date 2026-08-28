@@ -25,6 +25,14 @@ One line per session. Two things per line:
   [Categories](#categories) below, not the full instance message. `none` if `em validate` came
   back clean.
 
+`em state log-usage <model>.em --phases <phase1,phase2,...>` (MIL-161, see
+[cli.md](cli.md#em-state-log-usage-file)) writes this line for you: it runs the same checks
+`em validate --json` runs, dedupes and sorts the diagnostics' `usageCategory` values itself, and
+appends the canonically-formatted line — nothing to hand-run, dedupe, or format. That's also why
+the earlier failure mode below (two sessions phrasing the same rule two different ways) can't
+recur going forward: the phrasing always comes straight from the `RULES` registry, never free
+recall.
+
 That's it. No message text, no field names, no slice content, no participant names beyond
 what's already in the state file's Participants/Decisions sections you already choose to commit.
 
@@ -36,18 +44,20 @@ doesn't match [validation.md](validation.md)'s table wording verbatim (it's gene
 per-instance, with element names interpolated in). Logging the raw message would also risk
 leaking domain content the rest of this convention deliberately excludes. `em validate --json`
 (MIL-128, see [cli.md](cli.md)) *does* carry `usageCategory` on every diagnostic, sourced from
-this same table — dedupe the values straight off that array for the Usage log line below instead
-of re-deriving a category from the message text or the `code`. There's no separate
-`--usage-categories` flag; the fixed vocabulary lives in this one field.
+this same table — `em state log-usage` dedupes the values straight off that array for the Usage
+log line instead of re-deriving a category from the message text or the `code`. There's no
+separate `--usage-categories` flag; the fixed vocabulary lives in this one field.
 
 So the category is a fixed vocabulary instead: a `usageCategory` string on every entry in the
 `RULES` registry (`src/model/rules.ts`), generated below by `scripts/generate-skill-docs.ts` —
 the same mechanism that keeps [em-dsl.md](../.claude/skills/event-modeling/reference/em-dsl.md)'s
 validate-rules appendix current (MIL-92, extended for this table by MIL-97). A new rule shows up
 here the moment it's registered; don't hand-edit these tables — run `npm run docs:generate`.
-**Use one of these exact strings** — a session that writes "read model with no source" and
-another that writes "read model has no source" for the same rule silently splits one count
-into two in the aggregation recipe below.
+Because `em state log-usage` writes the line itself straight from this table, the historical
+failure mode — a session hand-typing "read model with no source" while another hand-types "read
+model has no source" for the same rule, silently splitting one count into two in
+`em usage-report`'s aggregation below — can't recur for anything logged this way; it only ever
+affected lines written by hand.
 
 **Warnings**
 
@@ -137,26 +147,23 @@ CLI-telemetry option deliberately, with its privacy posture decided up front.
 
 ## Aggregating across models for a retro
 
-Every `.event-modeling.md` in a repo (or across several, if models live in more than one) can be
-swept with plain `grep`. From a directory containing one or more models:
+`em usage-report [root]` (MIL-161, see [cli.md](cli.md#em-usage-report-root)) walks `root`
+(default the current directory) for every `.event-modeling.md` it can find, parses each Usage
+log section, and tallies phase and category counts across all of them:
 
 ```sh
-# Tally how often each phase shows up in a Usage log line
-find . -name '.event-modeling.md' -exec grep -h '^- .*phases:' {} + \
-  | grep -oE 'phases: [^—]+' | tr ',' '\n' | sed 's/phases: //' \
-  | awk '{$1=$1;print}' | sort | uniq -c | sort -rn
-
-# Tally how often each validate diagnostic category shows up
-find . -name '.event-modeling.md' -exec grep -h '^- .*validate:' {} + \
-  | grep -oE 'validate: .+$' | sed 's/validate: //' | tr ',' '\n' \
-  | awk '{$1=$1;print}' | grep -v '^none$' | sort | uniq -c | sort -rn
+em usage-report .                # text summary: phase tally, category tally, sorted desc
+em usage-report . --json         # the same counts as a versioned JSON document
 ```
 
-(Both lines split on the em dash, `—`, so they need a UTF-8 locale — the default on macOS and
-most CI images. Under `LC_ALL=C` the split can misbehave; run `export LC_ALL=en_US.UTF-8`
-first if that's the environment.)
+This replaces the earlier hand-rolled `grep`/`awk`/`sort` pipeline (and its `LC_ALL=C` + UTF-8
+em-dash locale caveat) with a plain, locale-independent parse — a line that doesn't match the
+canonical `- YYYY-MM-DD: phases: ... — validate: ...` shape (hand-authored before `em state
+log-usage` existed, or hand-edited since) is reported under `unparseableLines` instead of being
+silently dropped or mis-split.
 
 That's the raw material for the next roadmap engagement's facilitation and CI-urgency calls —
 which skill phases the team actually spends time in, and which validate warnings recur often
 enough to be worth designing around, instead of guessing from the code. Counts are only as
-clean as entries sticking to the fixed [Categories](#categories) list above.
+clean as entries sticking to the fixed [Categories](#categories) list above — which every line
+written by `em state log-usage` always does.
