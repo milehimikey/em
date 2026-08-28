@@ -47,15 +47,34 @@ A `Customer`, acting on the **Product Catalog** screen.
 
 ## Invariants / Business Rules
 
-- **INV-BC-1:** An order's `total` must equal the sum of its line items' `unitPrice * quantity` at order time. Violation ⇒ rejection, no event.
-- **INV-BC-2:** Every line item's product must be in stock at the moment `Place Order` is handled (checked then, not reserved earlier) — a race against another shopper's concurrent order is a legitimate rejection, not a bug. An order that fails this check is rejected outright; it never emits `Order Placed`, and there is no separate "rejected" event for it.
-- **INV-BC-3:** `Place Order` is not idempotent. Each accepted call records a new order, even with identical content to a prior call — de-duplicating a doubled submit is the client's job (disable the button on submit), not this command's.
+- **INV-BC-1:** An order's `total` must equal the sum of its line items' `unitPrice * quantity`
+  at order time.
+  - Violation ⇒ rejection, no event.
+- **INV-BC-2:** Every line item's product must be in stock at the moment `Place Order` is
+  handled (checked then, not reserved earlier).
+  - A race against another shopper's concurrent order is a legitimate rejection, not a bug.
+  - An order that fails this check is rejected outright; it never emits `Order Placed`, and
+    there is no separate "rejected" event for it.
+- **INV-BC-3:** `Place Order` is not idempotent.
+  - Each accepted call records a new order, even with identical content to a prior call —
+    de-duplicating a doubled submit is the client's job (disable the button on submit), not
+    this command's.
 
 ## Scenarios (Given / When / Then)
 
-- **Happy path** — Given an active customer and a cart of in-stock items whose prices sum to the declared total, When `Place Order` is issued, Then `Order Placed` is recorded and the order becomes visible in **Open Orders**.
-- **Rejected (INV-BC-1)** — Given a cart whose declared `total` doesn't match the sum of its line items, When `Place Order` is issued, Then rejected with a total-mismatch error; no event.
-- **Rejected (INV-BC-2)** — Given a line item that just sold out, When `Place Order` is issued, Then rejected with an out-of-stock error naming the item; no event.
+- **Happy path**
+  - **Given:** an active customer and a cart of in-stock items whose prices sum to the
+    declared total
+  - **When:** `Place Order` is issued
+  - **Then:** `Order Placed` is recorded and the order becomes visible in **Open Orders**.
+- **Rejected (INV-BC-1)**
+  - **Given:** a cart whose declared `total` doesn't match the sum of its line items
+  - **When:** `Place Order` is issued
+  - **Then:** rejected with a total-mismatch error; no event.
+- **Rejected (INV-BC-2)**
+  - **Given:** a line item that just sold out
+  - **When:** `Place Order` is issued
+  - **Then:** rejected with an out-of-stock error naming the item; no event.
 
 ## Alternate & Error Flows
 

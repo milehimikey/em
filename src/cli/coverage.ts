@@ -61,7 +61,12 @@ const OWNERSHIP_HEADING_RE = /^##\s+(?:Invariants(?:\s*\/\s*Business Rules)?|Del
  *  mechanism. The bullet's own *opening* line is structural and trusted for every ID it mentions
  *  (this also covers `## Delta`'s Renamed bullets, which legitimately declare two IDs — old and
  *  new — on one line, and its `**MODIFIED (...):** INV-X — ...` bullets, whose bold label isn't
- *  itself an ID); each wrapped continuation line is prose and contributes nothing. */
+ *  itself an ID); each wrapped continuation line is prose and contributes nothing. The indentation
+ *  test also covers MIL-156's blessed nested-elaboration-bullet shape: `templates/slice.md`'s
+ *  Invariants section now suggests a rule statement's optional rationale/edge-case detail go on
+ *  its own indented sub-bullet (`  - {{...}}`) rather than run on into the rule sentence, purely
+ *  for HTML-render readability — that sub-bullet is indented, so it's already excluded here the
+ *  same as any other continuation line, and never contributes (or steals) an ID. */
 const STRUCTURAL_LINE_RE = /^(?:[-*]\s|#{3,6}\s)/;
 
 /** Statuses `reference/implement.md`'s coverage gate applies to — a slice hasn't reached the

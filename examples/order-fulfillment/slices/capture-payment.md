@@ -50,17 +50,21 @@ event directly (see `patterns.md`).
 ## Invariants / Business Rules
 
 - **INV-CAP-1 (idempotency):** capturing twice for the same `authorizationId` is a defect, not a
-  legitimate retry — the command handler must dedupe on it. The gateway is known to retry.
-- **INV-CAP-2:** a declined capture must not silently disappear — see Open Questions; this
-  model doesn't yet have a failure event for it.
+  legitimate retry.
+  - The command handler must dedupe on it. The gateway is known to retry.
+- **INV-CAP-2:** a declined capture must not silently disappear.
+  - See Open Questions; this model doesn't yet have a failure event for it.
 
 ## Scenarios (Given / When / Then)
 
-- **Happy path** — Given an entry in **Payments To Process**, When the `Payment Gateway`
-  processor picks it up, Then `Capture Payment` is issued and `Payment Captured` is recorded.
-- **Rejected (INV-CAP-1)** — Given `Capture Payment` has already succeeded once for an
-  `authorizationId`, When the gateway retries with the same id, Then the second call is a
-  no-op (already-captured), not a second `Payment Captured`.
+- **Happy path**
+  - **Given:** an entry in **Payments To Process**
+  - **When:** the `Payment Gateway` processor picks it up
+  - **Then:** `Capture Payment` is issued and `Payment Captured` is recorded.
+- **Rejected (INV-CAP-1)**
+  - **Given:** `Capture Payment` has already succeeded once for an `authorizationId`
+  - **When:** the gateway retries with the same id
+  - **Then:** the second call is a no-op (already-captured), not a second `Payment Captured`.
 
 ## Alternate & Error Flows
 

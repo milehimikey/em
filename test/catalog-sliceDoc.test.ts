@@ -36,6 +36,24 @@ describe("parseSliceDoc", () => {
     expect(doc.supersededBy).toEqual([]);
   });
 
+  // MIL-156: the Scenarios/Invariants sections were flat single-line bullets that rendered as a
+  // dense run-on line/paragraph (soft line breaks collapse under marked's default, non-`breaks`
+  // options). The template now nests Given/When/Then (and an Invariant's optional elaboration)
+  // as their own list items — real markdown structure, not a wrapped sentence — which renders
+  // visibly separated without needing `breaks: true` (a doc-wide option change this test would
+  // also catch, since it isn't set — see sliceDoc.ts's `marked.parse` call).
+  it("renders the real template's Scenarios section as a nested list, not a run-on paragraph", () => {
+    const template = readFileSync(join(ROOT, ".claude/skills/event-modeling/templates/slice.md"), "utf8");
+    const withoutComment = template.replace(/^<!--[\s\S]*?-->\n\n/, "");
+    const doc = parseSliceDoc(withoutComment);
+    // The outer "Happy path" bullet's own <li> contains a nested <ul> — visible structure,
+    // not one collapsed sentence — with Given/When/Then each as their own <li>.
+    expect(doc.html).toMatch(/<li><strong>Happy path<\/strong><ul>/);
+    expect(doc.html).toContain("<strong>Given:</strong>");
+    expect(doc.html).toContain("<strong>When:</strong>");
+    expect(doc.html).toContain("<strong>Then:</strong>");
+  });
+
   it("returns null status when there's no recognizable status (freeform doc), but still renders", () => {
     const doc = parseSliceDoc("# Some Slice\n\nJust some notes, no structured header.\n");
     expect(doc.status).toBeNull();

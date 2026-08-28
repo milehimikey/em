@@ -39,17 +39,21 @@ command-and-event sense.
 ## Invariants / Business Rules
 
 - **INV-VOO-1:** An order appears in this view exactly once per `Order Placed` it's projected
-  from — this view is never repeated (`view … again`) elsewhere in the model, so there's
-  only one instance to keep in sync.
+  from.
+  - This view is never repeated (`view … again`) elsewhere in the model, so there's only one
+    instance to keep in sync.
 
 ## Scenarios (Given / When / Then)
 
-- **Happy path** — Given `Order Placed` has been recorded for a customer's order, When that
-  customer opens **Order List**, Then the order appears with its `orderId` and `total`.
-- **Not yet projected** — Given `Order Placed` was just recorded and the projection hasn't
-  caught up yet, When the customer opens **Order List** immediately after checkout, Then the
-  order may briefly be missing (eventual consistency) — the UI should not treat this as an
-  error state.
+- **Happy path**
+  - **Given:** `Order Placed` has been recorded for a customer's order
+  - **When:** that customer opens **Order List**
+  - **Then:** the order appears with its `orderId` and `total`.
+- **Not yet projected**
+  - **Given:** `Order Placed` was just recorded and the projection hasn't caught up yet
+  - **When:** the customer opens **Order List** immediately after checkout
+  - **Then:** the order may briefly be missing (eventual consistency) — the UI should not
+    treat this as an error state.
 
 ## Dependencies & Read Models Affected
 

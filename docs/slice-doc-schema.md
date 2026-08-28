@@ -10,8 +10,10 @@ exceptions:
 - The `## Open Questions` section's GFM checkboxes (`- [ ]` / `- [x]`) *are* now machine-parsed
   by `sliceDoc.ts` too (`openQuestionsTotal`/`openQuestionsUnchecked`, MIL-87), feeding
   `em validate --slice-ready <key>` (see [validation.md#slice-readiness](validation.md#slice-readiness)).
-  Everything else about that section's authoring — what a good open question looks like, when to
-  resolve one — stays owned by the skill template; this doc only covers the counting mechanics.
+  The section's cross-version lifecycle (MIL-156) is documented here too, alongside `## Delta`'s
+  — see [Open Questions section: lifecycle](#open-questions-section-lifecycle) below. Everything
+  else about the section's authoring — what a good open question looks like, when to resolve one
+  — stays owned by the skill template; this doc only covers the counting mechanics and lifecycle.
 - The `## Delta` section's grammar and lifecycle (MIL-88) is documented here, in full, alongside
   the lineage keys it complements — a 2026-08-14 ruling deliberately kept the slice-doc contract
   as one document rather than splitting a structurally-related convention across two files, even
@@ -208,7 +210,9 @@ inside** the section instead, as display text — not a frontmatter key, not par
 #### Requirement: {{title}} ({{stable ID, e.g. an INV-<MNEMONIC>-n from ## Invariants}})
 {{requirement text}}
 ##### Scenario: {{name}}
-- **GIVEN** {{...}} **WHEN** {{...}} **THEN** {{...}}
+- **Given:** {{...}}
+- **When:** {{...}}
+- **Then:** {{...}}
 
 ### Modified
 (same shape as Added — the ID names the requirement that changed)
@@ -258,6 +262,43 @@ over a slice's life, references requirements that have since moved (a *live* doc
 stale reads as current, unlike git which is honestly historical), and forces every reader to
 work out which delta is the live one — exactly the ambiguity `driftSignal` (MIL-85, below) is
 built to avoid.
+
+## Open Questions section: lifecycle
+
+`## Open Questions` (MIL-87 for the counting mechanics; MIL-156 for this lifecycle) had no
+cross-version story until now: `countOpenQuestions()` counts every GFM task item under the
+heading, but nothing ever pruned a resolved (`- [x]`) one — left unaddressed, the section grows
+by accretion across every re-ratification of a long-lived slice, the same problem `## Delta`
+(above) solves for by replacing its content wholesale each hop.
+
+**Decision: prune resolved items on the same commit that ratifies the next version — replace,
+never accumulate, same stance as `## Delta`, applied by hand instead of by section-rewrite.**
+Concretely:
+
+- While the *current* version is still being drafted or reviewed, a checked item can stay in the
+  doc — it's a visible record of what this round already decided, not yet an accumulation
+  problem (a slice's first version, `v1`, commonly ships with every question already resolved;
+  see `examples/order-fulfillment/slices/browse-catalog.md`).
+- On the commit that bumps `version` and rewrites `## Delta` for the next hop, prune every
+  already-checked item from `## Open Questions` — keep only what's still open (`- [ ]`), plus
+  anything new that hop's change surfaced.
+- Full history isn't lost: it lives in git the same way `## Delta`'s superseded hops do —
+  `git log -p slices/<name>.md` shows exactly which questions were open, and how they were
+  answered, at each prior version.
+
+**Why not keep resolved items as a permanent audit trail instead?** Same reasoning `## Delta`'s
+lifecycle section gives: an ever-growing scroll of resolved questions is a second history that
+diverges from git, grows unboundedly over a long-lived slice's life, and forces every reader to
+work out which resolutions are still relevant to the *current* version versus leftover from a
+prior one — exactly the ambiguity a live, current-version-only section avoids.
+
+**Not a parsing/grammar change.** `countOpenQuestions()` (`sliceDoc.ts`) and
+`slice-ready-open-questions-unchecked` (`sliceReadyValidate.ts`,
+[validation.md#slice-readiness](validation.md#slice-readiness)) are unaffected: both already
+only care about the CURRENT doc's checkbox state, never about how many hops of history the
+section has accumulated. This is purely an authoring convention — same "documented, not
+mechanically enforced" status `## Delta`'s own lifecycle has (no `em` command checks that pruning
+actually happened on re-ratification).
 
 ## `status` under re-ratification
 
@@ -321,5 +362,6 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
 - [validation.md#lineage](validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)
 - [validation.md#slice-readiness](validation.md#slice-readiness) — `em validate --slice-ready`'s note-binding gate, including the `covers` cross-binding (MIL-121)
+- [cli.md#em-coverage-file---tests-dir](cli.md#em-coverage-file---tests-dir) — `em coverage`'s INV-ID extraction, scoped to the Invariants/Delta sections' structural (non-nested) bullet lines (MIL-149/MIL-155/MIL-156)
 - [validation.md#note-binding-mismatch](validation.md#note-binding-mismatch) — `em validate`'s check for a doc-shaped note that doesn't participate in its slice's binding (MIL-126)
 - [`templates/slice.md`](../.claude/skills/event-modeling/templates/slice.md) — the authored template
