@@ -11,7 +11,9 @@ import { serializeDiagnostic } from "../model/validate.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (MIL-163): initial shape.
-export const STATUS_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-164): each `conformance[]` entry gains `slicePRsBehindHead` (number | null) —
+// candidate-slice count from the same conform-scope machinery, alongside `commitsBehindHead`.
+export const STATUS_SCHEMA_VERSION = "1.1";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No

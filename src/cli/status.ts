@@ -13,6 +13,10 @@
 //  - last-conformance + commits-behind-HEAD reuses stateFile.ts's parser and the same injectable
 //    GitRunner convention conform-scope.ts/diff-inputs.ts use, so every git failure branch stays
 //    unit-testable without a real repository.
+//  - slice-PRs-behind-HEAD (MIL-164) reuses conform-scope.ts's own machinery outright —
+//    `changedPathsSince` + `buildConformScope` — rather than re-deriving the
+//    implementedIn-to-changed-path match rule a second time. The standalone surface for this
+//    freshness clause alone (no full model rollup needed) is `em freshness` (freshness.ts).
 //
 // Deterministic core: no LLM calls, no wall-clock timestamps in the output, byte-stable for the
 // same inputs. Text/markdown/badge are formatting layers over one aggregated StatusReport; the
@@ -28,6 +32,7 @@ import { Diagnostic } from "../model/validate.js";
 import { CoverageReport } from "./coverage.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState } from "./stateFile.js";
+import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
 
 /** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
  *  `em catalog`'s header coloring and `em render`'s status legend already recognize. */
@@ -65,6 +70,11 @@ export interface SliceStatusFact {
    *  covered slice. */
   docPath: string | null;
   rawStatus: string | null;
+  /** The doc's own `implementedIn:` value verbatim (or null) — carried through from the same
+   *  `resolveSliceDocJoin` call this fact set already makes, so `resolveSlicePRsBehindHead`
+   *  (MIL-164) can build its `SliceDocFacts[]` input from these facts directly rather than
+   *  joining every slice's doc a second time. */
+  implementedIn: string | null;
   bucket: StatusBucket;
   driftSignal: DriftSignalKind | null;
   openQuestionsTotal: number;
@@ -115,6 +125,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       docReason: doc.reason,
       docPath,
       rawStatus: doc.status,
+      implementedIn: doc.implementedIn,
       bucket: classifyStatusBucket(doc.found, doc.reason, doc.status),
       driftSignal: doc.driftSignal,
       openQuestionsTotal,
@@ -142,10 +153,21 @@ export interface ConformanceEntry {
    *  convention still applies for a model whose implementation lives in a different repo). */
   repo: string;
   commitsBehindHead: number | null;
-  /** Set when the state file exists and parses, but git couldn't answer commits-behind-HEAD
-   *  (not a git repo, unknown revision, ...) — reported per-model rather than aborting the
-   *  whole rollup, since `em status` is a soft report, not a gate. Also carries a state-file
-   *  parse failure (unparseable `Last conformance:` bullet), same non-fatal treatment. */
+  /** Slices whose bound doc's `implementedIn:` maps to a path changed since `lastConformance`'s
+   *  revision (MIL-164) — the same `candidateSlices` computation `em conform-scope` makes for
+   *  one model at a time (`conformScope.ts`'s `changedPathsSince` + `buildConformScope`), rolled
+   *  up here to a single count: "how many slices likely shipped code since the last conform
+   *  sweep." Each candidate slice typically corresponds to one merged slice PR, hence the name.
+   *  Null under the same conditions `commitsBehindHead` is null — it needs the same revision to
+   *  diff against, and by construction is only ever null when `error` is also set (see
+   *  `resolveConformanceEntry` below): a bare "opted out of computing this" state doesn't occur
+   *  on the real CLI/MCP call paths, which always supply `sliceDocFacts`. */
+  slicePRsBehindHead: number | null;
+  /** Set when the state file exists and parses, but git couldn't answer commits-behind-HEAD or
+   *  slice-PRs-behind-HEAD (not a git repo, unknown revision, ...) — reported per-model rather
+   *  than aborting the whole rollup, since `em status` is a soft report, not a gate. Also carries
+   *  a state-file parse failure (unparseable `Last conformance:` bullet), same non-fatal
+   *  treatment. */
   error: string | null;
 }
 
@@ -176,11 +198,39 @@ export function commitsBehindHead(repo: string, revision: string, runGit: GitRun
 }
 
 /**
+ * `M` in "N commits and M slice-PRs behind HEAD" (MIL-164) — how many slices whose doc's
+ * `implementedIn:` names a path this model's target repo changed since `revision`. Reuses the
+ * exact `em conform-scope` machinery for one model at a time: `changedPathsSince` (the same
+ * `git diff --name-only <revision>..HEAD` walk, same injectable `GitRunner`) to get the changed
+ * paths, then `buildConformScope`'s own `implementedIn`-prefix matching (never fuzzy, never a
+ * second guess) to turn them into a candidate-slice count. `full` is always `false` here — this
+ * is only ever called once `lastConformance` is known non-null (see `resolveConformanceEntry`
+ * below), so there is always a revision to diff against.
+ */
+export function resolveSlicePRsBehindHead(
+  repo: string,
+  revision: string,
+  slices: SliceDocFacts[],
+  runGit: GitRunner = realGit,
+): { ok: true; count: number } | { ok: false; message: string } {
+  const changed = changedPathsSince(repo, revision, runGit);
+  if (!changed.ok) return { ok: false, message: changed.message };
+  // `date`/`report` are irrelevant to matching (buildConformScope only echoes them back in its
+  // own `lastConformance` field, which this function discards) — only `revision` drives the
+  // implementedIn-to-changed-path match below.
+  const scope = buildConformScope(slices, { date: "", revision, report: "" }, changed.paths, false);
+  return { ok: true, count: scope.candidateSlices.length };
+}
+
+/**
  * Resolve one model's conformance entry: read its sibling state file (if any — not every model
  * has reached the `conform` phase, so a missing state file is routine, not an error), then
- * compute commits-behind-HEAD when `Last conformance:` is set. `repoOverride` is `--repo`;
- * omitted, each model's own directory is used as the repo to walk (the common single-repo
- * project case — see `repo` field doc above).
+ * compute commits-behind-HEAD and slice-PRs-behind-HEAD (MIL-164) when `Last conformance:` is
+ * set. `repoOverride` is `--repo`; omitted, each model's own directory is used as the repo to
+ * walk (the common single-repo project case — see `repo` field doc above). `sliceDocFacts` is
+ * THIS model's own slice facts (`key`/`status`/`implementedIn`) — the caller's responsibility to
+ * scope correctly per file, since `resolveSlicePRsBehindHead` matches against exactly this
+ * model's slices, not some other input model's.
  *
  * A state file is shared by every `.em` file in its directory (`.event-modeling.md` has no
  * per-model namespacing), but its `Model file:` bullet names exactly ONE of them — so a sibling
@@ -190,16 +240,30 @@ export function commitsBehindHead(repo: string, revision: string, runGit: GitRun
  * `basename(file)`, the record is reported as unattributed (via `error`, the same non-fatal
  * channel a git failure uses) rather than silently misattributed.
  */
-export function resolveConformanceEntry(file: string, repoOverride: string | undefined, runGit: GitRunner = realGit): ConformanceEntry {
+export function resolveConformanceEntry(
+  file: string,
+  repoOverride: string | undefined,
+  sliceDocFacts: SliceDocFacts[],
+  runGit: GitRunner = realGit,
+): ConformanceEntry {
   const modelDir = dirname(file);
   const repo = repoOverride ?? modelDir;
   const loaded = loadStateFile(modelDir);
   if (!loaded.ok) {
-    return { file, modelDir, hasStateFile: false, lastConformance: null, repo, commitsBehindHead: null, error: null };
+    return { file, modelDir, hasStateFile: false, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: null };
   }
   const parsed = parseState(loaded.text);
   if (!parsed.ok) {
-    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, error: `state file: ${parsed.message}` };
+    return {
+      file,
+      modelDir,
+      hasStateFile: true,
+      lastConformance: null,
+      repo,
+      commitsBehindHead: null,
+      slicePRsBehindHead: null,
+      error: `state file: ${parsed.message}`,
+    };
   }
   if (parsed.state.modelPath && parsed.state.modelPath !== basename(file)) {
     return {
@@ -209,18 +273,50 @@ export function resolveConformanceEntry(file: string, repoOverride: string | und
       lastConformance: null,
       repo,
       commitsBehindHead: null,
+      slicePRsBehindHead: null,
       error: `state file describes "${parsed.state.modelPath}", not "${basename(file)}" — not attributing its conformance record`,
     };
   }
   if (!parsed.state.lastConformance) {
-    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, error: null };
+    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: null };
   }
   const { date, revision } = parsed.state.lastConformance;
-  const result = commitsBehindHead(repo, revision, runGit);
-  if (!result.ok) {
-    return { file, modelDir, hasStateFile: true, lastConformance: { date, revision }, repo, commitsBehindHead: null, error: result.message };
+  const commitsResult = commitsBehindHead(repo, revision, runGit);
+  if (!commitsResult.ok) {
+    return {
+      file,
+      modelDir,
+      hasStateFile: true,
+      lastConformance: { date, revision },
+      repo,
+      commitsBehindHead: null,
+      slicePRsBehindHead: null,
+      error: commitsResult.message,
+    };
   }
-  return { file, modelDir, hasStateFile: true, lastConformance: { date, revision }, repo, commitsBehindHead: result.count, error: null };
+  const slicePRsResult = resolveSlicePRsBehindHead(repo, revision, sliceDocFacts, runGit);
+  if (!slicePRsResult.ok) {
+    return {
+      file,
+      modelDir,
+      hasStateFile: true,
+      lastConformance: { date, revision },
+      repo,
+      commitsBehindHead: commitsResult.count,
+      slicePRsBehindHead: null,
+      error: slicePRsResult.message,
+    };
+  }
+  return {
+    file,
+    modelDir,
+    hasStateFile: true,
+    lastConformance: { date, revision },
+    repo,
+    commitsBehindHead: commitsResult.count,
+    slicePRsBehindHead: slicePRsResult.count,
+    error: null,
+  };
 }
 
 // ---- Aggregation ----
@@ -403,13 +499,26 @@ function pluralize(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-function formatConformancePart(entry: ConformanceEntry): string {
+/** "N commits and M slice-PRs behind HEAD" (MIL-164's freshness clause), handling either count
+ *  being independently unknown — defensive against a hand-built `ConformanceEntry` (tests) even
+ *  though on the real `resolveConformanceEntry` path the two counts are only ever null together
+ *  (both fail whenever `error` is set, which callers check first — see that function's doc). */
+function formatBehindHead(entry: ConformanceEntry): string {
+  const commits = entry.commitsBehindHead;
+  const slicePRs = entry.slicePRsBehindHead;
+  if (commits === null && slicePRs === null) return "commits and slice-PRs behind HEAD unknown";
+  if (commits === null) return `commits behind HEAD unknown, ${pluralize(slicePRs!, "slice-PR")} behind HEAD`;
+  if (slicePRs === null) return `${pluralize(commits, "commit")} behind HEAD, slice-PRs behind HEAD unknown`;
+  return `${pluralize(commits, "commit")} and ${pluralize(slicePRs, "slice-PR")} behind HEAD`;
+}
+
+/** Exported for `em freshness` (freshness.ts, MIL-164) — the standalone surface for exactly
+ *  this one clause, without pulling in the rest of `em status`'s rollup. */
+export function formatConformancePart(entry: ConformanceEntry): string {
   if (entry.error) return `conformance unknown (${entry.error})`;
   if (!entry.hasStateFile) return "no state file";
   if (!entry.lastConformance) return "never conformed";
-  const behind = entry.commitsBehindHead;
-  const behindPart = behind === null ? "commits behind HEAD unknown" : pluralize(behind, "commit") + " behind HEAD";
-  return `last conformed ${entry.lastConformance.revision}, ${behindPart}`;
+  return `last conformed ${entry.lastConformance.revision} — ${formatBehindHead(entry)}`;
 }
 
 /** Same facts as `formatConformancePart`, without the leading "last conformed"/"conformance
@@ -419,9 +528,7 @@ function formatConformanceValue(entry: ConformanceEntry): string {
   if (entry.error) return `unknown (${entry.error})`;
   if (!entry.hasStateFile) return "no state file";
   if (!entry.lastConformance) return "never conformed";
-  const behind = entry.commitsBehindHead;
-  const behindPart = behind === null ? "commits behind HEAD unknown" : pluralize(behind, "commit") + " behind HEAD";
-  return `\`${entry.lastConformance.revision}\` — ${behindPart}`;
+  return `\`${entry.lastConformance.revision}\` — ${formatBehindHead(entry)}`;
 }
 
 /** The one-line rollup: `"8/8 implemented · 20/20 invariants covered · 0 open issues · last
@@ -583,12 +690,12 @@ function badgeMessage(report: StatusReport): string {
  *    `implemented` with nothing linking to it).
  *  - **yellow** `#dfb317` — things are merely in flight, OR conformance couldn't be verified:
  *    not every slice implemented yet, an unchecked Open Question, any model with
- *    `commitsBehindHead > 0`, or — MIL-163 review — any conformance entry carrying a non-null
- *    `error` (an unresolvable revision, an unparseable state file, a `--repo` that isn't a git
- *    repo, or a state file describing a different model). An unverifiable conformance state must
- *    never be indistinguishable from a verified, current one — `commitsBehindHead: null` from an
- *    `error` is NOT the same fact as "0 commits behind", so it can't be allowed to coalesce to 0
- *    and read as healthy.
+ *    `commitsBehindHead > 0` or `slicePRsBehindHead > 0` (MIL-164), or — MIL-163 review — any
+ *    conformance entry carrying a non-null `error` (an unresolvable revision, an unparseable
+ *    state file, a `--repo` that isn't a git repo, or a state file describing a different
+ *    model). An unverifiable conformance state must never be indistinguishable from a verified,
+ *    current one — `commitsBehindHead: null`/`slicePRsBehindHead: null` from an `error` is NOT
+ *    the same fact as "0 behind", so neither can be allowed to coalesce to 0 and read as healthy.
  *  - **green** `#4c1` — otherwise. Deliberately NOT keyed on "every slice implemented" alone —
  *    most projects spend most of their life not fully implemented, and that's not a problem a
  *    badge should flag. A model with NO conformance history yet (`hasStateFile: false`, or
@@ -606,7 +713,7 @@ function badgeColor(report: StatusReport): string {
   const inFlight =
     report.slices.byStatus.implemented < report.slices.total ||
     report.issues.openQuestionsUnchecked > 0 ||
-    report.conformance.some((c) => (c.commitsBehindHead ?? 0) > 0 || c.error !== null);
+    report.conformance.some((c) => (c.commitsBehindHead ?? 0) > 0 || (c.slicePRsBehindHead ?? 0) > 0 || c.error !== null);
   if (inFlight) return "#dfb317"; // yellow
   return "#4c1"; // green
 }

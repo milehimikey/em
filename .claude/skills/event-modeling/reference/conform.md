@@ -253,6 +253,21 @@ the marker (nobody ratified the outcome), so the next run re-walks the same span
 `docs/ci.md`. If any proposals were ratified and applied, log a Decisions entry noting what
 changed and why.
 
+**Superseding the report you just walked (MIL-164).** Once the user has ruled on this run's
+findings, also run:
+
+```
+em conform-supersede <model-name>.em conformance/YYYY-MM-DD-report.md --as-of <target-repo revision> --findings <spec>
+```
+
+— stamping the report with a "superseded as of `<rev>`" banner so a later reader who finds it
+(a search hit, a bookmark, a link from an old PR description) sees immediately that its
+file:line citations describe an ancestor of the current model, not its current state. This is
+what keeps a superseded report an honest piece of history rather than a silently-misleading
+current view. `<spec>` names the finding number(s) this run's ruling covers (e.g. `"1-3"`); if
+only some findings were ruled on this session, run it again later with the remaining numbers —
+each call adds its own stamp rather than overwriting the last.
+
 ## Conventions
 
 - **Scratch model:** `<model-name>-asis.em`, written **next to** the canonical model (same

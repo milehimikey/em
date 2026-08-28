@@ -94,6 +94,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
 | `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
+| `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -202,6 +203,16 @@ ignoring `Last conformance:`/changed paths). **Deliberately narrower than the CL
 no MCP equivalent — this tool never writes anything, keeping every MCP tool in this server
 read-only. Use the CLI directly for that step. See [`em conform-scope`](cli.md#em-conform-scope-file)
 for the full JSON shape.
+
+### `freshness`
+
+Same document as `em freshness <file> --json` (MIL-164): one model's conformance record — the
+exact same `ConformanceEntry` `status`'s `conformance[]` array carries for that model, wrapped in
+its own versioned envelope — without pulling in the rest of `em status`'s rollup. Useful for an
+agent that only wants to qualify an answer ("per the model, last verified against code N commits
+ago") without paying for a full state-of-the-system compile. `repo` is optional, mirroring the
+CLI's `--repo` flag. Refuses (tool error) when the model has errors, matching `em freshness`'s
+own CLI refusal. See [`em freshness`](cli.md#em-freshness-file) for the full JSON shape.
 
 ### `contract`
 

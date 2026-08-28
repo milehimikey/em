@@ -51,6 +51,11 @@ three specific points:
 3. **Ratifying conformance findings** — when the conform phase reports drift between model
    and code, a human rules on every finding (fix the model, open a red note, fix the prose —
    [workflow.md](workflow.md#7-ratify-the-findings)). The report proposes; you decide.
+   `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec>` (MIL-164,
+   [cli.md](cli.md#em-conform-supersede-file-report-path)) stamps the ruled-on report with a
+   "superseded as of `<rev>`" banner once you're done, so the record of what was decided
+   stays legible without misleading a later reader into treating a historical report's
+   file:line citations as current.
 
 ## The lifecycle, by responsibility
 

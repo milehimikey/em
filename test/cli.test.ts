@@ -1309,6 +1309,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "diff",
           "export_model",
           "export_slice",
+          "freshness",
           "glossary",
           "list_markers",
           "slice_ready",
@@ -1874,6 +1875,122 @@ describe("em conform-scope (CLI, real git repo)", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+
+  // MIL-164: same fixture (place-order's implementedIn: src/checkout matches the changed
+  // src/checkout/Handler.kt; ship-order's URL-only implementedIn matches nothing) as the
+  // conform-scope suite above, exercised through the standalone `em freshness` surface instead.
+  it("em freshness: text line reports commits AND slice-PRs behind HEAD, computed via the same conform-scope machinery", () => {
+    const r = em(["freshness", "checkout.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout.trim()).toBe(`last conformed ${baseRev} — 2 commits and 1 slice-PR behind HEAD`);
+  });
+
+  it("em freshness --json: same ConformanceEntry facts em status --json reports for this model", () => {
+    const r = em(["freshness", "checkout.em", "--repo", targetRepo, "--json"], modelDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.freshnessSchemaVersion).toBe("1.0");
+    expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
+    expect(doc.file).toBe("checkout.em");
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.commitsBehindHead).toBe(2);
+    expect(doc.slicePRsBehindHead).toBe(1);
+    expect(doc.error).toBeNull();
+
+    const statusR = em(["status", "checkout.em", "--repo", targetRepo, "--json"], modelDir);
+    const statusDoc = JSON.parse(statusR.stdout);
+    expect(statusDoc.conformance[0].commitsBehindHead).toBe(doc.commitsBehindHead);
+    expect(statusDoc.conformance[0].slicePRsBehindHead).toBe(doc.slicePRsBehindHead);
+  });
+
+  it("em freshness --repo defaults to the model's own directory when omitted", () => {
+    const r = em(["freshness", "checkout.em"], modelDir);
+    expect(r.status).toBe(0);
+    // modelDir itself isn't a git repo (only targetRepo is, in this suite) — a clean, non-fatal error.
+    expect(r.stdout).toContain("conformance unknown");
+    expect(r.stdout).toContain("is not a git repository");
+  });
+
+  it("em freshness refuses (exit 1) on a model with errors", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-freshness-error-"));
+    try {
+      writeFileSync(join(cwd, "broken.em"), 'slice "Read" {\n  view Open Orders from "No Such Event"\n}\n');
+      const r = em(["freshness", "broken.em"], cwd);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("not reporting freshness");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("em conform-supersede (CLI, MIL-164)", () => {
+  const REPORT = `# Conformance Report — Checkout — 2026-08-23\n\n- **Model:** \`checkout.em\`\n\n## Summary\n\nClean.\n`;
+
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-conform-supersede-"));
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(join(dir, "checkout.em"), 'slice "A" {\n  ui Dashboard @Customer\n}\n');
+    writeFileSync(join(dir, "conformance", "2026-08-23-report.md"), REPORT);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("stamps the report and prints confirmation", () => {
+    const r = em(
+      ["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "a1b2c3d", "--findings", "1-3", "--on", "2026-08-27"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("stamped superseded: conformance/2026-08-23-report.md");
+    const onDisk = readFileSync(join(dir, "conformance", "2026-08-23-report.md"), "utf8");
+    expect(onDisk).toContain("Superseded as of `a1b2c3d`");
+    expect(onDisk).toContain("findings 1-3 since ruled (2026-08-27)");
+  });
+
+  it("--on defaults to today when omitted", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const r = em(["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "e4f5a6b", "--findings", "4"], dir);
+    expect(r.status).toBe(0);
+    const onDisk = readFileSync(join(dir, "conformance", "2026-08-23-report.md"), "utf8");
+    expect(onDisk).toContain("Superseded as of `e4f5a6b`");
+    expect(onDisk).toContain(`findings 4 since ruled (${today})`);
+  });
+
+  it("re-running the identical stamp is a no-op", () => {
+    const r = em(
+      ["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "a1b2c3d", "--findings", "1-3", "--on", "2026-08-27"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already stamped (no-op)");
+  });
+
+  it("refuses (exit 1) when the report doesn't exist", () => {
+    const r = em(["conform-supersede", "checkout.em", "conformance/no-such-report.md", "--as-of", "a1b2c3d", "--findings", "1-3"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("no such report");
+  });
+
+  it("refuses (exit 1) on an invalid --on date", () => {
+    const r = em(["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "a1b2c3d", "--findings", "1-3", "--on", "not-a-date"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("invalid --on date");
+  });
+
+  it("refuses (exit 1) on an unsafe --findings value", () => {
+    const r = em(["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "a1b2c3d", "--findings", "1-3; DROP"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("must be a plain list/range of numbers");
+  });
+
+  it("requires --as-of and --findings", () => {
+    const r1 = em(["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--findings", "1-3"], dir);
+    expect(r1.status).not.toBe(0);
+    const r2 = em(["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "a1b2c3d"], dir);
+    expect(r2.status).not.toBe(0);
+  });
 });
 
 describe("em status (CLI, real git repo + fs, MIL-163)", () => {
@@ -1935,8 +2052,10 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests"], modelDir);
     expect(r.status).toBe(0);
     const [summary, ...rest] = r.stdout.trim().split("\n\n");
+    // PLACE_ORDER_DOC's implementedIn ("PR#1") matches no changed path in this repo (the "record
+    // conformance" commit only touches .event-modeling.md) — 0 slice-PRs behind HEAD.
     expect(summary).toBe(
-      `1/2 implemented · 1/2 invariants covered · 1 open issue, 1 unchecked open question · last conformed ${baseRev}, 1 commit behind HEAD`,
+      `1/2 implemented · 1/2 invariants covered · 1 open issue, 1 unchecked open question · last conformed ${baseRev} — 1 commit and 0 slice-PRs behind HEAD`,
     );
     const detail = rest.join("\n\n");
     expect(detail).toContain(
@@ -1947,14 +2066,14 @@ slice "Billing" {
     );
     expect(detail).toContain("invariants: 1/2 covered (1 uncovered) — tests");
     expect(detail).toContain("issues: 1 open issue, 1/2 open question(s) unchecked");
-    expect(detail).toContain(`conformance: last conformed ${baseRev}, 1 commit behind HEAD`);
+    expect(detail).toContain(`conformance: last conformed ${baseRev} — 1 commit and 0 slice-PRs behind HEAD`);
   });
 
   it("--json: schema-versioned document with the same figures as the text report", () => {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.0");
+    expect(doc.statusSchemaVersion).toBe("1.1");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -1977,6 +2096,7 @@ slice "Billing" {
       hasStateFile: true,
       lastConformance: { date: expect.any(String), revision: baseRev },
       commitsBehindHead: 1,
+      slicePRsBehindHead: 0,
       error: null,
     });
   });
@@ -1996,7 +2116,7 @@ slice "Billing" {
     expect(r.stdout).toContain("| Slices | 1/2 implemented");
     expect(r.stdout).toContain("| Invariants | 1/2 covered |");
     expect(r.stdout).toContain("| Open issues | 1 |");
-    expect(r.stdout).toContain(`| Last conformed | \`${baseRev}\` — 1 commit behind HEAD |`);
+    expect(r.stdout).toContain(`| Last conformed | \`${baseRev}\` — 1 commit and 0 slice-PRs behind HEAD |`);
   });
 
   it("--badge: a well-formed SVG", () => {
@@ -2066,6 +2186,7 @@ slice "Billing" {
       const doc = JSON.parse(r.stdout);
       expect(doc.conformance[0].repo).toBe(targetRepo);
       expect(doc.conformance[0].commitsBehindHead).toBe(1);
+      expect(doc.conformance[0].slicePRsBehindHead).toBe(0); // PLACE_ORDER_DOC's implementedIn ("PR#1") matches no changed path here either
       rmSync(cwd, { recursive: true, force: true });
     } finally {
       rmSync(targetRepo, { recursive: true, force: true });

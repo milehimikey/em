@@ -19,6 +19,7 @@ import {
   resolveSliceStatusFacts,
   countOpenIssues,
   commitsBehindHead,
+  resolveSlicePRsBehindHead,
   resolveConformanceEntry,
   buildStatusReport,
   aggregateInvariantTotals,
@@ -215,7 +216,7 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it("reports hasStateFile: false, no error, when there's no .event-modeling.md", () => {
-    const entry = resolveConformanceEntry(join(dir, "model.em"), undefined, fakeGit([]));
+    const entry = resolveConformanceEntry(join(dir, "model.em"), undefined, [], fakeGit([]));
     expect(entry).toEqual({
       file: join(dir, "model.em"),
       modelDir: dir,
@@ -223,6 +224,7 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
       lastConformance: null,
       repo: dir,
       commitsBehindHead: null,
+      slicePRsBehindHead: null,
       error: null,
     });
   });
@@ -235,17 +237,18 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
         "- **Model file:** `model.em`\n- **Current phase:** discover\n- **Current step:** 1\n" +
           "- **Last updated:** 2026-08-01\n- **Last conformance:** never\n- **Last stakeholder review:** never\n",
       );
-      const entry = resolveConformanceEntry(join(d2, "model.em"), undefined, fakeGit([]));
+      const entry = resolveConformanceEntry(join(d2, "model.em"), undefined, [], fakeGit([]));
       expect(entry.hasStateFile).toBe(true);
       expect(entry.lastConformance).toBeNull();
       expect(entry.error).toBeNull();
       expect(entry.commitsBehindHead).toBeNull();
+      expect(entry.slicePRsBehindHead).toBeNull();
     } finally {
       rmSync(d2, { recursive: true, force: true });
     }
   });
 
-  it("computes commitsBehindHead against --repo when Last conformance: is set", () => {
+  it("computes commitsBehindHead and slicePRsBehindHead against --repo when Last conformance: is set", () => {
     const d3 = mkdtempSync(join(tmpdir(), "em-status-conformance-set-"));
     try {
       writeFileSync(
@@ -254,12 +257,17 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
           "- **Last updated:** 2026-08-01\n- **Last conformance:** 2026-08-01 @ abc123f — report: conformance/2026-08-01.md\n" +
           "- **Last stakeholder review:** never\n",
       );
-      const runGit = fakeGit([ok("/target-repo\n"), ok("5\n")]);
-      const entry = resolveConformanceEntry(join(d3, "model.em"), "/target-repo", runGit);
+      // commitsBehindHead: rev-parse --show-toplevel, rev-list --count. slicePRsBehindHead
+      // (MIL-164): its own rev-parse --show-toplevel, git diff --name-only (changedPathsSince) —
+      // no slice facts given, so the changed-paths content doesn't matter; the count is 0
+      // regardless.
+      const runGit = fakeGit([ok("/target-repo\n"), ok("5\n"), ok("/target-repo\n"), ok("")]);
+      const entry = resolveConformanceEntry(join(d3, "model.em"), "/target-repo", [], runGit);
       expect(entry.hasStateFile).toBe(true);
       expect(entry.lastConformance).toEqual({ date: "2026-08-01", revision: "abc123f" });
       expect(entry.repo).toBe("/target-repo");
       expect(entry.commitsBehindHead).toBe(5);
+      expect(entry.slicePRsBehindHead).toBe(0);
       expect(entry.error).toBeNull();
     } finally {
       rmSync(d3, { recursive: true, force: true });
@@ -275,16 +283,17 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
           "- **Last updated:** 2026-08-01\n- **Last conformance:** 2026-08-01 @ abc123f — report: r.md\n" +
           "- **Last stakeholder review:** never\n",
       );
-      const runGit = fakeGit([ok(`${d4}\n`), ok("0\n")]);
-      const entry = resolveConformanceEntry(join(d4, "model.em"), undefined, runGit);
+      const runGit = fakeGit([ok(`${d4}\n`), ok("0\n"), ok(`${d4}\n`), ok("")]);
+      const entry = resolveConformanceEntry(join(d4, "model.em"), undefined, [], runGit);
       expect(entry.repo).toBe(d4);
       expect(entry.commitsBehindHead).toBe(0);
+      expect(entry.slicePRsBehindHead).toBe(0);
     } finally {
       rmSync(d4, { recursive: true, force: true });
     }
   });
 
-  it("carries a non-fatal error when git can't resolve commits-behind-HEAD", () => {
+  it("carries a non-fatal error when git can't resolve commits-behind-HEAD, and never attempts slicePRsBehindHead", () => {
     const d5 = mkdtempSync(join(tmpdir(), "em-status-conformance-giterr-"));
     try {
       writeFileSync(
@@ -293,10 +302,13 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
           "- **Last updated:** 2026-08-01\n- **Last conformance:** 2026-08-01 @ abc123f — report: r.md\n" +
           "- **Last stakeholder review:** never\n",
       );
+      // fail(...) alone: if resolveConformanceEntry tried a second (slicePRsBehindHead) git call
+      // after commitsBehindHead already failed, fakeGit would throw "unexpected extra git call".
       const runGit = fakeGit([fail("not a repo")]);
-      const entry = resolveConformanceEntry(join(d5, "model.em"), "/not-a-repo", runGit);
+      const entry = resolveConformanceEntry(join(d5, "model.em"), "/not-a-repo", [], runGit);
       expect(entry.lastConformance).toEqual({ date: "2026-08-01", revision: "abc123f" });
       expect(entry.commitsBehindHead).toBeNull();
+      expect(entry.slicePRsBehindHead).toBeNull();
       expect(entry.error).toContain("is not a git repository");
     } finally {
       rmSync(d5, { recursive: true, force: true });
@@ -307,7 +319,7 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
     const d6 = mkdtempSync(join(tmpdir(), "em-status-conformance-badstate-"));
     try {
       writeFileSync(join(d6, ".event-modeling.md"), "not a real state file\n");
-      const entry = resolveConformanceEntry(join(d6, "model.em"), undefined, fakeGit([]));
+      const entry = resolveConformanceEntry(join(d6, "model.em"), undefined, [], fakeGit([]));
       expect(entry.hasStateFile).toBe(true);
       expect(entry.lastConformance).toBeNull();
       expect(entry.error).toContain("state file:");
@@ -329,19 +341,21 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
           "- **Last stakeholder review:** never\n",
       );
       // checkout.em itself: attributed normally.
-      const runGit = fakeGit([ok(`${d7}\n`), ok("2\n")]);
-      const forCheckout = resolveConformanceEntry(join(d7, "checkout.em"), undefined, runGit);
+      const runGit = fakeGit([ok(`${d7}\n`), ok("2\n"), ok(`${d7}\n`), ok("")]);
+      const forCheckout = resolveConformanceEntry(join(d7, "checkout.em"), undefined, [], runGit);
       expect(forCheckout.lastConformance).toEqual({ date: "2026-08-01", revision: "abc123f" });
       expect(forCheckout.commitsBehindHead).toBe(2);
+      expect(forCheckout.slicePRsBehindHead).toBe(0);
       expect(forCheckout.error).toBeNull();
 
       // checkout-asis.em, same directory, same state file: NOT attributed — no git call made at
       // all (fakeGit([]) would throw "unexpected extra git call" if resolveConformanceEntry
       // tried one).
-      const forAsis = resolveConformanceEntry(join(d7, "checkout-asis.em"), undefined, fakeGit([]));
+      const forAsis = resolveConformanceEntry(join(d7, "checkout-asis.em"), undefined, [], fakeGit([]));
       expect(forAsis.hasStateFile).toBe(true);
       expect(forAsis.lastConformance).toBeNull();
       expect(forAsis.commitsBehindHead).toBeNull();
+      expect(forAsis.slicePRsBehindHead).toBeNull();
       expect(forAsis.error).toContain('describes "checkout.em"');
       expect(forAsis.error).toContain('not "checkout-asis.em"');
     } finally {
@@ -358,13 +372,76 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
           "- **Last updated:** 2026-08-01\n- **Last conformance:** 2026-08-01 @ abc123f — report: r.md\n" +
           "- **Last stakeholder review:** never\n",
       );
-      const runGit = fakeGit([ok(`${d8}\n`), ok("0\n")]);
-      const entry = resolveConformanceEntry(join(d8, "model.em"), undefined, runGit);
+      const runGit = fakeGit([ok(`${d8}\n`), ok("0\n"), ok(`${d8}\n`), ok("")]);
+      const entry = resolveConformanceEntry(join(d8, "model.em"), undefined, [], runGit);
       expect(entry.lastConformance).toEqual({ date: "2026-08-01", revision: "abc123f" });
       expect(entry.error).toBeNull();
     } finally {
       rmSync(d8, { recursive: true, force: true });
     }
+  });
+
+  // MIL-164: slicePRsBehindHead reflects an actual candidate-slice match, not just 0 — a slice
+  // whose doc's implementedIn names a directory prefix-matching one of the changed paths counts.
+  it("computes a nonzero slicePRsBehindHead when a slice's implementedIn matches a changed path", () => {
+    const d9 = mkdtempSync(join(tmpdir(), "em-status-conformance-slicepr-"));
+    try {
+      writeFileSync(
+        join(d9, ".event-modeling.md"),
+        "- **Model file:** `model.em`\n- **Current phase:** conform\n- **Current step:** 1\n" +
+          "- **Last updated:** 2026-08-01\n- **Last conformance:** 2026-08-01 @ abc123f — report: r.md\n" +
+          "- **Last stakeholder review:** never\n",
+      );
+      const runGit = fakeGit([ok(`${d9}\n`), ok("3\n"), ok(`${d9}\n`), ok("src/checkout/handler.ts\nREADME.md\n")]);
+      const facts = [
+        { key: "checkout", status: "implemented", implementedIn: "src/checkout" },
+        { key: "billing", status: "implemented", implementedIn: "src/billing" },
+      ];
+      const entry = resolveConformanceEntry(join(d9, "model.em"), undefined, facts, runGit);
+      expect(entry.commitsBehindHead).toBe(3);
+      // Only "checkout" candidates — its implementedIn ("src/checkout") prefixes the changed
+      // "src/checkout/handler.ts"; "billing"'s implementedIn matches nothing changed, and
+      // "README.md" maps to no slice (unmapped, not this function's concern).
+      expect(entry.slicePRsBehindHead).toBe(1);
+      expect(entry.error).toBeNull();
+    } finally {
+      rmSync(d9, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveSlicePRsBehindHead", () => {
+  it("counts candidate slices whose implementedIn prefixes a changed path", () => {
+    const runGit = fakeGit([ok("/repo\n"), ok("src/checkout/handler.ts\n")]);
+    const result = resolveSlicePRsBehindHead(
+      "/repo",
+      "abc123",
+      [
+        { key: "checkout", status: "implemented", implementedIn: "src/checkout" },
+        { key: "billing", status: "implemented", implementedIn: "src/billing" },
+      ],
+      runGit,
+    );
+    expect(result).toEqual({ ok: true, count: 1 });
+  });
+
+  it("returns 0, not an error, when nothing changed since the revision", () => {
+    const runGit = fakeGit([ok("/repo\n"), ok("")]);
+    const result = resolveSlicePRsBehindHead("/repo", "abc123", [{ key: "checkout", status: "implemented", implementedIn: "src/checkout" }], runGit);
+    expect(result).toEqual({ ok: true, count: 0 });
+  });
+
+  it("fails clearly when the repo isn't a git repository (same failure channel changedPathsSince uses)", () => {
+    const runGit = fakeGit([fail("not a repo")]);
+    const result = resolveSlicePRsBehindHead("/not-a-repo", "abc123", [], runGit);
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; message: string }).message).toContain("is not a git repository");
+  });
+
+  it("a URL-only implementedIn (a PR link) never matches any changed path", () => {
+    const runGit = fakeGit([ok("/repo\n"), ok("src/checkout/handler.ts\n")]);
+    const result = resolveSlicePRsBehindHead("/repo", "abc123", [{ key: "checkout", status: "implemented", implementedIn: "https://github.com/x/y/pull/1" }], runGit);
+    expect(result).toEqual({ ok: true, count: 0 });
   });
 });
 
@@ -389,12 +466,12 @@ describe("aggregateInvariantTotals", () => {
 
 describe("buildStatusReport", () => {
   const facts: SliceStatusFact[] = [
-    { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
-    { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/s2.md", rawStatus: "draft", bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 2, openQuestionsUnchecked: 1 },
-    { file: "a.em", key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+    { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", implementedIn: null, bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+    { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/s2.md", rawStatus: "draft", implementedIn: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 2, openQuestionsUnchecked: 1 },
+    { file: "a.em", key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, implementedIn: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
   ];
   const conformance: ConformanceEntry[] = [
-    { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 2, error: null },
+    { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 2, slicePRsBehindHead: 1, error: null },
   ];
 
   it("tallies slices by bucket, driftSignal, and open-questions totals", () => {
@@ -441,7 +518,7 @@ describe("buildStatusReport", () => {
   it("tallies a frontmatter-invalid slice coherently: same count in byStatus and driftSignal, distinct from no-doc/notApplicable", () => {
     const withBroken: SliceStatusFact[] = [
       ...facts,
-      { file: "a.em", key: "broken", docFound: true, docReason: "frontmatter-invalid", docPath: "/a/slices/broken.md", rawStatus: null, bucket: "frontmatter-invalid", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+      { file: "a.em", key: "broken", docFound: true, docReason: "frontmatter-invalid", docPath: "/a/slices/broken.md", rawStatus: null, implementedIn: null, bucket: "frontmatter-invalid", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
     ];
     const report = buildStatusReport(["a.em"], withBroken, 0, null, conformance, []);
     expect(report.slices.byStatus.frontmatterInvalid).toBe(1);
@@ -456,8 +533,8 @@ describe("buildStatusReport", () => {
   // Open Questions ONCE, not once per covering slice.
   it("dedupes Open Questions by resolved docPath — a covers:-shared doc counts once, not per slice", () => {
     const sharedFacts: SliceStatusFact[] = [
-      { file: "a.em", key: "owner", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
-      { file: "a.em", key: "other", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "owner", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", implementedIn: null, bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "other", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", implementedIn: null, bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
     ];
     const report = buildStatusReport(["a.em"], sharedFacts, 0, null, conformance, []);
     expect(report.issues.openQuestionsTotal).toBe(3); // not 6
@@ -470,8 +547,8 @@ describe("buildStatusReport", () => {
 
   it("does not dedupe two DIFFERENT docs that happen to have distinct paths", () => {
     const distinctFacts: SliceStatusFact[] = [
-      { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/one.md", rawStatus: "draft", bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
-      { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/two.md", rawStatus: "draft", bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/one.md", rawStatus: "draft", implementedIn: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/two.md", rawStatus: "draft", implementedIn: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
     ];
     const report = buildStatusReport(["a.em"], distinctFacts, 0, null, conformance, []);
     expect(report.issues.openQuestionsTotal).toBe(2);
@@ -488,7 +565,7 @@ describe("text/markdown/badge formatting", () => {
       invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
       issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, error: null },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, slicePRsBehindHead: 3, error: null },
       ],
       diagnostics: [],
       ...overrides,
@@ -497,7 +574,9 @@ describe("text/markdown/badge formatting", () => {
 
   it("formatStatusSummary renders MIL-163's acceptance line for the fully-healthy case", () => {
     const summary = formatStatusSummary(makeReport());
-    expect(summary).toBe("8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f, 3 commits behind HEAD");
+    expect(summary).toBe(
+      "8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f — 3 commits and 3 slice-PRs behind HEAD",
+    );
   });
 
   it("formatStatusSummary reports invariants as not-checked when --tests wasn't given", () => {
@@ -508,24 +587,24 @@ describe("text/markdown/badge formatting", () => {
   it("formatStatusSummary pluralizes singular counts correctly", () => {
     const report = makeReport({
       issues: { openIssues: 1, openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc" }, repo: ".", commitsBehindHead: 1, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc" }, repo: ".", commitsBehindHead: 1, slicePRsBehindHead: 2, error: null }],
     });
     const summary = formatStatusSummary(report);
     expect(summary).toContain("1 open issue,");
     expect(summary).toContain("1 unchecked open question");
-    expect(summary).toContain("1 commit behind HEAD");
+    expect(summary).toContain("1 commit and 2 slice-PRs behind HEAD");
   });
 
   it("formatStatusSummary reports never conformed when there's no Last conformance:", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
     });
     expect(formatStatusSummary(report)).toContain("never conformed");
   });
 
   it("formatStatusSummary reports no state file distinctly from never conformed", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
     });
     expect(formatStatusSummary(report)).toContain("no state file");
   });
@@ -533,7 +612,7 @@ describe("text/markdown/badge formatting", () => {
   it("formatStatusSummary reports an unverifiable conformance state via its error, distinctly from never/no-state-file", () => {
     const report = makeReport({
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: "state file: missing bullet line(s)" },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: "state file: missing bullet line(s)" },
       ],
     });
     expect(formatStatusSummary(report)).toContain("conformance unknown (state file: missing bullet line(s))");
@@ -545,7 +624,7 @@ describe("text/markdown/badge formatting", () => {
     expect(detail).toContain("driftSignal: 8 in-sync");
     expect(detail).toContain("invariants: 20/20 covered");
     expect(detail).toContain("issues: 0 open issues");
-    expect(detail).toContain("conformance: last conformed abc123f, 3 commits behind HEAD");
+    expect(detail).toContain("conformance: last conformed abc123f — 3 commits and 3 slice-PRs behind HEAD");
   });
 
   it("formatStatusDetail surfaces frontmatterInvalid counts in both the slices and driftSignal lines", () => {
@@ -576,12 +655,12 @@ describe("text/markdown/badge formatting", () => {
     const report = makeReport({
       files: ["a.em", "b.em"],
       conformance: [
-        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, error: null },
-        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, error: null },
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
+        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null },
       ],
     });
     const detail = formatStatusDetail(report);
-    expect(detail).toContain("conformance (a.em): last conformed aaa, 0 commits behind HEAD");
+    expect(detail).toContain("conformance (a.em): last conformed aaa — 0 commits and 0 slice-PRs behind HEAD");
     expect(detail).toContain("conformance (b.em): no state file");
   });
 
@@ -596,15 +675,15 @@ describe("text/markdown/badge formatting", () => {
     expect(md).toContain("| Slices | 8/8 implemented");
     expect(md).toContain("| Invariants | 20/20 covered |");
     expect(md).toContain("| Open issues | 0 |");
-    expect(md).toContain("| Last conformed | `abc123f` — 3 commits behind HEAD |");
+    expect(md).toContain("| Last conformed | `abc123f` — 3 commits and 3 slice-PRs behind HEAD |");
   });
 
   it("formatStatusMarkdown renders one Last-conformed row per model when there are several", () => {
     const report = makeReport({
       files: ["a.em", "b.em"],
       conformance: [
-        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, error: null },
-        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, error: null },
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
+        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null },
       ],
     });
     const md = formatStatusMarkdown(report);
@@ -621,7 +700,7 @@ describe("text/markdown/badge formatting", () => {
   it("escapes a pre-existing backslash before escaping `|` in table VALUES, so the pipe can't be un-escaped", () => {
     const report = makeReport({
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: "weird \\| value" },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: "weird \\| value" },
       ],
     });
     const md = formatStatusMarkdown(report);
@@ -632,8 +711,8 @@ describe("text/markdown/badge formatting", () => {
     const report = makeReport({
       files: ["a.em", "weird \\| file.em"],
       conformance: [
-        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, error: null },
-        { file: "weird \\| file.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, error: null },
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
+        { file: "weird \\| file.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null },
       ],
     });
     const md = formatStatusMarkdown(report);
@@ -662,7 +741,7 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is green when fully implemented, covered, no open issues, and current on conformance", () => {
     const report = makeReport({
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 0, error: null },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
       ],
     });
     const svg = buildStatusBadge(report);
@@ -673,14 +752,14 @@ describe("text/markdown/badge formatting", () => {
   // file yet, both error: null) stays green-eligible — this is NOT the bug the finding flagged.
   it("buildStatusBadge stays green when a model simply has no conformance history yet (no state file)", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
     });
     expect(buildStatusBadge(report)).toContain("#4c1");
   });
 
   it("buildStatusBadge stays green when Last conformance: is the never marker", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
     });
     expect(buildStatusBadge(report)).toContain("#4c1");
   });
@@ -719,9 +798,21 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is yellow when a model is behind on conformance", () => {
     const svg = buildStatusBadge(
       makeReport({
-        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 4, error: null }],
+        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 4, slicePRsBehindHead: 4, error: null }],
       }),
     );
+    expect(svg).toContain("#dfb317");
+  });
+
+  // MIL-164: slicePRsBehindHead alone (commitsBehindHead: 0) must also flip the badge yellow —
+  // a slice can be behind even on a commit range that touches nothing else in the repo.
+  it("buildStatusBadge is yellow when only slicePRsBehindHead is nonzero (commitsBehindHead: 0)", () => {
+    const svg = buildStatusBadge(
+      makeReport({
+        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 1, error: null }],
+      }),
+    );
+    expect(svg).not.toContain("#4c1");
     expect(svg).toContain("#dfb317");
   });
 
@@ -732,7 +823,7 @@ describe("text/markdown/badge formatting", () => {
     const svg = buildStatusBadge(
       makeReport({
         conformance: [
-          { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: "/not-a-repo", commitsBehindHead: null, error: "em status: /not-a-repo is not a git repository" },
+          { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: "/not-a-repo", commitsBehindHead: null, slicePRsBehindHead: null, error: "em status: /not-a-repo is not a git repository" },
         ],
       }),
     );
@@ -743,7 +834,7 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is yellow when the state file itself failed to parse (error set)", () => {
     const svg = buildStatusBadge(
       makeReport({
-        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: "state file: missing bullet line(s)" }],
+        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: "state file: missing bullet line(s)" }],
       }),
     );
     expect(svg).not.toContain("#4c1");
@@ -754,7 +845,7 @@ describe("text/markdown/badge formatting", () => {
     const svg = buildStatusBadge(
       makeReport({
         conformance: [
-          { file: "checkout-asis.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record' },
+          { file: "checkout-asis.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record' },
         ],
       }),
     );

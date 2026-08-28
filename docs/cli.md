@@ -1131,13 +1131,13 @@ Example text report:
 
 ```
 $ em status model.em --tests test/
-8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f, 0 commits behind HEAD
+8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
 
 slices: 8 total — 8 implemented, 0 ready-to-implement, 0 reviewed, 0 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status
 driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc), 0 n/a (frontmatter invalid)
 invariants: 20/20 covered (0 uncovered) — test/
 issues: 0 open issues, 0/0 open question(s) unchecked
-conformance: last conformed abc123f, 0 commits behind HEAD
+conformance: last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
 ```
 
 A `doc issues: N warning(s) — see diagnostics (<codes>)` line is appended when any doc-join
@@ -1145,18 +1145,29 @@ diagnostic was raised (see `diagnostics` below) — omitted entirely when there 
 "nothing to report" convention as the rest of the detail block.
 
 The first line is the rollup MIL-163 was written to make printable — `8/8 implemented · 20/20
-invariants covered · 0 open issues · last conformed <rev>, N commits behind HEAD`. For more than
-one input model, that line's conformance clause reports the *first* file's entry (a single-model
-invocation is the common case it's written for); the full per-model breakdown is always in the
-detail block below it, and in `--json`, regardless of file count.
+invariants covered · 0 open issues · last conformed <rev> — N commits and M slice-PRs behind
+HEAD` (the "N commits and M slice-PRs" clause is MIL-164). For more than one input model, that
+line's conformance clause reports the *first* file's entry (a single-model invocation is the
+common case it's written for); the full per-model breakdown is always in the detail block below
+it, and in `--json`, regardless of file count.
 
-**`--json` shape** (`statusSchemaVersion: "1.0"`, versioned independently of the npm package and
+**Slice-PRs behind HEAD** (MIL-164) is the count of slices whose bound doc's `implementedIn:`
+names a path the target repo has changed since `Last conformance:`'s revision — the same
+candidate-slice computation `em conform-scope` makes for one model at a time (its own
+`implementedIn`-prefix match against `git diff --name-only <revision>..HEAD`), rolled up here to
+a single number: "how many slices likely shipped code since the last conform sweep, and so are
+due a fresh evidence walk." A slice whose `implementedIn` is a URL (a PR/commit link, no path
+information) never counts, same as `em conform-scope`'s own rule. Like `commitsBehindHead`, it's
+`null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
+`null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
+
+**`--json` shape** (`statusSchemaVersion: "1.1"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.0",
+  "statusSchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1180,6 +1191,7 @@ see [mcp.md](mcp.md)):
       "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
       "repo": ".",
       "commitsBehindHead": 0,
+      "slicePRsBehindHead": 0,
       "error": null
     }
   ],
@@ -1189,11 +1201,12 @@ see [mcp.md](mcp.md)):
 
 `invariants` is `null` when `--tests <dir>` wasn't given. `conformance` has one entry per input
 file, in argument order; a model with no sibling state file reports `hasStateFile: false`,
-`lastConformance: null`, `commitsBehindHead: null`, `error: null` — not an error, just nothing to
-report yet. `error` is also set (non-null) — with `lastConformance`/`commitsBehindHead` both
-`null` — when the state file's own `Model file:` bullet names a different file than the one being
-reported on (see above); a consumer that needs to tell "no history yet" apart from "history
-exists but couldn't be attributed/verified" should check `error`, not just `lastConformance`.
+`lastConformance: null`, `commitsBehindHead: null`, `slicePRsBehindHead: null`, `error: null` —
+not an error, just nothing to report yet. `error` is also set (non-null) — with
+`lastConformance`/`commitsBehindHead`/`slicePRsBehindHead` all `null` — when the state file's own
+`Model file:` bullet names a different file than the one being reported on (see above); a
+consumer that needs to tell "no history yet" apart from "history exists but couldn't be
+attributed/verified" should check `error`, not just `lastConformance`.
 
 `diagnostics` (added for the PR #116 review pass) carries every doc-join warning
 (`binding-missing-file`/`frontmatter-invalid`) raised while resolving each slice's doc, across
@@ -1214,18 +1227,61 @@ contract:
 | Color | Meaning |
 |---|---|
 | red `#e05d44` | A genuine problem: an open issue, an uncovered invariant, a `frontmatterInvalid` doc, or `implementedWithoutLink` drift (a doc claiming `implemented` with nothing linking to it). |
-| yellow `#dfb317` | Things are merely in flight, **or conformance couldn't be verified**: not every slice implemented yet, an unchecked Open Question, any model with `commitsBehindHead > 0`, or any conformance entry carrying a non-null `error` (an unresolvable revision, an unparseable state file, a `--repo` that isn't a git repo, or a state-file `Model file:` mismatch). |
+| yellow `#dfb317` | Things are merely in flight, **or conformance couldn't be verified**: not every slice implemented yet, an unchecked Open Question, any model with `commitsBehindHead > 0` or `slicePRsBehindHead > 0` (MIL-164), or any conformance entry carrying a non-null `error` (an unresolvable revision, an unparseable state file, a `--repo` that isn't a git repo, or a state-file `Model file:` mismatch). |
 | green `#4c1` | Otherwise. |
 
-The yellow/`error` rule (added for the PR #116 review pass) matters because `commitsBehindHead`
-is `null` both when conformance is genuinely current-and-unverified-for-another-reason *and* when
-it simply couldn't be computed — those are different facts, and `null ?? 0` must never be allowed
-to read as "0 commits behind" and paint the badge green. A model with **no conformance history at
-all** (`hasStateFile: false`, or `Last conformance: never` — both `error: null`) is deliberately
-NOT covered by that rule: it's a legitimate, unremarkable state ("hasn't reached the `conform`
-phase yet," not "broken"), so it stays eligible for green same as before. Badge text width is a
-fixed per-character estimate, not a real font-metrics table — legible, not a claim of pixel parity
-with shields.io.
+The yellow/`error` rule (added for the PR #116 review pass) matters because `commitsBehindHead`/
+`slicePRsBehindHead` are `null` both when conformance is genuinely current-and-unverified-for-
+another-reason *and* when they simply couldn't be computed — those are different facts, and
+`null ?? 0` must never be allowed to read as "0 behind" and paint the badge green. A model with
+**no conformance history at all** (`hasStateFile: false`, or `Last conformance: never` — both
+`error: null`) is deliberately NOT covered by that rule: it's a legitimate, unremarkable state
+("hasn't reached the `conform` phase yet," not "broken"), so it stays eligible for green same as
+before. Badge text width is a fixed per-character estimate, not a real font-metrics table —
+legible, not a claim of pixel parity with shields.io.
+
+## `em freshness <file>`
+
+Standalone surface for exactly one clause of `em status`'s rollup (MIL-164): "last conformed
+`<rev>` — N commits and M slice-PRs behind HEAD" for a single model, without compiling the rest
+of the state-of-the-system report. Reuses the same `resolveConformanceEntry`/conform-scope
+machinery `em status`'s conformance column does — this is a thinner presentation over the exact
+same facts, not a second implementation of them.
+
+| Flag | Effect |
+|---|---|
+| `--repo <path>` | Git repo to compute behind-HEAD in (default: the model's own directory) |
+| `--json` | Print a JSON document instead of the text line |
+
+```bash
+em freshness model.em                    # last conformed abc123f — 2 commits and 1 slice-PR behind HEAD
+em freshness model.em --repo ../service   # compute behind-HEAD against a different repo
+em freshness model.em --json              # machine-readable form
+```
+
+The model must compile without errors (same refusal convention as `em status`). Doc-join
+diagnostics (`binding-missing-file`/`frontmatter-invalid`) are printed to stderr, non-fatal, same
+as `em status`.
+
+**`--json` shape** (`freshnessSchemaVersion: "1.0"` — this is also the exact document the MCP
+`freshness` tool returns, see [mcp.md](mcp.md)): the envelope wraps the model's single
+`ConformanceEntry` verbatim, the same shape one entry of `em status --json`'s `conformance[]`
+array carries:
+
+```json
+{
+  "freshnessSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "model.em",
+  "modelDir": ".",
+  "hasStateFile": true,
+  "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
+  "repo": ".",
+  "commitsBehindHead": 2,
+  "slicePRsBehindHead": 1,
+  "error": null
+}
+```
 
 ## `em glossary <files...>`
 
@@ -1800,6 +1856,63 @@ Any input-model error (parse/validation) is reported and exits 1 before any git 
 write, same as every other command. A missing state file, an unparsable `Last conformance:`
 bullet, a `--repo` that isn't a git repository, or an unknown revision in `Last conformance:`
 each exit 1 with a clear message.
+
+## `em conform-supersede <file> <report-path>`
+
+Stamps an existing conformance report with a "superseded" banner once its findings have been
+ruled on (MIL-164, [process.md](process.md#what-ratified-means)'s "Ratifying conformance
+findings" / [workflow.md](workflow.md#7-ratify-the-findings)) — the companion step to run at
+ratification time so a reader who follows a report's file:line citations knows, before trusting
+them, that the report describes an ancestor of the current model rather than its current state.
+This is what makes the "two dated runs, not a track record" honesty register honest: a report
+nobody's told you is stale reads as current.
+
+`<file>` is only used to resolve `<report-path>`'s base directory (the same "`.em` file's own
+directory" convention every doc/note/report path in `em` uses) — the model itself is never
+compiled, and neither the `.em` nor any slice doc is touched.
+
+| Flag | Effect |
+|---|---|
+| `--as-of <rev>` | The revision this ruling was made against — pass the same value you're about to (or just did) hand to `em state set-conformance` (required) |
+| `--findings <spec>` | Which finding number(s) this stamps as ruled, e.g. `"1-3"` or `"1,2,4"` (required) |
+| `--on <date>` | Ruling date, `YYYY-MM-DD` (default: today) |
+
+```bash
+em conform-supersede model.em conformance/2026-08-23-report.md --as-of a1b2c3d --findings 1-3
+em conform-supersede model.em conformance/2026-08-23-report.md --as-of a1b2c3d --findings 1-3 --on 2026-08-27
+```
+
+Inserts one line directly under the report's title (its first line):
+
+```
+> **Superseded as of `a1b2c3d`** — findings 1-3 since ruled (2026-08-27). This report describes an ancestor of the current model; verify file:line citations against the current code before relying on them.
+```
+
+**Additive-only splice**, same surgical-edit discipline `em slice ratify`/`em slice
+mark-implemented` hold for frontmatter — never a parse-and-re-serialize of the report. Every byte
+after the inserted line (the metadata bullets, Summary, Findings, everything) is copied through
+verbatim.
+
+**Idempotent, and accumulates rather than overwrites.** Calling again with the exact same
+`--as-of`/`--findings`/`--on` is a no-op. Calling with a *different* stamp (a report ruled on
+incrementally, across more than one session — findings 1-3 today, finding 4 next week) appends a
+second banner line rather than replacing the first, so the accumulated block reads as a small
+history of rulings rather than one mutable fact:
+
+```
+> **Superseded as of `a1b2c3d`** — findings 1-3 since ruled (2026-08-27). ...
+> **Superseded as of `e4f5a6b`** — findings 4 since ruled (2026-09-02). ...
+```
+
+`--findings` accepts a plain list/range of numbers only (digits, commas, spaces, and either dash
+style) — refused otherwise, so nothing but the intended finding-number text ever reaches the
+banner. Refuses (exit 1) when `<report-path>` doesn't exist — this command stamps an existing
+report, it never authors one — or when `--as-of`/`--findings`/`--on` fail their own validation
+(a control character or backtick in the revision, an unsafe `--findings` value, a malformed
+`--on` date).
+
+There is no MCP tool for this command: it's a write/mutate operation (same as `em slice ratify`),
+and MCP parity in this codebase covers *read* surfaces with `--json` (see docs/mcp.md).
 
 ## `em contract`
 
