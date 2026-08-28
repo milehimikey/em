@@ -1301,7 +1301,7 @@ describe("em mcp (CLI, MIL-21)", () => {
       expect(client.getServerVersion()).toMatchObject({ name: "em" });
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(
-        ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
+        ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "status", "validate"].sort(),
       );
     } finally {
       await client.close();
@@ -1857,6 +1857,211 @@ describe("em conform-scope (CLI, real git repo)", () => {
       const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], badRevDir);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("git diff failed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("em status (CLI, real git repo + fs, MIL-163)", () => {
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  // One implemented slice with a bound doc (2 invariants, 1 uncovered, Open Questions all
+  // checked, an open `issue` marker on its command) and one draft slice with a bound doc (no
+  // invariants, 1 unchecked Open Question, never implemented) — enough surface to exercise
+  // every rollup dimension in one fixture.
+  const MODEL = `slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order note "slices/place-order.md" issue "who validates the discount code?"
+  event Order Placed
+}
+slice "Billing" {
+  view Invoice from "Order Placed" note "slices/billing.md"
+  ui Invoice Screen @Customer
+}
+`;
+
+  const PLACE_ORDER_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
+    "## Invariants / Business Rules\n- **INV-CHK-1:** total must be positive\n- **INV-CHK-2:** discount cannot exceed total\n\n" +
+    "## Open Questions\n- [x] resolved\n";
+
+  const BILLING_DOC =
+    "---\nschemaVersion: 1\npattern: state-view\nswimlane: billing\nstatus: draft\nversion: 1\n---\n" +
+    "## Open Questions\n- [ ] still deciding layout\n";
+
+  let modelDir: string;
+  let baseRev: string;
+
+  beforeAll(() => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-"));
+    const scaffolded = em(["scaffold", "Checkout"], cwd);
+    expect(scaffolded.status).toBe(0);
+    modelDir = join(cwd, "checkout");
+    writeFileSync(join(modelDir, "checkout.em"), MODEL);
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    writeFileSync(join(modelDir, "slices", "place-order.md"), PLACE_ORDER_DOC);
+    writeFileSync(join(modelDir, "slices", "billing.md"), BILLING_DOC);
+    mkdirSync(join(modelDir, "tests"), { recursive: true });
+    writeFileSync(join(modelDir, "tests", "place-order.spec.ts"), "// citing INV-CHK-1 in this test\nit('works', () => {});\n");
+
+    git(["init", "-q", "-b", "main"], modelDir);
+    git(["add", "."], modelDir);
+    git(["commit", "-qam", "initial"], modelDir);
+    baseRev = git(["rev-parse", "HEAD"], modelDir).stdout.trim();
+
+    const setConformance = em(["state", "set-conformance", baseRev, "--report", "conformance/r.md"], modelDir);
+    expect(setConformance.status).toBe(0);
+    git(["add", "."], modelDir);
+    git(["commit", "-qam", "record conformance"], modelDir);
+  });
+  afterAll(() => rmSync(modelDir, { recursive: true, force: true }));
+
+  it("text report: the acceptance-line summary plus a detail block", () => {
+    const r = em(["status", "checkout.em", "--tests", "tests"], modelDir);
+    expect(r.status).toBe(0);
+    const [summary, ...rest] = r.stdout.trim().split("\n\n");
+    expect(summary).toBe(
+      `1/2 implemented · 1/2 invariants covered · 1 open issue, 1 unchecked open question · last conformed ${baseRev}, 1 commit behind HEAD`,
+    );
+    const detail = rest.join("\n\n");
+    expect(detail).toContain("slices: 2 total — 1 implemented, 0 ready-to-implement, 0 reviewed, 1 draft, 0 no doc, 0 unknown status");
+    expect(detail).toContain("driftSignal: 1 in-sync, 1 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc)");
+    expect(detail).toContain("invariants: 1/2 covered (1 uncovered) — tests");
+    expect(detail).toContain("issues: 1 open issue, 1/2 open question(s) unchecked");
+    expect(detail).toContain(`conformance: last conformed ${baseRev}, 1 commit behind HEAD`);
+  });
+
+  it("--json: schema-versioned document with the same figures as the text report", () => {
+    const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.statusSchemaVersion).toBe("1.0");
+    expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
+    expect(doc.files).toEqual(["checkout.em"]);
+    expect(doc.slices).toEqual({
+      total: 2,
+      byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, noDoc: 0, unknown: 0 },
+    });
+    expect(doc.driftSignal).toEqual({ inSync: 1, neverImplemented: 1, unpropagatedDelta: 0, implementedWithoutLink: 0, notApplicable: 0 });
+    expect(doc.invariants).toEqual({ testsDir: "tests", total: 2, cited: 1, uncovered: 1 });
+    expect(doc.issues).toEqual({ openIssues: 1, openQuestionsTotal: 2, openQuestionsUnchecked: 1 });
+    expect(doc.conformance).toHaveLength(1);
+    expect(doc.conformance[0]).toMatchObject({
+      file: "checkout.em",
+      hasStateFile: true,
+      lastConformance: { date: expect.any(String), revision: baseRev },
+      commitsBehindHead: 1,
+      error: null,
+    });
+  });
+
+  it("--tests omitted: invariants is null, and the summary says so", () => {
+    const r = em(["status", "checkout.em"], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("invariants not checked (pass --tests <dir>)");
+    const json = em(["status", "checkout.em", "--json"], modelDir);
+    expect(JSON.parse(json.stdout).invariants).toBeNull();
+  });
+
+  it("--md: a markdown table suited for README embedding", () => {
+    const r = em(["status", "checkout.em", "--tests", "tests", "--md"], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("| Metric | Value |");
+    expect(r.stdout).toContain("| Slices | 1/2 implemented");
+    expect(r.stdout).toContain("| Invariants | 1/2 covered |");
+    expect(r.stdout).toContain("| Open issues | 1 |");
+    expect(r.stdout).toContain(`| Last conformed | \`${baseRev}\` — 1 commit behind HEAD |`);
+  });
+
+  it("--badge: a well-formed SVG", () => {
+    const r = em(["status", "checkout.em", "--tests", "tests", "--badge"], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim().startsWith("<svg")).toBe(true);
+    expect(r.stdout).toContain("em status");
+  });
+
+  it("-o writes the report to a file instead of stdout", () => {
+    const out = join(modelDir, "status.txt");
+    const r = em(["status", "checkout.em", "-o", "status.txt"], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("wrote status.txt");
+    expect(readFileSync(out, "utf8")).toContain("implemented ·");
+    rmSync(out);
+  });
+
+  it("--json and --md together is a usage error", () => {
+    const r = em(["status", "checkout.em", "--json", "--md"], modelDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("mutually exclusive");
+  });
+
+  it("a --tests directory that doesn't exist is a clear error", () => {
+    const r = em(["status", "checkout.em", "--tests", "no-such-dir"], modelDir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--tests directory not found");
+  });
+
+  it("refuses (exit 1) when a model has errors, printing diagnostics instead of a report", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-error-"));
+    try {
+      writeFileSync(join(cwd, "broken.em"), 'slice "Read" {\n  view Open Orders from "No Such Event"\n}\n');
+      const r = em(["status", "broken.em"], cwd);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("not reporting status");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("--repo overrides the default per-model repo used for commits-behind-HEAD", () => {
+    const targetRepo = mkdtempSync(join(tmpdir(), "em-cli-status-target-"));
+    try {
+      git(["init", "-q", "-b", "main"], targetRepo);
+      writeFileSync(join(targetRepo, "README.md"), "# demo\n");
+      git(["add", "."], targetRepo);
+      git(["commit", "-qam", "initial"], targetRepo);
+      const targetRev = git(["rev-parse", "HEAD"], targetRepo).stdout.trim();
+      writeFileSync(join(targetRepo, "README.md"), "# demo, updated\n");
+      git(["add", "."], targetRepo);
+      git(["commit", "-qam", "second"], targetRepo);
+
+      const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-repo-flag-"));
+      const scaffolded = em(["scaffold", "Checkout"], cwd);
+      expect(scaffolded.status).toBe(0);
+      const dir = join(cwd, "checkout");
+      writeFileSync(join(dir, "checkout.em"), MODEL);
+      mkdirSync(join(dir, "slices"), { recursive: true });
+      writeFileSync(join(dir, "slices", "place-order.md"), PLACE_ORDER_DOC);
+      writeFileSync(join(dir, "slices", "billing.md"), BILLING_DOC);
+      em(["state", "set-conformance", targetRev, "--report", "conformance/r.md"], dir);
+
+      const r = em(["status", "checkout.em", "--repo", targetRepo, "--json"], dir);
+      expect(r.status).toBe(0);
+      const doc = JSON.parse(r.stdout);
+      expect(doc.conformance[0].repo).toBe(targetRepo);
+      expect(doc.conformance[0].commitsBehindHead).toBe(1);
+      rmSync(cwd, { recursive: true, force: true });
+    } finally {
+      rmSync(targetRepo, { recursive: true, force: true });
+    }
+  });
+
+  it("aggregates across multiple input models", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-status-multi-"));
+    try {
+      writeFileSync(join(cwd, "a.em"), 'slice "A" {\n  ui Dashboard @Customer\n}\n');
+      writeFileSync(join(cwd, "b.em"), 'slice "B" {\n  ui Screen @Customer\n}\n');
+      const r = em(["status", "a.em", "b.em", "--json"], cwd);
+      expect(r.status).toBe(0);
+      const doc = JSON.parse(r.stdout);
+      expect(doc.files).toEqual(["a.em", "b.em"]);
+      expect(doc.slices.total).toBe(2);
+      expect(doc.slices.byStatus.noDoc).toBe(2);
+      expect(doc.conformance).toHaveLength(2);
+      expect(doc.conformance.map((c: { file: string }) => c.file)).toEqual(["a.em", "b.em"]);
+      expect(doc.conformance.every((c: { hasStateFile: boolean }) => c.hasStateFile === false)).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

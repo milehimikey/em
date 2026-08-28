@@ -112,11 +112,11 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the seven documented tools", async () => {
+  it("exposes exactly the eight documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "validate"].sort(),
+      ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "status", "validate"].sort(),
     );
     // Every tool carries a non-empty description an agent can route on.
     for (const t of tools) expect(t.description?.length ?? 0).toBeGreaterThan(20);
@@ -251,6 +251,50 @@ describe("coverage tool", () => {
     const { result } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "no-such-dir") });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("--tests directory not found");
+  });
+});
+
+describe("status tool", () => {
+  it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
+    const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
+    expect(doc.statusSchemaVersion).toBe("1.0");
+    expect(doc.files).toEqual([join(dir, "ready.em")]);
+    expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
+    expect(doc.slices.byStatus.readyToImplement).toBe(1);
+    expect(doc.slices.byStatus.noDoc).toBe(1); // "Read Model" has no bound doc
+    expect(doc.invariants).toEqual({ testsDir: join(dir, "tests"), total: 2, cited: 1, uncovered: 1 });
+    expect(doc.conformance).toHaveLength(1);
+    expect(doc.conformance[0].hasStateFile).toBe(false); // no .event-modeling.md next to ready.em
+  });
+
+  it("omits invariants (null) when testsDir isn't given", async () => {
+    const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")] });
+    expect(doc.invariants).toBeNull();
+  });
+
+  it("aggregates across multiple files", async () => {
+    const { doc } = await callJson(client, "status", { files: [join(dir, "clean.em"), join(dir, "ready.em")] });
+    expect(doc.files).toEqual([join(dir, "clean.em"), join(dir, "ready.em")]);
+    expect(doc.slices.total).toBe(4); // 2 slices in clean.em + 2 in ready.em
+    expect(doc.conformance).toHaveLength(2);
+  });
+
+  it("refuses (tool error) on an errored model, same as `em status`", async () => {
+    const { result } = await callJson(client, "status", { files: [join(dir, "error.em")] });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not reporting status");
+  });
+
+  it("refuses (tool error) when testsDir doesn't exist", async () => {
+    const { result } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "no-such-dir") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("--tests directory not found");
+  });
+
+  it("a missing file is a tool error, not a crash", async () => {
+    const { result } = await callJson(client, "status", { files: [join(dir, "no-such-file.em")] });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot read");
   });
 });
 

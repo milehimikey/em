@@ -30,8 +30,20 @@ import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReady
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
-import { buildCoverageReport } from "./cli/coverage.js";
+import { buildCoverageReport, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
+import {
+  resolveSliceStatusFacts,
+  countOpenIssues,
+  resolveConformanceEntry,
+  aggregateInvariantTotals,
+  buildStatusReport,
+  formatStatusText,
+  formatStatusMarkdown,
+  buildStatusBadge,
+  SliceStatusFact,
+} from "./cli/status.js";
+import { buildStatusJson } from "./emit/statusJson.js";
 import { planSkillSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSync } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
@@ -1082,6 +1094,85 @@ program
     // form, and consistent for the text form too.
     if (opts.strict && report.uncoveredCount > 0) process.exitCode = 1;
   });
+
+program
+  .command("status")
+  .description(
+    "deterministic state-of-the-system rollup over one or more .em models: slices by " +
+      "lifecycle status, driftSignal breakdown, invariant coverage totals (with --tests), " +
+      "open issue markers + unchecked Open Questions, and last-conformance commits-behind-HEAD " +
+      "(MIL-163, see docs/cli.md)",
+  )
+  .argument("<files...>", "input .em files")
+  .option("--tests <dir>", "directory to scan for INV-* test citations — enables invariant coverage totals")
+  .option("--repo <path>", "git repo to compute commits-behind-HEAD in (default: each model's own directory)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .option("--md", "print a markdown block suited for README embedding")
+  .option("--badge", "print a generated SVG badge")
+  .option("-o, --out <path>", "write output to a file instead of stdout")
+  .action(
+    (
+      files: string[],
+      opts: { tests?: string; repo?: string; json?: boolean; md?: boolean; badge?: boolean; out?: string },
+    ) => {
+      const modesSelected = [opts.json, opts.md, opts.badge].filter(Boolean).length;
+      if (modesSelected > 1) {
+        console.error("em status: --json, --md, and --badge are mutually exclusive");
+        process.exit(1);
+      }
+      if (opts.tests) {
+        if (!existsSync(opts.tests)) {
+          console.error(`em status: --tests directory not found: ${opts.tests}`);
+          process.exit(1);
+        }
+        if (!statSync(opts.tests).isDirectory()) {
+          console.error(`em status: --tests is not a directory: ${opts.tests}`);
+          process.exit(1);
+        }
+      }
+
+      const compiled: Array<{ file: string; model: NormalizedModel; refs: RefsResult }> = [];
+      let anyErrors = false;
+      for (const file of files) {
+        const { model, refs, diagnostics } = compileFile(file);
+        printDiagnosticsFor(file, diagnostics);
+        if (hasErrors(diagnostics)) anyErrors = true;
+        compiled.push({ file, model, refs });
+      }
+      if (anyErrors) {
+        console.error("em status: not reporting status — fix the errors above");
+        process.exit(1);
+      }
+
+      const sliceFacts: SliceStatusFact[] = [];
+      let openIssuesCount = 0;
+      const coverageReports: CoverageReport[] = [];
+      for (const { file, model, refs } of compiled) {
+        const baseDir = dirname(file);
+        sliceFacts.push(...resolveSliceStatusFacts(file, model, refs, baseDir));
+        openIssuesCount += countOpenIssues(model);
+        if (opts.tests) coverageReports.push(buildCoverageReport(model, refs, baseDir, opts.tests));
+      }
+      const invariants = opts.tests ? aggregateInvariantTotals(opts.tests, coverageReports) : null;
+
+      const conformance = compiled.map(({ file }) => resolveConformanceEntry(file, opts.repo));
+
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance);
+
+      let output: string;
+      if (opts.json) output = buildStatusJson(report);
+      else if (opts.md) output = formatStatusMarkdown(report);
+      else if (opts.badge) output = buildStatusBadge(report);
+      else output = formatStatusText(report);
+
+      if (opts.out) {
+        writeFileSync(opts.out, output + "\n");
+        console.log(`wrote ${opts.out}`);
+      } else {
+        process.stdout.write(output + "\n");
+      }
+    },
+  );
 
 // Shared by install/sync/check: the skill directory bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and

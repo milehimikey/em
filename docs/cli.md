@@ -11,6 +11,7 @@
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in a ready-to-implement/implemented slice doc is cited by a test (advisory by default, `--strict` for CI) |
+| `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
@@ -851,6 +852,137 @@ and every other command's own schema):
     `ready-to-implement` or `implemented`.
   - `invariants` — `{ id, cited, citations }[]`, empty for an out-of-scope slice. `citations` is
     `{ file, line }[]`, relative to `testsDir`.
+
+## `em status <files...>`
+
+One deterministic command that answers "what state is the system in" over one or more models
+(MIL-163) — the rollup a reader currently has to assemble by hand from the README's Slices
+table, a conformance report, and `.event-modeling.md` (two of which are hand-maintained or
+regenerated on demand). Pure aggregation over facts every other `em` command already computes —
+nothing here re-derives a rule another module owns:
+
+- **slices by lifecycle status** — the same doc join `em export`/`em coverage` use
+  (`resolveSliceDocJoin`), bucketed into the 4 canonical statuses
+  (`draft`/`reviewed`/`ready-to-implement`/`implemented`) plus `no-doc` (nothing bound) and
+  `unknown` (a found, usable doc whose `status` isn't one of the 4 canonical strings).
+- **`driftSignal` breakdown** — the same status/`implementedIn` coherence classification
+  `em export`'s `slice.doc.driftSignal` carries (`catalog/driftSignal.ts`): `in-sync`,
+  `never-implemented`, `unpropagated-delta`, `implemented-without-link`, tallied across every
+  slice with a usable doc; a slice with no doc at all (`driftSignal: null`) tallies separately
+  as `notApplicable`.
+- **invariant coverage totals** — `em coverage`'s own report builder, summed across every input
+  model. Opt-in: only computed when `--tests <dir>` is given (see below).
+- **open `issue` markers + unchecked Open Questions** — the same `issue "text"` predicate
+  `em validate --list-issues` counts, and the same GFM-task-list count
+  (`slices/<key>.md`'s `## Open Questions`) `--slice-ready`'s gate reads.
+- **last-conformance revision, with computed commits-behind-HEAD** — reads each model's sibling
+  state file's `Last conformance:` marker (`stateFile.ts`, same parser `em conform-scope`/
+  `em state read` use), then walks `git rev-list --count <revision>..HEAD` in the target repo
+  (the same injectable-git-runner convention `em conform-scope`'s own walk uses) — see `--repo`
+  below for which repo that is.
+
+A missing sibling state file is routine, not an error (not every model has reached the
+`conform` phase) — that model's conformance entry just reports `hasStateFile: false`. A git
+failure (not a repo, unknown revision) or an unparseable state file is carried as that entry's
+own `error` string rather than aborting the whole rollup — `em status` is a soft report, not a
+gate, and one model's broken conformance history shouldn't hide every other model's numbers.
+
+Every input model must still compile without errors — same convention as `em glossary`/
+`em catalog`: `em status` refuses (exits non-zero, prints each offending file's diagnostics)
+if any input file has one, since there's no slice list to aggregate from a model that didn't
+compile.
+
+**Deterministic core.** No LLM calls, no wall-clock timestamps in the output — byte-identical
+for the same models/tests/git state, same posture as `em export`/`em diff`.
+
+| Flag | Effect |
+|---|---|
+| `--tests <dir>` | Directory to scan for `INV-*` test citations — enables invariant coverage totals (omitted: `invariants` is `null`) |
+| `--repo <path>` | Git repo to compute commits-behind-HEAD in (default: each model's own directory — the common single-repo project case; pass this when the implementation lives in a different repo, same convention as `em conform-scope --repo`) |
+| `--json` | Print a JSON document instead of the text report (see below) |
+| `--md` | Print a markdown block suited for README embedding |
+| `--badge` | Print a generated SVG badge |
+| `-o, --out <path>` | Write the output to a file instead of stdout |
+
+`--json`/`--md`/`--badge` are mutually exclusive (a clear usage error if more than one is
+passed); the default with none of them is the text report.
+
+```bash
+em status model.em                              # text report, no invariant coverage
+em status model.em --tests test/                # text report, invariant coverage included
+em status model.em --tests test/ --json          # machine-readable form
+em status model.em --md                          # markdown block for a README
+em status model.em --badge -o status.svg         # generated SVG badge, written to a file
+em status checkout.em billing.em --tests test/   # aggregate over several models
+```
+
+Example text report:
+
+```
+$ em status model.em --tests test/
+8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f, 0 commits behind HEAD
+
+slices: 8 total — 8 implemented, 0 ready-to-implement, 0 reviewed, 0 draft, 0 no doc, 0 unknown status
+driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc)
+invariants: 20/20 covered (0 uncovered) — test/
+issues: 0 open issues, 0/0 open question(s) unchecked
+conformance: last conformed abc123f, 0 commits behind HEAD
+```
+
+The first line is the rollup MIL-163 was written to make printable — `8/8 implemented · 20/20
+invariants covered · 0 open issues · last conformed <rev>, N commits behind HEAD`. For more than
+one input model, that line's conformance clause reports the *first* file's entry (a single-model
+invocation is the common case it's written for); the full per-model breakdown is always in the
+detail block below it, and in `--json`, regardless of file count.
+
+**`--json` shape** (`statusSchemaVersion: "1.0"`, versioned independently of the npm package and
+every other command's own schema — this is also the exact document the MCP `status` tool returns,
+see [mcp.md](mcp.md)):
+
+```json
+{
+  "statusSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "files": ["model.em"],
+  "slices": {
+    "total": 8,
+    "byStatus": { "draft": 0, "reviewed": 0, "readyToImplement": 0, "implemented": 8, "noDoc": 0, "unknown": 0 }
+  },
+  "driftSignal": { "inSync": 8, "neverImplemented": 0, "unpropagatedDelta": 0, "implementedWithoutLink": 0, "notApplicable": 0 },
+  "invariants": { "testsDir": "test/", "total": 20, "cited": 20, "uncovered": 0 },
+  "issues": { "openIssues": 0, "openQuestionsTotal": 0, "openQuestionsUnchecked": 0 },
+  "conformance": [
+    {
+      "file": "model.em",
+      "modelDir": ".",
+      "hasStateFile": true,
+      "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
+      "repo": ".",
+      "commitsBehindHead": 0,
+      "error": null
+    }
+  ]
+}
+```
+
+`invariants` is `null` when `--tests <dir>` wasn't given. `conformance` has one entry per input
+file, in argument order; a model with no sibling state file reports `hasStateFile: false`,
+`lastConformance: null`, `commitsBehindHead: null`, `error: null` — not an error, just nothing to
+report yet.
+
+**`--md`** prints a small `| Metric | Value |` table — one row each for slices, invariants, open
+issues, open questions, and one "Last conformed" row per input model (a single label when there's
+one model, `Last conformed (<file>)` per model when there's more than one). It's a plain block,
+not marker-managed like `em slice index`'s README table — where (or whether) to embed it is left
+to the caller.
+
+**`--badge`** prints a self-contained, dependency-free flat-style SVG badge (`em status` on the
+left, a compact `N/M implemented · N/M invariants · N issues` message on the right), colored red
+when there's a genuine problem (an open issue, an uncovered invariant, or `implemented-without-
+link` drift), yellow when things are merely in flight (not every slice implemented yet, an
+unchecked Open Question, or any model behind on conformance), green otherwise. Text width is a
+fixed per-character estimate, not a real font-metrics table — legible, not a claim of pixel parity
+with shields.io.
 
 ## `em glossary <files...>`
 

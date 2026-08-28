@@ -81,6 +81,15 @@ records `ratifiedBy:`/`ratifiedOn:` in the same surgical-edit, idempotency-disci
 `em slice mark-implemented` (`schemaVersion` `1.8`), and a documented CODEOWNERS convention
 routes `slices/**` through a designated ratifier so the edit itself can't merge unreviewed (see
 [ci.md#codeowners-routing-ratification-review](ci.md#codeowners-routing-ratification-review)).
+Most recently (MIL-163): `em status <files...>` — one deterministic command answering "what
+state is the system in" over one or more models, aggregating slices by lifecycle status,
+`driftSignal` breakdown, invariant coverage totals (reusing `em coverage`'s report builder),
+open `issue` markers + unchecked Open Questions, and last-conformance commits-behind-HEAD
+(reusing `em conform-scope`'s injectable-git-runner walk) — as text, `--json`
+(`statusSchemaVersion` `1.0`), a `--md` block for README embedding, and a generated `--badge`
+SVG, plus a byte-identical MCP `status` tool (see [mcp.md](mcp.md)). The first surface built for
+1.9.0, "the communication layer": everything downstream (a portal, notifications, metrics, CI)
+consumes this rollup rather than re-deriving it.
 
 **Modeling and rendering**
 
