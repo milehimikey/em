@@ -27,6 +27,8 @@ em render <file> --keep-empty-lanes                         # keep the API lane 
 em export <file>                                            # export a versioned JSON snapshot of the normalized model
 em export <file> -o, --out <path>                           # write to a file instead of stdout
 em export <file> --slice <key>                              # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
+em typespec <file>                                          # EXPERIMENTAL/POC (MIL-159): generate a TypeSpec contract for a model's commands, public events, and public views (see docs/cli.md)
+em typespec <file> -o, --out <path>                         # write to a file instead of stdout
 em diff <old> [new]                                         # compare two models structurally (two files, or one file across git revisions)
 em diff <old> [new] --from <rev>                            # diff <old> against this git revision instead of a second file
 em diff <old> [new] --to <rev>                              # diff against this git revision instead of the current file (requires --from)
@@ -194,6 +196,8 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   this model). `em export` carries it as `public: true`/`false`; `em diff` reports a flip as
   `event marked public`/`event unmarked public` (the entry cites the element's kind, so a
   view flip reads `view "X"`); `em validate --list-public` audits the whole public surface.
+  `em typespec` (**experimental/POC**, MIL-159) generates a TypeSpec contract scoped to this
+  flag — see `docs/cli.md`.
 - **`tag`** (events only): declares a DCB (Dynamic Consistency Boundary) tag key. Three forms:
   a trailing `tag` on a field line inside the event's `{ … }` block (`priceId: UUID tag`, or
   typeless `priceId tag`) — an identity tag, key defaults to the field's own name; a bare field

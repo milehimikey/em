@@ -8,6 +8,7 @@
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
+| `em typespec <file>` | **Experimental/POC** (MIL-159) — generate a TypeSpec contract for a model's commands, public events, and public views |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in a ready-to-implement/implemented slice doc is cited by a test (advisory by default, `--strict` for CI) |
@@ -526,6 +527,115 @@ optional fields are a minor bump; renames, removals, or meaning changes are a ma
 
 See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step alongside
 `em validate` as a merge gate.
+
+## `em typespec <file>`
+
+> **Experimental / POC (MIL-159).** This is a proof of concept, not a stable surface: the scoping rule, the
+> type-mapping table, and the "metadata becomes a doc comment" decisions below are all
+> POC-stage choices, expected to change (or be reconsidered entirely) if this graduates past
+> POC. No schema-versioning/deprecation guarantee applies to it yet, unlike `em export`.
+
+Generates a [TypeSpec](https://typespec.io) contract — `model`/`interface`/`op` declarations,
+core scalars only, no imports — for the commands, public events, and public views a model
+declares. Event modeling is a design process, and wire contracts are part of design: this
+turns the model itself into the source of the contract artifact, instead of that being
+redone by hand downstream. Same refuse-on-error posture as `em export`: refuses (exits
+non-zero, prints the diagnostics) when the model has errors. Writes plain TypeSpec source text
+to stdout by default; `-o` writes a file.
+
+| Flag | Effect |
+|---|---|
+| `-o, --out <path>` | Write to a file instead of stdout |
+
+```bash
+em typespec model.em                    # TypeSpec source on stdout
+em typespec model.em -o model.tsp       # write to a file
+```
+
+### Scoping
+
+An `event` or `view` is included only when it carries `public` (see
+[dsl.md](dsl.md#integration-surface)) — the flag `em export`'s own docs already describe as
+"the field a downstream contract generator ... filters on." Commands have no `public` flag of
+their own, so this POC's decision is: a **command is included when its own slice declares at
+least one public event or view** — the request contract for a slice that's already promoted
+its outcome (or its read model) to the integration surface belongs on the same contract. A
+slice with no public event/view — including every element in it — contributes nothing. A model
+with no `public` elements at all still generates valid (if empty) TypeSpec: a bare
+`namespace <Model> {}`.
+
+A repeated view instance (`view X again`) is folded into its first declaration — only one
+`model` is emitted per logical view name, since TypeSpec would reject a duplicate declaration.
+Later instances' additional fields are not merged in — left out of this POC (see below).
+
+### Type mapping
+
+em field types are free text with no semantic checking (see [dsl.md](dsl.md#fields)). TypeSpec
+needs real scalar/model references, so this POC applies one explicit, documented strategy:
+
+1. A field whose type names a declared `type` block (already resolved by `em export`'s own
+   `typeRef`, bare or `[]`-suffixed — see [dsl.md](dsl.md#named-types)) references that type's
+   generated `model` by name. Only types reachable from an included element's fields are
+   emitted — never every declared type in the model.
+2. Otherwise the bare type name — after stripping a `[]` suffix or a `List<...>`/`Array<...>`/
+   `Set<...>` generic wrapper — is looked up case-insensitively against a small built-in table
+   of common scalars (`string`, `int`/`long`, `boolean`, `float`/`double`, `decimal`/`Money`,
+   `UUID`/`guid` → `string`, `Instant`/`DateTime` → `utcDateTime`, `Date`, `duration`, `url`,
+   `bytes`, …). A hit maps to that TypeSpec core scalar.
+3. A field with no declared type at all maps to `unknown` — not a mapping failure, just an
+   honest "this field's shape isn't declared here."
+4. Anything else — a declared type that's neither a known scalar nor a resolvable `type`
+   reference (a typo, an undocumented domain string like a bespoke `Money` without a `type`
+   block behind it) — also becomes `unknown`, but is reported back to the CLI as a `note:`
+   line on stderr so the gap is visible instead of silently swallowed. A `List<X>`/`X[]`
+   wrapper around an unmapped `X` still becomes `unknown[]`, keeping the arity even when the
+   element type doesn't map.
+
+This table is intentionally small and unopinionated — a promoted, non-POC version would likely
+want it user-configurable (a mapping file) instead of hardcoded.
+
+### Shape
+
+- **Named types** → a `model` per declared type, PascalCased, deduplicated (`_2`, `_3`, … on a
+  name collision once PascalCased).
+- **Public events** → a `model` per event (the message payload). Schema only — no protocol/
+  channel semantics (see "async representation," below).
+- **Public views** → a `model` per view, plus a no-arg accessor `op` inside `interface Views`
+  (`op get<View>(): <View>;`) — deliberately no `@get`/`@route` (that's `@typespec/http`
+  territory, a dependency this POC doesn't need to prove the field-mapping question).
+- **Commands** (scoped per above) → an `op` per command inside `interface Commands`, one
+  parameter per field, `void` return.
+
+### em-specific metadata: doc comments, never decorators
+
+`tag` (DCB identity/composite/external — [dsl.md](dsl.md#event-tags)), `renamed from`
+([dsl.md](dsl.md#renames)), and `assigned` ([dsl.md](dsl.md#assigned-fields)) are modeling/
+event-store concerns, not wire-contract shape. This POC carries them forward as plain
+`/** ... */` doc comments on the affected model/field — visible in the generated contract, but
+never as a decorator: a real `@tag`/`@renamedFrom`/`@assigned` decorator would need its own
+TypeSpec extension library (`extern dec` plus a JS implementation) to be more than cosmetic,
+out of scope for a dependency-free POC.
+
+### Async event representation
+
+Core TypeSpec is HTTP/OpenAPI-shaped; async messaging isn't a first-class primitive. This POC's
+answer: a public event becomes a plain `model` — schema only, no protocol semantics attached.
+A promoted version could layer `@typespec/events` or an AsyncAPI emitter on top of these same
+models for channel/binding semantics; deliberately not attempted here.
+
+### What's left out of this POC
+
+- No `--slice` scoping (unlike `em export`) — always the whole model's public surface.
+- No merging of a later `view X again public` instance's added fields into the first.
+- No user-configurable type-mapping file — the scalar table is fixed in code.
+- No decorators for `tag`/`renamed from`/`assigned` — doc comments only.
+- No AsyncAPI/HTTP emitter layering (`@typespec/http`, `@typespec/events`) — bare core
+  TypeSpec only, and no new runtime dependency.
+
+**Determinism.** Same discipline as `em export`: the same source text always generates
+byte-identical TypeSpec — no timestamps, no git data, no absolute paths, no environment-derived
+values. The header comment's `Source: <path> (sha256 <hash>)` line is a hash of the source
+text, same convention as `em export`'s own `source.sha256`.
 
 ## `em diff <old> <new>`
 

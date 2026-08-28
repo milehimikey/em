@@ -26,7 +26,7 @@ A `Customer`, acting on the **Product Catalog** screen.
 | Field | Type | Required | Rules / Validation |
 |-------|------|----------|--------------------|
 | customerId | UUID | yes | Must resolve to an active, non-suspended customer account. |
-| items | `List<LineItem>` | yes | At least one line item; each item's `productId` must exist and be in stock at command time (stock is re-checked, not just at add-to-cart time). |
+| items | `LineItem[]` | yes | At least one line item; each item's `productId` must exist and be in stock at command time (stock is re-checked, not just at add-to-cart time). |
 | total | Money | yes | Must equal the sum of `items[].unitPrice * quantity` — the server recomputes and rejects a mismatched client-supplied total rather than trusting it. |
 
 ## Trigger

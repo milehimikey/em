@@ -17,6 +17,7 @@ import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
 import { buildExport, buildSliceExport } from "./emit/json.js";
+import { buildTypeSpec } from "./emit/typespec.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
@@ -296,6 +297,35 @@ program
       console.log(`wrote ${opts.out}`);
     } else {
       process.stdout.write(exported.text + "\n");
+    }
+  });
+
+program
+  .command("typespec")
+  .description(
+    "EXPERIMENTAL/POC (MIL-159): generate a TypeSpec contract for a model's commands, public " +
+      "events, and public views (see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("-o, --out <path>", "write to a file instead of stdout")
+  .action((file: string, opts: { out?: string }) => {
+    const { model, refs, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    if (hasErrors(diagnostics)) {
+      console.error("not generating: fix the errors above");
+      process.exit(1);
+    }
+
+    const generated = buildTypeSpec(model, refs, diagnostics, source, file);
+    printDiagnostics(newDiagnostics(generated.diagnostics, diagnostics));
+    for (const note of generated.unmappedTypes) console.error(`note: ${note}`);
+
+    if (opts.out) {
+      writeFileSync(opts.out, generated.text + "\n");
+      console.log(`wrote ${opts.out}`);
+    } else {
+      process.stdout.write(generated.text + "\n");
     }
   });
 

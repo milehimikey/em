@@ -445,11 +445,13 @@ free-text name instead, the same as any other unrecognized trailing word.
 `em export` carries the flag forward as `public: true`/`false` on every event and view — the
 field a downstream contract generator (e.g. an AsyncAPI generator) filters on to promote only
 the events and views actually meant for consumers, instead of every fact and read model by
-default. `em diff` tracks a flagged element flipping public↔private as its own change
-(`event marked public` / `view marked public` / etc.), so a promotion or demotion to the
-integration surface is a visible, diffable event. `em validate` exempts public elements from
-warnings about unread events and unconsumed views, since their readers/consumers exist outside
-this model (see [validation.md](validation.md)). See [cli.md](cli.md) for both.
+default. `em typespec` (MIL-159, **experimental**/POC) is exactly such a generator, built into
+`em` itself — it emits a TypeSpec contract scoped to this flag. `em diff` tracks a flagged
+element flipping public↔private as its own change (`event marked public` / `view marked
+public` / etc.), so a promotion or demotion to the integration surface is a visible, diffable
+event. `em validate` exempts public elements from warnings about unread events and unconsumed
+views, since their readers/consumers exist outside this model (see
+[validation.md](validation.md)). See [cli.md](cli.md) for all three.
 
 ## Colors
 
