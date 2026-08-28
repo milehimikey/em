@@ -5,6 +5,14 @@ it on every `.em` file a pull request touches, and fail the check the same way a
 linter would. This is a copy-paste GitHub Actions workflow that does that, plus an optional
 `em export` artifact step for downstream tooling.
 
+**Installed, not just copy-pasted:** `em ci init <model>` (MIL-166, see
+[cli.md](cli.md#em-ci-initmodel)) scaffolds most of this page's recipe as two ready-to-commit
+GitHub Actions files — `em validate` below, `em slice index --check`, `em coverage --strict`,
+`em ledger`, `em skill check`, `em glossary --fail-on-conflicts`, a status-badge rebuild, and
+the conformance cadence — in one command, marker-delimited and idempotent the same way `em
+skill install` is. The rest of this page stays the reference for what each check does and why;
+reach for `em ci init` when you just want it wired.
+
 ## Where this fits
 
 Treat a committed `.em` model the same way you'd treat a schema or an OpenAPI spec: it's a
@@ -101,7 +109,8 @@ gate — one JSON document on stdout, exit 1 when the model actually changed. Se
 [cli.md](cli.md#em-diff-old-new).
 
 When a repo holds more than one `.em` model, `em glossary <files...> --fail-on-conflicts`
-adds a vocabulary-consistency gate the same way: opt-in, off by default, exits non-zero only
+adds a vocabulary-consistency gate the same way (also wired by default in the `em ci init`
+scaffold): opt-in, off by default in a hand-assembled workflow, exits non-zero only
 when the same term is used inconsistently across models (a different element kind, or a
 different field type). Add it as its own step once changed-files detection covers every
 `.em` file in the repo, not just the ones a PR touched — a conflict can be introduced by
@@ -115,6 +124,10 @@ either side of a rename, so scoping the check to the diff alone can miss it:
 See [cli.md](cli.md#em-glossary-files) for the conflict rules and the `--json` schema.
 
 ## `em ledger` (opt-in)
+
+Opt-in here means: not part of `em validate`, so add it yourself if you're hand-assembling a
+workflow. `em ci init` wires it in by default as its own PR gate — the preset's opinion is that
+once a repo has `slices/*.md` docs at all, ledger agreement is worth enforcing from the start.
 
 `em ledger` (MIL-89) checks that a slice doc's `version:` frontmatter field and its content
 (body + lineage refs) always change together between two git revisions — a version bump with
@@ -140,6 +153,9 @@ separate `--exit-code`/`--fail-on-*` opt-in flag. See
 
 ## `em coverage` (opt-in)
 
+Same "opt-in unless you install the preset" story as `em ledger` above — `--strict` is on by
+default in the `em ci init` scaffold, gating the PR rather than only reporting.
+
 `em coverage` (MIL-130) mechanizes `reference/implement.md`'s definition-of-done citation check:
 for every slice whose doc `status` is `ready-to-implement` or `implemented`, every `INV-*`
 invariant ID mentioned in the doc's body must be cited by at least one test under `--tests
@@ -161,6 +177,9 @@ test tree), so unlike `em ledger` it doesn't need `fetch-depth: 0` on checkout. 
 shape.
 
 ## Conformance cadence (advisory)
+
+`em ci init <model>` scaffolds this recipe verbatim as `.github/workflows/em-conform.yml` — the
+walkthrough below is what that file does and why.
 
 Once a model's slices are `implemented`, the bundled skill's `conform` phase can check the
 codebase against the model on a schedule — drift surfaces as an advisory report, never a
