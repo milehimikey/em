@@ -337,6 +337,19 @@ export const RULES = {
     fix: "Rename the type so its export ref is unique.",
     usageCategory: "duplicate type ref",
   },
+  // MIL-160: two input models sharing a directory (so both resolve slice docs at
+  // `<that-directory>/slices/<key>.md`) whose compiled slice keys overlap — nothing before this
+  // caught it, since computeRefs() dedupes slice keys only within one model's own compile. Raised
+  // by src/catalog/modelCollisionValidate.ts, the only cross-model check in the codebase — every
+  // other rule is a single-model concern, so this one lives outside model/validate.ts's pipeline
+  // and is instead wired directly into the two commands that ever compile more than one model in
+  // the same run (`em status`, `em catalog`).
+  "cross-model-slice-doc-collision": {
+    severity: "warning",
+    title: "Colliding slice doc path across models",
+    fix: "Give each model its own directory (see docs/cli.md, \"Multi-model projects\").",
+    usageCategory: "colliding slice doc path across models",
+  },
   "slice-ready-unknown-slice": {
     severity: "error",
     title: "Unknown --slice-ready key",

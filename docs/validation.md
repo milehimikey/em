@@ -419,3 +419,8 @@ never records an event itself). The [patterns](patterns.md) doc covers why.
 `em validate` is also single-model by design: a name reused across kinds *within* one file is
 flagged ("ambiguous names", above), but the same term used inconsistently *across* files is
 not — that's `em glossary`'s job, not the validator's (see [cli.md](cli.md#em-glossary-files)).
+One specific cross-model case — two `.em` files sharing a directory whose slice keys collide,
+so both would read/write the same `slices/<key>.md` doc (MIL-160) — isn't caught by `em
+validate` either, but IS caught by `em status`/`em catalog` (the `cross-model-slice-doc-collision`
+warning), the only two commands that ever compile more than one model in the same run; see
+[cli.md, "Multi-model projects"](cli.md#multi-model-projects).

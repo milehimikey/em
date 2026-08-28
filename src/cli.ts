@@ -27,6 +27,7 @@ import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceVali
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
+import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
@@ -119,28 +120,36 @@ program
   .command("scaffold")
   .description(
     "scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md " +
-      "(see docs/cli.md — for just a starter .em, use `em init`)",
+      "(see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, " +
+      "pass --under to nest it under a shared parent directory)",
   )
   .argument("<name>", "model display name — kebab-cased for the directory and file names, used as-is for titles/prose")
   .option("-f, --force", "overwrite the directory's contents if it already exists")
-  .action(async (name: string, opts: { force?: boolean }) => {
+  .option(
+    "--under <dir>",
+    "parent directory to scaffold into — writes <dir>/<slug>/ instead of ./<slug>/, the " +
+      "supported multi-model layout (docs/cli.md, \"Multi-model projects\"): one directory per " +
+      "model, so each model's slices/ never collides with a sibling model's",
+  )
+  .action(async (name: string, opts: { force?: boolean; under?: string }) => {
     if (name.includes('"') || name.includes("{{")) {
       console.error(
         `em scaffold: name must not contain '"' or '{{' (breaks the generated .em/README/state files): ${name}`,
       );
       process.exit(1);
     }
-    const dirName = kebabSlug(name);
-    if (existsSync(dirName) && !opts.force) {
-      console.error(`refusing to overwrite ${dirName}/ (use --force)`);
+    const slugName = kebabSlug(name);
+    const dirPath = opts.under ? join(opts.under, slugName) : slugName;
+    if (existsSync(dirPath) && !opts.force) {
+      console.error(`refusing to overwrite ${dirPath}/ (use --force)`);
       process.exit(1);
     }
-    await mkdir(dirName, { recursive: true });
+    await mkdir(dirPath, { recursive: true });
     const today = new Date().toISOString().slice(0, 10);
-    writeFileSync(join(dirName, `${dirName}.em`), starterEmFor(name));
-    writeFileSync(join(dirName, "README.md"), scaffoldReadme(name, dirName));
-    writeFileSync(join(dirName, STATE_FILE_NAME), scaffoldStateFile(name, dirName, today));
-    console.log(`scaffolded ${dirName}/`);
+    writeFileSync(join(dirPath, `${slugName}.em`), starterEmFor(name));
+    writeFileSync(join(dirPath, "README.md"), scaffoldReadme(name, slugName));
+    writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today));
+    console.log(`scaffolded ${dirPath}/`);
   });
 
 program
@@ -1147,6 +1156,17 @@ program
 
       const sliceFacts: SliceStatusFact[] = [];
       const statusDiagnostics: StatusDiagnostic[] = [];
+
+      // MIL-160: a multi-model run is exactly the case where two `.em` files could share a
+      // directory and collide on a slice key — checked once, up front, over every compiled
+      // input (never fatal, same "warn, don't block" posture as the doc-join diagnostics below).
+      const collisions = detectSliceDocCollisions(compiled.map(({ file, refs }) => ({ file, sliceKeys: refs.sliceKeys })));
+      for (const d of collisions) {
+        const file = d.refs?.[2] ?? files[0];
+        printDiagnosticsFor(file, [d]);
+        statusDiagnostics.push({ file, ...d });
+      }
+
       let openIssuesCount = 0;
       const coverageReports: CoverageReport[] = [];
       for (const { file, model, refs } of compiled) {

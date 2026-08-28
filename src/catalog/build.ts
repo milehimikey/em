@@ -22,6 +22,7 @@ import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 import { classifySlicePattern } from "./classify.js";
+import { detectSliceDocCollisions } from "./modelCollisionValidate.js";
 import { parseSliceDoc } from "./sliceDoc.js";
 import { renderIndexPage, renderSlicePage, CatalogModelSummary, CatalogSliceSummary } from "./pages.js";
 
@@ -72,6 +73,14 @@ export async function buildCatalog(
   const modelSummaries: CatalogModelSummary[] = [];
   const diagnostics: { file: string; diagnostics: Diagnostic[] }[] = [];
   let sliceCount = 0;
+
+  // MIL-160: catalog's own doc discovery below (existsSync+parseSliceDoc, deliberately not
+  // routed through readSliceDoc.ts's `note`-aware convention — see this module's header
+  // comment) reads straight off `dirname(file)/slices/<key>.md`, same as every other doc-aware
+  // command — so two input models sharing a directory with overlapping slice keys would
+  // silently mix up whose doc is whose here too. Checked once, up front, over every input.
+  const collisions = detectSliceDocCollisions(inputs.map(({ file, refs }) => ({ file, sliceKeys: refs.sliceKeys })));
+  for (const d of collisions) diagnostics.push({ file: d.refs?.[2] ?? "", diagnostics: [d] });
 
   for (const { file, model, grid, dot, refs } of inputs) {
     const modelKey = dedupe(kebabSlug(basename(file, extname(file))), usedModelKeys, "~");

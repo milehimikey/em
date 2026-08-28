@@ -102,6 +102,11 @@ and a Usage log (phases touched, validate diagnostic categories hit — see
 [usage-data.md](usage-data.md)), so you can stop mid-session and pick up in a fresh conversation
 days later.
 
+More than one model in the same project? Give each one its own directory (this same layout,
+repeated), nested under a shared `models/` parent — see
+[cli.md, "Multi-model projects"](cli.md#multi-model-projects) and
+[examples/multi-model/](../examples/multi-model/).
+
 ## A complete worked example
 
 The [em-with-ai repository](https://github.com/milehimikey/em-with-ai) is a full AI-built

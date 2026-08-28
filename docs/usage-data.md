@@ -54,6 +54,7 @@ into two in the aggregation recipe below.
 <!-- GENERATED:usage-categories-warnings:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Category |
 |---|
+| colliding slice doc path across models |
 | command nothing triggers |
 | command produces no event |
 | cross-slice note not ratified by target doc |
