@@ -112,8 +112,10 @@ of a large, still-WIP model has unrelated errors.
 ### `coverage`
 
 Same document as `em coverage <file> --tests <testsDir> --json`: for every slice whose joined
-doc status is `ready-to-implement` or `implemented`, each `INV-*` invariant ID found in the
-doc body, whether a test under `testsDir` cites it, and every citing `file:line`. Refuses (a
+doc status is `ready-to-implement` or `implemented`, each `INV-*` invariant ID the doc's own
+`## Invariants` / `## Delta` sections *define* (see **Token format** under
+[`em coverage`](cli.md#em-coverage-file---tests-dir) for exactly what counts as a definition),
+whether a test under `testsDir` cites it, and every citing `file:line`. Refuses (a
 tool error) when the model has errors, or when `testsDir` doesn't exist — matching the CLI's own
 hard-error behavior for a missing `--tests` directory. This is a *checking* tool, not a
 *judgment* one: it confirms an ID is cited, never whether the citing test is good or passing.

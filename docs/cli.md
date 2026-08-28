@@ -785,8 +785,11 @@ convention. Only the doc's own `## Invariants / Business Rules` section and `## 
 Invariants below") count as *defining* an ID for that slice — an ID appearing only in another
 section's prose (Dependencies, Open Questions, ...) is a citation-worthy mention, not an
 attribution, and is **not** collected into that slice's own coverage ledger; the ID still belongs
-to whichever slice's doc actually declares it under its own `## Invariants` (MIL-149). Citation
-matching is word-boundary-anchored so `INV-KEY-1` never matches inside `INV-KEY-12`.
+to whichever slice's doc actually declares it under its own `## Invariants` (MIL-149). And within
+that section, only the bullet's/subheading's own line counts as the definition — not a wrapped
+continuation line or a bare paragraph, either of which may legitimately cite a sibling slice's ID
+while explaining this doc's own rule (MIL-155). Citation matching is word-boundary-anchored so
+`INV-KEY-1` never matches inside `INV-KEY-12`.
 
 | Flag | Effect |
 |---|---|
