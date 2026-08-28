@@ -87,10 +87,13 @@ vendored alongside this skill.
 1. Check the tool: `em --version`. If missing, tell the user to run `npm i -g @milehimikey/em`
    and stop until installed.
 2. Locate the model. Look for an existing `<dir>/.event-modeling.md` and `*.em` in the working
-   directory (or a `models/` subfolder). If found, run `em state read <dir>` to read the state
-   file's mechanical fields (model path, phase, step, last updated, last conformance, last
-   review) as JSON — don't parse the bullets by hand. If not, and the phase needs one, ask the
-   user for the model name and where to create it.
+   directory, or — for a multi-model project laid out per the convention below — one level down
+   inside a `models/` subfolder (each model gets its own `models/<slug>/` directory; check each
+   candidate for its own `.event-modeling.md`/`*.em` pair). If found, run `em state read <dir>`
+   to read the state file's mechanical fields (model path, phase, step, last updated, last
+   conformance, last review) as JSON — don't parse the bullets by hand. If not, and the phase
+   needs one, ask the user for the model name and where to create it (a lone model goes at the
+   project root; one of several goes under `models/`, per "Multi-model projects" below).
 3. Parse the argument (`$ARGUMENTS`) to pick the phase below. With **no argument**, use
    `em state read <dir>`'s `phase`/`step` to resume the recorded phase/step; if no model exists,
    propose starting `discover` (greenfield) or `extract` (modeling an existing system).
@@ -125,6 +128,33 @@ model — it starts out as the same starter model `em init` writes, titled from 
 and `<model-name>-asis.em` only appear once the `conform` phase runs; `em conform-scope
 --seed-asis` creates `<model-name>-asis.em` and gitignores `*-asis.em` for you (see
 `reference/conform.md`) — it's scratch, never committed.
+
+### Multi-model projects
+
+Slice docs resolve at a fixed path — `slices/<slug>.md`, sibling of the `.em` file that
+declares the slice — with no model namespace anywhere, so **one directory per model** is the
+whole guardrail against two models' slice names colliding. For more than one model, nest each
+one's directory (the exact layout above) under a shared `models/` parent instead of scattering
+them at the project root:
+
+```
+models/
+  checkout/
+    checkout.em
+    slices/...
+  fulfillment/
+    fulfillment.em
+    slices/...
+```
+
+Run `em scaffold <model-name> --under models` for each model — it creates `models/<slug>/`
+directly rather than a two-step `cd models && em scaffold <model-name>`. See
+[docs/cli.md, "Multi-model projects"](https://github.com/milehimikey/em/blob/main/docs/cli.md#multi-model-projects)
+for the full rationale, and why slice keys stay unqualified (no `<model>/<slice>` prefix) —
+directory isolation alone is sufficient. Two `.em` files sharing a directory with colliding
+slice keys don't go undetected: `em status`/`em catalog`, the two commands that ever compile
+more than one model in a run, raise a `cross-model-slice-doc-collision` warning naming both
+files — treat that warning as a sign the models need separating, not a false positive.
 
 ---
 

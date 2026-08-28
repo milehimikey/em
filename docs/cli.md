@@ -28,6 +28,10 @@
 Every command that reads a model also parses and validates it first, printing any
 diagnostics (see [validation.md](validation.md)).
 
+For a project with more than one model, see [Multi-model projects](#multi-model-projects) below
+`em scaffold` — the supported directory convention, and how `em status`/`em catalog` detect a
+project that doesn't follow it.
+
 ## `em init [file]`
 
 Writes a starter model — the same order-fulfillment model the [tutorial](tutorial.md)
@@ -57,13 +61,86 @@ command rather than hand-copying its `templates/*` files.
 | Flag | Effect |
 |---|---|
 | `-f, --force` | Overwrite the directory's contents if it already exists |
+| `--under <dir>` | Scaffold into `<dir>/<slug>/` instead of `./<slug>/` — the supported multi-model layout, see [Multi-model projects](#multi-model-projects) below |
 
 ```bash
-em scaffold "Order Fulfillment"   # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md}
+em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md}
+em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md}
 ```
 
-Refuses if `<slug>/` already exists (`refusing to overwrite <slug>/ (use --force)`), matching
-`em init`'s convention.
+Refuses if `<slug>/` (or `<dir>/<slug>/` with `--under`) already exists (`refusing to overwrite
+<slug>/ (use --force)`), matching `em init`'s convention. `--under` only changes *where* the
+directory is created — every file inside it still uses the bare slug (`checkout.em`, not
+`models-checkout.em`), so a model scaffolded under a parent directory looks identical to one
+scaffolded standalone once you `cd` into it.
+
+## Multi-model projects
+
+Every doc-aware command (`em catalog`, `em export`, `em diff`, `em validate`, `em status`, `em
+slice ratify`/`mark-implemented`, ...) resolves a slice's doc at a fixed, unconfigurable path:
+`slices/<kebab-slug-of-slice-name>.md`, always a **sibling of the `.em` file that declares the
+slice** (`baseDir` = `dirname(file)` — see `em catalog`'s "Slice docs" section above for the
+exact rule). There is no model ID, namespace, or configurable slices-directory field anywhere —
+directory placement is the *entire* mechanism, so it's the one thing a multi-model project has
+to get right.
+
+**The convention: one directory per model.** Give every model its own directory, and every
+model's `slices/` is automatically isolated from every other model's — two models can freely
+reuse the same slice name (`"Checkout"` in one model, `"Checkout"` in another) with zero
+collision, because `slices/checkout.md` means something different relative to each model's own
+directory. This is the same precedent `em catalog`'s own output already establishes for its
+generated site (one `<model-key>/` subdirectory per input file, "so slice keys from different
+files can never collide, even without a cross-file dedup pass" — `src/catalog/build.ts`); this
+section formalizes the matching convention for the **source** layout `em catalog` (and every
+other doc-aware command) reads from.
+
+For more than a couple of models, nest their directories under a shared parent — conventionally
+`models/` — so the project root stays uncluttered:
+
+```
+my-project/
+  models/
+    checkout/
+      checkout.em
+      checkout.svg
+      README.md
+      .event-modeling.md
+      slices/
+        add-item.md
+        checkout.md          # <- this model's own "Checkout" slice
+    fulfillment/
+      fulfillment.em
+      fulfillment.svg
+      README.md
+      .event-modeling.md
+      slices/
+        ship-order.md
+        checkout.md          # <- a DIFFERENT model's own "Checkout" slice — no collision
+```
+
+Back this with `em scaffold <name> --under models` for each model (writes `models/<slug>/`
+directly, rather than requiring a `cd models && em scaffold <name>` two-step) — see above. The
+event-modeling skill's discovery step looks for a model in the working directory *or* a
+`models/` subfolder, one level down, for exactly this layout (see `SKILL.md`).
+
+**No key-namespacing needed.** Slice export keys and doc filenames stay exactly `kebabSlug(slice
+name)` — unqualified, no `<model>/<slice>` prefix — regardless of how many models a project has.
+Directory isolation is a *complete* guardrail on its own: as long as every model owns its own
+directory, two models' slice keys can never collide, because they're never read from the same
+`slices/` directory in the first place. Model-qualifying every key would only add ceremony (a
+slice's key/doc-filename could no longer be derived from its display name alone) without closing
+a gap directory isolation doesn't already close.
+
+**Detection, for when the convention isn't followed.** Nothing stops two `.em` files from
+sharing a directory — validate doesn't reject it, and `em status`/`em catalog` still compile
+each file that's given to them. If two co-located models *do* produce the same slice key, they'd
+silently read/write the same `slices/<key>.md` doc, each attributing the other's content to
+itself. `em status <files...>` and `em catalog <files...>` — the only two commands that ever
+compile more than one model in a single run — check for this directly and print a
+`cross-model-slice-doc-collision` warning naming both files and the colliding key whenever it
+happens (never fatal — a warning, same posture as every other doc-join diagnostic). A
+single-model project, or a multi-model project laid out one-directory-per-model, never triggers
+it.
 
 ## `em render <file>`
 
@@ -910,6 +987,12 @@ each is printed to stderr (tagged with the file it concerns) and carried in `dia
 JSON document below, so a `frontmatterInvalid` count in `slices.byStatus` always has a matching
 diagnostic explaining exactly which doc is broken and why.
 
+Multiple input files are also when `em status` checks for a **cross-model slice-doc collision**
+(MIL-160, see [Multi-model projects](#multi-model-projects) above): two files sharing a
+directory whose compiled slice keys overlap would both resolve to the same `slices/<key>.md`.
+When that happens, a `cross-model-slice-doc-collision` warning (also never fatal) is printed and
+added to `diagnostics`, same channel as the doc-join warnings above.
+
 **Deterministic core.** No LLM calls, no wall-clock timestamps in the output — byte-identical
 for the same models/tests/git state, same posture as `em export`/`em diff`.
 
@@ -1181,6 +1264,14 @@ are never conflated. Three outcomes, shown as the page/table's Status:
 Both the main diagram and every per-slice diagram embedded in the catalog carry the same
 status header coloring `em render`/`em watch` do (see above) — one status source, colored
 consistently everywhere it's shown.
+
+Given more than one input model, `em catalog` also checks for a **cross-model slice-doc
+collision** (MIL-160, see [Multi-model projects](#multi-model-projects) above): two input files
+sharing a directory whose compiled slice keys overlap would both resolve doc lookups to the same
+`slices/<key>.md` on disk. A `cross-model-slice-doc-collision` warning (never fatal — the build
+still completes) is printed and added to the diagnostics `em catalog` prints after the build, the
+same channel ref-collision warnings use. The documented one-directory-per-model layout never
+triggers this.
 
 **Pattern.** `em catalog` derives a slice's pattern (State Change / State View / Automation /
 Translation) from the slice's element kinds (see [patterns.md](patterns.md)) rather than reading

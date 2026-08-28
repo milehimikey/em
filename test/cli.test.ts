@@ -2888,3 +2888,127 @@ slice "Following" {
     expect(r.stderr).toContain("parse error in model.em");
   });
 });
+
+// MIL-160: `em status` is a multi-model surface (`<files...>`) — the CLI wiring that calls
+// detectSliceDocCollisions() and folds its diagnostics into the JSON `diagnostics` array is
+// exercised here, over and above the pure-function coverage in test/modelCollisionValidate.test.ts.
+describe("em status — cross-model slice-doc collisions (CLI, real fs, MIL-160)", () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-status-collision-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const CHECKOUT = `slice "Checkout" {
+  ui Checkout Screen @Customer
+  command Submit Order
+  event Order Submitted
+}
+slice "Order Confirmation" {
+  view Order Confirmation from "Order Submitted"
+  ui Confirmation Screen @Customer
+}
+`;
+
+  it("warns (non-fatally) when two sibling models share a directory and a slice name", () => {
+    const badDir = join(dir, "flat-models");
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, "a.em"), CHECKOUT);
+    writeFileSync(join(badDir, "b.em"), CHECKOUT);
+
+    const r = em(["status", "a.em", "b.em"], badDir);
+    expect(r.status).toBe(0); // a collision warning never blocks the report
+    expect(r.stderr).toContain(
+      'b.em:   warn  "b.em" and "a.em" share a directory and both produce slice key "checkout" — ' +
+        'both would read/write "slices/checkout.md"; give each model its own directory ' +
+        '(see docs/cli.md, "Multi-model projects")',
+    );
+    expect(r.stderr).toContain('slice key "order-confirmation"');
+
+    const json = em(["status", "a.em", "b.em", "--json"], badDir);
+    expect(json.status).toBe(0);
+    const parsed = JSON.parse(json.stdout);
+    const collision = parsed.diagnostics.find((d: { code: string }) => d.code === "cross-model-slice-doc-collision");
+    expect(collision).toBeDefined();
+    expect(collision.file).toBe("b.em"); // attributed to the second file to use the key
+    expect(collision.severity).toBe("warning");
+  });
+
+  it("MULTI-MODEL FIXTURE, backward compat: one directory per model reports zero collisions", () => {
+    // The documented convention (docs/cli.md, "Multi-model projects"): each model in its OWN
+    // directory, so both models can freely use the same slice name without namespacing.
+    const root = join(dir, "well-laid-out");
+    mkdirSync(join(root, "checkout"), { recursive: true });
+    mkdirSync(join(root, "fulfillment"), { recursive: true });
+    writeFileSync(join(root, "checkout", "checkout.em"), CHECKOUT);
+    // Deliberately reuses the exact same slice name ("Checkout") in a SECOND model — legal
+    // and collision-free purely because each model owns its own directory.
+    writeFileSync(join(root, "fulfillment", "fulfillment.em"), CHECKOUT);
+
+    const r = em(["status", "checkout/checkout.em", "fulfillment/fulfillment.em", "--json"], root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.slices.total).toBe(4); // 2 slices per model x 2 models, no cross-model dedup needed
+  });
+
+  it("backward compat: an existing single-model project (no directory-per-model layout) is unaffected", () => {
+    const single = join(dir, "single-model");
+    mkdirSync(single, { recursive: true });
+    writeFileSync(join(single, "model.em"), CHECKOUT);
+
+    const r = em(["status", "model.em", "--json"], single);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.diagnostics).toEqual([]);
+  });
+});
+
+describe("em scaffold --under (CLI, real fs, MIL-160)", () => {
+  let cwd: string;
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-under-"));
+  });
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it("scaffolds <under>/<slug>/ instead of ./<slug>/, keeping filenames un-namespaced", () => {
+    const r = em(["scaffold", "Checkout", "--under", "models"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("scaffolded models/checkout/");
+
+    const dir = join(cwd, "models", "checkout");
+    expect(existsSync(join(dir, "checkout.em"))).toBe(true); // slug stem, not "models-checkout"
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+    expect(existsSync(join(dir, ".event-modeling.md"))).toBe(true);
+    expect(readFileSync(join(dir, "checkout.em"), "utf8").startsWith('model "Checkout"\n')).toBe(true);
+    expect(readFileSync(join(dir, "README.md"), "utf8")).toContain("em watch checkout.em -o checkout.svg --serve");
+    expect(readFileSync(join(dir, ".event-modeling.md"), "utf8")).toContain("- **Model file:** `checkout.em`");
+  });
+
+  it("a second model scaffolded under the same parent gets its own sibling directory", () => {
+    const r = em(["scaffold", "Fulfillment", "--under", "models"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("scaffolded models/fulfillment/");
+    expect(existsSync(join(cwd, "models", "fulfillment", "fulfillment.em"))).toBe(true);
+    // The earlier model is untouched.
+    expect(existsSync(join(cwd, "models", "checkout", "checkout.em"))).toBe(true);
+  });
+
+  it("refuses to overwrite an existing --under directory without --force", () => {
+    const r = em(["scaffold", "Checkout", "--under", "models"], cwd);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing to overwrite models/checkout/ (use --force)");
+  });
+
+  it("without --under, behaves exactly as before (scaffolds ./<slug>/)", () => {
+    const r = em(["scaffold", "Standalone"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("scaffolded standalone/");
+    expect(existsSync(join(cwd, "standalone", "standalone.em"))).toBe(true);
+  });
+});

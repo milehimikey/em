@@ -15,8 +15,9 @@ Keep `.em` files focused on **structure**; put deep design in markdown linked vi
 em --version                                                # print the installed em version
 em init [file]                                              # scaffold a starter .em model
 em init [file] -f, --force                                  # overwrite if the file exists
-em scaffold <name>                                          # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md (see docs/cli.md — for just a starter .em, use `em init`)
+em scaffold <name>                                          # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md (see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, pass --under to nest it under a shared parent directory)
 em scaffold <name> -f, --force                              # overwrite the directory's contents if it already exists
+em scaffold <name> --under <dir>                            # parent directory to scaffold into — writes <dir>/<slug>/ instead of ./<slug>/, the supported multi-model layout (docs/cli.md, "Multi-model projects"): one directory per model, so each model's slices/ never collides with a sibling model's
 em render <file>                                            # transpile a model and render it (or emit DOT)
 em render <file> -o, --out <path>                           # output path (extension picks the format)
 em render <file> -T, --format <fmt>                         # output format (svg, png, pdf, ...)
@@ -540,6 +541,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
+| `cross-model-slice-doc-collision` | warning | Colliding slice doc path across models | Give each model its own directory (see docs/cli.md, "Multi-model projects"). |
 | `doc-model-element-not-in-doc` | warning | Model element the doc doesn't mention | Add the matching marker to the doc, or remove the element from the model. |
 | `doc-model-element-not-in-model` | warning | Doc names an element the model doesn't have | Add the element to the model, or fix/remove it in the doc. |
 | `doc-model-field-mismatch` | warning | Doc/model field mismatch | Reconcile the field table with the model's fields — names and types. |

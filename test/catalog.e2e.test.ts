@@ -158,4 +158,38 @@ slice "Place Order" {
     expect(existsSync(join(outDir, "model", "slices", "place-order.html"))).toBe(true);
     expect(existsSync(join(outDir, "model~2", "slices", "place-order.html"))).toBe(true);
   });
+
+  // MIL-160: unlike the test above (one file listed twice — always collision-free via the
+  // model-key dedup on the OUTPUT side), this is the genuine input-side hazard the ticket
+  // exists to catch: two DIFFERENT source .em files sharing a directory, each with a slice
+  // named "Checkout" — both would read/write the same `slices/checkout.md` on disk.
+  it("flags colliding slice doc paths when two DIFFERENT models share a directory and a slice name", async () => {
+    const sharedDir = join(dir, "shared-models");
+    mkdirSync(sharedDir, { recursive: true });
+    const CHECKOUT_MODEL = `slice "Checkout" {
+  ui Checkout Screen @Customer
+  command Submit Order
+  event Order Submitted
+}
+`;
+    const fileA = join(sharedDir, "a.em");
+    const fileB = join(sharedDir, "b.em");
+    writeFileSync(fileA, CHECKOUT_MODEL);
+    writeFileSync(fileB, CHECKOUT_MODEL);
+    const compiledA = compile(CHECKOUT_MODEL);
+    const compiledB = compile(CHECKOUT_MODEL);
+    const outDir = join(dir, "out-collision");
+
+    const inputs: CatalogModelInput[] = [
+      { file: fileA, model: compiledA.model, grid: compiledA.grid, dot: compiledA.dot, refs: compiledA.refs },
+      { file: fileB, model: compiledB.model, grid: compiledB.grid, dot: compiledB.dot, refs: compiledB.refs },
+    ];
+    const result = await buildCatalog(inputs, { outDir });
+
+    const collision = result.diagnostics.find((d) => d.diagnostics.some((diag) => diag.code === "cross-model-slice-doc-collision"));
+    expect(collision).toBeDefined();
+    expect(collision!.file).toBe(fileB); // attributed to the SECOND model to use the key
+    expect(collision!.diagnostics[0].message).toContain('slice key "checkout"');
+    expect(collision!.diagnostics[0].refs).toEqual(["checkout", fileA, fileB]);
+  });
 });
