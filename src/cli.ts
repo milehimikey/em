@@ -54,6 +54,7 @@ import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
 import { runMarkImplemented } from "./cli/markImplemented.js";
+import { runRatify } from "./cli/ratify.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
@@ -530,6 +531,52 @@ slice
       result.changed
         ? `marked implemented: ${result.path} (implementedIn: ${prUrl})`
         : `already implemented (no-op): ${result.path}`,
+    );
+  });
+
+slice
+  .command("ratify")
+  .description(
+    "flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/" +
+      "`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#what-ratified-means) that " +
+      "makes who ratified, and when, a first-class recorded fact. Idempotent on the same " +
+      "--by/--on pair; refuses to overwrite a different one already recorded; never touches " +
+      "`version:` or the doc body",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .requiredOption("--by <name>", "the ratifier's name")
+  .option("--on <date>", "ratification date, YYYY-MM-DD (default: today)")
+  .action((file: string, sliceKey: string, opts: { by: string; on?: string }) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    // Scoped the same way `em slice mark-implemented`/`em export --slice`/`em validate
+    // --slice-ready` are: only an error concerning THIS slice refuses.
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice ratify: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const ratifiedOn = opts.on ?? today;
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em slice ratify: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+
+    const result = runRatify(model, refs, dirname(file), sliceKey, opts.by, ratifiedOn);
+    if (!result.ok) {
+      console.error(`em slice ratify: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(
+      result.changed
+        ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn})`
+        : `already ratified (no-op): ${result.path}`,
     );
   });
 

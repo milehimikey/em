@@ -325,7 +325,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.7",
+  "schemaVersion": "1.8",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "sliceKey": "checkout",
@@ -334,7 +334,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.7` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.8` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -343,7 +343,7 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.7"`):
+**Schema summary** (`schemaVersion: "1.8"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -372,14 +372,18 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       but no file exists there — warns), and `frontmatter-invalid` (the file exists but has no
       frontmatter block, or is missing a required key — warns). `reason` is `null` exactly
       when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
-      `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, and `driftSignal`
-      are populated from it (each `null`/`[]` otherwise). `driftSignal` (added in schema `1.5`,
+      `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, `driftSignal`,
+      `ratifiedBy`, and `ratifiedOn` are populated from it (each `null`/`[]` otherwise).
+      `driftSignal` (added in schema `1.5`,
       MIL-85) is `"in-sync"` | `"never-implemented"` | `"unpropagated-delta"` |
       `"implemented-without-link"` — the status/implementedIn coherence classification also
       driving `em validate`'s frontmatter-coherence warning (see
       [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)); it's paired
       with `version` from the same doc parse, so a consumer reporting drift should always cite
-      both together. Full contract: [slice-doc-schema.md](slice-doc-schema.md).
+      both together. `ratifiedBy`/`ratifiedOn` (added in schema `1.8`, MIL-165) are the doc's
+      `ratifiedBy:`/`ratifiedOn:` frontmatter, written only by `em slice ratify` — both `null`
+      when absent (a doc predating this feature, or ratified by hand before it existed). Full
+      contract: [slice-doc-schema.md](slice-doc-schema.md).
     Elements appear only inside their slice, not flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
@@ -1077,6 +1081,7 @@ pair around an empty table.
 | `Slice` | Slice name |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
 | `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), or `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" |
+| `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
 | `Implemented in` | The doc's `implementedIn`, or `—` |
 | `Design doc` | Always a link to the conventional `slices/<slice-key>.md` path, whether or not that file exists yet |
 
@@ -1093,6 +1098,73 @@ Any input-model error (parse/validation) is reported and exits 1 before touching
 as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join warning (a slice
 notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
 still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
+
+## `em slice ratify <file> <slice-key> --by <name>`
+
+Makes "who ratified, and when" a first-class recorded fact (MIL-165) instead of an unnamed edit
+anyone with commit access could make — see [process.md#what-ratified-means](process.md#what-ratified-means).
+Sets three frontmatter fields on the doc resolved from `<slice-key>` via the same note-binding
+join `mark-implemented`/`--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121
+cross-binding included, so the file actually edited may be a *different* slice's doc when this
+slice's doc is only reached via a ratified `covers:` entry):
+
+```yaml
+status: ready-to-implement
+ratifiedBy: <name>
+ratifiedOn: <date>
+```
+
+`--by <name>` is required — free text, typically a person's name (spaces are fine; unlike a
+PR URL, a name legitimately contains them). `--on <date>` is optional, `YYYY-MM-DD`; defaults to
+today (same convention `em state set-review`'s date argument uses). `ratifiedBy`/`ratifiedOn`
+are additive, optional frontmatter keys (docs/slice-doc-schema.md) — a doc that predates this
+feature, or was hand-ratified, simply has neither key, and every existing `em` command already
+tolerates an unknown/absent field.
+
+Never touches `version:` or the doc body: the write is a surgical in-place edit of just the
+`status:`/`ratifiedBy:`/`ratifiedOn:` lines (inserting whichever of `ratifiedBy:`/`ratifiedOn:`
+the doc doesn't have yet, right after `status:`), same as `em slice mark-implemented` — not a
+parse-and-re-serialize, so every other line — key order, spacing, comments, the whole body —
+survives byte-for-byte.
+
+Idempotent: re-running with the same `--by`/`--on` pair once the doc is already
+`status: ready-to-implement` with both recorded is a no-op (reports as such, exits 0). Refuses,
+non-zero exit, leaving the file untouched, if the doc is already `status: ready-to-implement`
+with a **different** `ratifiedBy`/`ratifiedOn` already recorded — this command never silently
+overwrites provenance, same discipline `mark-implemented` holds for `implementedIn`. There's no
+such refusal when `status` isn't already `ready-to-implement`: re-ratifying a slice that has
+since moved on (e.g. back from `implemented` after a version bump — see
+[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification))
+is the ordinary, expected use of this command, so it always applies cleanly in that case.
+
+Scoped the same way `em export --slice`/`em validate --slice-ready`/`mark-implemented` are: only
+a model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
+refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
+
+| Flag | Effect |
+|---|---|
+| `--by <name>` | **Required.** The ratifier's name |
+| `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today) |
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
+| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
+| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
+| `already ratified by ... — refusing to overwrite` | The idempotent/refusal guard — see above |
+| `invalid --on date "..."` | `--on` didn't match `YYYY-MM-DD` |
+
+```bash
+em slice ratify model.em request-payment --by "Alex Rivera"
+em slice ratify model.em request-payment --by "Alex Rivera" --on 2026-08-28
+```
+
+**CODEOWNERS.** `em slice ratify` mechanizes the *edit*; it can't by itself stop an
+un-designated person from making the same edit by hand. Route `slices/**` through a
+[CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+entry naming your team's ratifiers so the platform enforces the review — see
+[ci.md#codeowners-routing-ratification-review](ci.md#codeowners-routing-ratification-review).
 
 ## `em slice mark-implemented <file> <slice-key> <pr-url>`
 

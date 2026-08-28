@@ -85,15 +85,15 @@ never connected to one another.
      `em slice index order-fulfillment.em` to (re)write the table below from the model and its
      slice docs; never hand-edit between the markers. -->
 <!-- GENERATED:slices:start -->
-| # | Slice | Pattern | Status | Implemented in | Design doc |
-|---|-------|---------|--------|----------------|------------|
-| 1 | Browse Catalog | State Change | ready-to-implement | — | [slices/browse-catalog.md](slices/browse-catalog.md) |
-| 2 | View Open Orders | State View | reviewed | — | [slices/view-open-orders.md](slices/view-open-orders.md) |
-| 3 | Checkout | State Change | ready-to-implement | — | [slices/checkout.md](slices/checkout.md) |
-| 4 | Manager Review | State View | no doc yet | — | [slices/manager-review.md](slices/manager-review.md) |
-| 5 | Payments To Process | State View | no doc yet | — | [slices/payments-to-process.md](slices/payments-to-process.md) |
-| 6 | Capture Payment | Automation | reviewed | — | [slices/capture-payment.md](slices/capture-payment.md) |
-| 7 | Show Receipt | State View | no doc yet | — | [slices/show-receipt.md](slices/show-receipt.md) |
+| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |
+|---|-------|---------|--------|-------------|----------------|------------|
+| 1 | Browse Catalog | State Change | ready-to-implement | — | — | [slices/browse-catalog.md](slices/browse-catalog.md) |
+| 2 | View Open Orders | State View | reviewed | — | — | [slices/view-open-orders.md](slices/view-open-orders.md) |
+| 3 | Checkout | State Change | ready-to-implement | — | — | [slices/checkout.md](slices/checkout.md) |
+| 4 | Manager Review | State View | no doc yet | — | — | [slices/manager-review.md](slices/manager-review.md) |
+| 5 | Payments To Process | State View | no doc yet | — | — | [slices/payments-to-process.md](slices/payments-to-process.md) |
+| 6 | Capture Payment | Automation | reviewed | — | — | [slices/capture-payment.md](slices/capture-payment.md) |
+| 7 | Show Receipt | State View | no doc yet | — | — | [slices/show-receipt.md](slices/show-receipt.md) |
 <!-- GENERATED:slices:end -->
 
 ## Status

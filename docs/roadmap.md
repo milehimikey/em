@@ -75,6 +75,12 @@ Added/Modified/Removed/Renamed vocabulary a slice doc's `## Delta` section uses 
 shared vocabulary only, `diffSchemaVersion` `1.7`; comparing an authored `## Delta` against the
 structural diff it claims to describe is still a separate, not-yet-built decision (see
 [slice-doc-schema.md#delta-section-grammar-and-lifecycle](slice-doc-schema.md#delta-section-grammar-and-lifecycle)).
+Most recently (MIL-165): "who ratified, and when" is now a first-class recorded fact —
+`em slice ratify <model>.em <key> --by <name>` flips `status` to `ready-to-implement` and
+records `ratifiedBy:`/`ratifiedOn:` in the same surgical-edit, idempotency-discipline shape as
+`em slice mark-implemented` (`schemaVersion` `1.8`), and a documented CODEOWNERS convention
+routes `slices/**` through a designated ratifier so the edit itself can't merge unreviewed (see
+[ci.md#codeowners-routing-ratification-review](ci.md#codeowners-routing-ratification-review)).
 
 **Modeling and rendering**
 

@@ -97,6 +97,13 @@ export interface SliceDocExport {
    *  `version` above from the same doc parse — a finding built from `driftSignal` should always
    *  cite `version` alongside it, never cache one without the other. */
   driftSignal: DriftSignalKind | null;
+  /** MIL-165: who ratified this doc's current `status`/`version` (frontmatter `ratifiedBy:`),
+   *  written only by `em slice ratify` — null when absent (a doc predating this feature, or
+   *  ratified by hand before it existed). */
+  ratifiedBy: string | null;
+  /** MIL-165: when this doc was ratified (frontmatter `ratifiedOn:`, `YYYY-MM-DD`), written only
+   *  by `em slice ratify` — null when absent, same as `ratifiedBy`. */
+  ratifiedOn: string | null;
 }
 
 export interface SliceDocJoinResult {
@@ -112,6 +119,8 @@ const EMPTY_CONTENT = {
   mergedFrom: [] as SliceRef[],
   supersededBy: [] as SliceRef[],
   driftSignal: null as DriftSignalKind | null,
+  ratifiedBy: null as string | null,
+  ratifiedOn: null as string | null,
 };
 
 /**
@@ -203,5 +212,7 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     mergedFrom: parsed.mergedFrom,
     supersededBy: parsed.supersededBy,
     driftSignal: classifyImplementationDrift(parsed),
+    ratifiedBy: parsed.ratifiedBy,
+    ratifiedOn: parsed.ratifiedOn,
   };
 }

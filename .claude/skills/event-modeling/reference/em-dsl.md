@@ -48,6 +48,9 @@ em slice new <name> -f, --force                             # overwrite the file
 em slice index <file>                                       # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
 em slice index <file> --check                               # verify the table is current; exit non-zero on drift without writing (CI)
 em slice mark-implemented <file> <slice-key> <pr-url>       # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` or the doc body
+em slice ratify <file> <slice-key>                          # flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#what-ratified-means) that makes who ratified, and when, a first-class recorded fact. Idempotent on the same --by/--on pair; refuses to overwrite a different one already recorded; never touches `version:` or the doc body
+em slice ratify <file> <slice-key> --by <name>              # the ratifier's name
+em slice ratify <file> <slice-key> --on <date>              # ratification date, YYYY-MM-DD (default: today)
 em changelog <file>                                         # render a model's git history as a business-readable ledger (see docs/cli.md)
 em changelog <file> --from <rev>                            # start the walk at this revision (inclusive)
 em changelog <file> --to <rev>                              # end the walk at this revision (inclusive; default HEAD)

@@ -36,6 +36,12 @@ three specific points:
    or explicitly deferred. This is the handoff gate between deciding and building, and it's
    mechanically checkable: `em validate <model>.em --slice-ready <key>` verifies the doc,
    status, and open-question state in one command ([cli.md](cli.md#--slice-ready-key-mil-87)).
+   `em slice ratify <model>.em <key> --by <name>` (MIL-165) makes the sign-off itself a
+   mechanical, one-edit act, recording *who* ratified it and *when* in `ratifiedBy:`/
+   `ratifiedOn:` frontmatter alongside the `status` flip
+   ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) — pair it with a
+   [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**` so the edit
+   itself can't merge without review by a designated ratifier.
    **Re-ratifying** a slice that already shipped is the same act for a change: bump
    `version:`, record the hop in the `## Delta` section, flip `status` back to
    `ready-to-implement` ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
@@ -102,7 +108,8 @@ their keep — bounded work, mechanical gates on both ends, human review of the 
 The short version of the [agent guide](../.claude/skills/event-modeling/reference/implement.md),
 for the human doing the handing:
 
-1. Ratify the slice (status → `ready-to-implement`, open questions resolved), and confirm:
+1. Ratify the slice — `em slice ratify <model>.em <key> --by <name>` (status →
+   `ready-to-implement`, records who/when), open questions resolved — and confirm:
    `em validate <model>.em --slice-ready <key>` exits 0.
 2. Point the agent at the slice doc and the guide. If the skill is installed in the repo
    (`em skill install`), the guide is already there.

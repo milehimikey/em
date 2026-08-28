@@ -35,6 +35,11 @@ to write up. Delete it otherwise; most docs never carry it. Requires a matching
 `note "slices/{{this-slice-name}}.md"` on an element in the OTHER slice — this key alone doesn't
 bind anything. Plain slice keys, comma-separated — not the `<slice-key>@v<N>` ref grammar above.
 
+`ratifiedBy`/`ratifiedOn` record who ratified this doc's current `status`/`version`, and when —
+don't hand-fill these; run `em slice ratify <model>.em {{this-slice-name}} --by "<name>"` at the
+handoff gate instead (docs/process.md#what-ratified-means), which flips `status` to
+`ready-to-implement` and writes both in one edit.
+
 Full machine schema — required-vs-optional keys per `status`, value types/enums, the
 unknown-key policy — is documented in docs/slice-doc-schema.md.
 
