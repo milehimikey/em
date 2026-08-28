@@ -18,6 +18,17 @@ to make staying true cheap.
 | 6. Check | Ask whether the code still matches the model | `/event-modeling conform` | `conformance/<date>-report.md` |
 | 7. Ratify | Decide what the drift means, and record it | you, with the report | An updated model + decisions log |
 
+```mermaid
+flowchart LR
+    S1["1. Build<br/>discover / extract"] --> S2["2. Specify<br/>slice"]
+    S2 --> S3["3. Gate<br/>em validate in CI"]
+    S3 --> S4["4. Hand off<br/>ratify, then implement"]
+    S4 --> S5["5. Track<br/>em diff / em changelog"]
+    S5 --> S6["6. Check<br/>conform"]
+    S6 --> S7["7. Ratify<br/>you decide"]
+    S7 -.->|"model updated"| S1
+```
+
 Stages 6 and 7 loop back into 1 — that's what keeps a model worth trusting a year after
 somebody wrote it. Not every model needs all seven; see
 [adopting this incrementally](#adopting-this-incrementally) at the end. And for the
@@ -165,6 +176,23 @@ structurally differs. It checks three surfaces:
 | Structural | The `.em` versus the code — slices, elements, fields, flow |
 | Spec | The slice doc versus the code — field rules, named invariants, scenarios without tests |
 | Internal | The slice doc versus the `.em` — the two disagreeing with each other |
+
+```mermaid
+flowchart LR
+    EM[".em model"] -->|"note \"slices/&lt;key&gt;.md\""| DOC["slice doc<br/>Invariants · Scenarios · Delta"]
+    DOC -->|ratified| CODE["implemented code<br/>+ tests"]
+    CODE -->|"em coverage<br/>tests cite INV-* ids"| DOC
+
+    subgraph CONFORM["conform checks three surfaces"]
+        direction LR
+        C1["structural<br/>.em vs. code"]
+        C2["spec<br/>doc vs. code"]
+        C3["internal<br/>doc vs. .em"]
+    end
+    CODE --> CONFORM
+    EM --> CONFORM
+    DOC --> CONFORM
+```
 
 Output is a report at `conformance/<date>-report.md`: every finding classified as real
 drift, a model gap, an internal inconsistency, or an honest uncertainty — each with cited

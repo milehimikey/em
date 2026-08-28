@@ -64,6 +64,23 @@ minutes, and [docs/workflow.md](docs/workflow.md) picks up where it leaves off: 
 gets specified, gated in CI, handed to implementation, and checked against the code that
 implements it.
 
+## How it works
+
+Model, gate, ratify, implement, check — repeat as the system evolves. Humans make the calls
+that matter (build the model, ratify a slice, rule on drift); `em` and its agents handle the
+mechanical parts in between. This is the loop in miniature — see
+[docs/workflow.md](docs/workflow.md) for the full seven-stage lifecycle and
+[docs/process.md](docs/process.md) for exactly who (or what) does each part.
+
+```mermaid
+flowchart LR
+    Model["Model<br/>.em file"] --> Gate["Gate<br/>em validate in CI"]
+    Gate --> Ratify["Ratify a slice<br/>a human signs off"]
+    Ratify --> Implement["Implement<br/>agent or engineer builds it"]
+    Implement --> Conform["Conform<br/>em conform checks the code"]
+    Conform -->|drift found, ratified| Model
+```
+
 ## Model with AI
 
 `em` ships a Claude Code skill that runs a facilitated Event Modeling session: the AI asks

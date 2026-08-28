@@ -45,6 +45,28 @@ stdio MCP server exposing the same contract, readiness gate, and read path — p
 `/event-modeling` takes an optional phase argument. With no argument it resumes wherever
 the previous session left off.
 
+```mermaid
+flowchart TD
+    D["discover<br/>greenfield"] --> M["model"]
+    E["extract<br/>existing system"] --> M
+    M --> SL["slice"]
+    SL --> IM["implement<br/>once per ratified slice"]
+    IM -.-> CF["conform<br/>recurring"]
+    CF -->|drift ratified| M
+
+    RV["review<br/>recurring, scheduled"] -->|issues captured live| SL
+    W["watch<br/>live view, any time"]
+
+    classDef recurring stroke-dasharray: 4 3
+    class CF,RV,W recurring
+```
+
+`discover`/`extract`, `slice`, and `implement` are the once-per-model (or once-per-slice)
+spine; `conform`, `review`, and `watch` (dashed above) are recurring or ongoing rather than
+steps in that sequence — see each phase's own row below. `validate` isn't pinned to one point
+either: it's woven through every phase's end-of-phase checks as well as being runnable on its
+own.
+
 Most phases run once per model, in roughly the order below — but `implement` runs **once per
 ratified slice**, and `conform` is a **recurring** one, run again whenever the codebase has
 moved. [workflow.md](workflow.md) puts these phases

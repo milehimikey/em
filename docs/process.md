@@ -65,6 +65,24 @@ Stages 1–2, the ratification gate inside 4, and stage 7 are where the humans a
 load-bearing. The build half of stage 4 and the sweep half of stage 6 are where agents earn
 their keep — bounded work, mechanical gates on both ends, human review of the result.
 
+```mermaid
+flowchart LR
+    classDef human fill:#e0d4f7,stroke:#6b46c1,color:#1a1a1a
+    classDef agent fill:#d4ecf7,stroke:#2b6cb0,color:#1a1a1a
+    classDef mech fill:#e2e8f0,stroke:#4a5568,color:#1a1a1a
+
+    S12["1-2. Build & specify<br/>humans in the room"]:::human --> S3["3. Gate<br/>em validate in CI"]:::mech
+    S3 --> S4a["4. Ratify a slice<br/>human sign-off"]:::human
+    S4a --> S4b["4. Implement<br/>agent-suitable, PR reviewed"]:::agent
+    S4b --> S5["5. Track<br/>humans review the diff"]:::human
+    S5 --> S6["6. Conform sweep<br/>agent gathers evidence, advisory only"]:::agent
+    S6 --> S7["7. Ratify the findings<br/>humans rule on every one"]:::human
+    S7 -.->|"model updated"| S12
+```
+
+Purple is a human decision, blue is agent-suitable work reviewed by a human, gray is a
+mechanical gate with no judgment call in it.
+
 ## Where humans are required, and why
 
 - **Building the model (stages 1–2).** The knowledge being modeled lives in people's heads —
