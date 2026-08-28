@@ -70,8 +70,8 @@ import { runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify } from "./cli/ratify.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
-import { listModelCommits, readFileAtCommit, CommitInfo } from "./cli/changelog-git.js";
-import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "./emit/changelog.js";
+import { listModelCommits } from "./cli/changelog-git.js";
+import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -1386,76 +1386,6 @@ function readAtRevision(file: string, rev: string): string {
     process.exit(1);
   }
   return result.content;
-}
-
-/**
- * Build the `em changelog` markdown document for an already-resolved commit
- * list (oldest -> newest). Compiles every revision once; per-revision
- * warnings are deliberately never printed (historical revisions can be noisy)
- * — only a compile *failure* (parse error or validation error, same
- * threshold `em diff` uses) surfaces, as that entry's error note, never a
- * crash. Diffs are computed against the previous *parseable* revision, so a
- * single bad revision in the middle of the walk doesn't break every entry
- * after it. Content is read at each commit's own path (`readFileAtCommit`),
- * so the walk survives renames.
- */
-function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]): string {
-  const models: (NormalizedModel | null)[] = [];
-  const refsList: (RefsResult | null)[] = [];
-  const errors: (string | null)[] = [];
-
-  for (const c of commits) {
-    const rev = readFileAtCommit(repoRoot, c);
-    if (!rev.ok) {
-      models.push(null);
-      refsList.push(null);
-      errors.push(rev.message);
-      continue;
-    }
-    try {
-      const { model, refs, diagnostics } = compile(rev.content);
-      if (hasErrors(diagnostics)) {
-        models.push(null);
-        refsList.push(null);
-        errors.push(`validation errors at ${c.shortHash} — fix with \`em validate\` at that revision`);
-      } else {
-        models.push(model);
-        refsList.push(refs);
-        errors.push(null);
-      }
-    } catch (e) {
-      models.push(null);
-      refsList.push(null);
-      errors.push(e instanceof ParseError ? `parse error: ${e.message}` : e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  const entries: ChangelogEntry[] = [];
-  let prevParseable = -1;
-  commits.forEach((c, i) => {
-    const base = { shortHash: c.shortHash, date: c.date, subject: c.subject };
-    if (i === 0) {
-      entries.push({ ...base, diff: null });
-    } else if (!models[i]) {
-      entries.push({ ...base, diff: null, error: errors[i]! });
-    } else if (prevParseable === -1) {
-      entries.push({ ...base, diff: null, error: `no earlier parseable revision to diff against (${commits[0].shortHash}: ${errors[0]})` });
-    } else {
-      entries.push({
-        ...base,
-        diff: diffModels(models[prevParseable]!, models[i]!, refsList[prevParseable]!, refsList[i]!),
-      });
-    }
-    if (models[i]) prevParseable = i;
-  });
-
-  const intro: ChangelogIntro | null = models[0] ? { slices: models[0].slices.length, elements: models[0].elements.length } : null;
-  const introError = models[0] ? undefined : (errors[0] ?? undefined);
-
-  const stateFile = join(dirname(file), STATE_FILE_NAME);
-  const decisions = existsSync(stateFile) ? parseDecisionsLog(readFileSync(stateFile, "utf8")) : [];
-
-  return buildChangelog(entries, decisions, { file, intro, introError });
 }
 
 /** Shared body for both `em diff` forms: compile both sides, gate on errors, print, exit-code. */

@@ -1301,7 +1301,20 @@ describe("em mcp (CLI, MIL-21)", () => {
       expect(client.getServerVersion()).toMatchObject({ name: "em" });
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(
-        ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "status", "validate"].sort(),
+        [
+          "changelog",
+          "conform_scope",
+          "contract",
+          "coverage",
+          "diff",
+          "export_model",
+          "export_slice",
+          "glossary",
+          "list_markers",
+          "slice_ready",
+          "status",
+          "validate",
+        ].sort(),
       );
     } finally {
       await client.close();

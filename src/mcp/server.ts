@@ -32,8 +32,10 @@ import { ParseError } from "../parser/parser.js";
 import { Diagnostic, hasErrors } from "../model/validate.js";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { diffModels, LineageResolvers } from "../model/diff.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "../emit/json.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "../emit/validateJson.js";
+import { buildDiffJson } from "../emit/diffJson.js";
 import { validateLineage } from "../catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
@@ -52,6 +54,14 @@ import {
   StatusDiagnostic,
 } from "../cli/status.js";
 import { buildStatusJson } from "../emit/statusJson.js";
+import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "../cli/diff-inputs.js";
+import { readSliceDoc } from "../catalog/readSliceDoc.js";
+import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, GlossaryModelInput } from "../model/glossary.js";
+import { buildGlossaryJson, GlossaryFileSide } from "../emit/glossaryJson.js";
+import { listModelCommits } from "../cli/changelog-git.js";
+import { buildChangelogDoc } from "../cli/changelogBuild.js";
+import { buildConformScope, changedPathsSince, resolveSliceDocFacts } from "../cli/conformScope.js";
+import { loadStateFile, parseState } from "../cli/stateFile.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
  *  `GENERATOR_VERSION` `em export`'s `generator.version` field already reads from package.json,
@@ -101,6 +111,19 @@ function compileFile(file: string): CompiledSource | { error: string } {
     return { model, refs, source, diagnostics };
   } catch (e) {
     if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
+    throw e;
+  }
+}
+
+/** Same as compileFile(), but for source text already in hand (e.g. `git show`'s stdout) rather
+ *  than a path to read — shared by the `diff` tool's git-revision form, which never has a real
+ *  file on disk for the revision side. `label` is used only for the parse-error message. */
+function compileText(source: string, label: string): CompiledSource | { error: string } {
+  try {
+    const { model, refs, diagnostics } = compile(source);
+    return { model, refs, source, diagnostics };
+  } catch (e) {
+    if (e instanceof ParseError) return { error: `parse error in ${label} ${e.message}` };
     throw e;
   }
 }
@@ -381,6 +404,196 @@ export function createServer(): McpServer {
 
       const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
       return textResult(buildStatusJson(report));
+    },
+  );
+
+  server.registerTool(
+    "diff",
+    {
+      title: "Compare two models structurally",
+      description:
+        "Return the same JSON document `em diff <old> <new> --json` (or `em diff <file> --from " +
+        "<rev> [--to <rev>] --json`) prints: a rollup of counts plus every structural change — " +
+        "slices/elements added, removed, or moved; field/from/note changes; issue lifecycle; " +
+        "an event's public promotion/demotion; declared-type changes. Two mutually exclusive " +
+        "forms: pass `oldFile` + `newFile` to compare two files directly (no git involved), or " +
+        "`oldFile` + `from` (and optionally `to`) to diff ONE file across git revisions via " +
+        "`git show <rev>:<path>` — that form REQUIRES `oldFile` to be tracked in a git " +
+        "repository reachable from the server's working directory; `to` defaults to the file's " +
+        "current on-disk content. Refuses (tool error) if either side fails to compile or has " +
+        "validation errors, same as the CLI.",
+      inputSchema: {
+        oldFile: z.string().describe("old model file — or the file to diff, when using `from`"),
+        newFile: z.string().optional().describe("new model file (omit when using `from`/`to`)"),
+        from: z
+          .string()
+          .optional()
+          .describe("diff `oldFile` against this git revision instead of `newFile` — requires a git repository"),
+        to: z
+          .string()
+          .optional()
+          .describe("diff against this git revision instead of the current file (requires `from`) — requires a git repository"),
+      },
+    },
+    async ({ oldFile, newFile, from, to }) => {
+      const plan = planDiffArgs(oldFile, newFile, { from, to });
+      if ("error" in plan) return errorResult(plan.error);
+
+      let oldResult: CompiledSource | { error: string };
+      let newResult: CompiledSource | { error: string };
+      let oldLabel: string;
+      let newLabel: string;
+      let lineage: LineageResolvers;
+
+      if (plan.form === "files") {
+        oldResult = compileFile(plan.oldFile);
+        newResult = compileFile(plan.newFile);
+        oldLabel = plan.oldFile;
+        newLabel = plan.newFile;
+        lineage = {
+          oldDoc: (key) => readSliceDoc(dirname(plan.oldFile), key),
+          newDoc: (key) => readSliceDoc(dirname(plan.newFile), key),
+        };
+      } else {
+        const oldRev = resolveRevision(plan.file, plan.from);
+        if (!oldRev.ok) return errorResult(oldRev.message);
+        oldLabel = `${plan.file}@${plan.from}`;
+        oldResult = compileText(oldRev.content, oldLabel);
+
+        if (plan.to) {
+          const newRev = resolveRevision(plan.file, plan.to);
+          if (!newRev.ok) return errorResult(newRev.message);
+          newLabel = `${plan.file}@${plan.to}`;
+          newResult = compileText(newRev.content, newLabel);
+        } else {
+          newLabel = plan.file;
+          newResult = compileFile(plan.file);
+        }
+
+        const toRev = plan.to;
+        lineage = {
+          oldDoc: (key) => resolveDocAtRevision(plan.file, key, plan.from),
+          newDoc: (key) => (toRev ? resolveDocAtRevision(plan.file, key, toRev) : readSliceDoc(dirname(plan.file), key)),
+        };
+      }
+
+      if ("error" in oldResult) return errorResult(oldResult.error);
+      if ("error" in newResult) return errorResult(newResult.error);
+      if (hasErrors(oldResult.diagnostics) || hasErrors(newResult.diagnostics)) {
+        return errorResult(`not diffing: "${oldLabel}" and/or "${newLabel}" have errors — run \`validate\` first and fix them`);
+      }
+
+      const diff = diffModels(oldResult.model, newResult.model, oldResult.refs, newResult.refs, lineage);
+      const oldSide = { label: oldLabel, source: oldResult.source, diagnostics: oldResult.diagnostics };
+      const newSide = { label: newLabel, source: newResult.source, diagnostics: newResult.diagnostics };
+      return textResult(buildDiffJson(diff, oldSide, newSide));
+    },
+  );
+
+  server.registerTool(
+    "glossary",
+    {
+      title: "Cross-model glossary of terms, with conflict detection",
+      description:
+        "Return the same JSON document `em glossary <files...> --json` prints: element, field, " +
+        "persona, and context terms aggregated across the given models, plus kind-conflict and " +
+        "field-type-conflict findings where the same normalized term disagrees across models. " +
+        "Each file is compiled independently — never merged. Refuses (tool error) if any file " +
+        "fails to compile or has validation errors, same as the CLI.",
+      inputSchema: {
+        files: z.array(z.string()).min(1).describe("one or more .em model file paths"),
+      },
+    },
+    async ({ files }) => {
+      const inputs: GlossaryModelInput[] = [];
+      const sources: GlossaryFileSide[] = [];
+      for (const file of files) {
+        const compiled = compileFile(file);
+        if ("error" in compiled) return errorResult(compiled.error);
+        if (hasErrors(compiled.diagnostics)) {
+          return errorResult(`not building glossary: "${file}" has errors — run \`validate\` first and fix them`);
+        }
+        inputs.push({ label: file, model: compiled.model });
+        sources.push({ label: file, source: compiled.source });
+      }
+      const glossary = buildGlossary(inputs);
+      const conflicts = [...detectKindConflicts(glossary), ...detectFieldTypeConflicts(glossary)];
+      return textResult(buildGlossaryJson(glossary, conflicts, sources));
+    },
+  );
+
+  server.registerTool(
+    "changelog",
+    {
+      title: "Render a model's git history as a business-readable ledger",
+      description:
+        "Return the exact markdown text `em changelog <file>` prints to stdout: one section per " +
+        "commit that touched the file (newest first), each with its structural delta (same " +
+        "vocabulary as the `diff` tool) and any dated Decisions-log entries from the adjacent " +
+        "state file (.event-modeling.md) woven in by date. REQUIRES `file` to be tracked in a " +
+        "git repository reachable from the server's working directory — the walk is driven by " +
+        "`git log --follow`. Returns markdown, not JSON: this command has no `--json` form on " +
+        "the CLI either, the rendered document IS the artifact.",
+      inputSchema: {
+        file: z.string().describe("input .em model file (must be tracked in git)"),
+        from: z.string().optional().describe("start the walk at this revision (inclusive)"),
+        to: z.string().optional().describe("end the walk at this revision (inclusive; default HEAD)"),
+      },
+    },
+    async ({ file, from, to }) => {
+      const commitsResult = listModelCommits(file, { from, to });
+      if (!commitsResult.ok) return errorResult(commitsResult.message);
+      return textResult(buildChangelogDoc(file, commitsResult.repoRoot, commitsResult.commits));
+    },
+  );
+
+  server.registerTool(
+    "conform_scope",
+    {
+      title: "Scope a conformance check: map changed paths to slices",
+      description:
+        "Return the same JSON document `em conform-scope <file> --repo <repo>` prints: the " +
+        "state file's `Last conformance:` marker, the target repo's changed paths since that " +
+        "revision (`git diff --name-only`), each mapped to a candidate slice via its doc's " +
+        "`implementedIn`, and any leftover unmapped paths. REQUIRES `repo` to be (or be inside) " +
+        "a git repository, and `file`'s sibling state file (.event-modeling.md) to exist and " +
+        "parse. Read-only: unlike the CLI's `--seed-asis` flag (which writes a scratch model " +
+        "file to disk), this tool never writes anything — use the CLI directly for that step.",
+      inputSchema: {
+        file: z.string().describe("input .em model file"),
+        repo: z.string().describe("path to (or inside) the target codebase's git repository"),
+        full: z
+          .boolean()
+          .default(false)
+          .describe("ignore Last conformance:/changed paths; scope every status: implemented slice"),
+      },
+    },
+    async ({ file, repo, full }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      if (hasErrors(compiled.diagnostics)) {
+        return errorResult(`not scoping: "${file}" has errors — run \`validate\` first and fix them`);
+      }
+      const { model, refs } = compiled;
+
+      const loaded = loadStateFile(dirname(file));
+      if (!loaded.ok) return errorResult(loaded.message);
+      const parsed = parseState(loaded.text);
+      if (!parsed.ok) return errorResult(`em conform-scope: ${parsed.message}`);
+      const { lastConformance } = parsed.state;
+
+      const { facts } = resolveSliceDocFacts(model, refs, dirname(file));
+
+      const skipGit = full || lastConformance === null;
+      let changedPaths: string[] = [];
+      if (!skipGit) {
+        const result = changedPathsSince(repo, lastConformance!.revision);
+        if (!result.ok) return errorResult(result.message);
+        changedPaths = result.paths;
+      }
+
+      const scope = buildConformScope(facts, lastConformance, changedPaths, full);
+      return textResult(JSON.stringify(scope, null, 2));
     },
   );
 
