@@ -9,9 +9,29 @@ agents, custom tooling) that wants em model data without a subprocess wrapper.
 
 The server lives outside the CLI core — `src/mcp/` never imports `src/cli.ts` or commander, and
 reuses the exact same data-layer builders the CLI's own JSON flags call
-(`src/emit/json.ts`, `src/emit/validateJson.ts`, `src/catalog/sliceReadyValidate.ts`,
-`src/cli/contract.ts`). One schema per surface: an MCP client and a shell script parsing
+(`src/emit/json.ts`, `src/emit/validateJson.ts`, `src/emit/diffJson.ts`, `src/emit/glossaryJson.ts`,
+`src/catalog/sliceReadyValidate.ts`, `src/cli/contract.ts`, `src/cli/changelogBuild.ts`,
+`src/cli/conformScope.ts`). One schema per surface: an MCP client and a shell script parsing
 `em export --json` see byte-identical documents for the same model.
+
+## MCP parity: a stated invariant
+
+**Every read surface `em` ships must reach agents two ways: as a CLI `--json` flag (or, for a
+surface with no natural JSON shape like `em changelog`, as its plain-text stdout) *and* as an MCP
+tool, byte-identical for the same inputs.** This isn't a description of what happened to be built
+— it's a rule the project holds itself to going forward (MIL-167): a new read surface (`status`
+today; `query`/`metrics` later, per [roadmap.md](roadmap.md)) ships its MCP tool in the *same*
+release, not as a follow-up ticket. The reason is architectural, not stylistic: for an agent, MCP
+*is* the conversation channel to this tool — "use agents and tools to talk to our architecture"
+fails wherever a surface is CLI-only, no matter how good that surface's `--json` output is.
+
+Mechanically, the rule is cheap to keep because it's structural rather than promised: every tool
+below calls the *exact same builder function* (`buildDiffJson`, `buildGlossaryJson`,
+`buildChangelogDoc`, `buildConformScope`, …) its CLI command calls, never a second
+implementation that happens to produce similar-looking JSON. Byte-identity is a consequence of
+sharing code, not a thing tested into existence after the fact — though it's tested too (see
+`test/mcp.test.ts`'s per-tool assertions that spawn the real CLI and diff its stdout against the
+MCP tool's result).
 
 ## Starting it
 
@@ -70,6 +90,10 @@ working directory — the same working-directory convention every `em` CLI comma
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
 | `coverage` | `{ file, testsDir }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
+| `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
+| `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
+| `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
+| `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -136,6 +160,49 @@ they reach the CLI's stderr-plus-JSON pair — an MCP tool call has no stderr ch
 so the document is the only place they surface here. See [`em status`](cli.md#em-status-files)
 for the full JSON shape.
 
+### `diff`
+
+Same document as `em diff --json`, in either of its two mutually exclusive forms: pass
+`oldFile` + `newFile` to compare two files directly, or `oldFile` + `from` (and optionally `to`)
+to diff one file across git revisions. **The git-revision form requires `oldFile` to be tracked
+in a git repository** reachable from the server process's working directory — it resolves each
+revision's content via `git show <rev>:<path>`, the same as the CLI. `to` defaults to the file's
+current on-disk content when omitted. An invalid combination (e.g. both `newFile` and `from`) is
+a tool error naming the conflict, mirroring the CLI's own argument validation
+(`planDiffArgs`). Refuses (tool error) when either side fails to compile or has validation
+errors, same as the CLI. See [`em diff`](cli.md#em-diff-old-new) for the full JSON shape.
+
+### `glossary`
+
+Same document as `em glossary <files...> --json`: element, field, persona, and context terms
+aggregated across the given models, plus `kind-conflict`/`field-type-conflict` findings where
+the same normalized term disagrees across ≥2 models. Each file is compiled independently, never
+merged — same semantics as the CLI. Refuses (tool error) if any file fails to compile or has
+validation errors. See [`em glossary`](cli.md#em-glossary-files) for the full JSON shape.
+
+### `changelog`
+
+Returns the exact markdown text `em changelog <file>` prints to stdout — **not** JSON, since the
+CLI command itself has no `--json` form; the rendered document *is* the artifact, one section per
+commit (newest first) with its structural delta and any dated Decisions-log entries woven in.
+**Requires `file` to be tracked in a git repository** reachable from the server process's working
+directory (the walk is `git log --follow`). `from`/`to` bound the walk, same semantics as the
+CLI's flags. See [`em changelog`](cli.md#em-changelog-file) for the full section-by-section
+anatomy.
+
+### `conform_scope`
+
+Same document as `em conform-scope <file> --repo <repo>`: the state file's `Last conformance:`
+marker, the target repo's changed paths since that revision, each mapped to a candidate slice via
+its doc's `implementedIn`, and any leftover unmapped paths. **Requires `repo` to be (or be
+inside) a git repository**, and `file`'s sibling state file (`.event-modeling.md`) to exist and
+parse. `full: true` mirrors the CLI's `--full` flag (scope every `status: implemented` slice,
+ignoring `Last conformance:`/changed paths). **Deliberately narrower than the CLI**: the CLI's
+`--seed-asis` flag (which writes a `<model>-asis.em` scratch file and touches `.gitignore`) has
+no MCP equivalent — this tool never writes anything, keeping every MCP tool in this server
+read-only. Use the CLI directly for that step. See [`em conform-scope`](cli.md#em-conform-scope-file)
+for the full JSON shape.
+
 ### `contract`
 
 No input. Returns `reference/implement.md` verbatim, from the skill directory bundled with
@@ -163,8 +230,11 @@ A missing file, a parse error, or (for `export_slice`) an unknown slice key come
 MCP tool error (`isError: true`, with a message explaining what went wrong) — never a process
 crash and never a bare protocol-level error. A model *with validation errors* is not a tool
 error for `validate`/`slice_ready`/`list_markers`: those are exactly the tools built to work on
-a broken model. `export_model`/`export_slice` do refuse on errors (as tool errors), matching
-`em export`'s own CLI behavior.
+a broken model. `export_model`/`export_slice`/`diff`/`glossary`/`conform_scope` do refuse on
+errors (as tool errors), matching each command's own CLI behavior. The three git-backed tools
+(`diff`'s revision form, `changelog`, `conform_scope`) surface every git failure mode the same
+way — not inside a git repository, an untracked file, an unknown revision — as a tool error with
+the same message the CLI would print to stderr, never a crash.
 
 ## See also
 

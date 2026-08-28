@@ -6,14 +6,31 @@
 // test/cli.test.ts; the stdio entry point itself (src/mcp/main.ts) is a 3-line wrapper with
 // nothing of its own to unit-test.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../src/mcp/server.js";
 import { readContract } from "../src/cli/contract.js";
+
+// Spawns the real CLI (via tsx), same helper shape as test/cli.test.ts's `em()` — used here only
+// for the byte-identity assertions (MCP tool result === `em <cmd> --json`/stdout for the same
+// inputs), not for every test, so the MCP-vs-CLI parity claim is checked against the actual
+// commander wiring, not just against the same builder function called twice.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+const CLI = join(ROOT, "src", "cli.ts");
+function em(args: string[], cwd: string) {
+  const res = spawnSync(process.execPath, [TSX, CLI, ...args], { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  return { status: res.status, stdout: res.stdout, stderr: res.stderr };
+}
+
+const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+  spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
 
 // Same fixtures shape as test/cli.test.ts's CLEAN/WITH_ERROR/WITH_ISSUE/etc — kept local and
 // MCP-specific rather than imported, since cli.test.ts's constants aren't exported.
@@ -74,8 +91,84 @@ beforeAll(() => {
   // the status tool should surface the join warning in its `diagnostics` field, same as the CLI.
   writeFileSync(join(dir, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
   writeFileSync(join(dir, "status-broken-doc.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
+
+  // Two-file `diff` tool fixture: clean2 adds one slice on top of CLEAN.
+  writeFileSync(join(dir, "clean2.em"), CLEAN + `slice "Ship" {\n  command Ship Order\n  event Order Shipped\n}\n`);
+
+  // `glossary` tool fixture: "total" is Money in one model, number in the other — a
+  // field-type-conflict, same shape as docs/cli.md's own example.
+  writeFileSync(join(dir, "glossary-a.em"), `slice "A" {\n  command Do Thing { total: Money }\n  event Thing Done\n}\n`);
+  writeFileSync(join(dir, "glossary-b.em"), `slice "B" {\n  command Other Thing { total: number }\n  event Other Done\n}\n`);
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+// `diff` (git-revision form) + `changelog` tool fixture: one small git repo, two commits plus a
+// working-tree edit on top, so `--from`/`--to`/no-args all have something real to walk.
+const HISTORY_INTRO = `slice "Place" {\n  command Place Order\n  event Order Placed\n}\n`;
+const HISTORY_ADD_SHIP = HISTORY_INTRO + `slice "Ship" {\n  command Ship Order\n  event Order Shipped\n}\n`;
+const HISTORY_ADD_CANCEL = HISTORY_ADD_SHIP + `slice "Cancel" {\n  command Cancel Order\n  event Order Canceled\n}\n`;
+
+let historyRepo: string;
+beforeAll(() => {
+  historyRepo = mkdtempSync(join(tmpdir(), "em-mcp-history-"));
+  git(["init", "-q", "-b", "main"], historyRepo);
+  writeFileSync(join(historyRepo, "model.em"), HISTORY_INTRO);
+  git(["add", "model.em"], historyRepo);
+  git(["commit", "-qm", "introduce order placement"], historyRepo);
+  writeFileSync(join(historyRepo, "model.em"), HISTORY_ADD_SHIP);
+  git(["add", "model.em"], historyRepo);
+  git(["commit", "-qm", "add shipping slice"], historyRepo);
+  // Working-tree edit on top of the last commit — nothing committed — so `--from HEAD` (no
+  // `--to`) has a real, uncommitted difference to report.
+  writeFileSync(join(historyRepo, "model.em"), HISTORY_ADD_CANCEL);
+});
+afterAll(() => rmSync(historyRepo, { recursive: true, force: true }));
+
+// `conform_scope` tool fixture: a model with one doc-bound, `implementedIn`-carrying slice, a
+// hand-written state file recording `Last conformance:`, and a separate target-codebase git repo
+// with a matching changed path — same shape as test/cli.test.ts's "em conform-scope" suite.
+let conformDir: string;
+let conformTargetRepo: string;
+let conformBaseRev: string;
+beforeAll(() => {
+  conformDir = mkdtempSync(join(tmpdir(), "em-mcp-conform-"));
+  writeFileSync(
+    join(conformDir, "model.em"),
+    `slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n`,
+  );
+  mkdirSync(join(conformDir, "slices"), { recursive: true });
+  writeFileSync(
+    join(conformDir, "slices", "place-order.md"),
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: src/checkout\n---\n## Intent\n",
+  );
+
+  conformTargetRepo = mkdtempSync(join(tmpdir(), "em-mcp-conform-target-"));
+  git(["init", "-q", "-b", "main"], conformTargetRepo);
+  mkdirSync(join(conformTargetRepo, "src", "checkout"), { recursive: true });
+  writeFileSync(join(conformTargetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
+  git(["add", "."], conformTargetRepo);
+  git(["commit", "-qm", "initial"], conformTargetRepo);
+  conformBaseRev = git(["rev-parse", "HEAD"], conformTargetRepo).stdout.trim();
+
+  writeFileSync(join(conformTargetRepo, "src", "checkout", "Handler.kt"), "class Handler2\n");
+  git(["add", "."], conformTargetRepo);
+  git(["commit", "-qm", "tweak checkout handler"], conformTargetRepo);
+
+  writeFileSync(
+    join(conformDir, ".event-modeling.md"),
+    "# Event Modeling Progress — Checkout\n\n" +
+      "- **Model file:** `model.em`\n" +
+      "- **Current phase:** conform\n" +
+      "- **Current step:** 1\n" +
+      "- **Last updated:** 2026-08-01\n" +
+      `- **Last conformance:** 2026-08-01 @ ${conformBaseRev} — report: conformance/2026-08-01-report.md\n` +
+      "- **Last stakeholder review:** never\n",
+  );
+});
+afterAll(() => {
+  rmSync(conformDir, { recursive: true, force: true });
+  rmSync(conformTargetRepo, { recursive: true, force: true });
+});
 
 /** Connect a fresh server/client pair over the SDK's in-memory transport — the recommended way
  *  to test an MCP server end-to-end without a child process (per the SDK's own docs). */
@@ -117,11 +210,24 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the eight documented tools", async () => {
+  it("exposes exactly the twelve documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["contract", "coverage", "export_model", "export_slice", "list_markers", "slice_ready", "status", "validate"].sort(),
+      [
+        "changelog",
+        "conform_scope",
+        "contract",
+        "coverage",
+        "diff",
+        "export_model",
+        "export_slice",
+        "glossary",
+        "list_markers",
+        "slice_ready",
+        "status",
+        "validate",
+      ].sort(),
     );
     // Every tool carries a non-empty description an agent can route on.
     for (const t of tools) expect(t.description?.length ?? 0).toBeGreaterThan(20);
@@ -322,5 +428,188 @@ describe("contract tool", () => {
     // Compare against the real packaged contract via readContract, same helper `em contract`
     // itself uses, resolved from this repo's own checkout (test runs from the repo root).
     expect(text).toBe(readContract(join(process.cwd(), ".claude", "skills", "event-modeling")));
+  });
+});
+
+describe("diff tool", () => {
+  it("files form: happy path, byte-identical to `em diff <old> <new> --json`", async () => {
+    const oldFile = join(dir, "clean.em");
+    const newFile = join(dir, "clean2.em");
+    const { result, doc } = await callJson(client, "diff", { oldFile, newFile });
+    expect(doc.diffSchemaVersion).toBeDefined();
+    expect(doc.identical).toBe(false);
+    expect(doc.changes).toContainEqual(expect.objectContaining({ type: "slice-added", name: "Ship" }));
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["diff", oldFile, newFile, "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("git-revision form (--from/--to): resolves via `git show`, byte-identical to the CLI", async () => {
+    const modelFile = join(historyRepo, "model.em");
+    const { result, doc } = await callJson(client, "diff", { oldFile: modelFile, from: "HEAD~1", to: "HEAD" });
+    expect(doc.oldModel.label).toBe(`${modelFile}@HEAD~1`);
+    expect(doc.newModel.label).toBe(`${modelFile}@HEAD`);
+    expect(doc.changes).toContainEqual(expect.objectContaining({ type: "slice-added", name: "Ship" }));
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["diff", modelFile, "--from", "HEAD~1", "--to", "HEAD", "--json"], historyRepo);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("git-revision form without --to diffs against the current working-tree content", async () => {
+    const modelFile = join(historyRepo, "model.em");
+    const { doc } = await callJson(client, "diff", { oldFile: modelFile, from: "HEAD" });
+    expect(doc.oldModel.label).toBe(`${modelFile}@HEAD`);
+    expect(doc.newModel.label).toBe(modelFile);
+    expect(doc.changes).toContainEqual(expect.objectContaining({ type: "slice-added", name: "Cancel" }));
+  });
+
+  it("invalid argument combination is a tool error, not a crash", async () => {
+    const { result } = await callJson(client, "diff", {
+      oldFile: join(dir, "clean.em"),
+      newFile: join(dir, "clean2.em"),
+      from: "HEAD",
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot combine");
+  });
+
+  it("refuses (tool error) when either side has errors, same as `em diff`", async () => {
+    const { result } = await callJson(client, "diff", { oldFile: join(dir, "clean.em"), newFile: join(dir, "error.em") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not diffing");
+  });
+
+  it("a missing file is a tool error, not a crash", async () => {
+    const { result } = await callJson(client, "diff", { oldFile: join(dir, "no-such.em"), newFile: join(dir, "clean.em") });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+});
+
+describe("glossary tool", () => {
+  it("happy path: byte-identical to `em glossary --json`, field-type conflict detected", async () => {
+    const a = join(dir, "glossary-a.em");
+    const b = join(dir, "glossary-b.em");
+    const { result, doc } = await callJson(client, "glossary", { files: [a, b] });
+    expect(doc.glossarySchemaVersion).toBe("1.0");
+    expect(doc.conflicts).toContainEqual(expect.objectContaining({ type: "field-type-conflict", term: "total" }));
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["glossary", a, b, "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("refuses (tool error) when any input file has errors, same as `em glossary`", async () => {
+    const { result } = await callJson(client, "glossary", { files: [join(dir, "clean.em"), join(dir, "error.em")] });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not building glossary");
+  });
+
+  it("a missing file is a tool error, not a crash", async () => {
+    const { result } = await callJson(client, "glossary", { files: [join(dir, "no-such.em")] });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+});
+
+describe("changelog tool", () => {
+  it("happy path: markdown text, byte-identical to `em changelog <file>`", async () => {
+    const modelFile = join(historyRepo, "model.em");
+    const result = (await client.callTool({ name: "changelog", arguments: { file: modelFile } })) as unknown as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    const text = (result.content[0] as { type: "text"; text: string }).text;
+    expect(text.startsWith(`# Model changelog — ${modelFile}`)).toBe(true);
+    expect(text).toContain("add shipping slice");
+    expect(text).toContain("introduce order placement");
+    expect(text).toContain("Model introduced:");
+
+    const cli = em(["changelog", modelFile], historyRepo);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(text + "\n");
+  });
+
+  it("--from bounds the walk, same as the CLI's flag", async () => {
+    const modelFile = join(historyRepo, "model.em");
+    const result = (await client.callTool({
+      name: "changelog",
+      arguments: { file: modelFile, from: "HEAD" },
+    })) as unknown as CallToolResult;
+    const text = (result.content[0] as { type: "text"; text: string }).text;
+    expect(text).not.toContain("introduce order placement");
+    expect(text).toContain("add shipping slice");
+    expect(text).toContain("Model introduced:");
+  });
+
+  it("a file outside a git repository is a tool error, not a crash", async () => {
+    const result = (await client.callTool({
+      name: "changelog",
+      arguments: { file: join(dir, "clean.em") },
+    })) as unknown as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("is not inside a git repository");
+  });
+});
+
+describe("conform_scope tool", () => {
+  it("diff-scoped happy path: byte-identical to `em conform-scope --repo <repo>`", async () => {
+    const modelFile = join(conformDir, "model.em");
+    const result = (await client.callTool({
+      name: "conform_scope",
+      arguments: { file: modelFile, repo: conformTargetRepo },
+    })) as unknown as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    const text = (result.content[0] as { type: "text"; text: string }).text;
+    const doc = JSON.parse(text);
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: conformBaseRev });
+    expect(doc.changedPaths).toEqual(["src/checkout/Handler.kt"]);
+    expect(doc.candidateSlices).toEqual([
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+    ]);
+    expect(doc.unmappedPaths).toEqual([]);
+
+    const cli = em(["conform-scope", "model.em", "--repo", conformTargetRepo], conformDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(text + "\n");
+  });
+
+  it("full mode: every implemented slice, changedPaths/unmappedPaths empty", async () => {
+    const modelFile = join(conformDir, "model.em");
+    const result = (await client.callTool({
+      name: "conform_scope",
+      arguments: { file: modelFile, repo: conformTargetRepo, full: true },
+    })) as unknown as CallToolResult;
+    const doc = JSON.parse((result.content[0] as { text: string }).text);
+    expect(doc.changedPaths).toEqual([]);
+    expect(doc.unmappedPaths).toEqual([]);
+    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+  });
+
+  it("never writes: the CLI's --seed-asis isn't exposed, so no scratch model appears on disk", async () => {
+    const modelFile = join(conformDir, "model.em");
+    await client.callTool({ name: "conform_scope", arguments: { file: modelFile, repo: conformTargetRepo } });
+    expect(existsSync(join(conformDir, "model-asis.em"))).toBe(false);
+  });
+
+  it("refuses (tool error) when the model has errors, same as `em conform-scope`", async () => {
+    const result = (await client.callTool({
+      name: "conform_scope",
+      arguments: { file: join(dir, "error.em"), repo: conformTargetRepo },
+    })) as unknown as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not scoping");
+  });
+
+  it("a missing state file is a tool error, not a crash", async () => {
+    const result = (await client.callTool({
+      name: "conform_scope",
+      arguments: { file: join(dir, "ready.em"), repo: conformTargetRepo },
+    })) as unknown as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("no state file");
   });
 });
