@@ -375,8 +375,32 @@ namespace OrderFulfillment {
 // compiles what the generator produces, catching a syntax mistake this file's own string
 // assertions above couldn't — but it degrades to a skip, not a failure, if the package (or its
 // CLI binary) isn't present, exactly as the ticket asked for.
+//
+// Resolving/existing isn't enough, though: @typespec/compiler declares `engines.node >= 22`
+// (it uses `fs.promises.glob`, added in Node 22) and throws a `SyntaxError` on import under an
+// older Node rather than failing gracefully — CI runs Node 20 (.github/workflows/ci.yml), so
+// this block must also check the *running* Node against that declared minimum, not just that
+// the package is on disk. Read from the installed package's own `engines.node` (rather than
+// hardcoding "22") so a future compiler bump that raises or lowers the requirement is honored
+// automatically, no edit needed here.
 const TSP_BIN = join(ROOT, "node_modules", ".bin", "tsp");
-const TSP_AVAILABLE = existsSync(TSP_BIN);
+
+function nodeSatisfiesEngineRequirement(pkgDir: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")) as {
+      engines?: { node?: string };
+    };
+    const required = pkg.engines?.node; // e.g. ">=22.0.0"
+    const minMajor = required ? Number(required.match(/(\d+)/)?.[1] ?? 0) : 0;
+    const currentMajor = Number(process.versions.node.split(".")[0]);
+    return currentMajor >= minMajor;
+  } catch {
+    return false; // package.json missing/unreadable — treat as unsatisfied, same as "not installed"
+  }
+}
+
+const TSP_AVAILABLE =
+  existsSync(TSP_BIN) && nodeSatisfiesEngineRequirement(join(ROOT, "node_modules", "@typespec", "compiler"));
 
 function tspCompile(text: string): { status: number | null; stderr: string; stdout: string } {
   const dir = mkdtempSync(join(tmpdir(), "em-typespec-"));
