@@ -104,6 +104,14 @@ export interface SliceDocExport {
   /** MIL-165: when this doc was ratified (frontmatter `ratifiedOn:`, `YYYY-MM-DD`), written only
    *  by `em slice ratify` — null when absent, same as `ratifiedBy`. */
   ratifiedOn: string | null;
+  /** MIL-171: who (a person or team) holds this slice, from frontmatter `owner:` — hand-filled,
+   *  no `em` command writes it. Null when absent. */
+  owner: string | null;
+  /** MIL-171: a URL into an external tracker mirroring this slice, from frontmatter `tracking:`
+   *  — hand-filled, no `em` command writes it. Null when absent. This is the exact field
+   *  em-tracker-bridge reads to find the mirrored ticket — its name/shape here is a cross-tool
+   *  contract, not just an internal display field. */
+  tracking: string | null;
 }
 
 export interface SliceDocJoinResult {
@@ -121,6 +129,8 @@ const EMPTY_CONTENT = {
   driftSignal: null as DriftSignalKind | null,
   ratifiedBy: null as string | null,
   ratifiedOn: null as string | null,
+  owner: null as string | null,
+  tracking: null as string | null,
 };
 
 /**
@@ -214,5 +224,7 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     driftSignal: classifyImplementationDrift(parsed),
     ratifiedBy: parsed.ratifiedBy,
     ratifiedOn: parsed.ratifiedOn,
+    owner: parsed.owner,
+    tracking: parsed.tracking,
   };
 }

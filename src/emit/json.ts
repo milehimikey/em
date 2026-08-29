@@ -55,7 +55,12 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // `status`/`version`, and when (frontmatter `ratifiedBy:`/`ratifiedOn:`), written only by
 // `em slice ratify`. Both null when absent, same as every other optional doc-join field. See
 // catalog/docJoin.ts. Additive-only.
-export const SCHEMA_VERSION = "1.8";
+// 1.9 (MIL-171): `slice.doc` gains `owner`/`tracking` — who (a person or team) holds this slice,
+// and a URL into an external tracker mirroring it (frontmatter `owner:`/`tracking:`), both
+// hand-filled (no `em` command writes them). Both null when absent. `tracking` in particular is
+// the exact field em-tracker-bridge reads to find the mirrored ticket — its name/shape here is a
+// cross-tool contract. See catalog/docJoin.ts. Additive-only.
+export const SCHEMA_VERSION = "1.9";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

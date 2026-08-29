@@ -13,7 +13,10 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // 1.0 (MIL-163): initial shape.
 // 1.1 (MIL-164): each `conformance[]` entry gains `slicePRsBehindHead` (number | null) —
 // candidate-slice count from the same conform-scope machinery, alongside `commitsBehindHead`.
-export const STATUS_SCHEMA_VERSION = "1.1";
+// 1.2 (MIL-171): a new top-level `owners` array — one `{ file, key, owner }` entry per slice
+// across every input file, `owner` verbatim from the doc's frontmatter `owner:` (null when
+// absent or when no doc was found). See ../cli/status.ts's StatusOwnerEntry.
+export const STATUS_SCHEMA_VERSION = "1.2";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No
@@ -29,6 +32,7 @@ export function buildStatusJson(report: StatusReport): string {
     invariants: report.invariants,
     issues: report.issues,
     conformance: report.conformance,
+    owners: report.owners,
     // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
     // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,
     // message, line, refs), plus `file` since this is a multi-model surface.

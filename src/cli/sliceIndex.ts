@@ -23,8 +23,8 @@ import { applyMarker } from "../util/markers.js";
 export const SLICE_INDEX_MARKER = "slices";
 
 const TABLE_HEADER =
-  "| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |\n" +
-  "|---|-------|---------|--------|-------------|----------------|------------|";
+  "| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
+  "|---|-------|---------|--------|-------------|-------|----------|----------------|------------|";
 
 /** Escape characters that would break a markdown table cell: `|` (the column separator) and
  *  newlines (a slice name is always one line, but a doc's freeform `implementedIn` text isn't
@@ -54,6 +54,8 @@ export interface SliceIndexRow {
   pattern: string;
   status: string;
   ratifiedBy: string;
+  owner: string;
+  tracking: string;
   implementedIn: string;
   docPath: string;
 }
@@ -89,6 +91,8 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       pattern: slicePatternLabel(pattern),
       status: statusCell(doc),
       ratifiedBy: doc.ratifiedBy ?? "—",
+      owner: doc.owner ?? "—",
+      tracking: doc.tracking ?? "—",
       implementedIn: doc.implementedIn ?? "—",
       docPath: doc.path,
     };
@@ -97,7 +101,8 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
   const lines = rows.map(
     (r) =>
       `| ${r.index} | ${escapeCell(r.name)} | ${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
-      `${escapeCell(r.ratifiedBy)} | ${escapeCell(r.implementedIn)} | [${r.docPath}](${r.docPath}) |`,
+      `${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ${escapeCell(r.tracking)} | ` +
+      `${escapeCell(r.implementedIn)} | [${r.docPath}](${r.docPath}) |`,
   );
 
   return { markdown: [TABLE_HEADER, ...lines].join("\n"), rows, diagnostics };

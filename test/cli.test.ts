@@ -177,14 +177,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.8");
+    expect(doc.schemaVersion).toBe("1.9");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.8");
+    expect(doc.schemaVersion).toBe("1.9");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -200,7 +200,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.8");
+    expect(doc.schemaVersion).toBe("1.9");
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
     expect(doc.slice.name).toBe("Place");
@@ -219,6 +219,8 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       driftSignal: null,
       ratifiedBy: null,
       ratifiedOn: null,
+      owner: null,
+      tracking: null,
     });
     // Only the one slice's object — never the whole model's slices array.
     expect(doc.model).toBeUndefined();
@@ -1464,8 +1466,8 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(readme).toContain("em watch order-fulfillment.em -o order-fulfillment.svg --serve");
     expect(readme).toContain(
       "<!-- GENERATED:slices:start -->\n" +
-        "| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|-------------|----------------|------------|\n" +
+        "| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|-------|----------|----------------|------------|\n" +
         "<!-- GENERATED:slices:end -->",
     );
 
@@ -2077,7 +2079,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.1");
+    expect(doc.statusSchemaVersion).toBe("1.2");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -2523,7 +2525,7 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote README.md");
     const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
-    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | [slices/place.md](slices/place.md) |");
     expect(readme).toContain("Open Orders");
   });
 

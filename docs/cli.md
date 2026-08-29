@@ -404,7 +404,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.8",
+  "schemaVersion": "1.9",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "sliceKey": "checkout",
@@ -413,7 +413,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.8` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.9` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -422,7 +422,7 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.8"`):
+**Schema summary** (`schemaVersion: "1.9"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -452,7 +452,8 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       frontmatter block, or is missing a required key — warns). `reason` is `null` exactly
       when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
       `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, `driftSignal`,
-      `ratifiedBy`, and `ratifiedOn` are populated from it (each `null`/`[]` otherwise).
+      `ratifiedBy`, `ratifiedOn`, `owner`, and `tracking` are populated from it (each `null`/`[]`
+      otherwise).
       `driftSignal` (added in schema `1.5`,
       MIL-85) is `"in-sync"` | `"never-implemented"` | `"unpropagated-delta"` |
       `"implemented-without-link"` — the status/implementedIn coherence classification also
@@ -461,8 +462,12 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       with `version` from the same doc parse, so a consumer reporting drift should always cite
       both together. `ratifiedBy`/`ratifiedOn` (added in schema `1.8`, MIL-165) are the doc's
       `ratifiedBy:`/`ratifiedOn:` frontmatter, written only by `em slice ratify` — both `null`
-      when absent (a doc predating this feature, or ratified by hand before it existed). Full
-      contract: [slice-doc-schema.md](slice-doc-schema.md).
+      when absent (a doc predating this feature, or ratified by hand before it existed).
+      `owner`/`tracking` (added in schema `1.9`, MIL-171) are the doc's `owner:`/`tracking:`
+      frontmatter — hand-filled, no `em` command writes either — both `null` when absent.
+      `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
+      mirroring this slice: `em` only stores and displays it, it never talks to a tracker
+      itself. Full contract: [slice-doc-schema.md](slice-doc-schema.md).
     Elements appear only inside their slice, not flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
@@ -1161,13 +1166,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.1"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.2"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.1",
+  "statusSchemaVersion": "1.2",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1195,6 +1200,10 @@ see [mcp.md](mcp.md)):
       "error": null
     }
   ],
+  "owners": [
+    { "file": "model.em", "key": "checkout", "owner": "Team Checkout" },
+    { "file": "model.em", "key": "billing", "owner": null }
+  ],
   "diagnostics": []
 }
 ```
@@ -1207,6 +1216,11 @@ not an error, just nothing to report yet. `error` is also set (non-null) — wit
 `Model file:` bullet names a different file than the one being reported on (see above); a
 consumer that needs to tell "no history yet" apart from "history exists but couldn't be
 attributed/verified" should check `error`, not just `lastConformance`.
+
+`owners` (added in schema `1.2`, MIL-171) is a flat, one-entry-per-slice list across every input
+file — `owner` is the slice's bound doc's `owner:` frontmatter verbatim, `null` when absent or
+when no doc was found at all. Never deduped: two slices sharing one doc via MIL-121 `covers:`
+legitimately share the same owner, and each still gets its own entry.
 
 `diagnostics` (added for the PR #116 review pass) carries every doc-join warning
 (`binding-missing-file`/`frontmatter-invalid`) raised while resolving each slice's doc, across
@@ -1555,6 +1569,8 @@ pair around an empty table.
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
 | `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), or `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" |
 | `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
+| `Owner` | The doc's `owner` (MIL-171), or `—` |
+| `Tracking` | The doc's `tracking` (MIL-171), or `—` |
 | `Implemented in` | The doc's `implementedIn`, or `—` |
 | `Design doc` | Always a link to the conventional `slices/<slice-key>.md` path, whether or not that file exists yet |
 

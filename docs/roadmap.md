@@ -96,6 +96,13 @@ rework of `em catalog` — see
 [docs/decisions/mil-162-teachable-navigator.md](decisions/mil-162-teachable-navigator.md) for
 the reasoning, the onboarding/cross-model-navigation design, and prototype scale numbers up to
 1,200+ slices across 20 models. Follow-up work lives in the em-portal Linear project, not here.
+Most recently (MIL-171): optional `owner:`/`tracking:` frontmatter keys — who (a person or team)
+holds a slice, and a URL into an external tracker mirroring it — both hand-filled, no dedicated
+`em` write path, same as `implementedIn`. Surfaced in `em export`'s doc join (`schemaVersion`
+`1.9`), `em slice index`'s new Owner/Tracking columns, and `em status --json`'s new per-slice
+`owners[]` list (`statusSchemaVersion` `1.2`). This is the `em`-side half of slice ownership —
+`tracking` is the exact field `em-tracker-bridge` (built in parallel) reads to find the mirrored
+ticket; `em` only stores and displays, it never talks to a tracker itself.
 
 **Modeling and rendering**
 

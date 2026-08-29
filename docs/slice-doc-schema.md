@@ -59,6 +59,8 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `covers` | list of slice keys | comma-separated `<slice-key>, ...` (plain keys — **not** the `<slice-key>@v<N>` ref grammar above) | ratifies a cross-slice binding (MIL-121 — see [Cross-slice coverage](#cross-slice-coverage-covers) below): read by `em export`'s doc join, `em validate --slice-ready`, and (best-effort) `em render`/`em watch`'s Slice Status legend |
 | `ratifiedBy` | string | free text (typically a person's name) | written only by `em slice ratify` (MIL-165 — see [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)); joined into `em export`'s `slice.doc.ratifiedBy` (schema `1.8`) and `em slice index`'s Ratified by column |
 | `ratifiedOn` | string | `YYYY-MM-DD` | written only by `em slice ratify` (MIL-165); joined into `em export`'s `slice.doc.ratifiedOn` (schema `1.8`) |
+| `owner` | string | free text (typically a person or team name) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.owner` (schema `1.9`, MIL-171), `em slice index`'s Owner column, and `em status`'s per-slice `owners[]` |
+| `tracking` | string | free text (typically an external ticket/issue URL) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.tracking` (schema `1.9`, MIL-171) and `em slice index`'s Tracking column. This is the exact field `em-tracker-bridge` reads to find the ticket mirroring this slice — `em` only stores and displays it, it never talks to a tracker itself |
 
 Five keys — `schemaVersion`/`pattern`/`swimlane`/`status`/`version` — are what
 `hasUsableFrontmatter()` requires: a doc omitting any of them is `frontmatter-invalid` to
@@ -77,6 +79,7 @@ convention, not parser-enforced.
 | `split-from`, `merged-from`, `superseded-by` | optional in every state — present only on docs created by a split/merge, or on a doc that has been retired |
 | `covers` | optional in every state — present only on a doc that deliberately also serves another slice (MIL-121, see below); most docs never carry it |
 | `ratifiedBy`, `ratifiedOn` | optional in every state — present once `em slice ratify` (MIL-165) has run at least once; a doc predating this feature, or ratified by hand, simply omits both |
+| `owner`, `tracking` | optional in every state — hand-filled whenever a team wants a who-holds-this / external-tracker link; most docs never carry either (MIL-171) |
 
 `em export`'s slice-doc join (MIL-91) is the first `em` command to mechanically check the
 required row above: a bound doc missing any of `schemaVersion`/`pattern`/`swimlane`/`status`/
@@ -363,7 +366,7 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](cli.md#em-catalog-files) — pattern / doc lookup
 - [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name) — `em slice ratify`, the mechanized ratification act (`ratifiedBy`/`ratifiedOn`, schema `1.8`, MIL-165)
 - [cli.md](cli.md#em-slice-reratify-file-slice-key) — `em slice reratify`, the mechanized re-ratification version bump/status flip (MIL-161)
-- [cli.md](cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91)
+- [cli.md](cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91), including `owner`/`tracking` (schema `1.9`, MIL-171)
 - [cli.md](cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
 - [validation.md#lineage](validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)
 - [validation.md#slice-readiness](validation.md#slice-readiness) — `em validate --slice-ready`'s note-binding gate, including the `covers` cross-binding (MIL-121)

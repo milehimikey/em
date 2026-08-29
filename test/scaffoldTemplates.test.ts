@@ -33,8 +33,8 @@ describe("scaffoldReadme", () => {
   it("keeps the GENERATED:slices marker block exactly as the template has it (header-only, no rows)", () => {
     expect(readme).toContain(
       "<!-- GENERATED:slices:start -->\n" +
-        "| # | Slice | Pattern | Status | Ratified by | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|-------------|----------------|------------|\n" +
+        "| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|-------|----------|----------------|------------|\n" +
         "<!-- GENERATED:slices:end -->",
     );
   });
