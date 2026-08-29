@@ -161,6 +161,20 @@ describe("parseSliceDoc", () => {
     expect(doc.ratifiedOn).toBeNull();
   });
 
+  it("parses `owner`/`tracking` (MIL-171), free text and unlowercased", () => {
+    const doc = parseSliceDoc(
+      "---\nstatus: draft\nowner: Team Checkout\ntracking: https://tracker.example/issue/42\n---\n# Some Slice\n",
+    );
+    expect(doc.owner).toBe("Team Checkout");
+    expect(doc.tracking).toBe("https://tracker.example/issue/42");
+  });
+
+  it("returns null for `owner`/`tracking` when absent — a doc predating MIL-171", () => {
+    const doc = parseSliceDoc("---\nstatus: draft\n---\n# Some Slice\n");
+    expect(doc.owner).toBeNull();
+    expect(doc.tracking).toBeNull();
+  });
+
   it("parses a comma-separated list with a mix of well-formed and malformed refs", () => {
     const doc = parseSliceDoc("---\nmerged-from: checkout, apply-discount@v1\n---\n# Some Slice\n");
     expect(doc.mergedFrom).toEqual([

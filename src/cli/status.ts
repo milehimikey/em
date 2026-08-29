@@ -75,6 +75,10 @@ export interface SliceStatusFact {
    *  (MIL-164) can build its `SliceDocFacts[]` input from these facts directly rather than
    *  joining every slice's doc a second time. */
   implementedIn: string | null;
+  /** MIL-171: the doc's own `owner:` value verbatim (or null) — carried through from the same
+   *  `resolveSliceDocJoin` call this fact set already makes, so a per-slice owner rollup
+   *  (`StatusReport.owners`) never needs a second doc join. */
+  owner: string | null;
   bucket: StatusBucket;
   driftSignal: DriftSignalKind | null;
   openQuestionsTotal: number;
@@ -126,6 +130,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       docPath,
       rawStatus: doc.status,
       implementedIn: doc.implementedIn,
+      owner: doc.owner,
       bucket: classifyStatusBucket(doc.found, doc.reason, doc.status),
       driftSignal: doc.driftSignal,
       openQuestionsTotal,
@@ -373,6 +378,19 @@ export interface StatusIssueTotals {
  *  needs to say which file it concerns. */
 export type StatusDiagnostic = { file: string } & Diagnostic;
 
+/** MIL-171: one slice's owner fact — the per-slice detail this ticket asked `em status` to
+ *  surface, kept deliberately minimal (no other fact duplicated here that `slices`/`diagnostics`
+ *  already carry elsewhere in the report). `file`+`key` identify the slice the same way
+ *  `StatusDiagnostic`'s `file` tags a diagnostic to its model; `owner` is the doc's own `owner:`
+ *  verbatim, null when absent OR when no doc was found at all — same "null when absent"
+ *  convention `em export`'s doc join uses. Listed once per slice, never deduped: two slices
+ *  legitimately sharing one doc (MIL-121 `covers:`) also legitimately share the same owner. */
+export interface StatusOwnerEntry {
+  file: string;
+  key: string;
+  owner: string | null;
+}
+
 export interface StatusReport {
   files: string[];
   slices: StatusSliceCounts;
@@ -388,6 +406,9 @@ export interface StatusReport {
    *  discarded, so a state-of-the-system report doesn't hide a broken doc reference just
    *  because it also folded that slice into `frontmatterInvalid`/`noDoc` above. */
   diagnostics: StatusDiagnostic[];
+  /** MIL-171: per-slice owner facts, one entry per slice across every input file — see
+   *  `StatusOwnerEntry`. */
+  owners: StatusOwnerEntry[];
 }
 
 /** Aggregate everything `em status` reports into one `StatusReport` — pure, no I/O. Callers
@@ -477,6 +498,7 @@ export function buildStatusReport(
     issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked },
     conformance,
     diagnostics,
+    owners: sliceFacts.map((f) => ({ file: f.file, key: f.key, owner: f.owner })),
   };
 }
 

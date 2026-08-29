@@ -29,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.8");
+    expect(doc.schemaVersion).toBe("1.9");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -78,6 +78,8 @@ slice "Submit Order" {
       driftSignal: null,
       ratifiedBy: null,
       ratifiedOn: null,
+      owner: null,
+      tracking: null,
     });
     expect(slice.elements[0]).toMatchObject({
       ref: "submit-order/command.submit-order",
@@ -643,7 +645,7 @@ type Order { billing: Address }
   });
 
   it("bumps schemaVersion to 1.6, additive over 1.5", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.8");
+    expect(docOf(SRC).schemaVersion).toBe("1.9");
   });
 });
 
@@ -750,6 +752,23 @@ describe("slice-doc join (MIL-91)", () => {
         "",
       ].join("\n"),
     );
+    // MIL-171: owner:/tracking: — hand-filled, no dedicated `em` write path.
+    writeFileSync(
+      join(dir, "slices", "owned.md"),
+      [
+        "---",
+        "schemaVersion: 1",
+        "pattern: state-change",
+        "swimlane: Customer -> Order",
+        "status: draft",
+        "version: 1",
+        "owner: Team Checkout",
+        "tracking: https://tracker.example/issue/42",
+        "---",
+        "# Slice: Owned",
+        "",
+      ].join("\n"),
+    );
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -791,6 +810,24 @@ describe("slice-doc join (MIL-91)", () => {
     expect(found).toMatchObject({ severity: "warning", refs: ["no-frontmatter"] });
   });
 
+  // MIL-171: owner:/tracking: joined verbatim — the exact field name/shape em-tracker-bridge
+  // reads `tracking` from.
+  it("joins `owner`/`tracking` verbatim from frontmatter", () => {
+    const doc = docOfFile(`slice "Owned" {\n  command Do Thing note "slices/owned.md"\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({
+      found: true,
+      owner: "Team Checkout",
+      tracking: "https://tracker.example/issue/42",
+    });
+  });
+
+  it("joins `owner`/`tracking` as null when a usable doc simply omits them", () => {
+    const doc = docOfFile(`slice "Checkout" {\n  command Do Thing note "slices/checkout.md"\n}`);
+    const slice = doc.model.slices[0];
+    expect(slice.doc).toMatchObject({ found: true, owner: null, tracking: null });
+  });
+
   it("happy path: a well-formed, note-bound doc joins every canonical field — no warning", () => {
     const doc = docOfFile(`slice "Checkout" {\n  command Do Thing note "slices/checkout.md"\n}`);
     const slice = doc.model.slices[0];
@@ -807,6 +844,8 @@ describe("slice-doc join (MIL-91)", () => {
       driftSignal: "in-sync",
       ratifiedBy: null,
       ratifiedOn: null,
+      owner: null,
+      tracking: null,
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
   });
@@ -898,6 +937,8 @@ describe("slice-doc join: cross-binding (MIL-121)", () => {
       driftSignal: "never-implemented",
       ratifiedBy: null,
       ratifiedOn: null,
+      owner: null,
+      tracking: null,
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
   });

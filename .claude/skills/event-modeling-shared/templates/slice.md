@@ -40,6 +40,12 @@ don't hand-fill these; run `em slice ratify <model>.em {{this-slice-name}} --by 
 handoff gate instead (docs/process.md#what-ratified-means), which flips `status` to
 `ready-to-implement` and writes both in one edit.
 
+`owner`/`tracking` are optional and, unlike `ratifiedBy`/`ratifiedOn`, hand-filled — no `em`
+command writes either. `owner` is free text naming who (a person or team) holds this slice;
+`tracking` is a URL into an external tracker (Jira, Linear, ...) mirroring it — the exact field
+`em-tracker-bridge` reads to find the mirrored ticket. `em` only stores and displays both; it
+never talks to a tracker itself. Delete both otherwise; most docs never carry them.
+
 Full machine schema — required-vs-optional keys per `status`, value types/enums, the
 unknown-key policy — is documented in docs/slice-doc-schema.md.
 
@@ -64,6 +70,9 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 # (e.g. the view-only half of a two-slice Automation/Translation, MIL-121); delete otherwise.
 # Plain slice keys, comma-separated. See docs/slice-doc-schema.md#cross-slice-coverage-covers.
 # covers: <slice-key>, <slice-key>
+# Ownership / tracking — optional, hand-filled (no `em` command writes either); delete otherwise.
+# owner: <person or team>
+# tracking: <ticket URL>
 ---
 # Slice: {{Slice Name}}
 

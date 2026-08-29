@@ -39,6 +39,14 @@
 // (cli/ratify.ts) alone — same "one write path" discipline `implementedIn` has with `em slice
 // mark-implemented`. Additive, tolerate-unknown-fields: a doc that predates this feature (or was
 // hand-ratified) simply has neither key, same as any other optional field's absence.
+//
+// `owner`/`tracking` (MIL-171) are a seventh and eighth optional frontmatter-only field: who
+// (a person or team) holds this slice, and a URL into an external tracker mirroring it. Unlike
+// `ratifiedBy`/`ratifiedOn`, neither has a dedicated `em` write path — both are hand-filled, free
+// text, exactly like `implementedIn`. `em` only stores and displays them; `tracking` in
+// particular is the field em-tracker-bridge reads to find the mirrored ticket, so its export
+// name/shape is a cross-tool contract — see docJoin.ts/emit/json.ts. Additive,
+// tolerate-unknown-fields: absent on every doc predating this feature.
 
 import { marked } from "marked";
 
@@ -111,6 +119,14 @@ export interface SliceDoc {
    *  `em slice ratify`; validated by the CLI layer, not re-validated here (this parser stays as
    *  lenient about value shape as every other frontmatter field). */
   ratifiedOn: string | null;
+  /** MIL-171: `owner:` — free text, typically a person or team name — or null when absent.
+   *  Hand-filled; no `em` command writes it. */
+  owner: string | null;
+  /** MIL-171: `tracking:` — free text, typically an external ticket/issue URL — or null when
+   *  absent. Hand-filled; no `em` command writes it. This is the field em-tracker-bridge reads
+   *  to find the ticket mirroring this slice — its export name/shape (docJoin.ts) is a
+   *  cross-tool contract, not just an internal display field. */
+  tracking: string | null;
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -289,6 +305,8 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     covers: parseKeyList(fields.get("covers")),
     ratifiedBy: fields.get("ratifiedby") ?? null,
     ratifiedOn: fields.get("ratifiedon") ?? null,
+    owner: fields.get("owner") ?? null,
+    tracking: fields.get("tracking") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,

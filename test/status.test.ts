@@ -75,7 +75,7 @@ describe("resolveSliceStatusFacts / countOpenIssues (real fs fixtures)", () => {
     mkdirSync(join(dir, "slices"), { recursive: true });
     writeFileSync(
       join(dir, "slices", "checkout.md"),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\nowner: Team Checkout\n---\n" +
         "## Open Questions\n- [x] resolved one\n- [ ] still open\n",
     );
     writeFileSync(
@@ -116,11 +116,15 @@ slice "Broken" {
     expect(checkout.openQuestionsTotal).toBe(2);
     expect(checkout.openQuestionsUnchecked).toBe(1);
     expect(checkout.docPath).toBe(resolve(dir, "slices/checkout.md"));
+    // MIL-171: owner carried through from the same doc join, verbatim.
+    expect(checkout.owner).toBe("Team Checkout");
 
     const billing = facts.find((f) => f.key === "billing")!;
     expect(billing.bucket).toBe("draft");
     expect(billing.driftSignal).toBe("never-implemented");
     expect(billing.openQuestionsUnchecked).toBe(1);
+    // MIL-171: null when the doc simply omits owner:.
+    expect(billing.owner).toBeNull();
 
     const untouched = facts.find((f) => f.key === "untouched")!;
     expect(untouched.docFound).toBe(false);
@@ -129,6 +133,7 @@ slice "Broken" {
     expect(untouched.driftSignal).toBeNull();
     expect(untouched.openQuestionsTotal).toBe(0);
     expect(untouched.docPath).toBeNull();
+    expect(untouched.owner).toBeNull();
 
     // PR #116 review finding 2: found: true, reason: frontmatter-invalid — bucketed distinctly,
     // and the join's warning diagnostic is surfaced, not dropped.
@@ -466,9 +471,9 @@ describe("aggregateInvariantTotals", () => {
 
 describe("buildStatusReport", () => {
   const facts: SliceStatusFact[] = [
-    { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", implementedIn: null, bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
-    { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/s2.md", rawStatus: "draft", implementedIn: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 2, openQuestionsUnchecked: 1 },
-    { file: "a.em", key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, implementedIn: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+    { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", implementedIn: null, owner: null, bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+    { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/s2.md", rawStatus: "draft", implementedIn: null, owner: "Alex Rivera", bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 2, openQuestionsUnchecked: 1 },
+    { file: "a.em", key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, implementedIn: null, owner: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
   ];
   const conformance: ConformanceEntry[] = [
     { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 2, slicePRsBehindHead: 1, error: null },
@@ -493,6 +498,12 @@ describe("buildStatusReport", () => {
     expect(report.conformance).toEqual(conformance);
     expect(report.files).toEqual(["a.em"]);
     expect(report.diagnostics).toEqual([]);
+    // MIL-171: one owner entry per slice, verbatim from the fact's own `owner`, never deduped.
+    expect(report.owners).toEqual([
+      { file: "a.em", key: "s1", owner: null },
+      { file: "a.em", key: "s2", owner: "Alex Rivera" },
+      { file: "a.em", key: "s3", owner: null },
+    ]);
   });
 
   it("carries invariants totals through unchanged when given", () => {
@@ -518,7 +529,7 @@ describe("buildStatusReport", () => {
   it("tallies a frontmatter-invalid slice coherently: same count in byStatus and driftSignal, distinct from no-doc/notApplicable", () => {
     const withBroken: SliceStatusFact[] = [
       ...facts,
-      { file: "a.em", key: "broken", docFound: true, docReason: "frontmatter-invalid", docPath: "/a/slices/broken.md", rawStatus: null, implementedIn: null, bucket: "frontmatter-invalid", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+      { file: "a.em", key: "broken", docFound: true, docReason: "frontmatter-invalid", docPath: "/a/slices/broken.md", rawStatus: null, implementedIn: null, owner: null, bucket: "frontmatter-invalid", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
     ];
     const report = buildStatusReport(["a.em"], withBroken, 0, null, conformance, []);
     expect(report.slices.byStatus.frontmatterInvalid).toBe(1);
@@ -533,8 +544,8 @@ describe("buildStatusReport", () => {
   // Open Questions ONCE, not once per covering slice.
   it("dedupes Open Questions by resolved docPath — a covers:-shared doc counts once, not per slice", () => {
     const sharedFacts: SliceStatusFact[] = [
-      { file: "a.em", key: "owner", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", implementedIn: null, bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
-      { file: "a.em", key: "other", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", implementedIn: null, bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "owner", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", implementedIn: null, owner: "Alex Rivera", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "other", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", implementedIn: null, owner: "Alex Rivera", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1 },
     ];
     const report = buildStatusReport(["a.em"], sharedFacts, 0, null, conformance, []);
     expect(report.issues.openQuestionsTotal).toBe(3); // not 6
@@ -543,12 +554,18 @@ describe("buildStatusReport", () => {
     // legitimately means 2 slices are "reviewed", not 1.
     expect(report.slices.byStatus.reviewed).toBe(2);
     expect(report.driftSignal.neverImplemented).toBe(2);
+    // Owners, unlike Open Questions, are never deduped — both slices legitimately share the
+    // same owner via the same shared doc, and each is still listed once.
+    expect(report.owners).toEqual([
+      { file: "a.em", key: "owner", owner: "Alex Rivera" },
+      { file: "a.em", key: "other", owner: "Alex Rivera" },
+    ]);
   });
 
   it("does not dedupe two DIFFERENT docs that happen to have distinct paths", () => {
     const distinctFacts: SliceStatusFact[] = [
-      { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/one.md", rawStatus: "draft", implementedIn: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
-      { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/two.md", rawStatus: "draft", implementedIn: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/one.md", rawStatus: "draft", implementedIn: null, owner: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
+      { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/two.md", rawStatus: "draft", implementedIn: null, owner: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
     ];
     const report = buildStatusReport(["a.em"], distinctFacts, 0, null, conformance, []);
     expect(report.issues.openQuestionsTotal).toBe(2);
@@ -568,6 +585,7 @@ describe("text/markdown/badge formatting", () => {
         { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, slicePRsBehindHead: 3, error: null },
       ],
       diagnostics: [],
+      owners: [],
       ...overrides,
     };
   }
