@@ -1,6 +1,6 @@
 ---
 name: event-modeling-review
-em-version: 1.8.1
+em-version: 1.9.0
 description: >-
   Use when starting em's live browser viewer (`em watch --serve`) so a team can watch a model
   update in real time, or facilitating a SCHEDULED stakeholder walkthrough that steps through
