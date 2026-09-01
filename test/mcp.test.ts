@@ -64,6 +64,7 @@ slice "Bad" {
 `;
 
 let dir: string;
+let brokenDocDir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-mcp-"));
   writeFileSync(join(dir, "clean.em"), CLEAN);
@@ -89,8 +90,15 @@ beforeAll(() => {
 
   // PR #116 review finding 2 (MCP parity): a doc that's bound but has no usable frontmatter —
   // the status tool should surface the join warning in its `diagnostics` field, same as the CLI.
-  writeFileSync(join(dir, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
-  writeFileSync(join(dir, "status-broken-doc.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
+  // Own directory (not `dir`'s shared `slices/`): MIL-183's orphaned-slice-doc check is
+  // model-scoped, so a usable-frontmatter doc from an unrelated fixture sharing that directory
+  // (e.g. `ready-slice.md`) would otherwise be flagged as orphaned relative to THIS one-slice
+  // model — a real (if edge-case) consequence of the documented "one directory per model"
+  // convention (docs/cli.md, "Multi-model projects"), not something this fixture should exercise.
+  brokenDocDir = join(dir, "broken-doc-model");
+  mkdirSync(join(brokenDocDir, "slices"), { recursive: true });
+  writeFileSync(join(brokenDocDir, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
+  writeFileSync(join(brokenDocDir, "status-broken-doc.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
 
   // Two-file `diff` tool fixture: clean2 adds one slice on top of CLEAN.
   writeFileSync(join(dir, "clean2.em"), CLEAN + `slice "Ship" {\n  command Ship Order\n  event Order Shipped\n}\n`);
@@ -414,11 +422,11 @@ describe("status tool", () => {
   // output — the MCP tool has no stderr channel of its own, so the document is the only place
   // this can surface for an MCP client.
   it("surfaces frontmatter-invalid doc-join diagnostics in the document, same as `em status --json`", async () => {
-    const { doc } = await callJson(client, "status", { files: [join(dir, "status-broken-doc.em")] });
+    const { doc } = await callJson(client, "status", { files: [join(brokenDocDir, "status-broken-doc.em")] });
     expect(doc.slices.byStatus.frontmatterInvalid).toBe(1);
     expect(doc.driftSignal.frontmatterInvalid).toBe(1);
     expect(doc.diagnostics).toHaveLength(1);
-    expect(doc.diagnostics[0]).toMatchObject({ file: join(dir, "status-broken-doc.em"), code: "frontmatter-invalid" });
+    expect(doc.diagnostics[0]).toMatchObject({ file: join(brokenDocDir, "status-broken-doc.em"), code: "frontmatter-invalid" });
   });
 });
 

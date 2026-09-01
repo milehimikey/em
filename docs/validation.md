@@ -404,6 +404,41 @@ to point at (`doc-model-pattern-mismatch`, `doc-model-element-not-in-model`) anc
 mismatch — every diagnostic here tags `refs` with the bare slice key (or `<sliceKey>/<kind>.<name>`
 element refs), so the existing ref filter picks them up without this module re-deriving anything.
 
+### Orphaned slice doc
+
+`em validate`'s fifth fs-aware rule (MIL-183, the fragility half of
+[GitHub #128](https://github.com/milehimikey/em/issues/128)), alongside lineage, frontmatter
+coherence, note-binding mismatch, and doc-model consistency above: every one of those four rules
+starts from a *slice* and asks "is its doc/note okay?" — none of them ever looked the other way
+and asked "does every file in `slices/` still belong to something?" A doc left behind after its
+slice is renamed or removed used to just quietly stop applying, with nothing pointing at the
+orphaned file itself.
+
+Two doc-join mechanisms coexist in `em`: `docJoin.ts`'s `resolveSliceDocJoin`, gated on an
+explicit `note "slices/<key>.md"` binding, drives `em export`/`em status`/the MCP tools; `em
+catalog` instead reads `slices/<sliceKey>.md` by bare filename convention, ignoring `note`
+entirely (a deliberate, tested invariant — see `src/catalog/build.ts`). The "matched by name,
+silently stops applying" experience GH #128 described is `em catalog`'s convention path, so this
+rule judges orphan-ness the same way: by filename key (and, for a MIL-121 covering doc, by its
+`covers:` list) — never by whether some element happens to carry a `note`.
+
+Only files with **usable frontmatter** (`hasUsableFrontmatter()`, the same gate every fs-aware
+rule above uses) are considered slice docs at all — this is what keeps a README, a scratch note,
+or an unfinished draft in `slices/` from ever being flagged.
+
+| Code | Meaning |
+|---|---|
+| `orphaned-slice-doc` | A `slices/*.md` file with usable frontmatter whose own key names no current slice, and whose `covers:` list (if any) doesn't ratify a current slice either. |
+
+**Never warns on:** a file whose key matches a current slice by name, whether or not any note
+currently binds it (matching `em catalog`'s own filename-convention lookup); a file with no
+usable frontmatter at all (a README, a scratch note, an unfinished draft missing a required
+frontmatter key); or a MIL-121 covering doc whose own canonical slice is gone but whose
+`covers:` still names a slice currently in the model — the two-slice Automation/Translation
+shape's shared-doc case. The `covers:` check only requires the *declaration* to still name a
+live slice, not that some note currently wins the binding race for it — a stricter check would
+reintroduce exactly the false positive this rule exists to avoid.
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection
