@@ -145,7 +145,7 @@ For each slice in scope:
      divergence** (step 4) and cite the annotation text as the evidence. This is the specific,
      per-element, ratified counterpart to the idiom-level bullet above.
    - **Unpropagated deltas (MIL-85):** before treating any slice-level finding as drift, check
-     that slice's `doc.driftSignal` in `em export --json` (see `docs/slice-doc-schema.md`'s
+     that slice's `doc.driftSignal` in `em export --json` (see `../../event-modeling-shared/reference/slice-doc-schema.md`'s
      "`status` under re-ratification" section for the mechanics). `"unpropagated-delta"` means
      the slice was re-ratified (a new
      `version`, `status` flipped back off `implemented`) but `implementedIn` still names the

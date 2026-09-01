@@ -11,7 +11,7 @@
 //   tsx scripts/generate-skill-docs.ts          # write (npm run docs:generate)
 //   tsx scripts/generate-skill-docs.ts --check   # verify only, exit 1 on drift (npm run docs:check)
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
@@ -29,6 +29,14 @@ export const EM_DSL_MD = join(ROOT, ".claude/skills/event-modeling-shared/refere
 // sees regardless of which phase-specific skill ends up handling the work.
 export const SKILL_MD = join(ROOT, ".claude/skills/event-modeling/SKILL.md");
 export const USAGE_DATA_MD = join(ROOT, "docs/usage-data.md");
+// The slice-doc frontmatter contract (MIL-186) — the one docs/ reference an authoring agent
+// actually needs mid-session, so it's vendored into the bundle instead of left dangling like
+// the rest of docs/*.md (see operating-principles.md's "References to docs/*.md" note).
+export const SLICE_DOC_SCHEMA_SRC = join(ROOT, "docs/slice-doc-schema.md");
+export const SLICE_DOC_SCHEMA_VENDORED = join(
+  ROOT,
+  ".claude/skills/event-modeling-shared/reference/slice-doc-schema.md",
+);
 
 // ---- CLI reference (full) — every command/option, walked from the real commander tree ----
 
@@ -152,6 +160,36 @@ export function buildUsageCategories(rules: Record<RuleCode, RuleDef>, severity:
   return [header, ...rows].join("\n");
 }
 
+// ---- Vendored slice-doc-schema.md (MIL-186) ----
+//
+// Not a byte-identical copy — two classes of relative link need rewriting for the vendored
+// copy's new home (.claude/skills/event-modeling-shared/reference/, not docs/):
+//   1. Links to *other* docs/*.md files (cli.md, validation.md) aren't vendored, so a plain
+//      relative link would be locally unresolvable from the copy's new directory. Repointed at
+//      the em GitHub repo directly — the same "em repo — not vendored" convention already used
+//      for the bundle's other cross-doc links (see operating-principles.md, implement.md).
+//   2. The one link back into this same skill bundle, written relative to docs/
+//      (../.claude/skills/event-modeling-shared/templates/slice.md), becomes the shorter
+//      sibling-directory form (../templates/slice.md) the copy's new home actually sits next to.
+const SLICE_DOC_SCHEMA_LINKED_DOCS = ["cli", "validation"] as const;
+
+export function buildVendoredSliceDocSchema(source: string): string {
+  let body = source;
+  for (const name of SLICE_DOC_SCHEMA_LINKED_DOCS) {
+    body = body.split(`](${name}.md`).join(`](https://github.com/milehimikey/em/blob/main/docs/${name}.md`);
+  }
+  body = body
+    .split("](../.claude/skills/event-modeling-shared/templates/slice.md)")
+    .join("](../templates/slice.md)");
+  const banner =
+    "<!-- GENERATED FILE — do not hand-edit. Synced from docs/slice-doc-schema.md by\n" +
+    "     scripts/generate-skill-docs.ts (`npm run docs:generate`); `npm run docs:check` fails\n" +
+    "     on drift. A few links below are rewritten for this vendored location (see that\n" +
+    "     script's buildVendoredSliceDocSchema for exactly what changes and why) — everything\n" +
+    "     else is identical to the source doc. -->\n\n";
+  return banner + body;
+}
+
 // ---- Marker-delimited patching ----
 //
 // The regex-matching mechanics live in src/util/markers.ts (shared with the runtime `em slice
@@ -211,6 +249,21 @@ function main(): void {
     } else {
       writeFileSync(path, updated, "utf8");
       console.log(`wrote ${path.replace(ROOT + "/", "")}`);
+    }
+  }
+
+  // Whole-file generation (not marker-patched — the entire vendored copy is generated content).
+  const vendoredSliceDocSchema = buildVendoredSliceDocSchema(readFileSync(SLICE_DOC_SCHEMA_SRC, "utf8"));
+  const vendoredOriginal = existsSync(SLICE_DOC_SCHEMA_VENDORED) ? readFileSync(SLICE_DOC_SCHEMA_VENDORED, "utf8") : null;
+  if (vendoredSliceDocSchema !== vendoredOriginal) {
+    if (check) {
+      drift = true;
+      console.error(
+        `docs:check — drift in ${SLICE_DOC_SCHEMA_VENDORED.replace(ROOT + "/", "")}: regenerated content differs from disk`,
+      );
+    } else {
+      writeFileSync(SLICE_DOC_SCHEMA_VENDORED, vendoredSliceDocSchema, "utf8");
+      console.log(`wrote ${SLICE_DOC_SCHEMA_VENDORED.replace(ROOT + "/", "")}`);
     }
   }
 
