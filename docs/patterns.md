@@ -213,6 +213,36 @@ construction (`reaction → command → event`) rather than an explicit
 [connection-legality error](validation.md#connection-legality) (a reaction never records an
 event itself). See [validation.md](validation.md).
 
+### Calling an external system
+
+Vendor integrations are the sharpest case of the one-slice rule. The translation reacts, issues
+a command, and that command's event asserts a fact about what the *vendor* did — so the event's
+`@Context` tag names the vendor, not the model's own domain, and the slice renders spanning from
+the caller's own lane down into the vendor's row:
+
+```em
+context Vendor
+
+slice "Translate Title" {
+  translation Translation Service from "Titles To Translate"
+  command Translate Title
+  event Title Translated @Vendor
+}
+```
+
+**This merged shape — translation, command, and vendor-tagged event sharing one slice — is
+canonical for external-system calls.** It's tempting to split the reaction into its own slice
+"for clarity," with the command and event following in the next one. That's syntactically
+valid, but produces exactly the two warnings this pattern exists to avoid:
+
+```
+translation "Translation Service" triggers no command; add the command it issues (in this slice) or an explicit arrow to one
+command "Translate Title" has nothing that triggers it; add the screen it is issued from (a `ui` in this slice) or the reaction that issues it (also in this slice)
+```
+
+An explicit `arrow` reconnecting the two slices silences both, but there's no reason to reach
+for it here — one slice is simpler and warns about nothing to begin with.
+
 ## Headless systems
 
 A headless system (no screens — clients call an API) still uses `ui` and `persona`. A slice is
