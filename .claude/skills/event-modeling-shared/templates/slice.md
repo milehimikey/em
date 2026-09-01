@@ -22,7 +22,7 @@ ships; that mismatch is an intended drift signal, not a bug), and fill in the `#
 below with this hop's change, replacing whatever it held before (it always shows only the latest
 hop — full history lives in git, same-commit-ratification convention). Full grammar — the fixed
 heading, the four operation subsections, why the heading never varies, the replace-not-accumulate
-lifecycle — is documented in docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle; treat
+lifecycle — is documented in ../reference/slice-doc-schema.md#delta-section-grammar-and-lifecycle; treat
 it the same Socratic way as every other section here, don't generate it mechanically.
 
 The three lineage keys only apply when this doc was produced by a split, merge, or rename —
@@ -47,7 +47,7 @@ command writes either. `owner` is free text naming who (a person or team) holds 
 never talks to a tracker itself. Delete both otherwise; most docs never carry them.
 
 Full machine schema — required-vs-optional keys per `status`, value types/enums, the
-unknown-key policy — is documented in docs/slice-doc-schema.md.
+unknown-key policy — is documented in ../reference/slice-doc-schema.md.
 
 The diagram below is generated, not hand-drawn: `em render <model>.em --slice "{{Slice Name}}"
 -o slices/{{slice-name}}.svg` (kebab-case the slice name to match this doc's own filename).
@@ -62,13 +62,13 @@ version: 1
 implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 # Lineage — only when this doc exists because of a split, merge, or rename (delete these three
 # lines otherwise). Grammar: <slice-key>@v<N>. See
-# docs/slice-doc-schema.md#lineage-grammar-and-cardinality.
+# ../reference/slice-doc-schema.md#lineage-grammar-and-cardinality.
 # split-from: <slice-key>@v<N>
 # merged-from: <slice-key>@v<N>, <slice-key>@v<N>
 # superseded-by: <slice-key>@v<N>, <slice-key>@v<N>
 # Cross-slice coverage — only when this doc also covers another slice with no doc of its own
 # (e.g. the view-only half of a two-slice Automation/Translation, MIL-121); delete otherwise.
-# Plain slice keys, comma-separated. See docs/slice-doc-schema.md#cross-slice-coverage-covers.
+# Plain slice keys, comma-separated. See ../reference/slice-doc-schema.md#cross-slice-coverage-covers.
 # covers: <slice-key>, <slice-key>
 # Ownership / tracking — optional, hand-filled (no `em` command writes either); delete otherwise.
 # owner: <person or team>
@@ -81,7 +81,7 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 <!-- Only on re-ratification of an already-`implemented` slice — omit this whole section on a
      slice's first version (v1 has no delta yet). The heading is always the literal `## Delta`,
      never `## Delta: vX → vY` — hop metadata is a display line inside the section instead (see
-     docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle for why). Replace this
+     ../reference/slice-doc-schema.md#delta-section-grammar-and-lifecycle for why). Replace this
      section's content wholesale on the next re-ratification — it shows only the latest hop, not
      an accumulating log. Omit any of the four subsections below with no entries this hop; keep
      the remaining ones in this order (Added/Modified/Removed/Renamed). `Renamed` is for a
@@ -161,7 +161,7 @@ an event directly.}}
 <!-- What must ALWAYS hold. Give each a stable ID so tests and code can reference it:
      `INV-<MNEMONIC>-<n>`, where `<MNEMONIC>` is a short (2-4 letter/digit), slice-unique
      abbreviation of this slice's key (e.g. slice `checkout` -> `INV-CHK-1`) — see
-     docs/slice-doc-schema.md. Add a letter suffix for a closely-related sub-invariant
+     ../reference/slice-doc-schema.md. Add a letter suffix for a closely-related sub-invariant
      (`INV-CHK-3a`). Keep the rule statement itself to one line. If it needs more — why the rule
      exists, what "violation" looks like in practice, an edge case worth calling out — add that as
      a nested bullet under the rule instead of one long run-on sentence: this section renders as
@@ -217,5 +217,5 @@ an event directly.}}
      as `## Delta`, for the same reason: an ever-growing scroll of resolved questions goes stale
      exactly like an accumulating Delta log would, and full history already lives in git
      (`git log -p slices/<name>.md`) — this section is a live worklist, not an audit trail. See
-     docs/slice-doc-schema.md#open-questions-section-lifecycle. -->
+     ../reference/slice-doc-schema.md#open-questions-section-lifecycle. -->
 - [ ] {{question}}

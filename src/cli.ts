@@ -518,8 +518,8 @@ slice
   .description(
     "scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` " +
       "plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, " +
-      "Scenarios, Open Questions, ...) stay hand-authored (see docs/slice-doc-schema.md, " +
-      "templates/slice.md)",
+      "Scenarios, Open Questions, ...) stay hand-authored (see " +
+      ".claude/skills/event-modeling-shared/reference/slice-doc-schema.md, templates/slice.md)",
   )
   .argument("<name>", "slice display name (e.g. \"Request Payment\") — kebab-cased for the filename")
   .requiredOption("--pattern <pattern>", `slice pattern: ${SLICE_PATTERNS.join(" | ")}`)

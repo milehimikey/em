@@ -44,7 +44,7 @@ em catalog <files> -o, --out <dir>                            # output directory
 em catalog <files> -T, --format <fmt>                         # diagram format embedded in the catalog (svg or png)
 em catalog <files> --title <text>                             # catalog site title
 em catalog <files> --keep-empty-lanes                         # keep the API lane even when empty
-em slice new <name>                                           # scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, Scenarios, Open Questions, ...) stay hand-authored (see docs/slice-doc-schema.md, templates/slice.md)
+em slice new <name>                                           # scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, Scenarios, Open Questions, ...) stay hand-authored (see .claude/skills/event-modeling-shared/reference/slice-doc-schema.md, templates/slice.md)
 em slice new <name> --pattern <pattern>                       # slice pattern: state-change | state-view | automation | translation
 em slice new <name> --swimlane <swimlane>                     # swimlane, e.g. "Persona → Context"
 em slice new <name> -f, --force                               # overwrite the file if it already exists

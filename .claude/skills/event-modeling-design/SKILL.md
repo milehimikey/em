@@ -74,7 +74,7 @@ For each slice:
    sections actually changed, then express the change as the `## Delta` section — fixed heading,
    `### Added`/`Modified`/`Removed`/`Renamed` Requirement blocks each carrying its own scenarios
    (see `../event-modeling-shared/templates/slice.md` and
-   `docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle`)
+   `../event-modeling-shared/reference/slice-doc-schema.md#delta-section-grammar-and-lifecycle`)
    — **overwriting** whatever the section held before, never appending to it. Then continue at
    step 2 to bump `version` and flip `status` back to `ready-to-implement`, leaving
    `implementedIn` naming the prior version's PR (intended drift signal, not a bug — see the
@@ -107,7 +107,7 @@ For each slice:
    mechanized. Record the originating need (ticket/conversation link) in the Intent section when
    one exists. When this doc exists because of a split, merge, or rename, add the matching
    lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar
-   — see `docs/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
+   — see `../event-modeling-shared/reference/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
    after the fact, see the `lineage-*` rules below).
    **Re-ratification (step 0):** the doc already exists, so `em slice new` doesn't apply here
    (it refuses to overwrite an existing file without `--force`, and forcing would blow away the

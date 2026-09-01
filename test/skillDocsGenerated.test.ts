@@ -14,10 +14,13 @@ import {
   buildCliReferenceQuick,
   buildRuleReferenceAppendix,
   buildUsageCategories,
+  buildVendoredSliceDocSchema,
   applyMarker,
   EM_DSL_MD,
   SKILL_MD,
   USAGE_DATA_MD,
+  SLICE_DOC_SCHEMA_SRC,
+  SLICE_DOC_SCHEMA_VENDORED,
 } from "../scripts/generate-skill-docs.js";
 
 describe("skill docs match generation (gate 2 — MIL-92)", () => {
@@ -39,6 +42,12 @@ describe("skill docs match generation (gate 2 — MIL-92)", () => {
     let regenerated = applyMarker(original, "usage-categories-warnings", buildUsageCategories(RULES, "warning"));
     regenerated = applyMarker(regenerated, "usage-categories-errors", buildUsageCategories(RULES, "error"));
     expect(regenerated).toBe(original);
+  });
+
+  it("the vendored reference/slice-doc-schema.md is in sync with docs/slice-doc-schema.md (MIL-186)", () => {
+    const source = readFileSync(SLICE_DOC_SCHEMA_SRC, "utf8");
+    const vendored = readFileSync(SLICE_DOC_SCHEMA_VENDORED, "utf8");
+    expect(vendored).toBe(buildVendoredSliceDocSchema(source));
   });
 
   it("finds the markers it expects (guards against a silently empty check)", () => {

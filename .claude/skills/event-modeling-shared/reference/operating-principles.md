@@ -8,7 +8,10 @@ they, together with this doc, are the source of truth every phase skill builds o
 live in `templates/`, a sibling of this `reference/` directory. References to `docs/*.md`
 throughout these skills mean the
 [em repository's docs](https://github.com/milehimikey/em/tree/main/docs) — they are not
-vendored alongside these skills.
+vendored alongside these skills, with one exception: the frontmatter schema doc is vendored
+right here as `reference/slice-doc-schema.md` (kept in sync with the em repo's
+`docs/slice-doc-schema.md` by `em`'s own `docs:generate`/`docs:check`), so every
+`slice-doc-schema.md` reference elsewhere in this bundle points there instead of at `docs/`.
 
 ## Operating principles
 
