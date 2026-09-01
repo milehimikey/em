@@ -75,7 +75,8 @@ new row on first use. An untagged `ui` defaults to the first persona (or "User")
 untagged `event` defaults to a "Domain" context. Multi-word tags need no quoting — the tag
 captures everything after `@` to the end of the line (`ui Ticket Queue @Customer Service`
 matches `persona Customer Service`), since every other trailing clause is stripped before
-the tag is read.
+the tag is read. Tagging an event into an external vendor's own context row is how an
+external-system call is modeled — see [patterns.md](patterns.md#calling-an-external-system).
 
 ## Wiring data flow
 
