@@ -40,6 +40,7 @@ import { validateLineage } from "../catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
+import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
 import { buildCoverageReport, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
@@ -133,10 +134,10 @@ function compileText(source: string, label: string): CompiledSource | { error: s
 }
 
 /** compileFile() plus the same fs-aware checks `em validate` folds into its own diagnostic set
- *  unconditionally (lineage, frontmatter coherence, note bindings, doc↔model consistency) —
- *  shared by the `validate`, `slice_ready`, and `list_markers` tools, same as src/cli.ts's
- *  `validate` action computes them once and reuses the result for all three of its own modes
- *  (--slice-ready, --list-*, plain). */
+ *  unconditionally (lineage, frontmatter coherence, note bindings, doc↔model consistency,
+ *  orphaned slice docs — MIL-183) — shared by the `validate`, `slice_ready`, and `list_markers`
+ *  tools, same as src/cli.ts's `validate` action computes them once and reuses the result for all
+ *  three of its own modes (--slice-ready, --list-*, plain). */
 function compileWithValidation(file: string): (CompiledSource & { allDiagnostics: Diagnostic[] }) | { error: string } {
   const compiled = compileFile(file);
   if ("error" in compiled) return compiled;
@@ -148,6 +149,7 @@ function compileWithValidation(file: string): (CompiledSource & { allDiagnostics
     ...validateFrontmatterCoherence(model, refs, baseDir),
     ...validateNoteBindings(model, refs, baseDir),
     ...validateDocModelConsistency(model, refs, baseDir),
+    ...validateOrphanedSliceDocs(model, refs, baseDir),
   ];
   return { ...compiled, allDiagnostics };
 }
@@ -401,6 +403,8 @@ export function createServer(): McpServer {
         sliceFacts.push(...facts);
         factsByFile.set(file, facts);
         for (const d of docDiags) statusDiagnostics.push({ file, ...d });
+        // MIL-183: fold in orphaned-slice-doc warnings the same way the CLI's `status` action does.
+        for (const d of validateOrphanedSliceDocs(model, refs, baseDir)) statusDiagnostics.push({ file, ...d });
         openIssuesCount += countOpenIssues(model);
         if (testsDir !== undefined) coverageReports.push(buildCoverageReport(model, refs, baseDir, testsDir));
       }

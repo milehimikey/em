@@ -584,6 +584,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `note-binding-unratified` | warning | Unratified cross-slice note | Add `covers: <this-slice-key>` to that doc's frontmatter, or correct the note's path. |
 | `note-binding-unusable` | warning | Cross-slice note to a doc with unusable frontmatter | Fix that doc's frontmatter, or fix/remove the note. |
 | `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
+| `orphaned-slice-doc` | warning | Orphaned slice doc | Rename it to a current slice's key, add `covers:` (plus a `note` binding) to attach it to a live slice, or delete it. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
 | `tag-composite-unknown-field` | error | Composite tag names an unknown field | Fix the field name, or add it to the event's fields. |

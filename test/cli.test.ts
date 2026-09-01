@@ -3259,6 +3259,65 @@ slice "Order Confirmation" {
   });
 });
 
+// MIL-183 (the fragility half of GH #128): a `slices/*.md` file a slice rename/removal left
+// behind used to just quietly stop applying, with nothing pointing at the orphaned file itself.
+// This exercises the actual CLI wiring — `em status`'s per-model `validateOrphanedSliceDocs` call
+// folding its warning into the JSON `diagnostics` array, the same way the multi-model collision
+// suite above exercises `detectSliceDocCollisions` — over and above the pure-function coverage in
+// test/orphanedSliceDocValidate.test.ts.
+describe("em status — orphaned slice docs (CLI, real fs, MIL-183)", () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-status-orphan-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("warns (non-fatally) when a slice doc's key matches no current slice, after a rename", () => {
+    const modelDir = join(dir, "renamed");
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    // "checkout.md" was authored for a slice that has since been renamed to "New Checkout" —
+    // the doc file was never renamed to follow.
+    writeFileSync(
+      join(modelDir, "slices", "checkout.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(join(modelDir, "model.em"), 'slice "New Checkout" {\n  command Submit Order\n  event Order Submitted\n}\n');
+
+    const r = em(["status", "model.em"], modelDir);
+    expect(r.status).toBe(0); // an orphaned-slice-doc warning never blocks the report
+    expect(r.stderr).toContain('warn  slice doc "slices/checkout.md" matches no current slice\'s key');
+
+    const json = em(["status", "model.em", "--json"], modelDir);
+    expect(json.status).toBe(0);
+    const parsed = JSON.parse(json.stdout);
+    const orphan = parsed.diagnostics.find((d: { code: string }) => d.code === "orphaned-slice-doc");
+    expect(orphan).toBeDefined();
+    expect(orphan.file).toBe("model.em");
+    expect(orphan.severity).toBe("warning");
+  });
+
+  it("no warning when every slices/*.md file still matches a current slice's key", () => {
+    const modelDir = join(dir, "matched");
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    writeFileSync(
+      join(modelDir, "slices", "checkout.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n",
+    );
+    // ui/reaction wiring is irrelevant to this check — kept minimal, so the only diagnostic this
+    // fixture could produce that matters here is orphaned-slice-doc.
+    writeFileSync(
+      join(modelDir, "model.em"),
+      'slice "Checkout" {\n  ui Checkout Screen @Customer\n  command Submit Order\n  event Order Submitted\n}\n',
+    );
+
+    const r = em(["status", "model.em", "--json"], modelDir);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.diagnostics.filter((d: { code: string }) => d.code === "orphaned-slice-doc")).toEqual([]);
+  });
+});
+
 describe("em scaffold --under (CLI, real fs, MIL-160)", () => {
   let cwd: string;
 

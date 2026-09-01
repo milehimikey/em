@@ -27,6 +27,7 @@ import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
+import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger } from "./cli/ledgerCheck.js";
@@ -1397,6 +1398,12 @@ program
         sliceFacts.push(...facts);
         factsByFile.set(file, facts);
         for (const d of docDiags) statusDiagnostics.push({ file, ...d });
+        // MIL-183: a slices/*.md file left behind by a rename/removal, matching no current
+        // slice's key or `covers:` declaration — same "fold into status's diagnostics list" as
+        // every other doc-join warning above.
+        const orphanDiags = validateOrphanedSliceDocs(model, refs, baseDir);
+        printDiagnosticsFor(file, orphanDiags);
+        for (const d of orphanDiags) statusDiagnostics.push({ file, ...d });
         openIssuesCount += countOpenIssues(model);
         if (opts.tests) coverageReports.push(buildCoverageReport(model, refs, baseDir, opts.tests));
       }
@@ -1730,13 +1737,14 @@ function compileFile(
 }
 
 /** Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding mismatches
- *  (MIL-126), and doc↔model consistency (MIL-124) are `em validate`'s fs-aware rules — every
- *  other diagnostic in `diagnostics` (from `compileFile`) is a pure function of the .em source.
- *  All four read `slices/*.md` alongside the model. Doc↔model consistency is deliberately
- *  validate-only (unlike note-binding, which `em render` also folds in) — it's a conform-phase
- *  concern, not something every render needs to recheck. Shared by `em validate` and
- *  `em state log-usage` (MIL-161) — the latter needs the exact same diagnostic set `em validate
- *  --json` would report, since its whole job is logging which categories fired. */
+ *  (MIL-126), doc↔model consistency (MIL-124), and orphaned slice docs (MIL-183) are `em
+ *  validate`'s fs-aware rules — every other diagnostic in `diagnostics` (from `compileFile`) is a
+ *  pure function of the .em source. All five read `slices/*.md` alongside the model. Doc↔model
+ *  consistency and orphaned-slice-doc are deliberately validate-only (unlike note-binding, which
+ *  `em render` also folds in) — both are conform-phase concerns, not something every render needs
+ *  to recheck. Shared by `em validate` and `em state log-usage` (MIL-161) — the latter needs the
+ *  exact same diagnostic set `em validate --json` would report, since its whole job is logging
+ *  which categories fired. */
 function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsResult, diagnostics: Diagnostic[]): Diagnostic[] {
   return [
     ...diagnostics,
@@ -1744,6 +1752,7 @@ function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsR
     ...validateFrontmatterCoherence(model, refs, dirname(file)),
     ...validateNoteBindings(model, refs, dirname(file)),
     ...validateDocModelConsistency(model, refs, dirname(file)),
+    ...validateOrphanedSliceDocs(model, refs, dirname(file)),
   ];
 }
 

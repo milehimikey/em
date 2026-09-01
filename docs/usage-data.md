@@ -87,6 +87,7 @@ affected lines written by hand.
 | invalid or missing frontmatter |
 | model element missing from doc |
 | open issue |
+| orphaned slice doc left behind by a rename or removal |
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |

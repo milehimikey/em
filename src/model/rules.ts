@@ -319,6 +319,13 @@ export const RULES = {
     usageCategory: "doc field table disagrees with model",
     docAnchor: "doc-model-consistency",
   },
+  "orphaned-slice-doc": {
+    severity: "warning",
+    title: "Orphaned slice doc",
+    fix: "Rename it to a current slice's key, add `covers:` (plus a `note` binding) to attach it to a live slice, or delete it.",
+    usageCategory: "orphaned slice doc left behind by a rename or removal",
+    docAnchor: "orphaned-slice-doc",
+  },
   "duplicate-slice-name": {
     severity: "warning",
     title: "Duplicate slice name",
