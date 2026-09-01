@@ -1,6 +1,6 @@
 ---
 name: event-modeling-discover
-em-version: 1.9.0
+em-version: 1.9.1
 description: >-
   Use when starting a brand-new event model from scratch — greenfield discovery: brainstorming
   past-tense events, storyboarding the happy path, finding the commands and read models — or when
