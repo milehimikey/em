@@ -1318,6 +1318,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "freshness",
           "glossary",
           "list_markers",
+          "query",
           "slice_ready",
           "status",
           "validate",
@@ -3482,5 +3483,201 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
     const r = em(["ci", "init", "model.em", "--tests", "te$st"], dir);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("must not contain");
+  });
+});
+
+describe("em query (CLI, real fs, MIL-168)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-query-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(
+      join(dir, "model.em"),
+      [
+        'model "Query Fixture"',
+        "",
+        "persona Customer",
+        "",
+        "context Order",
+        "",
+        'slice "Place Order" {',
+        "  ui Checkout @Customer",
+        "  command Place Order {",
+        "    customerId",
+        "    total: Money",
+        "  }",
+        '  event Order Placed @Order note "slices/place-order.md" {',
+        "    orderId",
+        "    total: Money tag",
+        '    placedAt renamed from "createdAt"',
+        "  }",
+        "}",
+        "",
+        'slice "Open Orders" {',
+        '  view Open Orders from "Order Placed" {',
+        "    orderId",
+        "    total: Money",
+        "  }",
+        "  ui Order List @Customer",
+        "}",
+        "",
+        'slice "Watch For Shipping" {',
+        '  view Orders To Ship from "Order Placed"',
+        "}",
+        "",
+        'slice "Ship Order" {',
+        '  processor Shipping Watcher from "Orders To Ship"',
+        "  command Ship Order {",
+        "    orderId",
+        "  }",
+        "  event Order Shipped @Order {",
+        "    orderId",
+        "    shippedBy assigned",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "slices", "place-order.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-PLACE-1:** total must be positive\n",
+    );
+    writeFileSync(join(dir, "tests", "place-order.test.ts"), `it("rejects a non-positive total (INV-PLACE-1)", () => {});\n`);
+
+    // Ambiguous-name fixture: two elements sharing a name across two slices in a second file.
+    writeFileSync(
+      join(dir, "ambiguous.em"),
+      'slice "A" {\n  ui Screen @Customer\n}\nslice "B" {\n  ui Screen @Customer\n}\n',
+    );
+
+    // A model with a compile error, for the refusal test.
+    writeFileSync(join(dir, "broken.em"), 'slice "Broken" {\n  view Bad from "No Such Event"\n}\n');
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("consumers: text mode lists both views reading the event, exit 0", () => {
+    const r = em(["query", "consumers", "model.em", "--event", "Order Placed"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("open-orders/view.open-orders");
+    expect(r.stdout).toContain("watch-for-shipping/view.orders-to-ship");
+  });
+
+  it("consumers: --json prints the versioned document", () => {
+    const r = em(["query", "consumers", "model.em", "--event", "Order Placed", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.querySchemaVersion).toBe("1.0");
+    expect(doc.verb).toBe("consumers");
+    expect(doc.files).toEqual(["model.em"]);
+    expect(doc.results.map((x: { ref: string }) => x.ref).sort()).toEqual(
+      ["open-orders/view.open-orders", "watch-for-shipping/view.orders-to-ship"].sort(),
+    );
+  });
+
+  it("an event with no consumers prints (none) and still exits 0", () => {
+    const r = em(["query", "consumers", "model.em", "--event", "Order Shipped"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("(none)");
+  });
+
+  it("producers: lists the command plus its ui trigger", () => {
+    const r = em(["query", "producers", "model.em", "--event", "Order Placed", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.results).toHaveLength(1);
+    expect(doc.results[0].ref).toBe("place-order/command.place-order");
+    expect(doc.results[0].uiTriggers.map((t: { ref: string }) => t.ref)).toEqual(["place-order/ui.checkout"]);
+  });
+
+  it("downstream: --depth limits the traversal", () => {
+    const r = em(["query", "downstream", "model.em", "--of", "Checkout", "--depth", "1", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.results.map((x: { ref: string }) => x.ref)).toEqual(["place-order/command.place-order"]);
+  });
+
+  it("downstream: an invalid --depth is a CLI error, exit 1", () => {
+    const r = em(["query", "downstream", "model.em", "--of", "Checkout", "--depth", "0"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--depth must be a positive integer");
+  });
+
+  it("upstream: walks back to the triggering ui", () => {
+    const r = em(["query", "upstream", "model.em", "--of", "Order Shipped", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.results.map((x: { ref: string }) => x.ref)).toContain("place-order/ui.checkout");
+  });
+
+  it("slices: filters AND-combine", () => {
+    const r = em(["query", "slices", "model.em", "--context", "Order", "--tag", "total", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.results.map((x: { ref: string }) => x.ref)).toEqual(["place-order"]);
+  });
+
+  it("invariant: with --tests prints the citing file:line", () => {
+    const r = em(["query", "invariant", "model.em", "--id", "INV-PLACE-1", "--tests", "tests"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("place-order.test.ts:1");
+  });
+
+  it("invariant: --tests naming a missing directory is a CLI error", () => {
+    const r = em(["query", "invariant", "model.em", "--id", "INV-PLACE-1", "--tests", "no-such-dir"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--tests directory not found: no-such-dir");
+  });
+
+  it("invariant: an unknown id is a CLI error, exit 1", () => {
+    const r = em(["query", "invariant", "model.em", "--id", "INV-NO-SUCH"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("INV-NO-SUCH");
+  });
+
+  it("field: reports the renamed-from chain", () => {
+    const r = em(["query", "field", "model.em", "--of", "Order Placed", "--name", "placedAt", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.results[0].renamedFrom).toEqual(["createdAt"]);
+  });
+
+  it("path: shortest path end to end", () => {
+    const r = em(["query", "path", "model.em", "--from", "Checkout", "--to", "Order Shipped", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.results[0].refs[0]).toBe("place-order/ui.checkout");
+    expect(doc.results[0].refs.at(-1)).toBe("ship-order/event.order-shipped");
+  });
+
+  it("path: no path prints (none), exit 0", () => {
+    const r = em(["query", "path", "model.em", "--from", "Order Shipped", "--to", "Checkout"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("(none)");
+  });
+
+  it("an ambiguous bare name is a CLI error listing every candidate ref, exit 1", () => {
+    const r = em(["query", "consumers", "ambiguous.em", "--event", "Screen"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("ambiguous");
+    expect(r.stderr).toContain("a/ui.screen");
+    expect(r.stderr).toContain("b/ui.screen");
+  });
+
+  it("refuses (exit 1) when a model has compile errors, like em export", () => {
+    const r = em(["query", "slices", "broken.em"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not querying");
+  });
+
+  it("multi-model: results are <modelKey>:ref-qualified across two input files", () => {
+    const r = em(["query", "slices", "model.em", "ambiguous.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    const refs = doc.results.map((x: { ref: string }) => x.ref);
+    expect(refs).toContain("model:place-order");
+    expect(refs).toContain("ambiguous:a");
+    expect(refs).toContain("ambiguous:b");
   });
 });

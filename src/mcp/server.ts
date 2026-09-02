@@ -64,6 +64,19 @@ import { buildChangelogDoc } from "../cli/changelogBuild.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
 import { loadStateFile, parseState } from "../cli/stateFile.js";
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
+import { compileForQuery } from "../query/pipeline.js";
+import { buildQuerySystem, QuerySystem } from "../query/system.js";
+import {
+  queryConsumers,
+  queryProducers,
+  queryDownstream,
+  queryUpstream,
+  querySlices,
+  queryInvariant,
+  queryField,
+  queryPath,
+} from "../query/verbs.js";
+import { buildQueryJson } from "../emit/queryJson.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
  *  `GENERATOR_VERSION` `em export`'s `generator.version` field already reads from package.json,
@@ -154,12 +167,42 @@ function compileWithValidation(file: string): (CompiledSource & { allDiagnostics
   return { ...compiled, allDiagnostics };
 }
 
+/** Same compile-and-diagnose scaffolding `compileFile()`/`compileWithValidation()` give every
+ *  other tool, but pointed at `query/pipeline.ts`'s lighter sub-pipeline (no layout allocation,
+ *  no DOT emission — see that module's header) and returning a built `QuerySystem` (the exact
+ *  same one `src/cli.ts`'s `query` command builds — MCP parity) instead of a single compiled
+ *  model. Refuses (an `{ error }`, never a crash) the same way every other tool does when any
+ *  input file fails to compile or has errors. */
+function compileFilesForQueryMcp(files: string[]): { system: QuerySystem } | { error: string } {
+  const entries: Array<{ file: string; model: NormalizedModel; refs: RefsResult; index: ReturnType<typeof compileForQuery>["index"] }> = [];
+  for (const file of files) {
+    let source: string;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch {
+      return { error: `cannot read ${file}` };
+    }
+    let compiled;
+    try {
+      compiled = compileForQuery(source, dirname(file));
+    } catch (e) {
+      if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
+      throw e;
+    }
+    if (hasErrors(compiled.diagnostics)) {
+      return { error: `not querying: "${file}" has errors — run \`validate\` first and fix them` };
+    }
+    entries.push({ file, model: compiled.model, refs: compiled.refs, index: compiled.index });
+  }
+  return { system: buildQuerySystem(entries) };
+}
+
 const fileParam = z.string().describe("path to the .em model file, resolved relative to the server's working directory");
 const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all thirteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all fourteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -638,6 +681,106 @@ export function createServer(): McpServer {
       const { facts } = resolveSliceDocFacts(model, refs, baseDir);
       const entry = resolveConformanceEntry(file, repo, facts);
       return textResult(buildFreshnessJson(entry));
+    },
+  );
+
+  server.registerTool(
+    "query",
+    {
+      title: "Deterministic graph queries over the compiled model",
+      description:
+        "Return the same JSON document `em query <verb> <files...> --json` prints (MIL-168): " +
+        "scoped, token-cheap graph answers instead of a whole-model `export_model` — 8 verbs " +
+        "selected by `verb`: consumers/producers (who reads/writes an event), downstream/" +
+        "upstream (transitive closure along the six legal connections, optionally depth-" +
+        "limited), slices (filtered list — pattern/status/context/persona/tag AND-combine), " +
+        "invariant (an INV-* id's declaring slice + doc facts, and with `testsDir` its test " +
+        "citations), field (one field's type/tag/assigned/renamed-from facts), and path " +
+        "(shortest path between two elements). `event`/`of`/`from`/`to` accept a stable export " +
+        "ref or a bare display name — an ambiguous bare name is a tool error listing every " +
+        "candidate ref, never a guess. Refs in `results` are `<modelKey>:<ref>`-qualified " +
+        "whenever `files` has more than one entry, bare otherwise. Refuses (tool error) when " +
+        "any input model has errors, same as every other tool; a legitimately empty answer " +
+        "(e.g. an event with no consumers) is `results: []`, not an error.",
+      inputSchema: {
+        files: z.array(fileParam).min(1).describe("one or more .em model file paths"),
+        verb: z
+          .enum(["consumers", "producers", "downstream", "upstream", "slices", "invariant", "field", "path"])
+          .describe("which query to run"),
+        event: z.string().optional().describe("consumers/producers: the event's export ref or display name"),
+        of: z.string().optional().describe("downstream/upstream/field: the element's export ref or display name"),
+        depth: z.number().int().positive().optional().describe("downstream/upstream: limit traversal to n hops (default: unlimited)"),
+        pattern: z.string().optional().describe("slices: state-change | state-view | automation | translation | unclassified"),
+        status: z.string().optional().describe("slices: the slice's joined doc status"),
+        context: z.string().optional().describe("slices: match a slice with an event in this @Context"),
+        persona: z.string().optional().describe("slices: match a slice with a ui in this @Persona"),
+        tag: z.string().optional().describe("slices: match a slice with an event carrying this tag key"),
+        id: z.string().optional().describe("invariant: the INV-* id to look up"),
+        testsDir: z.string().optional().describe("invariant: directory to scan for test files citing this id"),
+        name: z.string().optional().describe("field: the field's name"),
+        from: z.string().optional().describe("path: the starting element's export ref or display name"),
+        to: z.string().optional().describe("path: the ending element's export ref or display name"),
+      },
+    },
+    async ({ files, verb, event, of, depth, pattern, status, context, persona, tag, id, testsDir, name, from, to }) => {
+      if (testsDir !== undefined) {
+        if (!existsSync(testsDir)) return errorResult(`--tests directory not found: ${testsDir}`);
+        if (!statSync(testsDir).isDirectory()) return errorResult(`--tests is not a directory: ${testsDir}`);
+      }
+      const compiled = compileFilesForQueryMcp(files);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const { system } = compiled;
+
+      switch (verb) {
+        case "consumers": {
+          if (!event) return errorResult("query consumers: `event` is required");
+          const result = queryConsumers(system, event);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { event }, result.results));
+        }
+        case "producers": {
+          if (!event) return errorResult("query producers: `event` is required");
+          const result = queryProducers(system, event);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { event }, result.results));
+        }
+        case "downstream": {
+          if (!of) return errorResult("query downstream: `of` is required");
+          const result = queryDownstream(system, of, depth);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { of, depth: depth ?? null }, result.results));
+        }
+        case "upstream": {
+          if (!of) return errorResult("query upstream: `of` is required");
+          const result = queryUpstream(system, of, depth);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { of, depth: depth ?? null }, result.results));
+        }
+        case "slices": {
+          const filters = { pattern, status, context, persona, tag };
+          const result = querySlices(system, filters);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, filters, result.results));
+        }
+        case "invariant": {
+          if (!id) return errorResult("query invariant: `id` is required");
+          const result = queryInvariant(system, id, testsDir);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { id, tests: testsDir ?? null }, result.results));
+        }
+        case "field": {
+          if (!of || !name) return errorResult("query field: `of` and `name` are required");
+          const result = queryField(system, of, name);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { of, name }, result.results));
+        }
+        case "path": {
+          if (!from || !to) return errorResult("query path: `from` and `to` are required");
+          const result = queryPath(system, from, to);
+          if (!result.ok) return errorResult(result.error);
+          return textResult(buildQueryJson(verb, files, { from, to }, result.results));
+        }
+      }
     },
   );
 

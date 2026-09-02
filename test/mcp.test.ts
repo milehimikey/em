@@ -107,6 +107,9 @@ beforeAll(() => {
   // field-type-conflict, same shape as docs/cli.md's own example.
   writeFileSync(join(dir, "glossary-a.em"), `slice "A" {\n  command Do Thing { total: Money }\n  event Thing Done\n}\n`);
   writeFileSync(join(dir, "glossary-b.em"), `slice "B" {\n  command Other Thing { total: number }\n  event Other Done\n}\n`);
+
+  // `query` tool ambiguous-name fixture: the same display name declared twice, in two slices.
+  writeFileSync(join(dir, "ambiguous.em"), 'slice "A" {\n  ui Screen @Customer\n}\nslice "B" {\n  ui Screen @Customer\n}\n');
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -218,7 +221,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the thirteen documented tools", async () => {
+  it("exposes exactly the fourteen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -233,6 +236,7 @@ describe("tools/list", () => {
         "freshness",
         "glossary",
         "list_markers",
+        "query",
         "slice_ready",
         "status",
         "validate",
@@ -649,5 +653,133 @@ describe("conform_scope tool", () => {
     })) as unknown as CallToolResult;
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("no state file");
+  });
+});
+
+describe("query tool", () => {
+  it("consumers: byte-identical to `em query consumers <files...> --json`", async () => {
+    const modelFile = join(dir, "ready.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "consumers", event: "Thing Done" });
+    expect(result.isError).toBeFalsy();
+    expect(doc.querySchemaVersion).toBe("1.0");
+    expect(doc.verb).toBe("consumers");
+    expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["read-model/view.thing-list"]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "consumers", modelFile, "--event", "Thing Done", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("producers: includes the ui trigger, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "ready.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "producers", event: "Thing Done" });
+    expect(doc.results[0].uiTriggers.map((t: { ref: string }) => t.ref)).toEqual(["ready-slice/ui.screen"]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "producers", modelFile, "--event", "Thing Done", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("downstream: --depth limits the closure, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "ready.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "downstream", of: "Screen", depth: 1 });
+    expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["ready-slice/command.do-thing"]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "downstream", modelFile, "--of", "Screen", "--depth", "1", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("upstream: walks back to the ui, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "ready.em");
+    const { doc } = await callJson(client, "query", { files: [modelFile], verb: "upstream", of: "Thing Done" });
+    expect(doc.results.map((r: { ref: string }) => r.ref)).toContain("ready-slice/ui.screen");
+  });
+
+  it("slices: filters AND-combine, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "ready.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "slices", status: "ready-to-implement" });
+    expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["ready-slice"]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "slices", modelFile, "--status", "ready-to-implement", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("invariant: with testsDir, returns citations via the coverage machinery, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "ready.em");
+    const testsDir = join(dir, "tests");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "invariant", id: "INV-1", testsDir });
+    expect(doc.results[0].citations).toEqual([{ file: "ready-slice.test.ts", line: 1 }]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "invariant", modelFile, "--id", "INV-1", "--tests", testsDir, "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("invariant: an unknown id is a tool error", async () => {
+    const { result } = await callJson(client, "query", { files: [join(dir, "ready.em")], verb: "invariant", id: "INV-NO-SUCH" });
+    expect(result.isError).toBe(true);
+  });
+
+  it("field: reports type/tag facts, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "clean.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "field", of: "Place Order", name: "customerId" });
+    expect(doc.results).toEqual([]); // "customerId" isn't declared on this fixture's command — legitimately empty
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "field", modelFile, "--of", "Place Order", "--name", "customerId", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("path: shortest path, byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "ready.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "path", from: "Screen", to: "Thing List" });
+    expect(doc.results[0].refs[0]).toBe("ready-slice/ui.screen");
+    expect(doc.results[0].refs.at(-1)).toBe("read-model/view.thing-list");
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "path", modelFile, "--from", "Screen", "--to", "Thing List", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("an ambiguous bare name is a tool error listing every candidate ref", async () => {
+    const { result } = await callJson(client, "query", { files: [join(dir, "ambiguous.em")], verb: "consumers", event: "Screen" });
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain("a/ui.screen");
+    expect(text).toContain("b/ui.screen");
+  });
+
+  it("refuses (tool error) when a model has errors, same as the CLI", async () => {
+    const { result } = await callJson(client, "query", { files: [join(dir, "error.em")], verb: "slices" });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("not querying");
+  });
+
+  it("multi-model: results are <modelKey>:ref-qualified, byte-identical to the CLI", async () => {
+    const files = [join(dir, "clean.em"), join(dir, "clean2.em")];
+    const { result, doc } = await callJson(client, "query", { files, verb: "slices" });
+    const refs = doc.results.map((r: { ref: string }) => r.ref);
+    expect(refs).toContain("clean:place");
+    expect(refs).toContain("clean2:ship");
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "slices", ...files, "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("a missing file is a tool error, not a crash", async () => {
+    const { result } = await callJson(client, "query", { files: [join(dir, "no-such-file.em")], verb: "slices" });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot read");
   });
 });
