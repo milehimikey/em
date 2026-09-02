@@ -1643,7 +1643,7 @@ ci.command("init")
         planCiFile(
           ciPath,
           buildCiWorkflowFile(model, opts.tests, PKG_VERSION),
-          ciManagedBody(model, opts.tests),
+          ciManagedBody(model, opts.tests, PKG_VERSION),
           CI_WORKFLOW_MARKER,
           !!opts.force,
         ),
@@ -1653,7 +1653,7 @@ ci.command("init")
         planCiFile(
           conformPath,
           buildConformWorkflowFile(model, PKG_VERSION),
-          conformManagedBody(model),
+          conformManagedBody(model, PKG_VERSION),
           CONFORM_WORKFLOW_MARKER,
           !!opts.force,
         ),
