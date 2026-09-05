@@ -29,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.9");
+    expect(doc.schemaVersion).toBe("1.10");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -104,6 +104,139 @@ arrow "Orders" -> "Screen"
     expect(arrow).toMatchObject({ from: "Orders", to: "Screen" });
     expect(arrow.fromRef).toBe("react/view.orders");
     expect(arrow.toRef).toBe("submit/ui.screen");
+  });
+});
+
+describe("`model.edges` — the complete semantic graph (MIL-191, schema 1.10)", () => {
+  const edgeSet = (doc: any) =>
+    new Map<string, string>(doc.model.edges.map((e: any) => [`${e.from}>${e.to}`, e.source]));
+
+  it("exports every edge keyed by export refs with its provenance, including the pattern-inferred ones no other export field carries", () => {
+    const doc = docOf(`
+context Order
+persona Customer
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Order
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
+  ui Order List @Customer
+}
+arrow "Order List" -> "Place Order"
+`);
+    const edges = edgeSet(doc);
+    // Intra-slice pattern edges — implicit in slice membership before 1.10, so every consumer
+    // re-derived them (and drifted). Now explicit.
+    expect(edges.get("place-order/ui.checkout>place-order/command.place-order")).toBe("pattern");
+    expect(edges.get("place-order/command.place-order>place-order/event.order-placed")).toBe("pattern");
+    expect(edges.get("open-orders/view.open-orders>open-orders/ui.order-list")).toBe("pattern");
+    // Cross-slice `from` and explicit `arrow` — already derivable from `element.from` /
+    // `model.arrows`, but unified here so a consumer never has to union three lists.
+    expect(edges.get("place-order/event.order-placed>open-orders/view.open-orders")).toBe("from");
+    expect(edges.get("open-orders/ui.order-list>place-order/command.place-order")).toBe("arrow");
+    expect(doc.model.edges).toHaveLength(5);
+    for (const e of doc.model.edges) expect(Object.keys(e)).toEqual(["from", "to", "source"]);
+  });
+
+  it("every edge endpoint is a ref of an element in `model.slices` — the graph is self-sufficient", () => {
+    const doc = docOf(STARTER_EM);
+    const refs = new Set<string>(
+      doc.model.slices.flatMap((s: any) => s.elements.map((e: any) => e.ref)),
+    );
+    expect(doc.model.edges.length).toBeGreaterThan(0);
+    for (const e of doc.model.edges) {
+      expect(refs.has(e.from)).toBe(true);
+      expect(refs.has(e.to)).toBe(true);
+      expect(["pattern", "from", "arrow"]).toContain(e.source);
+    }
+  });
+
+  it("dedupes a (from, to) pair first-wins in pattern -> from -> arrow order — an arrow restating an inferred edge is one edge, tagged `pattern`", () => {
+    const doc = docOf(`
+context Order
+slice "Place Order" {
+  command Place Order
+  event Order Placed @Order
+}
+arrow "Place Order" -> "Order Placed"
+`);
+    const matches = doc.model.edges.filter(
+      (e: any) => e.from === "place-order/command.place-order" && e.to === "place-order/event.order-placed",
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0].source).toBe("pattern");
+    // `model.arrows` still records the restated arrow as authored — provenance detail, untouched.
+    expect(doc.model.arrows).toHaveLength(1);
+  });
+
+  it("applies the misplaced-ui guard: no ui -> command edge when a reaction shares the slice (the rule a re-deriving consumer gets wrong)", () => {
+    const doc = docOf(`
+context Order
+persona Customer
+slice "Place Order" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Pending" {
+  view Pending Orders from "Order Placed"
+}
+slice "Fulfil" {
+  ui Stray Screen @Customer
+  automation Fulfilment from "Pending Orders"
+  command Fulfil Order
+  event Order Fulfilled @Order
+}
+`);
+    const edges = edgeSet(doc);
+    expect(edges.has("fulfil/ui.stray-screen>fulfil/command.fulfil-order")).toBe(false);
+    expect(edges.get("fulfil/automation.fulfilment>fulfil/command.fulfil-order")).toBe("pattern");
+    expect(edges.get("pending/view.pending-orders>fulfil/automation.fulfilment")).toBe("from");
+    expect(edges.get("fulfil/command.fulfil-order>fulfil/event.order-fulfilled")).toBe("pattern");
+  });
+
+  it("points at instance refs and never connects repeated view instances to each other", () => {
+    const doc = docOf(`
+context Order
+persona Customer
+slice "Place Order" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Orders" {
+  view Orders from "Order Placed"
+  ui Order List @Customer
+}
+slice "Cancel Order" {
+  command Cancel Order
+  event Order Cancelled @Order
+}
+slice "Orders Again" {
+  view Orders again from "Order Cancelled"
+  ui Order List Again @Customer
+}
+`);
+    const edges = edgeSet(doc);
+    expect(edges.get("orders/view.orders>orders/ui.order-list")).toBe("pattern");
+    expect(edges.get("cancel-order/event.order-cancelled>orders-again/view.orders")).toBe("from");
+    expect(edges.get("orders-again/view.orders>orders-again/ui.order-list-again")).toBe("pattern");
+    expect(edges.has("orders/view.orders>orders-again/view.orders")).toBe(false);
+    expect(edges.has("orders-again/view.orders>orders/view.orders")).toBe(false);
+    // The second instance still carries `logicalRef` to the first — that's how a consumer
+    // groups them, as a query-engine rule, not as an edge.
+    const again = doc.model.slices[3].elements[0];
+    expect(again.logicalRef).toBe("orders/view.orders");
+  });
+
+  it("lists `edges` after `arrows` on `model`, and exports `[]` for a model with no connections", () => {
+    const doc = docOf(STARTER_EM);
+    expect(Object.keys(doc.model)).toEqual([
+      "name", "personas", "contexts", "hasAutomation", "types", "slices", "arrows", "edges",
+    ]);
+    expect(docOf(`slice "Lonely" {
+  event Nothing Happened
+}`).model.edges).toEqual([]);
   });
 });
 
@@ -644,8 +777,8 @@ type Order { billing: Address }
     ]);
   });
 
-  it("bumps schemaVersion to 1.6, additive over 1.5", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.9");
+  it("bumps schemaVersion to 1.10 (MIL-191), additive over 1.9", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.10");
   });
 });
 

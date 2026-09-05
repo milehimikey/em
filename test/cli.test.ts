@@ -177,14 +177,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.9");
+    expect(doc.schemaVersion).toBe("1.10");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.9");
+    expect(doc.schemaVersion).toBe("1.10");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -200,7 +200,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.9");
+    expect(doc.schemaVersion).toBe("1.10");
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
     expect(doc.slice.name).toBe("Place");

@@ -293,7 +293,9 @@ export function createServer(): McpServer {
       description:
         "Return the same JSON document `em export <file>` prints: a versioned, deterministic " +
         "snapshot of the whole normalized model — types, slices (pattern, fields, doc, " +
-        "elements), arrows, and export-stable refs. Refuses (tool error) when the model has " +
+        "elements), arrows, the complete semantic edge list (`model.edges`, the canonical graph " +
+        "— read it rather than re-deriving connections from slice membership), and export-stable " +
+        "refs. Refuses (tool error) when the model has " +
         "errors, same as the CLI — call `validate` first, or use `export_slice` to read one " +
         "already-ratified slice while the rest of the model is still broken.",
       inputSchema: { file: fileParam },

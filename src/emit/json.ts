@@ -16,6 +16,7 @@ import { collectTags, Element, NormalizedModel, TypeDecl, resolveByName, resolve
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
+import { EdgeSource, semanticEdges } from "../model/edges.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
@@ -60,7 +61,18 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // hand-filled (no `em` command writes them). Both null when absent. `tracking` in particular is
 // the exact field em-tracker-bridge reads to find the mirrored ticket — its name/shape here is a
 // cross-tool contract. See catalog/docJoin.ts. Additive-only.
-export const SCHEMA_VERSION = "1.9";
+// 1.10 (MIL-191): `model.edges` — the complete, deduped semantic edge list, `{ from, to, source }`
+// keyed by export refs, straight from `semanticEdges()` (model/edges.ts): the SAME derivation the
+// renderer draws and `em query` traverses. Before this, export carried only two of the three
+// edge sources (`element.from` with resolved refs, `model.arrows` with `fromRef`/`toRef`); the
+// intra-slice pattern-inferred edges (ui->command, command->event, reaction->command, view->ui,
+// event->view) were implicit in slice membership, so every consumer re-derived them — and got
+// the guards (misplaced-ui rule, same-slice-only event->view, pair dedup) subtly wrong. `edges`
+// is the canonical graph; `element.from`/`model.arrows` stay as provenance detail. `source` is
+// first-wins on a duplicate (from, to) pair in pattern -> from -> arrow order. `em diff` does
+// NOT read `edges` — an edge change is always a consequence of an element/from/arrow change it
+// already reports. Additive-only.
+export const SCHEMA_VERSION = "1.10";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -102,6 +114,18 @@ export interface ElementExport {
   logicalRef: string | null;
 }
 
+/** One semantic edge's exported shape (`model.edges[]`, schema 1.10 / MIL-191): both endpoints
+ *  are export-stable element refs (`<sliceKey>/<kind>.<slug>` — so each endpoint's kind is
+ *  embedded, and the connection type is a pure function of the two kinds, see
+ *  `model/edges.ts`'s `connectionKind`), plus where the edge came from. Edges point at
+ *  *instance* refs: a `view X again` instance is its own node here, never wired to its other
+ *  instances (follow `logicalRef` to group them — a query-engine rule, not an edge). */
+export interface EdgeExport {
+  from: string;
+  to: string;
+  source: EdgeSource;
+}
+
 /** One slice's exported shape (`model.slices[]`). `doc`/`pattern` are left loosely typed
  *  (`unknown`/`string`) here — no current consumer of this type reads either field through it,
  *  and giving `doc` its full doc-join shape would mean re-declaring `resolveSliceDocJoin`'s
@@ -133,6 +157,7 @@ export interface ExportDoc {
     types: TypeExport[];
     slices: SliceExport[];
     arrows: unknown[];
+    edges: EdgeExport[];
   };
   diagnostics: ReturnType<typeof serializeDiagnostic>[];
 }
@@ -378,6 +403,15 @@ export function buildExportDoc(
         fromRef: refOf(a.fromId),
         toRef: refOf(a.toId),
         line: a.line,
+      })),
+      // The complete semantic graph (MIL-191, schema 1.10) — every connection the renderer
+      // draws and `em query` traverses, from the one derivation (`semanticEdges`), keyed by the
+      // same refs the elements above carry. Both endpoints always resolve: `semanticEdges` only
+      // emits edges between elements of this model, and every element has a ref.
+      edges: semanticEdges(model).map((e) => ({
+        from: refById.get(e.from)!,
+        to: refById.get(e.to)!,
+        source: e.source,
       })),
     },
     diagnostics: allDiagnostics.map(serializeDiagnostic),

@@ -2,8 +2,8 @@
 // The semantic edges of a model: which connections exist, and where each came from. This is
 // the single source of truth for the graph — the renderer draws exactly these (colouring each
 // by its source element's kind at the call site, render/drawEdges.ts), `em query`'s ModelIndex
-// traverses exactly these (model/queryIndex.ts), and (MIL-191) export will serialize exactly
-// these. One derivation, three consumers: the guards below (the misplaced-ui rule, the
+// traverses exactly these (model/queryIndex.ts), and `em export` serializes exactly these as
+// `model.edges` (emit/json.ts, schema 1.10 / MIL-191). One derivation, three consumers: the guards below (the misplaced-ui rule, the
 // same-slice-only event->view rule, the pair dedup) are judgment calls invisible in the data,
 // so a second walk re-deriving them would drift — it did once already (the MIL-162 portal
 // spike re-derived independently).
