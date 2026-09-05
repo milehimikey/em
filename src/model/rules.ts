@@ -357,6 +357,77 @@ export const RULES = {
     fix: "Give each model its own directory (see docs/cli.md, \"Multi-model projects\").",
     usageCategory: "colliding slice doc path across models",
   },
+  // MIL-194: the nine codes `em system <manifest>` raises while verifying a seam manifest
+  // (docs/cli.md "em system") against each model's export document — the cross-model half of
+  // "both ends of a flow": every `public` event/view needs a declared reader somewhere in the
+  // system, every externally-fed reaction needs a declared producer. Raised by
+  // src/system/verify.ts (pure, over export JSON only — never a compiled model) and
+  // src/system/manifest.ts (the manifest's own shape). Registered here, like
+  // `cross-model-slice-doc-collision`, so severity/title/fix generate into the same reference
+  // tables every other code does; none of them is ever raised by `em validate` itself.
+  "system-manifest-invalid": {
+    severity: "error",
+    title: "Seam manifest invalid",
+    fix: "Fix the manifest: required keys, `systemSchemaVersion: \"1.0\"`, a readable `source` per model, and only declared model keys in seam refs.",
+    usageCategory: "seam manifest invalid",
+    docAnchor: "seam-manifest",
+  },
+  "system-model-key-mismatch": {
+    severity: "error",
+    title: "Manifest model key differs from the export's `model.key`",
+    fix: "Rename the manifest's `models:` key to the computed key the message prints.",
+    usageCategory: "seam manifest model key mismatch",
+    docAnchor: "seam-manifest",
+  },
+  "seam-endpoint-unresolved": {
+    severity: "error",
+    title: "Seam endpoint does not resolve",
+    fix: "Fix the ref to an element the named model actually exports (`em export` lists every ref), or re-declare the seam after a rename.",
+    usageCategory: "seam endpoint unresolved",
+    docAnchor: "seam-manifest",
+  },
+  "seam-source-not-public": {
+    severity: "error",
+    title: "Seam source is not `public`",
+    fix: "Mark the event/view `public` in its model, or point the seam at the element that is.",
+    usageCategory: "seam source not public",
+    docAnchor: "seam-manifest",
+  },
+  "seam-consumer-not-reaction": {
+    severity: "error",
+    title: "Seam consumer is not a reaction",
+    fix: "Point `to` at a translation/automation element (or a slice containing exactly one).",
+    usageCategory: "seam consumer not a reaction",
+    docAnchor: "seam-manifest",
+  },
+  "seam-duplicate": {
+    severity: "warning",
+    title: "Duplicate seam",
+    fix: "Remove the repeated `from`/`to` pair.",
+    usageCategory: "duplicate seam",
+    docAnchor: "seam-manifest",
+  },
+  "dangling-public-event": {
+    severity: "warning",
+    title: "Public event/view no seam consumes",
+    fix: "Declare the seam that reads it, or drop `public` if nothing outside the model does.",
+    usageCategory: "public event not consumed by any seam",
+    docAnchor: "seam-manifest",
+  },
+  "unbound-translation": {
+    severity: "warning",
+    title: "Externally-fed reaction no seam feeds",
+    fix: "Declare the seam whose `to` is this reaction, or give it an in-model `from`.",
+    usageCategory: "externally-fed reaction not bound by any seam",
+    docAnchor: "seam-manifest",
+  },
+  "undeclared-seam-candidate": {
+    severity: "warning",
+    title: "Looks connected across models, no seam declared",
+    fix: "Declare the seam, or rename one side so the name match stops looking like a link.",
+    usageCategory: "undeclared seam candidate",
+    docAnchor: "seam-manifest",
+  },
   "slice-ready-unknown-slice": {
     severity: "error",
     title: "Unknown --slice-ready key",
