@@ -9,7 +9,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { buildExportDoc } from "../src/emit/json.js";
-import { computeModelKey } from "../src/model/qualifiedRef.js";
 import { parseManifest, SystemManifest, SYSTEM_MANIFEST_SCHEMA_VERSION } from "../src/system/manifest.js";
 import { verifySystem, SystemExportDoc, SystemModelInput } from "../src/system/verify.js";
 import { loadSystem, readExportDoc } from "../src/cli/systemInputs.js";
@@ -56,8 +55,7 @@ slice "To Ship" {
 function exportOf(text: string, file = "model.em"): SystemExportDoc {
   const { model, refs, diagnostics } = compile(text);
   const { doc } = buildExportDoc(model, refs, diagnostics, text, file);
-  const key = (doc.model as { key?: string }).key ?? computeModelKey(model, file);
-  return { schemaVersion: doc.schemaVersion, model: { ...doc.model, key } };
+  return doc;
 }
 
 function modelInput(key: string, text: string, extra: Partial<SystemModelInput> = {}): SystemModelInput {

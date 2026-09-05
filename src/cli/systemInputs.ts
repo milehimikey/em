@@ -17,7 +17,6 @@ import { compile } from "../pipeline.js";
 import { ParseError } from "../parser/parser.js";
 import { hasErrors } from "../model/validate.js";
 import { buildExportDoc } from "../emit/json.js";
-import { computeModelKey } from "../model/qualifiedRef.js";
 import { makeDiag } from "../model/rules.js";
 import { parseManifest, SystemManifest } from "../system/manifest.js";
 import { SystemDiagnostic, SystemExportDoc, SystemModelInput } from "../system/verify.js";
@@ -86,11 +85,10 @@ function loadSource(file: string): LoadedSource {
       if (hasErrors(diagnostics)) {
         return { error: `${file} has validation errors — run \`em validate ${file}\` and fix them first` };
       }
+      // The document's own `model.key` (MIL-193, schema 1.10) is the key the manifest must match —
+      // never recomputed here, so `em system` and `em export` can't disagree about it.
       const { doc } = buildExportDoc(model, refs, diagnostics, text, file);
-      // `model.key` is MIL-193's export field (schema 1.10); until `buildExportDoc` carries it,
-      // computed here from the same helper (`computeModelKey`) so the two can never disagree.
-      const key = (doc.model as { key?: string }).key ?? computeModelKey(model, file);
-      return { sourceKind: "em", doc: { schemaVersion: doc.schemaVersion, model: { ...doc.model, key } } };
+      return { sourceKind: "em", doc };
     } catch (e) {
       if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
       throw e;
