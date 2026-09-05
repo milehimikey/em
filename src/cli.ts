@@ -120,6 +120,29 @@ import {
   formatUsageReportText,
 } from "./cli/usageLog.js";
 import { buildUsageReportJson } from "./emit/usageReportJson.js";
+import { compileForQuery } from "./query/pipeline.js";
+import { buildQuerySystem, QuerySystem } from "./query/system.js";
+import {
+  queryConsumers,
+  queryProducers,
+  queryDownstream,
+  queryUpstream,
+  querySlices,
+  queryInvariant,
+  queryField,
+  queryPath,
+  VerbResult,
+} from "./query/verbs.js";
+import {
+  formatConsumers,
+  formatProducers,
+  formatClosure,
+  formatSlices,
+  formatInvariant,
+  formatField,
+  formatPath,
+} from "./query/format.js";
+import { buildQueryJson } from "./emit/queryJson.js";
 
 const program = new Command();
 
@@ -1466,6 +1489,175 @@ program
     }
   });
 
+// `em query` (MIL-168): deterministic graph queries over the compiled model — scoped, token-
+// cheap answers instead of a whole-model `em export`. Compiles every input file through the
+// LIGHTER query sub-pipeline (query/pipeline.ts: parse -> normalize -> refs -> validate against
+// an empty grid -> ModelIndex — no layout allocation, no DOT emission), same "refuse on compile
+// errors" gate every JSON surface uses, then hands the built `QuerySystem` to whichever verb
+// function ran (query/verbs.ts) — the exact same functions the MCP `query` tool calls (MCP
+// parity, docs/mcp.md). `<files...>` variadic, multi-model, same as `em status`; refs in output
+// are `<modelKey>:<sliceKey>/<kind>.<slug>`-qualified whenever more than one file is given (see
+// query/system.ts's header for why), bare/unqualified otherwise.
+function compileFilesForQuery(files: string[]): QuerySystem {
+  const entries = files.map((file) => {
+    const source = readFileOrExit(file);
+    let compiled;
+    try {
+      compiled = compileForQuery(source, dirname(file));
+    } catch (e) {
+      if (e instanceof ParseError) {
+        console.error(`parse error in ${file} ${e.message}`);
+        process.exit(1);
+      }
+      throw e;
+    }
+    printDiagnosticsFor(file, compiled.diagnostics);
+    if (hasErrors(compiled.diagnostics)) {
+      console.error(`em query: not querying — "${file}" has errors — fix them first`);
+      process.exit(1);
+    }
+    return { file, model: compiled.model, refs: compiled.refs, index: compiled.index };
+  });
+  return buildQuerySystem(entries);
+}
+
+/** Runs one verb end to end: compile every file, call `fn`, then print — text by default,
+ *  `--json` for `emit/queryJson.ts`'s versioned document. A verb-level error (bad/ambiguous ref,
+ *  unknown invariant ID, ...) is `console.error` + exit 1; a legitimately empty result set still
+ *  exits 0 (MIL-168's own contract — "an event with no consumers prints 'none' and exits 0"). */
+function runQueryVerb<T>(
+  files: string[],
+  verb: string,
+  args: Record<string, unknown>,
+  json: boolean | undefined,
+  fn: (system: QuerySystem) => VerbResult<T>,
+  formatFn: (results: T[]) => string,
+): void {
+  const system = compileFilesForQuery(files);
+  const result = fn(system);
+  if (!result.ok) {
+    console.error(result.error);
+    process.exit(1);
+  }
+  if (json) process.stdout.write(buildQueryJson(verb, files, args, result.results) + "\n");
+  else console.log(formatFn(result.results));
+}
+
+function parseDepthOpt(depth: string | undefined, verb: string): number | undefined {
+  if (depth === undefined) return undefined;
+  // Decimal digits only — `Number()` would also accept "1e1", "0x10", " 5", which are not what
+  // a hop count looks like on a command line.
+  if (!/^[1-9][0-9]*$/.test(depth)) {
+    console.error(`em query ${verb}: --depth must be a positive integer`);
+    process.exit(1);
+  }
+  return Number(depth);
+}
+
+const query = program.command("query").description("deterministic graph queries over the compiled model (MIL-168, see docs/cli.md)");
+
+query
+  .command("consumers")
+  .description("views/reactions consuming an event, plus their slices")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--event <ref-or-name>", "the event's export ref or display name")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { event: string; json?: boolean }) => {
+    runQueryVerb(files, "consumers", { event: opts.event }, opts.json, (s) => queryConsumers(s, opts.event), formatConsumers);
+  });
+
+query
+  .command("producers")
+  .description("commands producing an event, plus their slices and ui triggers")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--event <ref-or-name>", "the event's export ref or display name")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { event: string; json?: boolean }) => {
+    runQueryVerb(files, "producers", { event: opts.event }, opts.json, (s) => queryProducers(s, opts.event), formatProducers);
+  });
+
+query
+  .command("downstream")
+  .description("transitive closure along legal edges from an element — impact analysis")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--of <ref-or-name>", "the starting element's export ref or display name")
+  .option("--depth <n>", "limit traversal to n hops (default: unlimited)")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { of: string; depth?: string; json?: boolean }) => {
+    const depth = parseDepthOpt(opts.depth, "downstream");
+    runQueryVerb(files, "downstream", { of: opts.of, depth: depth ?? null }, opts.json, (s) => queryDownstream(s, opts.of, depth), formatClosure);
+  });
+
+query
+  .command("upstream")
+  .description("transitive closure against legal-edge direction from an element")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--of <ref-or-name>", "the starting element's export ref or display name")
+  .option("--depth <n>", "limit traversal to n hops (default: unlimited)")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { of: string; depth?: string; json?: boolean }) => {
+    const depth = parseDepthOpt(opts.depth, "upstream");
+    runQueryVerb(files, "upstream", { of: opts.of, depth: depth ?? null }, opts.json, (s) => queryUpstream(s, opts.of, depth), formatClosure);
+  });
+
+query
+  .command("slices")
+  .description("filtered slice list — pattern/status/context/persona/tag filters AND-combine")
+  .argument("<files...>", "input .em files")
+  .option("--pattern <p>", "state-change | state-view | automation | translation | unclassified")
+  .option("--status <s>", "the slice's joined doc status (draft, reviewed, ready-to-implement, implemented, ...)")
+  .option("--context <c>", "match a slice with an event in this @Context")
+  .option("--persona <p>", "match a slice with a ui in this @Persona")
+  .option("--tag <t>", "match a slice with an event carrying this tag key")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { pattern?: string; status?: string; context?: string; persona?: string; tag?: string; json?: boolean }) => {
+    const filters = { pattern: opts.pattern, status: opts.status, context: opts.context, persona: opts.persona, tag: opts.tag };
+    runQueryVerb(files, "slices", filters, opts.json, (s) => querySlices(s, filters), formatSlices);
+  });
+
+query
+  .command("invariant")
+  .description("declaring slice + doc facts for one INV-* id, and (with --tests) its test citations")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--id <inv-id>", "the INV-* id to look up")
+  .option("--tests <dir>", "directory to scan for test files citing this id")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { id: string; tests?: string; json?: boolean }) => {
+    if (opts.tests) {
+      if (!existsSync(opts.tests)) {
+        console.error(`em query invariant: --tests directory not found: ${opts.tests}`);
+        process.exit(1);
+      }
+      if (!statSync(opts.tests).isDirectory()) {
+        console.error(`em query invariant: --tests is not a directory: ${opts.tests}`);
+        process.exit(1);
+      }
+    }
+    runQueryVerb(files, "invariant", { id: opts.id, tests: opts.tests ?? null }, opts.json, (s) => queryInvariant(s, opts.id, opts.tests), formatInvariant);
+  });
+
+query
+  .command("field")
+  .description("one field's facts on an element — type, tag/assigned markers, renamed-from chain")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--of <element-ref>", "the element's export ref or display name")
+  .requiredOption("--name <field>", "the field's name")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { of: string; name: string; json?: boolean }) => {
+    runQueryVerb(files, "field", { of: opts.of, name: opts.name }, opts.json, (s) => queryField(s, opts.of, opts.name), formatField);
+  });
+
+query
+  .command("path")
+  .description("shortest path between two elements through the six legal connection types")
+  .argument("<files...>", "input .em files")
+  .requiredOption("--from <ref-or-name>", "the starting element's export ref or display name")
+  .requiredOption("--to <ref-or-name>", "the ending element's export ref or display name")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((files: string[], opts: { from: string; to: string; json?: boolean }) => {
+    runQueryVerb(files, "path", { from: opts.from, to: opts.to }, opts.json, (s) => queryPath(s, opts.from, opts.to), formatPath);
+  });
+
 // Shared by install/sync/check: the `.claude/skills/` root bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and
 // regardless of a symlinked global install — see pkgDir's own resolution above for
@@ -1495,9 +1687,9 @@ program
 program
   .command("mcp")
   .description(
-    "start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/" +
-      "list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a " +
-      "structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. " +
+    "start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-" +
+      "facing alternative to shelling out to `em`; see docs/mcp.md for the full, current tool " +
+      "table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187). " +
       "Equivalent to running the `em-mcp` bin directly",
   )
   .action(async () => {

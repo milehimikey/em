@@ -1297,6 +1297,160 @@ array carries:
 }
 ```
 
+## `em query <verb> <files...>`
+
+Deterministic graph queries over the compiled model (MIL-168): scoped, token-cheap answers —
+"who consumes this event," "what's downstream of this command," "which slices are
+`ready-to-implement` in the `Payment` context" — instead of reading a whole `em export` document
+just to answer one structural question. Eight verbs, each its own subcommand:
+
+| Verb | Answers |
+|---|---|
+| `em query consumers <files...> --event <ref-or-name>` | Views/reactions consuming an event, plus their slices |
+| `em query producers <files...> --event <ref-or-name>` | Commands producing an event, plus their slices and `ui` triggers |
+| `em query downstream <files...> --of <ref-or-name> [--depth <n>]` | Transitive closure along legal edges from an element — impact analysis |
+| `em query upstream <files...> --of <ref-or-name> [--depth <n>]` | Transitive closure against legal-edge direction — "what feeds this" |
+| `em query slices <files...> [--pattern p] [--status s] [--context c] [--persona p] [--tag t]` | Filtered slice list — every given filter AND-combines |
+| `em query invariant <files...> --id <INV-id> [--tests <dir>]` | An `INV-*` id's declaring slice + doc facts, and (with `--tests`) its test citations |
+| `em query field <files...> --of <element-ref> --name <field>` | One field's type, `tag`/`assigned` markers, and `renamed from` chain |
+| `em query path <files...> --from <ref-or-name> --to <ref-or-name>` | Shortest path between two elements through the legal-connection graph |
+
+Every verb takes `<files...>` variadic, same multi-model convention as `em status`/`em glossary` —
+results carry model attribution (see **Cross-model addressing** below).
+
+### Element references
+
+`--event`/`--of`/`--from`/`--to` accept either a stable export ref
+(`<sliceKey>/<kind>.<slug>`, `em export`'s own identity scheme) or a bare display name. A bare
+name is resolved against the model's own element names, case/whitespace-insensitively; a name
+matching more than one element is a **hard error listing every candidate ref** — `em query` never
+guesses which one you meant. `--id` (for `invariant`) is the literal `INV-*` token a slice doc
+declares, not a ref.
+
+### The legal-connection graph
+
+Traversal (`consumers`/`producers`/`downstream`/`upstream`/`path`) runs over exactly the edge
+list the diagram itself draws — the six legal connections inferred from each slice's pattern
+shape, `from` clauses, and explicit `arrow` declarations — never a fuzzy edge. Every result names
+the connection kind it arrived by (`via`/`edgeKinds`): `ui->command`, `command->event`,
+`event->view`, `view->ui`, `view->reaction`, or `reaction->command` — a pure function of the two
+endpoint kinds, so an explicit `arrow` between a command and an event reports `command->event`
+like any inferred one. Traversal order is deterministic: model order (the order `<files...>`
+were given), then slice index, then element declaration order — same output every run, same as
+every other `em` command.
+
+**Repeated read models.** Instances of one read model (`view X again`) are never connected by an
+edge, but `downstream`/`upstream`/`path` treat them as one node: reaching any instance reaches
+every other instance at the **same depth**, reported `via: "view-instance"`, and traversal
+continues from all of them — a change upstream of a read model affects every screen or reaction
+that reads *any* timeline instance of it, which is what impact analysis has to answer. A
+`view-instance` step in a `path` appears in `edgeKinds` but doesn't count toward `length`. A
+bare display name for a repeated view resolves to its first instance (the read model itself);
+a later instance stays addressable by its own ref.
+
+### Cross-model addressing
+
+Export refs (`<sliceKey>/<kind>.<slug>`) are, and remain, model-unqualified — this doesn't change
+`em export`'s identity scheme. But a query spanning more than one input file needs to say *which*
+model a result came from, so whenever `<files...>` names more than one file, `em query` qualifies
+every ref in its output as `<modelKey>:<sliceKey>/<kind>.<slug>` (and a bare slice ref as
+`<modelKey>:<sliceKey>`) — `<modelKey>` is the kebab-slugged basename of the input file (extension
+stripped), deduped with `~2`/`~3`, … on collision within one invocation. A single-file invocation
+keeps bare, unqualified refs, unchanged from every other command. On input, a ref/name may be
+given bare (searched across every input model, per-model — never merged) or qualified
+(`<modelKey>:...`, searched in exactly that model); an unqualified match found in more than one
+model is the same ambiguity error as a same-model duplicate name, listing every qualified
+candidate. This is a query-only convention — no other `em` surface's ref shape changes — chosen
+here because query is the first surface that ever needs to name an element across model
+boundaries in one answer; a future portal or MCP client minting deep links against query results
+should expect this qualified form to be stable.
+
+### Exit codes and empty results
+
+`0` for a query that ran, including a **legitimately empty** result — an event with no consumers,
+two elements with no path between them, a filter matching no slices — text mode prints `(none)`
+and still exits `0`; `--json` prints `"results": []`. `1` for an error: a bad or ambiguous ref, an
+unknown `--id`, an invalid `--depth`, or — same refusal convention as `em export` — any input
+model with compile errors.
+
+| Flag | Applies to | Effect |
+|---|---|---|
+| `--event <ref-or-name>` | `consumers`, `producers` | The event to query |
+| `--of <ref-or-name>` | `downstream`, `upstream`, `field` | The element to query |
+| `--depth <n>` | `downstream`, `upstream` | Limit traversal to `n` hops (default: unlimited) |
+| `--pattern <p>` | `slices` | `state-change` \| `state-view` \| `automation` \| `translation` \| `unclassified` |
+| `--status <s>` | `slices` | The slice's joined doc status |
+| `--context <c>` | `slices` | Match a slice with an event in this `@Context` |
+| `--persona <p>` | `slices` | Match a slice with a `ui` in this `@Persona` |
+| `--tag <t>` | `slices` | Match a slice with an event carrying this tag key |
+| `--id <inv-id>` | `invariant` | The `INV-*` id to look up (**required**) |
+| `--tests <dir>` | `invariant` | Directory to scan for test files citing this id (reuses `em coverage`'s own citation scan) |
+| `--name <field>` | `field` | The field's name (**required**) |
+| `--from <ref-or-name>` / `--to <ref-or-name>` | `path` | The two endpoints (**required**) |
+| `--json` | every verb | Print a JSON document instead of the text report |
+
+```bash
+em query consumers model.em --event "Order Placed"           # views/reactions reading it
+em query producers model.em --event "Order Placed"           # commands that emit it
+em query downstream model.em --of "Place Order" --depth 2     # impact analysis, 2 hops
+em query upstream model.em --of "Order Shipped"                # what feeds this event
+em query slices model.em --status ready-to-implement --context Payment
+em query invariant model.em --id INV-CHK-3 --tests test/       # + who cites it
+em query field model.em --of "Order Placed" --name total       # type/tag/renamed-from facts
+em query path model.em --from "Checkout Screen" --to "Order Shipped"
+em query slices a.em b.em --json                               # multi-model, <modelKey>:-qualified refs
+```
+
+Example output:
+
+```
+$ em query consumers model.em --event "Order Placed"
+open-orders/view.open-orders  (view) in slice "Open Orders" [open-orders] — via event->view
+$ em query consumers model.em --event "Order Shipped"
+(none)
+$ echo $?
+0
+```
+
+**`--json` shape** (`querySchemaVersion: "1.0"`, versioned independently of the npm package and
+every other command's own schema — also the exact document the MCP `query` tool returns, see
+[mcp.md](mcp.md)): one envelope for every verb, with a `verb` discriminator and a `results` array
+whose entries are verb-shaped:
+
+```json
+{
+  "querySchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "verb": "consumers",
+  "files": ["model.em"],
+  "args": { "event": "Order Placed" },
+  "results": [
+    { "ref": "open-orders/view.open-orders", "kind": "view", "name": "Open Orders", "sliceKey": "open-orders", "sliceName": "Open Orders", "via": "event->view" }
+  ]
+}
+```
+
+- `args` echoes the resolved query parameters (`null` for an omitted optional one), for
+  traceability.
+- `consumers`/`producers` results carry `{ ref, kind, name, sliceKey, sliceName, via }`;
+  `producers` additionally carries `uiTriggers: [...]` (the same shape, for each `ui` wired to
+  that producing command).
+- `downstream`/`upstream` results add `depth` (hop count from `--of`) to the same shape.
+- `slices` results carry `{ ref, name, index, pattern, status, personas, contexts, tags }`.
+- `invariant` results carry `{ id, sliceRef, sliceName, docPath, status, citations }` —
+  `citations` is `null` when `--tests` wasn't given, else `{ file, line }[]` (possibly empty).
+  Lookup is status-agnostic: an id declared in a `draft` doc is found like any other, with that
+  status reported (`em coverage`'s in-scope rule decides which invariants *must* be cited, not
+  which ones exist).
+- `field` results carry `{ elementRef, name, type, tag, assigned, renamedFrom, elementRenamedFrom }`
+  — the same field facts `em export`'s `FieldExport` carries, scoped to one field, plus the
+  owning element's own `renamed from` chain (`elementRenamedFrom`, event/command only; `null`
+  when the element was never renamed) — provenance has two axes, the field's prior names and
+  the prior names of the element it lives on.
+- `path` results carry `{ refs, edgeKinds, length }` — `refs` is the full node sequence
+  (endpoints inclusive), `edgeKinds` one shorter (the edge between each consecutive pair);
+  `length` counts real connections only (a `view-instance` step is free).
+
 ## `em glossary <files...>`
 
 Aggregates the terms declared across N independently-compiled `.em` models — element

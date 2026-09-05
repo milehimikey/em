@@ -111,8 +111,41 @@ em status <files> -o, --out <path>                            # write output to 
 em freshness <file>                                           # standalone freshness signal for one model's conformance record (MIL-164): "last conformed <rev> — N commits and M slice-PRs behind HEAD", computed from the same conform-scope machinery `em status`'s conformance clause uses — for when you want just this fact, no full state-of-the-system rollup (see docs/cli.md)
 em freshness <file> --repo <path>                             # git repo to compute behind-HEAD in (default: the model's own directory)
 em freshness <file> --json                                    # print a JSON document instead of the text line
+em query consumers <files>                                    # views/reactions consuming an event, plus their slices
+em query consumers <files> --event <ref-or-name>              # the event's export ref or display name
+em query consumers <files> --json                             # print a JSON document instead of the text report
+em query producers <files>                                    # commands producing an event, plus their slices and ui triggers
+em query producers <files> --event <ref-or-name>              # the event's export ref or display name
+em query producers <files> --json                             # print a JSON document instead of the text report
+em query downstream <files>                                   # transitive closure along legal edges from an element — impact analysis
+em query downstream <files> --of <ref-or-name>                # the starting element's export ref or display name
+em query downstream <files> --depth <n>                       # limit traversal to n hops (default: unlimited)
+em query downstream <files> --json                            # print a JSON document instead of the text report
+em query upstream <files>                                     # transitive closure against legal-edge direction from an element
+em query upstream <files> --of <ref-or-name>                  # the starting element's export ref or display name
+em query upstream <files> --depth <n>                         # limit traversal to n hops (default: unlimited)
+em query upstream <files> --json                              # print a JSON document instead of the text report
+em query slices <files>                                       # filtered slice list — pattern/status/context/persona/tag filters AND-combine
+em query slices <files> --pattern <p>                         # state-change | state-view | automation | translation | unclassified
+em query slices <files> --status <s>                          # the slice's joined doc status (draft, reviewed, ready-to-implement, implemented, ...)
+em query slices <files> --context <c>                         # match a slice with an event in this @Context
+em query slices <files> --persona <p>                         # match a slice with a ui in this @Persona
+em query slices <files> --tag <t>                             # match a slice with an event carrying this tag key
+em query slices <files> --json                                # print a JSON document instead of the text report
+em query invariant <files>                                    # declaring slice + doc facts for one INV-* id, and (with --tests) its test citations
+em query invariant <files> --id <inv-id>                      # the INV-* id to look up
+em query invariant <files> --tests <dir>                      # directory to scan for test files citing this id
+em query invariant <files> --json                             # print a JSON document instead of the text report
+em query field <files>                                        # one field's facts on an element — type, tag/assigned markers, renamed-from chain
+em query field <files> --of <element-ref>                     # the element's export ref or display name
+em query field <files> --name <field>                         # the field's name
+em query field <files> --json                                 # print a JSON document instead of the text report
+em query path <files>                                         # shortest path between two elements through the six legal connection types
+em query path <files> --from <ref-or-name>                    # the starting element's export ref or display name
+em query path <files> --to <ref-or-name>                      # the ending element's export ref or display name
+em query path <files> --json                                  # print a JSON document instead of the text report
 em contract                                                   # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
-em mcp                                                        # start an MCP (Model Context Protocol) server over stdio, exposing validate/slice_ready/list_markers/export_model/export_slice/coverage/contract as tools (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md. Equivalent to running the `em-mcp` bin directly
+em mcp                                                        # start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md for the full, current tool table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187). Equivalent to running the `em-mcp` bin directly
 em skill install                                              # copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared)
 em skill install -f, --force                                  # overwrite an existing installation
 em skill install --no-agents-md                               # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)

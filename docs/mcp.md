@@ -19,8 +19,8 @@ reuses the exact same data-layer builders the CLI's own JSON flags call
 **Every read surface `em` ships must reach agents two ways: as a CLI `--json` flag (or, for a
 surface with no natural JSON shape like `em changelog`, as its plain-text stdout) *and* as an MCP
 tool, byte-identical for the same inputs.** This isn't a description of what happened to be built
-— it's a rule the project holds itself to going forward (MIL-167): a new read surface (`status`
-today; `query`/`metrics` later, per [roadmap.md](roadmap.md)) ships its MCP tool in the *same*
+— it's a rule the project holds itself to going forward (MIL-167): a new read surface (`status`,
+`query` today; `metrics` later, per [roadmap.md](roadmap.md)) ships its MCP tool in the *same*
 release, not as a follow-up ticket. The reason is architectural, not stylistic: for an agent, MCP
 *is* the conversation channel to this tool — "use agents and tools to talk to our architecture"
 fails wherever a surface is CLI-only, no matter how good that surface's `--json` output is.
@@ -90,6 +90,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
 | `coverage` | `{ file, testsDir }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
+| `query` | `{ files, verb, event?, of?, depth?, pattern?, status?, context?, persona?, tag?, id?, testsDir?, name?, from?, to? }` | The `em query <verb> <files...> --json` document: deterministic graph queries (consumers/producers/downstream/upstream/slices/invariant/field/path) over the compiled model |
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
 | `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
@@ -160,6 +161,25 @@ doesn't exist — matching `em status`'s own CLI refusal. Doc-join warnings
 they reach the CLI's stderr-plus-JSON pair — an MCP tool call has no stderr channel of its own,
 so the document is the only place they surface here. See [`em status`](cli.md#em-status-files)
 for the full JSON shape.
+
+### `query`
+
+Same document as `em query <verb> <files...> --json` (MIL-168): scoped, token-cheap graph
+answers over the compiled model — 8 verbs selected by `verb`
+(`consumers`/`producers`/`downstream`/`upstream`/`slices`/`invariant`/`field`/`path`), each
+taking whichever of `event`/`of`/`depth`/`pattern`/`status`/`context`/`persona`/`tag`/`id`/
+`testsDir`/`name`/`from`/`to` that verb uses (unused params for a given verb are ignored; a
+required-but-missing one is a tool error naming it). `event`/`of`/`from`/`to` accept a stable
+export ref or a bare display name; an ambiguous bare name is a tool error listing every
+candidate ref, never a guess. Built from the exact same `ModelIndex`/verb functions
+(`src/model/queryIndex.ts`, `src/query/verbs.ts`) the CLI's own `query` subcommands call — same
+parity contract as every other tool. Refs in `results` are `<modelKey>:<ref>`-qualified whenever
+`files` has more than one entry, bare otherwise (see [`em query`'s Cross-model
+addressing](cli.md#em-query-verb-files) for the qualifier convention). Refuses (tool error) when
+any input model has errors, same as `em query`'s own CLI refusal; a legitimately empty answer
+(e.g. an event with no consumers) is `results: []`, not an error. See [`em
+query`](cli.md#em-query-verb-files) for the full JSON shape, per-verb result fields, and the
+legal-connection graph traversal runs over.
 
 ### `diff`
 
