@@ -175,10 +175,15 @@ export ref or a bare display name; an ambiguous bare name is a tool error listin
 candidate ref, never a guess. Built from the exact same `ModelIndex`/verb functions
 (`src/model/queryIndex.ts`, `src/query/verbs.ts`) the CLI's own `query` subcommands call — same
 parity contract as every other tool. Refs in `results` are `<modelKey>:<ref>`-qualified whenever
-`files` has more than one entry, bare otherwise (see [`em query`'s Cross-model
-addressing](cli.md#em-query-verb-files) for the qualifier convention). Refuses (tool error) when
-any input model has errors, same as `em query`'s own CLI refusal; a legitimately empty answer
-(e.g. an event with no consumers) is `results: []`, not an error. See [`em
+`files` has more than one entry, bare otherwise — `<modelKey>` is the kebab-slug of each file's
+declared `model "Name"` (basename fallback), the same key `export_model` returns as `model.key`
+and every other em surface uses (see [`em query`'s Cross-model
+addressing](cli.md#em-query-verb-files) and [Model-qualified refs](cli.md#model-qualified-refs),
+MIL-193). Two files deriving the same key are suffixed `~2`/`~3`, … in `files` order; the CLI
+prints a `duplicate-model-key` warning for that on stderr, and — like every other compile
+warning under `query` — the tool returns the (identical) JSON document without it. Refuses (tool
+error) when any input model has errors, same as `em query`'s own CLI refusal; a legitimately
+empty answer (e.g. an event with no consumers) is `results: []`, not an error. See [`em
 query`](cli.md#em-query-verb-files) for the full JSON shape, per-verb result fields, and the
 legal-connection graph traversal runs over.
 

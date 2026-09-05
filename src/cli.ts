@@ -1521,7 +1521,14 @@ function compileFilesForQuery(files: string[]): QuerySystem {
     }
     return { file, model: compiled.model, refs: compiled.refs, index: compiled.index };
   });
-  return buildQuerySystem(entries);
+  const system = buildQuerySystem(entries);
+  // MIL-193: a `duplicate-model-key` collision is attributed to the file that had to take the
+  // `~n` suffix (its key is `refs[0]`), printed exactly like that file's own compile warnings.
+  for (const d of system.diagnostics) {
+    const owner = system.entries.find((e) => e.modelKey === d.refs?.[0]);
+    printDiagnosticsFor(owner?.file ?? files.join(", "), [d]);
+  }
+  return system;
 }
 
 /** Runs one verb end to end: compile every file, call `fn`, then print — text by default,

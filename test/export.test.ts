@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile } from "../src/pipeline.js";
 import { hasErrors } from "../src/model/validate.js";
-import { buildExport } from "../src/emit/json.js";
+import { buildExport, buildSliceExport } from "../src/emit/json.js";
 import { STARTER_EM } from "../src/templates.js";
 
 const PKG_VERSION: string = JSON.parse(
@@ -232,11 +232,35 @@ slice "Orders Again" {
   it("lists `edges` after `arrows` on `model`, and exports `[]` for a model with no connections", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc.model)).toEqual([
-      "name", "personas", "contexts", "hasAutomation", "types", "slices", "arrows", "edges",
+      "name", "key", "personas", "contexts", "hasAutomation", "types", "slices", "arrows", "edges",
     ]);
     expect(docOf(`slice "Lonely" {
   event Nothing Happened
 }`).model.edges).toEqual([]);
+  });
+});
+
+describe("model.key (MIL-193)", () => {
+  it("is the kebab-slug of the declared model name, regardless of the file path", () => {
+    const doc = docOf(`model "Order Fulfilment"\nslice "S" {\n  command Do\n}\n`, "some/dir/legacy-name.em");
+    expect(doc.model.name).toBe("Order Fulfilment");
+    expect(doc.model.key).toBe("order-fulfilment");
+  });
+
+  it("falls back to the source file's kebab-slugged basename when no model name is declared", () => {
+    const doc = docOf(`slice "S" {\n  command Do\n}\n`, "models/Billing_v2.em");
+    expect(doc.model.name).toBe("Event Model");
+    expect(doc.model.key).toBe("billing-v2");
+  });
+
+  it("is carried by the --slice envelope as top-level modelKey", () => {
+    const src = `model "Order Fulfilment"\nslice "Checkout" {\n  command Place Order\n  event Order Placed\n}\n`;
+    const { model, refs, diagnostics } = compile(src);
+    const r = buildSliceExport(model, refs, diagnostics, src, "model.em", "checkout");
+    expect(r.found).toBe(true);
+    const doc = JSON.parse(r.text!);
+    expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "modelKey", "sliceKey", "slice", "diagnostics"]);
+    expect(doc.modelKey).toBe("order-fulfilment");
   });
 });
 

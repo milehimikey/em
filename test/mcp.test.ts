@@ -264,6 +264,20 @@ describe("validate tool", () => {
     expect(doc.diagnostics[0]).toHaveProperty("usageCategory");
   });
 
+  it("multi-model key collision (MIL-193): ~2-suffixed keys, byte-identical to the CLI", async () => {
+    writeFileSync(join(dir, "same-a.em"), 'model "Shared Name"\nslice "Alpha" {\n  command Do A\n  event A Done\n}\n');
+    writeFileSync(join(dir, "same-b.em"), 'model "Shared Name"\nslice "Beta" {\n  command Do B\n  event B Done\n}\n');
+    const files = [join(dir, "same-a.em"), join(dir, "same-b.em")];
+    const { result, doc } = await callJson(client, "query", { files, verb: "slices" });
+    expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["shared-name:alpha", "shared-name~2:beta"]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "slices", ...files, "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stderr).toContain('duplicate model key "shared-name"');
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
   it("a missing file is a tool error, not a crash", async () => {
     const { result } = await callJson(client, "validate", { file: join(dir, "no-such-file.em") });
     expect(result.isError).toBe(true);
