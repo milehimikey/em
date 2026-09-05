@@ -344,6 +344,17 @@ export const RULES = {
     fix: "Rename the type so its export ref is unique.",
     usageCategory: "duplicate type ref",
   },
+  // MIL-193: two models in one multi-model invocation whose model keys (kebab-slugged declared
+  // names, model/qualifiedRef.ts) collide — the later one takes a `~n` suffix, exactly as
+  // `duplicate-slice-name` handles a slice-key collision. Raised by computeModelKeys(), which
+  // only ever runs where more than one model is in play (`em query`, MIL-194's `em system`);
+  // a single-model compile can never see it.
+  "duplicate-model-key": {
+    severity: "warning",
+    title: "Duplicate model key",
+    fix: "Give each model a unique `model \"Name\"` so its key (and every cross-model ref) is stable.",
+    usageCategory: "duplicate model key",
+  },
   // MIL-160: two input models sharing a directory (so both resolve slice docs at
   // `<that-directory>/slices/<key>.md`) whose compiled slice keys overlap — nothing before this
   // caught it, since computeRefs() dedupes slice keys only within one model's own compile. Raised

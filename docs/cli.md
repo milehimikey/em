@@ -407,6 +407,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
   "schemaVersion": "1.10",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
+  "modelKey": "order-fulfilment",
   "sliceKey": "checkout",
   "slice": { "key": "checkout", "name": "Checkout", "pattern": "state-change", "doc": { … }, "elements": [ … ], … },
   "diagnostics": [ … ]
@@ -428,7 +429,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`, `edges`.
+- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`, `edges`.
+  - `key` (added in schema `1.10`, MIL-193) is the model's own key in em's one cross-model
+    addressing scheme — see **Model-qualified refs** below for how it's derived and used. The
+    `--slice` envelope carries the same value as top-level `modelKey`.
   - `types` (added in schema `1.3`) lists every declared named type (see
     [dsl.md](dsl.md#named-types)), independent of the slice timeline. Each has a stable `ref`
     (`types/<slug(name)>`, suffixed `~2`, `~3`, … — plus a warning diagnostic — on a name
@@ -494,6 +498,9 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
     timeline instance of a `view … again` read model; `null` for everything else.
+    Refs are model-unqualified; to name an element in another model, prefix them with the
+    model's key using the shared helper (`import { formatQualifiedRef, parseQualifiedRef }
+    from "@milehimikey/em/refs"`) — see **Model-qualified refs** below (MIL-193).
   - Each **field** — on both a declared type's own `fields` and an element's `fields` — has
     `name`, `type` (the raw type string, unchanged), `typeRef` (added in schema `1.3`):
     `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`
@@ -550,6 +557,52 @@ render-stable.
 **Versioning policy.** `schemaVersion` is independent of the npm package version. Additive
 optional fields are a minor bump; renames, removals, or meaning changes are a major bump.
 **Consumers must tolerate unknown fields.**
+
+### Model-qualified refs
+
+Every ref and key inside an export is **model-unqualified** — `<sliceKey>/<kind>.<slug>` for
+elements, `<sliceKey>` for slices, `types/<slug>` for types — and stays valid everywhere it is
+accepted today. Any artifact that names an element in *another* model (a seam manifest, a
+portal deep link, a tracker mirror, `em query`'s multi-model output) prefixes it with the owning
+model's key, colon-separated (MIL-193):
+
+| Qualified form | Names |
+|---|---|
+| `<modelKey>:<sliceKey>/<kind>.<slug>` | an element |
+| `<modelKey>:<sliceKey>` | a slice |
+| `<modelKey>:types/<slug>` | a declared type |
+
+**Where `modelKey` comes from.** The kebab-slug of the declared `model "Name"` — the same
+slugging every slice key and element ref uses, so identity always derives from a declared
+name, never a path: the key survives a file move and a rename of the file, and a single-model
+`em export` can publish it (`model.key`) with no system context. A file that declares no
+`model` line has no name to slug (the parser titles it "Event Model"), so its key falls back to
+the file's kebab-slugged basename, extension stripped — `models/Order_Fulfilment.em` →
+`order-fulfilment`. Declare a name in any model that takes part in a multi-model system.
+
+**Collisions.** A key is deduped only across the models of one multi-model invocation (`em
+query a.em b.em`, `em system`, …): two models deriving the same key are suffixed `~2`, `~3`, …
+in file-list order — the first keeps the bare key — and a `duplicate-model-key` warning names
+both files (see [validation.md](validation.md#ref-and-key-collisions)). Same posture as a
+duplicate slice name's `~2` + `duplicate-slice-name`. A single-model export never sees a suffix.
+
+**One implementation.** The grammar, the key derivation, and the parse/format live in one
+module, published as the package subpath `@milehimikey/em/refs` so em-portal, em-tracker-bridge,
+and any other consumer never grow a second parser:
+
+```ts
+import { computeModelKey, formatQualifiedRef, parseQualifiedRef, MODEL_KEY_RE } from "@milehimikey/em/refs";
+
+const q = formatQualifiedRef(exportDoc.model.key, "checkout/command.place-order");
+// -> "order-fulfilment:checkout/command.place-order"
+parseQualifiedRef(q);             // { modelKey: "order-fulfilment", ref: "checkout/command.place-order" }
+parseQualifiedRef("Order: Paid"); // { modelKey: null, ref: "Order: Paid" } — not a key-shaped prefix
+```
+
+`parseQualifiedRef` splits on the first colon only when the prefix matches the key shape
+(`MODEL_KEY_RE`, `[a-z0-9]+(-[a-z0-9]+)*(~\d+)?`); a display name containing a colon passes
+through intact. `computeModelKeys(entries)` is the multi-model form (dedupe + diagnostics) and
+`isQualifiedRef(input)` the boolean convenience.
 
 See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step alongside
 `em validate` as a merge gate.
@@ -1375,16 +1428,22 @@ Export refs (`<sliceKey>/<kind>.<slug>`) are, and remain, model-unqualified — 
 `em export`'s identity scheme. But a query spanning more than one input file needs to say *which*
 model a result came from, so whenever `<files...>` names more than one file, `em query` qualifies
 every ref in its output as `<modelKey>:<sliceKey>/<kind>.<slug>` (and a bare slice ref as
-`<modelKey>:<sliceKey>`) — `<modelKey>` is the kebab-slugged basename of the input file (extension
-stripped), deduped with `~2`/`~3`, … on collision within one invocation. A single-file invocation
-keeps bare, unqualified refs, unchanged from every other command. On input, a ref/name may be
-given bare (searched across every input model, per-model — never merged) or qualified
+`<modelKey>:<sliceKey>`). This is em's **one** cross-model addressing scheme — the same
+`<modelKey>` and grammar `em export` publishes as `model.key`, `em system`'s seam manifest
+(MIL-194) and em-portal deep links use, all through the shared helper described under
+[**Model-qualified refs**](#model-qualified-refs) in the `em export` section (MIL-193): since that
+ticket, `<modelKey>` is the kebab-slug of the file's declared `model "Name"` (its kebab-slugged
+basename, extension stripped, only when no name is declared), so a qualified ref survives a file
+move. Two input files deriving the same key are deduped `~2`/`~3`, … in file-list order (the
+first keeps the bare key) and `em query` prints a `duplicate-model-key` warning to stderr naming
+both files — give each model a unique `model "Name"` to make the keys stable. A single-file
+invocation keeps bare, unqualified refs, unchanged from every other command. On input, a ref/name
+may be given bare (searched across every input model, per-model — never merged) or qualified
 (`<modelKey>:...`, searched in exactly that model); an unqualified match found in more than one
 model is the same ambiguity error as a same-model duplicate name, listing every qualified
-candidate. This is a query-only convention — no other `em` surface's ref shape changes — chosen
-here because query is the first surface that ever needs to name an element across model
-boundaries in one answer; a future portal or MCP client minting deep links against query results
-should expect this qualified form to be stable.
+candidate. Before MIL-193 the key was the input file's basename and this was a query-only
+convention; a deep link minted against the old key for a model whose declared name slugs
+differently from its filename needs re-minting once.
 
 ### Exit codes and empty results
 

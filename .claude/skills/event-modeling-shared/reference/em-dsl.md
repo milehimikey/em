@@ -599,6 +599,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `doc-model-field-mismatch` | warning | Doc/model field mismatch | Reconcile the field table with the model's fields — names and types. |
 | `doc-model-pattern-mismatch` | warning | Doc/model pattern mismatch | Fix the doc's `pattern:` frontmatter to match the model, or restructure the slice to match the doc. |
 | `duplicate-element-ref` | warning | Duplicate element ref | Rename the element so its export ref is unique. |
+| `duplicate-model-key` | warning | Duplicate model key | Give each model a unique `model "Name"` so its key (and every cross-model ref) is stable. |
 | `duplicate-name` | warning | Duplicate name | Rename one of the duplicates. |
 | `duplicate-slice-name` | warning | Duplicate slice name | Rename the slice so its export key is unique. |
 | `duplicate-type-name` | warning | Duplicate type name | Rename one of the duplicate `type` declarations. |

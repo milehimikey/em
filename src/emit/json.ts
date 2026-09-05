@@ -16,6 +16,7 @@ import { collectTags, Element, NormalizedModel, TypeDecl, resolveByName, resolve
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
+import { computeModelKey } from "../model/qualifiedRef.js";
 import { EdgeSource, semanticEdges } from "../model/edges.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
@@ -72,6 +73,15 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // first-wins on a duplicate (from, to) pair in pattern -> from -> arrow order. `em diff` does
 // NOT read `edges` — an edge change is always a consequence of an element/from/arrow change it
 // already reports. Additive-only.
+// Also 1.10 (MIL-193, same unreleased cycle as MIL-191 — no separate bump): `model.key` — the
+// model's own key in the one cross-model addressing scheme (model/qualifiedRef.ts): the
+// kebab-slug of the declared `model "Name"`, falling back to the source file's kebab-slugged
+// basename when no name was declared. A consumer that holds several exports (em-portal,
+// em-tracker-bridge, MIL-194's seam manifest) qualifies any ref as `<model.key>:<ref>` with
+// `@milehimikey/em/refs`' `formatQualifiedRef()` instead of inventing its own key. Refs inside
+// the document stay model-unqualified. Never deduped here — one export is one model; key
+// collisions are a multi-model-invocation concern (`duplicate-model-key`, `em query`/`em
+// system`). The `--slice` envelope carries the same value as top-level `modelKey`. Additive-only.
 export const SCHEMA_VERSION = "1.10";
 
 export interface ExportResult {
@@ -151,6 +161,8 @@ export interface ExportDoc {
   source: { path: string; sha256: string };
   model: {
     name: string | null;
+    /** The model's own cross-model key (MIL-193, `computeModelKey()`). */
+    key: string;
     personas: string[];
     contexts: string[];
     hasAutomation: boolean;
@@ -272,6 +284,9 @@ export function buildSliceExport(
     schemaVersion: doc.schemaVersion,
     generator: doc.generator,
     source: doc.source,
+    // The owning model's key (MIL-193) — this envelope has no `model` object, so it sits beside
+    // `sliceKey` at top level; same value as the full document's `model.key`.
+    modelKey: doc.model.key,
     sliceKey,
     slice,
     // Same scoping predicate as `em validate --slice-ready`'s own filter (cli.ts): a bare
@@ -385,6 +400,7 @@ export function buildExportDoc(
     source: { path, sha256: createHash("sha256").update(source, "utf8").digest("hex") },
     model: {
       name: model.name,
+      key: computeModelKey(model, path),
       personas: model.personas,
       contexts: model.contexts,
       hasAutomation: model.hasAutomation,

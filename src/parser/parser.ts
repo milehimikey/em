@@ -56,9 +56,13 @@ const ELEMENT_KEYWORDS = new Set<ElementKind>([
   "translation",
 ]);
 
+/** Title used when a file declares no `model "Name"` line. */
+export const DEFAULT_MODEL_NAME = "Event Model";
+
 export function parse(source: string): ModelNode {
   const model: ModelNode = {
     name: "",
+    nameDeclared: false,
     personas: [],
     contexts: [],
     slices: [],
@@ -232,6 +236,7 @@ export function parse(source: string): ModelNode {
     switch (keyword) {
       case "model":
         model.name = unquote(remainder);
+        model.nameDeclared = true;
         break;
       case "persona":
         pushUnique(model.personas, unquote(remainder));
@@ -314,7 +319,10 @@ export function parse(source: string): ModelNode {
       currentSlice.line,
     );
   }
-  if (!model.name) model.name = "Event Model";
+  if (!model.name) {
+    model.name = DEFAULT_MODEL_NAME;
+    model.nameDeclared = false;
+  }
 
   return model;
 }

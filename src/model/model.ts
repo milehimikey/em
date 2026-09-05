@@ -114,6 +114,8 @@ export interface ResolvedArrow {
 
 export interface NormalizedModel {
   name: string;
+  /** Whether `name` came from a `model "Name"` declaration (see `ModelNode.nameDeclared`). */
+  nameDeclared: boolean;
   personas: string[];
   contexts: string[];
   hasAutomation: boolean;
@@ -237,6 +239,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
 
   return {
     name: ast.name,
+    nameDeclared: ast.nameDeclared,
     personas,
     contexts,
     hasAutomation,

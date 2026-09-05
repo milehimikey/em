@@ -248,6 +248,29 @@ describe("multi-model addressing (qualified refs, per-model resolution, cross-mo
     if (!miss.ok) expect(miss.error).not.toContain("model key");
   });
 
+  it("MIL-193: modelKey is the slugged declared model name, not the file basename", () => {
+    const src = `model "Order Fulfilment"\nslice "S" {\n  ui Screen @Customer\n  command Do\n  event Done\n}\n`;
+    const c = compileForQuery(src, dir);
+    const system = buildQuerySystem([
+      { file: "some/dir/legacy.em", model: c.model, refs: c.refs, index: c.index },
+      { file: "other.em", model: c.model, refs: c.refs, index: c.index },
+    ]);
+    expect(system.entries[0].modelKey).toBe("order-fulfilment");
+    expect(system.diagnostics.map((d) => d.code)).toEqual(["duplicate-model-key"]);
+    expect(system.entries[1].modelKey).toBe("order-fulfilment~2");
+    const hit = resolveElement(system, "order-fulfilment~2:s/ui.screen");
+    expect(hit.ok).toBe(true);
+    if (hit.ok) expect(hit.match.file).toBe("other.em");
+    expect(qualifyRef(system, "order-fulfilment", "s/ui.screen")).toBe("order-fulfilment:s/ui.screen");
+  });
+
+  it("MIL-193: a single-model system carries no key diagnostics", () => {
+    const c = compileForQuery(FIXTURE, dir);
+    const system = buildQuerySystem([{ file: "x.em", model: c.model, refs: c.refs, index: c.index }]);
+    expect(system.entries[0].modelKey).toBe("query-fixture");
+    expect(system.diagnostics).toEqual([]);
+  });
+
   it("consumers on a qualified ref returns qualified results, attributed to the right model", () => {
     const system = twoModelSystem();
     const result = queryConsumers(system, "a:a-slice/event.shared-event");

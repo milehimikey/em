@@ -439,6 +439,23 @@ shape's shared-doc case. The `covers:` check only requires the *declaration* to 
 live slice, not that some note currently wins the binding race for it — a stricter check would
 reintroduce exactly the false positive this rule exists to avoid.
 
+### Ref and key collisions
+
+`em export`'s identities are slugs of declared names (see [cli.md](cli.md#model-qualified-refs)),
+so two same-kind declarations with the same name would mint the same identity. Each collision is
+resolved the same way — the first declaration keeps the bare key/ref, the later one is suffixed
+`~2`, `~3`, … in document (or file-list) order — and warned about, since a suffixed identity is
+only stable until someone renames or reorders the earlier one:
+
+| Code | Meaning |
+|---|---|
+| `duplicate-slice-name` | Two slices in one model share a name (export `key`). |
+| `duplicate-element-ref` | Two same-kind elements in one slice share a name (export `ref`). |
+| `duplicate-type-ref` | Two declared `type`s share a name (export `ref`). |
+| `duplicate-model-key` | Two models in one multi-model invocation (`em query a.em b.em`, `em system`) derive the same `modelKey` — the kebab-slug of the declared `model "Name"`, or of the file basename when none is declared (MIL-193). Never raised by a single-model command. |
+
+The fix is always to rename: for `duplicate-model-key`, give each model a unique `model "Name"`.
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection
