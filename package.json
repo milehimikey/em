@@ -8,6 +8,14 @@
     "em-mcp": "./dist/mcp/main.js"
   },
   "main": "./dist/cli.js",
+  "exports": {
+    ".": "./dist/cli.js",
+    "./refs": {
+      "types": "./dist/model/qualifiedRef.d.ts",
+      "default": "./dist/model/qualifiedRef.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "README.md",

@@ -129,6 +129,10 @@ export interface TypeDeclNode {
 
 export interface ModelNode {
   name: string;
+  /** True when the source declared `model "Name"`; false when `name` is the parser's default
+   *  title. The distinction matters to `model/qualifiedRef.ts` (MIL-193), whose model key is the
+   *  slugged declared name — an undeclared name must not become a key. */
+  nameDeclared: boolean;
   /** Declared persona lanes, in order. */
   personas: string[];
   /** Declared context/concept lanes, in order. */
