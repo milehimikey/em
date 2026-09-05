@@ -2143,14 +2143,15 @@ function printDiagnostics(diags: Diagnostic[]): void {
   }
 }
 
-/** Same as printDiagnostics, prefixed with the file each diagnostic came from —
- *  worth doing once N input files can be more than the two `em diff` compares,
- *  where ambiguity about which side a diagnostic belongs to gets materially worse. */
 /** `em system`'s diagnostics carry their own `file` (manifest or model source) — print each in
  *  the same `<file>: <severity>:<line> <message>` shape printDiagnosticsFor uses. */
 function printSystemDiagnostics(diags: SystemDiagnostic[]): void {
   for (const d of diags) printDiagnosticsFor(d.file, [d]);
 }
+
+/** Same as printDiagnostics, prefixed with the file each diagnostic came from —
+ *  worth doing once N input files can be more than the two `em diff` compares,
+ *  where ambiguity about which side a diagnostic belongs to gets materially worse. */
 function printDiagnosticsFor(file: string, diags: Diagnostic[]): void {
   for (const d of diags) {
     const line = `${file}: ${formatDiagnostic(d)}`;
