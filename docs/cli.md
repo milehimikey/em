@@ -404,7 +404,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.9",
+  "schemaVersion": "1.10",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "sliceKey": "checkout",
@@ -413,7 +413,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.9` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.10` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -422,13 +422,13 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.9"`):
+**Schema summary** (`schemaVersion: "1.10"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`.
+- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`, `edges`.
   - `types` (added in schema `1.3`) lists every declared named type (see
     [dsl.md](dsl.md#named-types)), independent of the slice timeline. Each has a stable `ref`
     (`types/<slug(name)>`, suffixed `~2`, `~3`, … — plus a warning diagnostic — on a name
@@ -512,6 +512,27 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     diagnostic never fires, from `--slice-ready` as well); does not narrow view ← event
     tracing. See [validation.md#fields-completeness](validation.md#fields-completeness).
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
+  - `edges` (added in schema `1.10`, MIL-191) is **the canonical graph**: the complete, deduped
+    list of every connection in the model, `[{ from, to, source }]`, both endpoints export-stable
+    element refs. It is exactly the edge list the renderer draws and `em query` traverses — one
+    derivation, three consumers — so a consumer should read this rather than re-derive
+    connections from slice membership. Before `1.10` only two of the three edge sources were
+    exported (`element.from` and `arrows`, above); the intra-slice **pattern-inferred** edges
+    (ui → command, command → event, reaction → command, view → ui, event → view within a slice)
+    were implicit, and re-deriving them means re-implementing guards that aren't visible in the
+    data (a `ui` sharing a slice with a reaction is *not* wired to the command; an event feeds a
+    same-slice view only when that view has no `from` clause; self-loops are dropped). `source`
+    is `"pattern"` (inferred from the slice's pattern shape), `"from"` (resolved from a `from
+    "Name"` clause), or `"arrow"` (a declared `arrow`) — **first-wins** on a duplicate
+    `(from, to)` pair in that order, so an `arrow` that restates an inferred connection appears
+    once, tagged `pattern` (`arrows` still records it as authored). No `kind` on an edge: refs
+    embed each endpoint's kind (`<sliceKey>/<kind>.<slug>`), and the connection type is a pure
+    function of the two kinds (the six legal flows in [patterns.md](patterns.md)). Edges point at
+    **instance** refs: a `view … again` instance is its own node and is never wired to its other
+    instances — group them via `logicalRef` if a traversal needs to follow a read model across
+    the timeline (that's what `em query`'s closures do). `element.from` and `arrows` stay as
+    provenance detail. `em diff` does not report edge changes — every edge change is a
+    consequence of an element/`from`/`arrow` change it already reports.
 - `diagnostics` — every diagnostic `em validate` would print, plus export-only ref-collision
   and slice-doc-join warnings. Each has `severity`, `code` (added in schema `1.4`, MIL-91 — a
   stable, CI-matchable rule identifier; `message` stays free text and may be reworded without
