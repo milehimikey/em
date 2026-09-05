@@ -71,10 +71,11 @@ describe("em query at scale (~5k slices, 25 models)", () => {
       const queryMs = Date.now() - t2;
 
       const totalMs = Date.now() - t0;
-      // Regression guard, not a precision benchmark — same generous-ceiling rationale
-      // test/portalSpike.test.ts's own scale test uses (MIL-162's spike measured compile +
-      // export + status at ~71ms/1,219 slices/20 models on ordinary hardware).
-      expect(totalMs).toBeLessThan(20000);
+      // Regression guard, not a precision benchmark: measured ~110ms end to end on ordinary
+      // hardware (index build ~100ms, every query ~1ms), so 2s is ~20x headroom for a slow CI
+      // runner while still failing on an order-of-magnitude regression — the "guarded
+      // invariant" MIL-168's design note asked for, rather than a ceiling nothing could hit.
+      expect(totalMs).toBeLessThan(2000);
 
       // Surfaced for a human reading test output/CI logs, not asserted individually (a slow CI
       // runner shouldn't flake on a per-phase ceiling when the total is still comfortably under

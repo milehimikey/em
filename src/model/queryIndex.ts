@@ -131,11 +131,22 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
 
   // Two passes, canonical bindings first, so a doc's own slice owns its invariants no matter
   // where a slice it also `covers:` sits in document order (see the `invariants` field doc).
+  // A doc that resolves for several slices (its own plus every one it `covers:`) is scanned
+  // once, keyed by path — the ids are a property of the doc, not of the slice asking.
   const invariants = new Map<string, InvariantIndexEntry>();
+  const idsByDocPath = new Map<string, string[]>();
+  const idsOf = (doc: SliceQueryDoc): string[] => {
+    let ids = idsByDocPath.get(doc.path);
+    if (!ids) {
+      ids = extractInvariantIds(doc.body!);
+      idsByDocPath.set(doc.path, ids);
+    }
+    return ids;
+  };
   const claim = (canonical: boolean) => {
     for (const { key, doc } of sliceFacts.values()) {
       if (doc.body === null || (doc.path === `slices/${key}.md`) !== canonical) continue;
-      for (const id of extractInvariantIds(doc.body)) {
+      for (const id of idsOf(doc)) {
         if (!invariants.has(id)) invariants.set(id, { id, sliceKey: key });
       }
     }
