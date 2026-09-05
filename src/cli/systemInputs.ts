@@ -12,7 +12,7 @@
 // diagnostic, never a throw or a process exit: the CLI prints and exits, MCP returns a tool error.
 
 import { readFileSync } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join } from "node:path";
 import { compile } from "../pipeline.js";
 import { ParseError } from "../parser/parser.js";
 import { hasErrors } from "../model/validate.js";
@@ -50,7 +50,10 @@ export function loadSystem(manifestPath: string): LoadSystemResult {
   const diagnostics: SystemDiagnostic[] = [];
   const models: SystemModelInput[] = [];
   for (const entry of parsed.manifest.models) {
-    const file = resolve(baseDir, entry.source);
+    // Joined, not resolved: diagnostics and `--json` echo this path, and a document a CI job
+    // commits must not embed one machine's absolute checkout path — `em export`'s `source.path`
+    // keeps the same "as given" posture.
+    const file = isAbsolute(entry.source) ? entry.source : join(baseDir, entry.source);
     const loaded = loadSource(file);
     if ("error" in loaded) {
       diagnostics.push({

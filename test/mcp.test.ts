@@ -221,7 +221,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the fourteen documented tools", async () => {
+  it("exposes exactly the fifteen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -238,6 +238,7 @@ describe("tools/list", () => {
         "list_markers",
         "query",
         "slice_ready",
+        "system",
         "status",
         "validate",
       ].sort(),
@@ -653,6 +654,54 @@ describe("conform_scope tool", () => {
     })) as unknown as CallToolResult;
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("no state file");
+  });
+});
+
+describe("system tool (MIL-194)", () => {
+  const exampleDir = join(ROOT, "examples", "multi-model");
+
+  it("byte-identical to `em system <manifest> --json` for the shipped multi-model example", async () => {
+    const manifest = join(exampleDir, "system.yaml");
+    const { result, doc } = await callJson(client, "system", { manifest });
+    expect(result.isError).toBeFalsy();
+    expect(doc.systemSchemaVersion).toBe("1.0");
+    expect(doc.seams.map((s: { status: string }) => s.status)).toEqual(["verified"]);
+    expect(doc.contextMap.edges).toEqual([{ from: "checkout", to: "fulfillment", seams: 1 }]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["system", manifest, "--json"], exampleDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("a seam error is reported INSIDE the document (not a tool error), byte-identical to the CLI's exit-1 document", async () => {
+    const manifest = join(dir, "failing-system.yaml");
+    writeFileSync(
+      manifest,
+      `systemSchemaVersion: "1.0"\nmodels:\n  checkout:\n    source: ${join(exampleDir, "models", "checkout", "checkout.em")}\n` +
+        `seams:\n  - from: checkout:checkout/event.order-submitted\n    to: checkout:checkout/command.submit-order\n`,
+    );
+    const { result, doc } = await callJson(client, "system", { manifest });
+    expect(result.isError).toBeFalsy();
+    expect(doc.seams[0].status).toBe("error");
+    expect(doc.seams[0].diagnostics).toEqual(["seam-consumer-not-reaction"]);
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["system", manifest, "--json"], dir);
+    expect(cli.status).toBe(1);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("an invalid manifest, or a missing one, is a tool error naming the problem — never a crash", async () => {
+    const bad = join(dir, "bad-system.yaml");
+    writeFileSync(bad, "systemSchemaVersion: \"9.9\"\nmodels:\n  a:\n    source: a.em\n");
+    const { result } = await callJson(client, "system", { manifest: bad });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('unsupported systemSchemaVersion "9.9"');
+
+    const missing = await callJson(client, "system", { manifest: join(dir, "no-such-system.yaml") });
+    expect(missing.result.isError).toBe(true);
+    expect((missing.result.content[0] as { text: string }).text).toContain("cannot read");
   });
 });
 

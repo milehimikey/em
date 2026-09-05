@@ -1321,6 +1321,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "query",
           "slice_ready",
           "status",
+          "system",
           "validate",
         ].sort(),
       );
@@ -3691,5 +3692,149 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     expect(refs).toContain("model:place-order");
     expect(refs).toContain("ambiguous:a");
     expect(refs).toContain("ambiguous:b");
+  });
+});
+
+describe("em system (CLI, real fs, MIL-194)", () => {
+  let dir: string;
+  const CHECKOUT_SEAM = `model "Checkout"
+
+persona Customer
+context Order
+
+slice "Place" {
+  ui Screen @Customer
+  command Place Order
+  event Order Placed @Order public
+}
+
+slice "Cancel" {
+  ui Details @Customer
+  command Cancel Order
+  event Order Cancelled @Order public
+}
+`;
+  const FULFILLMENT_SEAM = `model "Fulfillment"
+
+persona Warehouse
+context Order
+
+slice "Intake" {
+  translation Order Received
+  command Accept Order
+  event Order Accepted @Order
+}
+
+slice "To Ship" {
+  view To Ship from "Order Accepted"
+  ui Board @Warehouse
+}
+`;
+  const manifest = (seams: string) =>
+    `systemSchemaVersion: "1.0"\nname: Shop\nmodels:\n  checkout:\n    source: models/checkout.em\n    owner: Storefront\n  fulfillment:\n    source: models/fulfillment.em\nseams:\n${seams}`;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-system-"));
+    mkdirSync(join(dir, "models"), { recursive: true });
+    writeFileSync(join(dir, "models", "checkout.em"), CHECKOUT_SEAM);
+    writeFileSync(join(dir, "models", "fulfillment.em"), FULFILLMENT_SEAM);
+    writeFileSync(join(dir, "system.yaml"), manifest("  - from: checkout:place/event.order-placed\n    to: fulfillment:intake\n"));
+    writeFileSync(join(dir, "failing.yaml"), manifest("  - from: checkout:place/event.order-shipped\n    to: fulfillment:intake\n"));
+    writeFileSync(join(dir, "invalid.yaml"), "systemSchemaVersion: \"1.0\"\nmodels: {}\n");
+    writeFileSync(join(dir, "broken.em"), 'slice "Read" {\n  view Open Orders from "No Such Event"\n}\n');
+    writeFileSync(join(dir, "broken-source.yaml"), 'systemSchemaVersion: "1.0"\nmodels:\n  broken:\n    source: broken.em\n');
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("text: summary line, then each diagnostic as <file>: <severity>:<line> <message>; warnings exit 0", () => {
+    const res = em(["system", "system.yaml"], dir);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('system "Shop": 2 models, 1 seam (1 verified, 0 failing)');
+    // The dangling public event points at the model file (manifest-relative), not the manifest.
+    expect(res.stderr).toContain("models/checkout.em:   warn :15 public event \"Order Cancelled\"");
+    expect(res.stderr).toContain("dangling-public-event".replace("dangling-public-event", "consumed by no declared seam"));
+    expect(res.stdout).not.toContain("ok — no issues");
+  });
+
+  it("--json: the versioned document on stdout, diagnostics still on stderr, exit 0 with warnings only", () => {
+    const res = em(["system", "system.yaml", "--json"], dir);
+    expect(res.status).toBe(0);
+    const doc = JSON.parse(res.stdout);
+    expect(doc.systemSchemaVersion).toBe("1.0");
+    expect(doc.manifest.path).toBe("system.yaml");
+    expect(doc.manifest.name).toBe("Shop");
+    expect(doc.models.map((m: { key: string; sourceKind: string; owner: string | null }) => [m.key, m.sourceKind, m.owner])).toEqual([
+      ["checkout", "em", "Storefront"],
+      ["fulfillment", "em", null],
+    ]);
+    // A bare-slice `to` is resolved to the element in the output.
+    expect(doc.seams).toEqual([
+      {
+        from: "checkout:place/event.order-placed",
+        to: "fulfillment:intake/translation.order-received",
+        fromSlice: "checkout:place",
+        toSlice: "fulfillment:intake",
+        description: null,
+        status: "verified",
+        diagnostics: [],
+      },
+    ]);
+    expect(doc.contextMap.edges).toEqual([{ from: "checkout", to: "fulfillment", seams: 1 }]);
+    expect(doc.diagnostics).toEqual([
+      expect.objectContaining({ file: "models/checkout.em", code: "dangling-public-event", severity: "warning", line: 15 }),
+    ]);
+    expect(res.stderr).toContain("consumed by no declared seam");
+  });
+
+  it("a seam error: exit 1, and --json still prints the document with the seam marked error (validate --json's convention)", () => {
+    const text = em(["system", "failing.yaml"], dir);
+    expect(text.status).toBe(1);
+    expect(text.stdout).toContain("1 seam (0 verified, 1 failing)");
+    expect(text.stderr).toContain("failing.yaml:   error:10 seams[0]");
+    expect(text.stderr).toContain('no element "place/event.order-shipped" in model "checkout"');
+
+    const json = em(["system", "failing.yaml", "--json"], dir);
+    expect(json.status).toBe(1);
+    const doc = JSON.parse(json.stdout);
+    expect(doc.seams[0].status).toBe("error");
+    expect(doc.seams[0].diagnostics).toEqual(["seam-endpoint-unresolved"]);
+    expect(doc.diagnostics.map((d: { code: string }) => d.code)).toEqual([
+      "seam-endpoint-unresolved",
+      "dangling-public-event",
+      "dangling-public-event",
+    ]);
+  });
+
+  it("an invalid manifest refuses: exit 1, no document on stdout, the shape error on stderr", () => {
+    const res = em(["system", "invalid.yaml", "--json"], dir);
+    expect(res.status).toBe(1);
+    expect(res.stdout).toBe("");
+    expect(res.stderr).toContain("invalid.yaml:   error:2 `models` must declare at least one model");
+    expect(res.stderr).toContain("not verifying");
+  });
+
+  it("a source with validation errors refuses, pointing at the manifest entry and naming the fix", () => {
+    const res = em(["system", "broken-source.yaml"], dir);
+    expect(res.status).toBe(1);
+    expect(res.stdout).toBe("");
+    expect(res.stderr).toContain('broken-source.yaml:   error:3 model "broken": broken.em has validation errors');
+  });
+
+  it("a missing manifest and excess positional arguments both fail loudly", () => {
+    expect(em(["system", "nope.yaml"], dir).status).toBe(1);
+    expect(em(["system", "nope.yaml"], dir).stderr).toContain("cannot read nope.yaml");
+    const excess = em(["system", "system.yaml", "other.yaml"], dir);
+    expect(excess.status).not.toBe(0);
+    expect(excess.stderr).toContain("too many arguments");
+  });
+
+  it("verifies the shipped examples/multi-model manifest: one verified seam, one dangling public event", () => {
+    const res = em(["system", "system.yaml", "--json"], join(ROOT, "examples", "multi-model"));
+    expect(res.status).toBe(0);
+    const doc = JSON.parse(res.stdout);
+    expect(doc.seams.map((s: { status: string }) => s.status)).toEqual(["verified"]);
+    expect(doc.diagnostics.map((d: { code: string; refs: string[] }) => [d.code, d.refs])).toEqual([
+      ["dangling-public-event", ["checkout:cancel-order/event.order-cancelled"]],
+    ]);
   });
 });

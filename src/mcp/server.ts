@@ -78,6 +78,9 @@ import {
   queryPath,
 } from "../query/verbs.js";
 import { buildQueryJson } from "../emit/queryJson.js";
+import { loadSystem } from "../cli/systemInputs.js";
+import { verifySystem } from "../system/verify.js";
+import { buildSystemJson } from "../emit/systemJson.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
  *  `GENERATOR_VERSION` `em export`'s `generator.version` field already reads from package.json,
@@ -203,7 +206,7 @@ const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all fourteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all fifteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -784,6 +787,43 @@ export function createServer(): McpServer {
           return textResult(buildQueryJson(verb, files, { from, to }, result.results));
         }
       }
+    },
+  );
+
+  server.registerTool(
+    "system",
+    {
+      title: "Verify a seam manifest across models (context map)",
+      description:
+        "Return the same JSON document `em system <manifest> --json` prints (MIL-194): the seam " +
+        "manifest (system.yaml — which model's `public` event/view feeds which other model's " +
+        "translation/automation slice) verified against each model's export document — both " +
+        "endpoints resolve, the source is `public`, the consumer is a reaction — plus the " +
+        "cross-model lints (`dangling-public-event`, `unbound-translation`, " +
+        "`undeclared-seam-candidate`) and the org-level context map (models as nodes, seams as " +
+        "edges). Verification reads export JSON only: a `.em` source is compiled to the same " +
+        "document `export_model` returns, a `.json` source is read as one (schema >= 1.10). " +
+        "Refuses (tool error) when the manifest is unreadable/invalid or any source can't be " +
+        "loaded or has errors, same as the CLI; seam-level errors are reported INSIDE the " +
+        "document (`diagnostics`, `seams[].status`), not as a tool error.",
+      inputSchema: {
+        manifest: z
+          .string()
+          .describe(
+            "path to the seam manifest (system.yaml; YAML or JSON), resolved relative to the server's " +
+              "working directory — each model's `source` resolves relative to the manifest itself",
+          ),
+      },
+    },
+    async ({ manifest }) => {
+      const loaded = loadSystem(manifest);
+      if (!loaded.ok) {
+        return errorResult(
+          `not verifying: ${manifest} could not be loaded — ${loaded.diagnostics.map((d) => `${d.file}${d.line ? `:${d.line}` : ""}: ${d.message}`).join("; ")}`,
+        );
+      }
+      const report = verifySystem(loaded.manifest, loaded.models, manifest);
+      return textResult(buildSystemJson(manifest, loaded.manifestText, report));
     },
   );
 

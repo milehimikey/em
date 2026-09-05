@@ -17,7 +17,7 @@
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { normalizeName } from "../model/model.js";
-import { parseQualifiedRef } from "../model/qualifiedRef.js";
+import { formatQualifiedRef, parseQualifiedRef } from "../model/qualifiedRef.js";
 import { pushDiag, RuleCode } from "../model/rules.js";
 import type { Diagnostic } from "../model/validate.js";
 import type { SystemManifest } from "./manifest.js";
@@ -124,7 +124,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
     pushDiag(bucket, code, extra);
     diagnostics.push({ ...bucket[0], file });
   };
-  const qualify = (modelKey: string, ref: string) => `${modelKey}:${ref}`;
+  const qualify = formatQualifiedRef;
 
   // Models are addressed by their MANIFEST key throughout — even on a mismatch, so a seam
   // written against the manifest's own vocabulary still verifies and the one error tells the
