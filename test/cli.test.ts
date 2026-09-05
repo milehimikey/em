@@ -201,6 +201,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.schemaVersion).toBe("1.10");
+    expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
     expect(doc.slice.name).toBe("Place");

@@ -407,6 +407,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
   "schemaVersion": "1.10",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
+  "modelKey": "order-fulfilment",
   "sliceKey": "checkout",
   "slice": { "key": "checkout", "name": "Checkout", "pattern": "state-change", "doc": { … }, "elements": [ … ], … },
   "diagnostics": [ … ]
@@ -428,7 +429,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`, `edges`.
+- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`, `edges`.
+  - `key` (added in schema `1.10`, MIL-193) is the model's own key in em's one cross-model
+    addressing scheme — see **Model-qualified refs** below for how it's derived and used. The
+    `--slice` envelope carries the same value as top-level `modelKey`.
   - `types` (added in schema `1.3`) lists every declared named type (see
     [dsl.md](dsl.md#named-types)), independent of the slice timeline. Each has a stable `ref`
     (`types/<slug(name)>`, suffixed `~2`, `~3`, … — plus a warning diagnostic — on a name
