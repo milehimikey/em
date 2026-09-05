@@ -6,6 +6,7 @@ import { Grid } from "../layout/grid.js";
 import { collectTags, Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
+import { connectionKind } from "./edges.js";
 
 export type Severity = "error" | "warning";
 
@@ -685,12 +686,9 @@ const isAuto = (k: ElementKind) => AUTOMATION_KINDS.has(k);
 /** The only kind pairs a connection may take, per the four patterns: information enters the
  *  system through a command and leaves through a read model, and nothing skips a step. */
 function isLegalFlow(from: ElementKind, to: ElementKind): boolean {
-  if (from === "ui") return to === "command"; // State Change
-  if (from === "command") return to === "event"; // State Change
-  if (from === "event") return to === "view"; // State View
-  if (from === "view") return to === "ui" || isAuto(to); // State View / Automation / Translation
-  if (isAuto(from)) return to === "command"; // reactions always go through a command
-  return false;
+  // The six legal connections are a pure function of the endpoint kinds — edges.ts owns the
+  // table (the renderer, `em query`, and this rule all read the same one).
+  return connectionKind(from, to) !== undefined;
 }
 
 /** Why a given illegal pair is illegal, and what to put in the gap. */

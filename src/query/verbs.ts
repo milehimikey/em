@@ -10,6 +10,12 @@
 // order, slices in `model.slices` order, and elements in `model.elements` order — the same
 // order `ModelIndex.byRef`/`.out`/`.in` were built in (queryIndex.ts's own header), so no verb
 // here does its own sorting; it just doesn't disturb the order its inputs already have.
+//
+// Repeated read models (`view X again`): the closures and `path` treat every timeline instance
+// of one read model as the same node — reaching one instance reaches them all, at the same
+// depth, reported `via: "view-instance"` — because a change upstream of the read model
+// reaches everything that reads ANY instance of it. Instances are never edges (edges.ts's own
+// note); this is the query-engine rule MIL-191's design note assigns to MIL-168.
 
 import { Element } from "../model/model.js";
 import { IndexEdge } from "../model/queryIndex.js";
@@ -108,20 +114,26 @@ function closure(system: QuerySystem, ofRef: string, depth: number | undefined, 
   const adjacency = direction === "out" ? entry.index.out : entry.index.in;
 
   const results: ClosureEntry[] = [];
-  const visited = new Map<string, number>([[ref, 0]]);
-  let frontier = [ref];
+  const visited = new Set<string>([ref]);
+  let frontier: string[] = [];
+  // Discovering a node also discovers every other instance of the same read model, at the
+  // same depth (a zero-cost hop, see this module's header) — including the start's own.
+  const discover = (next: string[], target: string, d: number, via: string) => {
+    if (visited.has(target)) return;
+    visited.add(target);
+    next.push(target);
+    results.push({ ...summarize(system, entry, entry.index.byRef.get(target)!), depth: d, via });
+    for (const sibling of entry.index.instances.get(target) ?? []) discover(next, sibling, d, "view-instance");
+  };
+  frontier.push(ref);
+  for (const sibling of entry.index.instances.get(ref) ?? []) discover(frontier, sibling, 0, "view-instance");
+
   let d = 0;
   while (frontier.length > 0 && (depth === undefined || d < depth)) {
     d++;
     const next: string[] = [];
     for (const cur of frontier) {
-      for (const edge of adjacency.get(cur) ?? []) {
-        if (visited.has(edge.ref)) continue;
-        visited.set(edge.ref, d);
-        next.push(edge.ref);
-        const el = entry.index.byRef.get(edge.ref)!;
-        results.push({ ...summarize(system, entry, el), depth: d, via: edge.kind });
-      }
+      for (const edge of adjacency.get(cur) ?? []) discover(next, edge.ref, d, edge.kind);
     }
     frontier = next;
   }
@@ -277,9 +289,10 @@ export interface PathQueryEntry {
 }
 
 /** Shortest directed path from `fromRef` to `toRef` through the legal-connection graph (BFS,
- *  unweighted — first-found is shortest by construction). Endpoints resolving to different
- *  models is a legitimate empty result (edges never cross model files — see system.ts's header)
- *  rather than an error. */
+ *  unweighted — first-found is shortest by construction; a `view-instance` hop costs nothing
+ *  and isn't counted in `length`). Endpoints resolving to different models is a legitimate
+ *  empty result (edges never cross model files — see system.ts's header) rather than an
+ *  error. */
 export function queryPath(system: QuerySystem, fromRef: string, toRef: string): VerbResult<PathQueryEntry> {
   const from = resolveElement(system, fromRef);
   if (!from.ok) return err(from.error);
@@ -296,20 +309,36 @@ export function queryPath(system: QuerySystem, fromRef: string, toRef: string): 
 
   const prev = new Map<string, { from: string; kind: string }>();
   const visited = new Set<string>([startRef]);
-  let frontier = [startRef];
+  // Discovering a node discovers every other instance of the same read model with it, at the
+  // same distance (this module's header) — recorded as a "view-instance" step in `edgeKinds`
+  // but not counted in `length`. Doing it at discovery time (not as a frontier edge) is what
+  // keeps BFS's first-found-is-shortest guarantee intact with zero-cost hops in the graph.
+  const discover = (next: string[], target: string, from: string, kind: string): boolean => {
+    if (visited.has(target)) return false;
+    visited.add(target);
+    prev.set(target, { from, kind });
+    if (target === endRef) return true;
+    next.push(target);
+    for (const sibling of entry.index.instances.get(target) ?? []) {
+      if (discover(next, sibling, target, "view-instance")) return true;
+    }
+    return false;
+  };
+
+  let frontier: string[] = [];
   let found = false;
+  for (const sibling of entry.index.instances.get(startRef) ?? []) {
+    if (discover(frontier, sibling, startRef, "view-instance")) found = true;
+  }
+  frontier.unshift(startRef);
   while (frontier.length > 0 && !found) {
     const next: string[] = [];
     for (const cur of frontier) {
       for (const edge of entry.index.out.get(cur) ?? []) {
-        if (visited.has(edge.ref)) continue;
-        visited.add(edge.ref);
-        prev.set(edge.ref, { from: cur, kind: edge.kind });
-        if (edge.ref === endRef) {
+        if (discover(next, edge.ref, cur, edge.kind)) {
           found = true;
           break;
         }
-        next.push(edge.ref);
       }
       if (found) break;
     }
@@ -327,8 +356,9 @@ export function queryPath(system: QuerySystem, fromRef: string, toRef: string): 
     chain.unshift(step.from);
     cur = step.from;
   }
+  const length = kinds.filter((k) => k !== "view-instance").length;
   return {
     ok: true,
-    results: [{ refs: chain.map((r) => qualifyRef(system, entry.modelKey, r)), edgeKinds: kinds, length: kinds.length }],
+    results: [{ refs: chain.map((r) => qualifyRef(system, entry.modelKey, r)), edgeKinds: kinds, length }],
   };
 }

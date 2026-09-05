@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Unit coverage for `em query`'s pure core (MIL-168): ModelIndex construction
-// (src/model/queryIndex.ts, queryEdges.ts, sliceDocIndex.ts), multi-model ref resolution
+// (src/model/queryIndex.ts over edges.ts's semanticEdges(), sliceDocIndex.ts), multi-model ref resolution
 // (src/query/system.ts), and the eight verb functions (src/query/verbs.ts) — determinism,
 // ambiguity errors, depth limits, empty results, and multi-model attribution. CLI-level
 // (commander wiring, exit codes, --json) and MCP-parity coverage live in test/cli.test.ts and
@@ -476,5 +476,122 @@ describe("path — shortest path through the legal-connection graph", () => {
     const result = queryPath(system, "Checkout", "Checkout");
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.results[0]).toEqual({ refs: ["place-order/ui.checkout"], edgeKinds: [], length: 0 });
+  });
+});
+
+describe("repeated read models (`view X again`) — instances traverse as one node", () => {
+  const REPEAT = `model "Repeat View"
+
+persona Customer
+
+context Order
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Order
+}
+
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
+  ui Order List @Customer
+}
+
+slice "Ship Order" {
+  ui Ship Screen @Customer
+  command Ship Order
+  event Order Shipped @Order
+}
+
+slice "Open Orders Later" {
+  view Open Orders again from "Order Shipped"
+  ui Order List Refreshed @Customer
+}
+`;
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-again-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function system() {
+    const compiled = compileForQuery(REPEAT, dir);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    return buildQuerySystem([{ file: "repeat.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+  }
+
+  it("the index groups instances by logicalId and never wires them as edges", () => {
+    const { index } = system().entries[0];
+    expect(index.instances.get("open-orders/view.open-orders")).toEqual(["open-orders-later/view.open-orders"]);
+    expect(index.instances.get("open-orders-later/view.open-orders")).toEqual(["open-orders/view.open-orders"]);
+    expect(index.instances.has("place-order/event.order-placed")).toBe(false);
+    expect(index.out.get("open-orders/view.open-orders")?.map((e) => e.ref)).toEqual(["open-orders/ui.order-list"]);
+  });
+
+  it("downstream from an event reaches the later instance at the same depth, and its ui one deeper", () => {
+    const result = queryDownstream(system(), "Order Placed");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results.map((r) => [r.ref, r.depth, r.via])).toEqual([
+      ["open-orders/view.open-orders", 1, "event->view"],
+      ["open-orders-later/view.open-orders", 1, "view-instance"],
+      ["open-orders/ui.order-list", 2, "view->ui"],
+      ["open-orders-later/ui.order-list-refreshed", 2, "view->ui"],
+    ]);
+  });
+
+  it("--depth 1 still includes the sibling instance (a zero-cost hop) but not its ui", () => {
+    const result = queryDownstream(system(), "Order Placed", 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results.map((r) => r.ref)).toEqual(["open-orders/view.open-orders", "open-orders-later/view.open-orders"]);
+  });
+
+  it("a bare name resolves to the first instance and lists the others at depth 0", () => {
+    const resolved = resolveElement(system(), "Open Orders");
+    expect(resolved.ok).toBe(true);
+    if (resolved.ok) expect(resolved.match.ref).toBe("open-orders/view.open-orders");
+    const result = queryDownstream(system(), "Open Orders");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results.map((r) => [r.ref, r.depth, r.via])).toEqual([
+      ["open-orders-later/view.open-orders", 0, "view-instance"],
+      ["open-orders/ui.order-list", 1, "view->ui"],
+      ["open-orders-later/ui.order-list-refreshed", 1, "view->ui"],
+    ]);
+  });
+
+  it("a later instance is still addressable by its own ref", () => {
+    const resolved = resolveElement(system(), "open-orders-later/view.open-orders");
+    expect(resolved.ok).toBe(true);
+    if (resolved.ok) expect(resolved.match.elementName).toBe("Open Orders");
+  });
+
+  it("upstream from the refreshed screen walks back through both instances to both events", () => {
+    const result = queryUpstream(system(), "Order List Refreshed");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const refs = result.results.map((r) => r.ref);
+    expect(refs).toContain("place-order/event.order-placed");
+    expect(refs).toContain("ship-order/event.order-shipped");
+    expect(result.results.find((r) => r.ref === "open-orders/view.open-orders")).toMatchObject({ depth: 1, via: "view-instance" });
+  });
+
+  it("path crosses an instance hop, records it in edgeKinds, and doesn't count it in length", () => {
+    const result = queryPath(system(), "Checkout", "Order List Refreshed");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results[0]).toEqual({
+      refs: [
+        "place-order/ui.checkout",
+        "place-order/command.place-order",
+        "place-order/event.order-placed",
+        "open-orders/view.open-orders",
+        "open-orders-later/view.open-orders",
+        "open-orders-later/ui.order-list-refreshed",
+      ],
+      edgeKinds: ["ui->command", "command->event", "event->view", "view-instance", "view->ui"],
+      length: 4,
+    });
   });
 });

@@ -7,10 +7,13 @@
 //     facing-edge centre.
 //   - across slices: a cubic bezier that leaves/enters perpendicular to the
 //     facing edges and arcs through the channel between the boxes.
-// Arrowheads are per-colour markers referenced with marker-end.
+// Arrowheads are per-colour markers referenced with marker-end; an edge is coloured by its
+// SOURCE element's kind (emit/theme.ts) — a render concern, so it's decided here, not on the
+// SemanticEdge (which carries only the graph fact and its provenance).
 
 import { NormalizedModel } from "../model/model.js";
 import { semanticEdges } from "../model/edges.js";
+import { edgeColorFor } from "../emit/theme.js";
 import { Box, Rect } from "./svgGeometry.js";
 
 const STROKE = 1.5;
@@ -37,6 +40,7 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
     const f = rects.get(e.from);
     const t = rects.get(e.to);
     if (!f || !t) continue;
+    const color = edgeColorFor(model.byId.get(e.from)?.kind);
     const fSlice = model.byId.get(e.from)?.sliceIndex;
     const tSlice = model.byId.get(e.to)?.sliceIndex;
     let d: string;
@@ -78,11 +82,11 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
       }
       d = cubic(...pts);
     }
-    colors.add(e.color);
+    colors.add(color);
     grow(box, d);
     paths.push(
-      `<path fill="none" stroke="${e.color}" stroke-width="${STROKE}" ` +
-        `d="${d}" marker-end="url(#${markerId(e.color)})"/>`,
+      `<path fill="none" stroke="${color}" stroke-width="${STROKE}" ` +
+        `d="${d}" marker-end="url(#${markerId(color)})"/>`,
     );
   }
 

@@ -1,28 +1,63 @@
 // SPDX-License-Identifier: MIT
-// The semantic edges of a model: which arrows exist and their colour. This is
-// the single source of truth for the diagram's arrows, decoupled from how they
-// are drawn (the renderer turns these into SVG paths over the Graphviz grid).
+// The semantic edges of a model: which connections exist, and where each came from. This is
+// the single source of truth for the graph — the renderer draws exactly these (colouring each
+// by its source element's kind at the call site, render/drawEdges.ts), `em query`'s ModelIndex
+// traverses exactly these (model/queryIndex.ts), and (MIL-191) export will serialize exactly
+// these. One derivation, three consumers: the guards below (the misplaced-ui rule, the
+// same-slice-only event->view rule, the pair dedup) are judgment calls invisible in the data,
+// so a second walk re-deriving them would drift — it did once already (the MIL-162 portal
+// spike re-derived independently).
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Element, NormalizedModel, normalizeName } from "./model.js";
-import { edgeColorFor } from "../emit/theme.js";
+
+/** Where an edge came from: inferred from a slice's pattern shape, resolved from an explicit
+ *  `from "Name"` clause, or declared by an `arrow`. First-wins on a duplicate (from, to) pair
+ *  in exactly this order — an `arrow` restating an inferred connection is the same line. */
+export type EdgeSource = "pattern" | "from" | "arrow";
 
 export interface SemanticEdge {
   from: string;
   to: string;
-  color: string;
+  source: EdgeSource;
+}
+
+/** The six legal connection types, named by their endpoint kinds. */
+export type ConnectionKind =
+  | "ui->command"
+  | "command->event"
+  | "event->view"
+  | "view->ui"
+  | "view->reaction"
+  | "reaction->command";
+
+/** The legal connection type for an endpoint-kind pair, or undefined when no such connection
+ *  is legal — the relationship is a pure function of the two kinds, so edges carry no `kind`
+ *  of their own (validate.ts's illegal-pair rule and query's edge labels both derive from
+ *  here). */
+export function connectionKind(from: ElementKind, to: ElementKind): ConnectionKind | undefined {
+  if (from === "ui") return to === "command" ? "ui->command" : undefined; // State Change
+  if (from === "command") return to === "event" ? "command->event" : undefined; // State Change
+  if (from === "event") return to === "view" ? "event->view" : undefined; // State View
+  if (from === "view") {
+    if (to === "ui") return "view->ui"; // State View
+    if (AUTOMATION_KINDS.has(to)) return "view->reaction"; // Automation / Translation
+    return undefined;
+  }
+  if (AUTOMATION_KINDS.has(from)) return to === "command" ? "reaction->command" : undefined; // reactions always go through a command
+  return undefined;
 }
 
 /** Infer pattern arrows from each slice plus cross-slice `from` sources. */
 export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   const edges: SemanticEdge[] = [];
   const seen = new Set<string>();
-  const add = (from: string, to: string, kind: ElementKind | undefined) => {
+  const add = (from: string, to: string, source: EdgeSource) => {
     if (from === to) return;
     const key = `${from}>${to}`;
     if (seen.has(key)) return;
     seen.add(key);
-    edges.push({ from, to, color: edgeColorFor(kind) });
+    edges.push({ from, to, source });
   };
 
   for (const slice of model.slices) {
@@ -37,22 +72,22 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
     // a reaction's slice — so skip the ui->command wire when an automation-kind element also
     // shares this slice, matching validate.ts's "renders disconnected here" diagnosis exactly.
     if (command) {
-      if (!auto) for (const ui of uis) add(ui.id, command.id, "ui");
-      for (const ev of events) add(command.id, ev.id, "command");
+      if (!auto) for (const ui of uis) add(ui.id, command.id, "pattern");
+      for (const ev of events) add(command.id, ev.id, "pattern");
     }
 
     // Automation/translation: it triggers the command in this same slice — the
     // reaction is to a command what a `ui` is in the State Change pattern. If it
     // also reads a read model that happens to share this slice, wire that too;
     // the far more common cross-slice case is handled by the `from` loop below.
-    if (auto && command) add(auto.id, command.id, auto.kind);
-    if (auto && view) add(view.id, auto.id, "view");
+    if (auto && command) add(auto.id, command.id, "pattern");
+    if (auto && view) add(view.id, auto.id, "pattern");
 
     // Output pattern: view -> UI (read model feeds the screen)
     if (view) {
-      for (const ui of uis) add(view.id, ui.id, "view");
+      for (const ui of uis) add(view.id, ui.id, "pattern");
       if ((view.from ?? []).length === 0) {
-        for (const ev of events) add(ev.id, view.id, "event");
+        for (const ev of events) add(ev.id, view.id, "pattern");
       }
     }
   }
@@ -63,7 +98,7 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   for (const el of model.elements) {
     for (const name of el.from ?? []) {
       const src = resolveFromSource(model, el, name);
-      if (src) add(src.id, el.id, src.kind);
+      if (src) add(src.id, el.id, "from");
     }
   }
 
@@ -73,11 +108,13 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   // inbound event arrows are what show how the view changes over time. A view->view arrow
   // would be a modelling error — and, since commands and read models share the API lane,
   // it also renders as a flat line through any command box between the two instances,
-  // reading as an illegal command->read-model connection.
+  // reading as an illegal command->read-model connection. (Traversal that needs to follow a
+  // read model across its instances — `em query`'s closures — does so via `logicalId`, as a
+  // query-engine rule, not as an edge.)
 
   // Explicit arrows from the DSL.
   for (const a of model.arrows) {
-    if (a.fromId && a.toId) add(a.fromId, a.toId, model.byId.get(a.fromId)?.kind);
+    if (a.fromId && a.toId) add(a.fromId, a.toId, "arrow");
   }
 
   return edges;

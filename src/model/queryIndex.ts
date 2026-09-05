@@ -6,8 +6,14 @@
 //
 //  - `byRef`: the inverse of `RefsResult.refById` — the compiled model has never had this
 //    before (`NormalizedModel.byName` is the only lookup table, keyed by display name, not ref).
-//  - `out`/`in`: adjacency over the six legal connections + explicit arrows (queryEdges.ts),
-//    keyed by export ref so query never has to re-resolve an internal Element.id.
+//  - `out`/`in`: adjacency over `semanticEdges()` (model/edges.ts — the SAME edge list the
+//    renderer draws, so query and diagram can't disagree on what connects), keyed by export ref
+//    so query never has to re-resolve an internal Element.id. Each edge is labeled with its
+//    connection kind, a pure function of the endpoint kinds (`connectionKind()`).
+//  - `instances`: repeated read-model instances (`view X again`) grouped by `logicalId` — never
+//    edges (see edges.ts's note on why instances don't connect), but the thing closures/paths
+//    follow so "what's downstream of this event" reaches every later timeline instance of a
+//    read model it feeds, not just the first (MIL-191's design note: a query-engine rule).
 //  - `sliceFacts`: the doc join done once via `sliceDocIndex.ts`'s single `readdirSync`.
 //  - `invariants`: INV-* id -> declaring slice, extracted from each in-scope slice's own doc
 //    body — reuses `cli/coverage.ts`'s extraction (never re-derives the ownership-heading /
@@ -17,9 +23,16 @@
 
 import { Element, NormalizedModel } from "./model.js";
 import { RefsResult } from "./refs.js";
-import { collectQueryEdges, QueryEdgeKind } from "./queryEdges.js";
+import { semanticEdges, connectionKind, ConnectionKind } from "./edges.js";
 import { loadSliceDocsOnce, joinSliceDocFast, SliceQueryDoc } from "./sliceDocIndex.js";
-import { extractInvariantIds } from "../cli/coverage.js";
+import { extractInvariantIds, IN_SCOPE_STATUSES } from "../cli/coverage.js";
+
+/** What a query result arrived by: one of the six legal connections, `view-instance` (the
+ *  zero-cost hop between two timeline instances of one read model — not an edge), or `other`
+ *  for an edge whose endpoint kinds form no legal connection (only reachable through a `from`
+ *  clause resolving to a non-event; an explicit `arrow` between such a pair is a compile error
+ *  query refuses on). */
+export type QueryEdgeKind = ConnectionKind | "view-instance" | "other";
 
 export interface IndexEdge {
   ref: string;
@@ -49,6 +62,10 @@ export interface ModelIndex {
   byRef: Map<string, Element>;
   out: Map<string, IndexEdge[]>;
   in: Map<string, IndexEdge[]>;
+  /** Ref of a repeated read model instance -> refs of its OTHER instances (same `logicalId`),
+   *  in document order. Only populated for views declared more than once; a single-instance
+   *  element has no entry. */
+  instances: Map<string, string[]>;
   /** Slice export key -> its doc-join facts, in `model.slices` order. */
   sliceFacts: Map<string, SliceIndexFact>;
   /** INV-* id -> the slice whose doc body first declares it (first-wins on a duplicate — a
@@ -62,13 +79,6 @@ function pushEdge(map: Map<string, IndexEdge[]>, key: string, edge: IndexEdge): 
   else map.set(key, [edge]);
 }
 
-/** Statuses in scope for invariant-ID ownership — same set `cli/coverage.ts`'s
- *  IN_SCOPE_STATUSES uses (a slice doesn't own invariant IDs before ready-to-implement, and
- *  stays in scope forever after implemented). Not imported (coverage.ts doesn't export it) —
- *  small, stable enum kept in lockstep by inspection rather than adding an export whose only
- *  other reader would be this one call site. */
-const IN_SCOPE_STATUSES = new Set(["ready-to-implement", "implemented"]);
-
 export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDir: string): ModelIndex {
   const byRef = new Map<string, Element>();
   for (const el of model.elements) {
@@ -78,12 +88,30 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
 
   const out = new Map<string, IndexEdge[]>();
   const inMap = new Map<string, IndexEdge[]>();
-  for (const e of collectQueryEdges(model)) {
-    const fromRef = refs.refById.get(e.fromId);
-    const toRef = refs.refById.get(e.toId);
-    if (!fromRef || !toRef) continue;
-    pushEdge(out, fromRef, { ref: toRef, kind: e.kind });
-    pushEdge(inMap, toRef, { ref: fromRef, kind: e.kind });
+  for (const e of semanticEdges(model)) {
+    const fromRef = refs.refById.get(e.from);
+    const toRef = refs.refById.get(e.to);
+    const fromEl = model.byId.get(e.from);
+    const toEl = model.byId.get(e.to);
+    if (!fromRef || !toRef || !fromEl || !toEl) continue;
+    const kind: QueryEdgeKind = connectionKind(fromEl.kind, toEl.kind) ?? "other";
+    pushEdge(out, fromRef, { ref: toRef, kind });
+    pushEdge(inMap, toRef, { ref: fromRef, kind });
+  }
+
+  const byLogical = new Map<string, string[]>();
+  for (const el of model.elements) {
+    if (el.kind !== "view") continue;
+    const ref = refs.refById.get(el.id);
+    if (!ref) continue;
+    const bucket = byLogical.get(el.logicalId);
+    if (bucket) bucket.push(ref);
+    else byLogical.set(el.logicalId, [ref]);
+  }
+  const instances = new Map<string, string[]>();
+  for (const group of byLogical.values()) {
+    if (group.length < 2) continue;
+    for (const ref of group) instances.set(ref, group.filter((r) => r !== ref));
   }
 
   const docsByKey = loadSliceDocsOnce(baseDir);
@@ -100,5 +128,5 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
     }
   });
 
-  return { model, refs, baseDir, byRef, out, in: inMap, sliceFacts, invariants };
+  return { model, refs, baseDir, byRef, out, in: inMap, instances, sliceFacts, invariants };
 }

@@ -76,6 +76,50 @@ slice "Weird" {
   });
 });
 
+describe("semanticEdges provenance (MIL-191 refactor)", () => {
+  it("labels every edge with its source — pattern, from, or arrow — and carries no colour", () => {
+    const model = modelFrom(`
+context Order
+persona Customer
+slice "A" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Order
+}
+slice "B" {
+  view Open Orders from "Order Placed"
+  ui Order List @Customer
+}
+arrow "Order List" -> "Place Order"
+`);
+    const es = semanticEdges(model);
+    const id = (name: string, kind?: string) =>
+      model.byName.get(name)!.find((e) => kind === undefined || e.kind === kind)!.id;
+    const sourceOf = (a: string, b: string) => es.find((e) => e.from === a && e.to === b)?.source;
+    expect(sourceOf(id("checkout"), id("place order", "command"))).toBe("pattern");
+    expect(sourceOf(id("order placed"), id("open orders"))).toBe("from");
+    expect(sourceOf(id("order list"), id("place order", "command"))).toBe("arrow");
+    for (const e of es) expect(Object.keys(e).sort()).toEqual(["from", "source", "to"]);
+  });
+
+  it("dedupes a (from, to) pair first-wins in pattern -> from -> arrow order — an arrow restating an inferred edge is the same line", () => {
+    const model = modelFrom(`
+context Order
+slice "A" {
+  command Place Order
+  event Order Placed @Order
+}
+arrow "Place Order" -> "Order Placed"
+`);
+    const es = semanticEdges(model);
+    const cmd = model.byName.get("place order")![0].id;
+    const ev = model.byName.get("order placed")![0].id;
+    const matches = es.filter((e) => e.from === cmd && e.to === ev);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].source).toBe("pattern");
+  });
+});
+
 describe("buildEdgeOverlay", () => {
   // helper: a box centred at (cx, cy), 100 wide x 40 tall
   const box = (cx: number, cy: number): Rect => ({

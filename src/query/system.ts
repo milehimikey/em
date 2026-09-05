@@ -84,7 +84,9 @@ const REF_SHAPE_RE = /\//;
  *  always an error listing every candidate as a fully-qualified ref (`<modelKey>:<ref>`, even
  *  when `system` is single-model — a candidate list must be unambiguous on its own) — resolution
  *  never guesses. "Resolution is per-model" (MIL-168's spec): a bare name is looked up in each
- *  candidate model's OWN `byName` index, never merged across models before matching. */
+ *  candidate model's OWN `byName` index, never merged across models before matching. A repeated
+ *  read model's later instances (`view X again`) don't count as separate name matches — see
+ *  the bare-name branch below. */
 export function resolveElement(system: QuerySystem, raw: string): ResolveResult {
   let modelKey: string | undefined;
   let rest = raw;
@@ -111,8 +113,12 @@ export function resolveElement(system: QuerySystem, raw: string): ResolveResult 
         matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: `${entry.modelKey}:${ref}`, elementKind: el.kind, elementName: el.name });
       }
     } else {
-      const bucket = entry.model.byName.get(normalizeName(rest));
-      for (const el of bucket ?? []) {
+      // A repeated read model (`view X again`) has one name and several instances; the bare
+      // name means the read model, which resolves to its FIRST instance (`logicalId`) — every
+      // closure/path verb then follows the instance chain from there (verbs.ts's header). A
+      // later instance stays addressable by its own ref.
+      const bucket = (entry.model.byName.get(normalizeName(rest)) ?? []).filter((el) => el.logicalId === el.id);
+      for (const el of bucket) {
         const ref = entry.refs.refById.get(el.id)!;
         matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: `${entry.modelKey}:${ref}`, elementKind: el.kind, elementName: el.name });
       }

@@ -73,7 +73,7 @@ const STRUCTURAL_LINE_RE = /^(?:[-*]\s|#{3,6}\s)/;
  *  point of needing test citations before `ready-to-implement`, and stays in scope forever after
  *  once `implemented` (tests shouldn't regress away from citing an invariant just because the
  *  slice shipped). Anything else (`draft`, `reviewed`, or no doc at all) is out of scope. */
-const IN_SCOPE_STATUSES = new Set(["ready-to-implement", "implemented"]);
+export const IN_SCOPE_STATUSES: ReadonlySet<string> = new Set(["ready-to-implement", "implemented"]);
 
 /**
  * Extract every distinct `INV-*` token this slice doc *defines*, in first-occurrence order (a

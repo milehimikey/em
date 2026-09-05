@@ -1320,7 +1320,7 @@ results carry model attribution (see **Cross-model addressing** below).
 
 ### Element references
 
-`--event`/`--of`/`--from`/`--to`/`--of` (for `field`) accept either a stable export ref
+`--event`/`--of`/`--from`/`--to` accept either a stable export ref
 (`<sliceKey>/<kind>.<slug>`, `em export`'s own identity scheme) or a bare display name. A bare
 name is resolved against the model's own element names, case/whitespace-insensitively; a name
 matching more than one element is a **hard error listing every candidate ref** — `em query` never
@@ -1329,12 +1329,24 @@ declares, not a ref.
 
 ### The legal-connection graph
 
-Traversal (`consumers`/`producers`/`downstream`/`upstream`/`path`) runs over the same six legal
-connections the diagram itself draws (`ui->command`, `command->event`, `event->view`,
-`view->ui`, `view->reaction`, `reaction->command`) plus explicit `arrow` declarations — never a
-fuzzy or inferred edge. Every result names the edge kind it arrived by (`via`/`edgeKinds`).
-Traversal order is deterministic: model order (the order `<files...>` were given), then slice
-index, then element declaration order — same output every run, same as every other `em` command.
+Traversal (`consumers`/`producers`/`downstream`/`upstream`/`path`) runs over exactly the edge
+list the diagram itself draws — the six legal connections inferred from each slice's pattern
+shape, `from` clauses, and explicit `arrow` declarations — never a fuzzy edge. Every result names
+the connection kind it arrived by (`via`/`edgeKinds`): `ui->command`, `command->event`,
+`event->view`, `view->ui`, `view->reaction`, or `reaction->command` — a pure function of the two
+endpoint kinds, so an explicit `arrow` between a command and an event reports `command->event`
+like any inferred one. Traversal order is deterministic: model order (the order `<files...>`
+were given), then slice index, then element declaration order — same output every run, same as
+every other `em` command.
+
+**Repeated read models.** Instances of one read model (`view X again`) are never connected by an
+edge, but `downstream`/`upstream`/`path` treat them as one node: reaching any instance reaches
+every other instance at the **same depth**, reported `via: "view-instance"`, and traversal
+continues from all of them — a change upstream of a read model affects every screen or reaction
+that reads *any* timeline instance of it, which is what impact analysis has to answer. A
+`view-instance` step in a `path` appears in `edgeKinds` but doesn't count toward `length`. A
+bare display name for a repeated view resolves to its first instance (the read model itself);
+a later instance stays addressable by its own ref.
 
 ### Cross-model addressing
 
@@ -1430,7 +1442,8 @@ whose entries are verb-shaped:
 - `field` results carry `{ elementRef, name, type, tag, assigned, renamedFrom }` — same field
   facts `em export`'s `FieldExport` carries, scoped to one field.
 - `path` results carry `{ refs, edgeKinds, length }` — `refs` is the full node sequence
-  (endpoints inclusive), `edgeKinds` one shorter (the edge between each consecutive pair).
+  (endpoints inclusive), `edgeKinds` one shorter (the edge between each consecutive pair);
+  `length` counts real connections only (a `view-instance` step is free).
 
 ## `em glossary <files...>`
 
