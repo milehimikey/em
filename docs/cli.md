@@ -558,6 +558,52 @@ render-stable.
 optional fields are a minor bump; renames, removals, or meaning changes are a major bump.
 **Consumers must tolerate unknown fields.**
 
+### Model-qualified refs
+
+Every ref and key inside an export is **model-unqualified** — `<sliceKey>/<kind>.<slug>` for
+elements, `<sliceKey>` for slices, `types/<slug>` for types — and stays valid everywhere it is
+accepted today. Any artifact that names an element in *another* model (a seam manifest, a
+portal deep link, a tracker mirror, `em query`'s multi-model output) prefixes it with the owning
+model's key, colon-separated (MIL-193):
+
+| Qualified form | Names |
+|---|---|
+| `<modelKey>:<sliceKey>/<kind>.<slug>` | an element |
+| `<modelKey>:<sliceKey>` | a slice |
+| `<modelKey>:types/<slug>` | a declared type |
+
+**Where `modelKey` comes from.** The kebab-slug of the declared `model "Name"` — the same
+slugging every slice key and element ref uses, so identity always derives from a declared
+name, never a path: the key survives a file move and a rename of the file, and a single-model
+`em export` can publish it (`model.key`) with no system context. A file that declares no
+`model` line has no name to slug (the parser titles it "Event Model"), so its key falls back to
+the file's kebab-slugged basename, extension stripped — `models/Order_Fulfilment.em` →
+`order-fulfilment`. Declare a name in any model that takes part in a multi-model system.
+
+**Collisions.** A key is deduped only across the models of one multi-model invocation (`em
+query a.em b.em`, `em system`, …): two models deriving the same key are suffixed `~2`, `~3`, …
+in file-list order — the first keeps the bare key — and a `duplicate-model-key` warning names
+both files (see [validation.md](validation.md#ref-and-key-collisions)). Same posture as a
+duplicate slice name's `~2` + `duplicate-slice-name`. A single-model export never sees a suffix.
+
+**One implementation.** The grammar, the key derivation, and the parse/format live in one
+module, published as the package subpath `@milehimikey/em/refs` so em-portal, em-tracker-bridge,
+and any other consumer never grow a second parser:
+
+```ts
+import { computeModelKey, formatQualifiedRef, parseQualifiedRef, MODEL_KEY_RE } from "@milehimikey/em/refs";
+
+const q = formatQualifiedRef(exportDoc.model.key, "checkout/command.place-order");
+// -> "order-fulfilment:checkout/command.place-order"
+parseQualifiedRef(q);             // { modelKey: "order-fulfilment", ref: "checkout/command.place-order" }
+parseQualifiedRef("Order: Paid"); // { modelKey: null, ref: "Order: Paid" } — not a key-shaped prefix
+```
+
+`parseQualifiedRef` splits on the first colon only when the prefix matches the key shape
+(`MODEL_KEY_RE`, `[a-z0-9]+(-[a-z0-9]+)*(~\d+)?`); a display name containing a colon passes
+through intact. `computeModelKeys(entries)` is the multi-model form (dedupe + diagnostics) and
+`isQualifiedRef(input)` the boolean convenience.
+
 See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step alongside
 `em validate` as a merge gate.
 
