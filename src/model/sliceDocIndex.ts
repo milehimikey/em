@@ -15,7 +15,7 @@
 // (`found`/`reason`), and leaves surfacing that as a warning to `em export`/`em status`, which
 // already do.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSliceDoc, SliceDoc, hasUsableFrontmatter } from "../catalog/sliceDoc.js";
 import { classifyImplementationDrift, DriftSignalKind } from "../catalog/driftSignal.js";
@@ -43,8 +43,13 @@ export function loadSliceDocsOnce(baseDir: string): Map<string, SliceDoc> {
   for (const name of entries) {
     const m = SLICE_DOC_FILENAME_RE.exec(name);
     if (!m) continue;
+    const key = m[1].toLowerCase();
+    // `readSliceDoc()` opens `slices/<key>.md` with the lowercased key verbatim, so a mixed-case
+    // filename is only a doc where the filesystem itself folds case. Probe once — only for the
+    // rare mixed-case entry — so query and export agree on every platform.
+    if (m[1] !== key && !existsSync(join(baseDir, "slices", `${key}.md`))) continue;
     try {
-      docs.set(m[1].toLowerCase(), parseSliceDoc(readFileSync(join(baseDir, "slices", name), "utf8")));
+      docs.set(key, parseSliceDoc(readFileSync(join(baseDir, "slices", name), "utf8")));
     } catch {
       // unreadable — treated as "no doc" for this key, same as a fs error inside readSliceDoc().
     }

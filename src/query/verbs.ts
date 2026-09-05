@@ -118,15 +118,21 @@ function closure(system: QuerySystem, ofRef: string, depth: number | undefined, 
   let frontier: string[] = [];
   // Discovering a node also discovers every other instance of the same read model, at the
   // same depth (a zero-cost hop, see this module's header) — including the start's own.
-  const discover = (next: string[], target: string, d: number, via: string) => {
-    if (visited.has(target)) return;
+  const add = (next: string[], target: string, d: number, via: string): boolean => {
+    if (visited.has(target)) return false;
     visited.add(target);
     next.push(target);
     results.push({ ...summarize(system, entry, entry.index.byRef.get(target)!), depth: d, via });
-    for (const sibling of entry.index.instances.get(target) ?? []) discover(next, sibling, d, "view-instance");
+    return true;
+  };
+  // One level of sibling discovery, never recursive: `instances` already lists EVERY other
+  // member of a read model's group, so recursing would only re-visit the same set.
+  const discover = (next: string[], target: string, d: number, via: string) => {
+    if (!add(next, target, d, via)) return;
+    for (const sibling of entry.index.instances.get(target) ?? []) add(next, sibling, d, "view-instance");
   };
   frontier.push(ref);
-  for (const sibling of entry.index.instances.get(ref) ?? []) discover(frontier, sibling, 0, "view-instance");
+  for (const sibling of entry.index.instances.get(ref) ?? []) add(frontier, sibling, 0, "view-instance");
 
   let d = 0;
   while (frontier.length > 0 && (depth === undefined || d < depth)) {
@@ -313,14 +319,22 @@ export function queryPath(system: QuerySystem, fromRef: string, toRef: string): 
   // same distance (this module's header) — recorded as a "view-instance" step in `edgeKinds`
   // but not counted in `length`. Doing it at discovery time (not as a frontier edge) is what
   // keeps BFS's first-found-is-shortest guarantee intact with zero-cost hops in the graph.
-  const discover = (next: string[], target: string, from: string, kind: string): boolean => {
-    if (visited.has(target)) return false;
+  const add = (next: string[], target: string, from: string, kind: string): "found" | "new" | "seen" => {
+    if (visited.has(target)) return "seen";
     visited.add(target);
     prev.set(target, { from, kind });
-    if (target === endRef) return true;
+    if (target === endRef) return "found";
     next.push(target);
+    return "new";
+  };
+  // One level of sibling discovery, never recursive: `instances` already lists EVERY other
+  // member of the group, and each sibling links straight back to `target` — so a path through
+  // a three-instance read model reports exactly one `view-instance` step, not a chain of two.
+  const discover = (next: string[], target: string, from: string, kind: string): boolean => {
+    const outcome = add(next, target, from, kind);
+    if (outcome !== "new") return outcome === "found";
     for (const sibling of entry.index.instances.get(target) ?? []) {
-      if (discover(next, sibling, target, "view-instance")) return true;
+      if (add(next, sibling, target, "view-instance") === "found") return true;
     }
     return false;
   };
@@ -328,7 +342,7 @@ export function queryPath(system: QuerySystem, fromRef: string, toRef: string): 
   let frontier: string[] = [];
   let found = false;
   for (const sibling of entry.index.instances.get(startRef) ?? []) {
-    if (discover(frontier, sibling, startRef, "view-instance")) found = true;
+    if (add(frontier, sibling, startRef, "view-instance") === "found") found = true;
   }
   frontier.unshift(startRef);
   while (frontier.length > 0 && !found) {

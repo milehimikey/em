@@ -15,17 +15,20 @@
 //    follow so "what's downstream of this event" reaches every later timeline instance of a
 //    read model it feeds, not just the first (MIL-191's design note: a query-engine rule).
 //  - `sliceFacts`: the doc join done once via `sliceDocIndex.ts`'s single `readdirSync`.
-//  - `invariants`: INV-* id -> declaring slice, extracted from each in-scope slice's own doc
-//    body — reuses `cli/coverage.ts`'s extraction (never re-derives the ownership-heading /
-//    structural-line rules a second time). Test citations are NOT precomputed here (a query run
-//    only ever asks about one ID at a time — see `em query invariant`) — the CLI/MCP layer
-//    calls `scanTestCitations()` (also coverage.ts) directly when `--tests` is given.
+//  - `invariants`: INV-* id -> declaring slice, extracted from EVERY found slice doc's body
+//    regardless of its status — reuses `cli/coverage.ts`'s extraction (never re-derives the
+//    ownership-heading / structural-line rules a second time), but NOT coverage's in-scope
+//    status gate: that gate decides which invariants must be cited by tests, whereas a lookup
+//    ("which slice declares INV-X?") has to find a draft doc's invariant too, and reports the
+//    doc's status alongside it. Test citations are NOT precomputed here (a query run only ever
+//    asks about one ID at a time — see `em query invariant`) — the CLI/MCP layer calls
+//    `scanTestCitations()` (also coverage.ts) directly when `--tests` is given.
 
 import { Element, NormalizedModel } from "./model.js";
 import { RefsResult } from "./refs.js";
 import { semanticEdges, connectionKind, ConnectionKind } from "./edges.js";
 import { loadSliceDocsOnce, joinSliceDocFast, SliceQueryDoc } from "./sliceDocIndex.js";
-import { extractInvariantIds, IN_SCOPE_STATUSES } from "../cli/coverage.js";
+import { extractInvariantIds } from "../cli/coverage.js";
 
 /** What a query result arrived by: one of the six legal connections, `view-instance` (the
  *  zero-cost hop between two timeline instances of one read model — not an edge), or `other`
@@ -121,7 +124,7 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
     const key = refs.sliceKeys[i];
     const doc = joinSliceDocFast(slice, key, docsByKey);
     sliceFacts.set(key, { key, name: slice.name, index: i, line: slice.line, doc });
-    if (doc.found && doc.reason === null && doc.status !== null && IN_SCOPE_STATUSES.has(doc.status) && doc.body !== null) {
+    if (doc.body !== null) {
       for (const id of extractInvariantIds(doc.body)) {
         if (!invariants.has(id)) invariants.set(id, { id, sliceKey: key });
       }

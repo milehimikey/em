@@ -65,6 +65,7 @@ import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFac
 import { loadStateFile, parseState } from "../cli/stateFile.js";
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
 import { compileForQuery } from "../query/pipeline.js";
+import type { ModelIndex } from "../model/queryIndex.js";
 import { buildQuerySystem, QuerySystem } from "../query/system.js";
 import {
   queryConsumers,
@@ -174,7 +175,7 @@ function compileWithValidation(file: string): (CompiledSource & { allDiagnostics
  *  model. Refuses (an `{ error }`, never a crash) the same way every other tool does when any
  *  input file fails to compile or has errors. */
 function compileFilesForQueryMcp(files: string[]): { system: QuerySystem } | { error: string } {
-  const entries: Array<{ file: string; model: NormalizedModel; refs: RefsResult; index: ReturnType<typeof compileForQuery>["index"] }> = [];
+  const entries: Array<{ file: string; model: NormalizedModel; refs: RefsResult; index: ModelIndex }> = [];
   for (const file of files) {
     let source: string;
     try {
@@ -365,10 +366,10 @@ export function createServer(): McpServer {
         return errorResult(`not checking coverage: "${file}" has errors — run \`validate\` first and fix them`);
       }
       if (!existsSync(testsDir)) {
-        return errorResult(`--tests directory not found: ${testsDir}`);
+        return errorResult(`testsDir not found: ${testsDir}`);
       }
       if (!statSync(testsDir).isDirectory()) {
-        return errorResult(`--tests is not a directory: ${testsDir}`);
+        return errorResult(`testsDir is not a directory: ${testsDir}`);
       }
       const report = buildCoverageReport(model, refs, dirname(file), testsDir);
       return textResult(buildCoverageJson(file, testsDir, report));
@@ -420,8 +421,8 @@ export function createServer(): McpServer {
     },
     async ({ files, testsDir, repo }) => {
       if (testsDir !== undefined) {
-        if (!existsSync(testsDir)) return errorResult(`--tests directory not found: ${testsDir}`);
-        if (!statSync(testsDir).isDirectory()) return errorResult(`--tests is not a directory: ${testsDir}`);
+        if (!existsSync(testsDir)) return errorResult(`testsDir not found: ${testsDir}`);
+        if (!statSync(testsDir).isDirectory()) return errorResult(`testsDir is not a directory: ${testsDir}`);
       }
 
       const compiledFiles: Array<{ file: string; compiled: CompiledSource }> = [];
@@ -724,8 +725,8 @@ export function createServer(): McpServer {
     },
     async ({ files, verb, event, of, depth, pattern, status, context, persona, tag, id, testsDir, name, from, to }) => {
       if (testsDir !== undefined) {
-        if (!existsSync(testsDir)) return errorResult(`--tests directory not found: ${testsDir}`);
-        if (!statSync(testsDir).isDirectory()) return errorResult(`--tests is not a directory: ${testsDir}`);
+        if (!existsSync(testsDir)) return errorResult(`testsDir not found: ${testsDir}`);
+        if (!statSync(testsDir).isDirectory()) return errorResult(`testsDir is not a directory: ${testsDir}`);
       }
       const compiled = compileFilesForQueryMcp(files);
       if ("error" in compiled) return errorResult(compiled.error);

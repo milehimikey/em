@@ -106,12 +106,12 @@ export function resolveElement(system: QuerySystem, raw: string): ResolveResult 
 
   const matches: ResolvedElement[] = [];
   for (const entry of candidates) {
-    if (REF_SHAPE_RE.test(rest)) {
-      const el = entry.index.byRef.get(rest);
-      if (el) {
-        const ref = entry.refs.refById.get(el.id)!;
-        matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: `${entry.modelKey}:${ref}`, elementKind: el.kind, elementName: el.name });
-      }
+    // A slash makes the input look like a ref; when no ref matches, fall through to the
+    // display-name lookup — a name may itself contain a slash ("Approve/Reject Screen").
+    const byRef = REF_SHAPE_RE.test(rest) ? entry.index.byRef.get(rest) : undefined;
+    if (byRef) {
+      const ref = entry.refs.refById.get(byRef.id)!;
+      matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: `${entry.modelKey}:${ref}`, elementKind: byRef.kind, elementName: byRef.name });
     } else {
       // A repeated read model (`view X again`) has one name and several instances; the bare
       // name means the read model, which resolves to its FIRST instance (`logicalId`) — every

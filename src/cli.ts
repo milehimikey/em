@@ -1545,12 +1545,13 @@ function runQueryVerb<T>(
 
 function parseDepthOpt(depth: string | undefined, verb: string): number | undefined {
   if (depth === undefined) return undefined;
-  const n = Number(depth);
-  if (!Number.isInteger(n) || n < 1) {
+  // Decimal digits only — `Number()` would also accept "1e1", "0x10", " 5", which are not what
+  // a hop count looks like on a command line.
+  if (!/^[1-9][0-9]*$/.test(depth)) {
     console.error(`em query ${verb}: --depth must be a positive integer`);
     process.exit(1);
   }
-  return n;
+  return Number(depth);
 }
 
 const query = program.command("query").description("deterministic graph queries over the compiled model (MIL-168, see docs/cli.md)");

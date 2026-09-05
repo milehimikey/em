@@ -22,7 +22,9 @@ export function buildQueryJson(verb: string, files: string[], args: Record<strin
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     verb,
     files,
-    args,
+    // An omitted optional parameter echoes as an explicit `null` on a stable key (docs/cli.md's
+    // documented `args` contract) — JSON.stringify would otherwise drop an `undefined` key.
+    args: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, v === undefined ? null : v])),
     results,
   };
   return JSON.stringify(doc, null, 2);

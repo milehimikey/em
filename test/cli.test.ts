@@ -3604,6 +3604,12 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     expect(r.stderr).toContain("--depth must be a positive integer");
   });
 
+  it("downstream: --depth accepts decimal digits only — \"1e1\" is rejected, not read as 10", () => {
+    const r = em(["query", "downstream", "model.em", "--of", "Checkout", "--depth", "1e1"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--depth must be a positive integer");
+  });
+
   it("upstream: walks back to the triggering ui", () => {
     const r = em(["query", "upstream", "model.em", "--of", "Order Shipped", "--json"], dir);
     expect(r.status).toBe(0);
@@ -3611,11 +3617,12 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     expect(doc.results.map((x: { ref: string }) => x.ref)).toContain("place-order/ui.checkout");
   });
 
-  it("slices: filters AND-combine", () => {
+  it("slices: filters AND-combine, and args echoes every filter — null when omitted", () => {
     const r = em(["query", "slices", "model.em", "--context", "Order", "--tag", "total", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.results.map((x: { ref: string }) => x.ref)).toEqual(["place-order"]);
+    expect(doc.args).toEqual({ pattern: null, status: null, context: "Order", persona: null, tag: "total" });
   });
 
   it("invariant: with --tests prints the citing file:line", () => {

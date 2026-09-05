@@ -595,3 +595,250 @@ slice "Open Orders Later" {
     });
   });
 });
+
+describe("repeated read models with three instances — one `view-instance` step, never a chain", () => {
+  const THREE = `model "Three Instances"
+
+persona Customer
+
+context Order
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Order
+}
+
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
+  ui Order List @Customer
+}
+
+slice "Ship Order" {
+  ui Ship Screen @Customer
+  command Ship Order
+  event Order Shipped @Order
+}
+
+slice "Open Orders Later" {
+  view Open Orders again from "Order Shipped"
+  ui Order List Refreshed @Customer
+}
+
+slice "Open Orders Latest" {
+  view Open Orders again from "Order Shipped"
+  ui Order List Third @Customer
+}
+`;
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-three-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function system() {
+    const compiled = compileForQuery(THREE, dir);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    return buildQuerySystem([{ file: "three.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+  }
+
+  it("path to a screen on the third instance crosses directly from the first — exactly one view-instance step", () => {
+    const result = queryPath(system(), "Checkout", "Order List Third");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results[0]).toEqual({
+      refs: [
+        "place-order/ui.checkout",
+        "place-order/command.place-order",
+        "place-order/event.order-placed",
+        "open-orders/view.open-orders",
+        "open-orders-latest/view.open-orders",
+        "open-orders-latest/ui.order-list-third",
+      ],
+      edgeKinds: ["ui->command", "command->event", "event->view", "view-instance", "view->ui"],
+      length: 4,
+    });
+  });
+
+  it("downstream reaches all three instances at the same depth, each screen one deeper", () => {
+    const result = queryDownstream(system(), "Order Placed");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results.map((r) => [r.ref, r.depth, r.via])).toEqual([
+      ["open-orders/view.open-orders", 1, "event->view"],
+      ["open-orders-later/view.open-orders", 1, "view-instance"],
+      ["open-orders-latest/view.open-orders", 1, "view-instance"],
+      ["open-orders/ui.order-list", 2, "view->ui"],
+      ["open-orders-later/ui.order-list-refreshed", 2, "view->ui"],
+      ["open-orders-latest/ui.order-list-third", 2, "view->ui"],
+    ]);
+  });
+});
+
+describe("invariant lookup is status-agnostic", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-inv-draft-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "place-order.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-PLACE-1:** total must be positive\n",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("finds an id declared in a draft doc (out of coverage's in-scope set) and reports that status", () => {
+    const result = queryInvariant(buildFixtureSystem(dir), "INV-PLACE-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results[0]).toMatchObject({ sliceRef: "place-order", status: "draft", docPath: "slices/place-order.md" });
+  });
+});
+
+describe("resolveElement — a display name containing a slash", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-slash-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("falls through from the ref lookup to the name lookup", () => {
+    const compiled = compileForQuery(
+      `slice "Approve" {\n  ui Approve/Reject Screen @Customer\n  command Approve Thing\n  event Thing Approved\n}\n`,
+      dir,
+    );
+    const system = buildQuerySystem([{ file: "slash.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+    const result = resolveElement(system, "Approve/Reject Screen");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.match.ref).toBe("approve/ui.approve-reject-screen");
+  });
+});
+
+describe("sliceDocIndex — same resolution as catalog/docJoin.ts's resolveSliceDocJoin()", () => {
+  const MODEL = `model "Doc Join"
+
+persona Customer
+
+context Order
+
+slice "Request Payment" {
+  ui Pay @Customer
+  command Request Payment
+  event Payment Requested @Order note "slices/request-payment.md"
+}
+
+slice "Detect Unpaid" {
+  view Unpaid Orders from "Payment Requested" note "slices/request-payment.md"
+  ui Unpaid List @Customer
+}
+
+slice "Ship Order" {
+  ui Ship @Customer
+  command Ship Order
+  event Order Shipped @Order note "slices/ship-order.md"
+}
+
+slice "Cancel Order" {
+  ui Cancel @Customer
+  command Cancel Order
+  event Order Cancelled @Order note "slices/cancel-order.md"
+}
+
+slice "Refund Order" {
+  ui Refund @Customer
+  command Refund Order
+  event Order Refunded @Order note "slices/request-payment.md"
+}
+`;
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-docjoin-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    // Canonical doc for request-payment, which also ratifies detect-unpaid (MIL-121 `covers:`)
+    // but NOT refund-order.
+    writeFileSync(
+      join(dir, "slices", "request-payment.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\ncovers: detect-unpaid\n---\n" +
+        "## Invariants / Business Rules\n- **INV-PAY-1:** amount must be positive\n",
+    );
+    // ship-order: bound by note, but no file -> binding-missing-file.
+    // cancel-order: file exists but its frontmatter lacks required keys -> frontmatter-invalid.
+    writeFileSync(join(dir, "slices", "cancel-order.md"), "---\nstatus: draft\n---\n# Cancel Order\n");
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  async function facts() {
+    const { resolveSliceDocJoin } = await import("../src/catalog/docJoin.js");
+    const compiled = compileForQuery(MODEL, dir);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const { model, refs, index } = compiled;
+    const both = (name: string) => {
+      const i = model.slices.findIndex((s) => s.name === name);
+      const key = refs.sliceKeys[i];
+      const fast = index.sliceFacts.get(key)!.doc;
+      const slow = resolveSliceDocJoin(model.slices[i], key, dir, (id) => refs.refById.get(id)!).doc;
+      return { fast, slow };
+    };
+    return { both, index };
+  }
+
+  it("canonical binding: found, with the doc's own status", async () => {
+    const { both } = await facts();
+    const { fast, slow } = both("Request Payment");
+    expect(fast).toMatchObject({ found: true, reason: null, path: "slices/request-payment.md", status: "reviewed" });
+    expect([fast.found, fast.path, fast.reason, fast.status]).toEqual([slow.found, slow.path, slow.reason, slow.status]);
+  });
+
+  it("ratified cross-binding (`covers:` names this slice): resolves to the OTHER slice's doc", async () => {
+    const { both } = await facts();
+    const { fast, slow } = both("Detect Unpaid");
+    expect(fast).toMatchObject({ found: true, reason: null, path: "slices/request-payment.md", status: "reviewed" });
+    expect([fast.found, fast.path, fast.reason, fast.status]).toEqual([slow.found, slow.path, slow.reason, slow.status]);
+  });
+
+  it("unratified cross-binding (`covers:` doesn't name this slice): no-doc-bound", async () => {
+    const { both } = await facts();
+    const { fast, slow } = both("Refund Order");
+    expect(fast).toMatchObject({ found: false, reason: "no-doc-bound", path: "slices/refund-order.md", status: null, body: null });
+    expect([fast.found, fast.path, fast.reason, fast.status]).toEqual([slow.found, slow.path, slow.reason, slow.status]);
+  });
+
+  it("bound but no file: binding-missing-file", async () => {
+    const { both } = await facts();
+    const { fast, slow } = both("Ship Order");
+    expect(fast).toMatchObject({ found: false, reason: "binding-missing-file", path: "slices/ship-order.md", body: null });
+    expect([fast.found, fast.path, fast.reason, fast.status]).toEqual([slow.found, slow.path, slow.reason, slow.status]);
+  });
+
+  it("file with unusable frontmatter: found, frontmatter-invalid, nothing to scan for invariants", async () => {
+    const { both, index } = await facts();
+    const { fast, slow } = both("Cancel Order");
+    expect(fast).toMatchObject({ found: true, reason: "frontmatter-invalid", status: null, body: null });
+    expect([fast.found, fast.path, fast.reason, fast.status]).toEqual([slow.found, slow.path, slow.reason, slow.status]);
+    // The one invariant in the fixture is attributed to its canonical slice only.
+    expect(index.invariants.get("INV-PAY-1")).toEqual({ id: "INV-PAY-1", sliceKey: "request-payment" });
+  });
+
+  it("a mixed-case filename is a doc exactly where readSliceDoc() would find it", async () => {
+    const { readSliceDoc } = await import("../src/catalog/readSliceDoc.js");
+    const { loadSliceDocsOnce } = await import("../src/model/sliceDocIndex.js");
+    const mixed = mkdtempSync(join(tmpdir(), "em-query-mixedcase-"));
+    try {
+      mkdirSync(join(mixed, "slices"));
+      writeFileSync(join(mixed, "slices", "Place-Order.md"), "---\nstatus: draft\n---\n# Place Order\n");
+      const viaReadSliceDoc = readSliceDoc(mixed, "place-order") !== null;
+      expect(loadSliceDocsOnce(mixed).has("place-order")).toBe(viaReadSliceDoc);
+    } finally {
+      rmSync(mixed, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildQueryJson — omitted optional args echo as null", () => {
+  it("keeps every args key on a stable name, null when the caller passed undefined", async () => {
+    const { buildQueryJson } = await import("../src/emit/queryJson.js");
+    const doc = JSON.parse(buildQueryJson("slices", ["m.em"], { pattern: undefined, status: "draft", tag: undefined }, []));
+    expect(doc.args).toEqual({ pattern: null, status: "draft", tag: null });
+  });
+});

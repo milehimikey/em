@@ -1439,6 +1439,9 @@ whose entries are verb-shaped:
 - `slices` results carry `{ ref, name, index, pattern, status, personas, contexts, tags }`.
 - `invariant` results carry `{ id, sliceRef, sliceName, docPath, status, citations }` —
   `citations` is `null` when `--tests` wasn't given, else `{ file, line }[]` (possibly empty).
+  Lookup is status-agnostic: an id declared in a `draft` doc is found like any other, with that
+  status reported (`em coverage`'s in-scope rule decides which invariants *must* be cited, not
+  which ones exist).
 - `field` results carry `{ elementRef, name, type, tag, assigned, renamedFrom }` — same field
   facts `em export`'s `FieldExport` carries, scoped to one field.
 - `path` results carry `{ refs, edgeKinds, length }` — `refs` is the full node sequence

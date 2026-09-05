@@ -374,7 +374,7 @@ describe("coverage tool", () => {
   it("refuses (tool error) when testsDir doesn't exist", async () => {
     const { result } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "no-such-dir") });
     expect(result.isError).toBe(true);
-    expect((result.content[0] as { text: string }).text).toContain("--tests directory not found");
+    expect((result.content[0] as { text: string }).text).toContain("testsDir not found");
   });
 });
 
@@ -413,7 +413,7 @@ describe("status tool", () => {
   it("refuses (tool error) when testsDir doesn't exist", async () => {
     const { result } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "no-such-dir") });
     expect(result.isError).toBe(true);
-    expect((result.content[0] as { text: string }).text).toContain("--tests directory not found");
+    expect((result.content[0] as { text: string }).text).toContain("testsDir not found");
   });
 
   it("a missing file is a tool error, not a crash", async () => {
