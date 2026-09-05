@@ -494,6 +494,9 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
     timeline instance of a `view … again` read model; `null` for everything else.
+    Refs are model-unqualified; to name an element in another model, prefix them with the
+    model's key using the shared helper (`import { formatQualifiedRef, parseQualifiedRef }
+    from "@milehimikey/em/refs"`) — see **Model-qualified refs** below (MIL-193).
   - Each **field** — on both a declared type's own `fields` and an element's `fields` — has
     `name`, `type` (the raw type string, unchanged), `typeRef` (added in schema `1.3`):
     `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`

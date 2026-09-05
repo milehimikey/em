@@ -184,6 +184,7 @@ function assembleSyntheticModel(model: NormalizedModel, columns: SyntheticColumn
 
   return {
     name: title,
+    nameDeclared: true,
     personas: dedupeDefined(elements.filter((e) => e.kind === "ui").map((e) => e.persona)),
     contexts: dedupeDefined(elements.filter((e) => e.kind === "event").map((e) => e.context)),
     hasAutomation: elements.some((e) => AUTOMATION_KINDS.has(e.kind)),

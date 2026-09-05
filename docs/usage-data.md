@@ -75,6 +75,7 @@ affected lines written by hand.
 | doc field table disagrees with model |
 | doc pattern disagrees with model |
 | duplicate element ref |
+| duplicate model key |
 | duplicate name referenced |
 | duplicate slice name |
 | duplicate type name |
