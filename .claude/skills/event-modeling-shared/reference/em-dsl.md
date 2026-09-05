@@ -144,6 +144,8 @@ em query path <files>                                         # shortest path be
 em query path <files> --from <ref-or-name>                    # the starting element's export ref or display name
 em query path <files> --to <ref-or-name>                      # the ending element's export ref or display name
 em query path <files> --json                                  # print a JSON document instead of the text report
+em system <manifest>                                          # verify a seam manifest (system.yaml) against its models' exports — every `public` event/view bound to a reaction in another model, the cross-model half of "both ends of a flow" (MIL-194, see docs/cli.md)
+em system <manifest> --json                                   # print a JSON document instead of the text report (see docs/cli.md)
 em contract                                                   # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
 em mcp                                                        # start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; see docs/mcp.md for the full, current tool table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187). Equivalent to running the `em-mcp` bin directly
 em skill install                                              # copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared)
@@ -594,6 +596,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
 | `cross-model-slice-doc-collision` | warning | Colliding slice doc path across models | Give each model its own directory (see docs/cli.md, "Multi-model projects"). |
+| `dangling-public-event` | warning | Public event/view no seam consumes | Declare the seam that reads it, or drop `public` if nothing outside the model does. |
 | `doc-model-element-not-in-doc` | warning | Model element the doc doesn't mention | Add the matching marker to the doc, or remove the element from the model. |
 | `doc-model-element-not-in-model` | warning | Doc names an element the model doesn't have | Add the element to the model, or fix/remove it in the doc. |
 | `doc-model-field-mismatch` | warning | Doc/model field mismatch | Reconcile the field table with the model's fields — names and types. |
@@ -621,11 +624,19 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `orphaned-slice-doc` | warning | Orphaned slice doc | Rename it to a current slice's key, add `covers:` (plus a `note` binding) to attach it to a live slice, or delete it. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
+| `seam-consumer-not-reaction` | error | Seam consumer is not a reaction | Point `to` at a translation/automation element (or a slice containing exactly one). |
+| `seam-duplicate` | warning | Duplicate seam | Remove the repeated `from`/`to` pair. |
+| `seam-endpoint-unresolved` | error | Seam endpoint does not resolve | Fix the ref to an element the named model actually exports (`em export` lists every ref), or re-declare the seam after a rename. |
+| `seam-source-not-public` | error | Seam source is not `public` | Mark the event/view `public` in its model, or point the seam at the element that is. |
+| `system-manifest-invalid` | error | Seam manifest invalid | Fix the manifest: required keys, `systemSchemaVersion: "1.0"`, a readable `source` per model, and only declared model keys in seam refs. |
+| `system-model-key-mismatch` | error | Manifest model key differs from the export's `model.key` | Rename the manifest's `models:` key to the computed key the message prints. |
 | `tag-composite-unknown-field` | error | Composite tag names an unknown field | Fix the field name, or add it to the event's fields. |
 | `tag-duplicate-key` | error | Duplicate tag key | Rename one of the tags so every key on the event is unique. |
 | `translation-name-collision` | warning | Translation name reused for different producers | Use a distinct name per producer to avoid confusion. |
 | `type-cycle` | error | Cyclic type reference | Break the cycle, or route the self/mutual reference through an array. |
 | `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction | Move the `ui` to the slice that displays the read model, or drop it. |
+| `unbound-translation` | warning | Externally-fed reaction no seam feeds | Declare the seam whose `to` is this reaction, or give it an in-model `from`. |
+| `undeclared-seam-candidate` | warning | Looks connected across models, no seam declared | Declare the seam, or rename one side so the name match stops looking like a link. |
 | `view-again-without-earlier` | error | `again` without an earlier declaration | Declare the view plainly the first time it appears. |
 | `view-from-future-event` | error | Backward timeline (view reads a future event) | Move the source to a later `view X again` instance. |
 | `view-from-unresolved` | error | Unknown event source | Fix the `from` reference to name an existing event. |

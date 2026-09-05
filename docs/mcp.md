@@ -20,7 +20,7 @@ reuses the exact same data-layer builders the CLI's own JSON flags call
 surface with no natural JSON shape like `em changelog`, as its plain-text stdout) *and* as an MCP
 tool, byte-identical for the same inputs.** This isn't a description of what happened to be built
 — it's a rule the project holds itself to going forward (MIL-167): a new read surface (`status`,
-`query` today; `metrics` later, per [roadmap.md](roadmap.md)) ships its MCP tool in the *same*
+`query`, `system` today; `metrics` later, per [roadmap.md](roadmap.md)) ships its MCP tool in the *same*
 release, not as a follow-up ticket. The reason is architectural, not stylistic: for an agent, MCP
 *is* the conversation channel to this tool — "use agents and tools to talk to our architecture"
 fails wherever a surface is CLI-only, no matter how good that surface's `--json` output is.
@@ -91,6 +91,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `coverage` | `{ file, testsDir }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
 | `query` | `{ files, verb, event?, of?, depth?, pattern?, status?, context?, persona?, tag?, id?, testsDir?, name?, from?, to? }` | The `em query <verb> <files...> --json` document: deterministic graph queries (consumers/producers/downstream/upstream/slices/invariant/field/path) over the compiled model |
+| `system` | `{ manifest }` | The `em system <manifest> --json` document: a seam manifest (`system.yaml`) verified against each model's export — every `public` event/view bound to another model's reaction — plus the org-level context map |
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
 | `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
@@ -181,6 +182,25 @@ any input model has errors, same as `em query`'s own CLI refusal; a legitimately
 query`](cli.md#em-query-verb-files) for the full JSON shape, per-verb result fields, and the
 legal-connection graph traversal runs over.
 
+### `system`
+
+Same document as `em system <manifest> --json` (MIL-194): the seam manifest at `manifest`
+(`system.yaml` — YAML or JSON; resolved relative to the server's working directory, with each
+model's `source` resolving relative to the manifest itself) verified against every model it
+declares — both endpoints resolve, the `from` is a `public` event/view, the `to` is a
+translation/automation-kind element (or a slice holding exactly one) — plus the cross-model lints
+(`dangling-public-event`, `unbound-translation`, `undeclared-seam-candidate`) and the
+`contextMap` (models as nodes, seams as edges) em-portal renders. Built from the exact same
+loader/verifier/builder (`src/cli/systemInputs.ts`, `src/system/verify.ts`,
+`src/emit/systemJson.ts`) the CLI calls — same parity contract as every other tool. Verification
+reads export JSON only: a `.em` source is compiled to the same document `export_model` returns,
+a `.json` source is read as one (schema ≥ 1.10). Refuses (tool error) when the manifest is
+unreadable or invalid, or any source can't be read/compiled or has errors — the CLI's own
+refusal. A seam that fails verification is **not** a tool error: the document comes back with
+that seam's `status: "error"` and its codes, exactly as the CLI prints it (with exit 1). See
+[`em system`](cli.md#em-system-manifest) for the manifest format, every check, and the full JSON
+shape.
+
 ### `diff`
 
 Same document as `em diff --json`, in either of its two mutually exclusive forms: pass
@@ -261,8 +281,9 @@ A missing file, a parse error, or (for `export_slice`) an unknown slice key come
 MCP tool error (`isError: true`, with a message explaining what went wrong) — never a process
 crash and never a bare protocol-level error. A model *with validation errors* is not a tool
 error for `validate`/`slice_ready`/`list_markers`: those are exactly the tools built to work on
-a broken model. `export_model`/`export_slice`/`diff`/`glossary`/`conform_scope` do refuse on
-errors (as tool errors), matching each command's own CLI behavior. The three git-backed tools
+a broken model. `export_model`/`export_slice`/`diff`/`glossary`/`conform_scope`/`status`/`query`/`system` do refuse on
+errors (as tool errors), matching each command's own CLI behavior (`system` refuses only when the
+manifest or a model source can't be loaded — a failing *seam* is reported inside the document). The three git-backed tools
 (`diff`'s revision form, `changelog`, `conform_scope`) surface every git failure mode the same
 way — not inside a git repository, an untracked file, an unknown revision — as a tool error with
 the same message the CLI would print to stderr, never a crash.
