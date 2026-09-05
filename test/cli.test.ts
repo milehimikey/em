@@ -3380,10 +3380,15 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
 
     const ci = readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8");
     expect(ci).toContain("name: em ci");
-    expect(ci).toContain('npx @milehimikey/em validate "$f"');
-    expect(ci).toContain('npx @milehimikey/em slice index "model.em" --check');
-    expect(ci).toContain('npx @milehimikey/em coverage "model.em" --tests "test" --strict');
-    expect(ci).toContain('npx @milehimikey/em glossary $(git ls-files \'*.em\') --fail-on-conflicts');
+    // MIL-188: every generated invocation pins the generating em's own exact version —
+    // an unpinned line would float to npm's latest on the runner.
+    const pkgVersion = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8")).version as string;
+    const pinned = `npx @milehimikey/em@${pkgVersion}`;
+    expect(ci).toContain(`${pinned} validate "$f"`);
+    expect(ci).toContain(`${pinned} slice index "model.em" --check`);
+    expect(ci).toContain(`${pinned} coverage "model.em" --tests "test" --strict`);
+    expect(ci).toContain(`${pinned} glossary $(git ls-files '*.em') --fail-on-conflicts`);
+    expect(ci).not.toContain("npx @milehimikey/em ");
 
     const conform = readFileSync(join(dir, ".github", "workflows", "em-conform.yml"), "utf8");
     expect(conform).toContain("name: model-conformance");

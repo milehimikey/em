@@ -53,8 +53,16 @@ export function findUnsafeCiInitArg(value: string): string | null {
 // ---- em-ci.yml (PR gates + push-triggered badge rebuild) ----
 
 /** The managed block only (no header/`on:`/`jobs:` scaffolding) — what gets written between
- *  the marker pair, both for a fresh file and to patch an existing marked one in place. */
-export function ciManagedBody(model: string, testsDir: string): string {
+ *  the marker pair, both for a fresh file and to patch an existing marked one in place.
+ *
+ *  Every `npx @milehimikey/em` invocation pins the generating em's own exact version
+ *  (MIL-188): an unpinned line floats to whatever `latest` resolves to on the runner that
+ *  day, which is the opposite of a preset. Because the pin lives inside the managed body,
+ *  `--check` from a different em version reports the block as stale — the same
+ *  upgrade-visibility `em skill check` gets from its version stamp — and a file scaffolded
+ *  by a pre-pin em shows stale the same way. */
+export function ciManagedBody(model: string, testsDir: string, emVersion: string): string {
+  const em = `npx @milehimikey/em@${emVersion}`;
   return `  validate:
     name: em validate (changed .em files)
     if: github.event_name == 'pull_request'
@@ -79,8 +87,8 @@ export function ciManagedBody(model: string, testsDir: string): string {
           status=0
           for f in $changed; do
             echo "::group::em validate $f"
-            npx @milehimikey/em validate "$f" || status=1
-            npx @milehimikey/em validate "$f" --list-issues
+            ${em} validate "$f" || status=1
+            ${em} validate "$f" --list-issues
             echo "::endgroup::"
           done
           exit $status
@@ -95,7 +103,7 @@ export function ciManagedBody(model: string, testsDir: string): string {
         with:
           node-version: 20
       - name: Check README Slices table is current
-        run: npx @milehimikey/em slice index "${model}" --check
+        run: ${em} slice index "${model}" --check
 
   coverage:
     name: "em coverage --strict (invariant citations)"
@@ -107,7 +115,7 @@ export function ciManagedBody(model: string, testsDir: string): string {
         with:
           node-version: 20
       - name: Check invariant test coverage
-        run: npx @milehimikey/em coverage "${model}" --tests "${testsDir}" --strict
+        run: ${em} coverage "${model}" --tests "${testsDir}" --strict
 
   ledger:
     name: em ledger (slice doc version/content agreement)
@@ -121,7 +129,7 @@ export function ciManagedBody(model: string, testsDir: string): string {
         with:
           node-version: 20
       - name: Check slice doc version/content agreement
-        run: npx @milehimikey/em ledger "${model}" --from "\${{ github.event.pull_request.base.sha }}"
+        run: ${em} ledger "${model}" --from "\${{ github.event.pull_request.base.sha }}"
 
   skill-check:
     name: em skill check (vendored skill drift)
@@ -135,7 +143,7 @@ export function ciManagedBody(model: string, testsDir: string): string {
       - name: Check vendored skill matches installed em
         run: |
           if [ -d .claude/skills/event-modeling ]; then
-            npx @milehimikey/em skill check
+            ${em} skill check
           else
             echo "no vendored skill at .claude/skills/event-modeling — skipping (run \`em skill install\` to opt in)"
           fi
@@ -150,7 +158,7 @@ export function ciManagedBody(model: string, testsDir: string): string {
         with:
           node-version: 20
       - name: Check glossary consistency across models
-        run: npx @milehimikey/em glossary $(git ls-files '*.em') --fail-on-conflicts
+        run: ${em} glossary $(git ls-files '*.em') --fail-on-conflicts
 
   status-badge:
     name: rebuild status badge (advisory — publish only, never a gate)
@@ -164,7 +172,7 @@ export function ciManagedBody(model: string, testsDir: string): string {
         with:
           node-version: 20
       - name: Rebuild status badge
-        run: npx @milehimikey/em status "${model}" --tests "${testsDir}" --badge -o status-badge.svg
+        run: ${em} status "${model}" --tests "${testsDir}" --badge -o status-badge.svg
       - name: Commit badge if changed
         run: |
           if git diff --quiet -- status-badge.svg; then
@@ -211,7 +219,7 @@ jobs:
 // closing marker's leading spaces vanished on a second `em ci init` run).
 export function buildCiWorkflowFile(model: string, testsDir: string, emVersion: string): string {
   const { start, end } = markerPair(CI_WORKFLOW_MARKER, "hash");
-  return `${ciWorkflowHeader(model, emVersion)}${start}\n${ciManagedBody(model, testsDir)}\n${end}\n`;
+  return `${ciWorkflowHeader(model, emVersion)}${start}\n${ciManagedBody(model, testsDir, emVersion)}\n${end}\n`;
 }
 
 // ---- em-conform.yml (scheduled, advisory-only conformance cadence) ----
@@ -219,7 +227,7 @@ export function buildCiWorkflowFile(model: string, testsDir: string, emVersion: 
 /** The managed block only (no header/`on:`/`permissions:`/`jobs:` scaffolding) — what gets
  *  written between the marker pair, both for a fresh file and to patch an existing marked one
  *  in place. */
-export function conformManagedBody(model: string): string {
+export function conformManagedBody(model: string, emVersion: string): string {
   const modelDir = dirname(model) === "." ? "." : dirname(model);
   return `  conform:
     runs-on: ubuntu-latest
@@ -234,7 +242,7 @@ export function conformManagedBody(model: string): string {
 
       - name: Run conform phase
         run: |
-          npm i -g @milehimikey/em@1 @anthropic-ai/claude-code
+          npm i -g @milehimikey/em@${emVersion} @anthropic-ai/claude-code
           em skill install --force
           claude -p "/event-modeling conform" \\
             --allowedTools "Bash(em:*),Bash(git:*),Read,Grep,Glob,Write,Edit"
@@ -282,7 +290,7 @@ jobs:
 
 export function buildConformWorkflowFile(model: string, emVersion: string): string {
   const { start, end } = markerPair(CONFORM_WORKFLOW_MARKER, "hash");
-  return `${conformWorkflowHeader(model, emVersion)}${start}\n${conformManagedBody(model)}\n${end}\n`;
+  return `${conformWorkflowHeader(model, emVersion)}${start}\n${conformManagedBody(model, emVersion)}\n${end}\n`;
 }
 
 // ---- Install/check plumbing, one file at a time ----

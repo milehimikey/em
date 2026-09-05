@@ -32,10 +32,10 @@ describe("buildCiWorkflowFile", () => {
   });
 
   it("embeds the model path and tests dir into the right commands", () => {
-    expect(content).toContain('npx @milehimikey/em slice index "order-fulfillment/order-fulfillment.em" --check');
-    expect(content).toContain('npx @milehimikey/em coverage "order-fulfillment/order-fulfillment.em" --tests "test" --strict');
-    expect(content).toContain('npx @milehimikey/em ledger "order-fulfillment/order-fulfillment.em" --from');
-    expect(content).toContain('npx @milehimikey/em status "order-fulfillment/order-fulfillment.em" --tests "test" --badge -o status-badge.svg');
+    expect(content).toContain('npx @milehimikey/em@1.9.0 slice index "order-fulfillment/order-fulfillment.em" --check');
+    expect(content).toContain('npx @milehimikey/em@1.9.0 coverage "order-fulfillment/order-fulfillment.em" --tests "test" --strict');
+    expect(content).toContain('npx @milehimikey/em@1.9.0 ledger "order-fulfillment/order-fulfillment.em" --from');
+    expect(content).toContain('npx @milehimikey/em@1.9.0 status "order-fulfillment/order-fulfillment.em" --tests "test" --badge -o status-badge.svg');
   });
 
   it("gates validate/slice-index/coverage/ledger/skill-check/glossary on pull_request, and status-badge on push only", () => {
@@ -108,7 +108,7 @@ describe("planCiFile / applyCiFile", () => {
   }
 
   const generated = buildCiWorkflowFile("model.em", "test", "1.9.0");
-  const body = ciManagedBody("model.em", "test");
+  const body = ciManagedBody("model.em", "test", "1.9.0");
 
   it("plans 'create' for a missing file", () => {
     const path = tmpFile();
@@ -147,7 +147,7 @@ describe("planCiFile / applyCiFile", () => {
       );
       writeFileSync(path, withCustomJob, "utf8");
 
-      const newBody = ciManagedBody("model.em", "other-tests");
+      const newBody = ciManagedBody("model.em", "other-tests", "1.9.0");
       const status = planCiFile(path, generated, newBody, CI_WORKFLOW_MARKER, false);
       expect(status.kind).toBe("stale");
       if (status.kind !== "stale") throw new Error("unreachable");
