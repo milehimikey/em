@@ -77,18 +77,21 @@ affected lines written by hand.
 | duplicate element ref |
 | duplicate model key |
 | duplicate name referenced |
+| duplicate seam |
 | duplicate slice name |
 | duplicate type name |
 | duplicate type ref |
 | event field not provided by command |
 | event has no producing command |
 | event not read by any read model |
+| externally-fed reaction not bound by any seam |
 | extra doc-binding note ignored |
 | implemented without link |
 | invalid or missing frontmatter |
 | model element missing from doc |
 | open issue |
 | orphaned slice doc left behind by a rename or removal |
+| public event not consumed by any seam |
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |
@@ -98,6 +101,7 @@ affected lines written by hand.
 | translation name collision |
 | ui shares slice with reaction |
 | ui with no view or command |
+| undeclared seam candidate |
 | view field no source |
 <!-- GENERATED:usage-categories-warnings:end -->
 
@@ -119,6 +123,11 @@ affected lines written by hand.
 | reaction reads view before it exists |
 | reaction references unknown read model |
 | same-band collision |
+| seam consumer not a reaction |
+| seam endpoint unresolved |
+| seam manifest invalid |
+| seam manifest model key mismatch |
+| seam source not public |
 | slice-ready key does not exist |
 | type cycle |
 | view again with no earlier declaration |

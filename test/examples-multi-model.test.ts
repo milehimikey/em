@@ -11,9 +11,12 @@ import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { hasErrors } from "../src/model/validate.js";
 import { detectSliceDocCollisions } from "../src/catalog/modelCollisionValidate.js";
+import { loadSystem } from "../src/cli/systemInputs.js";
+import { verifySystem } from "../src/system/verify.js";
 
 const CHECKOUT_FILE = join("examples", "multi-model", "models", "checkout", "checkout.em");
 const FULFILLMENT_FILE = join("examples", "multi-model", "models", "fulfillment", "fulfillment.em");
+const MANIFEST_FILE = join("examples", "multi-model", "system.yaml");
 
 describe("examples/multi-model/", () => {
   it("both models parse and validate without errors", () => {
@@ -38,5 +41,35 @@ describe("examples/multi-model/", () => {
       { file: FULFILLMENT_FILE, sliceKeys: fulfillment.refs.sliceKeys },
     ]);
     expect(diags).toEqual([]);
+  });
+
+  // MIL-194: the same example doubles as the worked seam — checkout's public `Order Submitted`
+  // feeds fulfillment's externally-fed `Order Intake` translation, declared in system.yaml —
+  // plus one deliberately unbound public event, so `em system` shows both a verified seam and a
+  // `dangling-public-event` warning. Exactly those, nothing else.
+  it("system.yaml verifies with exactly one verified seam and one dangling-public-event warning", () => {
+    const loaded = loadSystem(MANIFEST_FILE);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const report = verifySystem(loaded.manifest, loaded.models, MANIFEST_FILE);
+    expect(report.seams).toEqual([
+      expect.objectContaining({
+        from: "checkout:checkout/event.order-submitted",
+        to: "fulfillment:receive-order/translation.order-intake",
+        status: "verified",
+        diagnostics: [],
+      }),
+    ]);
+    expect(report.diagnostics.map((d) => [d.severity, d.code, d.refs])).toEqual([
+      ["warning", "dangling-public-event", ["checkout:cancel-order/event.order-cancelled"]],
+    ]);
+    expect(report.contextMap.edges).toEqual([{ from: "checkout", to: "fulfillment", seams: 1 }]);
+  });
+
+  it("the translation is externally fed (no in-model edge into it) — the shape the seam binds", () => {
+    const loaded = loadSystem(MANIFEST_FILE);
+    if (!loaded.ok) throw new Error("manifest failed to load");
+    const fulfillment = loaded.models.find((m) => m.key === "fulfillment")!;
+    expect(fulfillment.doc.model.edges.some((e) => e.to === "receive-order/translation.order-intake")).toBe(false);
   });
 });

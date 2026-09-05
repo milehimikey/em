@@ -456,6 +456,30 @@ only stable until someone renames or reorders the earlier one:
 
 The fix is always to rename: for `duplicate-model-key`, give each model a unique `model "Name"`.
 
+### Seam manifest
+
+Raised by [`em system <manifest>`](cli.md#em-system-manifest) (MIL-194), never by `em validate`:
+the cross-model half of [Both ends of a flow](#both-ends-of-a-flow), checked over the models'
+export documents against a declared seam manifest (which model's `public` event/view feeds
+which other model's reaction).
+
+| Code | Severity | Rule | Fix |
+|---|---|---|---|
+| `system-manifest-invalid` | error | The manifest's shape is wrong — missing/unknown keys, unsupported `systemSchemaVersion`, a seam ref that isn't `<modelKey>:`-qualified or names an undeclared model, an unreadable/unparseable `source` | Fix the manifest; `source` must be a `.em` file or an `em export --json` document (schema ≥ 1.10) |
+| `system-model-key-mismatch` | error | A `models:` key differs from that export's `model.key` | Rename the manifest entry to the computed key the message prints |
+| `seam-endpoint-unresolved` | error | A seam's `from`/`to` doesn't resolve in the named model | Fix the ref (`em export` lists every ref), or re-declare the seam after a rename |
+| `seam-source-not-public` | error | The `from` element exists but isn't a `public` event/view | Mark it `public` in its model, or point the seam at the element that is |
+| `seam-consumer-not-reaction` | error | The `to` element isn't a `translation`/`automation`/`processor`/`saga` — or a bare slice ref holds zero or several | Point `to` at the reaction element (or a slice containing exactly one) |
+| `seam-duplicate` | warning | The same resolved `(from, to)` pair is declared twice | Remove the repeat |
+| `dangling-public-event` | warning | A `public` event/view no seam names as `from` — a published surface nobody consumes | Declare the seam that reads it, or drop `public` if nothing outside the model does |
+| `unbound-translation` | warning | An externally fed reaction (no incoming edge inside its own model) that no seam names as `to` | Declare the seam whose `to` is this reaction, or give it an in-model `from` |
+| `undeclared-seam-candidate` | warning | A `public` event/view in one model shares its name with a reaction or event in another, with no seam between them — the old name-matching heuristic, demoted to a lint | Declare the seam, or rename one side so the match stops looking like a link |
+
+`em validate` itself deliberately stays quiet on both halves of a seam: a `public` event with no
+reader in its own model, and a reaction with no `from`, are each a legitimate single-model shape
+(the reader/producer is outside the model). `em system` is where the system-level claim is
+checked.
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection

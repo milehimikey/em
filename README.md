@@ -38,6 +38,13 @@ em diff model.em --from HEAD~1   # what this change did to the model
 em changelog model.em     # the model's git history as a business ledger
 ```
 
+A system of several models — one per team or sub-department, each in its own directory — gets
+the same treatment across model boundaries: a seam manifest (`system.yaml`) declares which
+model's `public` event feeds which other model's Translation slice, and `em system system.yaml`
+verifies every binding against the models' exports and emits the org-level context map
+([docs/cli.md](docs/cli.md#em-system-manifest); worked example in
+[examples/multi-model/](examples/multi-model/)).
+
 A model is a list of slices — vertical time steps, read left to right — whose elements land
 in swimlane rows:
 
@@ -117,7 +124,7 @@ built this way.
 | [docs/usage-data.md](docs/usage-data.md) | What usage data em captures, and how to roll it up for a retro |
 | [docs/architecture.md](docs/architecture.md) | How rendering works; why Graphviz, not PlantUML |
 | [docs/roadmap.md](docs/roadmap.md) | What's planned |
-| [docs/decisions/](docs/decisions/) | Write-ups for open design questions (starts with [MIL-162](docs/decisions/mil-162-teachable-navigator.md), the stakeholder-portal decision) |
+| [docs/decisions/](docs/decisions/) | Write-ups for open design questions ([MIL-162](docs/decisions/mil-162-teachable-navigator.md), the stakeholder-portal decision; [MIL-194](docs/decisions/mil-194-seam-manifest.md), the seam manifest) |
 
 ## Development
 

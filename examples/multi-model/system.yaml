@@ -1,0 +1,18 @@
+# Seam manifest (MIL-194) — the cross-model bindings `em system` verifies. Keys under `models:`
+# are each model's key (the kebab-slug of its declared `model "..."` name); `source` paths
+# resolve relative to this file and may be `.em` files or `em export --json` documents.
+systemSchemaVersion: "1.0"
+name: Multi-model example
+models:
+  checkout:
+    source: models/checkout/checkout.em
+    owner: Storefront team
+  fulfillment:
+    source: models/fulfillment/fulfillment.em
+    owner: Warehouse team
+seams:
+  - from: checkout:checkout/event.order-submitted
+    to: fulfillment:receive-order/translation.order-intake
+    description: A submitted order is handed to the warehouse to be fulfilled.
+# `checkout:cancel-order/event.order-cancelled` is deliberately left unbound so this example's
+# `em system` run shows a `dangling-public-event` warning alongside the verified seam above.

@@ -13,6 +13,7 @@
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in a ready-to-implement/implemented slice doc is cited by a test (advisory by default, `--strict` for CI) |
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
+| `em system <manifest>` | Verify a seam manifest (`system.yaml`) — which model's `public` event/view feeds which other model's reaction — against the models' exports, and emit the org-level context map |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
 | `em changelog <file>` | Render a model's git history as a business-readable ledger |
@@ -1530,6 +1531,162 @@ whose entries are verb-shaped:
 - `path` results carry `{ refs, edgeKinds, length }` — `refs` is the full node sequence
   (endpoints inclusive), `edgeKinds` one shorter (the edge between each consecutive pair);
   `length` counts real connections only (a `view-instance` step is free).
+
+## `em system <manifest>`
+
+Verifies a **seam manifest** against the models it names (MIL-194). A *seam* is one model's
+`public` event or view bound to a Translation/Automation slice in another model — `em` has always
+had both ends (the `public` clause on one side, an externally-fed reaction on the other), but
+nothing recorded *which* reader a published event feeds, and the portal's cross-model links were a
+name-matching heuristic that vanished silently on a rename. The manifest makes each binding data;
+`em system` checks it: this is the [both ends of a flow](validation.md#both-ends-of-a-flow) rule
+extended across models — every public event needs a declared reader somewhere in the system, and
+every externally-fed reaction needs a declared producer.
+
+```bash
+em system system.yaml            # summary + diagnostics; exit 1 on any error
+em system system.yaml --json     # the versioned document below (also the context map)
+```
+
+### The manifest
+
+YAML (conventionally `system.yaml`; any path works, and JSON is accepted since it's a YAML
+subset). Model keys are the same `<modelKey>` `em query` and `em export`'s `model.key` use —
+the kebab-slug of the declared `model "…"` name — and refs are the qualified form
+`<modelKey>:<sliceKey>/<kind>.<slug>` (see [Cross-model addressing](#cross-model-addressing)):
+
+```yaml
+systemSchemaVersion: "1.0"      # required; only "1.0" accepted
+name: Meridian Goods            # optional display name for the system
+models:                         # required, ≥1 entry; keys ARE the model keys
+  checkout:
+    source: models/checkout/checkout.em        # a .em file OR an `em export --json` file
+    owner: Storefront team                     # optional
+  fulfillment:
+    source: models/fulfillment/fulfillment.em
+    owner: Warehouse team
+seams:                          # optional — a system with no seams is valid, and reports
+  - from: checkout:checkout/event.order-placed         #   every public element as dangling
+    to: fulfillment:intake/translation.order-received
+    description: optional free text
+```
+
+- `source` paths resolve relative to the manifest's directory. A `.em` source is compiled
+  in-process into the exact document `em export --json` produces; any other extension is read
+  *as* an export document (`schemaVersion` ≥ `1.10` — it needs `model.key` and `model.edges`).
+  Either way the verifier only ever sees export documents (see **Reads exports only** below).
+- Each `models:` key must equal that export's `model.key`; a mismatch is an error that prints
+  the computed key so the manifest can be fixed.
+- `from` is a qualified ref to an **event or view marked `public`** (both are published
+  surfaces — see [dsl.md, Integration surface](dsl.md#integration-surface)).
+- `to` is a qualified ref to a **reaction** (`translation`, `automation`, `processor`, or
+  `saga` element), or a bare slice ref `<modelKey>:<sliceKey>` when that slice holds exactly one
+  reaction — the output always carries the resolved element-level ref, so the context map never
+  has a slice-level endpoint.
+- Unknown keys anywhere are errors, not ignored: a misspelled `seam:` silently declaring zero
+  seams would defeat the check.
+
+### Checks
+
+Every finding uses the same `Diagnostic` shape (severity, `code`, message, `line`, `refs`) as
+`em validate`, plus `file` — manifest-level findings point at the manifest, per-element ones at
+that model's source. Codes are stable and CI-matchable ([validation.md](validation.md#seam-manifest)):
+
+| Code | Severity | When |
+|---|---|---|
+| `system-manifest-invalid` | error | Shape problems — missing/unknown keys, bad `systemSchemaVersion`, a seam ref that isn't model-qualified or names an undeclared model key, an unreadable/unparseable source |
+| `system-model-key-mismatch` | error | A `models:` key ≠ that export's `model.key` (the message names the computed key) |
+| `seam-endpoint-unresolved` | error | A `from`/`to` ref doesn't resolve in the named model |
+| `seam-source-not-public` | error | The `from` element exists but isn't a `public` event/view (a private event, or a command) |
+| `seam-consumer-not-reaction` | error | The `to` element isn't a reaction — or a bare slice ref holds zero or two-plus reactions |
+| `seam-duplicate` | warning | The same resolved `(from, to)` pair declared twice (a bare-slice `to` and its element spelling are the same seam) |
+| `dangling-public-event` | warning | A `public` event/view in any model that no seam names as `from` — a published surface nobody consumes |
+| `unbound-translation` | warning | An **externally fed** reaction — no incoming edge inside its own model (`model.edges` has no edge into it) — that no seam names as `to`: nobody claims to feed it |
+| `undeclared-seam-candidate` | warning | A `public` event/view in model A whose normalized name equals a reaction's or an event's name in model B ≠ A, with no seam between them — the old heuristic join, demoted to a lint: "looks connected; declare the seam or rename" |
+
+"Externally fed" is read straight off the export's `model.edges` (schema 1.10), never
+re-derived: a reaction with a `from "View"` (or an explicit `arrow` into it) has an in-model
+source; one without is fed from outside the model by construction — the shape
+[patterns.md](patterns.md#translation) documents for an externally triggered Translation.
+
+### Exit codes and refusal
+
+`0` when no error was raised (warnings never fail — same as `em validate`), `1` when any error
+was. Two situations *refuse* instead — no document, the reason on stderr, exit `1` — following
+`em export`/`em status`: the manifest itself can't be read or parsed (or fails the shape check),
+or a `source` can't be read, parsed, or has validation errors (run `em validate` on it first).
+A seam that fails verification is **not** a refusal: `--json` still prints the full document,
+with that seam's `status: "error"` and the codes in `diagnostics` — `em validate --json`'s
+convention, so a CI job always has the document to act on.
+
+### `--json` shape
+
+`systemSchemaVersion: "1.0"`, versioned independently of the npm package and every other
+command's schema — also the exact document the MCP `system` tool returns ([mcp.md](mcp.md)):
+
+```json
+{
+  "systemSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "manifest": { "path": "system.yaml", "sha256": "…", "name": "Meridian Goods" },
+  "models": [
+    { "key": "checkout", "name": "Checkout", "source": "models/checkout/checkout.em",
+      "sourceKind": "em", "owner": "Storefront team",
+      "publicSurface": ["checkout/event.order-placed"] }
+  ],
+  "seams": [
+    { "from": "checkout:checkout/event.order-placed",
+      "to": "fulfillment:intake/translation.order-received",
+      "fromSlice": "checkout:checkout", "toSlice": "fulfillment:intake",
+      "description": null, "status": "verified", "diagnostics": [] }
+  ],
+  "contextMap": {
+    "nodes": [ { "key": "checkout", "name": "Checkout", "owner": "Storefront team" } ],
+    "edges": [ { "from": "checkout", "to": "fulfillment", "seams": 1 } ]
+  },
+  "diagnostics": [
+    { "file": "models/checkout/checkout.em", "severity": "warning", "code": "dangling-public-event",
+      "message": "…", "line": 21, "refs": ["checkout:cancel-order/event.order-cancelled"] }
+  ]
+}
+```
+
+- `models[]` and `seams[]` are in manifest order; `sourceKind` is `em` or `export`;
+  `publicSurface` lists the model's `public` elements as unqualified refs in export order.
+- A seam's `from`/`to` are the **resolved** element-level qualified refs (a bare-slice `to` is
+  expanded); an endpoint that didn't resolve echoes the ref as written, with a `null` slice.
+  `status` is `error` when any error-severity code was raised on it, else `verified` (a
+  warning such as `seam-duplicate` doesn't fail a seam).
+- Deterministic: no timestamps, stable ordering, byte-identical across runs for the same
+  inputs. Paths are echoed as given/manifest-relative, never absolute, so a committed document
+  doesn't embed one machine's checkout path.
+
+### The context map
+
+`contextMap` is the org-level view em-portal 0.4.0 renders: **models as nodes** (`key`, display
+`name`, `owner`), **seams as edges** — one edge per ordered model pair with at least one declared
+seam, `seams` counting the declarations, sorted by `(from, to)`. It counts *declared* topology
+whether or not each seam verified; a failing seam is visible in `seams[]` (and fails the exit
+code) rather than silently disappearing from the map — the exact failure mode the old
+name-matching link had.
+
+### Reads exports only
+
+Verification never reads a compiled model — only export documents. That's deliberate: models
+still compile independently (no compile-time coupling between repos), and it makes
+cross-repository systems free. A model that lives in another repo publishes its
+`em export --json` (e.g. as a CI artifact); the system manifest points its `source` at that
+`.json` file; `em system` verifies it exactly as it would a local `.em`. A co-located
+monorepo simply points at the `.em` files and gets the export compiled on the fly.
+
+### One manifest or several
+
+Whether a system keeps **one central manifest** or **one per repo** (each declaring the models
+and seams it owns, aggregated by CI) is deliberately open, to be decided with pilot use — the
+tooling precludes neither. Each manifest is verified on its own: a per-repo manifest declaring
+only its own models and the seams touching them is a complete, valid system for `em system`;
+run it once per manifest, or assemble one central manifest and run it once. Nothing in the
+document shape assumes either arrangement.
 
 ## `em glossary <files...>`
 

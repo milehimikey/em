@@ -143,6 +143,9 @@ import {
   formatPath,
 } from "./query/format.js";
 import { buildQueryJson } from "./emit/queryJson.js";
+import { loadSystem } from "./cli/systemInputs.js";
+import { verifySystem, SystemDiagnostic } from "./system/verify.js";
+import { buildSystemJson } from "./emit/systemJson.js";
 
 const program = new Command();
 
@@ -1665,6 +1668,48 @@ query
     runQueryVerb(files, "path", { from: opts.from, to: opts.to }, opts.json, (s) => queryPath(s, opts.from, opts.to), formatPath);
   });
 
+program
+  .command("system")
+  .description(
+    "verify a seam manifest (system.yaml) against its models' exports — every `public` event/view " +
+      "bound to a reaction in another model, the cross-model half of \"both ends of a flow\" (MIL-194, see docs/cli.md)",
+  )
+  .argument("<manifest>", "seam manifest path (YAML, or JSON); each model's `source` resolves relative to it")
+  // Same reasoning as `em validate`'s allowExcessArguments(false) (MIL-123): a second positional
+  // would be silently dropped, and "one manifest per run" is the whole contract here.
+  .allowExcessArguments(false)
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((manifest: string, opts: { json?: boolean }) => {
+    const loaded = loadSystem(manifest);
+    if (!loaded.ok) {
+      // Same refusal posture as `em export`/`em status`: a manifest that can't be parsed, or a
+      // source that can't be read/compiled, is not a system to verify — no document, exit 1.
+      printSystemDiagnostics(loaded.diagnostics);
+      console.error(`em system: not verifying — ${manifest} could not be loaded; fix the above first`);
+      process.exit(1);
+    }
+    const report = verifySystem(loaded.manifest, loaded.models, manifest);
+    if (opts.json) {
+      // `em validate --json`'s convention: diagnostics still go to stderr in the human format,
+      // the document (which carries the same diagnostics) to stdout; exit code unchanged.
+      printSystemDiagnostics(report.diagnostics);
+      process.stdout.write(buildSystemJson(manifest, loaded.manifestText, report) + "\n");
+    } else {
+      const verified = report.seams.filter((s) => s.status === "verified").length;
+      const failing = report.seams.length - verified;
+      const label = report.name === null ? "system" : `system "${report.name}"`;
+      console.log(
+        `${label}: ${report.models.length} model${report.models.length === 1 ? "" : "s"}, ` +
+          `${report.seams.length} seam${report.seams.length === 1 ? "" : "s"} (${verified} verified, ${failing} failing)`,
+      );
+      printSystemDiagnostics(report.diagnostics);
+      if (report.diagnostics.length === 0) console.log("ok — no issues");
+    }
+    // Set the code rather than process.exit(): same rationale as em diff/em ledger — stdout to
+    // a pipe (a --json document) shouldn't risk truncation.
+    if (hasErrors(report.diagnostics)) process.exitCode = 1;
+  });
+
 // Shared by install/sync/check: the `.claude/skills/` root bundled with whatever em package is
 // actually running (works whether em was installed from npm or run from a checkout, and
 // regardless of a symlinked global install — see pkgDir's own resolution above for
@@ -2096,6 +2141,12 @@ function printDiagnostics(diags: Diagnostic[]): void {
     if (d.severity === "error") console.error(line);
     else console.warn(line);
   }
+}
+
+/** `em system`'s diagnostics carry their own `file` (manifest or model source) — print each in
+ *  the same `<file>: <severity>:<line> <message>` shape printDiagnosticsFor uses. */
+function printSystemDiagnostics(diags: SystemDiagnostic[]): void {
+  for (const d of diags) printDiagnosticsFor(d.file, [d]);
 }
 
 /** Same as printDiagnostics, prefixed with the file each diagnostic came from —
