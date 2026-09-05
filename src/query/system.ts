@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: MIT
 // `em query`'s multi-model addressing (MIL-168): a `QuerySystem` is one or more compiled
-// models, each keyed by a short, stable `modelKey` derived from its input filename. Refs
-// (`<sliceKey>/<kind>.<slug>`) are, and remain, model-UNQUALIFIED — `computeRefs()`'s contract
-// is untouched, and `em export`'s document shape doesn't change. For a query answer that spans
-// more than one input file, that's ambiguous on its own (two models can easily mint the same
-// slice/element ref independently), so `em query` addresses cross-model results with a qualified
-// form: `<modelKey>:<sliceKey>/<kind>.<slug>` — accepted on input alongside a bare ref/display
-// name, and used to disambiguate/print results whenever more than one file was given.
+// models, each keyed by a short, stable `modelKey`. Refs (`<sliceKey>/<kind>.<slug>`) are, and
+// remain, model-UNQUALIFIED — `computeRefs()`'s contract is untouched. For a query answer that
+// spans more than one input file, that's ambiguous on its own (two models can easily mint the
+// same slice/element ref independently), so `em query` addresses cross-model results with the
+// qualified form `<modelKey>:<sliceKey>/<kind>.<slug>` — accepted on input alongside a bare
+// ref/display name, and used to disambiguate/print results whenever more than one file was given.
 //
-// This is a query-only convention, decided here because query is the first surface that ever
-// needs to name an element across model boundaries in one answer. It's the natural shape for
-// em-portal's future deep links too, so it's called out prominently in this ticket's report —
-// changing it later means changing every link already minted against it.
+// Query was the first surface to need this (MIL-168) and originally derived `modelKey` from the
+// input filename. Since MIL-193 the key, the grammar, and the parse/format live in
+// model/qualifiedRef.ts — the ONE cross-model addressing scheme every em surface shares
+// (`em export`'s `model.key`, MIL-194's seam manifest, em-portal deep links): the key is the
+// kebab-slug of the declared `model "Name"` (basename fallback when none is declared), so a
+// query result's qualified ref is the same string an export consumer would mint for the same
+// element. This module only decides WHEN to qualify (more than one file given) and how a
+// user-supplied ref resolves; it never spells the grammar itself.
 
 import { NormalizedModel, normalizeName } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { ModelIndex } from "../model/queryIndex.js";
-import { dedupe, kebabSlug } from "../util/slug.js";
-import { basename, extname } from "node:path";
+import type { Diagnostic } from "../model/validate.js";
+import { computeModelKeys, formatQualifiedRef, parseQualifiedRef } from "../model/qualifiedRef.js";
 
 export interface QueryModelEntry {
   file: string;
@@ -34,32 +37,29 @@ export interface QuerySystem {
    *  ("unqualified + multi-model + ambiguous" -> list qualified candidates, per this ticket's
    *  design note). */
   multiModel: boolean;
-}
-
-/** Derive each file's `modelKey`: the kebab-slugged basename (extension stripped), deduped with
- *  `~2`/`~3`, ... on collision within this one invocation — same dedupe() convention
- *  `computeRefs()` uses for slice/element refs. Order-stable: the first file to claim a
- *  basename keeps the bare key. */
-export function computeModelKeys(files: string[]): string[] {
-  const used = new Set<string>();
-  return files.map((f) => dedupe(kebabSlug(basename(f, extname(f))), used, "~"));
+  /** `duplicate-model-key` warnings from keying the entries (MIL-193, `computeModelKeys()`):
+   *  two input models deriving the same key, the later one suffixed `~2`/`~3`, … in file-list
+   *  order. Empty for a single-model system. The CLI prints these to stderr like any other
+   *  compile warning; the JSON document is unaffected (MCP parity holds). */
+  diagnostics: Diagnostic[];
 }
 
 export function buildQuerySystem(
   entries: Array<{ file: string; model: NormalizedModel; refs: RefsResult; index: ModelIndex }>,
 ): QuerySystem {
-  const keys = computeModelKeys(entries.map((e) => e.file));
+  const { keys, diagnostics } = computeModelKeys(entries);
   return {
     entries: entries.map((e, i) => ({ file: e.file, modelKey: keys[i], model: e.model, refs: e.refs, index: e.index })),
     multiModel: entries.length > 1,
+    diagnostics,
   };
 }
 
 /** `<modelKey>:<ref>` when the system spans more than one model, else the bare ref — the one
- *  place every query verb formats a ref for output, so the qualifier convention can't drift
- *  between verbs. */
+ *  place every query verb decides whether to qualify a ref for output, so the WHEN can't drift
+ *  between verbs (the HOW is `formatQualifiedRef()`'s). */
 export function qualifyRef(system: QuerySystem, modelKey: string, ref: string): string {
-  return system.multiModel ? `${modelKey}:${ref}` : ref;
+  return system.multiModel ? formatQualifiedRef(modelKey, ref) : ref;
 }
 
 export interface ResolvedElement {
@@ -88,20 +88,15 @@ const REF_SHAPE_RE = /\//;
  *  read model's later instances (`view X again`) don't count as separate name matches — see
  *  the bare-name branch below. */
 export function resolveElement(system: QuerySystem, raw: string): ResolveResult {
-  let modelKey: string | undefined;
-  let rest = raw;
-  const colon = raw.indexOf(":");
-  if (colon > 0) {
-    const prefix = raw.slice(0, colon);
-    if (system.entries.some((e) => e.modelKey === prefix)) {
-      modelKey = prefix;
-      rest = raw.slice(colon + 1);
-    }
-  }
+  // `parseQualifiedRef` only splits when the prefix has the model-key SHAPE; a prefix that
+  // isn't one of THIS system's keys is then left in place — a display name may legitimately
+  // contain a colon — so the search runs over every model; if nothing matches, the miss names
+  // the unrecognised prefix (a typo'd qualifier is the likely cause).
+  const parsed = parseQualifiedRef(raw);
+  const known = parsed.modelKey !== null && system.entries.some((e) => e.modelKey === parsed.modelKey);
+  const modelKey = known ? parsed.modelKey! : undefined;
+  const rest = known ? parsed.ref : raw;
 
-  // A prefix that isn't a model key is left in place — a display name may legitimately contain
-  // a colon — so the search runs over every model; if nothing matches, the miss names the
-  // unrecognised prefix (a typo'd qualifier is the likely cause).
   const candidates = modelKey ? system.entries.filter((e) => e.modelKey === modelKey) : system.entries;
 
   const matches: ResolvedElement[] = [];
@@ -111,7 +106,7 @@ export function resolveElement(system: QuerySystem, raw: string): ResolveResult 
     const byRef = REF_SHAPE_RE.test(rest) ? entry.index.byRef.get(rest) : undefined;
     if (byRef) {
       const ref = entry.refs.refById.get(byRef.id)!;
-      matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: `${entry.modelKey}:${ref}`, elementKind: byRef.kind, elementName: byRef.name });
+      matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: formatQualifiedRef(entry.modelKey, ref), elementKind: byRef.kind, elementName: byRef.name });
     } else {
       // A repeated read model (`view X again`) has one name and several instances; the bare
       // name means the read model, which resolves to its FIRST instance (`logicalId`) — every
@@ -120,15 +115,15 @@ export function resolveElement(system: QuerySystem, raw: string): ResolveResult 
       const bucket = (entry.model.byName.get(normalizeName(rest)) ?? []).filter((el) => el.logicalId === el.id);
       for (const el of bucket) {
         const ref = entry.refs.refById.get(el.id)!;
-        matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: `${entry.modelKey}:${ref}`, elementKind: el.kind, elementName: el.name });
+        matches.push({ modelKey: entry.modelKey, file: entry.file, entry, ref, qualifiedRef: formatQualifiedRef(entry.modelKey, ref), elementKind: el.kind, elementName: el.name });
       }
     }
   }
 
   if (matches.length === 0) {
     const hint =
-      colon > 0 && modelKey === undefined
-        ? ` ("${raw.slice(0, colon)}" is not a model key — input models are: ${system.entries.map((e) => e.modelKey).join(", ")})`
+      parsed.modelKey !== null && !known
+        ? ` ("${parsed.modelKey}" is not a model key — input models are: ${system.entries.map((e) => e.modelKey).join(", ")})`
         : "";
     return { ok: false, error: `em query: no element matches "${raw}"${hint}` };
   }

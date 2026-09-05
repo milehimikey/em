@@ -1382,16 +1382,22 @@ Export refs (`<sliceKey>/<kind>.<slug>`) are, and remain, model-unqualified — 
 `em export`'s identity scheme. But a query spanning more than one input file needs to say *which*
 model a result came from, so whenever `<files...>` names more than one file, `em query` qualifies
 every ref in its output as `<modelKey>:<sliceKey>/<kind>.<slug>` (and a bare slice ref as
-`<modelKey>:<sliceKey>`) — `<modelKey>` is the kebab-slugged basename of the input file (extension
-stripped), deduped with `~2`/`~3`, … on collision within one invocation. A single-file invocation
-keeps bare, unqualified refs, unchanged from every other command. On input, a ref/name may be
-given bare (searched across every input model, per-model — never merged) or qualified
+`<modelKey>:<sliceKey>`). This is em's **one** cross-model addressing scheme — the same
+`<modelKey>` and grammar `em export` publishes as `model.key`, `em system`'s seam manifest
+(MIL-194) and em-portal deep links use, all through the shared helper described under
+[**Model-qualified refs**](#model-qualified-refs) in the `em export` section (MIL-193): since that
+ticket, `<modelKey>` is the kebab-slug of the file's declared `model "Name"` (its kebab-slugged
+basename, extension stripped, only when no name is declared), so a qualified ref survives a file
+move. Two input files deriving the same key are deduped `~2`/`~3`, … in file-list order (the
+first keeps the bare key) and `em query` prints a `duplicate-model-key` warning to stderr naming
+both files — give each model a unique `model "Name"` to make the keys stable. A single-file
+invocation keeps bare, unqualified refs, unchanged from every other command. On input, a ref/name
+may be given bare (searched across every input model, per-model — never merged) or qualified
 (`<modelKey>:...`, searched in exactly that model); an unqualified match found in more than one
 model is the same ambiguity error as a same-model duplicate name, listing every qualified
-candidate. This is a query-only convention — no other `em` surface's ref shape changes — chosen
-here because query is the first surface that ever needs to name an element across model
-boundaries in one answer; a future portal or MCP client minting deep links against query results
-should expect this qualified form to be stable.
+candidate. Before MIL-193 the key was the input file's basename and this was a query-only
+convention; a deep link minted against the old key for a model whose declared name slugs
+differently from its filename needs re-minting once.
 
 ### Exit codes and empty results
 

@@ -3689,8 +3689,26 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
     const refs = doc.results.map((x: { ref: string }) => x.ref);
-    expect(refs).toContain("model:place-order");
+    // MIL-193: model.em declares `model "Query Fixture"` -> key from the name; ambiguous.em
+    // declares no name -> key from the file basename.
+    expect(refs).toContain("query-fixture:place-order");
     expect(refs).toContain("ambiguous:a");
     expect(refs).toContain("ambiguous:b");
+  });
+
+  it("multi-model: two files declaring the same model name collide -> ~2 key + duplicate-model-key warning (MIL-193)", () => {
+    writeFileSync(join(dir, "same-a.em"), 'model "Shared Name"\nslice "Alpha" {\n  command Do A\n  event A Done\n}\n');
+    writeFileSync(join(dir, "same-b.em"), 'model "Shared Name"\nslice "Beta" {\n  command Do B\n  event B Done\n}\n');
+    const r = em(["query", "slices", "same-a.em", "same-b.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const refs = JSON.parse(r.stdout).results.map((x: { ref: string }) => x.ref);
+    expect(refs).toEqual(["shared-name:alpha", "shared-name~2:beta"]);
+    expect(r.stderr).toMatch(/same-b\.em: +warn +duplicate model key "shared-name"/);
+    expect(r.stderr).toContain("same-a.em");
+    expect(r.stderr).toContain('addressed as "shared-name~2"');
+    // Single-file: no collision, no warning, bare refs.
+    const single = em(["query", "slices", "same-b.em", "--json"], dir);
+    expect(single.stderr).not.toContain("duplicate model key");
+    expect(JSON.parse(single.stdout).results.map((x: { ref: string }) => x.ref)).toEqual(["beta"]);
   });
 });
