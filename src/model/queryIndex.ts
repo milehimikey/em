@@ -71,8 +71,12 @@ export interface ModelIndex {
   instances: Map<string, string[]>;
   /** Slice export key -> its doc-join facts, in `model.slices` order. */
   sliceFacts: Map<string, SliceIndexFact>;
-  /** INV-* id -> the slice whose doc body first declares it (first-wins on a duplicate — a
-   *  bug in the model, not something query silently resolves further). */
+  /** INV-* id -> the slice that declares it. A doc is scanned once per slice it resolves for
+   *  (its own canonical slice, plus every slice it ratifies via MIL-121 `covers:`), so the
+   *  CANONICAL binding (`doc.path === slices/<thisSliceKey>.md`) always owns the id, whatever
+   *  the slices' document order; a cross-bound slice claims an id only when no canonical slice
+   *  for that doc exists in the model. Two canonical docs declaring the same id is first-wins
+   *  in slice order — a bug in the model, not something query silently resolves further. */
   invariants: Map<string, InvariantIndexEntry>;
 }
 
@@ -119,17 +123,25 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
 
   const docsByKey = loadSliceDocsOnce(baseDir);
   const sliceFacts = new Map<string, SliceIndexFact>();
-  const invariants = new Map<string, InvariantIndexEntry>();
   model.slices.forEach((slice, i) => {
     const key = refs.sliceKeys[i];
     const doc = joinSliceDocFast(slice, key, docsByKey);
     sliceFacts.set(key, { key, name: slice.name, index: i, line: slice.line, doc });
-    if (doc.body !== null) {
+  });
+
+  // Two passes, canonical bindings first, so a doc's own slice owns its invariants no matter
+  // where a slice it also `covers:` sits in document order (see the `invariants` field doc).
+  const invariants = new Map<string, InvariantIndexEntry>();
+  const claim = (canonical: boolean) => {
+    for (const { key, doc } of sliceFacts.values()) {
+      if (doc.body === null || (doc.path === `slices/${key}.md`) !== canonical) continue;
       for (const id of extractInvariantIds(doc.body)) {
         if (!invariants.has(id)) invariants.set(id, { id, sliceKey: key });
       }
     }
-  });
+  };
+  claim(true);
+  claim(false);
 
   return { model, refs, baseDir, byRef, out, in: inMap, instances, sliceFacts, invariants };
 }

@@ -58,7 +58,7 @@ slice "Ship Order" {
   command Ship Order {
     orderId
   }
-  event Order Shipped @Order {
+  event Order Shipped renamed from "Order Dispatched" @Order {
     orderId
     shippedBy assigned
   }
@@ -223,6 +223,29 @@ describe("multi-model addressing (qualified refs, per-model resolution, cross-mo
       expect(result.error).toContain("a:a-slice/event.shared-event");
       expect(result.error).toContain("b:b-slice/event.shared-event");
     }
+  });
+
+  it("a miss with an unrecognised <prefix>: names the prefix and the real model keys", () => {
+    const system = twoModelSystem();
+    const result = resolveElement(system, "c:a-slice/ui.a-screen");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('no element matches "c:a-slice/ui.a-screen"');
+      expect(result.error).toContain('"c" is not a model key');
+      expect(result.error).toContain("a, b");
+    }
+  });
+
+  it("a colon inside a display name is not read as a qualifier, and a miss on a plain name carries no hint", () => {
+    const src = `slice "S" {\n  ui Step 1: Details @Customer\n  command Save Details\n  event Details Saved\n}\n`;
+    const c = compileForQuery(src, dir);
+    const system = buildQuerySystem([{ file: "s.em", model: c.model, refs: c.refs, index: c.index }]);
+    const hit = resolveElement(system, "Step 1: Details");
+    expect(hit.ok).toBe(true);
+    if (hit.ok) expect(hit.match.elementKind).toBe("ui");
+    const miss = resolveElement(system, "No Such Screen");
+    expect(miss.ok).toBe(false);
+    if (!miss.ok) expect(miss.error).not.toContain("model key");
   });
 
   it("consumers on a qualified ref returns qualified results, attributed to the right model", () => {
@@ -436,6 +459,22 @@ describe("field — type/tag/assigned/renamed-from facts", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.results[0].assigned).toBe(true);
+  });
+
+  it("reports the owning element's own renamed-from chain alongside the field's", () => {
+    const system = buildFixtureSystem(dir);
+    const onRenamedElement = queryField(system, "Order Shipped", "shippedBy");
+    expect(onRenamedElement.ok).toBe(true);
+    if (onRenamedElement.ok) {
+      expect(onRenamedElement.results[0].elementRenamedFrom).toEqual(["Order Dispatched"]);
+      expect(onRenamedElement.results[0].renamedFrom).toBeNull();
+    }
+    const onUnrenamedElement = queryField(system, "Order Placed", "placedAt");
+    expect(onUnrenamedElement.ok).toBe(true);
+    if (onUnrenamedElement.ok) {
+      expect(onUnrenamedElement.results[0].renamedFrom).toEqual(["createdAt"]);
+      expect(onUnrenamedElement.results[0].elementRenamedFrom).toBeNull();
+    }
   });
 
   it("a field that doesn't exist on the element is an empty (not erroring) result", () => {
@@ -829,9 +868,93 @@ slice "Refund Order" {
       writeFileSync(join(mixed, "slices", "Place-Order.md"), "---\nstatus: draft\n---\n# Place Order\n");
       const viaReadSliceDoc = readSliceDoc(mixed, "place-order") !== null;
       expect(loadSliceDocsOnce(mixed).has("place-order")).toBe(viaReadSliceDoc);
+
+      // Both spellings written: on a case-folding fs that's one file overwritten, on a
+      // case-sensitive fs it's two entries — either way the doc query sees must be the one
+      // readSliceDoc() reads (`slices/place-order.md` verbatim), never readdir-order-dependent.
+      writeFileSync(join(mixed, "slices", "place-order.md"), "---\nstatus: reviewed\n---\n# place order (exact)\n");
+      expect(loadSliceDocsOnce(mixed).get("place-order")?.body).toBe(readSliceDoc(mixed, "place-order")?.body);
     } finally {
       rmSync(mixed, { recursive: true, force: true });
     }
+  });
+});
+
+describe("invariant ownership — the canonical binding wins over a cross-bound slice, whatever the slice order", () => {
+  // The covering slice ("Request Payment") is declared BEFORE the doc's own slice ("Process
+  // Payment"), so slice-order first-wins would misattribute INV-PP-1 to request-payment.
+  const MODEL = `model "Ownership"
+
+persona Customer
+
+context Payment
+
+slice "Request Payment" {
+  ui Pay Screen @Customer
+  command Request Payment
+  event Payment Requested @Payment note "slices/process-payment.md"
+}
+
+slice "Process Payment" {
+  view Pending Payments from "Payment Requested"
+  processor Payment Processor
+  command Process Payment note "slices/process-payment.md"
+  event Payment Processed @Payment
+}
+
+slice "Show Receipt" {
+  view Receipt from "Payment Processed"
+  ui Receipt Screen @Customer
+}
+`;
+  const DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: payment\nstatus: ready-to-implement\nversion: 1\ncovers: request-payment\n---\n" +
+    "## Invariants / Business Rules\n- **INV-PP-1:** a payment is processed at most once\n";
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-inv-owner-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "process-payment.md"), DOC);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("attributes the id to the doc's own slice, and the query answer's sliceRef agrees with docPath", () => {
+    const compiled = compileForQuery(MODEL, dir);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    // Both slices resolve to the same doc — the covering one first in document order.
+    expect(compiled.index.sliceFacts.get("request-payment")!.doc.path).toBe("slices/process-payment.md");
+    expect(compiled.index.sliceFacts.get("process-payment")!.doc.path).toBe("slices/process-payment.md");
+    expect(compiled.index.invariants.get("INV-PP-1")).toEqual({ id: "INV-PP-1", sliceKey: "process-payment" });
+
+    const system = buildQuerySystem([{ file: "o.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+    const result = queryInvariant(system, "INV-PP-1");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.results[0]).toMatchObject({ sliceRef: "process-payment", docPath: "slices/process-payment.md" });
+  });
+
+  it("falls back to the covering slice only when the doc's own slice isn't in the model", () => {
+    // Same doc, but the model has no "Process Payment" slice — the cross-bound slice is the
+    // only claimant, so it (deterministically) owns the id.
+    const onlyCovering = `model "Covering Only"
+
+persona Customer
+
+context Payment
+
+slice "Request Payment" {
+  ui Pay Screen @Customer
+  command Request Payment
+  event Payment Requested @Payment note "slices/process-payment.md"
+}
+
+slice "Show Requests" {
+  view Requests from "Payment Requested"
+  ui Requests Screen @Customer
+}
+`;
+    const compiled = compileForQuery(onlyCovering, dir);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(compiled.index.invariants.get("INV-PP-1")).toEqual({ id: "INV-PP-1", sliceKey: "request-payment" });
   });
 });
 

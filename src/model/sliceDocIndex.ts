@@ -40,14 +40,21 @@ export function loadSliceDocsOnce(baseDir: string): Map<string, SliceDoc> {
   } catch {
     return docs;
   }
+  const names = new Set(entries);
   for (const name of entries) {
     const m = SLICE_DOC_FILENAME_RE.exec(name);
     if (!m) continue;
     const key = m[1].toLowerCase();
     // `readSliceDoc()` opens `slices/<key>.md` with the lowercased key verbatim, so a mixed-case
-    // filename is only a doc where the filesystem itself folds case. Probe once — only for the
-    // rare mixed-case entry — so query and export agree on every platform.
-    if (m[1] !== key && !existsSync(join(baseDir, "slices", `${key}.md`))) continue;
+    // filename is only a doc where the filesystem itself folds case. If the exact lowercase
+    // file is its own directory entry (a case-sensitive fs holding both), that entry is the
+    // one readSliceDoc() reads — skip this one, whatever order readdir listed them in.
+    // Otherwise probe once — only for the rare mixed-case entry — so query and export agree
+    // on every platform.
+    if (m[1] !== key) {
+      if (names.has(`${key}.md`)) continue;
+      if (!existsSync(join(baseDir, "slices", `${key}.md`))) continue;
+    }
     try {
       docs.set(key, parseSliceDoc(readFileSync(join(baseDir, "slices", name), "utf8")));
     } catch {

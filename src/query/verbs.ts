@@ -258,12 +258,15 @@ export interface FieldQueryEntry {
   tag: boolean;
   assigned: boolean;
   renamedFrom: string[] | null;
+  /** The owning element's own `renamed from` chain (event/command only, MIL-68) — provenance
+   *  has two axes: the field's prior names, and the prior names of the element it lives on. */
+  elementRenamedFrom: string[] | null;
 }
 
-/** One field's facts on the named element — type, identity-tag/system-assigned markers, and its
- *  `renamed from` chain. An element that resolves but carries no field of that name is a
- *  legitimate empty result (`results: []`), not an error — same "none, exit 0" contract as
- *  every other verb's empty answer. */
+/** One field's facts on the named element — type, identity-tag/system-assigned markers, its
+ *  `renamed from` chain, and the owning element's. An element that resolves but carries no
+ *  field of that name is a legitimate empty result (`results: []`), not an error — same "none,
+ *  exit 0" contract as every other verb's empty answer. */
 export function queryField(system: QuerySystem, ofRef: string, name: string): VerbResult<FieldQueryEntry> {
   const resolved = resolveElement(system, ofRef);
   if (!resolved.ok) return err(resolved.error);
@@ -281,6 +284,7 @@ export function queryField(system: QuerySystem, ofRef: string, name: string): Ve
         tag: field.tag === true,
         assigned: field.assigned === true,
         renamedFrom: field.renamedFrom ?? null,
+        elementRenamedFrom: el.renamedFrom ?? null,
       },
     ],
   };

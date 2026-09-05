@@ -71,8 +71,9 @@ export function formatInvariant(results: InvariantQueryEntry[]): string {
 export function formatField(results: FieldQueryEntry[]): string {
   if (results.length === 0) return "(none)";
   const r = results[0];
-  const renamed = r.renamedFrom && r.renamedFrom.length > 0 ? ` renamedFrom=[${r.renamedFrom.join(", ")}]` : "";
-  return `${r.elementRef}.${r.name}: ${r.type ?? "(untyped)"} tag=${r.tag} assigned=${r.assigned}${renamed}`;
+  const renamed = tagList("renamedFrom", r.renamedFrom ?? []);
+  const elementRenamed = tagList("elementRenamedFrom", r.elementRenamedFrom ?? []);
+  return `${r.elementRef}.${r.name}: ${r.type ?? "(untyped)"} tag=${r.tag} assigned=${r.assigned}${renamed}${elementRenamed}`;
 }
 
 export function formatPath(results: PathQueryEntry[]): string {

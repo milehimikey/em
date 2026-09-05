@@ -1442,8 +1442,11 @@ whose entries are verb-shaped:
   Lookup is status-agnostic: an id declared in a `draft` doc is found like any other, with that
   status reported (`em coverage`'s in-scope rule decides which invariants *must* be cited, not
   which ones exist).
-- `field` results carry `{ elementRef, name, type, tag, assigned, renamedFrom }` — same field
-  facts `em export`'s `FieldExport` carries, scoped to one field.
+- `field` results carry `{ elementRef, name, type, tag, assigned, renamedFrom, elementRenamedFrom }`
+  — the same field facts `em export`'s `FieldExport` carries, scoped to one field, plus the
+  owning element's own `renamed from` chain (`elementRenamedFrom`, event/command only; `null`
+  when the element was never renamed) — provenance has two axes, the field's prior names and
+  the prior names of the element it lives on.
 - `path` results carry `{ refs, edgeKinds, length }` — `refs` is the full node sequence
   (endpoints inclusive), `edgeKinds` one shorter (the edge between each consecutive pair);
   `length` counts real connections only (a `view-instance` step is free).

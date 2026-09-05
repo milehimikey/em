@@ -99,10 +99,10 @@ export function resolveElement(system: QuerySystem, raw: string): ResolveResult 
     }
   }
 
+  // A prefix that isn't a model key is left in place — a display name may legitimately contain
+  // a colon — so the search runs over every model; if nothing matches, the miss names the
+  // unrecognised prefix (a typo'd qualifier is the likely cause).
   const candidates = modelKey ? system.entries.filter((e) => e.modelKey === modelKey) : system.entries;
-  if (modelKey && candidates.length === 0) {
-    return { ok: false, error: `em query: unknown model "${modelKey}" in "${raw}"` };
-  }
 
   const matches: ResolvedElement[] = [];
   for (const entry of candidates) {
@@ -126,7 +126,11 @@ export function resolveElement(system: QuerySystem, raw: string): ResolveResult 
   }
 
   if (matches.length === 0) {
-    return { ok: false, error: `em query: no element matches "${raw}"` };
+    const hint =
+      colon > 0 && modelKey === undefined
+        ? ` ("${raw.slice(0, colon)}" is not a model key — input models are: ${system.entries.map((e) => e.modelKey).join(", ")})`
+        : "";
+    return { ok: false, error: `em query: no element matches "${raw}"${hint}` };
   }
   if (matches.length > 1) {
     const candidateRefs = matches.map((m) => m.qualifiedRef).join(", ");
