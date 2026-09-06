@@ -96,6 +96,7 @@ em migrate <file> --write                                     # apply the rewrit
 em ledger <file>                                              # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
 em ledger <file> --from <rev>                                 # baseline revision
 em ledger <file> --to <rev>                                   # compare revision (default: current working tree)
+em ledger <file> --waive <slice-key>                          # excuse a doc-content-without-version-bump finding for this slice key (repeatable; MIL-185, see docs/cli.md) — never waives a version regression or bump-without-content-change
 em ledger <file> --json                                       # print a JSON document instead of the text report (see docs/cli.md)
 em coverage <file>                                            # check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI
 em coverage <file> --tests <dir>                              # directory to scan recursively for test files citing invariant IDs

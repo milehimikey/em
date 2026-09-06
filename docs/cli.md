@@ -972,12 +972,14 @@ here is **never parsed or compiled**.
 |---|---|
 | `--from <rev>` | Baseline revision (required) |
 | `--to <rev>` | Compare revision; omitted defaults to the current working tree (same convention as `em diff --to`) |
+| `--waive <slice-key>` | Excuse a `ledger-content-without-version-bump` finding for this slice key (repeatable; MIL-185 — see "Waiving a finding" below) |
 | `--json` | Print a JSON document instead of the text report |
 
 ```bash
 em ledger model.em --from HEAD~5                # 5 commits ago vs. the working tree
 em ledger model.em --from v1.0 --to v1.1         # two tags
 em ledger model.em --from HEAD --json            # CI-friendly machine-readable form
+em ledger model.em --from HEAD~1 --waive checkout   # excuse one slice's finding this run
 ```
 
 Every finding is a defect once you've opted into running this command — `em ledger` exits 1 on
@@ -993,6 +995,43 @@ re-ratification (see
 — including them would false-positive on every ordinary lifecycle transition. `pattern`/
 `swimlane`/`schemaVersion` are also excluded — decorative, not currently exposed on `SliceDoc`
 at all.
+
+**Waiving a finding (MIL-185).** A version bump is the right fix for a real content change, but
+the wrong fix for a formatting-only doc reformat — bumping `version:` with nothing behind it
+falsely breaks an already-in-sync `implementedIn` link. Rather than normalize away "formatting"
+(which would bless one particular idea of what counts as cosmetic) or ask you to override the
+gate silently, `em ledger` accepts an **explicit, auditable waiver** from either of two sources,
+checked together:
+
+1. **`--waive <slice-key>`** on the command line (repeatable) — for a manual run.
+2. An **`Em-Ledger-Waive: <slice-key>` git trailer** on a commit in the checked range
+   (`<from>..<to>` when `--to` is given, else `<from>..HEAD`) — for CI, so the waiver travels
+   with the commit that actually made the formatting-only change, rather than living only in a
+   one-off CLI invocation nobody can see afterwards. One trailer per waived slice key; put
+   several on one commit if it reformats several docs:
+
+   ```
+   MIL-156: reformat slice-doc Given/When/Then rendering
+
+   Em-Ledger-Waive: checkout
+   Em-Ledger-Waive: apply-discount
+   ```
+
+   Trailers are read with git's own trailer parser (`%(trailers:key=Em-Ledger-Waive,...)`), which
+   requires the standard blank-line-separated footer block — the same convention `git
+   interpret-trailers` and this project's own commit trailers (`Co-Authored-By:`, etc.) use.
+   **An uncommitted working-tree change has no commit to carry a trailer**, so comparing against
+   the working tree (`--to` omitted) can only be waived with `--waive`.
+
+A waiver **only** excuses a `ledger-content-without-version-bump` finding — a version regression
+or a version bump with no real content change is never waivable, by either source: those two are
+never "just formatting," and hiding either would hide a real defect. A waiver naming a slice key
+with no matching waivable finding (a typo, or a slice that's already clean) is not silently
+dropped: it's reported as `note: waiver for unknown slice "<key>" ignored` on stderr, so a stale
+or misspelled waiver doesn't quietly stop meaning anything. A waived finding is still fully
+**reported**, just excused from the exit code — `em ledger` exits `0` when every remaining
+finding was waived. If the same slice key is named by both a flag and a trailer, the flag wins
+(reported as `waived by --waive`).
 
 A slice doc that can't be usefully compared is **skipped**, not treated as a finding:
 
@@ -1012,20 +1051,37 @@ $ echo $?
 1
 ```
 
-or `ok — ledger agrees (N slice doc(s) checked)` when nothing disagrees.
+or `ok — ledger agrees (N slice doc(s) checked)` when nothing disagrees. With a waiver in play:
 
-**`--json` shape** (`ledgerSchemaVersion: "1.0"`, versioned independently of the npm package and
+```
+$ em ledger model.em --from HEAD~1 --waive checkout
+waived: slice "checkout": doc content changed but version: didn't bump (still v1) (waived by --waive)
+ok — ledger agrees (1 slice doc(s) checked, 1 waived)
+$ echo $?
+0
+```
+
+A trailer waiver prints `(waived by trailer <short-sha>)` instead of `(waived by --waive)`. A
+mix of active and waived findings still exits `1` — only the "everything is either clean or
+waived" case exits `0` — and the mismatch line grows the same `, N waived` suffix:
+`3 ledger mismatch(es), 1 waived`.
+
+**`--json` shape** (`ledgerSchemaVersion: "1.1"`, versioned independently of the npm package and
 every other command's own schema):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
 - `from` / `to` — the revisions compared; `to` is explicit `null` for the working-tree form.
 - `checkedCount` — total slice docs considered (the union of both revisions' `slices/*.md`),
   including skipped ones.
-- `findings` — `{ sliceKey, code, message, oldVersion, newVersion, bodyChanged, lineageChanged }[]`.
-  `code` is one of `ledger-content-without-version-bump`, `ledger-version-without-content-change`,
-  `ledger-version-regression`.
+- `findings` — `{ sliceKey, code, message, oldVersion, newVersion, bodyChanged, lineageChanged }[]`,
+  active (unwaived) findings only. `code` is one of `ledger-content-without-version-bump`,
+  `ledger-version-without-content-change`, `ledger-version-regression`.
+- `waived` — every waived finding (MIL-185, added in schema `1.1`): the same shape as a
+  `findings` entry plus `waivedBy: { source: "flag" } | { source: "trailer", commit: "<full sha>" }`.
+  `[]` when no waiver applied — the only difference from a `1.0` document with the same result.
 - `skipped` — `{ sliceKey, reason }[]`, `reason` one of the three above.
-- `ok` — `true` when `findings` is empty.
+- `ok` — `true` when `findings` (the still-active list) is empty — a run with only waived
+  findings is `ok: true`.
 
 ## `em coverage <file> --tests <dir>`
 
