@@ -28,12 +28,25 @@
 // explicit, auditable escape hatch — it prints a loud one-line notice on stderr and writes
 // nothing about the skip into the file. Never clears `reviewedBy`/`reviewedOn`: the review record
 // is provenance for the version being ratified, not something ratification consumes.
+//
+// MIL-198 — the upstream-timeline advisory: the review/ratify gates above are about THIS slice's
+// own doc; they say nothing about whether the slices it depends on (earlier on the timeline,
+// per the modeling discipline in event-modeling-design/SKILL.md) are themselves far enough
+// along. Ratifying "ahead of" an unratified upstream producer isn't wrong — sometimes the team
+// deliberately works out of order — so this is advisory only and never refuses. `runRatify`
+// walks the query index's `in` adjacency one hop from every element in the ratifying slice to
+// find producing elements that live in OTHER slices (an upstream producer in the SAME slice
+// isn't a cross-slice dependency), dedupes by upstream slice, sorts by timeline position, and
+// reports any whose doc isn't `ready-to-implement`/`implemented` yet. Repeated-view instance
+// hops (`view X again`) are never edges in `ModelIndex.out`/`.in` (queryIndex.ts's own design
+// note), so they never surface here either — nothing extra to filter.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
+import { buildModelIndex } from "../model/queryIndex.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { REVIEWED_STATUS } from "./review.js";
 import { isValidDateString } from "./stateFile.js";
@@ -47,6 +60,60 @@ export const RATIFIED_STATUS = "ready-to-implement";
  *  ordinary path — `em slice review` recorded a review session) and `ready-to-implement` (the
  *  idempotent re-run, and the post-`reratify` path — see the module header). */
 const RATIFIABLE_STATUSES: readonly string[] = [REVIEWED_STATUS, RATIFIED_STATUS];
+
+/** Doc statuses an upstream producing slice can hold without triggering MIL-198's advisory —
+ *  the two statuses that mean "this slice's contract is settled enough to build against". */
+const UPSTREAM_SETTLED_STATUSES: readonly string[] = [RATIFIED_STATUS, "implemented"];
+
+/** One upstream producing slice (in timeline order earlier than the slice being ratified) whose
+ *  doc hasn't reached `ready-to-implement`/`implemented` yet. `status` is the doc's own status
+ *  string, or the literal `"no doc"` when no doc is bound/found for that slice at all. */
+export interface UpstreamUnratifiedSlice {
+  sliceKey: string;
+  status: string;
+}
+
+/**
+ * MIL-198 (ruling R5): for every element in the `sliceKey` slice, walks the query index's `in`
+ * adjacency one hop to find producing elements that live in OTHER slices (a producer in the SAME
+ * slice isn't a cross-slice dependency), dedupes by upstream slice, and reports every upstream
+ * slice whose doc status isn't `ready-to-implement`/`implemented` — sorted by the upstream
+ * slice's position on the timeline (`Slice.index`), so the advisory itself reads in the order the
+ * team should catch up in. Advisory data only: never refuses, callers decide whether/how to print
+ * it. An unknown `sliceKey` (shouldn't happen — the caller already resolved it) yields `[]`
+ * rather than throwing.
+ */
+export function upstreamUnratifiedSlices(
+  model: NormalizedModel,
+  refs: RefsResult,
+  baseDir: string,
+  sliceKey: string,
+): UpstreamUnratifiedSlice[] {
+  const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
+  if (sliceIndex === -1) return [];
+  const slice = model.slices[sliceIndex];
+  const index = buildModelIndex(model, refs, baseDir);
+
+  const upstreamSliceIndexes = new Set<number>();
+  for (const el of slice.elements) {
+    const ref = refs.refById.get(el.id);
+    if (!ref) continue;
+    for (const edge of index.in.get(ref) ?? []) {
+      const producer = index.byRef.get(edge.ref);
+      if (!producer || producer.sliceIndex === sliceIndex) continue;
+      upstreamSliceIndexes.add(producer.sliceIndex);
+    }
+  }
+
+  const results: UpstreamUnratifiedSlice[] = [];
+  for (const upstreamIndex of [...upstreamSliceIndexes].sort((a, b) => a - b)) {
+    const upstreamKey = refs.sliceKeys[upstreamIndex];
+    const status = index.sliceFacts.get(upstreamKey)?.doc.status ?? null;
+    if (status !== null && UPSTREAM_SETTLED_STATUSES.includes(status)) continue;
+    results.push({ sliceKey: upstreamKey, status: status ?? "no doc" });
+  }
+  return results;
+}
 
 export type ApplyRatifyResult =
   | {
@@ -176,7 +243,16 @@ export function applyRatifyFrontmatter(
 }
 
 export type RunRatifyResult =
-  | { ok: true; path: string; changed: boolean; skippedReviewFrom: string | null }
+  | {
+      ok: true;
+      path: string;
+      changed: boolean;
+      skippedReviewFrom: string | null;
+      /** MIL-198's upstream-timeline advisory — see `upstreamUnratifiedSlices` above. Always
+       *  computed once the gate has passed (whether or not `--skip-review` is what let it
+       *  through), never gates the ratification itself. */
+      upstreamWarnings: UpstreamUnratifiedSlice[];
+    }
   | { ok: false; message: string };
 
 /**
@@ -222,8 +298,17 @@ export function runRatify(
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
   }
+  // MIL-198: computed once the gate above has passed, before the write — advisory only, so it
+  // runs the same whether the gate passed on its own merits or via --skip-review.
+  const upstreamWarnings = upstreamUnratifiedSlices(model, refs, baseDir, sliceKey);
   if (result.changed) {
     writeFileSync(absPath, result.content, "utf8");
   }
-  return { ok: true, path: doc.path, changed: result.changed, skippedReviewFrom: result.skippedReviewFrom };
+  return {
+    ok: true,
+    path: doc.path,
+    changed: result.changed,
+    skippedReviewFrom: result.skippedReviewFrom,
+    upstreamWarnings,
+  };
 }

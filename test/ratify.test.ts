@@ -10,12 +10,17 @@
 // and the post-`reratify` path), unless `--skip-review` is passed. Most fixtures below therefore
 // start at `reviewed` rather than `draft`; the gate's own refusal/skip behavior has its own
 // describe block at the bottom of the pure-transform section.
+//
+// MIL-198 added the upstream-timeline advisory (`upstreamUnratifiedSlices`): pure-function
+// coverage lives in its own describe block near the bottom of this file, plus one `runRatify`
+// integration test proving the warnings ride the `ok: true` result. CLI-level stderr-line
+// coverage lives in test/cli.test.ts's ratify block.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { applyRatifyFrontmatter, runRatify } from "../src/cli/ratify.js";
+import { applyRatifyFrontmatter, runRatify, upstreamUnratifiedSlices } from "../src/cli/ratify.js";
 
 const DRAFT_DOC =
   "---\n" +
@@ -386,7 +391,13 @@ describe("runRatify (note-binding resolution + fs orchestration)", () => {
 
   it("flips a note-bound doc and writes it to disk", () => {
     const result = run("draft.em", "draft-slice", "Alex Rivera", "2026-08-28");
-    expect(result).toEqual({ ok: true, path: "slices/draft-slice.md", changed: true, skippedReviewFrom: null });
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/draft-slice.md",
+      changed: true,
+      skippedReviewFrom: null,
+      upstreamWarnings: [],
+    });
     const written = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
     expect(written).toContain("ratifiedBy: Alex Rivera");
@@ -396,7 +407,13 @@ describe("runRatify (note-binding resolution + fs orchestration)", () => {
   it("is idempotent on a second run with the same by/on pair (no write, changed: false)", () => {
     const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
     const result = run("draft.em", "draft-slice", "Alex Rivera", "2026-08-28");
-    expect(result).toEqual({ ok: true, path: "slices/draft-slice.md", changed: false, skippedReviewFrom: null });
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/draft-slice.md",
+      changed: false,
+      skippedReviewFrom: null,
+      upstreamWarnings: [],
+    });
     expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
   });
 
@@ -438,7 +455,13 @@ describe("runRatify (note-binding resolution + fs orchestration)", () => {
 
   it("resolves a MIL-121 cross-binding to the covering doc's own path and writes there", () => {
     const result = run("cross.em", "view-only", "Alex Rivera", "2026-08-28");
-    expect(result).toEqual({ ok: true, path: "slices/covering-slice.md", changed: true, skippedReviewFrom: null });
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/covering-slice.md",
+      changed: true,
+      skippedReviewFrom: null,
+      upstreamWarnings: [],
+    });
     const written = readFileSync(join(dir, "slices", "covering-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
     expect(written).toContain("ratifiedBy: Alex Rivera");
@@ -464,9 +487,154 @@ describe("runRatify (note-binding resolution + fs orchestration)", () => {
       path: "slices/gated-slice.md",
       changed: true,
       skippedReviewFrom: "draft",
+      upstreamWarnings: [],
     });
     const written = readFileSync(join(dir, "slices", "gated-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
     expect(written).toContain("ratifiedBy: Alex Rivera");
+  });
+});
+
+describe("upstreamUnratifiedSlices (MIL-198 upstream-timeline advisory)", () => {
+  // A neutral, self-contained model: three independent producing slices (make-widget,
+  // retire-widget, an undocumented ghost-widget), a ready-to-implement producer, a view fed by
+  // two events (to exercise dedupe + timeline sort), and a `view X again` chain (to prove a
+  // sibling instance's own producer is never picked up as if it were this slice's own upstream).
+  const FIXTURE = `model "Upstream Fixture"
+
+persona Customer
+
+context Widget
+
+slice "Make Widget" {
+  command Make Widget note "slices/make-widget.md"
+  event Widget Made @Widget
+}
+slice "Retire Widget" {
+  command Retire Widget note "slices/retire-widget.md"
+  event Widget Retired @Widget
+}
+slice "Ghost Widget" {
+  command Ghost Widget
+  event Widget Ghosted @Widget
+}
+slice "Ready Widget" {
+  command Ready Widget note "slices/ready-widget.md"
+  event Widget Readied @Widget
+}
+slice "List Single" {
+  view Widget List Single from "Widget Made" note "slices/list-single.md"
+}
+slice "List Ready" {
+  view Widget List Ready from "Widget Readied" note "slices/list-ready.md"
+}
+slice "List Ghost" {
+  view Widget List Ghost from "Widget Ghosted" note "slices/list-ghost.md"
+}
+slice "List Both" {
+  view Widget List Both from "Widget Retired", "Widget Made" note "slices/list-both.md"
+}
+slice "List Widgets" {
+  view Widget List from "Widget Made" note "slices/list-widgets.md"
+}
+slice "List Widgets Later" {
+  view Widget List again from "Widget Retired" note "slices/list-widgets-later.md"
+}
+slice "Notify From Latest" {
+  processor Widget Notifier from "Widget List" note "slices/notify-from-latest.md"
+  command Notify Widget
+  event Widget Notified @Widget
+}
+`;
+
+  function doc(status: string): string {
+    return (
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: widget\n" +
+      `status: ${status}\nversion: 1\n---\nbody\n`
+    );
+  }
+
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-ratify-upstream-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "model.em"), FIXTURE);
+    writeFileSync(join(dir, "slices", "make-widget.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "retire-widget.md"), doc("draft"));
+    // ghost-widget.md deliberately absent — "Ghost Widget" has no doc bound at all.
+    writeFileSync(join(dir, "slices", "ready-widget.md"), doc("ready-to-implement"));
+    writeFileSync(join(dir, "slices", "list-single.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "list-ready.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "list-ghost.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "list-both.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "list-widgets.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "list-widgets-later.md"), doc("draft"));
+    writeFileSync(join(dir, "slices", "notify-from-latest.md"), doc("draft"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function upstreamFor(sliceKey: string) {
+    const { model, refs } = compile(FIXTURE);
+    return upstreamUnratifiedSlices(model, refs, dir, sliceKey);
+  }
+
+  it("one warning naming the upstream slice with its doc status", () => {
+    expect(upstreamFor("list-single")).toEqual([{ sliceKey: "make-widget", status: "draft" }]);
+  });
+
+  it("no warning when the upstream slice is ready-to-implement", () => {
+    expect(upstreamFor("list-ready")).toEqual([]);
+  });
+
+  it('reports "no doc" for an upstream slice with no doc bound at all', () => {
+    expect(upstreamFor("list-ghost")).toEqual([{ sliceKey: "ghost-widget", status: "no doc" }]);
+  });
+
+  it("two upstream slices, deduped and sorted by timeline position (not `from`-list order)", () => {
+    // The `.em` lists "Widget Retired" before "Widget Made" in the `from` clause — the result
+    // must still come out in slice-index order (make-widget before retire-widget).
+    expect(upstreamFor("list-both")).toEqual([
+      { sliceKey: "make-widget", status: "draft" },
+      { sliceKey: "retire-widget", status: "draft" },
+    ]);
+  });
+
+  it("a view-instance chain doesn't count: only the actual edge's slice is upstream", () => {
+    // "Notify From Latest" resolves "Widget List" to the LATEST instance (List Widgets Later,
+    // fed by Widget Retired) — List Widgets' own producer (make-widget) must NOT appear just
+    // because it's an earlier instance of the same logical view.
+    expect(upstreamFor("notify-from-latest")).toEqual([{ sliceKey: "list-widgets-later", status: "draft" }]);
+  });
+
+  it("returns [] for a slice key the model doesn't have", () => {
+    expect(upstreamFor("no-such-slice")).toEqual([]);
+  });
+});
+
+describe("runRatify carries upstreamWarnings on success (MIL-198)", () => {
+  let dir: string;
+  const UPSTREAM_MODEL =
+    'slice "Producer" {\n  command Produce note "slices/producer.md"\n  event Produced\n}\n' +
+    'slice "Consumer" {\n  view Consumed from "Produced" note "slices/consumer.md"\n}\n';
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-ratify-upstream-warnings-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "upstream.em"), UPSTREAM_MODEL);
+    writeFileSync(join(dir, "slices", "producer.md"), DRAFT_DOC.replace("Draft Slice", "Producer"));
+    writeFileSync(join(dir, "slices", "consumer.md"), REVIEWED_DOC.replace("Draft Slice", "Consumer"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("warns about the upstream producer still at draft, and never refuses", () => {
+    const { model, refs } = compile(readFileSync(join(dir, "upstream.em"), "utf8"));
+    const result = runRatify(model, refs, dir, "consumer", "Alex Rivera", "2026-08-28");
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/consumer.md",
+      changed: true,
+      skippedReviewFrom: null,
+      upstreamWarnings: [{ sliceKey: "producer", status: "draft" }],
+    });
   });
 });
