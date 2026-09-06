@@ -2670,9 +2670,26 @@ skill is already installed (checked via the `event-modeling` router directory) a
 `--force` isn't given, so the skill copy itself is skipped: `install` always ensures the
 `AGENTS.md` section unless opted out.
 
+**`-f`/`--force` reconciles, it doesn't just overwrite (MIL-180):** against an existing
+installation, `--force` runs the same plan/apply `em skill sync` uses — every file added or
+changed in the packaged bundle is copied in, and, critically, a file that no longer exists in
+the packaged bundle is *removed* from the vendored copy instead of being left behind. This is
+scoped to the bundle's own managed directories only (`event-modeling`,
+`event-modeling-discover`/`-design`/`-implement`/`-conform`/`-review`, `event-modeling-shared`),
+exactly like `sync`: an unrelated sibling skill already vendored alongside them under
+`.claude/skills/` is never walked, never touched. It prints one `added:`/`modified:`/`removed:`
+line per changed file (same shape as `sync`, see below), followed by a summary line naming how
+many files changed and how many of those were removals.
+
+**`em skill sync` is the upgrade path across a structural bundle change** — such as the
+MIL-157 split of the old single `event-modeling/` directory into today's six-directory bundle —
+because it's unconditional and needs no flag to remember. `install --force` now performs the
+same reconcile, so either command gets a drifted vendored copy back to a clean layout; run
+`em skill check` afterwards (or instead, first) to confirm.
+
 | Flag | Effect |
 |---|---|
-| `-f, --force` | Overwrite an existing installation |
+| `-f, --force` | Overwrite an existing installation, reconciling added/updated/removed files within the bundle's managed directories the same way `em skill sync` does (sibling skills untouched) |
 | `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
 
 ## `em skill sync [path]`
@@ -2692,7 +2709,10 @@ overwrites unconditionally; a local edit is never merged, only clobbered on the 
 is the opposite contract from `em skill install`, which refuses to touch an existing copy
 without `-f`/`--force` (a first-time materialization you're expected to be able to customize).
 If that's not the contract you want, don't run `sync` — stick with `install --force` for an
-occasional, deliberate refresh instead.
+occasional, deliberate refresh instead: as of MIL-180, `install --force` reconciles
+added/updated/removed files the same way `sync` does (see
+[`em skill install`](#em-skill-install) above), so both commands leave a clean layout across a
+structural bundle change — `sync` is just the one that needs no flag.
 
 ```bash
 em skill sync                 # sync ./.claude/skills/ (the em bundle) against the installed em

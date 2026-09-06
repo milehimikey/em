@@ -41,11 +41,16 @@ drift"), Claude Code can trigger the matching `event-modeling-*` skill directly,
 through the router at all — that's the payoff of narrower per-skill `description:` triggers over
 one skill covering all nine phases.
 
-**Upgrading from before the split (pre-1.9.0):** re-run `em skill install --force` (or
-`em skill sync`) — it replaces the old, single `.claude/skills/event-modeling/` (which held every
-phase plus all reference docs and templates) with the six new directories. Nothing in your model
-files, slice docs, or `.event-modeling.md` state changes; only the skill's own vendored layout
-does. `em skill check` flags the old layout as drifted if you skip this step.
+**Upgrading across a structural bundle change** (such as the split above, pre-1.9.0's single
+`.claude/skills/event-modeling/` — which held every phase plus all reference docs and
+templates — becoming today's six directories): **`em skill sync` is the migration path** — it's
+unconditional, so it needs no flag to remember and always leaves the vendored copy exactly
+matching the packaged bundle, orphaned files from the old layout removed. `em skill install
+--force` performs the same add/update/remove reconcile as of MIL-180 (previously it only
+copied files it knew about and silently left old ones behind), so either command gets you to a
+clean six-directory layout. Nothing in your model files, slice docs, or `.event-modeling.md`
+state changes; only the skill's own vendored layout does. `em skill check` flags a stale or
+partially-upgraded layout as drifted if you skip both.
 
 ## Implementing outside Claude Code
 

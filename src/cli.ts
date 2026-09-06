@@ -1835,8 +1835,19 @@ const skill = program
 
 skill
   .command("install")
-  .description("copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared)")
-  .option("-f, --force", "overwrite an existing installation")
+  .description(
+    "copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-" +
+      "discover/-design/-implement/-conform/-review, event-modeling-shared); across a structural " +
+      "bundle change (e.g. the MIL-157 split of the old single event-modeling/ directory into " +
+      "this six-directory bundle), `em skill sync` is the migration path — --force now performs " +
+      "the same reconcile (MIL-180)",
+  )
+  .option(
+    "-f, --force",
+    "overwrite an existing installation, reconciling added/updated/removed files within the " +
+      "bundle's own managed directories the same way `em skill sync` does — never touching an " +
+      "unrelated sibling skill (MIL-180)",
+  )
   .option(
     "--no-agents-md",
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
@@ -1849,6 +1860,33 @@ skill
     if (existsSync(anchor) && !opts.force) {
       console.log(`skill already installed at ${anchor}`);
       console.log("re-run with --force to overwrite");
+    } else if (existsSync(anchor)) {
+      // --force on an existing installation (MIL-180): reconcile via the same plan/apply
+      // `em skill sync` uses instead of a raw recursive copy, so a file that no longer exists
+      // in the packaged bundle (e.g. left behind by the MIL-157 6-directory split) is removed
+      // from the vendored copy too. Scoped to EM_ALL_SKILL_BUNDLE_DIRS only, exactly like sync
+      // — an unrelated sibling skill under .claude/skills/ is never walked, never touched.
+      await mkdir(destRoot, { recursive: true });
+      const bundlePlan = planSkillSyncBundle(srcRoot, destRoot, EM_ALL_SKILL_BUNDLE_DIRS);
+      const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
+      const totalUnchanged = bundlePlan.reduce((n, { plan }) => n + plan.unchangedCount, 0);
+      const removedCount = bundlePlan.reduce(
+        (n, { plan }) => n + plan.changes.filter((c) => c.kind === "removed").length,
+        0,
+      );
+      applySkillSyncBundle(bundlePlan, srcRoot, destRoot);
+      for (const { dirName, plan } of bundlePlan) {
+        for (const c of plan.changes) console.log(`${c.kind}: ${dirName}/${c.relPath}`);
+      }
+      if (totalChanges === 0) {
+        console.log(`installed event-modeling skill bundle → ${destRoot} — already up to date (${totalUnchanged} file(s))`);
+      } else {
+        console.log(
+          `installed event-modeling skill bundle → ${destRoot} — ${totalChanges} file(s) changed ` +
+            `(${removedCount} removed), ${totalUnchanged} unchanged`,
+        );
+      }
+      console.log("in Claude Code, run /event-modeling to start a guided session");
     } else {
       await mkdir(destRoot, { recursive: true });
       for (const name of EM_ALL_SKILL_BUNDLE_DIRS) {
