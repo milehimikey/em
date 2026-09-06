@@ -272,7 +272,7 @@ view Waitlist Queue from "Waitlist Entry Added" {
 
 Before `derived` existed, the only choices for a field like this were a permanent, un-fixable
 warning, or dropping the field out of the `.em` entirely and describing it only in the slice
-doc's prose — the latter being what the toolshed pilot actually did, at the cost of `em
+doc's prose — the latter being the usual workaround before this marker existed, at the cost of `em
 export` no longer knowing the field exists. **Everything else in this section is still just a
 warning, and some of it will be correct and permanent** — these warnings never block a render
 or a merge, but note that (like an un-marked field before `derived` existed) an un-marked
