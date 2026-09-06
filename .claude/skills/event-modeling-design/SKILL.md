@@ -36,9 +36,19 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    directly**. Add `translation` slices for external inputs (externally triggered: external →
    translation → command → event, no slice before) and for the system reacting to its own state
    (internally triggered: read model in the slice before → translation → command → event).
-2. **Elaborate scenarios — first pass (step 6).** For each slice, capture the happy-path
-   Given/When/Then and the obvious invariants as short notes. (The full spec is the `slice` phase
-   below.)
+2. **Elaborate scenarios — first pass (step 6).** Scaffold every slice's doc now, one per
+   slice, none skipped: `em slice new "<slice name>" --pattern <state-change|state-view|
+   automation|translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes
+   `slices/<slice-name>.md` at `status: draft` (the same command, flags, and `--wire`
+   note-binding the `slice` phase's step 2 below documents in full). Then, for each freshly
+   scaffolded doc, hold a first-pass Socratic pass and write the happy-path Given/When/Then into
+   its `## Scenarios (Given / When / Then)` section and the obvious invariants known so far into
+   its `## Invariants / Business Rules` section — **into the doc, never into the state file.**
+   Keep this pass shallow (no field tables, alternate/error flows, or NFRs yet — that's the full
+   deep-dive in the `slice` phase below); the docs are the home for everything collected from
+   here on, not yet implementation-ready specs. Because every doc already exists by the time the
+   `slice` phase begins, its own step 2 scaffolding call is then a no-op — that phase picks up
+   at its step 1's deeper pass.
 3. **Evaluate completeness (step 7).** Walk the model: every slice is a **complete** pattern, not a
    half-slice — **every command has something that triggers it**, every command emits an event,
    **every event is read by a read model**, **every read model has a consumer**, every view has a
@@ -51,13 +61,19 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    this fact and what they do with it. The honest answers are "here's the read model we missed" or
    "nobody — so why are we recording it", and both improve the model.
 
-End of phase: render, update state (`em state set-phase slice`), continue with the `slice` phase
-below to write implementation specs.
+End of phase: render, update state (`em state set-phase slice` — the mechanical marker the state
+machine expects), and stop. Every slice already has a draft doc ready to receive the deep spec,
+but slicing is deliberate work the team starts when it's ready for it, not this phase's automatic
+next step.
 
 ## Phase: `slice` — deep slice documents
 
-Goal: implementation-ready specs. Go slice by slice (let the user pick order, or follow the
-timeline). Check `README.md`'s Slices table for what's already done (run `em slice index
+Goal: implementation-ready specs. Go slice by slice **in timeline order, starting with the first
+slice on the storyboard** — never ask the user which slice to spec first, and never propose
+starting with whichever slice looks highest-risk or most uncertain instead. Ratification
+proceeds in the same order: later slices' scenarios and invariants depend on earlier slices'
+events already being settled, so working out of order means re-litigating an earlier slice's
+contract mid-spec. Check `README.md`'s Slices table for what's already done (run `em slice index
 <model-name>.em` first if it looks stale).
 
 This is also where **branch / unhappy-path events** are discovered and added to the model — as a

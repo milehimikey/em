@@ -2910,6 +2910,27 @@ describe("em slice ratify (CLI, MIL-165)", () => {
       join(dir, "scoped.em"),
       'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
     );
+    // MIL-198 upstream-timeline advisory fixtures: "Consumer"/"Consumer Gated" are each fed by
+    // an event from the earlier "Producer" slice, whose doc hasn't reached
+    // ready-to-implement/implemented yet. Note paths match the slices' own export keys exactly
+    // (the canonical note-binding grammar), and two separate consumer slices/docs keep the
+    // ordinary path and the --skip-review path independent.
+    writeFileSync(
+      join(dir, "slices", "producer.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(join(dir, "slices", "consumer.md"), REVIEWED_DOC);
+    writeFileSync(join(dir, "slices", "consumer-gated.md"), DRAFT_DOC);
+    writeFileSync(
+      join(dir, "upstream.em"),
+      'slice "Producer" {\n  command Produce note "slices/producer.md"\n  event Produced\n}\n' +
+        'slice "Consumer" {\n  view Consumed from "Produced" note "slices/consumer.md"\n}\n',
+    );
+    writeFileSync(
+      join(dir, "upstream-gated.em"),
+      'slice "Producer" {\n  command Produce note "slices/producer.md"\n  event Produced\n}\n' +
+        'slice "Consumer Gated" {\n  view Consumed Gated from "Produced" note "slices/consumer-gated.md"\n}\n',
+    );
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -3020,6 +3041,35 @@ describe("em slice ratify (CLI, MIL-165)", () => {
     const r = em(["slice", "ratify", "draft.em", "draft-slice"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("--by");
+  });
+
+  it("warns on stderr about an upstream slice not yet ready-to-implement, but still exits 0 (MIL-198)", () => {
+    const r = em(["slice", "ratify", "upstream.em", "consumer", "--by", "Alex Rivera", "--on", "2026-08-28"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('warn: ratifying "consumer" ahead of upstream slice "producer" (status: draft)');
+    expect(r.stdout).toContain("ratified: slices/consumer.md");
+  });
+
+  it("the upstream-timeline advisory also fires on the --skip-review path (MIL-198)", () => {
+    const r = em(
+      [
+        "slice",
+        "ratify",
+        "upstream-gated.em",
+        "consumer-gated",
+        "--by",
+        "Alex Rivera",
+        "--on",
+        "2026-08-28",
+        "--skip-review",
+      ],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain(
+      'notice: --skip-review — ratifying "consumer-gated" without a recorded review (status was draft)',
+    );
+    expect(r.stderr).toContain('warn: ratifying "consumer-gated" ahead of upstream slice "producer" (status: draft)');
   });
 });
 

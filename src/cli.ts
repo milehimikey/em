@@ -772,6 +772,14 @@ slice
           `(status was ${result.skippedReviewFrom})`,
       );
     }
+    // MIL-198: advisory only, never refuses — ratifying ahead of an upstream slice the model's
+    // own timeline puts before this one (query index `in` adjacency, one hop, other slices only)
+    // is sometimes deliberate; this just makes it visible in the terminal and CI logs.
+    for (const upstream of result.upstreamWarnings) {
+      console.error(
+        `warn: ratifying "${sliceKey}" ahead of upstream slice "${upstream.sliceKey}" (status: ${upstream.status})`,
+      );
+    }
     console.log(
       result.changed
         ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn})`

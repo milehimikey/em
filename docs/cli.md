@@ -2153,6 +2153,26 @@ un-designated person from making the same edit by hand. Route `slices/**` throug
 entry naming your team's ratifiers so the platform enforces the review — see
 [ci.md#codeowners-routing-ratification-review](ci.md#codeowners-routing-ratification-review).
 
+**Upstream advisory (MIL-198).** After the review gate above has passed — including via
+`--skip-review` — `em slice ratify` checks whether the slice it's about to ratify depends on
+another slice that comes *earlier* on the model's timeline (a producing element the query
+index's `in` adjacency reaches one hop upstream, per `event-modeling-design/SKILL.md`'s
+timeline-order discipline). For every such upstream slice living in a different slice from the
+one being ratified, deduplicated and sorted by timeline position, whose doc isn't yet
+`ready-to-implement`/`implemented`, it prints one line per slice to **stderr**:
+
+```
+warn: ratifying "<key>" ahead of upstream slice "<upKey>" (status: <s>)
+```
+
+`<s>` is the upstream doc's own `status:`, or the literal `no doc` when no doc is bound at all.
+This is **advisory only — it never refuses ratification.** Working out of timeline order is
+sometimes deliberate (a downstream slice's contract can be nailed down before its producer is
+fully written up); the warning just makes that visible in the terminal and in CI logs rather than
+silent. A repeated read model's own earlier instance (`view X again`) is never counted as an
+upstream dependency by itself — only a genuine producing edge into an element of the slice being
+ratified counts.
+
 ## `em slice mark-implemented <file> <slice-key> <pr-url>`
 
 The lifecycle flip a ratified slice's doc gets at merge (MIL-103) — see
