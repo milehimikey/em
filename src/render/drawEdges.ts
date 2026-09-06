@@ -37,6 +37,12 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
 
   const sideLaneBySource = new Map<string, number>();
   for (const e of semanticEdges(model)) {
+    // A `loops-to` edge (MIL-199) is never drawn as an arrow — the timeline's forward-only
+    // laws stay intact; the loop is a numbered marker + legend entry instead
+    // (render/drawNotes.ts's `buildLoopsToMarkers`/`appendNoteLegend`). It still exists in
+    // `semanticEdges()` for `em query`/`em export` (the one shared derivation, model/edges.ts),
+    // so it must be skipped here explicitly rather than never emitted at all.
+    if (e.source === "loops-to") continue;
     const f = rects.get(e.from);
     const t = rects.get(e.to);
     if (!f || !t) continue;

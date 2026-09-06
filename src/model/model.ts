@@ -56,6 +56,10 @@ export interface Element {
    *  (MIL-68). `undefined` when absent. Purely export/codegen metadata: `em diff` never reads
    *  this, and continues reporting a rename as remove+add. */
   renamedFrom?: string[];
+  /** `loops-to "View"` clause(s) — event only (MIL-199): the name(s) of an earlier read model
+   *  this event re-feeds. `undefined` when absent. See `model/edges.ts`'s
+   *  `resolveLoopsToTarget` for resolution and `model/validate.ts` for the earlier-only rule. */
+  loopsTo?: string[];
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -192,6 +196,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         fields: el.fields,
         tags: el.tags,
         renamedFrom: el.renamedFrom,
+        loopsTo: el.loopsTo,
       };
 
       if (el.kind === "ui") {

@@ -14,6 +14,7 @@ import { compile } from "../src/pipeline.js";
 import { hasErrors } from "../src/model/validate.js";
 import { buildExport, buildSliceExport } from "../src/emit/json.js";
 import { STARTER_EM } from "../src/templates.js";
+import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 
 const PKG_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
@@ -29,7 +30,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.11");
+    expect(doc.schemaVersion).toBe("1.11"); // MIL-199: release-wide export bump
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -242,6 +243,82 @@ slice "Orders Again" {
   });
 });
 
+describe("`loops-to` round-trip (MIL-199, schema 1.11)", () => {
+  const LOOP_SRC = `
+context Todo
+slice "Notify" {
+  view Entries To Notify
+  ui Entries Screen
+}
+slice "Trigger" {
+  command Notify Entry
+  event Entry Notified @Todo
+}
+slice "Expire" {
+  command Expire Entry
+  event Entry Expired @Todo {
+    entryId: UUID
+  } loops-to "Entries To Notify"
+}
+`;
+
+  it("exports `loopsTo` with the resolved earlier view's ref, `null` on every element without the clause", () => {
+    const doc = docOf(LOOP_SRC);
+    const view = doc.model.slices[0].elements[0];
+    const expired = doc.model.slices[2].elements[1];
+    expect(view.loopsTo).toBeNull();
+    expect(expired.kind).toBe("event");
+    expect(expired.loopsTo).toEqual([{ name: "Entries To Notify", ref: view.ref }]);
+  });
+
+  it("adds a `model.edges` entry `{ from: <event ref>, to: <view ref>, source: \"loops-to\" }`", () => {
+    const doc = docOf(LOOP_SRC);
+    const view = doc.model.slices[0].elements[0];
+    const expired = doc.model.slices[2].elements[1];
+    const loopEdges = doc.model.edges.filter((e: any) => e.source === "loops-to");
+    expect(loopEdges).toEqual([{ from: expired.ref, to: view.ref, source: "loops-to" }]);
+  });
+
+  it("orders the loops-to edge after the element's other edges, in `model.elements` declaration order", () => {
+    const doc = docOf(LOOP_SRC);
+    const sources = doc.model.edges.map((e: any) => e.source);
+    // pattern edges (per slice) and cross-slice `from`/`arrow` edges never exist here since
+    // "Expire"'s only other edge is command->event (pattern) — loops-to is the last edge.
+    expect(sources[sources.length - 1]).toBe("loops-to");
+  });
+
+  it("supports multiple targets on one event, in declaration order", () => {
+    const doc = docOf(`
+context Todo
+slice "A" {
+  view Alpha
+}
+slice "B" {
+  view Beta
+}
+slice "C" {
+  command Do Thing
+  event Thing Done loops-to "Alpha" loops-to "Beta"
+}
+`);
+    const alpha = doc.model.slices[0].elements[0];
+    const beta = doc.model.slices[1].elements[0];
+    const evt = doc.model.slices[2].elements[1];
+    expect(evt.loopsTo).toEqual([
+      { name: "Alpha", ref: alpha.ref },
+      { name: "Beta", ref: beta.ref },
+    ]);
+  });
+
+  it("R12 fixture: exports a `model.edges` entry with source \"loops-to\" for the room-booking/waitlist loop", () => {
+    const doc = docOf(LOOP_FIXTURE);
+    const loopEdges = doc.model.edges.filter((e: any) => e.source === "loops-to");
+    expect(loopEdges).toHaveLength(1);
+    expect(loopEdges[0].from).toBe("expire-waitlist-entry/event.waitlist-entry-expired");
+    expect(loopEdges[0].to).toBe("entries-to-notify/view.entries-to-notify");
+  });
+});
+
 describe("model.key (MIL-193)", () => {
   it("is the kebab-slug of the declared model name, regardless of the file path", () => {
     const doc = docOf(`model "Order Fulfilment"\nslice "S" {\n  command Do\n}\n`, "some/dir/legacy-name.em");
@@ -267,7 +344,7 @@ describe("model.key (MIL-193)", () => {
 });
 
 describe("nullable fields are explicit null, not omitted", () => {
-  it("emits null for fields/note/issue/divergence/from/persona/context/logicalRef when absent", () => {
+  it("emits null for fields/note/issue/divergence/from/persona/context/logicalRef/loopsTo when absent", () => {
     const doc = docOf(`slice "S" {\n  command Do Thing\n}`);
     const el = doc.model.slices[0].elements[0];
     expect(el.fields).toBeNull();
@@ -282,10 +359,12 @@ describe("nullable fields are explicit null, not omitted", () => {
     expect(el.public).toBe(false);
     expect(el.tags).toBeNull();
     expect(el.renamedFrom).toBeNull();
+    expect(el.loopsTo).toBeNull();
     expect("fields" in el).toBe(true); // key present with null, not sniffed via absence
     expect("divergence" in el).toBe(true);
     expect("tags" in el).toBe(true);
     expect("renamedFrom" in el).toBe(true);
+    expect("loopsTo" in el).toBe(true);
   });
 
   it("emits null for a slice's source when absent", () => {
@@ -803,7 +882,7 @@ type Order { billing: Address }
     ]);
   });
 
-  it("bumps schemaVersion to 1.11 (MIL-201), additive over 1.10", () => {
+  it("bumps schemaVersion to 1.11 (em 1.11.0), additive over 1.10", () => {
     expect(docOf(SRC).schemaVersion).toBe("1.11");
   });
 });

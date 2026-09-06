@@ -3,7 +3,10 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noteHref } from "../src/render/render.js";
+import { noteHref, layoutDot, composeSvg } from "../src/render/render.js";
+import { compile } from "../src/pipeline.js";
+import { semanticEdges } from "../src/model/edges.js";
+import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 
 describe("noteHref", () => {
   it("is unchanged when the SVG sits beside the .em (note relative to both)", () => {
@@ -74,5 +77,27 @@ describe("writeRendered failure paths", () => {
     await expect(writeRendered("<svg/>", out, "eps")).rejects.toThrow(/exited with code 1/);
     // junk went to out.eps.tmp and was unlinked; out.eps itself was never created
     expect(readdirSync(dir)).toEqual(["fake-rsvg"]);
+  });
+});
+
+describe("`loops-to` (MIL-199): no edge is ever drawn for a loop-back", () => {
+  it("composes an SVG with the loops-to marker/legend but exactly one fewer drawn edge than the semantic graph has", async () => {
+    const { dot, model, grid } = compile(LOOP_FIXTURE);
+    const raw = await layoutDot(dot);
+    const svg = composeSvg(raw, model, grid, ".", ".");
+
+    // the marker + legend affordances are present — the loop is expressed, just not as an arrow
+    expect(svg).toContain('class="em-loops-to"');
+    expect(svg).toContain("Loops");
+    expect(svg).toContain('re-feeds "Entries To Notify"');
+
+    // exactly one semantic edge is `loops-to`, and the edges group draws every OTHER edge
+    // (both endpoints always have a rect in a full-model render) but never that one.
+    const allEdges = semanticEdges(model);
+    const loopEdges = allEdges.filter((e) => e.source === "loops-to");
+    expect(loopEdges).toHaveLength(1);
+    const edgesGroup = /<g class="em-edges">([\s\S]*?)<\/g>/.exec(svg)![1];
+    const drawnCount = (edgesGroup.match(/<path\b/g) ?? []).length;
+    expect(drawnCount).toBe(allEdges.length - loopEdges.length);
   });
 });

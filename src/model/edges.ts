@@ -12,9 +12,12 @@ import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Element, NormalizedModel, normalizeName } from "./model.js";
 
 /** Where an edge came from: inferred from a slice's pattern shape, resolved from an explicit
- *  `from "Name"` clause, or declared by an `arrow`. First-wins on a duplicate (from, to) pair
- *  in exactly this order — an `arrow` restating an inferred connection is the same line. */
-export type EdgeSource = "pattern" | "from" | "arrow";
+ *  `from "Name"` clause, declared by an `arrow`, or resolved from an event's `loops-to "View"`
+ *  clause (MIL-199) — a later fact re-feeding an earlier read model, deliberately never drawn
+ *  as an arrow (`render/drawEdges.ts` skips this source explicitly; see `render/drawNotes.ts`'s
+ *  legend instead). First-wins on a duplicate (from, to) pair in exactly this order — an
+ *  `arrow` restating an inferred connection is the same line. */
+export type EdgeSource = "pattern" | "from" | "arrow" | "loops-to";
 
 export interface SemanticEdge {
   from: string;
@@ -102,6 +105,20 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
     }
   }
 
+  // Loop-back wiring (MIL-199): an event's `loops-to "View"` clause re-feeds an earlier read
+  // model — validate.ts has already confirmed each name resolves to a `view` strictly earlier
+  // on the timeline before this ever runs (a model with diagnostics still compiles/exports;
+  // an event whose target doesn't resolve simply contributes no loop edge here). Added after
+  // the pattern/`from` wiring above, in `model.elements` declaration order, so a model's edge
+  // list stays deterministic regardless of how many loops-to clauses exist or where they land.
+  for (const el of model.elements) {
+    if (el.kind !== "event") continue;
+    for (const name of el.loopsTo ?? []) {
+      const target = resolveLoopsToTarget(model, el, name);
+      if (target) add(el.id, target.id, "loops-to");
+    }
+  }
+
   // Note: instances of the same logical read model (`view X again`) are deliberately NOT
   // connected to one another. Repeating a view is an ergonomic device for showing it at
   // successive points on the timeline; continuity is implied by the shared name, and the
@@ -142,5 +159,24 @@ export function resolveFromSource(model: NormalizedModel, el: Element, name: str
 function nearestViewAtOrBefore(bucket: Element[], sliceIndex: number): Element | undefined {
   return bucket
     .filter((x) => x.kind === "view" && x.sliceIndex <= sliceIndex)
+    .sort((a, b) => b.sliceIndex - a.sliceIndex)[0];
+}
+
+/**
+ * Resolve one event's `loops-to "View"` target (MIL-199): the LATEST `view` instance strictly
+ * EARLIER on the timeline (`sliceIndex < event.sliceIndex`) sharing the normalized name — the
+ * opposite selection direction from a reaction's `from` (which wants the nearest instance
+ * at-or-before its own slice, `nearestViewAtOrBefore` above): a loop back must land on a
+ * genuinely earlier instance, never the same slice, since same-slice-or-later is what an
+ * ordinary forward `from` on a later `view … again` instance is for. Returns `undefined` both
+ * when no view of that name exists at all and when one exists but only at-or-after the
+ * event's own slice — `validate.ts` tells those two cases apart for its own error messages by
+ * checking whether ANY view shares the name before calling this.
+ */
+export function resolveLoopsToTarget(model: NormalizedModel, event: Element, name: string): Element | undefined {
+  const bucket = model.byName.get(normalizeName(name));
+  if (!bucket) return undefined;
+  return bucket
+    .filter((x) => x.kind === "view" && x.sliceIndex < event.sliceIndex)
     .sort((a, b) => b.sliceIndex - a.sliceIndex)[0];
 }

@@ -118,6 +118,37 @@ arrow "Place Order" -> "Order Placed"
     expect(matches).toHaveLength(1);
     expect(matches[0].source).toBe("pattern");
   });
+
+  it("MIL-199: emits a `loops-to` edge from the event to the earlier view it resolves to, after the model's other edges", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+  ui Entries Screen
+}
+slice "Expire" {
+  command Expire Entry
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const es = semanticEdges(model);
+    const view = model.byName.get("entries to notify")![0].id;
+    const evt = model.byName.get("entry expired")![0].id;
+    expect(edge(es, evt, view)).toBe(true);
+    expect(es.find((e) => e.from === evt && e.to === view)?.source).toBe("loops-to");
+    expect(es[es.length - 1]).toEqual({ from: evt, to: view, source: "loops-to" });
+  });
+
+  it("MIL-199: never connects an event to a view it names but doesn't resolve earlier to (forward/unresolved is validate.ts's job, not edges.ts's)", () => {
+    const model = modelFrom(`
+context Todo
+slice "S" {
+  event Thing Done loops-to "No Such View"
+}
+`);
+    const es = semanticEdges(model);
+    expect(es.some((e) => e.source === "loops-to")).toBe(false);
+  });
 });
 
 describe("buildEdgeOverlay", () => {
@@ -174,5 +205,27 @@ slice "B" {
     expect(group).toContain("C"); // cubic bezier
     expect(group).toContain("marker-end");
     expect(defs).toContain("<marker");
+  });
+
+  it("MIL-199: never draws a `loops-to` edge — no path exists between the event and its earlier view", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+}
+slice "Expire" {
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const view = model.byName.get("entries to notify")![0].id;
+    const evt = model.byName.get("entry expired")![0].id;
+    const rects = new Map<string, Rect>([
+      [view, box(100, 100)],
+      [evt, box(300, 300)],
+    ]);
+    const { group } = buildEdgeOverlay(model, rects);
+    // Both endpoints have rects (so a normal edge WOULD be drawn here) — the loops-to source
+    // is what suppresses it, not a missing-rect fallthrough.
+    expect(group).toBe(`<g class="em-edges"></g>`);
   });
 });

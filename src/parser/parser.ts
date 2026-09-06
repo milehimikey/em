@@ -10,7 +10,7 @@
 //     ui    <free text> [@Persona]
 //     command <free text>
 //     view  <free text> [from "Event"[, "Event2" ...]]
-//     event <free text> [@Context] [public]
+//     event <free text> [@Context] [public] [loops-to "View"[ loops-to "View2" ...]]
 //     automation|processor|saga|translation <free text>
 //   }
 //   arrow <From Element> -> <To Element>
@@ -475,6 +475,28 @@ function extractClauses(
       );
     node.renamedFrom = renamedFromClause.values;
     rest = renamedFromClause.rest;
+  }
+
+  // `loops-to "View"` clause(s) (event only, MIL-199): the name of an earlier read model this
+  // event re-feeds — a poll/retry loop the timeline's forward-only `from`/`arrow` can't
+  // express. Case-sensitive and quote-anchored, same discipline as `from` below (MIL-82): a
+  // title-cased free-text event name (`event Widget Loops To Cabinet`) never collides, since
+  // the hyphenated lowercase keyword never appears in it. Repeatable — `loops-to "A" loops-to
+  // "B"` — so this loops on the extraction itself (unlike every single-shot clause above),
+  // accumulating each hit's values onto `node.loopsTo` in declaration order. Extracted before
+  // the plain `from` clause below only by convention (the two never actually collide: this
+  // one is event-only, `from` is view/reaction-only). No arrow is ever drawn for this — see
+  // `render/drawNotes.ts`'s legend instead.
+  for (;;) {
+    const loopsToClause = extractQuotedListClause(rest, "loops-to", "loops-to", line);
+    if (!loopsToClause) break;
+    if (node.kind !== "event")
+      throw new ParseError(
+        "`loops-to` is only valid on event — only a recorded fact can re-feed an earlier read model",
+        line,
+      );
+    node.loopsTo = [...(node.loopsTo ?? []), ...loopsToClause.values];
+    rest = loopsToClause.rest;
   }
 
   // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive

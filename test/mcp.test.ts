@@ -16,6 +16,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../src/mcp/server.js";
 import { readContract } from "../src/cli/contract.js";
+import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 
 // Spawns the real CLI (via tsx), same helper shape as test/cli.test.ts's `em()` — used here only
 // for the byte-identity assertions (MCP tool result === `em <cmd> --json`/stdout for the same
@@ -71,6 +72,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "clean.em"), CLEAN);
   writeFileSync(join(dir, "error.em"), WITH_ERROR);
   writeFileSync(join(dir, "scoped-error.em"), SCOPED_ERROR);
+  writeFileSync(join(dir, "loop.em"), LOOP_FIXTURE);
 
   mkdirSync(join(dir, "slices"), { recursive: true });
   writeFileSync(
@@ -783,7 +785,7 @@ describe("query tool", () => {
     const modelFile = join(dir, "ready.em");
     const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "consumers", event: "Thing Done" });
     expect(result.isError).toBeFalsy();
-    expect(doc.querySchemaVersion).toBe("1.0");
+    expect(doc.querySchemaVersion).toBe("1.1"); // MIL-199: +loops-to QueryEdgeKind
     expect(doc.verb).toBe("consumers");
     expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["read-model/view.thing-list"]);
 
@@ -819,6 +821,18 @@ describe("query tool", () => {
     const modelFile = join(dir, "ready.em");
     const { doc } = await callJson(client, "query", { files: [modelFile], verb: "upstream", of: "Thing Done" });
     expect(doc.results.map((r: { ref: string }) => r.ref)).toContain("ready-slice/ui.screen");
+  });
+
+  it("downstream: follows a `loops-to` edge (MIL-199), byte-identical to the CLI", async () => {
+    const modelFile = join(dir, "loop.em");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "downstream", of: "Waitlist Entry Expired" });
+    expect(doc.results.map((r: { ref: string }) => r.ref)).toContain("entries-to-notify/view.entries-to-notify");
+    expect(doc.results.find((r: { ref: string }) => r.ref === "entries-to-notify/view.entries-to-notify").via).toBe("loops-to");
+
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "downstream", modelFile, "--of", "Waitlist Entry Expired", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
   });
 
   it("slices: filters AND-combine, byte-identical to the CLI", async () => {

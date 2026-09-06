@@ -120,6 +120,8 @@ affected lines written by hand.
 | lineage ref cycle |
 | lineage ref malformed |
 | lineage version impossible |
+| loops-to points forward |
+| loops-to target unresolved |
 | reaction reads view before it exists |
 | reaction references unknown read model |
 | same-band collision |

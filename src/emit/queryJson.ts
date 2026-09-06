@@ -10,7 +10,11 @@
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (MIL-168): initial shape — verb, files, args, results.
-export const QUERY_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-199): new `QueryEdgeKind` enum value `"loops-to"` — an event's `loops-to "View"`
+// edge, distinct from an ordinary `from`-derived `event->view` connection (model/queryIndex.ts).
+// `downstream`/`upstream` results crossing one carry `via: "loops-to"`. Additive-only (new enum
+// value on an existing string field, not a new key).
+export const QUERY_SCHEMA_VERSION = "1.1";
 
 /** Build the `em query <verb> ... --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as every other `em` JSON surface. No

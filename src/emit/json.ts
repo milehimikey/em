@@ -17,7 +17,7 @@ import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
-import { EdgeSource, semanticEdges } from "../model/edges.js";
+import { EdgeSource, resolveLoopsToTarget, semanticEdges } from "../model/edges.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
@@ -82,11 +82,19 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // the document stay model-unqualified. Never deduped here — one export is one model; key
 // collisions are a multi-model-invocation concern (`duplicate-model-key`, `em query`/`em
 // system`). The `--slice` envelope carries the same value as top-level `modelKey`. Additive-only.
-// 1.11 (MIL-201): `slice.doc` gains `reviewedBy`/`reviewedOn` — who recorded the review session
-// this doc passed through, and when (frontmatter `reviewedBy:`/`reviewedOn:`), written only by
-// `em slice review`. Both null when absent, same as every other optional doc-join field. The
-// review gate is the FIRST of the two human gates; `ratifiedBy`/`ratifiedOn` (schema 1.8) record
-// the second. See catalog/docJoin.ts. Additive-only.
+// 1.11 (em 1.11.0 "the human gate", one bump for the whole release):
+//  - MIL-201: `slice.doc` gains `reviewedBy`/`reviewedOn` — who recorded the review session
+//    this doc passed through, and when (frontmatter `reviewedBy:`/`reviewedOn:`), written only
+//    by `em slice review`. Both null when absent, same as every other optional doc-join field.
+//    The review gate is the FIRST of the two human gates; `ratifiedBy`/`ratifiedOn` (schema
+//    1.8) record the second. See catalog/docJoin.ts.
+//  - MIL-199: element `loopsTo: { name, ref }[] | null` (same shape as `from`) — an event's
+//    `loops-to "View"` clause(s), resolved to the earlier view instance each names (`null`
+//    ref only on a model with unresolved diagnostics; validation makes it an error). New
+//    `model.edges[].source` enum value `"loops-to"` (model/edges.ts's `EdgeSource`) for the
+//    corresponding edge, straight from `semanticEdges()` — no new key, same `source` field
+//    every other edge already carries.
+// Additive-only.
 export const SCHEMA_VERSION = "1.11";
 
 export interface ExportResult {
@@ -127,6 +135,14 @@ export interface ElementExport {
   tags: TagExport[] | null;
   renamedFrom: string[] | null;
   logicalRef: string | null;
+  /** `loops-to "View"` clause(s) (MIL-199, schema 1.11) — event only, `null` on every other
+   *  kind and on an event with none. Same shape as `from`: each target's declared `name` plus
+   *  its resolved `ref` (the earlier `view` instance it re-feeds). `ref` is `null` only when
+   *  the target doesn't resolve to an earlier view — validation makes that a compile error
+   *  (`loops-to-unresolved`/`loops-to-forward`), so in practice `ref` is always non-null on an
+   *  export built from an error-free model; the null case exists for the same robustness/
+   *  parity reason `from`'s does. */
+  loopsTo: { name: string; ref: string | null }[] | null;
 }
 
 /** One semantic edge's exported shape (`model.edges[]`, schema 1.10 / MIL-191): both endpoints
@@ -329,6 +345,15 @@ export function buildExportDoc(
     return el.from.map((name) => ({ name, ref: refOf(resolveByName(model.byName, name)) }));
   };
 
+  // `loops-to "View"` targets (MIL-199), same `{ name, ref }` shape as `fromOf` above but
+  // resolved via `resolveLoopsToTarget` (earlier-instance-only) rather than `resolveByName`
+  // (first-bucket-entry) — a loops-to target and a `from` target follow different resolution
+  // rules even though both name a view by string.
+  const loopsToOf = (el: Element): { name: string; ref: string | null }[] | null => {
+    if (!el.loopsTo || el.loopsTo.length === 0) return null;
+    return el.loopsTo.map((name) => ({ name, ref: refOf(resolveLoopsToTarget(model, el, name)?.id) }));
+  };
+
   // Identity/composite/external DCB tag metadata (MIL-66) — events only in practice (`tag`
   // clauses are a parse error on any other kind), `null` when the event carries none. Order:
   // inline field identity tags in field order, then element-level composite/external clauses
@@ -387,6 +412,7 @@ export function buildExportDoc(
         renamedFrom: el.renamedFrom ?? null,
         logicalRef:
           el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
+        loopsTo: loopsToOf(el),
       })),
     };
   });

@@ -19,6 +19,8 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | An event feeding a view instance that sits earlier on the timeline | Add `view X again` at the point where the event lands, and move the source there (see [timeline.md](timeline.md)) |
 | A reaction's `from "View"` where no such read model exists | Fix the name, or add the missing view |
 | A reaction reading a view before any instance of it exists | Declare the view in or before the reaction's slice |
+| An event's `loops-to "View"` naming a view at the same slice or later (`loops-to-forward`) | Point `loops-to` at an earlier view, or use `from` on a later `view … again` instance instead |
+| An event's `loops-to "View"` naming a view that doesn't exist, or a name that resolves to a non-view (`loops-to-unresolved`) | Fix the name, or declare the view before this event |
 | `view X again` with no earlier declaration of `X` | Declare the view plainly the first time it appears |
 | An `arrow` endpoint that matches no element | Fix the name |
 | An `arrow` that points backward in time | Restructure so the target comes later |
@@ -173,6 +175,12 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   Change), or via an explicit `arrow` in either direction. A `ui` sharing a reaction's slice
   with no view present gets the more specific "renders disconnected here" warning instead
   (above), not this one — whether or not that slice also has the reaction's own command.
+
+**Loop-backs.** A resolved [`loops-to "View"`](dsl.md#loops-to) clause also counts as an
+event being read — the loop re-feeds an earlier read model instead of projecting into a new
+one, but it's still a real consumer, so the event-unread warning stays quiet. An *unresolved*
+or *forward* `loops-to` does **not** count: the event still warns as unread, on top of its own
+`loops-to-forward`/`loops-to-unresolved` error — a broken loop is not a silent pass.
 
 All seven are warnings rather than errors on purpose. A model under construction spends most of
 its life with one end of a flow ahead of the other, and errors block rendering — `em watch`

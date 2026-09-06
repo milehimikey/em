@@ -177,7 +177,7 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.11");
+    expect(doc.schemaVersion).toBe("1.11"); // MIL-199: release-wide export bump
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
@@ -4076,7 +4076,7 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     const r = em(["query", "consumers", "model.em", "--event", "Order Placed", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.querySchemaVersion).toBe("1.0");
+    expect(doc.querySchemaVersion).toBe("1.1"); // MIL-199: +loops-to QueryEdgeKind
     expect(doc.verb).toBe("consumers");
     expect(doc.files).toEqual(["model.em"]);
     expect(doc.results.map((x: { ref: string }) => x.ref).sort()).toEqual(

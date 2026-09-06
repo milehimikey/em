@@ -6,6 +6,7 @@ import {
   buildNoteMarkers,
   buildIssueMarkers,
   buildDivergenceMarkers,
+  buildLoopsToMarkers,
   appendNoteLegend,
 } from "../src/render/drawNotes.js";
 import { Rect } from "../src/render/svgGeometry.js";
@@ -239,6 +240,111 @@ slice "S" {
   });
 });
 
+describe("buildLoopsToMarkers", () => {
+  it("emits an indigo corner marker with an ↩ glyph at the box's bottom-left for an event with a `loops-to` clause", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+}
+slice "Expire" {
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const id = model.byName.get("entry expired")![0].id;
+    const group = buildLoopsToMarkers(model, new Map([[id, box(100, 100)]]));
+
+    // anchored near the box's bottom-left corner (left=50, bottom=120), inset by 5
+    expect(group).toContain("55,115");
+    // indigo fill, distinct from note amber / issue red / divergence teal
+    expect(group).toContain("#5C6BC0");
+    expect(group).not.toContain("#F4C430");
+    expect(group).not.toContain("#E53935");
+    expect(group).not.toContain("#26A69A");
+    // carries the ↩ glyph beside its footnote number
+    expect(group).toContain(">↩1</text>");
+    // no anchor — nothing to link to; a tooltip carries the text instead
+    expect(group).not.toContain("<a");
+    expect(group).toContain('<title>1. loops back to "Entries To Notify"</title>');
+  });
+
+  it("emits nothing for an event without a `loops-to` clause, or for a non-event element", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Order Placed
+}
+`);
+    const id = model.byName.get("order placed")![0].id;
+    const group = buildLoopsToMarkers(model, new Map([[id, box(100, 100)]]));
+    expect(group).not.toContain("<path");
+  });
+
+  it("MIL-26: draws a white halo behind the marker so it reads on any box color", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+}
+slice "Expire" {
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const id = model.byName.get("entry expired")![0].id;
+    const group = buildLoopsToMarkers(model, new Map([[id, box(100, 100)]]));
+    const paths = [...group.matchAll(/<path d="[^"]*Z" [^/]*\/>/g)];
+    expect(paths).toHaveLength(2);
+    expect(paths[0][0]).toContain('stroke="#FFFFFF"');
+    expect(paths[0][0]).toContain('fill="none"');
+    expect(paths[1][0]).toContain(`fill="#5C6BC0"`);
+  });
+
+  it("assigns one footnote number per EVENT, not per target, when an event has multiple `loops-to` clauses", () => {
+    const model = modelFrom(`
+context Todo
+slice "A" {
+  view Alpha
+}
+slice "B" {
+  view Beta
+}
+slice "C" {
+  event Thing Done loops-to "Alpha" loops-to "Beta"
+}
+`);
+    const id = model.byName.get("thing done")![0].id;
+    const group = buildLoopsToMarkers(model, new Map([[id, box(100, 100)]]));
+    // one marker, numbered 1, even though there are two targets
+    expect(group.match(/class="em-loops-to"/g)).toHaveLength(1);
+    expect(group).toContain(">↩1</text>");
+    expect(group).not.toContain(">↩2</text>");
+    expect(group).toContain('<title>1. loops back to "Alpha", "Beta"</title>');
+  });
+
+  it("never overlaps a note/issue/divergence marker on the same box — all four corners", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+}
+slice "Expire" {
+  event Entry Expired @Todo note "notes/expire.md" issue "does this ever double-fire?" divergence "known idiom" loops-to "Entries To Notify"
+}
+`);
+    const id = model.byName.get("entry expired")![0].id;
+    const rects = new Map([[id, box(100, 100)]]);
+    const notes = buildNoteMarkers(model, rects);
+    const issues = buildIssueMarkers(model, rects);
+    const divergences = buildDivergenceMarkers(model, rects);
+    const loopsTo = buildLoopsToMarkers(model, rects);
+
+    expect(notes).toContain("145,85"); // top-right
+    expect(issues).toContain("55,85"); // top-left
+    expect(divergences).toContain("145,115"); // bottom-right
+    expect(loopsTo).toContain("55,115"); // bottom-left
+    expect(loopsTo).toContain("#5C6BC0");
+  });
+});
+
 describe("appendNoteLegend", () => {
   const fakeSvg = (w: number, h: number) =>
     `<svg width="${w}pt" height="${h}pt"\n viewBox="0.00 0.00 ${w}.00 ${h}.00" ` +
@@ -354,5 +460,77 @@ slice "Request Payment" {
     // only one note row rendered, not two
     expect(out).toContain(">1.</tspan>");
     expect(out).not.toContain(">2.</tspan>");
+  });
+
+  it("MIL-199: adds a Loops section with an exact row per `loops-to` target, distinct from Notes/Issues/Accepted Divergences", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+}
+slice "Expire" {
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    expect(out).toContain("Loops");
+    expect(out).toContain('<tspan font-weight="bold" fill="#283593">↩ 1.</tspan>');
+    expect(out).toContain('<tspan dx="6">Entry Expired</tspan>');
+    expect(out).toContain('<tspan dx="6" fill="#5F6368">re-feeds "Entries To Notify"</tspan>');
+  });
+
+  it("MIL-199: grows the canvas for a loops-to-only model (no notes/issues/divergences present)", () => {
+    const model = modelFrom(`
+context Todo
+slice "Notify" {
+  view Entries To Notify
+}
+slice "Expire" {
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const out = appendNoteLegend(fakeSvg(400, 200), model);
+    const newH = Number(/height="([\d.]+)pt"/.exec(out)![1]);
+    expect(newH).toBeGreaterThan(200);
+    expect(out).toContain("Loops");
+    expect(out).not.toContain(">Notes<");
+    expect(out).not.toContain(">Issues<");
+    expect(out).not.toContain(">Accepted Divergences<");
+  });
+
+  it("MIL-199: grows further, and adds one row per target, when a single event loops-to two views", () => {
+    const model = modelFrom(`
+context Todo
+slice "A" {
+  view Alpha
+}
+slice "B" {
+  view Beta
+}
+slice "C" {
+  event Thing Done loops-to "Alpha" loops-to "Beta"
+}
+`);
+    const one = appendNoteLegend(
+      fakeSvg(400, 200),
+      modelFrom(`
+context Todo
+slice "A" {
+  view Alpha
+}
+slice "C" {
+  event Thing Done loops-to "Alpha"
+}
+`),
+    );
+    const two = appendNoteLegend(fakeSvg(400, 200), model);
+    const oneH = Number(/height="([\d.]+)pt"/.exec(one)![1]);
+    const twoH = Number(/height="([\d.]+)pt"/.exec(two)![1]);
+    expect(twoH).toBeGreaterThan(oneH); // a second target row grows the legend further
+    // both rows carry the SAME footnote number — it identifies the event, not the target
+    expect((two.match(/↩ 1\./g) ?? []).length).toBe(2);
+    expect(two).not.toContain("↩ 2.");
+    expect(two).toContain('re-feeds "Alpha"');
+    expect(two).toContain('re-feeds "Beta"');
   });
 });
