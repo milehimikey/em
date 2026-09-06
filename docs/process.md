@@ -53,10 +53,11 @@ three specific points:
 2. **Ratifying model changes** — every edit to a committed `.em` or slice doc is a ratified
    decision, made in (or reviewed out of) a facilitated session. The PR review of a model
    change is part of this: the diff *is* the decision record.
-3. **Ratifying conformance findings** — when the conform phase reports drift between model
-   and code, a human rules on every finding (fix the model, open a red note, fix the prose —
-   [workflow.md](workflow.md#7-ratify-the-findings)). A ruling is a human gate, the same shape as
-   ratifying a slice: an agent gathers evidence and proposes, a person decides, and the decision
+3. **Ruling on conformance findings** — a *ruling*, not a ratification (the word is reserved
+   for the design-exit gate in point 1), but the same human-decides shape: when the conform
+   phase reports drift between model and code, a human rules on every finding (fix the model,
+   open a red note, fix the prose — [workflow.md](workflow.md#7-rule-on-the-findings)). A ruling is a
+   human gate, the same shape as ratifying a slice: an agent gathers evidence and proposes, a person decides, and the decision
    is recorded with a name and a date. The report proposes; you decide. `em state
    set-conformance` records the ruling; nothing writes it for you.
    `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec>` (MIL-164,
@@ -121,7 +122,7 @@ responsibility columns:
 | 4. Hand off | **Humans ratify** the reviewed slice (status → `ready-to-implement`); then an **agent or engineer builds it, humans review the PR** | Ratification is human; the build is agent-suitable | `em slice ratify` (refuses an unreviewed doc), `em validate --slice-ready`, `em export`, the bridge |
 | 5. Track change | Model diffs reviewed; changelog for the business | Humans review | `em diff`, `em changelog`, `em ledger` |
 | 6. Check (conform) | Code checked against the model on a cadence; findings reported | Agent walks the code — **advisory only** | `em diff --json`, `driftSignal` |
-| 7. Ratify the findings | Every finding gets a human ruling, logged with a date | **Humans** | `em validate --list-issues` keeps rulings visible |
+| 7. Rule on the findings | Every finding gets a human ruling, logged with a date | **Humans** | `em validate --list-issues` keeps rulings visible |
 
 Stages 1–2, the ratification gate inside 4, and stage 7 are where the humans are
 load-bearing. The build half of stage 4 and the sweep half of stage 6 are where agents earn
@@ -138,7 +139,7 @@ flowchart LR
     S4a --> S4b["4. Implement<br/>agent-suitable, PR reviewed"]:::agent
     S4b --> S5["5. Track<br/>humans review the diff"]:::human
     S5 --> S6["6. Conform sweep<br/>agent gathers evidence, advisory only"]:::agent
-    S6 --> S7["7. Ratify the findings<br/>humans rule on every one"]:::human
+    S6 --> S7["7. Rule on the findings<br/>humans rule on every one"]:::human
     S7 -.->|"model updated"| S12
 ```
 

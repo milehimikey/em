@@ -286,7 +286,7 @@ Ground rules, matching the phase's own stance (see
   doesn't compile).
 - **The report itself is throwaway; the issue is the artifact.** Nothing commits the
   generated `conformance/<date>-report.md`, so the state file's `Last conformance:` line —
-  which cites that path — gets written by whoever ratifies the findings locally, in the same
+  which cites that path — gets written by whoever rules on the findings locally, in the same
   PR that applies them. If you want the file itself kept, add an `upload-artifact` step or
   have the job open a PR instead of an issue.
 - **Diff-scoped by default.** The phase reads the state file's `Last conformance:` marker

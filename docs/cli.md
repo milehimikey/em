@@ -2689,9 +2689,9 @@ This is the same check `em status`'s conformance rollup runs for exactly the sam
 ## `em conform-supersede <file> <report-path>`
 
 Stamps an existing conformance report with a "superseded" banner once its findings have been
-ruled on (MIL-164, [process.md](process.md#what-ratified-means)'s "Ratifying conformance
-findings" / [workflow.md](workflow.md#7-ratify-the-findings)) — the companion step to run at
-ratification time so a reader who follows a report's file:line citations knows, before trusting
+ruled on (MIL-164, [process.md](process.md#what-ratified-means)'s "Ruling on conformance
+findings" / [workflow.md](workflow.md#7-rule-on-the-findings)) — the companion step to run at
+ruling time so a reader who follows a report's file:line citations knows, before trusting
 them, that the report describes an ancestor of the current model rather than its current state.
 This is what makes the "two dated runs, not a track record" honesty register honest: a report
 nobody's told you is stale reads as current.
