@@ -157,6 +157,10 @@ an event directly.}}
      instance of a repeated view needs its own consumer, not just the last one. -->
 - **Freshness / consistency expectation:** {{real-time | eventual | on-demand}}
 
+| Field | Type | Source / Notes |
+|-------|------|-----------------|
+| {{field}} | {{Type}} | {{which event field it's copied from, or `Derived: <plain-language rule>` for a value computed from which events have landed (a status stepping through states, a computed rank, a flag two events can flip) — a field written as `Derived:` here should ALSO carry the `derived` marker (bare `derived`, or `derived from "Event A", "Event B"` naming the events the rule depends on) on the view's field in the `.em`, so `em export`/the model know the field exists too, not just this doc (docs/dsl.md#derived-fields)}} |
+
 ## Invariants / Business Rules
 <!-- What must ALWAYS hold. Give each a stable ID so tests and code can reference it:
      `INV-<MNEMONIC>-<n>`, where `<MNEMONIC>` is a short (2-4 letter/digit), slice-unique

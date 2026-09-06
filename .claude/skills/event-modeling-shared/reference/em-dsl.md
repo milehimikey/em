@@ -301,6 +301,25 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   `=== true` convention as `tag`. **Reach for this before echoing a server-set field onto the
   command just to silence a fields-completeness warning** — that misrepresents what the client
   actually sends.
+- **`derived`** (view fields only, MIL-200): marks a field as computed from which events have
+  landed, rather than copied from a single source event's payload (a status stepping through
+  states as events arrive, a computed ordinal, an availability flag two events can flip).
+  Trails a field's type, or the bare name of a typeless field — bare `derived` (no traced
+  source) or traced `derived from "Event A", "Event B"` (the two-word form parsed before the
+  bare check, same discipline as `renamed from` vs. plain `from`). A field whose ENTIRE text is
+  just `derived` is a field named `derived`, not a clause. `derived`/`derived from` on a
+  command/event/`ui`/`type` field is a parse error. Excludes the field from
+  `fields-completeness/view-field-no-source` entirely (and thus from `--slice-ready`). The
+  traced form still checks something: every named event must resolve among the view's ACTUAL
+  sources (its own `from` list, or the same-slice events for a `from`-less view) — an
+  unresolved name is a validation error, `derived-from-unresolved`. `em export` carries it as
+  `derived: boolean` on the field (always present, same `=== true` convention as `tag`/
+  `assigned`) and `derivedFrom: string[] | null` (the traced event name(s), `null` on a bare
+  `derived` field). **Reach for this instead of dropping a computed field out of the `.em` and
+  into doc-only prose** — the marker keeps `em export`/the model aware the field exists (the
+  `doc-model-field-mismatch` doc↔model check does not compare view field tables at all today —
+  see the slice template's field-table guidance — so this is an export-side win specifically,
+  not yet a doc-drift check).
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured
@@ -546,6 +565,10 @@ it to the slice that displays the read model, or drop it.
     same slice or later (`loops-to-forward`; that's what `from` on a later `view … again`
     instance is for), or naming a view that doesn't exist at all, or a name that resolves to a
     non-view (`loops-to-unresolved`).
+11. **`derived from` names an unresolved event** — a view field's traced `derived from "Event
+    A", "Event B"` clause naming an event that isn't among the view's actual sources (its own
+    `from` list, or the same-slice events for a `from`-less view) — `derived-from-unresolved`.
+    Name one of the view's real sources, or drop the traced event.
 
 **Warnings (should fix):**
 1. **Reaction with no command** — a `processor`/`automation`/`saga`/`translation` that triggers
@@ -576,7 +599,8 @@ it to the slice that displays the read model, or drop it.
    fail while any remain open.
 9. **View field with no source** — a `view` field whose name matches no field on any instance
    of its source events. Only checked once BOTH the view and at least one source event declare
-   `{ fields }`.
+   `{ fields }` — unless the field is marked `derived` (optionally `derived from "Event A",
+   "Event B"`, whose names must be among the view's sources), which exempts it entirely.
 10. **Event field not from a command** — an `event` field whose name matches no field on any
     command in the same slice. Only checked once BOTH the event and at least one same-slice
     command declare `{ fields }`. This is the payoff of the fields feature for slicing rigor:
@@ -624,6 +648,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
 | `cross-model-slice-doc-collision` | warning | Colliding slice doc path across models | Give each model its own directory (see docs/cli.md, "Multi-model projects"). |
 | `dangling-public-event` | warning | Public event/view no seam consumes | Declare the seam that reads it, or drop `public` if nothing outside the model does. |
+| `derived-from-unresolved` | error | `derived from` names an unknown event | Name one of the view's actual sources, or drop the traced event from `derived from`. |
 | `doc-model-element-not-in-doc` | warning | Model element the doc doesn't mention | Add the matching marker to the doc, or remove the element from the model. |
 | `doc-model-element-not-in-model` | warning | Doc names an element the model doesn't have | Add the element to the model, or fix/remove it in the doc. |
 | `doc-model-field-mismatch` | warning | Doc/model field mismatch | Reconcile the field table with the model's fields — names and types. |

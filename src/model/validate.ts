@@ -126,6 +126,9 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       // `{ fields }`: the view, and *every* source event. A partially-declared
       // source set can't prove a gap (the fieldless event may well provide the
       // field), so it stays silent rather than warning on legitimate fields.
+      // A field marked `derived` (MIL-200) opts out of this check entirely — it's the
+      // model's own record that the field is computed from which events have landed, not
+      // copied from a single source event's payload.
       if (view.fields && view.fields.length > 0) {
         const fromNames = view.from ?? [];
         const sourceEvents: Element[] = [];
@@ -142,11 +145,40 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           }
           const eventList = fromNames.map((n) => `"${n}"`).join(", ");
           for (const f of view.fields) {
+            // `derived` (bare or traced, MIL-200) marks a field as computed from which events
+            // have landed rather than copied from a single source event's payload — exempt
+            // from this check entirely, same posture as `assigned` below for event fields.
+            if (f.derived) continue;
             if (!fieldUnion.has(normalizeName(f.name))) {
               pushDiag(diags, "fields-completeness/view-field-no-source", {
                 message: `view "${view.name}" field "${f.name}" has no source in ${eventList}`,
                 line: view.line,
                 refs: [refOf(view.id), ...sourceEvents.map((e) => refOf(e.id))],
+              });
+            }
+          }
+        }
+
+        // `derived from "Event A", "Event B"` (view fields only, MIL-200): the traced form
+        // still checks something — every named event must resolve among the view's ACTUAL
+        // sources, its `from` names, or (for a `from`-less view) the events in its own slice.
+        // Independent of `sourcesDeclareFields` above: this checks event *names*, not field
+        // completeness, so it applies whether or not the sources declare `{ fields }`.
+        const actualSourceEvents = fromNames.length > 0 ? sourceEvents : events;
+        const actualSourceNames = new Set(actualSourceEvents.map((e) => normalizeName(e.name)));
+        for (const f of view.fields) {
+          for (const name of f.derivedFrom ?? []) {
+            if (!actualSourceNames.has(normalizeName(name))) {
+              const actualList =
+                actualSourceEvents.length > 0
+                  ? actualSourceEvents.map((e) => `"${e.name}"`).join(", ")
+                  : "(none)";
+              pushDiag(diags, "derived-from-unresolved", {
+                message:
+                  `view "${view.name}" field "${f.name}" is derived from unknown event "${name}" — ` +
+                  `its actual sources are ${actualList}`,
+                line: view.line,
+                refs: [refOf(view.id), ...actualSourceEvents.map((e) => refOf(e.id))],
               });
             }
           }

@@ -94,6 +94,12 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    `model.edges[].source` enum value `"loops-to"` (model/edges.ts's `EdgeSource`) for the
 //    corresponding edge, straight from `semanticEdges()` — no new key, same `source` field
 //    every other edge already carries.
+//  - MIL-200: field `derived: boolean` (computed-from-events marker, view fields only) — same
+//    `=== true` convention as `tag`/`assigned` — and `derivedFrom: string[] | null` (the traced
+//    form's event name(s), `renamedFrom`-style nullable). A trailing `derived` (or `derived
+//    from "Event A", "Event B"`) clause exempts the field from
+//    `fields-completeness/view-field-no-source`; the traced form's names must resolve among
+//    the view's actual sources (`derived-from-unresolved` otherwise). See model/validate.ts.
 // Additive-only.
 export const SCHEMA_VERSION = "1.11";
 
@@ -225,6 +231,16 @@ export interface FieldExport {
    *  `=== true` convention as `tag`. Always present; `false` on every field that isn't one,
    *  including every field of a declared type. */
   assigned: boolean;
+  /** `true` when the field carries a trailing `derived` clause, bare or traced (computed from
+   *  which events have landed — view fields only, MIL-200) — same `=== true` convention as
+   *  `tag`/`assigned`. Always present; `false` on every field that isn't one, including every
+   *  field of a declared type. */
+  derived: boolean;
+  /** The event name(s) a traced `derived from "Event A", "Event B"` clause names, in
+   *  declaration order — `renamedFrom`-style nullable, not the `derived` boolean-default
+   *  convention. `null` on a bare `derived` field, a non-derived field, and every field of a
+   *  declared type (the clause can't parse there). */
+  derivedFrom: string[] | null;
 }
 
 export interface TagExport {
@@ -257,6 +273,8 @@ function fieldExport(
     tag: f.tag === true,
     renamedFrom: f.renamedFrom ?? null,
     assigned: f.assigned === true,
+    derived: f.derived === true,
+    derivedFrom: f.derivedFrom ?? null,
   };
 }
 

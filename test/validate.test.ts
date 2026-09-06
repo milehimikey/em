@@ -10,6 +10,7 @@ import { resolveLoopsToTarget } from "../src/model/edges.js";
 import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
+import { DERIVED_FIXTURE } from "./helpers/derivedFixture.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
 const diagsFor = (src: string) => {
@@ -384,6 +385,126 @@ slice "S" {
 }
 `;
     expect(gapDiags(src)).toHaveLength(0);
+  });
+});
+
+describe("`derived` view fields (MIL-200)", () => {
+  const gapDiags = (src: string) =>
+    diagsFor(src).filter((d) => d.message.includes("has no source in"));
+  const derivedFromDiags = (src: string) =>
+    diagsFor(src).filter((d) => d.code === "derived-from-unresolved");
+
+  it("a bare `derived` field is exempt from view-field-no-source", () => {
+    const src = `
+slice "S" {
+  command Book Room { roomId }
+  event Room Booked { roomId }
+}
+slice "T" {
+  view Waitlist Queue from "Room Booked" {
+    roomId
+    position derived
+  }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+  });
+
+  it("a traced `derived from` field naming an actual source is exempt, and raises no unresolved error", () => {
+    const src = `
+slice "S" {
+  command Book Room { roomId }
+  event Room Booked { roomId }
+}
+slice "U" {
+  command Delist Room { roomId }
+  event Room Delisted { roomId }
+}
+slice "T" {
+  view Room Catalog from "Room Booked", "Room Delisted" {
+    roomId
+    availability: String derived from "Room Booked", "Room Delisted"
+  }
+}
+`;
+    expect(gapDiags(src)).toHaveLength(0);
+    expect(derivedFromDiags(src)).toHaveLength(0);
+  });
+
+  it("a traced `derived from` field naming an event outside the view's actual sources errors (derived-from-unresolved)", () => {
+    const src = `
+slice "S" {
+  command Book Room { roomId }
+  event Room Booked { roomId }
+}
+slice "T" {
+  view Room Catalog from "Room Booked" {
+    roomId
+    availability: String derived from "Room Booked", "Room Vanished"
+  }
+}
+`;
+    const diags = derivedFromDiags(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      severity: "error",
+      message:
+        'view "Room Catalog" field "availability" is derived from unknown event "Room Vanished" — ' +
+        'its actual sources are "Room Booked"',
+    });
+  });
+
+  it("an undeclared derived computed field (no `derived` marker) still warns view-field-no-source — the exemption is the marker, not the field's meaning", () => {
+    const src = `
+slice "S" {
+  command Book Room { roomId }
+  event Room Booked { roomId }
+}
+slice "T" {
+  view Room Catalog from "Room Booked" {
+    roomId
+    availability: String
+  }
+}
+`;
+    const diags = gapDiags(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      severity: "warning",
+      message: 'view "Room Catalog" field "availability" has no source in "Room Booked"',
+    });
+  });
+
+  it("a `from`-less view resolves `derived from` against its own slice's events", () => {
+    const ok = `
+slice "S" {
+  command Book Room { roomId }
+  event Room Booked { roomId }
+  view Room Snapshot {
+    roomId
+    status: String derived from "Room Booked"
+  }
+}
+`;
+    expect(derivedFromDiags(ok)).toHaveLength(0);
+
+    const bad = `
+slice "S" {
+  command Book Room { roomId }
+  event Room Booked { roomId }
+  view Room Snapshot {
+    roomId
+    status: String derived from "Room Vanished"
+  }
+}
+`;
+    const diags = derivedFromDiags(bad);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('its actual sources are "Room Booked"');
+  });
+
+  it("R12 fixture: the shared room-catalog/waitlist derived-field model compiles warning-free", () => {
+    expect(diagsFor(DERIVED_FIXTURE)).toHaveLength(0);
   });
 });
 

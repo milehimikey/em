@@ -15,6 +15,7 @@ import { hasErrors } from "../src/model/validate.js";
 import { buildExport, buildSliceExport } from "../src/emit/json.js";
 import { STARTER_EM } from "../src/templates.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
+import { DERIVED_FIXTURE } from "./helpers/derivedFixture.js";
 
 const PKG_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
@@ -423,16 +424,16 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[0].fields;
     expect(fields).toEqual([
-      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null, assigned: false },
-      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
     ]);
   });
 
   it("exports `tag: false` on every field of a declared type (types carry no tag clause)", () => {
     const doc = docOf(`type Money { amount: int, currency: String }`);
     expect(doc.model.types[0].fields).toEqual([
-      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null, assigned: false },
-      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
     ]);
   });
 
@@ -552,7 +553,7 @@ slice "S" {
 }
 `);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
       {
         name: "amountCents",
         type: "long",
@@ -560,6 +561,8 @@ slice "S" {
         tag: false,
         renamedFrom: ["amount", "amt"],
         assigned: false,
+        derived: false,
+        derivedFrom: null,
       },
     ]);
   });
@@ -582,7 +585,7 @@ slice "S" {
     );
     const evt = doc.model.slices[0].elements[0];
     expect(evt.fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false },
+      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false, derived: false, derivedFrom: null },
     ]);
     expect(evt.tags).toEqual([
       { key: "paymentId", kind: "identity", fields: ["paymentId"], description: null },
@@ -606,9 +609,9 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[1].fields;
     expect(fields).toEqual([
-      { name: "orderId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: true },
-      { name: "customerId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false },
-      { name: "placedAt", type: "Instant", typeRef: null, tag: false, renamedFrom: null, assigned: true },
+      { name: "orderId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null },
+      { name: "customerId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "placedAt", type: "Instant", typeRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null },
     ]);
   });
 
@@ -636,6 +639,184 @@ slice "T" {
   });
 });
 
+describe("`derived` round-trip (MIL-200)", () => {
+  it("exports `derived: true`/`derivedFrom: null` for a bare `derived` view field, `false`/`null` otherwise", () => {
+    const doc = docOf(`
+slice "S" {
+  command Join Waitlist {
+    entryId
+  }
+  event Waitlist Entry Added {
+    entryId
+  }
+}
+slice "T" {
+  view Waitlist Queue from "Waitlist Entry Added" {
+    entryId
+    position derived
+  }
+}
+`);
+    const view = doc.model.slices[1].elements.find((e: any) => e.kind === "view");
+    expect(view.fields).toEqual([
+      { name: "entryId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "position", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: true, derivedFrom: null },
+    ]);
+  });
+
+  it("exports `derived: true`/`derivedFrom: [...]` for a traced `derived from \"Event A\", \"Event B\"` view field", () => {
+    const doc = docOf(`
+slice "S" {
+  command Book Room {
+    roomId
+  }
+  event Room Booked {
+    roomId
+  }
+}
+slice "U" {
+  command Delist Room {
+    roomId
+  }
+  event Room Delisted {
+    roomId
+  }
+}
+slice "T" {
+  view Room Catalog from "Room Booked", "Room Delisted" {
+    roomId
+    availability: String derived from "Room Booked", "Room Delisted"
+  }
+}
+`);
+    const view = doc.model.slices[2].elements.find((e: any) => e.kind === "view");
+    expect(view.fields).toEqual([
+      { name: "roomId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      {
+        name: "availability",
+        type: "String",
+        typeRef: null,
+        tag: false,
+        renamedFrom: null,
+        assigned: false,
+        derived: true,
+        derivedFrom: ["Room Booked", "Room Delisted"],
+      },
+    ]);
+  });
+
+  it("exports `derived: false`/`derivedFrom: null` on every field of a declared type (the clause can't parse there)", () => {
+    const doc = docOf(`type Money { amount: int, currency: String }`);
+    for (const f of doc.model.types[0].fields) {
+      expect(f.derived).toBe(false);
+      expect(f.derivedFrom).toBeNull();
+    }
+  });
+
+  it("a `derived` view field carries the field into the model at all — the whole point (MIL-200)", () => {
+    // The migration case this ticket exists for: a computed field is no longer omitted from
+    // the `.em` just to dodge view-field-no-source — it's visible in the model and export again.
+    const doc = docOf(`
+slice "S" {
+  command Book Room {
+    roomId
+  }
+  event Room Booked {
+    roomId
+  }
+}
+slice "T" {
+  view Room Catalog from "Room Booked" {
+    roomId
+    availability: String derived from "Room Booked"
+  }
+}
+`);
+    const view = doc.model.slices[1].elements.find((e: any) => e.kind === "view");
+    const names = view.fields.map((f: any) => f.name);
+    expect(names).toContain("availability");
+    expect(doc.diagnostics.filter((d: any) => d.code.startsWith("fields-completeness"))).toEqual([]);
+  });
+
+  it("a traced `derived from` naming an event outside the view's actual sources errors (derived-from-unresolved) and blocks export", () => {
+    const src = `
+slice "S" {
+  command Book Room {
+    roomId
+  }
+  event Room Booked {
+    roomId
+  }
+}
+slice "T" {
+  view Room Catalog from "Room Booked" {
+    roomId
+    availability: String derived from "Room Booked", "Room Vanished"
+  }
+}
+`;
+    const { diagnostics } = compile(src);
+    expect(hasErrors(diagnostics)).toBe(true);
+    expect(diagnostics.filter((d: any) => d.code === "derived-from-unresolved")).toHaveLength(1);
+  });
+
+  it("R12 fixture: exports `derived: true` and the right `derivedFrom` for all three field shapes", () => {
+    const doc = docOf(DERIVED_FIXTURE);
+    const viewsByName = new Map(
+      doc.model.slices
+        .flatMap((s: any) => s.elements)
+        .filter((e: any) => e.kind === "view")
+        .map((e: any) => [e.name, e]),
+    );
+    const fieldOf = (viewName: string, fieldName: string) =>
+      (viewsByName.get(viewName) as any).fields.find((f: any) => f.name === fieldName);
+
+    expect(fieldOf("Room Catalog", "availability")).toMatchObject({
+      derived: true,
+      derivedFrom: ["Room Booked", "Room Delisted"],
+    });
+    expect(fieldOf("Room Listings", "status")).toMatchObject({
+      derived: true,
+      derivedFrom: ["Room Booked", "Room Delisted"],
+    });
+    expect(fieldOf("Waitlist Queue", "position")).toMatchObject({ derived: true, derivedFrom: null });
+    expect(fieldOf("Waitlist Queue", "status")).toMatchObject({
+      derived: true,
+      derivedFrom: [
+        "Waitlist Entry Added",
+        "Waitlist Entry Notified",
+        "Waitlist Entry Expired",
+        "Waitlist Entry Withdrawn",
+      ],
+    });
+  });
+
+  it("R12 fixture variant: a bogus traced event name errors with derived-from-unresolved", () => {
+    const bogus = DERIVED_FIXTURE.replace(
+      'availability: String derived from "Room Booked", "Room Delisted"',
+      'availability: String derived from "Room Booked", "Room Vanished"',
+    );
+    expect(bogus).not.toBe(DERIVED_FIXTURE); // guard against the replacement silently no-op'ing
+    const { diagnostics } = compile(bogus);
+    expect(hasErrors(diagnostics)).toBe(true);
+    const unresolved = diagnostics.filter((d: any) => d.code === "derived-from-unresolved");
+    expect(unresolved).toHaveLength(1);
+    expect(unresolved[0].message).toContain('unknown event "Room Vanished"');
+  });
+
+  it("R12 fixture variant: dropping the `derived` marker from a computed field reintroduces view-field-no-source — the exemption is the marker, not the fixture", () => {
+    const undeclared = DERIVED_FIXTURE.replace(
+      "position: Integer derived\n",
+      "position: Integer\n",
+    );
+    expect(undeclared).not.toBe(DERIVED_FIXTURE);
+    const { diagnostics } = compile(undeclared);
+    const gap = diagnostics.filter((d: any) => d.code === "fields-completeness/view-field-no-source");
+    expect(gap).toHaveLength(1);
+    expect(gap[0].message).toBe('view "Waitlist Queue" field "position" has no source in "Waitlist Entry Added", "Waitlist Entry Notified", "Waitlist Entry Expired", "Waitlist Entry Withdrawn"');
+  });
+});
+
 describe("note / issue / fields / from round-trip", () => {
   const SRC = `
 slice "Receive" {
@@ -658,8 +839,8 @@ slice "Catalog" {
     expect(event.note).toBe("notes/stock.md");
     expect(event.issue).toBe("still open?");
     expect(event.fields).toEqual([
-      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false },
-      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
     ]);
   });
 
@@ -826,9 +1007,9 @@ slice "Accept" {
     expect(t.name).toBe("QuoteAcceptedLine");
     expect(typeof t.line).toBe("number");
     expect(t.fields).toEqual([
-      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
-      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false },
-      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
     ]);
   });
 
@@ -836,7 +1017,7 @@ slice "Accept" {
     const doc = docOf(SRC);
     const eventFields = doc.model.slices[0].elements[1].fields;
     expect(eventFields).toEqual([
-      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
       {
         name: "lines",
         type: "QuoteAcceptedLine[]",
@@ -844,6 +1025,8 @@ slice "Accept" {
         tag: false,
         renamedFrom: null,
         assigned: false,
+        derived: false,
+        derivedFrom: null,
       },
       {
         name: "winner",
@@ -852,6 +1035,8 @@ slice "Accept" {
         tag: false,
         renamedFrom: null,
         assigned: false,
+        derived: false,
+        derivedFrom: null,
       },
     ]);
   });
@@ -870,6 +1055,8 @@ type Order { billing: Address }
         tag: false,
         renamedFrom: null,
         assigned: false,
+        derived: false,
+        derivedFrom: null,
       },
     ]);
   });
@@ -878,7 +1065,7 @@ type Order { billing: Address }
     const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
     expect(doc.model.types).toEqual([]);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false },
+      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
     ]);
   });
 

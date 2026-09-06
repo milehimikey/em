@@ -712,6 +712,11 @@ interface FieldClauses {
   renamedFrom?: string[];
   /** Trailing `assigned` keyword (event fields only, MIL-148): marks the field system-assigned. */
   assigned?: boolean;
+  /** Trailing `derived` keyword, or `derived from "Event A", "Event B"` clause (view fields
+   *  only, MIL-200): marks the field as computed from which events have landed. */
+  derived?: boolean;
+  /** The traced form's event name(s), when given (`derived from ...`); absent on the bare form. */
+  derivedFrom?: string[];
 }
 
 /**
@@ -738,6 +743,15 @@ interface FieldClauses {
  * stops once a pass finds nothing new. At most as many passes as there are clauses ever do real
  * work (each clause can only unblock another once), so this never loops meaningfully longer than
  * a fixed clause chain would.
+ *
+ * `derived from "Event A", "Event B"` (view fields only, MIL-200) is checked in the same loop,
+ * BEFORE the bare `derived` check below it — mirroring how the element-level `renamed from` is
+ * extracted before the plain `from` clause (`extractClauses`) — so the two-word clause's own
+ * "from"-adjacent text is never at risk of being mistaken for anything the bare form's regex
+ * might otherwise reach into. (In practice the two never actually collide: the bare form's
+ * `/^(.*\S)\s+derived$/` only matches text ending in the literal word "derived", and a traced
+ * clause's text ends in a quoted list instead — but the ordering keeps this function's clauses
+ * checked in the same "two-word form before its bare prefix" discipline throughout.)
  */
 function extractFieldClauses(raw: string, line: number, context: FieldClauseContext): { rest: string; clauses: FieldClauses } {
   const clauses: FieldClauses = {};
@@ -794,6 +808,43 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
       }
     }
 
+    // `derived from "Event A", "Event B"` (view fields only, MIL-200) — checked before the
+    // bare `derived` keyword below, same "two-word form first" discipline as `renamed from`
+    // vs. plain `from` at the element level.
+    if (clauses.derived === undefined && clauses.derivedFrom === undefined) {
+      const derivedFromClause = extractQuotedListClause(rest, "derived\\s+from", "derived from", line);
+      if (derivedFromClause) {
+        if (context !== "view") {
+          throw new ParseError(
+            "`derived from` is only valid on a view field — it names the events a computed " +
+              `value's arrival depends on, so it can't describe a ${context === "type-decl" ? "type" : context} field`,
+            line,
+          );
+        }
+        clauses.derived = true;
+        clauses.derivedFrom = derivedFromClause.values;
+        rest = derivedFromClause.rest;
+        progressed = true;
+      }
+    }
+
+    if (clauses.derived === undefined) {
+      const derivedMatch = rest.match(/^(.*\S)\s+derived$/);
+      if (derivedMatch) {
+        if (context !== "view") {
+          throw new ParseError(
+            "`derived` is only valid on a view field — it marks a field computed from which " +
+              `events have landed, not copied from a triggering command or event payload, so ` +
+              `it can't describe a ${context === "type-decl" ? "type" : context} field`,
+            line,
+          );
+        }
+        clauses.derived = true;
+        rest = derivedMatch[1];
+        progressed = true;
+      }
+    }
+
     if (!progressed) break;
   }
 
@@ -822,47 +873,51 @@ function parseFieldSpec(raw: string, line: number, context: FieldClauseContext):
   if (field && clauses.tag) field.tag = true;
   if (field && clauses.renamedFrom) field.renamedFrom = clauses.renamedFrom;
   if (field && clauses.assigned) field.assigned = true;
+  if (field && clauses.derived) field.derived = true;
+  if (field && clauses.derivedFrom) field.derivedFrom = clauses.derivedFrom;
   return field;
 }
 
-/** Matches a fragment ending in an in-progress `renamed from` list: `renamed from` followed by
- *  one or more quoted items, comma-separated, the LAST one flush against the fragment's end —
- *  exactly the shape `splitTopLevel` leaves on the fragment that owns the list once it's split
- *  the top-level commas BETWEEN list items apart (see `mergeRenamedFromContinuations`). */
-const RENAMED_FROM_TAIL =
-  /(?:^|\s)renamed\s+from\s+"(?:[^"\\]|\\.)*"(?:\s*,\s*"(?:[^"\\]|\\.)*")*$/;
+/** Matches a fragment ending in an in-progress field-level quoted-list clause: `renamed from`
+ *  or `derived from` (MIL-200 — the same hazard, same fix) followed by one or more quoted
+ *  items, comma-separated, the LAST one flush against the fragment's end — exactly the shape
+ *  `splitTopLevel` leaves on the fragment that owns the list once it's split the top-level
+ *  commas BETWEEN list items apart (see `mergeQuotedListContinuations`). */
+const QUOTED_LIST_CLAUSE_TAIL =
+  /(?:^|\s)(?:renamed|derived)\s+from\s+"(?:[^"\\]|\\.)*"(?:\s*,\s*"(?:[^"\\]|\\.)*")*$/;
 
 /** Matches a fragment that, trimmed, STARTS with a quoted string — capturing that leading
  *  quoted span so the caller can inspect what (if anything) follows it (see
- *  `mergeRenamedFromContinuations`). */
+ *  `mergeQuotedListContinuations`). */
 const LEADING_QUOTED_STRING = /^"(?:[^"\\]|\\.)*"/;
 
 /**
- * Re-merges `splitTopLevel`'s fragments across a field-level `renamed from "Old1", "Old2"`
- * list's own internal commas (MIL-68, hazard 4). `splitTopLevel` only treats a comma as
- * literal WHILE INSIDE a single quoted span — the commas BETWEEN two list items are
- * themselves top-level separators, so `{ a: X renamed from "A", "B", b: Y }` splits into
- * THREE raw fragments (`a: X renamed from "A"`, `"B"`, `b: Y`), not two fields. Worse, a
- * continuation fragment need not be JUST the quoted string — `{ paymentId: UUID renamed from
- * "id", "pid" tag }` splits into `paymentId: UUID renamed from "id"` and `"pid" tag`, and that
- * second fragment must fold in WHOLE (quote and trailing ` tag` both) or the ` tag` survives as
- * a fabricated field of its own — a phantom identity tag flowing into the export with no
- * diagnostic.
+ * Re-merges `splitTopLevel`'s fragments across a field-level quoted-list clause's own internal
+ * commas (MIL-68, hazard 4; extended to `derived from` by MIL-200 — the identical hazard on a
+ * different keyword). `splitTopLevel` only treats a comma as literal WHILE INSIDE a single
+ * quoted span — the commas BETWEEN two list items are themselves top-level separators, so
+ * `{ a: X renamed from "A", "B", b: Y }` splits into THREE raw fragments (`a: X renamed from
+ * "A"`, `"B"`, `b: Y`), not two fields, and `{ status: String derived from "A", "B" }` splits
+ * the same way. Worse, a continuation fragment need not be JUST the quoted string —
+ * `{ paymentId: UUID renamed from "id", "pid" tag }` splits into `paymentId: UUID renamed from
+ * "id"` and `"pid" tag`, and that second fragment must fold in WHOLE (quote and trailing ` tag`
+ * both) or the ` tag` survives as a fabricated field of its own — a phantom identity tag
+ * flowing into the export with no diagnostic.
  *
  * A fragment whose trimmed text STARTS with a quoted string is folded back into the PREVIOUS
  * fragment in full (`prev + ", " + frag`) whenever both (a) that previous fragment's own
- * trailing text is itself an in-progress `renamed from` list, and (b) the text right after the
- * fragment's leading quote is not a `:` (allowing leading whitespace) — otherwise it's left
- * alone. Condition (b) preserves the documented escape hatch: a quoted field name immediately
- * followed by `: Type` (`{ a: X renamed from "A", "B": Type }`) is an ordinary field with a
- * quoted name, not a list continuation, unchanged from pre-MIL-68 behavior. Anything else
- * trailing the quote (a bare quoted field, or trailing clause text like ` tag`) is swept into
- * the list fragment and left for `extractFieldClauses`'s fixpoint loop to sort out — this makes
- * the ambiguous case always resolve to "continuation of the rename list", never "next field
- * (or fields)"; see docs/dsl.md for the two escape hatches (multi-line field blocks, or giving
- * the quoted-name field a type).
+ * trailing text is itself an in-progress `renamed from`/`derived from` list, and (b) the text
+ * right after the fragment's leading quote is not a `:` (allowing leading whitespace) —
+ * otherwise it's left alone. Condition (b) preserves the documented escape hatch: a quoted
+ * field name immediately followed by `: Type` (`{ a: X renamed from "A", "B": Type }`) is an
+ * ordinary field with a quoted name, not a list continuation, unchanged from pre-MIL-68
+ * behavior. Anything else trailing the quote (a bare quoted field, or trailing clause text
+ * like ` tag`) is swept into the list fragment and left for `extractFieldClauses`'s fixpoint
+ * loop to sort out — this makes the ambiguous case always resolve to "continuation of the
+ * list", never "next field (or fields)"; see docs/dsl.md for the two escape hatches (multi-line
+ * field blocks, or giving the quoted-name field a type).
  */
-function mergeRenamedFromContinuations(fragments: string[]): string[] {
+function mergeQuotedListContinuations(fragments: string[]): string[] {
   const merged: string[] = [];
   for (const raw of fragments) {
     const trimmed = raw.trim();
@@ -873,7 +928,7 @@ function mergeRenamedFromContinuations(fragments: string[]): string[] {
       prev !== undefined &&
       leadingQuote !== null &&
       !afterQuote!.startsWith(":") &&
-      RENAMED_FROM_TAIL.test(prev)
+      QUOTED_LIST_CLAUSE_TAIL.test(prev)
     ) {
       merged[merged.length - 1] = `${prev}, ${trimmed}`;
     } else {
@@ -888,11 +943,12 @@ function mergeRenamedFromContinuations(fragments: string[]): string[] {
  *  every field-bearing `{ … }` block in the grammar splits and parses fields the same way.
  *  The split is quote-aware (`splitTopLevel`, identical to native `.split(",")` when `inner`
  *  has no quotes at all) so a field clause carrying a quoted, comma-bearing list (MIL-68's
- *  `renamed from "Old1", "Old2"`) isn't broken apart mid-string; `mergeRenamedFromContinuations`
- *  then re-joins the fragments the split still leaves apart BETWEEN list items. */
+ *  `renamed from "Old1", "Old2"`, or MIL-200's `derived from "Event A", "Event B"`) isn't
+ *  broken apart mid-string; `mergeQuotedListContinuations` then re-joins the fragments the
+ *  split still leaves apart BETWEEN list items. */
 function parseInlineFields(inner: string, line: number, context: FieldClauseContext): Field[] {
   const fields: Field[] = [];
-  const fragments = mergeRenamedFromContinuations(splitTopLevel(inner, ","));
+  const fragments = mergeQuotedListContinuations(splitTopLevel(inner, ","));
   for (const spec of fragments) {
     const f = parseFieldSpec(spec, line, context);
     if (f) fields.push(f);
