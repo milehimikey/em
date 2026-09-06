@@ -16,7 +16,11 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // 1.2 (MIL-171): a new top-level `owners` array — one `{ file, key, owner }` entry per slice
 // across every input file, `owner` verbatim from the doc's frontmatter `owner:` (null when
 // absent or when no doc was found). See ../cli/status.ts's StatusOwnerEntry.
-export const STATUS_SCHEMA_VERSION = "1.2";
+// 1.3 (MIL-202): each `conformance[]` entry gains `constitution: { present, path }` — whether
+// the project's implementation constitution exists, and its expected location relative to that
+// entry's own `modelDir` (`/`-separated, never absolute). Existence only; the document's content
+// is never read. See ../cli/status.ts's ConstitutionEntry/resolveConstitution.
+export const STATUS_SCHEMA_VERSION = "1.3";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No

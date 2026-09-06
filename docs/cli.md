@@ -3,7 +3,7 @@
 | Command | What it does |
 |---|---|
 | `em init [file]` | Scaffold a starter model (default `model.em`) |
-| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md` |
+| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md`, `constitution.md` |
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
@@ -55,6 +55,7 @@ a single `-`); the display name you passed is used as-is for titles/prose. Creat
 | `<slug>/<slug>.em` | The same starter model `em init` writes, titled `model "<name>"` |
 | `<slug>/README.md` | Overview + slice index, `{{Model Name}}`/`{{model-name}}` filled in; the `GENERATED:slices` table stays empty (run `em slice index` once the model has slices) |
 | `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
+| `<slug>/constitution.md` | The implementation constitution (MIL-202) — the project's house rules (stack + pattern→skill routing, code style, testing norms, NFR baselines, review/merge norms). Only the project name is filled: every section keeps the elicitation question it opens with and its `{{...}}` answer block, and `ratifiedBy:`/`ratifiedOn:` ship empty, because an unanswered, unratified constitution must read as one. **Not written in a spec-kit project** — see below |
 
 This is the machinery behind the bundled `event-modeling` Claude Code skill's "scaffold the
 project layout" setup step (see [ai-workflow.md](ai-workflow.md)) — the skill runs this
@@ -66,9 +67,23 @@ command rather than hand-copying its `templates/*` files.
 | `--under <dir>` | Scaffold into `<dir>/<slug>/` instead of `./<slug>/` — the supported multi-model layout, see [Multi-model projects](#multi-model-projects) below |
 
 ```bash
-em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md}
-em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md}
+em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md,constitution.md}
+em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md,constitution.md}
 ```
+
+**The constitution and spec-kit.** There is exactly one implementation constitution per project,
+never two. `em scaffold` walks up from the directory it just created looking for a `.specify/`
+directory; when it finds one, the document already exists as spec-kit's own
+`.specify/memory/constitution.md`, so `em` writes nothing and prints instead:
+
+```
+note: .specify/ found — the implementation constitution is .specify/memory/constitution.md (spec-kit's file); em writes no second copy
+```
+
+em's sections then merge into that file under their own headings (see the implement skill's
+`reference/implement.md`, "Before the first slice: the constitution" — `em contract` prints it).
+`em status` reports the same resolution, so a model always agrees with the scaffold about where
+its constitution lives.
 
 Refuses if `<slug>/` (or `<dir>/<slug>/` with `--under`) already exists (`refusing to overwrite
 <slug>/ (use --force)`), matching `em init`'s convention. `--under` only changes *where* the
@@ -1218,6 +1233,13 @@ nothing here re-derives a rule another module owns:
   slices via MIL-121 `covers:` cross-binding (one doc ratifying coverage for more than one slice)
   is only counted **once** — an Open Question belongs to the doc, not to each slice bound to it,
   so a shared doc's single unresolved question doesn't inflate the total once per covering slice.
+- **the implementation constitution, present or absent** (MIL-202) — existence only, per model.
+  Resolution: walk up from the model's directory looking for a `.specify/` directory; if one is
+  found, the document IS `<root>/.specify/memory/constitution.md` (spec-kit's own slot — `em`
+  never expects a second copy); otherwise it's `<modelDir>/constitution.md`, where `em scaffold`
+  writes it. `em` never opens the file: a blank stock template and a fully answered, ratified
+  constitution are indistinguishable here **by design** — judging content is a human's job (and
+  keeps the core deterministic and LLM-free).
 - **last-conformance revision, with computed commits-behind-HEAD** — reads each model's sibling
   state file's `Last conformance:` marker (`stateFile.ts`, same parser `em conform-scope`/
   `em state read` use), then walks `git rev-list --count <revision>..HEAD` in the target repo
@@ -1286,6 +1308,7 @@ driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented
 invariants: 20/20 covered (0 uncovered) — test/
 issues: 0 open issues, 0/0 open question(s) unchecked
 conformance: last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
+constitution: present
 ```
 
 A `doc issues: N warning(s) — see diagnostics (<codes>)` line is appended when any doc-join
@@ -1309,13 +1332,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.2"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.3"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.2",
+  "statusSchemaVersion": "1.3",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1340,6 +1363,7 @@ see [mcp.md](mcp.md)):
       "repo": ".",
       "commitsBehindHead": 0,
       "slicePRsBehindHead": 0,
+      "constitution": { "present": true, "path": "constitution.md" },
       "error": null
     }
   ],
@@ -1360,6 +1384,17 @@ not an error, just nothing to report yet. `error` is also set (non-null) — wit
 consumer that needs to tell "no history yet" apart from "history exists but couldn't be
 attributed/verified" should check `error`, not just `lastConformance`.
 
+`constitution` (added in schema `1.3`, MIL-202) is per model, inside its `conformance[]` entry:
+`present` is a plain existence check, and `path` is the **expected** location — set whether or not
+the file is there, so an `absent` report always says where `em` looked. It is expressed relative
+to that entry's own `modelDir`, always with `/` separators, so the document stays
+machine-independent: `constitution.md` for a model with no spec-kit above it,
+`../../.specify/memory/constitution.md` for a model two directories below a spec-kit root.
+`join(modelDir, path)` reconstructs the real location. The text report prints
+`constitution: present` or `constitution: absent (<expected path>)` per model (labelled
+`constitution (<file>):` when there's more than one input), and `--md` carries a matching
+`Constitution` row.
+
 `owners` (added in schema `1.2`, MIL-171) is a flat, one-entry-per-slice list across every input
 file — `owner` is the slice's bound doc's `owner:` frontmatter verbatim, `null` when absent or
 when no doc was found at all. Never deduped: two slices sharing one doc via MIL-121 `covers:`
@@ -1372,7 +1407,7 @@ every input file: `{ file, severity, code, message, line, refs }` — the same s
 every bound doc joined cleanly.
 
 **`--md`** prints a small `| Metric | Value |` table — one row each for slices, invariants, open
-issues, open questions, and one "Last conformed" row per input model (a single label when there's
+issues, open questions, and one "Last conformed" and one "Constitution" row per input model (a single label when there's
 one model, `Last conformed (<file>)` per model when there's more than one). It's a plain block,
 not marker-managed like `em slice index`'s README table — where (or whether) to embed it is left
 to the caller.
@@ -1420,14 +1455,14 @@ The model must compile without errors (same refusal convention as `em status`). 
 diagnostics (`binding-missing-file`/`frontmatter-invalid`) are printed to stderr, non-fatal, same
 as `em status`.
 
-**`--json` shape** (`freshnessSchemaVersion: "1.0"` — this is also the exact document the MCP
+**`--json` shape** (`freshnessSchemaVersion: "1.1"` — this is also the exact document the MCP
 `freshness` tool returns, see [mcp.md](mcp.md)): the envelope wraps the model's single
 `ConformanceEntry` verbatim, the same shape one entry of `em status --json`'s `conformance[]`
 array carries:
 
 ```json
 {
-  "freshnessSchemaVersion": "1.0",
+  "freshnessSchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "modelDir": ".",
@@ -1436,9 +1471,14 @@ array carries:
   "repo": ".",
   "commitsBehindHead": 2,
   "slicePRsBehindHead": 1,
+  "constitution": { "present": true, "path": "constitution.md" },
   "error": null
 }
 ```
+
+`constitution` (added in schema `1.1`, MIL-202) is the same per-model fact `em status` reports —
+carried because this document *is* one `ConformanceEntry`, not because staleness has anything to
+do with house rules. See [`em status`](#em-status-files) for what it means.
 
 ## `em query <verb> <files...>`
 

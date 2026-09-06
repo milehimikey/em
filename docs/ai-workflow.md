@@ -126,9 +126,22 @@ remember, exactly as before the split.
   <model-name>.svg              # kept fresh by em watch
   README.md                     # overview + slice index
   .event-modeling.md            # session state — this is what makes sessions resumable
+  constitution.md               # the implementation constitution — the project's house rules
   slices/<slice-name>.md        # one implementation spec per slice
   conformance/<date>-report.md  # conform-phase drift reports (advisory)
 ```
+
+`constitution.md` is the one project-wide document in that list: stack and architectural shape
+(including which implementation skill each slice pattern routes to), code style, testing norms,
+NFR baselines, review and merge norms. The `implement` skill elicits it in a short conversation
+before the first slice is built and a named human ratifies it (`ratifiedBy:`/`ratifiedOn:` — an
+empty `ratifiedBy:` means it's still a draft, and the implementing agent is told to stop rather
+than decide your stack or style for you). **In a spec-kit project the document IS
+`.specify/memory/constitution.md`** — em defers to that slot, writes no second copy, and merges
+its sections into that file under their own headings. `em status` reports which location applies
+and whether the file is there (`constitution: present` / `absent (<path>)`) — existence only, no
+content check. See [cli.md](cli.md#em-status-files) and
+[process.md](process.md#handing-a-slice-to-an-agent).
 
 The `.event-modeling.md` state file records the current phase, decisions made, open questions,
 and a Usage log (phases touched, validate diagnostic categories hit — see

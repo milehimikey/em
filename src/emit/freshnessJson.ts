@@ -12,7 +12,11 @@ import { ConformanceEntry } from "../cli/status.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (MIL-164): initial shape.
-export const FRESHNESS_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-202): `constitution: { present, path }` rides along — this document spreads one
+// `ConformanceEntry` verbatim, and that type gained the field for `em status` (R6). The fact is
+// per-model, not per-conformance-sweep, so it's incidental here rather than a freshness signal;
+// it's carried (not filtered out) so the two surfaces keep reporting the SAME entry.
+export const FRESHNESS_SCHEMA_VERSION = "1.1";
 
 /** Build the `em freshness <file> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildStatusJson/buildCoverageJson. No

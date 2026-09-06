@@ -45,6 +45,7 @@ import {
   formatStatusMarkdown,
   buildStatusBadge,
   formatConformancePart,
+  findSpecifyRoot,
   SliceStatusFact,
   StatusDiagnostic,
 } from "./cli/status.js";
@@ -95,7 +96,7 @@ import {
   modelPathMismatch,
   PatchResult,
 } from "./cli/stateFile.js";
-import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
+import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile, scaffoldConstitution } from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
 import {
   ciWorkflowPath,
@@ -180,7 +181,9 @@ program
 program
   .command("scaffold")
   .description(
-    "scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md " +
+    "scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and " +
+      "constitution.md (the implementation constitution — skipped, with a note, in a spec-kit " +
+      "project, where `.specify/memory/constitution.md` IS that document) " +
       "(see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, " +
       "pass --under to nest it under a shared parent directory)",
   )
@@ -210,7 +213,19 @@ program
     writeFileSync(join(dirPath, `${slugName}.em`), starterEmFor(name));
     writeFileSync(join(dirPath, "README.md"), scaffoldReadme(name, slugName));
     writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today));
+    // MIL-202: the implementation constitution. One document per project, never two — in a
+    // spec-kit project `.specify/memory/constitution.md` already IS that slot, so em defers to it
+    // and writes nothing rather than seeding a second, competing copy beside the model. Same
+    // walk-up resolution `em status` reports with (src/cli/status.ts's resolveConstitution).
+    const specifyRoot = findSpecifyRoot(dirPath);
+    if (!specifyRoot) writeFileSync(join(dirPath, "constitution.md"), scaffoldConstitution(name));
     console.log(`scaffolded ${dirPath}/`);
+    if (specifyRoot) {
+      console.log(
+        "note: .specify/ found — the implementation constitution is .specify/memory/constitution.md " +
+          "(spec-kit's file); em writes no second copy",
+      );
+    }
   });
 
 program

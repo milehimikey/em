@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// `em scaffold` (MIL-97 item 2) embeds MODEL_README_TEMPLATE /
-// STATE_TEMPLATE in src/templates.ts rather than reading
+// `em scaffold` (MIL-97 item 2, MIL-202) embeds MODEL_README_TEMPLATE / STATE_TEMPLATE /
+// CONSTITUTION_TEMPLATE in src/templates.ts rather than reading
 // .claude/skills/event-modeling-shared/templates/ at runtime (same rationale as STARTER_EM:
 // works identically whether em is run from a checkout or installed from npm). That means there
 // are now two copies of each file — this test is the drift guard: it fails loudly the moment
@@ -11,7 +11,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MODEL_README_TEMPLATE, STATE_TEMPLATE } from "../src/templates.js";
+import { MODEL_README_TEMPLATE, STATE_TEMPLATE, CONSTITUTION_TEMPLATE } from "../src/templates.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATES_DIR = join(ROOT, ".claude", "skills", "event-modeling-shared", "templates");
@@ -23,5 +23,11 @@ describe("em scaffold's embedded templates stay in sync with the skill's templat
 
   it("STATE_TEMPLATE matches templates/state.md byte-for-byte", () => {
     expect(STATE_TEMPLATE).toBe(readFileSync(join(TEMPLATES_DIR, "state.md"), "utf8"));
+  });
+
+  // MIL-202: the implementation constitution, the fourth file `em scaffold` writes (in a
+  // non-spec-kit project).
+  it("CONSTITUTION_TEMPLATE matches templates/constitution.md byte-for-byte", () => {
+    expect(CONSTITUTION_TEMPLATE).toBe(readFileSync(join(TEMPLATES_DIR, "constitution.md"), "utf8"));
   });
 });

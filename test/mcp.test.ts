@@ -434,7 +434,7 @@ describe("coverage tool", () => {
 describe("status tool", () => {
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.2");
+    expect(doc.statusSchemaVersion).toBe("1.3");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -443,6 +443,24 @@ describe("status tool", () => {
     expect(doc.conformance).toHaveLength(1);
     expect(doc.conformance[0].hasStateFile).toBe(false); // no .event-modeling.md next to ready.em
     expect(doc.conformance[0].slicePRsBehindHead).toBeNull(); // MIL-164 — no state file, nothing to compute
+    expect(doc.conformance[0].constitution).toEqual({ present: false, path: "constitution.md" }); // MIL-202
+  });
+
+  // MIL-202: the constitution fact rides on the shared builder, so the tool's document must stay
+  // byte-identical to `em status --json` — including the new field and the 1.3 schema version.
+  it("byte-identical to `em status <file> --json`, constitution field included", async () => {
+    const model = join(dir, "ready.em");
+    writeFileSync(join(dir, "constitution.md"), "# house rules\n");
+    try {
+      const { result, doc } = await callJson(client, "status", { files: [model] });
+      expect(doc.conformance[0].constitution).toEqual({ present: true, path: "constitution.md" });
+      const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+      const cli = em(["status", model, "--json"], dir);
+      expect(cli.status).toBe(0);
+      expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      rmSync(join(dir, "constitution.md"), { force: true });
+    }
   });
 
   it("omits invariants (null) when testsDir isn't given", async () => {
@@ -491,7 +509,7 @@ describe("freshness tool (MIL-164)", () => {
   it("happy path: returns the same document `em freshness --json` prints, byte-identical to status's own conformance[0]", async () => {
     const { doc: statusDoc } = await callJson(client, "status", { files: [join(dir, "ready.em")] });
     const { doc } = await callJson(client, "freshness", { file: join(dir, "ready.em") });
-    expect(doc.freshnessSchemaVersion).toBe("1.0");
+    expect(doc.freshnessSchemaVersion).toBe("1.1");
     expect(doc.file).toBe(join(dir, "ready.em"));
     expect(doc.hasStateFile).toBe(false);
     expect(doc.slicePRsBehindHead).toBeNull();

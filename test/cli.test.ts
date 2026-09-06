@@ -1649,7 +1649,7 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
   });
   afterAll(() => rmSync(cwd, { recursive: true, force: true }));
 
-  it("creates <slug>/ with all 3 files, correctly titled/slugged", () => {
+  it("creates <slug>/ with all 4 files, correctly titled/slugged", () => {
     const r = em(["scaffold", "Order Fulfillment"], cwd);
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
@@ -1659,6 +1659,7 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(existsSync(join(dir, "order-fulfillment.em"))).toBe(true);
     expect(existsSync(join(dir, "README.md"))).toBe(true);
     expect(existsSync(join(dir, ".event-modeling.md"))).toBe(true);
+    expect(existsSync(join(dir, "constitution.md"))).toBe(true); // MIL-202
     // The retired static file:// viewer (MIL-141) must NOT come back.
     expect(existsSync(join(dir, "live.html"))).toBe(false);
 
@@ -1715,6 +1716,28 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(r.stdout).toContain("scaffolded order-fulfillment/");
     const readme = readFileSync(join(dir, "README.md"), "utf8");
     expect(readme.startsWith("# Order Fulfillment\n")).toBe(true);
+  });
+
+  // MIL-202: the implementation constitution — written beside the model in a project with no
+  // SDD tool, with the elicitation questions and their {{...}} answer blocks deliberately intact.
+  it("writes constitution.md beside the model, titled, unratified, questions unanswered", () => {
+    const doc = readFileSync(join(cwd, "order-fulfillment", "constitution.md"), "utf8");
+    expect(doc).toContain("# Order Fulfillment — implementation constitution");
+    expect(doc).toContain("\n---\nschemaVersion: 1\nratifiedBy:\nratifiedOn:\n---\n");
+    expect(doc).toContain("## Stack and architectural shape");
+    expect(doc).toContain("| Pattern | Skill / approach |");
+    expect(doc).toContain("## Review and merge norms");
+    // Unlike the README/state files, the {{...}} answer blocks stay — they're the questions.
+    expect(doc).toMatch(/\{\{[^}]*\}\}/);
+    expect(doc).not.toContain("{{Project Name}}");
+  });
+
+  it("--force rewrites constitution.md like every other scaffolded file", () => {
+    const path = join(cwd, "order-fulfillment", "constitution.md");
+    writeFileSync(path, "hand-edited, should be clobbered");
+    const r = em(["scaffold", "Order Fulfillment", "--force"], cwd);
+    expect(r.status).toBe(0);
+    expect(readFileSync(path, "utf8")).toContain("# Order Fulfillment — implementation constitution");
   });
 
   it("kebab-slugs an already-slug-shaped name to itself, and a messy name into a clean slug", () => {
@@ -2100,7 +2123,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
     const r = em(["freshness", "checkout.em", "--repo", targetRepo, "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.freshnessSchemaVersion).toBe("1.0");
+    expect(doc.freshnessSchemaVersion).toBe("1.1");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.file).toBe("checkout.em");
     expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
@@ -2354,7 +2377,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.2");
+    expect(doc.statusSchemaVersion).toBe("1.3");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -3819,6 +3842,58 @@ describe("em status — orphaned slice docs (CLI, real fs, MIL-183)", () => {
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(parsed.diagnostics.filter((d: { code: string }) => d.code === "orphaned-slice-doc")).toEqual([]);
+  });
+});
+
+// MIL-202: the OTHER branch of the constitution's location rule — in a spec-kit project the
+// document IS .specify/memory/constitution.md, so `em scaffold` writes no second copy and says so.
+describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
+  let cwd: string;
+
+  beforeAll(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-specify-"));
+    mkdirSync(join(cwd, ".specify", "memory"), { recursive: true });
+  });
+  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+
+  it("writes no constitution.md and notes spec-kit's file instead", () => {
+    const r = em(["scaffold", "Checkout"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("scaffolded checkout/");
+    expect(r.stdout).toContain(
+      "note: .specify/ found — the implementation constitution is .specify/memory/constitution.md (spec-kit's file); em writes no second copy",
+    );
+    const dir = join(cwd, "checkout");
+    expect(existsSync(join(dir, "constitution.md"))).toBe(false);
+    // Every other scaffolded file is unaffected.
+    expect(existsSync(join(dir, "checkout.em"))).toBe(true);
+    expect(existsSync(join(dir, "README.md"))).toBe(true);
+    expect(existsSync(join(dir, ".event-modeling.md"))).toBe(true);
+    // em never seeds or touches spec-kit's own slot either — that's the elicitation's job.
+    expect(existsSync(join(cwd, ".specify", "memory", "constitution.md"))).toBe(false);
+  });
+
+  it("finds .specify/ by walking up, from a --under nested model too", () => {
+    const r = em(["scaffold", "Billing", "--under", "models"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(".specify/memory/constitution.md (spec-kit's file)");
+    expect(existsSync(join(cwd, "models", "billing", "constitution.md"))).toBe(false);
+  });
+
+  it("`em status` reports the same resolution the scaffold used", () => {
+    const model = join(cwd, "checkout", "checkout.em");
+    const r = em(["status", model, "--json"], cwd);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
+    expect(doc.statusSchemaVersion).toBe("1.3");
+    expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
+    writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
+    const r2 = em(["status", model, "--json"], cwd);
+    const doc2 = JSON.parse(r2.stdout) as { conformance: Array<{ constitution: { present: boolean; path: string } }> };
+    expect(doc2.conformance[0].constitution).toEqual({ present: true, path: "../.specify/memory/constitution.md" });
+    // ...and the text report says it in words.
+    expect(em(["status", model], cwd).stdout).toContain("constitution: present");
   });
 });
 
