@@ -22,7 +22,7 @@
 // same inputs. Text/markdown/badge are formatting layers over one aggregated StatusReport; the
 // JSON document (emit/statusJson.ts) is a versioned envelope around the exact same object.
 
-import { basename, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin, DocReason } from "../catalog/docJoin.js";
@@ -31,7 +31,7 @@ import { DriftSignalKind } from "../catalog/driftSignal.js";
 import { Diagnostic } from "../model/validate.js";
 import { CoverageReport } from "./coverage.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
-import { loadStateFile, parseState } from "./stateFile.js";
+import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
 
 /** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
@@ -241,9 +241,10 @@ export function resolveSlicePRsBehindHead(
  * per-model namespacing), but its `Model file:` bullet names exactly ONE of them — so a sibling
  * file it does NOT describe (the common case: a `conform-scope --seed-asis` scratch copy like
  * `checkout-asis.em` sitting next to `checkout.em`) must not inherit `checkout.em`'s conformance
- * record just because it lives in the same directory. When `Model file:` is set and doesn't match
- * `basename(file)`, the record is reported as unattributed (via `error`, the same non-fatal
- * channel a git failure uses) rather than silently misattributed.
+ * record just because it lives in the same directory. `stateFile.ts`'s `modelPathMismatch` (the
+ * one check both this function and `em conform-scope`, MIL-179, run) reports that case: the
+ * record comes back unattributed (via `error`, the same non-fatal channel a git failure uses)
+ * rather than silently misattributed.
  */
 export function resolveConformanceEntry(
   file: string,
@@ -270,17 +271,9 @@ export function resolveConformanceEntry(
       error: `state file: ${parsed.message}`,
     };
   }
-  if (parsed.state.modelPath && parsed.state.modelPath !== basename(file)) {
-    return {
-      file,
-      modelDir,
-      hasStateFile: true,
-      lastConformance: null,
-      repo,
-      commitsBehindHead: null,
-      slicePRsBehindHead: null,
-      error: `state file describes "${parsed.state.modelPath}", not "${basename(file)}" — not attributing its conformance record`,
-    };
+  const mismatch = modelPathMismatch(parsed.state.modelPath, file);
+  if (mismatch) {
+    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: mismatch };
   }
   if (!parsed.state.lastConformance) {
     return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: null };

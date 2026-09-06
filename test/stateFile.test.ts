@@ -23,6 +23,7 @@ import {
   setPhase,
   setConformance,
   setReview,
+  modelPathMismatch,
   STATE_FILE_NAME,
 } from "../src/cli/stateFile.js";
 
@@ -293,6 +294,26 @@ describe("round-trip: set then read", () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.state.lastReview).toBe("2026-08-21");
+  });
+});
+
+describe("modelPathMismatch (MIL-179)", () => {
+  it("returns null when modelPath matches file's basename", () => {
+    expect(modelPathMismatch("checkout.em", "/models/checkout/checkout.em")).toBeNull();
+  });
+
+  it("returns null when modelPath matches, ignoring the file argument's own directory", () => {
+    expect(modelPathMismatch("checkout.em", "checkout.em")).toBeNull();
+  });
+
+  it("returns the exact non-fatal message when modelPath names a different sibling file", () => {
+    expect(modelPathMismatch("checkout.em", "/models/checkout/checkout-asis.em")).toBe(
+      'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record',
+    );
+  });
+
+  it("returns null for an empty modelPath (nothing to compare against)", () => {
+    expect(modelPathMismatch("", "/models/checkout/checkout.em")).toBeNull();
   });
 });
 
