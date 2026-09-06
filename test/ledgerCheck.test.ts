@@ -7,7 +7,7 @@
 // queue rather than real fs — the working-tree form is covered by the real-git-repo CLI tests
 // instead (test/cli.test.ts).
 import { describe, it, expect } from "vitest";
-import { checkLedger } from "../src/cli/ledgerCheck.js";
+import { checkLedger, applyLedgerWaivers, readLedgerWaiverTrailers, LedgerCheckResult, LedgerFinding } from "../src/cli/ledgerCheck.js";
 import { GitResult, GitRunner } from "../src/cli/diff-inputs.js";
 
 // A fake git runner that replays a queue of canned results in call order — same helper shape
@@ -202,5 +202,152 @@ describe("checkLedger: skips", () => {
     );
     expect(result.findings).toEqual([]);
     expect(result.skipped).toEqual([{ sliceKey: "checkout", reason: "frontmatter-invalid" }]);
+  });
+});
+
+// --- MIL-185: waivers ---------------------------------------------------------------------
+
+/** A minimal `ledger-content-without-version-bump` finding — the only waivable code. */
+function contentFinding(sliceKey: string): LedgerFinding {
+  return {
+    sliceKey,
+    code: "ledger-content-without-version-bump",
+    message: `slice "${sliceKey}": doc content changed but version: didn't bump (still v1)`,
+    oldVersion: 1,
+    newVersion: 1,
+    bodyChanged: true,
+    lineageChanged: false,
+  };
+}
+
+function regressionFinding(sliceKey: string): LedgerFinding {
+  return {
+    sliceKey,
+    code: "ledger-version-regression",
+    message: `slice "${sliceKey}": version went backwards (v3 -> v2)`,
+    oldVersion: 3,
+    newVersion: 2,
+    bodyChanged: false,
+    lineageChanged: false,
+  };
+}
+
+function baseResult(findings: LedgerFinding[]): LedgerCheckResult {
+  return { findings, waived: [], skipped: [], checkedCount: findings.length };
+}
+
+describe("applyLedgerWaivers", () => {
+  it("waives a ledger-content-without-version-bump finding named by --waive", () => {
+    const result = baseResult([contentFinding("checkout")]);
+    const { result: out, unknownWaivers } = applyLedgerWaivers(result, ["checkout"], []);
+    expect(out.findings).toEqual([]);
+    expect(out.waived).toEqual([{ ...contentFinding("checkout"), waivedBy: { source: "flag" } }]);
+    expect(unknownWaivers).toEqual([]);
+  });
+
+  it("waives a finding named by a trailer, carrying the commit that declared it", () => {
+    const result = baseResult([contentFinding("checkout")]);
+    const { result: out, unknownWaivers } = applyLedgerWaivers(result, [], [{ sliceKey: "checkout", commit: "abc1234" }]);
+    expect(out.findings).toEqual([]);
+    expect(out.waived).toEqual([{ ...contentFinding("checkout"), waivedBy: { source: "trailer", commit: "abc1234" } }]);
+    expect(unknownWaivers).toEqual([]);
+  });
+
+  it("never waives a version-regression or version-without-content-change finding, even if named", () => {
+    const result = baseResult([regressionFinding("checkout")]);
+    const { result: out, unknownWaivers } = applyLedgerWaivers(result, ["checkout"], []);
+    expect(out.findings).toEqual([regressionFinding("checkout")]);
+    expect(out.waived).toEqual([]);
+    expect(unknownWaivers).toEqual([{ sliceKey: "checkout", source: { source: "flag" } }]);
+  });
+
+  it("reports an unknown-slice waiver (typo'd or already-clean slice key) without erroring", () => {
+    const result = baseResult([]);
+    const { result: out, unknownWaivers } = applyLedgerWaivers(result, ["no-such-slice"], []);
+    expect(out.findings).toEqual([]);
+    expect(out.waived).toEqual([]);
+    expect(unknownWaivers).toEqual([{ sliceKey: "no-such-slice", source: { source: "flag" } }]);
+  });
+
+  it("leaves other findings untouched when only one of several is waived", () => {
+    const result = baseResult([contentFinding("checkout"), contentFinding("apply-discount")]);
+    const { result: out } = applyLedgerWaivers(result, ["checkout"], []);
+    expect(out.findings).toEqual([contentFinding("apply-discount")]);
+    expect(out.waived.map((w) => w.sliceKey)).toEqual(["checkout"]);
+  });
+
+  it("prefers the flag source over a same-key trailer waiver, with no duplicate unknown-note", () => {
+    const result = baseResult([contentFinding("checkout")]);
+    const { result: out, unknownWaivers } = applyLedgerWaivers(result, ["checkout"], [{ sliceKey: "checkout", commit: "deadbee" }]);
+    expect(out.waived).toEqual([{ ...contentFinding("checkout"), waivedBy: { source: "flag" } }]);
+    expect(unknownWaivers).toEqual([]);
+  });
+
+  it("deduplicates a slice key repeated across multiple --waive flags", () => {
+    const result = baseResult([contentFinding("checkout")]);
+    const { result: out } = applyLedgerWaivers(result, ["checkout", "checkout"], []);
+    expect(out.waived).toHaveLength(1);
+  });
+
+  it("sorts waived entries by slice key regardless of waiver input order", () => {
+    const result = baseResult([contentFinding("zeta"), contentFinding("alpha")]);
+    const { result: out } = applyLedgerWaivers(result, ["zeta", "alpha"], []);
+    expect(out.waived.map((w) => w.sliceKey)).toEqual(["alpha", "zeta"]);
+  });
+});
+
+describe("readLedgerWaiverTrailers", () => {
+  it("reads Em-Ledger-Waive trailers from the from..to range, resolving `to: null` to HEAD", () => {
+    const calls: string[][] = [];
+    const git: GitRunner = (args) => {
+      calls.push(args);
+      if (args.includes("rev-parse")) return ok("/repo\n");
+      return ok("abc1234full\x00checkout\x01\n");
+    };
+    const waivers = readLedgerWaiverTrailers("model.em", "HEAD~3", null, git);
+    expect(waivers).toEqual([{ sliceKey: "checkout", commit: "abc1234full" }]);
+    const logCall = calls.find((c) => c.includes("log"));
+    expect(logCall).toBeDefined();
+    expect(logCall).toContain("HEAD~3..HEAD");
+  });
+
+  it("uses the from..to range verbatim when --to is given", () => {
+    const calls: string[][] = [];
+    const git: GitRunner = (args) => {
+      calls.push(args);
+      if (args.includes("rev-parse")) return ok("/repo\n");
+      return ok("\x00\x01\n");
+    };
+    readLedgerWaiverTrailers("model.em", "v1.0", "v1.1", git);
+    const logCall = calls.find((c) => c.includes("log"));
+    expect(logCall).toContain("v1.0..v1.1");
+  });
+
+  it("parses multiple trailer values on one commit into separate waivers", () => {
+    const git: GitRunner = (args) => (args.includes("rev-parse") ? ok("/repo\n") : ok("commitA\x00beta\ngamma\x01\n"));
+    const waivers = readLedgerWaiverTrailers("model.em", "HEAD~1", "HEAD", git);
+    expect(waivers).toEqual([
+      { sliceKey: "beta", commit: "commitA" },
+      { sliceKey: "gamma", commit: "commitA" },
+    ]);
+  });
+
+  it("attributes a slice key repeated across commits to the first (earliest, --reverse) commit", () => {
+    // --reverse means the git log stream is already oldest-first; "earliest" is simply "first
+    // record seen" — this fake replays two commits both carrying "checkout", oldest first.
+    const git: GitRunner = (args) =>
+      args.includes("rev-parse") ? ok("/repo\n") : ok("oldest\x00checkout\x01\nnewest\x00checkout\x01\n");
+    const waivers = readLedgerWaiverTrailers("model.em", "HEAD~2", "HEAD", git);
+    expect(waivers).toEqual([{ sliceKey: "checkout", commit: "oldest" }]);
+  });
+
+  it("returns no waivers (not a crash) when the range can't be resolved", () => {
+    const git: GitRunner = () => ({ status: 1, stdout: "", stderr: "fatal: bad revision" });
+    expect(readLedgerWaiverTrailers("model.em", "not-a-rev", "HEAD", git)).toEqual([]);
+  });
+
+  it("returns no waivers when anchorFile isn't inside a git repository", () => {
+    const git: GitRunner = (args) => (args.includes("rev-parse") ? { status: 128, stdout: "", stderr: "fatal: not a git repository" } : ok(""));
+    expect(readLedgerWaiverTrailers("model.em", "HEAD~1", "HEAD", git)).toEqual([]);
   });
 });

@@ -9,7 +9,11 @@ import { LedgerCheckResult } from "../cli/ledgerCheck.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0: initial shape (MIL-89).
-export const LEDGER_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-185): additive `waived` field — findings excused by `--waive <slice-key>` or an
+// `Em-Ledger-Waive: <slice-key>` commit trailer, each carrying `waivedBy: { source: "flag" } |
+// { source: "trailer", commit }`. A run with no waivers is byte-identical to the 1.0 shape
+// except for the new empty `waived: []` array — every other field is unchanged.
+export const LEDGER_SCHEMA_VERSION = "1.1";
 
 /** Build the `em ledger --json` document. Pretty-printed (2-space), no trailing newline — the
  *  caller adds it, same convention as buildDiffJson/buildGlossaryJson. */
@@ -21,6 +25,7 @@ export function buildLedgerJson(result: LedgerCheckResult, from: string, to: str
     to,
     checkedCount: result.checkedCount,
     findings: result.findings,
+    waived: result.waived,
     skipped: result.skipped,
     ok: result.findings.length === 0,
   };

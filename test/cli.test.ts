@@ -1033,7 +1033,7 @@ describe("em ledger (CLI, real git repo, MIL-89)", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
     expect(r.status).toBe(1);
     const doc = JSON.parse(r.stdout);
-    expect(doc.ledgerSchemaVersion).toBe("1.0");
+    expect(doc.ledgerSchemaVersion).toBe("1.1");
     expect(doc.from).toBe("HEAD~1");
     expect(doc.to).toBe("HEAD");
     expect(doc.ok).toBe(false);
@@ -1108,6 +1108,145 @@ describe("em ledger: text report, working tree, and argument validation (CLI, re
     const r = em(["ledger", "model.em"], repo);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("em ledger: --from <rev> is required");
+  });
+});
+
+describe("em ledger --waive: trailer waiver (CLI, real git repo, MIL-185)", () => {
+  let repo: string;
+  let reformatSha: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-waive-trailer-"));
+    git(["init", "-q", "-b", "main"], repo);
+    writeFileSync(join(repo, "model.em"), CLEAN);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original body."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "first"], repo);
+    // A formatting-only reformat (MIL-156's shape): body changes, version stays v1 — normally a
+    // `ledger-content-without-version-bump` finding — but this commit's own message carries the
+    // waiver trailer, so it's excused rather than blocking the PR.
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Reformatted body, same meaning."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "reformat\n\nEm-Ledger-Waive: checkout"], repo);
+    reformatSha = git(["rev-parse", "HEAD"], repo).stdout.trim();
+    // A later, unrelated content change with no trailer of its own — the waiver on the reformat
+    // commit must not bleed into a range that excludes it.
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Reformatted again, still no bump."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "later, no trailer"], repo);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("waives the finding when the trailer's commit is inside the checked range", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~2", "--to", "HEAD~1"], repo);
+    expect(r.status).toBe(0);
+    const shortSha = reformatSha.slice(0, 7);
+    expect(r.stdout).toContain(
+      `waived: slice "checkout": doc content changed but version: didn't bump (still v1) (waived by trailer ${shortSha})`,
+    );
+    expect(r.stdout).toContain("ok — ledger agrees (1 slice doc(s) checked, 1 waived)");
+  });
+
+  it("--json carries ledgerSchemaVersion 1.1, an empty findings array, and the waived entry", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~2", "--to", "HEAD~1", "--json"], repo);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.ledgerSchemaVersion).toBe("1.1");
+    expect(doc.findings).toEqual([]);
+    expect(doc.ok).toBe(true);
+    expect(doc.waived).toEqual([
+      expect.objectContaining({
+        sliceKey: "checkout",
+        code: "ledger-content-without-version-bump",
+        waivedBy: { source: "trailer", commit: reformatSha },
+      }),
+    ]);
+  });
+
+  it("does not honor the trailer once its commit falls outside the checked range (`from` excludes it)", () => {
+    // HEAD~1..HEAD is the next content-without-version-bump change; the reformat commit (and its
+    // trailer) is `--from` here, which git range syntax excludes — a fresh, unwaived mismatch.
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD"], repo);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('slice "checkout": doc content changed but version: didn\'t bump (still v1)');
+    expect(r.stdout).not.toContain("waived");
+    const json = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
+    expect(JSON.parse(json.stdout).waived).toEqual([]);
+  });
+});
+
+describe("em ledger --waive: flag waiver and non-waivable codes (CLI, real git repo, MIL-185)", () => {
+  let repo: string;
+
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-waive-flag-"));
+    git(["init", "-q", "-b", "main"], repo);
+    writeFileSync(join(repo, "model.em"), CLEAN);
+    mkdirSync(join(repo, "slices"), { recursive: true });
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original body."));
+    writeFileSync(join(repo, "slices", "regress.md"), ledgerDoc(3, "implemented", "PR#30", "Regress body unchanged."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "first"], repo);
+    // "checkout": content change, no version bump — waivable. No trailer on this commit.
+    writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Updated body, no bump."));
+    // "regress": version goes backwards — never waivable, regardless of any --waive naming it.
+    writeFileSync(join(repo, "slices", "regress.md"), ledgerDoc(2, "implemented", "PR#30", "Regress body unchanged."));
+    git(["add", "-A"], repo);
+    git(["commit", "-qm", "second"], repo);
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("without --waive, both findings are reported and the run exits non-zero", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD"], repo);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('slice "checkout": doc content changed but version: didn\'t bump (still v1)');
+    expect(r.stdout).toContain('slice "regress": version went backwards (v3 -> v2)');
+    expect(r.stdout).toContain("2 ledger mismatch(es)");
+  });
+
+  it("--waive checkout excuses only the waivable finding; exit 0", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--waive", "checkout"], repo);
+    expect(r.status).toBe(1); // "regress" is still an active, non-waivable finding
+    expect(r.stdout).toContain('waived: slice "checkout": doc content changed but version: didn\'t bump (still v1) (waived by --waive)');
+    expect(r.stdout).toContain('slice "regress": version went backwards (v3 -> v2)');
+    expect(r.stdout).not.toContain('waived: slice "regress"');
+  });
+
+  it("--waive on the non-waivable slice key is reported as an ignored, unknown waiver — the finding stays active", () => {
+    const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--waive", "regress"], repo);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('note: waiver for unknown slice "regress" ignored');
+    expect(r.stdout).toContain('slice "regress": version went backwards (v3 -> v2)');
+    // "checkout" was never named — still an active mismatch too.
+    expect(r.stdout).toContain('slice "checkout": doc content changed but version: didn\'t bump (still v1)');
+  });
+
+  it("--waive on a slice key with no finding at all is reported as an ignored, unknown waiver; exit reflects the real findings", () => {
+    const r = em(
+      ["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--waive", "checkout", "--waive", "no-such-slice"],
+      repo,
+    );
+    expect(r.status).toBe(1); // "regress" remains active
+    expect(r.stderr).toContain('note: waiver for unknown slice "no-such-slice" ignored');
+    expect(r.stdout).toContain('waived: slice "checkout"');
+  });
+
+  it("--waive is repeatable and each occurrence is honored", () => {
+    const r = em(
+      ["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--waive", "checkout", "--waive", "regress"],
+      repo,
+    );
+    // "regress" is named but non-waivable — reported as an unknown waiver, not silently accepted.
+    expect(r.stderr).toContain('note: waiver for unknown slice "regress" ignored');
+    expect(r.stdout).toContain('waived: slice "checkout"');
+    expect(r.status).toBe(1);
   });
 });
 

@@ -151,6 +151,28 @@ defect once you've opted into running this check, so unlike `em diff`/`em glossa
 separate `--exit-code`/`--fail-on-*` opt-in flag. See
 [cli.md](cli.md#em-ledger-file) for the full flag/output reference and `--json` shape.
 
+**Waiving a formatting-only PR from CI (MIL-185).** A doc reformat with zero semantic change
+(a template migration, a Markdown re-render) trips `ledger-content-without-version-bump`
+correctly-by-rule, but bumping `version:` for it is the wrong fix — it detaches an
+already-`implemented` doc from the version its `implementedIn` link actually shipped. Rather
+than override the gate (which leaves no record of *why*), add an `Em-Ledger-Waive: <slice-key>`
+trailer to the commit that does the reformat — the CI recipe above reads trailers from every
+commit in the checked range automatically, no workflow change needed:
+
+```
+MIL-156: reformat slice-doc Given/When/Then rendering, no semantic change
+
+Em-Ledger-Waive: checkout
+Em-Ledger-Waive: apply-discount
+```
+
+The waived findings still print in the job log (`waived: slice "checkout": ... (waived by
+trailer <sha>)`), so the exception is visible in the PR, not silent — only the exit code is
+excused. A version regression or a bump with no real content change is **never** waivable this
+way; only `ledger-content-without-version-bump` is. For a one-off manual run, `--waive
+<slice-key>` does the same thing without a commit trailer — see
+[cli.md](cli.md#em-ledger-file) for both forms.
+
 ## `em coverage` (opt-in)
 
 Same "opt-in unless you install the preset" story as `em ledger` above — `--strict` is on by

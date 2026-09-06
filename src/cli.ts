@@ -30,7 +30,7 @@ import { validateDocModelConsistency } from "./catalog/docModelConsistencyValida
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
-import { checkLedger } from "./cli/ledgerCheck.js";
+import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { buildCoverageReport, CoverageReport } from "./cli/coverage.js";
@@ -1331,6 +1331,10 @@ program
     if (plan.refusals.length > 0) process.exitCode = 1;
   });
 
+function describeLedgerWaiveSource(source: LedgerWaiveSource): string {
+  return source.source === "flag" ? "--waive" : `trailer ${source.commit.slice(0, 7)}`;
+}
+
 program
   .command("ledger")
   .description(
@@ -1340,23 +1344,43 @@ program
   .argument("<file>", "anchor .em file — locates slices/ relative to it; never parsed")
   .option("--from <rev>", "baseline revision")
   .option("--to <rev>", "compare revision (default: current working tree)")
+  .option(
+    "--waive <slice-key>",
+    "excuse a doc-content-without-version-bump finding for this slice key (repeatable; MIL-185, " +
+      "see docs/cli.md) — never waives a version regression or bump-without-content-change",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
-  .action((file: string, opts: { from?: string; to?: string; json?: boolean }) => {
+  .action((file: string, opts: { from?: string; to?: string; waive: string[]; json?: boolean }) => {
     if (!opts.from) {
       console.error("em ledger: --from <rev> is required");
       process.exit(1);
     }
     const to = opts.to ?? null;
-    const result = checkLedger(file, opts.from, to);
+    const rawResult = checkLedger(file, opts.from, to);
+    // Commit trailers apply only to CI/manual runs against a real range — the working-tree
+    // comparison itself (`to === null`) still resolves the trailer range as `from..HEAD`, since
+    // an uncommitted change has no commit to carry a trailer; that gap is `--waive`'s job (see
+    // docs/cli.md).
+    const trailerWaivers = readLedgerWaiverTrailers(file, opts.from, to);
+    const { result, unknownWaivers } = applyLedgerWaivers(rawResult, opts.waive, trailerWaivers);
+
+    for (const note of unknownWaivers) {
+      console.error(`note: waiver for unknown slice "${note.sliceKey}" ignored`);
+    }
 
     if (opts.json) {
       process.stdout.write(buildLedgerJson(result, opts.from, to) + "\n");
     } else {
       for (const f of result.findings) console.log(f.message);
+      for (const w of result.waived) console.log(`waived: ${w.message} (waived by ${describeLedgerWaiveSource(w.waivedBy)})`);
+
+      const waivedNote = result.waived.length > 0 ? `, ${result.waived.length} waived` : "";
       if (result.findings.length === 0) {
-        console.log(`ok — ledger agrees (${result.checkedCount} slice doc(s) checked)`);
+        console.log(`ok — ledger agrees (${result.checkedCount} slice doc(s) checked${waivedNote})`);
       } else {
-        console.log(`${result.findings.length} ledger mismatch(es)`);
+        console.log(`${result.findings.length} ledger mismatch(es)${waivedNote}`);
       }
     }
 

@@ -259,7 +259,7 @@ and treat a finding as the start of a conversation.
 | Fields completeness | — | warnings |
 | Slice readiness at handoff | `em validate --slice-ready <key>` exits non-zero (opt-in, per slice) | — |
 | Model changed at all | only with `em diff --exit-code` | — |
-| Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history) | — |
+| Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
 | Vendored skill drift | `em skill check` exits non-zero (opt-in) | — |
 | Conformance findings | never | always — you ratify |
 
