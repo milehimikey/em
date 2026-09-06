@@ -32,6 +32,7 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | A lineage ref that names its own slice, or that closes a cycle with another slice's lineage ref (`lineage-ref-cycle`) | Break the cycle — a slice can't be its own ancestor |
 | `superseded-by` naming a slice absent from the current model (`lineage-forward-dangling`) | Fix the key, or remove the stale successor |
 | A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the pending delta on the target slice first (bumping its `version:`) |
+| A view field's traced `derived from "Event A", "Event B"` naming an event that isn't among the view's actual sources (`derived-from-unresolved`) | Name one of the view's actual sources — its `from` list, or the same-slice events for a `from`-less view — or drop the traced event |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
@@ -111,7 +112,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A view marked `public` with no consumer (unconditional variant of "A read model nothing consumes") | Mark it `public` only if its consumer is outside this model; otherwise add the screen or reaction |
 | A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
-| A `view` field with no matching field on any source event | Add the field to the event, or drop it from the view |
+| A `view` field with no matching field on any source event, and not marked `derived` | Add the field to the event, drop it from the view, or mark it `derived` if it's genuinely computed from which events have landed |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
 | A slice doc's `status: implemented` with no `implementedIn` link (`frontmatter-coherence-implemented-without-link`) | Add the `implementedIn` link, or move `status` back if it hasn't actually shipped |
 
@@ -206,7 +207,7 @@ consistently instead of trusting it by eye.
 
 - **View ← events** — every field on a `view` should trace back to a field on one of its
   source events (any instance of each named event, unioned). A view field with no matching
-  event field gets a warning.
+  event field gets a warning — unless the field carries a trailing `derived` clause (below).
 - **Event ← command** — every field on an `event` should trace back to a field on a command
   in the same slice (unioned across commands, in the rare case a slice has more than one).
   An event field the command never mentions gets a warning — unless the field carries a
@@ -243,14 +244,40 @@ event Order Placed {
 An `assigned` field stays fully visible to view ← event tracing — the marker narrows only
 the event ← command check, not what a downstream view is allowed to read.
 
-**Everything else in this section is still just a warning, and some of it will be correct
-and permanent.** A read-model field a view *derives* rather than copies straight from a
-single source event (a computed status, an aggregate) has no field-level escape hatch today
-— the rule can't tell "the view legitimately derives this" from "somebody forgot this", so
-it reports both and leaves the judgment to you: confirm it's intentional and move on, or add
-the field where it was genuinely missing. These warnings never block a render or a merge —
-but note that unlike an `assigned` field, an un-marked warning **does** still count against
-`--slice-ready` if it's scoped to that slice (see [cli.md](cli.md)).
+**`derived` — mark a view field computed from which events have landed (MIL-200).** A status
+that steps through states as different events arrive, a position recomputed as an ordinal
+over existing rows, an availability flag two events can flip: these are real view fields, but
+by construction they aren't copied from any single source event's payload, so the View ←
+events check above can never match them on name. Mark such a field with a trailing `derived`
+clause (view fields only, its own trailing-clause family — it doesn't share `tag`/`renamed
+from`'s event/command-only posture) and it's excluded from the View ← events check entirely —
+no warning, and it no longer counts against `em validate --slice-ready` either. Optionally
+trace it — `derived from "Event A", "Event B"` — naming the event(s) whose arrival the value
+actually depends on; the traced form still checks something, since every named event must
+resolve among the view's actual sources (its own `from` list, or the same-slice events for a
+`from`-less view), an error (`derived-from-unresolved`) otherwise:
+
+```
+view Room Catalog from "Room Booked", "Room Delisted" {
+  roomId: UUID
+  bookedAt: Instant
+  availability: String derived from "Room Booked", "Room Delisted"
+}
+
+view Waitlist Queue from "Waitlist Entry Added" {
+  entryId: UUID
+  position: Integer derived
+}
+```
+
+Before `derived` existed, the only choices for a field like this were a permanent, un-fixable
+warning, or dropping the field out of the `.em` entirely and describing it only in the slice
+doc's prose — the latter being what the toolshed pilot actually did, at the cost of `em
+export` no longer knowing the field exists. **Everything else in this section is still just a
+warning, and some of it will be correct and permanent** — these warnings never block a render
+or a merge, but note that (like an un-marked field before `derived` existed) an un-marked
+warning **does** still count against `--slice-ready` if it's scoped to that slice (see
+[cli.md](cli.md)).
 
 An `issue` warning never blocks by default, same as every other warning — `em render`,
 `em watch`, and `em validate` all still succeed on a model with open issues. Use

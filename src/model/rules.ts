@@ -89,6 +89,13 @@ export const RULES = {
     usageCategory: "event field not provided by command",
     docAnchor: "fields-completeness",
   },
+  "derived-from-unresolved": {
+    severity: "error",
+    title: "`derived from` names an unknown event",
+    fix: "Name one of the view's actual sources, or drop the traced event from `derived from`.",
+    usageCategory: "derived from names unresolved event",
+    docAnchor: "fields-completeness",
+  },
   "reaction-from-unresolved": {
     severity: "error",
     title: "Unknown read-model source",

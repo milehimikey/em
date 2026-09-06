@@ -113,6 +113,7 @@ affected lines written by hand.
 | arrow endpoint unresolved |
 | arrow points backward |
 | composite tag references unknown field |
+| derived from names unresolved event |
 | duplicate tag key |
 | event feeds earlier view instance |
 | illegal connection |

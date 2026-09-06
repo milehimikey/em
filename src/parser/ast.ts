@@ -43,6 +43,19 @@ export interface Field {
    *  slice's commands. Still visible to view↔event field tracing; the marker only narrows
    *  the event↔command completeness check, not the view-facing one. */
   assigned?: boolean;
+  /** Trailing `derived` clause on the field line (view fields only, MIL-200): marks this
+   *  field as computed from which events have landed, rather than copied from a single
+   *  source event's payload — so `fields-completeness/view-field-no-source` never checks it
+   *  against the view's source events. Optionally traced: `derivedFrom` names the event(s)
+   *  whose arrival the value depends on (`derived from "Event A", "Event B"`); when given,
+   *  `em validate` still checks something — every named event must resolve among the view's
+   *  actual sources (see `model/validate.ts`'s `derived-from-unresolved`). `undefined` when
+   *  absent. */
+  derived?: boolean;
+  /** The event name(s) a `derived from "Event A", "Event B"` clause traces to, in declaration
+   *  order — `undefined` on a bare `derived` (no traced source) or when the field carries no
+   *  `derived` clause at all. See `Field.derived`. */
+  derivedFrom?: string[];
 }
 
 /** Kind of an element-level `tag` clause (`ElementNode.tags`) — the inline field `tag` (identity)

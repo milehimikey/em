@@ -1552,4 +1552,93 @@ slice "S" {
       expect(orderB.slices[0].elements[0].fields).toEqual(expected);
     });
   });
+
+  describe("`derived` clause (MIL-200)", () => {
+    it("parses a bare trailing `derived` clause on a typed view field", () => {
+      const ast = parse(`
+slice "S" {
+  view Room Catalog from "Room Booked" {
+    roomId: UUID
+    position: Integer derived
+  }
+}
+`);
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "roomId", type: "UUID" },
+        { name: "position", type: "Integer", derived: true },
+      ]);
+    });
+
+    it("parses a bare trailing `derived` clause on a typeless view field", () => {
+      const ast = parse(`slice "S" {\n  view V {\n    position derived\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "position", derived: true }]);
+    });
+
+    it("parses a traced `derived from \"Event A\", \"Event B\"` clause, single and multi-item", () => {
+      const one = parse(
+        `slice "S" {\n  view V from "Room Booked" {\n    status: String derived from "Room Booked"\n  }\n}`,
+      );
+      expect(one.slices[0].elements[0].fields).toEqual([
+        { name: "status", type: "String", derived: true, derivedFrom: ["Room Booked"] },
+      ]);
+
+      const two = parse(
+        `slice "S" {\n  view V from "Room Booked" {\n    status: String derived from "Room Booked", "Room Delisted"\n  }\n}`,
+      );
+      expect(two.slices[0].elements[0].fields).toEqual([
+        { name: "status", type: "String", derived: true, derivedFrom: ["Room Booked", "Room Delisted"] },
+      ]);
+    });
+
+    it("extracts the two-word `derived from` form before the bare `derived` check, same discipline as `renamed from` vs. `from`", () => {
+      // If the bare-form regex ran first and somehow matched inside the traced clause's own
+      // text, `derivedFrom` would be lost. It isn't: both forms coexist correctly across many
+      // fields on one line, quote-continuation commas included.
+      const ast = parse(
+        `slice "S" {\n  view V from "A", "B" {\n    x: String derived from "A", "B"\n    y: String derived\n  }\n}`,
+      );
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "x", type: "String", derived: true, derivedFrom: ["A", "B"] },
+        { name: "y", type: "String", derived: true },
+      ]);
+    });
+
+    it("treats a field whose entire text is just `derived` as a field NAMED derived, not a clause", () => {
+      const ast = parse(`slice "S" {\n  view V {\n    derived\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields).toEqual([{ name: "derived" }]);
+    });
+
+    it("leaves `field.derived`/`field.derivedFrom` undefined when no trailing derived clause is present", () => {
+      const ast = parse(`slice "S" {\n  view V {\n    roomId: UUID\n  }\n}`);
+      expect(ast.slices[0].elements[0].fields![0].derived).toBeUndefined();
+      expect(ast.slices[0].elements[0].fields![0].derivedFrom).toBeUndefined();
+    });
+
+    it("rejects a `derived` clause on a command, event, ui, and `type` block", () => {
+      expect(() => parse(`slice "S" {\n  command Do Thing {\n    total: Money derived\n  }\n}`)).toThrow(
+        /`derived` is only valid on a view field/,
+      );
+      expect(() => parse(`slice "S" {\n  event E {\n    total: Money derived\n  }\n}`)).toThrow(
+        /`derived` is only valid on a view field/,
+      );
+      expect(() => parse(`slice "S" {\n  ui Catalog @Customer {\n    total: Money derived\n  }\n}`)).toThrow(
+        /`derived` is only valid on a view field/,
+      );
+      expect(() => parse(`type Money {\n  amount: int derived\n}`)).toThrow(
+        /`derived` is only valid on a view field/,
+      );
+    });
+
+    it("rejects a traced `derived from` clause on a command, event, ui, and `type` block", () => {
+      expect(() =>
+        parse(`slice "S" {\n  command Do Thing {\n    total: Money derived from "Order Placed"\n  }\n}`),
+      ).toThrow(/`derived from` is only valid on a view field/);
+      expect(() =>
+        parse(`slice "S" {\n  event E {\n    total: Money derived from "Order Placed"\n  }\n}`),
+      ).toThrow(/`derived from` is only valid on a view field/);
+      expect(() => parse(`type Money {\n  amount: int derived from "Order Placed"\n}`)).toThrow(
+        /`derived from` is only valid on a view field/,
+      );
+    });
+  });
 });

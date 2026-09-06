@@ -203,7 +203,8 @@ element.
 
 Once two connected elements both declare fields, `em validate` traces them — a view field
 with no matching source-event field, or an event field no same-slice command provides, gets
-a warning (unless the event field is marked `assigned` — see [below](#assigned-fields)). See
+a warning (unless the event field is marked `assigned` — see [below](#assigned-fields) — or,
+for a view field, marked `derived` — see [below](#derived-fields)). See
 [validation.md](validation.md).
 
 ## Event tags
@@ -333,6 +334,64 @@ event Order Placed {
 
 `em export` carries the marker forward as `assigned: boolean` on each field (`true`/`false`,
 always present, same convention as `tag`) — see [cli.md](cli.md).
+
+## Derived fields
+
+**View fields only.** A trailing `derived` clause marks a field as computed from which events
+have landed, rather than copied straight from a single source event's payload — a `status`
+that steps through `queued` → `notified` → `fulfilled` as different events arrive, a `position`
+recomputed as an ordinal over existing rows, an `availability` flag flipped by whichever of two
+events landed last. These fields are real and belong in the model, but by construction they
+fail the ordinary [view field ↔ source event field trace](#fields) — `derived` records that as
+a modeling fact instead of leaving `em validate` to warn forever, or forcing the field out of
+the `.em` and into doc-only prose where `em export` can no longer see it. Writing it on a
+`command`, `event`, `ui`, or `type` field — or an element-level clause on a non-view element —
+is a parse error, the same posture as `assigned`.
+
+There are two forms: bare `derived` (no traced source — the value is computed some other way,
+like a row's rank), and traced `derived from "Event A", "Event B"` (the value's arrival depends
+on specific named events landing, even though it isn't copied from any single one of their
+fields):
+
+```
+view Room Catalog from "Room Booked", "Room Delisted" {
+  roomId: UUID
+  bookedAt: Instant
+  availability: String derived from "Room Booked", "Room Delisted"
+}
+
+view Waitlist Queue from "Waitlist Entry Added" {
+  entryId: UUID
+  position: Integer derived
+}
+```
+
+- Trails a single field spec, after its type (`availability: String derived from "…"`) or after
+  the bare name of a typeless field (`position derived`) — same trailing-clause family as `tag`,
+  `renamed from`, and `assigned`, though in practice a view field never carries those other
+  three (they're event/command-only), so `derived` doesn't compose with them so much as occupy
+  their spot on a different element kind.
+- The two-word `derived from "Event A", "Event B"` form is parsed before the bare `derived`
+  check, the same "two-word form first" discipline `renamed from` uses ahead of plain `from` —
+  in practice the two never collide, since the bare form's regex only matches text ending in
+  the literal word "derived", and a traced clause's text ends in a quoted list instead.
+- A field whose entire text is just `derived` (no type, nothing before it) is a field literally
+  NAMED `derived`, not a clause — same anchoring rule `tag`/`assigned` use.
+- Excludes the field from `fields-completeness/view-field-no-source` entirely (see
+  [validation.md](validation.md)) — no warning, and it no longer counts against
+  `em validate --slice-ready` either, since the diagnostic never fires.
+- The traced form still checks something: every named event must resolve among the view's
+  ACTUAL sources — its own `from` list, or (for a `from`-less view) the events in its own
+  slice. A name that doesn't resolve there is a validation error, `derived-from-unresolved`,
+  naming the field, the view, the bad name, and the view's real sources — a typo or a stale
+  reference doesn't get to hide behind the marker.
+
+`em export` carries the marker forward as `derived: boolean` on each field (`true`/`false`,
+always present, same convention as `tag`/`assigned`) and `derivedFrom: string[] | null` (the
+traced form's event name(s), `null` on a bare `derived` field, a non-derived field, and every
+field of a declared type) — see [cli.md](cli.md). This is the actual payoff: a computed field
+declared with `derived` shows up in `em export`'s model again, instead of living only in a
+slice doc's prose where nothing machine-readable knows it exists.
 
 ## Named types
 
