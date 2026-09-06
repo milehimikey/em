@@ -6,7 +6,7 @@
 // test/cli.test.ts; the stdio entry point itself (src/mcp/main.ts) is a 3-line wrapper with
 // nothing of its own to unit-test.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -668,6 +668,29 @@ describe("conform_scope tool", () => {
     })) as unknown as CallToolResult;
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("no state file");
+  });
+
+  it("state-file model mismatch (MIL-179): falls back to full mode, carries stateFile.error, byte-identical to the CLI's --json", async () => {
+    const siblingFile = join(conformDir, "model-asis.em");
+    writeFileSync(siblingFile, readFileSync(join(conformDir, "model.em"), "utf8"));
+    try {
+      const result = (await client.callTool({
+        name: "conform_scope",
+        arguments: { file: siblingFile, repo: conformTargetRepo },
+      })) as unknown as CallToolResult;
+      expect(result.isError).toBeFalsy();
+      const text = (result.content[0] as { type: "text"; text: string }).text;
+      const doc = JSON.parse(text);
+      expect(doc.lastConformance).toBeNull();
+      expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+      expect(doc.stateFile).toEqual({ error: 'state file describes "model.em", not "model-asis.em" — not attributing its conformance record' });
+
+      const cli = em(["conform-scope", "model-asis.em", "--repo", conformTargetRepo], conformDir);
+      expect(cli.status).toBe(0);
+      expect(cli.stdout).toBe(text + "\n");
+    } finally {
+      rmSync(siblingFile, { force: true });
+    }
   });
 });
 

@@ -1934,6 +1934,77 @@ describe("em conform-scope (CLI, real git repo)", () => {
   });
 });
 
+describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
+  const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
+
+  const MODEL =
+    'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n' +
+    'slice "Open Orders" {\n  view Open Orders from "Order Placed"\n  ui Order List @Customer\n}\n';
+  const DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: src/checkout\n---\n## Intent\n";
+
+  let modelDir: string;
+  let targetRepo: string;
+  let baseRev: string;
+
+  beforeAll(() => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-mismatch-"));
+    const scaffolded = em(["scaffold", "Checkout"], cwd);
+    expect(scaffolded.status).toBe(0);
+    modelDir = join(cwd, "checkout");
+    writeFileSync(join(modelDir, "checkout.em"), MODEL);
+    // The sibling this suite exercises: byte-identical content, a DIFFERENT filename — same
+    // shape `--seed-asis` produces, built by hand here so this suite doesn't depend on that flag.
+    writeFileSync(join(modelDir, "checkout-asis.em"), MODEL);
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    writeFileSync(join(modelDir, "slices", "place-order.md"), DOC);
+
+    targetRepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-mismatch-target-"));
+    git(["init", "-q", "-b", "main"], targetRepo);
+    mkdirSync(join(targetRepo, "src", "checkout"), { recursive: true });
+    writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "initial"], targetRepo);
+    baseRev = git(["rev-parse", "HEAD"], targetRepo).stdout.trim();
+
+    // The state file (shared by every .em in this directory) names checkout.em explicitly.
+    const setConformance = em(["state", "set-conformance", baseRev, "--report", "conformance/2026-08-01-report.md"], modelDir);
+    expect(setConformance.status).toBe(0);
+
+    writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler2\n");
+    git(["add", "."], targetRepo);
+    git(["commit", "-qam", "tweak checkout handler"], targetRepo);
+  });
+  afterAll(() => {
+    rmSync(modelDir, { recursive: true, force: true });
+    rmSync(targetRepo, { recursive: true, force: true });
+  });
+
+  it("happy path unchanged: checkout.em (the state file's own Model file:) attributes lastConformance normally", () => {
+    const r = em(["conform-scope", "checkout.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    const doc = JSON.parse(r.stdout);
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.stateFile).toBeUndefined();
+  });
+
+  it("scoping the sibling does not attribute the record, prints the distinct message, and falls back to full-mode scoping", () => {
+    const r = em(["conform-scope", "checkout-asis.em", "--repo", targetRepo], modelDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr.trim()).toBe('state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record');
+    const doc = JSON.parse(r.stdout);
+    expect(doc.lastConformance).toBeNull();
+    expect(doc.changedPaths).toEqual([]);
+    expect(doc.unmappedPaths).toEqual([]);
+    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+    expect(doc.stateFile).toEqual({
+      error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record',
+    });
+  });
+});
+
 describe("em conform-supersede (CLI, MIL-164)", () => {
   const REPORT = `# Conformance Report — Checkout — 2026-08-23\n\n- **Model:** \`checkout.em\`\n\n## Summary\n\nClean.\n`;
 

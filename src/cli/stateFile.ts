@@ -155,6 +155,20 @@ export function parseState(text: string): ParseStateResult {
   };
 }
 
+/** A state file is shared by every `.em` file in its directory (`.event-modeling.md` has no
+ *  per-model namespacing), but its `Model file:` bullet names exactly ONE of them — so a
+ *  sibling file it does NOT describe (the common case: a `conform-scope --seed-asis` scratch
+ *  copy like `checkout-asis.em` sitting next to `checkout.em`) must not inherit `checkout.em`'s
+ *  conformance record just because it lives in the same directory. Returns the exact non-fatal
+ *  message to report when `modelPath` (a parsed state's `modelPath`, already stripped of
+ *  backticks) names a different file than `file`'s basename; `null` when they agree. THE one
+ *  check both `em status` (`resolveConformanceEntry`, PR #116/MIL-163) and `em conform-scope`
+ *  (MIL-179) run before attributing a state file's `Last conformance:` to a given model file. */
+export function modelPathMismatch(modelPath: string, file: string): string | null {
+  if (!modelPath || modelPath === basename(file)) return null;
+  return `state file describes "${modelPath}", not "${basename(file)}" — not attributing its conformance record`;
+}
+
 /** Replace one or more bullet lines in place, in the order given, failing (without writing
  *  anything) if any targeted bullet is missing. Every other byte of `text` — including every
  *  other bullet, and whatever line ending style the file already used — passes through the

@@ -246,8 +246,12 @@ parse. `full: true` mirrors the CLI's `--full` flag (scope every `status: implem
 ignoring `Last conformance:`/changed paths). **Deliberately narrower than the CLI**: the CLI's
 `--seed-asis` flag (which writes a `<model>-asis.em` scratch file and touches `.gitignore`) has
 no MCP equivalent — this tool never writes anything, keeping every MCP tool in this server
-read-only. Use the CLI directly for that step. See [`em conform-scope`](cli.md#em-conform-scope-file)
-for the full JSON shape.
+read-only. Use the CLI directly for that step. When `file`'s sibling state file names a
+*different* model (a sibling `--seed-asis` scratch copy is the common case), scoping falls back
+to full mode and the JSON carries an additional `stateFile: { error }` key, byte-identical to
+the CLI's own `--json` output on that path (MIL-179) — the CLI's stderr notice on the same
+mismatch has no bearing here, since this tool has no stderr. See
+[`em conform-scope`](cli.md#em-conform-scope-file) for the full JSON shape.
 
 ### `freshness`
 

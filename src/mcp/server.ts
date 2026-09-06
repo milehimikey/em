@@ -62,7 +62,7 @@ import { buildGlossaryJson, GlossaryFileSide } from "../emit/glossaryJson.js";
 import { listModelCommits } from "../cli/changelog-git.js";
 import { buildChangelogDoc } from "../cli/changelogBuild.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
-import { loadStateFile, parseState } from "../cli/stateFile.js";
+import { loadStateFile, parseState, modelPathMismatch } from "../cli/stateFile.js";
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
 import { compileForQuery } from "../query/pipeline.js";
 import type { ModelIndex } from "../model/queryIndex.js";
@@ -645,7 +645,10 @@ export function createServer(): McpServer {
       if (!loaded.ok) return errorResult(loaded.message);
       const parsed = parseState(loaded.text);
       if (!parsed.ok) return errorResult(`em conform-scope: ${parsed.message}`);
-      const { lastConformance } = parsed.state;
+      // MIL-179: same state-file-mismatch check the CLI runs — keeps this tool byte-identical
+      // to `em conform-scope --json` on the mismatch path too.
+      const stateFileMismatch = modelPathMismatch(parsed.state.modelPath, file);
+      const lastConformance = stateFileMismatch ? null : parsed.state.lastConformance;
 
       const { facts } = resolveSliceDocFacts(model, refs, dirname(file));
 
@@ -658,7 +661,11 @@ export function createServer(): McpServer {
       }
 
       const scope = buildConformScope(facts, lastConformance, changedPaths, full);
-      return textResult(JSON.stringify(scope, null, 2));
+      const output: Record<string, unknown> = { ...scope };
+      if (stateFileMismatch) {
+        output.stateFile = { error: stateFileMismatch };
+      }
+      return textResult(JSON.stringify(output, null, 2));
     },
   );
 

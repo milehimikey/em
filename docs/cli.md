@@ -2429,6 +2429,24 @@ write, same as every other command. A missing state file, an unparsable `Last co
 bullet, a `--repo` that isn't a git repository, or an unknown revision in `Last conformance:`
 each exit 1 with a clear message.
 
+**Which model the state file describes.** A state file is shared by every `.em` file in its
+directory (`.event-modeling.md` has no per-model namespacing), but its `Model file:` bullet
+names exactly one of them. Running `conform-scope` against a sibling it does NOT describe — the
+common case being a `--seed-asis` scratch copy like `checkout-asis.em` sitting next to
+`checkout.em` — does not inherit that sibling's `Last conformance:` record: scoping falls back
+to full mode (every `status: implemented` slice, `changedPaths`/`unmappedPaths` both `[]`, same
+as a genuine first run) and stderr prints the mismatch, e.g. `` state file describes
+"checkout.em", not "checkout-asis.em" — not attributing its conformance record ``. The JSON also
+carries this as an additional `stateFile` key, omitted entirely when there's no mismatch (same
+"omitted unless it applies" convention as `seeded` above):
+
+```json
+{ "stateFile": { "error": "state file describes \"checkout.em\", not \"checkout-asis.em\" — not attributing its conformance record" } }
+```
+
+This is the same check `em status`'s conformance rollup runs for exactly the same reason (see
+[`em status`](#em-status-files)).
+
 ## `em conform-supersede <file> <report-path>`
 
 Stamps an existing conformance report with a "superseded" banner once its findings have been

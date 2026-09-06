@@ -91,6 +91,7 @@ import {
   setConformance,
   setReview,
   isValidDateString,
+  modelPathMismatch,
   PatchResult,
 } from "./cli/stateFile.js";
 import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile } from "./templates.js";
@@ -958,7 +959,14 @@ program
       console.error(`em conform-scope: ${parsed.message}`);
       process.exit(1);
     }
-    const { lastConformance } = parsed.state;
+    // MIL-179: the state file names exactly one model in `Model file:`; a sibling this run
+    // isn't describing (e.g. a `--seed-asis` scratch copy) must not inherit its conformance
+    // record. Same check `em status`'s resolveConformanceEntry runs (PR #116).
+    const stateFileMismatch = modelPathMismatch(parsed.state.modelPath, file);
+    if (stateFileMismatch) {
+      console.error(stateFileMismatch);
+    }
+    const lastConformance = stateFileMismatch ? null : parsed.state.lastConformance;
 
     const { facts, diagnostics: docDiags } = resolveSliceDocFacts(model, refs, dirname(file));
     printDiagnostics(newDiagnostics(docDiags, diagnostics));
@@ -976,6 +984,9 @@ program
 
     const scope = buildConformScope(facts, lastConformance, changedPaths, !!opts.full);
     const output: Record<string, unknown> = { ...scope };
+    if (stateFileMismatch) {
+      output.stateFile = { error: stateFileMismatch };
+    }
     if (opts.seedAsis) {
       output.seeded = seedAsisModel(file);
     }
