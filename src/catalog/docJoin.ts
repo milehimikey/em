@@ -97,6 +97,14 @@ export interface SliceDocExport {
    *  `version` above from the same doc parse — a finding built from `driftSignal` should always
    *  cite `version` alongside it, never cache one without the other. */
   driftSignal: DriftSignalKind | null;
+  /** MIL-201: who recorded the review session this doc passed through (frontmatter
+   *  `reviewedBy:`), written only by `em slice review` — null when absent (a doc that hasn't
+   *  reached the review gate, one predating this feature, or one reviewed by hand). The review
+   *  gate is the FIRST of the two human gates; `ratifiedBy` below records the second. */
+  reviewedBy: string | null;
+  /** MIL-201: when this doc was reviewed (frontmatter `reviewedOn:`, `YYYY-MM-DD`), written only
+   *  by `em slice review` — null when absent, same as `reviewedBy`. */
+  reviewedOn: string | null;
   /** MIL-165: who ratified this doc's current `status`/`version` (frontmatter `ratifiedBy:`),
    *  written only by `em slice ratify` — null when absent (a doc predating this feature, or
    *  ratified by hand before it existed). */
@@ -127,6 +135,8 @@ const EMPTY_CONTENT = {
   mergedFrom: [] as SliceRef[],
   supersededBy: [] as SliceRef[],
   driftSignal: null as DriftSignalKind | null,
+  reviewedBy: null as string | null,
+  reviewedOn: null as string | null,
   ratifiedBy: null as string | null,
   ratifiedOn: null as string | null,
   owner: null as string | null,
@@ -222,6 +232,8 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     mergedFrom: parsed.mergedFrom,
     supersededBy: parsed.supersededBy,
     driftSignal: classifyImplementationDrift(parsed),
+    reviewedBy: parsed.reviewedBy,
+    reviewedOn: parsed.reviewedOn,
     ratifiedBy: parsed.ratifiedBy,
     ratifiedOn: parsed.ratifiedOn,
     owner: parsed.owner,

@@ -65,6 +65,7 @@ slice "Bad" {
 
 let dir: string;
 let brokenDocDir: string;
+let reviewedDocDir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-mcp-"));
   writeFileSync(join(dir, "clean.em"), CLEAN);
@@ -99,6 +100,22 @@ beforeAll(() => {
   mkdirSync(join(brokenDocDir, "slices"), { recursive: true });
   writeFileSync(join(brokenDocDir, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
   writeFileSync(join(brokenDocDir, "status-broken-doc.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
+
+  // MIL-201 parity fixture: a slice doc carrying `reviewedBy:`/`reviewedOn:`, so export's new
+  // doc-join fields are actually populated (not just null) in the byte-identity assertion below.
+  // Own directory, same reason brokenDocDir has one.
+  reviewedDocDir = join(dir, "reviewed-model");
+  mkdirSync(join(reviewedDocDir, "slices"), { recursive: true });
+  writeFileSync(
+    join(reviewedDocDir, "slices", "reviewed-slice.md"),
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n" +
+      "reviewedBy: Sam Okafor\nreviewedOn: 2026-09-05\n---\n# Slice: Reviewed Slice\n",
+  );
+  writeFileSync(
+    join(reviewedDocDir, "reviewed.em"),
+    'slice "Reviewed Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/reviewed-slice.md"\n  event Thing Done\n}\n' +
+      'slice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+  );
 
   // Two-file `diff` tool fixture: clean2 adds one slice on top of CLEAN.
   writeFileSync(join(dir, "clean2.em"), CLEAN + `slice "Ship" {\n  command Ship Order\n  event Order Shipped\n}\n`);
@@ -347,6 +364,25 @@ describe("export_model tool", () => {
     const { result } = await callJson(client, "export_model", { file: join(dir, "error.em") });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("not exporting");
+  });
+
+  it("carries the MIL-201 reviewedBy/reviewedOn doc fields, byte-identical to `em export --json`", async () => {
+    const modelFile = join(reviewedDocDir, "reviewed.em");
+    const { result, doc } = await callJson(client, "export_model", { file: modelFile });
+    expect(result.isError).toBeFalsy();
+    expect(doc.schemaVersion).toBe("1.11");
+    expect(doc.model.slices[0].doc).toMatchObject({
+      found: true,
+      status: "reviewed",
+      reviewedBy: "Sam Okafor",
+      reviewedOn: "2026-09-05",
+      ratifiedBy: null,
+      ratifiedOn: null,
+    });
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["export", modelFile], reviewedDocDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
   });
 });
 

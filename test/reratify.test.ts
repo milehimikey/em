@@ -45,6 +45,40 @@ describe("applyReratifyFrontmatter (pure text surgery)", () => {
     );
   });
 
+  it("clears reviewedBy/reviewedOn alongside ratifiedBy/ratifiedOn (MIL-201)", () => {
+    const withReview = IMPLEMENTED_DOC.replace(
+      "ratifiedBy: Alex Rivera\n",
+      "reviewedBy: Sam Okafor\nreviewedOn: 2026-07-20\nratifiedBy: Alex Rivera\n",
+    );
+    const result = applyReratifyFrontmatter(withReview);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.content).not.toContain("reviewedBy:");
+    expect(result.content).not.toContain("reviewedOn:");
+    expect(result.content).not.toContain("ratifiedBy:");
+    expect(result.content).not.toContain("ratifiedOn:");
+    expect(result.content).toContain("status: ready-to-implement");
+    expect(result.content).toContain("version: 2");
+    // Everything else survives byte-for-byte.
+    const bodyMarker = "# Slice: Shipped Slice";
+    expect(result.content.slice(result.content.indexOf(bodyMarker))).toBe(
+      withReview.slice(withReview.indexOf(bodyMarker)),
+    );
+  });
+
+  it("bumps cleanly when only reviewedBy/reviewedOn are present (never ratified through the command)", () => {
+    const reviewOnly = IMPLEMENTED_DOC.replace(
+      "ratifiedBy: Alex Rivera\nratifiedOn: 2026-08-01\n",
+      "reviewedBy: Sam Okafor\nreviewedOn: 2026-07-20\n",
+    );
+    const result = applyReratifyFrontmatter(reviewOnly);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.newVersion).toBe(2);
+    expect(result.content).not.toContain("reviewedBy:");
+    expect(result.content).not.toContain("reviewedOn:");
+  });
+
   it("refuses a doc that's still draft — nothing has shipped yet to re-ratify", () => {
     const draft =
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n";

@@ -49,8 +49,19 @@ walk each one with the user, same as any open issue. Update the state file's Par
 section with who attended, and run `em state set-review <date>` to set the `Last stakeholder
 review:` marker (mirrors `Last conformance:`).
 
-End of phase: state file's `Last stakeholder review:` marker updated, every issue captured
-live triaged (resolved on the spot, moved to Open questions / parking lot, or left open on
+**Per-slice outcome.** A slice whose open questions are all resolved in the room →
+`em slice review <model>.em <key> --by <name>` (flips its doc to `status: reviewed` and records
+`reviewedBy:`/`reviewedOn:`). Anything still open stays `draft` — the walkthrough doesn't decide
+it, the next session or the open-questions list does.
+
+**The facilitator never ratifies, never offers to ratify, and never suggests ratification in a
+review session. Ratification is a separate human gate after review**
+(docs/process.md#the-slice-lifecycle-gates). It is typically multi-person, routed through
+CODEOWNERS on `slices/**`, and it is not this session's to run — `em slice ratify` will itself
+refuse a doc that hasn't been through `em slice review`.
+
+End of phase: state file's `Last stakeholder review:` marker updated, every walked slice whose
+questions all closed moved to `status: reviewed`, every issue captured live triaged (resolved on the spot, moved to Open questions / parking lot, or left open on
 purpose). Review doesn't chain to another phase — it's a recurring, scheduled activity like
 `conform`, not a step in the discover → model → slice sequence.
 

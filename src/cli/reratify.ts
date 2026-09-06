@@ -27,6 +27,12 @@
 // <name>` apply cleanly afterward — ratify's own idempotent-refusal guard would otherwise read
 // the leftover prior ratifiedBy/ratifiedOn as "already ratified by someone else" and refuse.
 //
+// MIL-201: `reviewedBy:`/`reviewedOn:` are cleared for the same reason and in the same sweep. The
+// review record describes the version that shipped, not the new one — a re-ratified version needs
+// no fresh review session (the doc lands at `ready-to-implement`, which `em slice ratify`'s review
+// gate accepts), but leaving the old review in place would claim the room walked a version it has
+// never seen.
+//
 // Write strategy: the same surgical index-math splicing markImplemented.ts/ratify.ts use, via
 // the shared primitives in ./frontmatterSurgery.js — never a parse+re-serialize. Everything
 // outside the edited value spans — the body, `implementedIn:`, the lineage/`covers` keys, and
@@ -100,11 +106,14 @@ export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
     updatedInner = updatedInner.slice(0, edit.index) + edit.next + updatedInner.slice(edit.index + edit.oldLen);
   }
 
-  // Clear stale ratifiedBy:/ratifiedOn: — see module header. A plain `.replace()` (not
-  // index-spliced alongside the edits above) is safe here: these two keys are disjoint from
-  // `status:`/`version:` by construction (fieldLineRegex matches one key at a time), so removing
-  // them from the ALREADY-updated text can't disturb the edits just applied.
-  updatedInner = updatedInner.replace(fieldLineWithEolRegex("ratifiedBy"), "").replace(fieldLineWithEolRegex("ratifiedOn"), "");
+  // Clear stale ratifiedBy:/ratifiedOn:/reviewedBy:/reviewedOn: — see module header. A plain
+  // `.replace()` (not index-spliced alongside the edits above) is safe here: these four keys are
+  // disjoint from `status:`/`version:` and from each other by construction (fieldLineRegex matches
+  // one key at a time), so removing them from the ALREADY-updated text can't disturb the edits
+  // just applied.
+  for (const key of ["ratifiedBy", "ratifiedOn", "reviewedBy", "reviewedOn"]) {
+    updatedInner = updatedInner.replace(fieldLineWithEolRegex(key), "");
+  }
 
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
   return { ok: true, content, newVersion };

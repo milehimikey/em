@@ -29,7 +29,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.10");
+    expect(doc.schemaVersion).toBe("1.11");
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -76,6 +76,8 @@ slice "Submit Order" {
       mergedFrom: [],
       supersededBy: [],
       driftSignal: null,
+      reviewedBy: null,
+      reviewedOn: null,
       ratifiedBy: null,
       ratifiedOn: null,
       owner: null,
@@ -801,8 +803,8 @@ type Order { billing: Address }
     ]);
   });
 
-  it("bumps schemaVersion to 1.10 (MIL-191), additive over 1.9", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.10");
+  it("bumps schemaVersion to 1.11 (MIL-201), additive over 1.10", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.11");
   });
 });
 
@@ -999,6 +1001,8 @@ describe("slice-doc join (MIL-91)", () => {
       mergedFrom: [],
       supersededBy: [],
       driftSignal: "in-sync",
+      reviewedBy: null,
+      reviewedOn: null,
       ratifiedBy: null,
       ratifiedOn: null,
       owner: null,
@@ -1092,6 +1096,8 @@ describe("slice-doc join: cross-binding (MIL-121)", () => {
       mergedFrom: [],
       supersededBy: [],
       driftSignal: "never-implemented",
+      reviewedBy: null,
+      reviewedOn: null,
       ratifiedBy: null,
       ratifiedOn: null,
       owner: null,

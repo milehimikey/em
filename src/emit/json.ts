@@ -82,7 +82,12 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // the document stay model-unqualified. Never deduped here — one export is one model; key
 // collisions are a multi-model-invocation concern (`duplicate-model-key`, `em query`/`em
 // system`). The `--slice` envelope carries the same value as top-level `modelKey`. Additive-only.
-export const SCHEMA_VERSION = "1.10";
+// 1.11 (MIL-201): `slice.doc` gains `reviewedBy`/`reviewedOn` — who recorded the review session
+// this doc passed through, and when (frontmatter `reviewedBy:`/`reviewedOn:`), written only by
+// `em slice review`. Both null when absent, same as every other optional doc-join field. The
+// review gate is the FIRST of the two human gates; `ratifiedBy`/`ratifiedOn` (schema 1.8) record
+// the second. See catalog/docJoin.ts. Additive-only.
+export const SCHEMA_VERSION = "1.11";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
