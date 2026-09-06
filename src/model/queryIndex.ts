@@ -31,11 +31,14 @@ import { loadSliceDocsOnce, joinSliceDocFast, SliceQueryDoc } from "./sliceDocIn
 import { extractInvariantIds } from "../cli/coverage.js";
 
 /** What a query result arrived by: one of the six legal connections, `view-instance` (the
- *  zero-cost hop between two timeline instances of one read model — not an edge), or `other`
+ *  zero-cost hop between two timeline instances of one read model — not an edge), `loops-to`
+ *  (MIL-199: an event's `loops-to "View"` edge — structurally an `event->view` pair like an
+ *  ordinary `from`-derived one, but labeled distinctly here so `downstream`/`upstream` results
+ *  can tell "re-feeds an earlier to-do list" apart from "projects into a new one"), or `other`
  *  for an edge whose endpoint kinds form no legal connection (only reachable through a `from`
  *  clause resolving to a non-event; an explicit `arrow` between such a pair is a compile error
  *  query refuses on). */
-export type QueryEdgeKind = ConnectionKind | "view-instance" | "other";
+export type QueryEdgeKind = ConnectionKind | "view-instance" | "loops-to" | "other";
 
 export interface IndexEdge {
   ref: string;
@@ -101,7 +104,11 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
     const fromEl = model.byId.get(e.from);
     const toEl = model.byId.get(e.to);
     if (!fromRef || !toRef || !fromEl || !toEl) continue;
-    const kind: QueryEdgeKind = connectionKind(fromEl.kind, toEl.kind) ?? "other";
+    // A `loops-to` edge is structurally `event->view`, indistinguishable from an ordinary
+    // `from`-derived one by endpoint kinds alone — check the edge's own provenance (MIL-199)
+    // before falling through to connectionKind()'s pure endpoint-kind function.
+    const kind: QueryEdgeKind =
+      e.source === "loops-to" ? "loops-to" : connectionKind(fromEl.kind, toEl.kind) ?? "other";
     pushEdge(out, fromRef, { ref: toRef, kind });
     pushEdge(inMap, toRef, { ref: fromRef, kind });
   }

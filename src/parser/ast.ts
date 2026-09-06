@@ -100,6 +100,14 @@ export interface ElementNode {
    *  remove+add, no-inference philosophy); this is purely additive metadata a consumer opts
    *  into reading. `undefined` when absent. */
   renamedFrom?: string[];
+  /** `loops-to "View"` clause(s) — event only (MIL-199): the name(s) of an earlier read model
+   *  this event re-feeds, e.g. a poll/retry loop where a later fact must re-trigger an
+   *  automation that already ran. Repeatable (`loops-to "A" loops-to "B"`), in declaration
+   *  order. Deliberately not drawn as an arrow — the timeline's forward-only laws stay intact;
+   *  this is a labeled legend entry instead (see `render/drawNotes.ts`). `undefined` when
+   *  absent. See `model/validate.ts` for the "target must be strictly earlier" rule and
+   *  `model/edges.ts`'s `resolveLoopsToTarget`. */
+  loopsTo?: string[];
   line: number;
 }
 

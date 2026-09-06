@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Draws "has notes", "has issues", and "has an accepted divergence" affordances on top of
-// a Graphviz-rendered SVG:
+// Draws "has notes", "has issues", "has an accepted divergence", and "loops back" affordances
+// on top of a Graphviz-rendered SVG:
 //   - a small folded-corner (dog-ear) marker per noted box, top-right, amber, carrying
 //     a footnote number, linked to the note file;
 //   - a small folded-corner marker per element with an open `issue`, top-left, red,
@@ -10,19 +10,26 @@
 //     same tooltip-only treatment as `issue` (inline text, no file to link to) — the
 //     *resolved* counterpart to issue's red: right side reads "documented" (note,
 //     divergence), left reads "open" (issue);
+//   - a small folded-corner marker per event with a `loops-to` clause (MIL-199), bottom-left,
+//     indigo, carrying an ↩ glyph beside its footnote number — tooltip-only, same reasoning
+//     as issue/divergence. This is the one family that never gets a drawn arrow: the loop is
+//     declared by this marker and its legend row instead, so the timeline's forward-only laws
+//     stay intact (see src/render/drawEdges.ts, which explicitly skips `source: "loops-to"`
+//     edges for the same reason).
 //   - a legend appended below the diagram: a "Notes" section mapping each amber number
 //     to its element and note file, an "Issues" section mapping each red number to its
-//     element and issue text, and an "Accepted Divergences" section mapping each teal
-//     number to its element and divergence text — each present only when non-empty.
+//     element and issue text, an "Accepted Divergences" section mapping each teal
+//     number to its element and divergence text, and a "Loops" section mapping each
+//     indigo number to the event and the view it re-feeds — each present only when non-empty.
 // An element may carry a note, an issue, and a divergence all at once: note/issue sit on
-// the top corners, divergence sits at bottom-right, so none of them overlap, and each
-// keeps its own independent numbering (a "1" note, a "1" issue, and a "1" divergence on
-// the same box are unambiguous — distinct color, distinct corner, distinct legend
-// section).
-// In SVG the note markers/rows are anchors (click to open the markdown); issue and
-// divergence markers/rows never are, since inline text has no file to link to. Raster
+// the top corners, divergence and loops-to sit on the bottom corners, so none of them
+// overlap, and each keeps its own independent numbering (a "1" note, a "1" issue, a "1"
+// divergence, and a "1" loops-to marker on the same box are unambiguous — distinct color,
+// distinct corner, distinct legend section).
+// In SVG the note markers/rows are anchors (click to open the markdown); issue, divergence,
+// and loops-to markers/rows never are, since inline text has no file to link to. Raster
 // output (PNG/PDF) can't carry links or tooltips either way, so the legend is what tells
-// you which note, issue, or divergence belongs to which element there.
+// you which note, issue, divergence, or loop-back belongs to which element there.
 //
 // Marker coordinates come from parseNodeRects (the box coordinate space, inside
 // Graphviz's transform group). The legend is laid out in the SVG's root/viewBox
@@ -46,6 +53,8 @@ const ISSUE_FILL = "#E53935"; // red sticky (open issues)
 const ISSUE_STROKE = "#8B0000"; // dark red
 const DIVERGENCE_FILL = "#26A69A"; // muted teal (accepted divergences — settled, not open)
 const DIVERGENCE_STROKE = "#00695C"; // dark teal
+const LOOP_FILL = "#5C6BC0"; // indigo (MIL-199: loops-to — the one marker with no drawn arrow)
+const LOOP_STROKE = "#283593"; // dark indigo
 
 /**
  * Elements carrying a note, in document order, EXCLUDING an element whose `.note` is its
@@ -71,6 +80,14 @@ export function issuedElements(model: NormalizedModel): Element[] {
 /** Elements carrying an accepted divergence, in document order. Index + 1 is the footnote number. */
 export function divergedElements(model: NormalizedModel): Element[] {
   return model.elements.filter((el) => el.divergence);
+}
+
+/** Events carrying one or more `loops-to` clauses, in document order (MIL-199). Index + 1 is
+ *  the marker's footnote number — it identifies the EVENT, not each individual target: an
+ *  event with several `loops-to` targets gets one marker but one legend row per target,
+ *  every row sharing that same number (see `appendNoteLegend`'s "Loops" section). */
+export function loopedElements(model: NormalizedModel): Element[] {
+  return model.elements.filter((el) => (el.loopsTo ?? []).length > 0);
 }
 
 /** How to turn an element's note into the link href (default: the raw note path). */
@@ -121,10 +138,28 @@ export function buildDivergenceMarkers(model: NormalizedModel, rects: Map<string
   return `<g class="em-divergences">${markers.join("")}</g>`;
 }
 
+/** SVG group with a numbered corner marker per event carrying a `loops-to` clause (MIL-199).
+ *  Bottom-left — the one corner none of the other three marker families use — so it never
+ *  overlaps a note/issue/divergence marker on the same box. */
+export function buildLoopsToMarkers(model: NormalizedModel, rects: Map<string, Rect>): string {
+  const markers: string[] = [];
+
+  loopedElements(model).forEach((el, i) => {
+    const r = rects.get(el.id);
+    if (!r) return;
+    markers.push(loopsToMarker(r, el, i + 1));
+  });
+
+  return `<g class="em-loops-to">${markers.join("")}</g>`;
+}
+
 type Corner = "left" | "right";
 type VAlign = "top" | "bottom";
 
-/** The dog-ear glyph + footnote number, anchored at one corner of the box. */
+/** The dog-ear glyph + footnote number, anchored at one corner of the box. `glyph` (default
+ *  none) prepends a fixed marker to the footnote number itself — MIL-199's `loops-to` marker
+ *  is the one family that uses it, carrying "↩" beside its number so the glyph reads as
+ *  "loops back" even before the legend is consulted. */
 function cornerGlyph(
   r: Rect,
   num: number,
@@ -132,6 +167,7 @@ function cornerGlyph(
   vAlign: VAlign,
   fill: string,
   stroke: string,
+  glyph: string = "",
 ): string {
   const x = corner === "right" ? r.right - INSET : r.left + INSET;
   const foldX = corner === "right" ? x - FOLD : x + FOLD;
@@ -146,7 +182,7 @@ function cornerGlyph(
   const anchor = corner === "right" ? "end" : "start";
   return (
     // MIL-26 (theming): a white halo behind the triangle, independent of note/issue/
-    // divergence color, so the marker reads clearly on every element-kind fill —
+    // divergence/loops-to color, so the marker reads clearly on every element-kind fill —
     // amber-on-orange (a note on an `event` box) was the specific low-contrast case
     // that motivated this; the halo fixes it for all five box colors at once instead
     // of special-casing that one pairing.
@@ -154,7 +190,7 @@ function cornerGlyph(
     `<path d="${tri}" fill="${fill}" stroke="${stroke}" stroke-width="1" stroke-linejoin="round"/>` +
     `<path d="${crease}" fill="none" stroke="${stroke}" stroke-width="0.7"/>` +
     `<text x="${n(numX)}" y="${n(numY)}" text-anchor="${anchor}" font-family="Helvetica" ` +
-    `font-weight="bold" font-size="10" fill="${stroke}">${num}</text>`
+    `font-weight="bold" font-size="10" fill="${stroke}">${glyph}${num}</text>`
   );
 }
 
@@ -191,6 +227,20 @@ function divergenceMarker(r: Rect, divergence: string, num: number): string {
   );
 }
 
+/**
+ * A folded-corner glyph + ↩ + footnote number at the box's bottom-left, marking an event with
+ * one or more `loops-to` clauses (MIL-199) — the loop is declared here and in the "Loops"
+ * legend section, never as a drawn arrow. Tooltip-only, same reasoning as issue/divergence;
+ * the tooltip lists every target this footnote number covers.
+ */
+function loopsToMarker(r: Rect, el: Element, num: number): string {
+  const targets = (el.loopsTo ?? []).map((t) => `"${esc(t)}"`).join(", ");
+  return (
+    `<g><title>${num}. loops back to ${targets}</title>` +
+    `${cornerGlyph(r, num, "left", "bottom", LOOP_FILL, LOOP_STROKE, "↩")}</g>`
+  );
+}
+
 // ---- legend ----
 
 const PAD_X = 16;
@@ -199,11 +249,29 @@ const HEAD_H = 22;
 const LINE_H = 18;
 const PAD_BOTTOM = 14;
 
+/** One "Loops" legend entry: which event (by its marker's footnote number) re-feeds which
+ *  target view — one entry per `loops-to` target, so an event with several targets produces
+ *  several entries sharing the same `num`. */
+interface LoopRow {
+  el: Element;
+  target: string;
+  num: number;
+}
+
+/** Flatten `loopedElements(model)` into one row per `loops-to` target, in document order,
+ *  numbering by EVENT (`loopedElements`' own index) rather than by row. */
+function loopRows(model: NormalizedModel): LoopRow[] {
+  return loopedElements(model).flatMap((el, i) =>
+    (el.loopsTo ?? []).map((target) => ({ el, target, num: i + 1 })),
+  );
+}
+
 /**
  * Grow the canvas and append a legend below the diagram: a "Notes" section (if any
- * element has a note), an "Issues" section (if any element has an open issue), and an
- * "Accepted Divergences" section (if any element has one). Returns the SVG unchanged
- * if there's nothing to show or the dimensions can't be parsed.
+ * element has a note), an "Issues" section (if any element has an open issue), an
+ * "Accepted Divergences" section (if any element has one), and a "Loops" section (if any
+ * event has a `loops-to` clause). Returns the SVG unchanged if there's nothing to show or
+ * the dimensions can't be parsed.
  */
 export function appendNoteLegend(
   svg: string,
@@ -213,7 +281,10 @@ export function appendNoteLegend(
   const noted = notedElements(model);
   const issued = issuedElements(model);
   const diverged = divergedElements(model);
-  if (noted.length === 0 && issued.length === 0 && diverged.length === 0) return svg;
+  const loops = loopRows(model);
+  if (noted.length === 0 && issued.length === 0 && diverged.length === 0 && loops.length === 0) {
+    return svg;
+  }
 
   const vb = /viewBox="([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)\s+([\d.eE+-]+)"/.exec(svg);
   const hpt = /height="([\d.eE+-]+)pt"/.exec(svg);
@@ -227,7 +298,8 @@ export function appendNoteLegend(
   const notesH = noted.length > 0 ? HEAD_H + noted.length * LINE_H : 0;
   const issuesH = issued.length > 0 ? HEAD_H + issued.length * LINE_H : 0;
   const divergencesH = diverged.length > 0 ? HEAD_H + diverged.length * LINE_H : 0;
-  const legendH = PAD_TOP + notesH + issuesH + divergencesH + PAD_BOTTOM;
+  const loopsH = loops.length > 0 ? HEAD_H + loops.length * LINE_H : 0;
+  const legendH = PAD_TOP + notesH + issuesH + divergencesH + loopsH + PAD_BOTTOM;
   const newVh = vh + legendH;
   const newHpt = (+hpt[1]) * (newVh / vh); // keep the pt:viewBox ratio (handles scaling)
   const top = minY + vh; // legend sits just below the diagram, in root coords
@@ -282,6 +354,16 @@ export function appendNoteLegend(
     sectionY += divergencesH;
   }
 
+  if (loops.length > 0) {
+    sections +=
+      `<text x="${n(minX + PAD_X)}" y="${n(sectionY + 14)}" font-family="Helvetica" ` +
+      `font-weight="bold" font-size="12" fill="${LOOP_STROKE}">Loops</text>`;
+    sections += loops
+      .map((r, i) => loopRow(r, minX + PAD_X, sectionY + HEAD_H + i * LINE_H + 13))
+      .join("");
+    sectionY += loopsH;
+  }
+
   const legend =
     `<g class="em-note-legend">` +
     `<rect x="${n(minX)}" y="${n(top)}" width="${n(vw)}" height="${n(legendH)}" fill="#FFFFFF"/>` +
@@ -316,6 +398,24 @@ function row(
   if (kind === "issue" || kind === "divergence") return text; // nothing to link to
   const href = esc(hrefOrText); // resolved link target
   return `<a xlink:href="${href}" href="${href}" target="_blank">${text}</a>`;
+}
+
+/**
+ * One "Loops" legend row: `↩ N.  Event re-feeds "View"` (MIL-199). `num` identifies the
+ * EVENT (`loopRows()`'s numbering), not the target — an event with several `loops-to`
+ * clauses produces several rows sharing the same number, one per target. No link target,
+ * same reasoning as issue/divergence rows.
+ */
+function loopRow(r: LoopRow, x: number, y: number): string {
+  const name = esc(r.el.name);
+  const target = esc(r.target);
+  return (
+    `<text x="${n(x)}" y="${n(y)}" font-family="Helvetica" font-size="11" fill="#202124">` +
+    `<tspan font-weight="bold" fill="${LOOP_STROKE}">↩ ${r.num}.</tspan>` +
+    `<tspan dx="6">${name}</tspan>` +
+    `<tspan dx="6" fill="#5F6368">re-feeds "${target}"</tspan>` +
+    `</text>`
+  );
 }
 
 function esc(s: string): string {

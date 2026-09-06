@@ -6,8 +6,10 @@ import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
 import { validate } from "../src/model/validate.js";
+import { resolveLoopsToTarget } from "../src/model/edges.js";
 import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
+import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
 const diagsFor = (src: string) => {
@@ -1747,5 +1749,252 @@ slice "S" {
       "tag-duplicate-key",
     );
     expect(diags).toHaveLength(0);
+  });
+});
+
+describe("`loops-to` (MIL-199): loop-backs on the timeline", () => {
+  it("resolves to the latest earlier view instance and raises no diagnostic", () => {
+    const diags = diagsFor(`
+context Todo
+slice "Add Entry" {
+  ui Add Screen
+  command Add Entry
+  event Entry Added @Todo
+}
+slice "Notify" {
+  view Entries To Notify from "Entry Added"
+  ui Entries Screen
+}
+slice "Expire" {
+  ui Expire Screen
+  command Expire Entry
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("resolves to the LATEST earlier instance when the view has been re-declared with `again`", () => {
+    const diags = diagsFor(`
+context Todo
+slice "Add Entry" {
+  ui Add Screen
+  command Add Entry
+  event Entry Added @Todo
+}
+slice "Notify" {
+  view Entries To Notify from "Entry Added"
+  ui Entries Screen
+}
+slice "Refresh" {
+  ui Refresh Screen
+  command Refresh Entries
+  event Entries Refreshed @Todo
+}
+slice "Notify Again" {
+  view Entries To Notify again from "Entries Refreshed"
+  ui Entries Screen Again
+}
+slice "Expire" {
+  ui Expire Screen
+  command Expire Entry
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    expect(diags).toHaveLength(0);
+    const model = modelFrom(`
+context Todo
+slice "Add Entry" {
+  command Add Entry
+  event Entry Added @Todo
+}
+slice "Notify" {
+  view Entries To Notify from "Entry Added"
+}
+slice "Refresh" {
+  command Refresh Entries
+  event Entries Refreshed @Todo
+}
+slice "Notify Again" {
+  view Entries To Notify again from "Entries Refreshed"
+}
+slice "Expire" {
+  command Expire Entry
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    const evt = model.byName.get("entry expired")![0];
+    const target = resolveLoopsToTarget(model, evt, "Entries To Notify");
+    // the SECOND ("again") instance, not the first — same "latest" rule as a reaction's `from`
+    expect(target?.sliceIndex).toBe(3);
+  });
+
+  it("errors `loops-to-forward` when the target is the same slice or later, naming `from` on a later `view … again` instance as the alternative", () => {
+    const diags = diagsFor(`
+context Todo
+slice "Earlier" {
+  command Do Earlier
+  event Earlier Done @Todo
+}
+slice "Later" {
+  view Later View from "Earlier Done"
+  event Later Event loops-to "Later View"
+}
+`);
+    const forward = diags.filter((d) => d.code === "loops-to-forward");
+    expect(forward).toHaveLength(1);
+    expect(forward[0]).toMatchObject({ severity: "error" });
+    expect(forward[0].message).toContain("time flows left to right");
+    expect(forward[0].message).toContain('event "Later Event"');
+    expect(forward[0].message).toContain('loops-to "Later View"');
+    expect(forward[0].message).toContain("not earlier on the timeline");
+    expect(forward[0].message).toContain("`from` on a later `view Later View again` instance");
+  });
+
+  it("errors `loops-to-forward` when the named view's only instance is strictly later", () => {
+    const diags = diagsFor(`
+context Todo
+slice "Earlier" {
+  command Do Earlier
+  event Earlier Event loops-to "Todo List"
+}
+slice "Later" {
+  view Todo List
+}
+`);
+    const forward = diags.filter((d) => d.code === "loops-to-forward");
+    expect(forward).toHaveLength(1);
+    expect(forward[0].message).toContain("not earlier on the timeline");
+  });
+
+  it("errors `loops-to-unresolved` when no view by that name exists", () => {
+    const diags = diagsFor(`
+context Todo
+slice "S" {
+  command Do Thing
+  event Thing Done @Todo loops-to "No Such View"
+}
+`);
+    const unresolved = diags.filter((d) => d.code === "loops-to-unresolved");
+    expect(unresolved).toHaveLength(1);
+    expect(unresolved[0]).toMatchObject({ severity: "error" });
+    expect(unresolved[0].message).toBe('event "Thing Done" loops-to unknown read model "No Such View"');
+  });
+
+  it("errors `loops-to-unresolved` with the kind-mismatch courtesy when the name resolves to a non-view", () => {
+    const diags = diagsFor(`
+context Todo
+slice "S" {
+  command Do Thing
+  event Thing Done @Todo loops-to "Do Thing"
+}
+`);
+    const unresolved = diags.filter((d) => d.code === "loops-to-unresolved");
+    expect(unresolved).toHaveLength(1);
+    expect(unresolved[0].message).toBe(
+      'event "Thing Done" loops-to "Do Thing", which is a command, not a read model — `loops-to` names the view this event re-feeds',
+    );
+  });
+
+  it("only valid on event — a parse error on any other kind", () => {
+    expect(() =>
+      normalize(
+        parse(`
+slice "S" {
+  command Do Thing loops-to "Entries To Notify"
+}
+`),
+      ),
+    ).toThrow(/loops-to.*only valid on event/);
+  });
+
+  it("MIL-74: covers the trailing-clause-after-`{ fields }`-block leftover path", () => {
+    const model = modelFrom(`
+slice "S" {
+  event E { f: String } loops-to "V"
+}
+`);
+    const evt = model.byName.get("e")![0];
+    expect(evt.loopsTo).toEqual(["V"]);
+  });
+
+  it("MIL-82: a title-cased free-text event name containing the words is untouched", () => {
+    const model = modelFrom(`
+slice "S" {
+  event Widget Loops To Cabinet
+}
+`);
+    const evt = model.byName.get("widget loops to cabinet")?.[0];
+    expect(evt).toBeDefined();
+    expect(evt!.loopsTo).toBeUndefined();
+  });
+
+  it("accumulates multiple `loops-to \"A\" loops-to \"B\"` clauses in declaration order", () => {
+    const model = modelFrom(`
+slice "A" {
+  view Alpha
+}
+slice "B" {
+  view Beta
+}
+slice "C" {
+  event Thing Done loops-to "Alpha" loops-to "Beta"
+}
+`);
+    const evt = model.byName.get("thing done")![0];
+    expect(evt.loopsTo).toEqual(["Alpha", "Beta"]);
+  });
+
+  it("also accepts the comma-joined form `loops-to \"A\", \"B\"`", () => {
+    const model = modelFrom(`
+slice "A" {
+  view Alpha
+}
+slice "B" {
+  view Beta
+}
+slice "C" {
+  event Thing Done loops-to "Alpha", "Beta"
+}
+`);
+    const evt = model.byName.get("thing done")![0];
+    expect(evt.loopsTo).toEqual(["Alpha", "Beta"]);
+  });
+
+  it("both-ends: a resolved loops-to counts as consumption — no `event-unread` warning", () => {
+    const diags = diagsFor(`
+context Todo
+slice "Add Entry" {
+  ui Add Screen
+  command Add Entry
+  event Entry Added @Todo
+}
+slice "Notify" {
+  view Entries To Notify from "Entry Added"
+  ui Entries Screen
+}
+slice "Expire" {
+  ui Expire Screen
+  command Expire Entry
+  event Entry Expired @Todo loops-to "Entries To Notify"
+}
+`);
+    expect(diags.some((d) => d.code === "both-ends-of-a-flow/event-unread")).toBe(false);
+  });
+
+  it("both-ends: an UNRESOLVED loops-to does NOT count as consumption — event-unread still fires alongside loops-to-unresolved", () => {
+    const diags = diagsFor(`
+context Todo
+slice "S" {
+  command Do Thing
+  event Thing Done @Todo loops-to "No Such View"
+}
+`);
+    expect(diags.some((d) => d.code === "both-ends-of-a-flow/event-unread")).toBe(true);
+    expect(diags.some((d) => d.code === "loops-to-unresolved")).toBe(true);
+  });
+
+  it("R12 fixture: the shared room-booking/waitlist loop-back model compiles warning-free", () => {
+    expect(diagsFor(LOOP_FIXTURE)).toHaveLength(0);
   });
 });

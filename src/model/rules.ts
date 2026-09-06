@@ -155,6 +155,18 @@ export const RULES = {
     fix: "Restructure so the target comes later.",
     usageCategory: "arrow points backward",
   },
+  "loops-to-forward": {
+    severity: "error",
+    title: "`loops-to` target not earlier on the timeline",
+    fix: "Point `loops-to` at an earlier view, or use `from` on a later `view … again` instance instead.",
+    usageCategory: "loops-to points forward",
+  },
+  "loops-to-unresolved": {
+    severity: "error",
+    title: "`loops-to` target unresolved",
+    fix: "Name a view that exists, or declare it before this event.",
+    usageCategory: "loops-to target unresolved",
+  },
   "connection-legality/illegal-pair": {
     severity: "error",
     title: "Illegal connection",

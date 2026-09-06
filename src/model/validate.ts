@@ -6,7 +6,7 @@ import { Grid } from "../layout/grid.js";
 import { collectTags, Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
-import { connectionKind } from "./edges.js";
+import { connectionKind, resolveLoopsToTarget } from "./edges.js";
 
 export type Severity = "error" | "warning";
 
@@ -223,6 +223,46 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     }
   }
 
+  // `loops-to "View"` (event only, MIL-199): a later fact re-feeding an earlier read model —
+  // the one loop-back device forward-only `from`/`arrow` can't express. The target must
+  // resolve to a `view` instance strictly EARLIER on the timeline; same-slice-or-later is
+  // what `from` on a later `view … again` instance is for.
+  for (const el of model.elements) {
+    if (el.kind !== "event") continue;
+    for (const name of el.loopsTo ?? []) {
+      const bucket = model.byName.get(normalizeName(name));
+      const views = bucket?.filter((e) => e.kind === "view") ?? [];
+      if (views.length === 0) {
+        // Same courtesy as the reaction/view `from` checks above: a name that exists but as
+        // the wrong kind reads like a typo without saying so.
+        const other = bucket?.[0];
+        pushDiag(diags, "loops-to-unresolved", {
+          message: other
+            ? `event "${el.name}" loops-to "${name}", which is a ${other.kind}, not a read model — ` +
+              `\`loops-to\` names the view this event re-feeds`
+            : `event "${el.name}" loops-to unknown read model "${name}"`,
+          line: el.line,
+          refs: other ? [refOf(el.id), refOf(other.id)] : [refOf(el.id)],
+        });
+        continue;
+      }
+      const target = resolveLoopsToTarget(model, el, name);
+      if (!target) {
+        const nearest = views
+          .filter((v) => v.sliceIndex >= el.sliceIndex)
+          .sort((a, b) => a.sliceIndex - b.sliceIndex)[0];
+        pushDiag(diags, "loops-to-forward", {
+          message:
+            `time flows left to right: event "${el.name}" (slice ${el.sliceIndex + 1}) loops-to ` +
+            `"${name}" (slice ${nearest.sliceIndex + 1}), which is not earlier on the timeline — ` +
+            `that's what \`from\` on a later \`view ${name} again\` instance is for`,
+          line: el.line,
+          refs: [refOf(el.id), refOf(nearest.id)],
+        });
+      }
+    }
+  }
+
   // A \`view X again\` instance needs an earlier declaration to continue.
   for (const el of model.elements) {
     if (el.kind === "view" && el.again && el.logicalId === el.id) {
@@ -414,6 +454,16 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     const from = a.fromId ? model.byId.get(a.fromId) : undefined;
     const to = a.toId ? model.byId.get(a.toId) : undefined;
     if (from?.kind === "event" && to?.kind === "view") readEvents.add(normalizeName(from.name));
+  }
+  // A resolved `loops-to "View"` (MIL-199) counts as consumption too — the event re-feeds an
+  // earlier read model instead of a new one, but it's still read by something. An unresolved
+  // or forward target (already flagged above by its own rule) does not credit the event here;
+  // it stays reported as unread on top of its loops-to diagnostic rather than silently passing.
+  for (const el of model.elements) {
+    if (el.kind !== "event") continue;
+    for (const name of el.loopsTo ?? []) {
+      if (resolveLoopsToTarget(model, el, name)) readEvents.add(normalizeName(el.name));
+    }
   }
   for (const el of model.elements) {
     if (el.kind !== "event") continue;

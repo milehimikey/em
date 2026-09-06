@@ -21,6 +21,7 @@ import {
   queryField,
   queryPath,
 } from "../src/query/verbs.js";
+import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 
 const FIXTURE = `model "Query Fixture"
 
@@ -367,6 +368,49 @@ describe("downstream / upstream (transitive closure, depth limits)", () => {
     const system = buildFixtureSystem(dir);
     const result = queryDownstream(system, "Checkout", 0);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("`loops-to` (MIL-199): downstream follows the loop-back edge, cycle-safe", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-loops-to-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function buildLoopSystem() {
+    const compiled = compileForQuery(LOOP_FIXTURE, dir);
+    expect(compiled.diagnostics).toEqual([]);
+    return buildQuerySystem([{ file: "loop.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+  }
+
+  it("downstream from the looping event reaches the earlier view via `loops-to`, then the reaction and command behind it", () => {
+    const system = buildLoopSystem();
+    const result = queryDownstream(system, "Waitlist Entry Expired");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byRef = new Map(result.results.map((r) => [r.ref, r]));
+    const view = byRef.get("entries-to-notify/view.entries-to-notify");
+    expect(view).toBeDefined();
+    expect(view!.via).toBe("loops-to");
+    expect(byRef.get("notify-waitlist-entry/processor.waitlist-notifier")).toBeDefined();
+    expect(byRef.get("notify-waitlist-entry/command.notify-waitlist-entry")).toBeDefined();
+    expect(byRef.get("notify-waitlist-entry/event.waitlist-entry-notified")).toBeDefined();
+  });
+
+  it("visits every node exactly once and terminates even though the loop closes back on itself", () => {
+    const system = buildLoopSystem();
+    const result = queryDownstream(system, "Waitlist Entry Expired");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const refs = result.results.map((r) => r.ref);
+    expect(new Set(refs).size).toBe(refs.length); // no duplicates despite the cycle
+    // the forward chain from "Waitlist Entry Notified" leads right back toward
+    // "Waitlist Entry Expired" (via "Entries Awaiting Response" -> "Response Watcher" ->
+    // "Expire Waitlist Entry" -> "Waitlist Entry Expired" again) — the query must not loop
+    // forever chasing that.
+    expect(refs).toContain("entries-awaiting-response/view.entries-awaiting-response");
+    expect(refs).toContain("expire-waitlist-entry/processor.response-watcher");
   });
 });
 

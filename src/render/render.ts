@@ -23,7 +23,13 @@ import { SliceDoc } from "../catalog/sliceDoc.js";
 import { Grid } from "../layout/grid.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
-import { buildNoteMarkers, buildIssueMarkers, buildDivergenceMarkers, appendNoteLegend } from "./drawNotes.js";
+import {
+  buildNoteMarkers,
+  buildIssueMarkers,
+  buildDivergenceMarkers,
+  buildLoopsToMarkers,
+  appendNoteLegend,
+} from "./drawNotes.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
 import { readSliceDocs } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
@@ -222,6 +228,7 @@ function withOverlays(
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
   const divergences = buildDivergenceMarkers(model, rects);
+  const loopsTo = buildLoopsToMarkers(model, rects);
   const statuses = docs.map((doc) => doc?.status ?? null);
 
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
@@ -242,10 +249,10 @@ function withOverlays(
   const nodeAt = out.search(/<g\b[^>]*class="node"[^>]*>/);
   if (nodeAt >= 0) out = out.slice(0, nodeAt) + group + out.slice(nodeAt);
   else out = out.replace(/<\/svg>/, `${group}</svg>`);
-  // note/issue/divergence markers go on top of the boxes — inside the graph transform
-  // group (so they share the box coordinate space) but after every node, as the last
-  // children of that group, making them the topmost clickable layer.
-  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}${divergences}$1$2`);
+  // note/issue/divergence/loops-to markers go on top of the boxes — inside the graph
+  // transform group (so they share the box coordinate space) but after every node, as the
+  // last children of that group, making them the topmost clickable layer.
+  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}${divergences}${loopsTo}$1$2`);
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
   out = appendStatusLegend(out, grid, statuses);

@@ -405,7 +405,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.10",
+  "schemaVersion": "1.11",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "modelKey": "order-fulfilment",
@@ -415,7 +415,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.10` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.11` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -424,7 +424,7 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.10"`):
+**Schema summary** (`schemaVersion: "1.11"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -482,7 +482,7 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
     `fields`, `note`, `issue`, `divergence`, `from`, `persona`, `context`, `again`, `public`,
-    `tags`, `renamedFrom`, and `logicalRef`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
+    `tags`, `renamedFrom`, `logicalRef`, and `loopsTo`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
     annotation — a reasoned, ratified deviation between this element and its implementation;
     `null` when the element carries none. `public` (added in schema `1.2`) is `true` when the
     event carries the `public` clause — part of the model's published integration surface —
@@ -503,7 +503,11 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     Fields that don't apply to a given element are emitted as explicit `null` (not omitted),
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
-    timeline instance of a `view … again` read model; `null` for everything else.
+    timeline instance of a `view … again` read model; `null` for everything else. `loopsTo`
+    (added in schema `1.11`, MIL-199) is `{ name, ref }[] | null` — same shape as `from` — the
+    event's `loops-to "View"` target(s), each resolved to the earlier `view` instance it names;
+    `null` when the event carries none (events only in practice; the clause is a parse error on
+    any other kind). See [dsl.md](dsl.md#loops-to).
     Refs are model-unqualified; to name an element in another model, prefix them with the
     model's key using the shared helper (`import { formatQualifiedRef, parseQualifiedRef }
     from "@milehimikey/em/refs"`) — see **Model-qualified refs** below (MIL-193).
@@ -536,9 +540,12 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     data (a `ui` sharing a slice with a reaction is *not* wired to the command; an event feeds a
     same-slice view only when that view has no `from` clause; self-loops are dropped). `source`
     is `"pattern"` (inferred from the slice's pattern shape), `"from"` (resolved from a `from
-    "Name"` clause), or `"arrow"` (a declared `arrow`) — **first-wins** on a duplicate
-    `(from, to)` pair in that order, so an `arrow` that restates an inferred connection appears
-    once, tagged `pattern` (`arrows` still records it as authored). No `kind` on an edge: refs
+    "Name"` clause), `"arrow"` (a declared `arrow`), or `"loops-to"` (added in schema `1.11`,
+    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to))
+    — **first-wins** on a duplicate `(from, to)` pair in that order, so an `arrow` that restates
+    an inferred connection appears once, tagged `pattern` (`arrows` still records it as
+    authored). A `loops-to` edge is the one edge the renderer never draws as an arrow — see
+    [dsl.md](dsl.md#loops-to) for the marker/legend it draws instead. No `kind` on an edge: refs
     embed each endpoint's kind (`<sliceKey>/<kind>.<slug>`), and the connection type is a pure
     function of the two kinds (the six legal flows in [patterns.md](patterns.md)). Edges point at
     **instance** refs: a `view … again` instance is its own node and is never wired to its other
@@ -1469,11 +1476,14 @@ Traversal (`consumers`/`producers`/`downstream`/`upstream`/`path`) runs over exa
 list the diagram itself draws — the six legal connections inferred from each slice's pattern
 shape, `from` clauses, and explicit `arrow` declarations — never a fuzzy edge. Every result names
 the connection kind it arrived by (`via`/`edgeKinds`): `ui->command`, `command->event`,
-`event->view`, `view->ui`, `view->reaction`, or `reaction->command` — a pure function of the two
-endpoint kinds, so an explicit `arrow` between a command and an event reports `command->event`
-like any inferred one. Traversal order is deterministic: model order (the order `<files...>`
-were given), then slice index, then element declaration order — same output every run, same as
-every other `em` command.
+`event->view`, `view->ui`, `view->reaction`, `reaction->command`, or `loops-to` — a pure
+function of the two endpoint kinds, except `loops-to` (MIL-199), which labels an event's
+[`loops-to "View"`](dsl.md#loops-to) edge — structurally an `event->view` pair like an ordinary
+`from`-derived one, but tagged distinctly so `downstream`/`upstream` results can tell "re-feeds
+an earlier to-do list" apart from "projects into a new one." An explicit `arrow` between a
+command and an event reports `command->event` like any inferred one. Traversal order is
+deterministic: model order (the order `<files...>` were given), then slice index, then element
+declaration order — same output every run, same as every other `em` command.
 
 **Repeated read models.** Instances of one read model (`view X again`) are never connected by an
 edge, but `downstream`/`upstream`/`path` treat them as one node: reaching any instance reaches
@@ -1554,14 +1564,14 @@ $ echo $?
 0
 ```
 
-**`--json` shape** (`querySchemaVersion: "1.0"`, versioned independently of the npm package and
+**`--json` shape** (`querySchemaVersion: "1.1"`, versioned independently of the npm package and
 every other command's own schema — also the exact document the MCP `query` tool returns, see
 [mcp.md](mcp.md)): one envelope for every verb, with a `verb` discriminator and a `results` array
 whose entries are verb-shaped:
 
 ```json
 {
-  "querySchemaVersion": "1.0",
+  "querySchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "verb": "consumers",
   "files": ["model.em"],

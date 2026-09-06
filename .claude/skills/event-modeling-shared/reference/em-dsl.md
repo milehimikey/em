@@ -200,7 +200,7 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `renamed from`, `{ fields }` |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, field-level `assigned`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, `loops-to`, field-level `assigned`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Clauses
@@ -225,6 +225,22 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   instance are what show the view changing. `again` with no earlier declaration is a validation error.
   Use `again` (not a plain repeated `view` name) whenever the view is referenced by a
   `from`/`arrow` — plain repeats are only warning-free while unreferenced.
+- **`loops-to "View"`** (events only): marks an event as re-feeding an earlier read model — a
+  poll/retry loop where a later fact must re-trigger an automation that already ran (a lapsed
+  reservation re-notifying the next person waiting in line, and similar re-triggers). Written
+  after the event's name/`@Context`, either on the header line or trailing an
+  inline `{ fields }` block; repeatable (`loops-to "A" loops-to "B"`, or comma-joined). The
+  target must resolve to a `view` instance STRICTLY EARLIER on the timeline — the opposite of
+  `from`'s "nearest at-or-before" rule; pointing at the same slice or later is a validation
+  error naming `from` on a later `view … again` instance as the forward-flowing alternative,
+  and naming a view that doesn't exist is a separate unresolved-target error. A resolved
+  `loops-to` counts as the event being read for both-ends-of-a-flow completeness. **No arrow is
+  ever drawn** for it — drawing one backward would violate the timeline laws — instead the
+  event gets an indigo ↩ corner marker (bottom-left) and the legend gains a "Loops" section:
+  `↩ 1  <Event> re-feeds "<View>"` (the number identifies the event, not the target). `em
+  export` carries it as `loopsTo: { name, ref }[] | null` (`from`'s shape); `model.edges` gains
+  `{ from: <event ref>, to: <view ref>, source: "loops-to" }`; `em query`'s adjacency labels the
+  connection `"loops-to"` too, so `downstream`/`upstream` follow it (cycle-safely).
 - **`note "path.md"`** on ANY element links a markdown doc. Relative to the `.em` file. Renders as
   a clickable marker in SVG and a legend entry in PNG/PDF. **This is how slice docs attach.**
 - **`issue "text"`** on ANY element flags an open question inline — the diagram-visible red
@@ -526,6 +542,10 @@ it to the slice that displays the read model, or drop it.
    a ref naming a version higher than the target's own `version:`. A `split-from`/`merged-from`
    naming a key absent from the tree is deliberately silent — that's the normal state after a
    real split/merge (see the four `lineage-*` codes in the table below).
+10. **`loops-to` not earlier, or unresolved** — an event's `loops-to "View"` naming a view at the
+    same slice or later (`loops-to-forward`; that's what `from` on a later `view … again`
+    instance is for), or naming a view that doesn't exist at all, or a name that resolves to a
+    non-view (`loops-to-unresolved`).
 
 **Warnings (should fix):**
 1. **Reaction with no command** — a `processor`/`automation`/`saga`/`translation` that triggers
@@ -542,9 +562,11 @@ it to the slice that displays the read model, or drop it.
 5. **Event nobody reads** — the mirror of (4): recording an event no read model projects is a
    write with no reader. Follow every write slice with the read slice that consumes its event.
    Counts as read when a `view` names it in `from` (any `again` instance will do), when a view
-   with no `from` of its own sits in its slice, or via an explicit `event -> view` arrow.
-   (Events marked `public` are exempt — their reader is outside the model; same for a
-   `public` view and the no-consumer warning.)
+   with no `from` of its own sits in its slice, via an explicit `event -> view` arrow, or via a
+   resolved `loops-to "View"` clause (a loop-back is a real consumer too — an UNRESOLVED or
+   forward `loops-to` does not count, so the event still warns as unread alongside its own
+   `loops-to-forward`/`loops-to-unresolved` error). (Events marked `public` are exempt — their
+   reader is outside the model; same for a `public` view and the no-consumer warning.)
 6. **Read model without source** — add `from "Event"` or place the view in a slice with an event.
 7. **Duplicate name** — the same name defined N times; references resolve to the first. Rename.
    (A duplicate `type` name always warns, unlike a duplicate element name — there's no
@@ -621,6 +643,8 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `lineage-ref-cycle` | error | Lineage cycle | Break the cycle — a slice can't be its own ancestor. |
 | `lineage-ref-malformed` | error | Malformed lineage ref | Fix the value to `<slice-key>@v<N>`, or remove it. |
 | `lineage-version-impossible` | error | Impossible lineage version | Fix the referenced version, or ratify the target slice first. |
+| `loops-to-forward` | error | `loops-to` target not earlier on the timeline | Point `loops-to` at an earlier view, or use `from` on a later `view … again` instance instead. |
+| `loops-to-unresolved` | error | `loops-to` target unresolved | Name a view that exists, or declare it before this event. |
 | `note-binding-dangling` | warning | Dangling cross-slice note | Create the doc at that path, or fix/remove the note. |
 | `note-binding-extra` | warning | Extra doc-binding note, ignored | Remove the note, or point it at the slice's actual bound doc. |
 | `note-binding-unratified` | warning | Unratified cross-slice note | Add `covers: <this-slice-key>` to that doc's frontmatter, or correct the note's path. |

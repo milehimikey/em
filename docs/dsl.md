@@ -57,7 +57,7 @@ same element kind.
 | `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `divergence`, `{ fields }` |
 | `view` | API | read model / projection | — | `from`, `again`, `public`, `note`, `issue`, `divergence`, `{ fields }` |
-| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `divergence`, `public`, `{ fields }` |
+| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `divergence`, `public`, `loops-to`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Swimlane bands, top to bottom
@@ -137,6 +137,47 @@ are checked against the four patterns: `ui → command`, `command → event`,
 `event → read model`, `read model → ui`, `read model → reaction`, `reaction → command`.
 Anything else — a command straight to a read model, an event straight to a command — is a
 [validation error](validation.md#connection-legality).
+
+### `loops-to`
+
+`event Name loops-to "View"` marks an event as re-feeding an earlier read model — a poll/retry
+loop where a later fact must re-trigger an automation that already ran, the one shape
+`from`/`arrow`'s forward-only rule can't express (a lapsed reservation re-notifying the next
+person waiting in line, and similar re-triggers). Event only — a parse
+error on any other kind. Written after the event's name and any `@Context` tag, either on the
+header line or trailing an inline `{ fields }` block's closing `}`. Repeatable: `loops-to "A"
+loops-to "B"` (or the comma-joined `loops-to "A", "B"`) names more than one target, in
+declaration order.
+
+The keyword is case-sensitive and its operand must open with a quote, same discipline as
+`from` — a title-cased free-text event name (`event Widget Loops To Cabinet`) is never
+mistaken for the clause.
+
+The named view must resolve to a `view` instance **strictly earlier** on the timeline
+(`sliceIndex < event.sliceIndex`) — the opposite of `from`'s "nearest at-or-before" rule for a
+reaction. Pointing at the same slice or a later one is a validation error naming `from` on a
+later `view … again` instance as the correct, forward-flowing alternative; naming a view that
+doesn't exist at all is a separate, unresolved-target error. See
+[validation.md](validation.md#errors).
+
+A resolved `loops-to` counts as the event being read, for
+[both-ends-of-a-flow](validation.md#both-ends-of-a-flow) completeness — the loop is a real
+consumer, even though it isn't a new projection.
+
+**No arrow is ever drawn for a `loops-to` edge** — drawing one backward would violate the
+timeline laws the [forward-only rule](validation.md#connection-legality) exists to enforce.
+Instead the event gets a small ↩ corner marker (bottom-left, indigo, with a footnote number)
+and the diagram's legend gains a "Loops" section listing each target: `↩ 1  <Event> re-feeds
+"<View>"`. The number identifies the EVENT, not the target — an event with several `loops-to`
+clauses gets one marker but one legend row per target, all sharing that number.
+
+`em export`'s element object gains `loopsTo: { name, ref }[] | null` (`null` when the event
+declares none), the same shape `from` already exports. `model.edges` gains an entry
+`{ from: <event ref>, to: <view ref>, source: "loops-to" }` for each resolved target — the
+same array `from`/`arrow`-derived edges live in, distinguished by `source` rather than a
+separate list. `em query`'s adjacency labels the connection kind `"loops-to"` too, so
+`em query downstream <event>` follows the loop into the view and everything reading it,
+cycle-safely.
 
 ## Fields
 
