@@ -13,21 +13,26 @@ to make staying true cheap.
 | 1. Build | Model the process — greenfield or from an existing system | `/event-modeling discover` or `extract` | `<model>.em`, rendered diagram |
 | 2. Specify | Deepen each slice into an implementable spec | `/event-modeling slice` | `slices/<name>.md`, linked via `note` |
 | 3. Gate | Keep the committed model honest | `em validate` in CI | A failing check on a broken model |
-| 4. Hand off | Give a slice to whoever (or whatever) builds it | the slice doc; `em export` | Working code, `status: implemented` + `implementedIn` link |
+| 4. Review, ratify, hand off | Walk each slice with the room, sign it off, then give it to whoever (or whatever) builds it | `em slice review`, `em slice ratify`; the slice doc; `em export` | `status: reviewed` → `ready-to-implement`; working code, `status: implemented` + `implementedIn` link |
 | 5. Track | Show what changed, to engineers and to the business | `em diff`, `em changelog` | Review comments, a business ledger |
 | 6. Check | Ask whether the code still matches the model | `/event-modeling conform` | `conformance/<date>-report.md` |
-| 7. Ratify | Decide what the drift means, and record it | you, with the report | An updated model + decisions log |
+| 7. Rule | Decide what the drift means, and record it | you, with the report | An updated model + decisions log |
 
 ```mermaid
 flowchart LR
     S1["1. Build<br/>discover / extract"] --> S2["2. Specify<br/>slice"]
     S2 --> S3["3. Gate<br/>em validate in CI"]
-    S3 --> S4["4. Hand off<br/>ratify, then implement"]
+    S3 --> S4["4. Review, ratify, hand off<br/>two human gates, then implement"]
     S4 --> S5["5. Track<br/>em diff / em changelog"]
     S5 --> S6["6. Check<br/>conform"]
-    S6 --> S7["7. Ratify<br/>you decide"]
+    S6 --> S7["7. Rule<br/>you decide"]
     S7 -.->|"model updated"| S1
 ```
+
+Two of the seven stages are human gates, and they are *different* gates: stage 4's
+review-then-ratify sign-off decides a slice is ready to **build**; stage 7's ruling decides what
+to do when the built code and the model **disagree**. "Ratify" in these docs always means the
+first one — a finding is *ruled on*, never ratified.
 
 Stages 6 and 7 loop back into 1 — that's what keeps a model worth trusting a year after
 somebody wrote it. Not every model needs all seven; see
@@ -74,6 +79,13 @@ Each slice doc carries machine-read YAML frontmatter — the full contract is
 draft → reviewed → ready-to-implement → implemented
 ```
 
+Each step has an owner and a command. `draft` is where `em slice new` puts a doc and where the
+`slice` phase writes it. A review session ends with `em slice review <model>.em <key> --by <name>`
+(→ `reviewed`). The ratification gate — human, per-slice, usually more than one person — is
+`em slice ratify` (→ `ready-to-implement`). The merge is `em slice mark-implemented`
+(→ `implemented`). Stage 4 below walks the two human gates; the full contract is
+[process.md](process.md#the-slice-lifecycle-gates).
+
 `implemented` also records where — `implementedIn`, a PR or commit link. That link looks like
 bookkeeping and isn't: it's what stage 6 uses to know which slices are worth checking against
 code, and what a future reader follows to find out how a business rule was actually built.
@@ -99,22 +111,33 @@ specifically, that's the per-slice readiness gate — `em validate --slice-ready
 stage 4, not on every PR ([cli.md](cli.md#--slice-ready-key-mil-87)); `--fail-on-issues`
 remains for gating a whole model on its open `issue` clauses.
 
-## 4. Hand a slice off
+## 4. Review, ratify, and hand a slice off
 
 A slice is a good unit of work precisely because it's bounded: one command, its event(s),
 the read models involved, the invariants that must hold, and scenarios that compile to
 tests. Hand the slice doc to an engineer or an agent and it is, in most cases, a complete
 brief.
 
-The handoff has a gate: a slice goes out only once it's **ratified** — a human flips its
-`status` to `ready-to-implement` with every open question resolved
-([process.md](process.md#what-ratified-means)). `em slice ratify` (MIL-165) makes the flip
-itself, and *who* did it and *when*, mechanically recorded rather than an unnamed manual edit:
+The handoff sits behind **two human gates**, and they are the first place in this lifecycle
+where a person's name goes on the record ([process.md](process.md#the-slice-lifecycle-gates)):
+
+1. **Review.** A facilitated walkthrough with the people who know the domain
+   (`/event-modeling review`). A slice whose open questions are all resolved in the room is
+   flipped to `reviewed` — `em slice review` records who and when. The facilitator never
+   ratifies in that session; that's the next gate, and not theirs to run.
+2. **Ratification.** Human, per-slice, usually more than one person — route it through a
+   [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**`.
+   `em slice ratify` flips the doc to `ready-to-implement` and records
+   `ratifiedBy`/`ratifiedOn`, and it **refuses a doc that never passed through `reviewed`**
+   unless you pass `--skip-review`, which prints a loud notice so the skip is visible in history.
 
 ```bash
-em slice ratify model.em <key> --by "Alex Rivera"   # flips status, records ratifiedBy/ratifiedOn
+em slice review model.em <key> --by "Alex Rivera"   # review done: status reviewed, reviewedBy/reviewedOn
+em slice ratify model.em <key> --by "Sam Okafor"    # ratification gate: status ready-to-implement, ratifiedBy/ratifiedOn
 em validate model.em --slice-ready <key>            # exits non-zero until the slice is safe to hand off
 ```
+
+Only then does the slice go out.
 
 For an agent implementer, the bundled skill ships the full contract to follow —
 [the agent guide](../.claude/skills/event-modeling-implement/reference/implement.md): the readiness
@@ -208,9 +231,11 @@ It **proposes, never edits**: the report is a recommendation, and you decide. An
 changed since, which is what makes a recurring cadence affordable. [ci.md](ci.md) has a
 scheduled-run recipe.
 
-## 7. Ratify the findings
+## 7. Rule on the findings
 
-Walk the report and rule on each finding. In practice they fall into three buckets:
+This is the lifecycle's second human gate, and a different decision from stage 4's: not "is
+this slice ready to build?" but "the code and the model disagree — which one is right?" Walk
+the report and rule on each finding. In practice they fall into three buckets:
 
 - **The code is right and the model is stale** — fix the model directly. No red note
   needed; the disagreement is resolved.
@@ -258,10 +283,11 @@ and treat a finding as the start of a conversation.
 | Open `issue` clauses | only with `--fail-on-issues` (opt-in) | warning by default |
 | Fields completeness | — | warnings |
 | Slice readiness at handoff | `em validate --slice-ready <key>` exits non-zero (opt-in, per slice) | — |
+| Ratifying a slice that was never reviewed | `em slice ratify` exits non-zero (`--skip-review` bypasses, with a notice on stderr) | — |
 | Model changed at all | only with `em diff --exit-code` | — |
 | Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
 | Vendored skill drift | `em skill check` exits non-zero (opt-in) | — |
-| Conformance findings | never | always — you ratify |
+| Conformance findings | never | always — you rule (stage 7) |
 
 The pattern is deliberate: `em` is strict about things that are unambiguously wrong, and
 advisory about everything that requires human judgment. A model is a description of a
