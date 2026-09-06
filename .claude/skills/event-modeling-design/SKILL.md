@@ -130,10 +130,9 @@ For each slice:
    `implementedIn` once shipped). Never hand-edit the table; it's a generated block.
 6. Re-render and `em validate`.
 
-When a slice is **ratified** — a human flips its `status` to `ready-to-implement` with every
-open question resolved — it's ready to hand to an implementer. Confirm with
-`em validate <model>.em --slice-ready <key>`, and point whoever (or whatever) implements it
-at the `event-modeling-implement` skill.
+A finished draft doesn't become implementable here: it goes through the review gate and then the
+ratification gate, both human, both outside this phase — see
+`docs/process.md#the-slice-lifecycle-gates` for who runs which and in what order.
 
 End of phase: every slice that should exist has a doc, `README.md`'s Slices table is current,
 and the model validates clean. Suggest `event-modeling-implement` for each ratified slice.

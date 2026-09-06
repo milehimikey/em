@@ -37,6 +37,10 @@ canonical model's names wherever the code matches them); run `em diff <model-nam
 proposals the user ratifies, then re-render and validate; run `em state set-conformance
 <revision> --report <path>` to update the state file's `Last conformance:` marker.
 
+Ruling on a finding is a human gate, like ratifying a slice
+(docs/process.md#the-slice-lifecycle-gates): the sweep gathers evidence and proposes, a person
+decides, and `em state set-conformance` records the decision — never run it on your own judgment.
+
 End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance`),
 Decisions log entry if any
 proposals were applied. Conform doesn't chain to another phase — it's a recurring loop, run

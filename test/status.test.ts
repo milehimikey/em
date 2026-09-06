@@ -190,6 +190,27 @@ slice "Other" {
     expect(owner.openQuestionsUnchecked).toBe(1);
     expect(other.openQuestionsUnchecked).toBe(1);
   });
+
+  // MIL-201: `reviewed` was already a canonical, counted bucket before `em slice review` existed
+  // — nothing wrote it, so nothing exercised it end to end. Now that a command produces it, gate
+  // the whole path: a doc `em slice review` would write, resolved from a real file, tallied.
+  it("a reviewed doc lands in the reviewed bucket and in byStatus.reviewed (MIL-201)", () => {
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "walked.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n" +
+        "reviewedBy: Sam Okafor\nreviewedOn: 2026-09-05\n---\n# Slice: Walked\n",
+    );
+    const src = 'slice "Walked" {\n  command Do Thing note "slices/walked.md"\n  event Thing Done\n}\n';
+    const { model, refs } = compile(src);
+    const { facts } = resolveSliceStatusFacts("model.em", model, refs, dir);
+    const walked = facts.find((f) => f.key === "walked")!;
+    expect(walked.rawStatus).toBe("reviewed");
+    expect(walked.bucket).toBe("reviewed");
+
+    const report = buildStatusReport(["model.em"], facts, 0, null, [], []);
+    expect(report.slices.byStatus.reviewed).toBe(1);
+  });
 });
 
 describe("commitsBehindHead", () => {

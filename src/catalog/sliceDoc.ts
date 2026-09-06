@@ -112,6 +112,14 @@ export interface SliceDoc {
    *  the noting slice back. Empty array when absent — the common case; a doc always covers its
    *  own canonical slice key implicitly and never needs to list it here. */
   covers: string[];
+  /** MIL-201: `reviewedBy:` — free text, typically the facilitator's or reviewer's name — or null
+   *  when absent. Written only by `em slice review` (the FIRST human gate); no legacy bullet-line
+   *  form. Optional in every status, exactly like `ratifiedBy` — never a required key. */
+  reviewedBy: string | null;
+  /** MIL-201: `reviewedOn:` — a `YYYY-MM-DD` date string, or null when absent. Written only by
+   *  `em slice review`; validated by the CLI layer, not re-validated here (this parser stays as
+   *  lenient about value shape as every other frontmatter field). */
+  reviewedOn: string | null;
   /** MIL-165: `ratifiedBy:` — free text, typically a person's name — or null when absent.
    *  Written only by `em slice ratify`; no legacy bullet-line form. */
   ratifiedBy: string | null;
@@ -303,6 +311,8 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     supersededBy: parseSliceRefList(fields.get("superseded-by")),
     implementedIn: fields.get("implementedin") ?? null,
     covers: parseKeyList(fields.get("covers")),
+    reviewedBy: fields.get("reviewedby") ?? null,
+    reviewedOn: fields.get("reviewedon") ?? null,
     ratifiedBy: fields.get("ratifiedby") ?? null,
     ratifiedOn: fields.get("ratifiedon") ?? null,
     owner: fields.get("owner") ?? null,

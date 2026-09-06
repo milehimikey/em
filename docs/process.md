@@ -31,9 +31,12 @@ Used throughout these docs and the skill, **ratified** means: *a human decided t
 deliberately, and the decision is recorded in the model or its slice docs.* It shows up at
 three specific points:
 
-1. **Ratifying a slice** — the sign-off, after review, that flips a slice doc's `status` to
-   `ready-to-implement`: contracts and invariants are agreed, every open question is resolved
-   or explicitly deferred. This is the handoff gate between deciding and building, and it's
+1. **Ratifying a slice** — the sign-off, after review, that flips a slice doc's `status` from
+   `reviewed` to `ready-to-implement`: contracts and invariants are agreed, every open question is
+   resolved or explicitly deferred. This is the second of the two per-slice human gates (the first
+   is the review session itself — the whole sequence is
+   [The slice lifecycle gates](#the-slice-lifecycle-gates) below), the handoff gate between
+   deciding and building, and it's
    mechanically checkable: `em validate <model>.em --slice-ready <key>` verifies the doc,
    status, and open-question state in one command ([cli.md](cli.md#--slice-ready-key-mil-87)).
    `em slice ratify <model>.em <key> --by <name>` (MIL-165) makes the sign-off itself a
@@ -52,12 +55,58 @@ three specific points:
    change is part of this: the diff *is* the decision record.
 3. **Ratifying conformance findings** — when the conform phase reports drift between model
    and code, a human rules on every finding (fix the model, open a red note, fix the prose —
-   [workflow.md](workflow.md#7-ratify-the-findings)). The report proposes; you decide.
+   [workflow.md](workflow.md#7-ratify-the-findings)). A ruling is a human gate, the same shape as
+   ratifying a slice: an agent gathers evidence and proposes, a person decides, and the decision
+   is recorded with a name and a date. The report proposes; you decide. `em state
+   set-conformance` records the ruling; nothing writes it for you.
    `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec>` (MIL-164,
    [cli.md](cli.md#em-conform-supersede-file-report-path)) stamps the ruled-on report with a
    "superseded as of `<rev>`" banner once you're done, so the record of what was decided
    stays legible without misleading a later reader into treating a historical report's
    file:line citations as current.
+
+## The slice lifecycle gates
+
+A slice doc travels through four statuses, and **two of the three transitions between them are
+human gates**. Each has its own command, its own recorded name and date, and — deliberately — its
+own moment:
+
+```
+draft ──(review session)──▶ reviewed ──(ratification gate)──▶ ready-to-implement ──(merge)──▶ implemented
+```
+
+1. **`draft`** — the doc exists and is being written. `em slice new` scaffolds it here; the
+   `slice` phase of the skill fills it in. No gate: drafting is work, not a decision.
+2. **The review session → `reviewed`.** A facilitated walkthrough with the people who know the
+   domain. A slice whose open questions are all resolved in the room ends the walkthrough with
+   `em slice review <model>.em <key> --by <name>` ([cli.md](cli.md#em-slice-review-file-slice-key---by-name)),
+   which flips `status` to `reviewed` and records `reviewedBy:`/`reviewedOn:`. Anything still
+   open stays `draft`. **The facilitator never ratifies in a review session** — that is the next
+   gate, and it is not theirs to run.
+3. **The ratification gate → `ready-to-implement`.** Human, per-slice, and *typically
+   multi-person*: the ratifier plus whoever will own the build. `em slice ratify <model>.em <key>
+   --by <name>` ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) makes the sign-off one
+   mechanical edit recording `ratifiedBy:`/`ratifiedOn:`, and it **refuses a doc that never passed
+   through `reviewed`** unless `--skip-review` is passed (which prints a loud notice on stderr and
+   writes nothing about the skip into the doc). The "multi-person" part is routed by the platform,
+   not by `em`: put a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on
+   `slices/**` naming your ratifiers, so the edit itself can't merge without their review.
+   Confirm readiness mechanically with `em validate <model>.em --slice-ready <key>`.
+4. **The merge → `implemented`.** Not a gate — bookkeeping. The implementing agent or engineer
+   runs `em slice mark-implemented <model>.em <key> <pr-url>` at merge; the human checkpoint here
+   was the PR review, which already happened.
+
+**Re-ratification** re-enters the loop rather than repeating it: `em slice reratify <model>.em
+<key>` ([cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:`, returns a shipped doc
+to `ready-to-implement`, and clears both the old sign-off and the old review record (neither
+describes the new version). A `em slice ratify --by <name>` following a `reratify` **does not need
+a fresh review session** — the doc is already `ready-to-implement`, which the review gate accepts;
+the delta was decided when it was written into the `## Delta` section.
+
+Why two gates and not one: "the room understood this slice" and "we commit to building this
+slice" are different decisions, made by different people, often days apart. Collapsing them means
+whoever facilitated the review also authorized the build — which is exactly the failure the
+one rule at the top of this document exists to prevent.
 
 ## The lifecycle, by responsibility
 
@@ -67,9 +116,9 @@ responsibility columns:
 | Stage | What happens | Who decides | What's mechanical |
 |---|---|---|---|
 | 1. Build the model | Facilitated sessions produce the timeline: events, commands, views, slices | **Humans in the room** — the AI facilitates and scribes, never invents a domain fact | Rendering, live view, validation |
-| 2. Specify the slices | Each slice deepened: field contracts, invariants, Given/When/Then | **Humans answer**; the AI asks and drafts (`status: draft`) | Field-completeness warnings |
+| 2. Specify the slices | Each slice deepened: field contracts, invariants, Given/When/Then; then walked in a review session (`status: reviewed`) | **Humans answer**; the AI asks and drafts (`status: draft`) | Field-completeness warnings, `em slice review` |
 | 3. Gate in CI | The committed model validated on every PR that touches it | — | `em validate` as a merge gate |
-| 4. Hand off | **Humans ratify** the slice (status → `ready-to-implement`); then an **agent or engineer builds it, humans review the PR** | Ratification is human; the build is agent-suitable | `em validate --slice-ready`, `em export`, the bridge |
+| 4. Hand off | **Humans ratify** the reviewed slice (status → `ready-to-implement`); then an **agent or engineer builds it, humans review the PR** | Ratification is human; the build is agent-suitable | `em slice ratify` (refuses an unreviewed doc), `em validate --slice-ready`, `em export`, the bridge |
 | 5. Track change | Model diffs reviewed; changelog for the business | Humans review | `em diff`, `em changelog`, `em ledger` |
 | 6. Check (conform) | Code checked against the model on a cadence; findings reported | Agent walks the code — **advisory only** | `em diff --json`, `driftSignal` |
 | 7. Ratify the findings | Every finding gets a human ruling, logged with a date | **Humans** | `em validate --list-issues` keeps rulings visible |
@@ -135,7 +184,9 @@ for the human doing the handing:
 
 1. Ratify the slice — `em slice ratify <model>.em <key> --by <name>` (status →
    `ready-to-implement`, records who/when), open questions resolved — and confirm:
-   `em validate <model>.em --slice-ready <key>` exits 0.
+   `em validate <model>.em --slice-ready <key>` exits 0. Ratification comes *after* the review
+   gate (`em slice review`, status → `reviewed`); `ratify` refuses a doc that skipped it unless
+   you pass `--skip-review`. See [The slice lifecycle gates](#the-slice-lifecycle-gates).
 2. Point the agent at the slice doc and the guide. If the skill is installed in the repo
    (`em skill install`), the guide is already there.
 3. Review the PR like any other — plus two model-side checks: the slice doc's only edits are

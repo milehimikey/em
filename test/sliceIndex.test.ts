@@ -31,6 +31,8 @@ swimlane: order
 status: implemented
 version: 2
 implementedIn: https://github.com/example/repo/pull/42
+reviewedBy: Sam Okafor
+reviewedOn: 2026-07-20
 ratifiedBy: Alex Rivera
 ratifiedOn: 2026-08-01
 owner: Team Checkout
@@ -44,8 +46,8 @@ const README_WITH_MARKERS = `# Demo
 
 ## Slices
 <!-- GENERATED:${SLICE_INDEX_MARKER}:start -->
-| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |
-|---|-------|---------|--------|-------------|-------|----------|----------------|------------|
+| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |
+|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|
 <!-- GENERATED:${SLICE_INDEX_MARKER}:end -->
 
 ## Status
@@ -81,6 +83,7 @@ describe("buildSliceIndexTable", () => {
       name: "Place Order",
       pattern: "State Change",
       status: "implemented",
+      reviewedBy: "Sam Okafor",
       ratifiedBy: "Alex Rivera",
       owner: "Team Checkout",
       tracking: "https://tracker.example/issue/42",
@@ -88,13 +91,13 @@ describe("buildSliceIndexTable", () => {
       docPath: "slices/place-order.md",
     });
     expect(markdown).toContain(
-      "| 1 | Place Order | State Change | implemented | Alex Rivera | Team Checkout | " +
+      "| 1 | Place Order | State Change | implemented | Sam Okafor | Alex Rivera | Team Checkout | " +
         "https://tracker.example/issue/42 | https://github.com/example/repo/pull/42 | " +
         "[slices/place-order.md](slices/place-order.md) |",
     );
   });
 
-  it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Ratified by/Owner/Tracking/Implemented in", () => {
+  it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Reviewed by/Ratified by/Owner/Tracking/Implemented in", () => {
     const { model, refs } = compile(MODEL);
     const { rows } = buildSliceIndexTable(model, refs, dir);
 
@@ -103,6 +106,7 @@ describe("buildSliceIndexTable", () => {
       name: "Open Orders",
       pattern: "State View",
       status: "no doc yet",
+      reviewedBy: "—",
       ratifiedBy: "—",
       owner: "—",
       tracking: "—",
@@ -131,8 +135,8 @@ describe("buildSliceIndexTable", () => {
     const { markdown, rows } = buildSliceIndexTable(model, refs, dir);
     expect(rows).toEqual([]);
     expect(markdown).toBe(
-      "| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|-------------|-------|----------|----------------|------------|",
+      "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|",
     );
   });
 

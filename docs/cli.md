@@ -457,17 +457,22 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       frontmatter block, or is missing a required key — warns). `reason` is `null` exactly
       when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
       `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, `driftSignal`,
-      `ratifiedBy`, `ratifiedOn`, `owner`, and `tracking` are populated from it (each `null`/`[]`
-      otherwise).
+      `reviewedBy`, `reviewedOn`, `ratifiedBy`, `ratifiedOn`, `owner`, and `tracking` are
+      populated from it (each `null`/`[]` otherwise).
       `driftSignal` (added in schema `1.5`,
       MIL-85) is `"in-sync"` | `"never-implemented"` | `"unpropagated-delta"` |
       `"implemented-without-link"` — the status/implementedIn coherence classification also
       driving `em validate`'s frontmatter-coherence warning (see
       [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)); it's paired
       with `version` from the same doc parse, so a consumer reporting drift should always cite
-      both together. `ratifiedBy`/`ratifiedOn` (added in schema `1.8`, MIL-165) are the doc's
+      both together. `reviewedBy`/`reviewedOn` (added in schema `1.11`, MIL-201) are the doc's
+      `reviewedBy:`/`reviewedOn:` frontmatter, written only by `em slice review` — both `null`
+      when absent (a doc that hasn't reached the review gate, one predating this feature, or one
+      reviewed by hand). `ratifiedBy`/`ratifiedOn` (added in schema `1.8`, MIL-165) are the doc's
       `ratifiedBy:`/`ratifiedOn:` frontmatter, written only by `em slice ratify` — both `null`
-      when absent (a doc predating this feature, or ratified by hand before it existed).
+      when absent (a doc predating this feature, or ratified by hand before it existed). The two
+      pairs record the two human gates, in that order — see
+      [process.md#the-slice-lifecycle-gates](process.md#the-slice-lifecycle-gates).
       `owner`/`tracking` (added in schema `1.9`, MIL-171) are the doc's `owner:`/`tracking:`
       frontmatter — hand-filled, no `em` command writes either — both `null` when absent.
       `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
@@ -1959,6 +1964,7 @@ pair around an empty table.
 | `Slice` | Slice name |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
 | `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), or `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" |
+| `Reviewed by` | The doc's `reviewedBy` (MIL-201), or `—` |
 | `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
 | `Owner` | The doc's `owner` (MIL-171), or `—` |
 | `Tracking` | The doc's `tracking` (MIL-171), or `—` |
@@ -1979,10 +1985,78 @@ as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join 
 notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
 still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
 
+## `em slice review <file> <slice-key> --by <name>`
+
+Gives `status: reviewed` a mechanical path into a slice doc (MIL-201) — the **first** of the two
+human gates, and the per-slice outcome of a stakeholder review session. See
+[process.md#the-slice-lifecycle-gates](process.md#the-slice-lifecycle-gates) for the whole
+lifecycle. Sets three frontmatter fields on the doc resolved from `<slice-key>` via the same
+note-binding join `ratify`/`mark-implemented`/`--slice-ready`/`em export` use
+(`resolveSliceDocJoin` — MIL-121 cross-binding included, so the file actually edited may be a
+*different* slice's doc when this slice's doc is only reached via a ratified `covers:` entry):
+
+```yaml
+status: reviewed
+reviewedBy: <name>
+reviewedOn: <date>
+```
+
+Reviewing is not ratifying. Review records that the room walked this slice and every open
+question it raised is resolved; ratification is a separate, later, usually multi-person gate that
+flips `reviewed` → `ready-to-implement` (`em slice ratify`). A facilitator running a review
+session ends each walked slice here and never reaches for `ratify`.
+
+`--by <name>` is required — free text, typically the facilitator's or reviewer's name (spaces are
+fine). `--on <date>` is optional, `YYYY-MM-DD`; defaults to today, same convention `em slice
+ratify --on` uses. `reviewedBy`/`reviewedOn` are additive, optional frontmatter keys in *every*
+status (docs/slice-doc-schema.md) — a doc that never went through this command simply has
+neither, and every existing `em` command already tolerates an absent field.
+
+Never touches `version:` or the doc body: the write is a surgical in-place edit of just the
+`status:`/`reviewedBy:`/`reviewedOn:` lines (inserting whichever of `reviewedBy:`/`reviewedOn:`
+the doc doesn't have yet, immediately after `status:`), same as `em slice ratify` — not a
+parse-and-re-serialize, so every other line — key order, spacing, comments, the whole body —
+survives byte-for-byte. It never touches `ratifiedBy:`/`ratifiedOn:` either.
+
+Legal from `status: draft` (the ordinary case) and from `reviewed` itself. Idempotent: re-running
+with the same `--by`/`--on` pair once the doc is already `status: reviewed` with both recorded is
+a no-op (reports as such, exits 0). Refuses, non-zero exit, leaving the file untouched, if the doc
+is already `status: reviewed` with a **different** `reviewedBy`/`reviewedOn` recorded — this
+command never silently overwrites provenance, same discipline `ratify`/`mark-implemented` hold.
+
+Refuses a doc already `ready-to-implement` or `implemented`: review applies *before* ratification,
+and a slice that has already shipped is reopened with `em slice reratify` (which clears the old
+review and sign-off), not reviewed in place.
+
+Scoped the same way `em slice ratify`/`em export --slice`/`em validate --slice-ready` are: only a
+model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
+refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
+
+| Flag | Effect |
+|---|---|
+| `--by <name>` | **Required.** The reviewer's (or facilitator's) name |
+| `--on <date>` | Review date, `YYYY-MM-DD` (default: today) |
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
+| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
+| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
+| ``already reviewed by ... — refusing to overwrite`` | The idempotent/refusal guard — see above |
+| ``doc is `status: ...` — review applies before ratification`` | The doc is already `ready-to-implement`/`implemented` — use `em slice reratify` |
+| `invalid --on date "..."` | `--on` didn't match `YYYY-MM-DD` |
+
+```bash
+em slice review model.em request-payment --by "Sam Okafor"
+em slice review model.em request-payment --by "Sam Okafor" --on 2026-09-05
+```
+
 ## `em slice ratify <file> <slice-key> --by <name>`
 
 Makes "who ratified, and when" a first-class recorded fact (MIL-165) instead of an unnamed edit
-anyone with commit access could make — see [process.md#what-ratified-means](process.md#what-ratified-means).
+anyone with commit access could make — the **second** of the two human gates, see
+[process.md#the-slice-lifecycle-gates](process.md#the-slice-lifecycle-gates).
 Sets three frontmatter fields on the doc resolved from `<slice-key>` via the same note-binding
 join `mark-implemented`/`--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121
 cross-binding included, so the file actually edited may be a *different* slice's doc when this
@@ -2011,11 +2085,41 @@ Idempotent: re-running with the same `--by`/`--on` pair once the doc is already
 `status: ready-to-implement` with both recorded is a no-op (reports as such, exits 0). Refuses,
 non-zero exit, leaving the file untouched, if the doc is already `status: ready-to-implement`
 with a **different** `ratifiedBy`/`ratifiedOn` already recorded — this command never silently
-overwrites provenance, same discipline `mark-implemented` holds for `implementedIn`. There's no
-such refusal when `status` isn't already `ready-to-implement`: re-ratifying a slice that has
-since moved on (e.g. back from `implemented` after a version bump — see
-[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification))
-is the ordinary, expected use of this command, so it always applies cleanly in that case.
+overwrites provenance, same discipline `mark-implemented` holds for `implementedIn`.
+
+**The review gate (MIL-201).** After that idempotency check, `em slice ratify` refuses any doc
+whose `status` is neither `reviewed` nor `ready-to-implement` — exit 1, file byte-untouched:
+
+```
+slice "<key>" is `status: <s>` — the review gate comes first: run `em slice review <file> <key> --by <name>` after the review session, or pass --skip-review to ratify without one
+```
+
+Ratification is the sign-off *after* a review, not a substitute for one. `reviewed` is the
+ordinary way in (written by [`em slice review`](#em-slice-review-file-slice-key---by-name));
+`ready-to-implement` stays legal because it covers both the idempotent re-run above and the
+post-`reratify` path.
+
+**After `em slice reratify`, a `ratify --by` needs no fresh review.** `reratify` bumps `version:`,
+leaves the doc at `status: ready-to-implement`, and clears `ratifiedBy:`/`ratifiedOn:` *and*
+`reviewedBy:`/`reviewedOn:`; the follow-up `em slice ratify --by <name>` for the new version
+passes the gate on the `ready-to-implement` status and applies cleanly. Re-ratifying a doc that is
+still `status: implemented` is not a supported hop any more — reopen it with `em slice reratify`
+first (see
+[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)).
+
+**`--skip-review`** is the explicit, auditable escape hatch: it lets any status through and prints
+one loud line to **stderr** naming what it skipped, while writing nothing about the skip into the
+file (the doc records ratification, never "ratification without review"):
+
+```
+notice: --skip-review — ratifying "<key>" without a recorded review (status was <s>)
+```
+
+The notice prints only when the flag actually did something — passing `--skip-review` on a doc
+that *was* reviewed is silent.
+
+`em slice ratify` never clears `reviewedBy:`/`reviewedOn:`: the review record is provenance for
+the version being ratified, not something ratification consumes.
 
 Scoped the same way `em export --slice`/`em validate --slice-ready`/`mark-implemented` are: only
 a model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
@@ -2025,6 +2129,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 |---|---|
 | `--by <name>` | **Required.** The ratifier's name |
 | `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today) |
+| `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr |
 
 | Error | Meaning |
 |---|---|
@@ -2033,11 +2138,13 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
 | `already ratified by ... — refusing to overwrite` | The idempotent/refusal guard — see above |
+| ``slice "<key>" is `status: <s>` — the review gate comes first`` | The doc never passed through `em slice review`; review it, or pass `--skip-review` |
 | `invalid --on date "..."` | `--on` didn't match `YYYY-MM-DD` |
 
 ```bash
 em slice ratify model.em request-payment --by "Alex Rivera"
 em slice ratify model.em request-payment --by "Alex Rivera" --on 2026-08-28
+em slice ratify model.em request-payment --by "Alex Rivera" --skip-review   # no review recorded
 ```
 
 **CODEOWNERS.** `em slice ratify` mechanizes the *edit*; it can't by itself stop an
@@ -2118,11 +2225,17 @@ as already ratified. Clearing them is also what lets a follow-up `em slice ratif
 apply cleanly afterward: without this, `ratify`'s own idempotent-refusal guard would read the
 leftover prior `ratifiedBy`/`ratifiedOn` as "already ratified by someone else" and refuse.
 
+`reviewedBy:`/`reviewedOn:` are cleared in the same sweep (MIL-201), for the same reason: the
+review record describes the version that shipped, not the new one. The re-ratified doc needs no
+fresh review session — it lands at `status: ready-to-implement`, which
+[`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)'s review gate accepts — but leaving
+the old review in place would claim the room walked a version it has never seen.
+
 Never touches `implementedIn:` (kept pointing at the prior version's PR on purpose — see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)'s
 drift-signal framing) or the doc body: the write is a surgical in-place edit of just the
-`version:`/`status:` lines (and, when present, removing the `ratifiedBy:`/`ratifiedOn:` lines
-entirely), not a parse-and-re-serialize, so every other line — key order, spacing, comments, the
+`version:`/`status:` lines (and, when present, removing the `ratifiedBy:`/`ratifiedOn:`/
+`reviewedBy:`/`reviewedOn:` lines entirely), not a parse-and-re-serialize, so every other line — key order, spacing, comments, the
 whole body — survives byte-for-byte.
 
 Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/

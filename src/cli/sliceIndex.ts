@@ -23,8 +23,8 @@ import { applyMarker } from "../util/markers.js";
 export const SLICE_INDEX_MARKER = "slices";
 
 const TABLE_HEADER =
-  "| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
-  "|---|-------|---------|--------|-------------|-------|----------|----------------|------------|";
+  "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
+  "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|";
 
 /** Escape characters that would break a markdown table cell: `|` (the column separator) and
  *  newlines (a slice name is always one line, but a doc's freeform `implementedIn` text isn't
@@ -53,6 +53,9 @@ export interface SliceIndexRow {
   name: string;
   pattern: string;
   status: string;
+  /** MIL-201: the doc's `reviewedBy`, or `—`. Sits between Status and Ratified by so the two
+   *  human gates read left-to-right in the order they happen. */
+  reviewedBy: string;
   ratifiedBy: string;
   owner: string;
   tracking: string;
@@ -90,6 +93,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       name: slice.name,
       pattern: slicePatternLabel(pattern),
       status: statusCell(doc),
+      reviewedBy: doc.reviewedBy ?? "—",
       ratifiedBy: doc.ratifiedBy ?? "—",
       owner: doc.owner ?? "—",
       tracking: doc.tracking ?? "—",
@@ -101,8 +105,8 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
   const lines = rows.map(
     (r) =>
       `| ${r.index} | ${escapeCell(r.name)} | ${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
-      `${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ${escapeCell(r.tracking)} | ` +
-      `${escapeCell(r.implementedIn)} | [${r.docPath}](${r.docPath}) |`,
+      `${escapeCell(r.reviewedBy)} | ${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ` +
+      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | [${r.docPath}](${r.docPath}) |`,
   );
 
   return { markdown: [TABLE_HEADER, ...lines].join("\n"), rows, diagnostics };

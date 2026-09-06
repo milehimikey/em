@@ -74,6 +74,7 @@ import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
 import { runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify } from "./cli/ratify.js";
+import { runReview } from "./cli/review.js";
 import { runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
@@ -676,19 +677,68 @@ slice
   });
 
 slice
+  .command("review")
+  .description(
+    "flip a slice doc's frontmatter to `status: reviewed` and record `reviewedBy:`/`reviewedOn:` " +
+      "— the FIRST of the two human gates (MIL-201, docs/process.md#the-slice-lifecycle-gates): " +
+      "the room walked this slice and every open question it raised is resolved. Ratification is " +
+      "a separate, later gate (`em slice ratify`). Legal from `status: draft`; idempotent on the " +
+      "same --by/--on pair; refuses to overwrite a different one already recorded; refuses a doc " +
+      "already `ready-to-implement`/`implemented`; never touches `version:` or the doc body",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
+  .option("--on <date>", "review date, YYYY-MM-DD (default: today)")
+  .action((file: string, sliceKey: string, opts: { by: string; on?: string }) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    // Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
+    // `em validate --slice-ready` are: only an error concerning THIS slice refuses.
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice review: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const reviewedOn = opts.on ?? today;
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em slice review: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+
+    const result = runReview(model, refs, dirname(file), sliceKey, opts.by, reviewedOn);
+    if (!result.ok) {
+      console.error(`em slice review: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(
+      result.changed
+        ? `reviewed: ${result.path} (reviewedBy: ${opts.by}, reviewedOn: ${reviewedOn})`
+        : `already reviewed (no-op): ${result.path}`,
+    );
+  });
+
+slice
   .command("ratify")
   .description(
     "flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/" +
-      "`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#what-ratified-means) that " +
-      "makes who ratified, and when, a first-class recorded fact. Idempotent on the same " +
-      "--by/--on pair; refuses to overwrite a different one already recorded; never touches " +
-      "`version:` or the doc body",
+      "`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#the-slice-lifecycle-gates) " +
+      "that makes who ratified, and when, a first-class recorded fact. Refuses a doc that never " +
+      "passed the review gate (`em slice review`) unless --skip-review is passed. Idempotent on " +
+      "the same --by/--on pair; refuses to overwrite a different one already recorded; never " +
+      "touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .requiredOption("--by <name>", "the ratifier's name")
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today)")
-  .action((file: string, sliceKey: string, opts: { by: string; on?: string }) => {
+  .option("--skip-review", "ratify without a recorded review — prints a loud notice on stderr")
+  .action((file: string, sliceKey: string, opts: { by: string; on?: string; skipReview?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
 
@@ -709,10 +759,18 @@ slice
       process.exit(1);
     }
 
-    const result = runRatify(model, refs, dirname(file), sliceKey, opts.by, ratifiedOn);
+    const result = runRatify(model, refs, dirname(file), sliceKey, opts.by, ratifiedOn, opts.skipReview === true);
     if (!result.ok) {
       console.error(`em slice ratify: ${result.message}`);
       process.exit(1);
+    }
+    // Loud, on stderr, exactly when --skip-review is what let this through — the skip is a
+    // visible act in the terminal and in CI logs, and deliberately leaves no trace in the doc.
+    if (result.skippedReviewFrom !== null) {
+      console.error(
+        `notice: --skip-review — ratifying "${sliceKey}" without a recorded review ` +
+          `(status was ${result.skippedReviewFrom})`,
+      );
     }
     console.log(
       result.changed
@@ -727,8 +785,9 @@ slice
     "bump `version:` and flip a shipped slice doc's frontmatter back to `status: " +
       "ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice " +
       "mark-implemented`). Only applies to a doc at `status: implemented`; clears any stale " +
-      "`ratifiedBy:`/`ratifiedOn:` (they describe the PRIOR version's sign-off) so a follow-up " +
-      "`em slice ratify --by` applies cleanly; never touches `implementedIn:` or the doc body",
+      "`ratifiedBy:`/`ratifiedOn:`/`reviewedBy:`/`reviewedOn:` (they describe the PRIOR version's " +
+      "review and sign-off) so a follow-up `em slice ratify --by` applies cleanly — and needs no " +
+      "fresh review; never touches `implementedIn:` or the doc body",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")

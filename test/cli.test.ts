@@ -177,14 +177,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.10");
+    expect(doc.schemaVersion).toBe("1.11");
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.10");
+    expect(doc.schemaVersion).toBe("1.11");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -200,7 +200,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.10");
+    expect(doc.schemaVersion).toBe("1.11");
     expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
@@ -218,6 +218,8 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       mergedFrom: [],
       supersededBy: [],
       driftSignal: null,
+      reviewedBy: null,
+      reviewedOn: null,
       ratifiedBy: null,
       ratifiedOn: null,
       owner: null,
@@ -1469,8 +1471,8 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(readme).toContain("em watch order-fulfillment.em -o order-fulfillment.svg --serve");
     expect(readme).toContain(
       "<!-- GENERATED:slices:start -->\n" +
-        "| # | Slice | Pattern | Status | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|-------------|-------|----------|----------------|------------|\n" +
+        "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|\n" +
         "<!-- GENERATED:slices:end -->",
     );
 
@@ -2599,7 +2601,7 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote README.md");
     const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
-    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | — | [slices/place.md](slices/place.md) |");
     expect(readme).toContain("Open Orders");
   });
 
@@ -2749,15 +2751,15 @@ describe("em slice mark-implemented (CLI, MIL-103)", () => {
   });
 });
 
-describe("em slice ratify (CLI, MIL-165)", () => {
-  // Pure-transform and note-binding-resolution coverage lives in test/ratify.test.ts; this
-  // block is exit-code/process-level only, same split as `em slice mark-implemented`.
+describe("em slice review (CLI, MIL-201)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/review.test.ts; this
+  // block is exit-code/process-level only, same split as `em slice ratify`.
   let dir: string;
   const DRAFT_DOC =
     "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n# Slice: Draft Slice\n\nbody\n";
 
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), "em-cli-ratify-"));
+    dir = mkdtempSync(join(tmpdir(), "em-cli-review-"));
     mkdirSync(join(dir, "slices"), { recursive: true });
     writeFileSync(join(dir, "slices", "draft-slice.md"), DRAFT_DOC);
     writeFileSync(
@@ -2765,8 +2767,16 @@ describe("em slice ratify (CLI, MIL-165)", () => {
       'slice "Draft Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
     );
     writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
-    // Genuine error in an UNRELATED slice — same scoping regression coverage mark-implemented's
-    // CLI block has.
+    writeFileSync(
+      join(dir, "slices", "shipped.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n" +
+        "implementedIn: https://github.com/org/repo/pull/1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "shipped.em"),
+      'slice "Shipped" {\n  ui Screen @Customer\n  command Do Thing note "slices/shipped.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    // Genuine error in an UNRELATED slice — same scoping regression coverage ratify's CLI block has.
     writeFileSync(
       join(dir, "slices", "good.md"),
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n",
@@ -2777,6 +2787,170 @@ describe("em slice ratify (CLI, MIL-165)", () => {
     );
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("flips status and records reviewedBy/reviewedOn (default --on today), confirms on stdout", () => {
+    const r = em(["slice", "review", "draft.em", "draft-slice", "--by", "Sam Okafor"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("reviewed: slices/draft-slice.md");
+    expect(r.stdout).toContain("reviewedBy: Sam Okafor");
+    const content = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    expect(content).toContain("status: reviewed");
+    expect(content).toContain("reviewedBy: Sam Okafor");
+    expect(content).toMatch(/reviewedOn: \d{4}-\d{2}-\d{2}/);
+    expect(content).toContain("version: 1"); // never bumped
+  });
+
+  it("is idempotent: re-running with the same --by/--on is a no-op, exit 0", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const onMatch = before.match(/reviewedOn: (\d{4}-\d{2}-\d{2})/);
+    expect(onMatch).not.toBeNull();
+    const r = em(["slice", "review", "draft.em", "draft-slice", "--by", "Sam Okafor", "--on", onMatch![1]], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("already reviewed (no-op)");
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses a different reviewer once reviewed, exit non-zero, file untouched", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const r = em(["slice", "review", "draft.em", "draft-slice", "--by", "Robin Vale", "--on", "2026-09-05"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("already reviewed by Sam Okafor");
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("refuses a shipped doc, naming reratify, exit non-zero, file untouched", () => {
+    const before = readFileSync(join(dir, "slices", "shipped.md"), "utf8");
+    const r = em(["slice", "review", "shipped.em", "shipped", "--by", "Sam Okafor", "--on", "2026-09-05"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain(
+      "doc is `status: implemented` — review applies before ratification; a shipped slice is " +
+        "reopened with `em slice reratify`",
+    );
+    expect(readFileSync(join(dir, "slices", "shipped.md"), "utf8")).toBe(before);
+  });
+
+  it("accepts an explicit --on date", () => {
+    const r = em(["slice", "review", "scoped.em", "good", "--by", "Sam Okafor", "--on", "2026-09-05"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("reviewedOn: 2026-09-05");
+    expect(readFileSync(join(dir, "slices", "good.md"), "utf8")).toContain("reviewedOn: 2026-09-05");
+  });
+
+  it("rejects a malformed --on date before touching the file", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const r = em(["slice", "review", "draft.em", "draft-slice", "--by", "Sam Okafor", "--on", "not-a-date"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('invalid --on date "not-a-date"');
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("errors clearly for a key that names no slice in the model", () => {
+    const r = em(["slice", "review", "draft.em", "no-such-key", "--by", "Sam Okafor"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
+  });
+
+  it("errors clearly when no doc is bound via note", () => {
+    const r = em(["slice", "review", "unbound.em", "unbound", "--by", "Sam Okafor"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("refuses on an error concerning the named slice itself", () => {
+    const r = em(["slice", "review", "scoped.em", "bad", "--by", "Sam Okafor"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('slice "bad" has errors');
+  });
+
+  it("requires --by", () => {
+    const r = em(["slice", "review", "draft.em", "draft-slice"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--by");
+  });
+});
+
+describe("em slice ratify (CLI, MIL-165)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/ratify.test.ts; this
+  // block is exit-code/process-level only, same split as `em slice mark-implemented`.
+  let dir: string;
+  // MIL-201: `ratify` now refuses anything that hasn't passed the review gate, so the ordinary
+  // fixture starts at `reviewed`; `gated-slice.md` below stays at `draft` for the gate's own tests.
+  const DRAFT_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n# Slice: Draft Slice\n\nbody\n";
+  const REVIEWED_DOC = DRAFT_DOC.replace("status: draft", "status: reviewed");
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-ratify-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "draft-slice.md"), REVIEWED_DOC);
+    writeFileSync(
+      join(dir, "draft.em"),
+      'slice "Draft Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
+    // MIL-201 review-gate fixtures: a doc still at `status: draft`, and a reviewed doc used only
+    // to prove `--skip-review` is silent when it skipped nothing.
+    writeFileSync(join(dir, "slices", "gated-slice.md"), DRAFT_DOC);
+    writeFileSync(join(dir, "slices", "silent-slice.md"), REVIEWED_DOC);
+    writeFileSync(
+      join(dir, "silent.em"),
+      'slice "Silent Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/silent-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    writeFileSync(
+      join(dir, "gated.em"),
+      'slice "Gated Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/gated-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+    );
+    // Genuine error in an UNRELATED slice — same scoping regression coverage mark-implemented's
+    // CLI block has.
+    writeFileSync(
+      join(dir, "slices", "good.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "scoped.em"),
+      'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("refuses a doc that never passed the review gate: exact message, exit 1, file untouched (MIL-201)", () => {
+    const before = readFileSync(join(dir, "slices", "gated-slice.md"), "utf8");
+    const r = em(["slice", "ratify", "gated.em", "gated-slice", "--by", "Alex Rivera", "--on", "2026-08-28"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(
+      'em slice ratify: slices/gated-slice.md: slice "gated-slice" is `status: draft` — the ' +
+        "review gate comes first: run `em slice review <file> <key> --by <name>` after the review " +
+        "session, or pass --skip-review to ratify without one",
+    );
+    expect(readFileSync(join(dir, "slices", "gated-slice.md"), "utf8")).toBe(before);
+  });
+
+  it("--skip-review ratifies anyway and prints the exact notice on stderr (MIL-201)", () => {
+    const r = em(
+      ["slice", "ratify", "gated.em", "gated-slice", "--by", "Alex Rivera", "--on", "2026-08-28", "--skip-review"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain(
+      'notice: --skip-review — ratifying "gated-slice" without a recorded review (status was draft)',
+    );
+    expect(r.stdout).toContain("ratified: slices/gated-slice.md");
+    const content = readFileSync(join(dir, "slices", "gated-slice.md"), "utf8");
+    expect(content).toContain("status: ready-to-implement");
+    // Nothing about the skip is written to the file.
+    expect(content).not.toContain("skip");
+    expect(content).not.toContain("reviewedBy:");
+  });
+
+  it("--skip-review on an already-reviewed doc prints no notice — the flag skipped nothing", () => {
+    const r = em(
+      ["slice", "ratify", "silent.em", "silent-slice", "--by", "Alex Rivera", "--on", "2026-08-28", "--skip-review"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ratified: slices/silent-slice.md");
+    expect(r.stderr).not.toContain("--skip-review");
+  });
 
   it("flips status and records ratifiedBy/ratifiedOn (default --on today), confirms on stdout", () => {
     const r = em(["slice", "ratify", "draft.em", "draft-slice", "--by", "Alex Rivera"], dir);
@@ -2855,7 +3029,8 @@ describe("em slice reratify (CLI, MIL-161)", () => {
   let dir: string;
   const IMPLEMENTED_DOC =
     "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n" +
-    "implementedIn: https://github.com/org/repo/pull/1\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-01\n---\n" +
+    "implementedIn: https://github.com/org/repo/pull/1\nreviewedBy: Sam Okafor\nreviewedOn: 2026-07-20\n" +
+    "ratifiedBy: Alex Rivera\nratifiedOn: 2026-08-01\n---\n" +
     "# Slice: Shipped Slice\n\nbody\n";
 
   beforeAll(() => {
@@ -2890,11 +3065,17 @@ describe("em slice reratify (CLI, MIL-161)", () => {
     expect(content).toContain("implementedIn: https://github.com/org/repo/pull/1"); // untouched
     expect(content).not.toContain("ratifiedBy:");
     expect(content).not.toContain("ratifiedOn:");
+    expect(content).not.toContain("reviewedBy:"); // MIL-201: cleared in the same sweep
+    expect(content).not.toContain("reviewedOn:");
   });
 
-  it("a follow-up em slice ratify --by applies cleanly (no false 'already ratified' refusal)", () => {
+  it("a follow-up em slice ratify --by applies cleanly, needing no fresh review (MIL-201)", () => {
     const r = em(["slice", "ratify", "shipped.em", "shipped-slice", "--by", "Jordan Lee", "--on", "2026-08-28"], dir);
     expect(r.status).toBe(0);
+    // The review gate passes on the `ready-to-implement` status reratify left behind — no
+    // --skip-review needed, and no skip notice printed.
+    expect(r.stderr).not.toContain("--skip-review");
+    expect(r.stderr).not.toContain("review gate");
     const content = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     expect(content).toContain("ratifiedBy: Jordan Lee");
     expect(content).toContain("status: ready-to-implement");
