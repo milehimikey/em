@@ -21,6 +21,9 @@ import {
   commitsBehindHead,
   resolveSlicePRsBehindHead,
   resolveConformanceEntry,
+  findSpecifyRoot,
+  resolveConstitution,
+  formatConstitutionPart,
   buildStatusReport,
   aggregateInvariantTotals,
   formatStatusSummary,
@@ -251,6 +254,7 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
       repo: dir,
       commitsBehindHead: null,
       slicePRsBehindHead: null,
+      constitution: { present: false, path: "constitution.md" },
       error: null,
     });
   });
@@ -490,6 +494,63 @@ describe("aggregateInvariantTotals", () => {
   });
 });
 
+// MIL-202: the implementation constitution — existence only, two project shapes, one document.
+describe("findSpecifyRoot / resolveConstitution", () => {
+  let root: string;
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "em-status-constitution-"));
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  it("resolves constitution.md beside the model when no .specify/ is anywhere above it", () => {
+    const dir = join(root, "plain", "models", "checkout");
+    mkdirSync(dir, { recursive: true });
+    expect(findSpecifyRoot(dir)).toBeNull();
+    expect(resolveConstitution(dir)).toEqual({ present: false, path: "constitution.md" });
+    writeFileSync(join(dir, "constitution.md"), "# house rules\n");
+    expect(resolveConstitution(dir)).toEqual({ present: true, path: "constitution.md" });
+  });
+
+  it("defers to spec-kit's .specify/memory/constitution.md, found by walking up from the model dir", () => {
+    const repo = join(root, "sdd");
+    const dir = join(repo, "models", "checkout");
+    mkdirSync(join(repo, ".specify", "memory"), { recursive: true });
+    mkdirSync(dir, { recursive: true });
+    expect(findSpecifyRoot(dir)).toBe(resolve(repo));
+    // Path is relative to the model dir, `/`-separated — never absolute, never machine-specific.
+    expect(resolveConstitution(dir)).toEqual({ present: false, path: "../../.specify/memory/constitution.md" });
+    writeFileSync(join(repo, ".specify", "memory", "constitution.md"), "# spec-kit's own file\n");
+    expect(resolveConstitution(dir)).toEqual({ present: true, path: "../../.specify/memory/constitution.md" });
+    // ...and em never expects a second copy beside the model, even if one is sitting there.
+    writeFileSync(join(dir, "constitution.md"), "# a stray second copy\n");
+    expect(resolveConstitution(dir).path).toBe("../../.specify/memory/constitution.md");
+  });
+
+  it("reads existence only — a blank stock template counts as present", () => {
+    const dir = join(root, "blank");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "constitution.md"), "# [PROJECT_NAME] Constitution\n");
+    expect(resolveConstitution(dir).present).toBe(true);
+  });
+
+  it("resolveConformanceEntry carries the constitution fact on every branch, state file or not", () => {
+    const dir = join(root, "entry");
+    mkdirSync(dir, { recursive: true });
+    const absent = resolveConformanceEntry(join(dir, "model.em"), undefined, [], fakeGit([]));
+    expect(absent.hasStateFile).toBe(false);
+    expect(absent.constitution).toEqual({ present: false, path: "constitution.md" });
+    writeFileSync(join(dir, "constitution.md"), "# house rules\n");
+    writeFileSync(
+      join(dir, ".event-modeling.md"),
+      "- **Model file:** `model.em`\n- **Current phase:** discover\n- **Current step:** 1\n" +
+        "- **Last updated:** 2026-08-01\n- **Last conformance:** never\n- **Last stakeholder review:** never\n",
+    );
+    const present = resolveConformanceEntry(join(dir, "model.em"), undefined, [], fakeGit([]));
+    expect(present.hasStateFile).toBe(true);
+    expect(present.constitution).toEqual({ present: true, path: "constitution.md" });
+  });
+});
+
 describe("buildStatusReport", () => {
   const facts: SliceStatusFact[] = [
     { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", implementedIn: null, owner: null, bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
@@ -497,7 +558,7 @@ describe("buildStatusReport", () => {
     { file: "a.em", key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, implementedIn: null, owner: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
   ];
   const conformance: ConformanceEntry[] = [
-    { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 2, slicePRsBehindHead: 1, error: null },
+    { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 2, slicePRsBehindHead: 1, constitution: { present: false, path: "constitution.md" }, error: null },
   ];
 
   it("tallies slices by bucket, driftSignal, and open-questions totals", () => {
@@ -603,7 +664,7 @@ describe("text/markdown/badge formatting", () => {
       invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
       issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, slicePRsBehindHead: 3, error: null },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 3, slicePRsBehindHead: 3, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
       diagnostics: [],
       owners: [],
@@ -626,7 +687,7 @@ describe("text/markdown/badge formatting", () => {
   it("formatStatusSummary pluralizes singular counts correctly", () => {
     const report = makeReport({
       issues: { openIssues: 1, openQuestionsTotal: 1, openQuestionsUnchecked: 1 },
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc" }, repo: ".", commitsBehindHead: 1, slicePRsBehindHead: 2, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc" }, repo: ".", commitsBehindHead: 1, slicePRsBehindHead: 2, constitution: { present: false, path: "constitution.md" }, error: null }],
     });
     const summary = formatStatusSummary(report);
     expect(summary).toContain("1 open issue,");
@@ -636,14 +697,14 @@ describe("text/markdown/badge formatting", () => {
 
   it("formatStatusSummary reports never conformed when there's no Last conformance:", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null }],
     });
     expect(formatStatusSummary(report)).toContain("never conformed");
   });
 
   it("formatStatusSummary reports no state file distinctly from never conformed", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null }],
     });
     expect(formatStatusSummary(report)).toContain("no state file");
   });
@@ -651,7 +712,7 @@ describe("text/markdown/badge formatting", () => {
   it("formatStatusSummary reports an unverifiable conformance state via its error, distinctly from never/no-state-file", () => {
     const report = makeReport({
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: "state file: missing bullet line(s)" },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: "state file: missing bullet line(s)" },
       ],
     });
     expect(formatStatusSummary(report)).toContain("conformance unknown (state file: missing bullet line(s))");
@@ -664,6 +725,47 @@ describe("text/markdown/badge formatting", () => {
     expect(detail).toContain("invariants: 20/20 covered");
     expect(detail).toContain("issues: 0 open issues");
     expect(detail).toContain("conformance: last conformed abc123f — 3 commits and 3 slice-PRs behind HEAD");
+  });
+
+  // MIL-202
+  it("formatStatusDetail reports the constitution per model, absent with its expected path", () => {
+    expect(formatConstitutionPart(makeReport().conformance[0])).toBe("absent (constitution.md)");
+    expect(formatStatusDetail(makeReport())).toContain("constitution: absent (constitution.md)");
+    const present = makeReport({
+      conformance: [
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, constitution: { present: true, path: "../.specify/memory/constitution.md" }, error: null },
+      ],
+    });
+    expect(formatStatusDetail(present)).toContain("constitution: present");
+  });
+
+  it("formatStatusDetail labels each model's constitution line by file when there's more than one", () => {
+    const detail = formatStatusDetail(
+      makeReport({
+        files: ["a.em", "b.em"],
+        conformance: [
+          { file: "a.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: true, path: "constitution.md" }, error: null },
+          { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null },
+        ],
+      }),
+    );
+    expect(detail).toContain("constitution (a.em): present");
+    expect(detail).toContain("constitution (b.em): absent (constitution.md)");
+  });
+
+  it("formatStatusMarkdown carries a Constitution row, one per model when there's more than one", () => {
+    expect(formatStatusMarkdown(makeReport())).toContain("| Constitution | absent (constitution.md) |");
+    const md = formatStatusMarkdown(
+      makeReport({
+        files: ["a.em", "b.em"],
+        conformance: [
+          { file: "a.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: true, path: "constitution.md" }, error: null },
+          { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null },
+        ],
+      }),
+    );
+    expect(md).toContain("| Constitution (a.em) | present |");
+    expect(md).toContain("| Constitution (b.em) | absent (constitution.md) |");
   });
 
   it("formatStatusDetail surfaces frontmatterInvalid counts in both the slices and driftSignal lines", () => {
@@ -694,8 +796,8 @@ describe("text/markdown/badge formatting", () => {
     const report = makeReport({
       files: ["a.em", "b.em"],
       conformance: [
-        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
-        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null },
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, constitution: { present: false, path: "constitution.md" }, error: null },
+        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
     });
     const detail = formatStatusDetail(report);
@@ -721,8 +823,8 @@ describe("text/markdown/badge formatting", () => {
     const report = makeReport({
       files: ["a.em", "b.em"],
       conformance: [
-        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
-        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null },
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, constitution: { present: false, path: "constitution.md" }, error: null },
+        { file: "b.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
     });
     const md = formatStatusMarkdown(report);
@@ -739,7 +841,7 @@ describe("text/markdown/badge formatting", () => {
   it("escapes a pre-existing backslash before escaping `|` in table VALUES, so the pipe can't be un-escaped", () => {
     const report = makeReport({
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: "weird \\| value" },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: "weird \\| value" },
       ],
     });
     const md = formatStatusMarkdown(report);
@@ -750,8 +852,8 @@ describe("text/markdown/badge formatting", () => {
     const report = makeReport({
       files: ["a.em", "weird \\| file.em"],
       conformance: [
-        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
-        { file: "weird \\| file.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null },
+        { file: "a.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "aaa" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, constitution: { present: false, path: "constitution.md" }, error: null },
+        { file: "weird \\| file.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
     });
     const md = formatStatusMarkdown(report);
@@ -780,7 +882,7 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is green when fully implemented, covered, no open issues, and current on conformance", () => {
     const report = makeReport({
       conformance: [
-        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, error: null },
+        { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
     });
     const svg = buildStatusBadge(report);
@@ -791,14 +893,14 @@ describe("text/markdown/badge formatting", () => {
   // file yet, both error: null) stays green-eligible — this is NOT the bug the finding flagged.
   it("buildStatusBadge stays green when a model simply has no conformance history yet (no state file)", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: false, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null }],
     });
     expect(buildStatusBadge(report)).toContain("#4c1");
   });
 
   it("buildStatusBadge stays green when Last conformance: is the never marker", () => {
     const report = makeReport({
-      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: null }],
+      conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: null }],
     });
     expect(buildStatusBadge(report)).toContain("#4c1");
   });
@@ -837,7 +939,7 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is yellow when a model is behind on conformance", () => {
     const svg = buildStatusBadge(
       makeReport({
-        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 4, slicePRsBehindHead: 4, error: null }],
+        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 4, slicePRsBehindHead: 4, constitution: { present: false, path: "constitution.md" }, error: null }],
       }),
     );
     expect(svg).toContain("#dfb317");
@@ -848,7 +950,7 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is yellow when only slicePRsBehindHead is nonzero (commitsBehindHead: 0)", () => {
     const svg = buildStatusBadge(
       makeReport({
-        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 1, error: null }],
+        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 1, constitution: { present: false, path: "constitution.md" }, error: null }],
       }),
     );
     expect(svg).not.toContain("#4c1");
@@ -862,7 +964,7 @@ describe("text/markdown/badge formatting", () => {
     const svg = buildStatusBadge(
       makeReport({
         conformance: [
-          { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: "/not-a-repo", commitsBehindHead: null, slicePRsBehindHead: null, error: "em status: /not-a-repo is not a git repository" },
+          { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "x", revision: "r" }, repo: "/not-a-repo", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: "em status: /not-a-repo is not a git repository" },
         ],
       }),
     );
@@ -873,7 +975,7 @@ describe("text/markdown/badge formatting", () => {
   it("buildStatusBadge is yellow when the state file itself failed to parse (error set)", () => {
     const svg = buildStatusBadge(
       makeReport({
-        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: "state file: missing bullet line(s)" }],
+        conformance: [{ file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: "state file: missing bullet line(s)" }],
       }),
     );
     expect(svg).not.toContain("#4c1");
@@ -884,7 +986,7 @@ describe("text/markdown/badge formatting", () => {
     const svg = buildStatusBadge(
       makeReport({
         conformance: [
-          { file: "checkout-asis.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record' },
+          { file: "checkout-asis.em", modelDir: ".", hasStateFile: true, lastConformance: null, repo: ".", commitsBehindHead: null, slicePRsBehindHead: null, constitution: { present: false, path: "constitution.md" }, error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record' },
         ],
       }),
     );

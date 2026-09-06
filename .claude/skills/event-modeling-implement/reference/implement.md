@@ -41,7 +41,22 @@ implementation branch.
 
 ## 2. Read the spec
 
-Read `slices/<slice-key>.md` end to end — every section is load-bearing:
+**First, read the project's constitution** — the house rules for *how* implementation happens
+here (stack and architectural shape, which implementation skill each slice pattern routes to,
+code style, testing norms, NFR baselines, review and merge norms). It lives in one of exactly two
+places, never both:
+
+- **spec-kit project** (a `.specify/` directory exists at or above the model):
+  `.specify/memory/constitution.md` — spec-kit's own slot, which em defers to.
+- **anything else**: `constitution.md` beside the model, where `em scaffold` writes it.
+
+`em status <model>.em --json` reports which one applies and whether it's there
+(`conformance[].constitution`) — existence only; nothing in `em` reads or judges its content.
+**Its rules bound every technical choice you make on this slice** (see §4). If it's missing, or
+its `ratifiedBy:` is empty (spec-kit's file: the `**Ratified**:` footer still a placeholder),
+it isn't ratified — go to §7 before writing code.
+
+Then read `slices/<slice-key>.md` end to end — every section is load-bearing:
 
 | Section | What it is to the implementer |
 |---|---|
@@ -92,7 +107,10 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   a business person could have an opinion on. Silent divergence is the failure mode the whole
   conformance loop exists to catch — don't manufacture it.
 - Purely technical choices with no behavioral surface (private naming, idiomatic structure,
-  which assertion library) are yours; anything observable in behavior, data, or contract is not.
+  which assertion library) are yours — **within the constitution's rules** (§2); anything
+  observable in behavior, data, or contract is not. If no constitution exists (or its
+  `ratifiedBy` is empty), surface that to the human and do not proceed on unilateral style or
+  stack decisions for a first slice: run the constitution step (§7) first.
 
 ## 5. Definition of done
 
@@ -104,7 +122,7 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 - Alternate/error flows (idempotency included) are covered by tests.
 - The build and full test suite are green; the model still validates (`em validate` in CI —
   you didn't touch the `.em`, so this only fails if something else broke).
-- Nothing between the slice doc and the code was committed as a source of truth (see §7 —
+- Nothing between the slice doc and the code was committed as a source of truth (see §8 —
   work containers are ephemeral; generated or symlinked specs are renderings).
 
 ## 6. At merge: the lifecycle flip
@@ -131,7 +149,55 @@ Then, if the project keeps a model README (from `../../event-modeling-shared/tem
 link — never hand-edit that table. The `implementedIn` link is what the `conform` phase later
 uses to anchor drift-checking — leaving it empty blinds the loop.
 
-## 7. Spec-kit projects: the SDD adapter
+## 7. Before the first slice: the constitution
+
+The first time this project's slices reach implementation — or any time §2 finds no constitution,
+or one whose `ratifiedBy` is still empty — **stop and run this short conversation before writing
+code.** It happens once per project, not once per slice.
+
+Start from the template the skill bundle ships,
+`../../event-modeling-shared/templates/constitution.md`. Each of its five sections opens with the
+question to ask; ask them **conversationally, one section at a time**, and write the answers into
+the document as you go — never fill a section by guessing, by reading the codebase and inferring
+"what they probably do", or by pasting the template's own examples. Unanswerable questions get
+parked in the document as open items, exactly like a slice doc's Open Questions:
+
+1. **Stack and architectural shape** — languages/runtimes, frameworks, the architectural pattern,
+   where a slice's code lives, and the routing table: which implementation skill or approach each
+   of the four slice patterns uses (for example, State Change slices → the `axon-*` skill set).
+   That table is what you obey in §2 when you read a slice's `pattern:`.
+2. **Code style** — formatter/linter, naming, module layout, and what "idiomatic" means here.
+3. **Testing norms** — which test levels each pattern requires, where invariant and scenario
+   tests live, and the test-naming convention that lets `em coverage` trace `INV-<MNEMONIC>-n`
+   citations.
+4. **NFR baselines** — authz model, PII handling, performance defaults, observability: the
+   standing defaults every slice inherits where its own `## Non-Functional Requirements` section
+   is silent.
+5. **Review and merge norms** — who reviews, what blocks a merge, and who runs
+   `em slice mark-implemented` at merge (§6).
+
+**A human ratifies it.** The answers are the project's, not yours — you drafted the wording, they
+sign it off. In the em-native file that's the `ratifiedBy:`/`ratifiedOn:` frontmatter (a named
+person and an ISO date, hand-filled — no `em` command writes this file, and an empty `ratifiedBy:`
+means *draft*). In a spec-kit project it's that file's own `**Ratified**:` footer line — never add
+frontmatter to spec-kit's document. Until it's ratified, treat it as a proposal: you may not
+build a first slice on it.
+
+**In a spec-kit project, merge — never duplicate.** The constitution IS
+`.specify/memory/constitution.md`; em writes no second file and neither do you. Append em's five
+sections to it under their own `##` headings, **leaving every existing section byte-untouched** —
+including spec-kit's own `## Core Principles` and `## Governance`, and any principle a team
+already wrote. If a heading of the same name is already there, add to it rather than replacing it,
+and show the human the diff before writing. Two cautions: spec-kit's `/speckit.constitution`
+command rewrites that whole file from its template, so run it (if at all) **before** this
+conversation, never after — and never use it to author em's sections. If the file is still the
+blank stock template (`[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`, … placeholders), say so: filling
+spec-kit's own placeholders is the team's call, and em's sections go in alongside them either way.
+
+`em status` will then report `constitution: present` for the model. That's the whole mechanical
+check — em stores and locates this document, and never validates a word of it.
+
+## 8. Spec-kit projects: the SDD adapter
 
 If the repository uses spec-kit (a `.specify/` directory exists), do not hand-author spec-kit
 artifacts — allocate through **em-sdd-bridge**, redirect mode preferred:
@@ -163,7 +229,7 @@ plan/tasks as FEATURE_SPEC. The rules that keep redirect mode safe:
 No spec-kit (or any SDD tool)? Implement straight from the slice doc — it already contains
 everything a spec holds. Don't introduce an intermediate spec document of your own.
 
-## 8. Never do
+## 9. Never do
 
 | Rule | Because |
 |---|---|
@@ -172,10 +238,11 @@ everything a spec holds. Don't introduce an intermediate spec document of your o
 | Never edit the `.em` model | Model edits are ratified decisions — propose, don't write |
 | Never bump `version:` | Versions move only with ratified deltas; see `em ledger` |
 | Never silently decide unspecified behavior | Silent divergence is the disease the conformance loop exists to catch |
+| Never invent the house rules a first slice needs (stack, style, testing, NFR defaults) | They're the project's decision, ratified in the constitution — §7, not your judgment call |
 | Never regenerate merged code from the model | Generated-then-owned: post-merge code belongs to its owners |
 | Never commit an authored intermediate spec | The slice is the spec; anything between it and the code is a rendering |
 
-## 9. Afterward: the loop closes
+## 10. Afterward: the loop closes
 
 Implementation isn't the end of the slice's story. On a cadence — or whenever someone asks —
 the `conform` phase checks implemented slices against the code, using the `implementedIn` link

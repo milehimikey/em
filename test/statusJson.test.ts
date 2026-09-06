@@ -31,6 +31,7 @@ function sampleReport(): StatusReport {
         repo: ".",
         commitsBehindHead: 3,
         slicePRsBehindHead: 1,
+        constitution: { present: true, path: "constitution.md" },
         error: null,
       },
     ],
@@ -44,7 +45,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.2");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.3");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);
@@ -52,6 +53,8 @@ describe("buildStatusJson", () => {
     expect(doc.invariants).toEqual(report.invariants);
     expect(doc.issues).toEqual(report.issues);
     expect(doc.conformance).toEqual(report.conformance);
+    // MIL-202: the constitution fact rides inside each conformance entry, verbatim.
+    expect(doc.conformance[0].constitution).toEqual({ present: true, path: "constitution.md" });
     expect(doc.owners).toEqual(report.owners);
     expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
   });

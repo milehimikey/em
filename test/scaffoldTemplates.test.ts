@@ -2,7 +2,7 @@
 // Unit coverage for the `em scaffold` template-filling helpers in src/templates.ts. CLI-level
 // wiring (file creation, --force, refuse-on-existing) is covered in test/cli.test.ts.
 import { describe, it, expect } from "vitest";
-import { scaffoldReadme, scaffoldStateFile, starterEmFor } from "../src/templates.js";
+import { scaffoldConstitution, scaffoldReadme, scaffoldStateFile, starterEmFor } from "../src/templates.js";
 
 describe("starterEmFor", () => {
   it("titles the starter model from the given display name, leaving the rest of STARTER_EM intact", () => {
@@ -82,5 +82,51 @@ describe("scaffoldStateFile", () => {
         "     (who/what), revisit (when). -->\n\n" +
         "## Slice inventory",
     );
+  });
+});
+
+// MIL-202: unlike the README/state builders, this one deliberately KEEPS its {{...}} answer
+// blocks — they're the unanswered elicitation questions, not mechanical fields em can fill.
+describe("scaffoldConstitution", () => {
+  const doc = scaffoldConstitution("Widget Returns");
+
+  it("fills the project-name placeholder in the title", () => {
+    expect(doc).toContain("# Widget Returns — implementation constitution");
+    expect(doc).not.toContain("{{Project Name}}");
+  });
+
+  it("ships empty ratifiedBy/ratifiedOn frontmatter — a scaffolded constitution is a draft", () => {
+    expect(doc).toContain("\n---\nschemaVersion: 1\nratifiedBy:\nratifiedOn:\n---\n");
+  });
+
+  it("keeps the elicitation questions and their {{...}} answer blocks intact", () => {
+    for (const heading of [
+      "## Stack and architectural shape",
+      "## Code style",
+      "## Testing norms",
+      "## NFR baselines",
+      "## Review and merge norms",
+    ]) {
+      expect(doc).toContain(heading);
+    }
+    // Each section opens with the question the elicitation conversation asks.
+    expect(doc.match(/^> \*\*/gm)?.length).toBe(5);
+    expect(doc).toMatch(/\{\{[^}]*\}\}/);
+  });
+
+  it("carries the pattern → skill/approach routing table", () => {
+    expect(doc).toContain("| Pattern | Skill / approach |");
+    for (const pattern of ["| State Change |", "| State View |", "| Automation |", "| Translation |"]) {
+      expect(doc).toContain(pattern);
+    }
+  });
+
+  it("names both locations the document can live in", () => {
+    expect(doc).toContain("`constitution.md` beside the model");
+    expect(doc).toContain("`.specify/memory/constitution.md`");
+  });
+
+  it("inserts an arbitrary display name literally (no $-pattern expansion)", () => {
+    expect(scaffoldConstitution("A$&B")).toContain("# A$&B — implementation constitution");
   });
 });

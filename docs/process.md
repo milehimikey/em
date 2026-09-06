@@ -156,6 +156,11 @@ mechanical gate with no judgment call in it.
   unresolved questions gets those questions answered *by the implementer, silently* — the
   exact failure the gate exists to prevent. Ratification is cheap (a review and a status
   flip) precisely so it never gets skipped.
+- **Ratifying the implementation constitution.** The project's house rules — stack, code style,
+  testing norms, NFR baselines, review norms — are decisions about how *this team* builds, and an
+  agent that assumes them has quietly made them. The implement skill asks the questions and drafts
+  the answers; the document isn't in force until a named human ratifies it (empty `ratifiedBy:` =
+  draft). See [Handing a slice to an agent](#handing-a-slice-to-an-agent).
 - **Ruling on drift (stage 7).** Only a human can say whether the code or the model is right
   when they disagree — that's a business judgment, and the conform phase is deliberately
   advisory because a false accusation of drift destroys trust in the loop faster than real
@@ -182,6 +187,19 @@ mechanical gate with no judgment call in it.
 The short version of the [agent guide](../.claude/skills/event-modeling-implement/reference/implement.md),
 for the human doing the handing:
 
+0. **Once per project, before the first slice: the constitution exists and is ratified.** The
+   implementation constitution is the project's house rules for *how* implementation happens —
+   stack and architectural shape (including which implementation skill each slice pattern routes
+   to), code style, testing norms, NFR baselines, review and merge norms. It lives in exactly one
+   place: `.specify/memory/constitution.md` in a spec-kit project, otherwise `constitution.md`
+   beside the model (`em scaffold` writes the template there). The implement skill elicits it in a
+   short conversation and drafts the answers; **a named human signs it off** — `ratifiedBy:`/
+   `ratifiedOn:` in the em-native file, spec-kit's own `**Ratified**:` footer in
+   `.specify/memory/constitution.md`. An empty `ratifiedBy:` means draft, and an implementing
+   agent is told to stop rather than decide the project's stack or style for you.
+   `em status` reports it per model (`constitution: present` / `absent (<path>)`) — existence
+   only; `em` never reads or judges its content. See
+   [cli.md](cli.md#em-status-files) and the agent guide's §7.
 1. Ratify the slice — `em slice ratify <model>.em <key> --by <name>` (status →
    `ready-to-implement`, records who/when), open questions resolved — and confirm:
    `em validate <model>.em --slice-ready <key>` exits 0. Ratification comes *after* the review

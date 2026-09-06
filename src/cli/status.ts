@@ -22,7 +22,8 @@
 // same inputs. Text/markdown/badge are formatting layers over one aggregated StatusReport; the
 // JSON document (emit/statusJson.ts) is a versioned envelope around the exact same object.
 
-import { dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin, DocReason } from "../catalog/docJoin.js";
@@ -168,12 +169,66 @@ export interface ConformanceEntry {
    *  `resolveConformanceEntry` below): a bare "opted out of computing this" state doesn't occur
    *  on the real CLI/MCP call paths, which always supply `sliceDocFacts`. */
   slicePRsBehindHead: number | null;
+  /** MIL-202: whether this model's implementation constitution exists, and where it's expected
+   *  — existence only. `em` never reads or validates the document's content (no LLM, nothing
+   *  parsed): the whole fact is "is the house-rules document there or not". See
+   *  `resolveConstitution` for the two-shape resolution rule. */
+  constitution: ConstitutionEntry;
   /** Set when the state file exists and parses, but git couldn't answer commits-behind-HEAD or
    *  slice-PRs-behind-HEAD (not a git repo, unknown revision, ...) — reported per-model rather
    *  than aborting the whole rollup, since `em status` is a soft report, not a gate. Also carries
    *  a state-file parse failure (unparseable `Last conformance:` bullet), same non-fatal
    *  treatment. */
   error: string | null;
+}
+
+// ---- Implementation constitution (MIL-202) ----
+
+/** Where the project's implementation constitution is, and whether it's there. `path` is always
+ *  the EXPECTED location — set whether or not the file exists — expressed **relative to the
+ *  entry's own `modelDir`**, always with `/` separators, so the JSON document stays
+ *  machine-independent (never an absolute path, never a Windows separator). `join(modelDir,
+ *  path)` reconstructs the real location. Typed `string | null` for the ruling's shape; on every
+ *  real call path (`resolveConstitution` below) it is non-null, since the expected location is
+ *  always computable from `modelDir` alone. */
+export interface ConstitutionEntry {
+  present: boolean;
+  path: string | null;
+}
+
+/** Walk up from `startDir` looking for a `.specify/` directory — the same "is this a spec-kit
+ *  project, and where is its root" walk `em-sdd-bridge`'s `findRepoRoot` does (and spec-kit's own
+ *  `find_specify_root`). Returns the directory CONTAINING `.specify/`, or null at the filesystem
+ *  root. Directory existence only; nothing inside `.specify/` is read. */
+export function findSpecifyRoot(startDir: string): string | null {
+  let dir = resolve(startDir);
+  for (;;) {
+    if (existsSync(join(dir, ".specify"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * Resolve one model's implementation constitution (MIL-202). Two project shapes, one document —
+ * em never writes or expects a second copy:
+ *
+ *  - **spec-kit project** (a `.specify/` directory exists at or above `modelDir`): the document
+ *    IS `<root>/.specify/memory/constitution.md`, spec-kit's own slot. em defers to it.
+ *  - **anything else**: `<modelDir>/constitution.md`, beside the model — what `em scaffold`
+ *    writes.
+ *
+ * Existence only: this never opens the file, so a blank stock template and a fully answered,
+ * ratified constitution are indistinguishable here by design (content judgment is a human's, and
+ * `em`'s core stays deterministic and LLM-free). The advisory "is it still an unfilled template"
+ * check belongs to the SDD bridge, not here.
+ */
+export function resolveConstitution(modelDir: string): ConstitutionEntry {
+  const base = resolve(modelDir);
+  const specifyRoot = findSpecifyRoot(base);
+  const absolute = specifyRoot ? join(specifyRoot, ".specify", "memory", "constitution.md") : join(base, "constitution.md");
+  return { present: existsSync(absolute), path: relative(base, absolute).split(sep).join("/") };
 }
 
 /**
@@ -254,9 +309,12 @@ export function resolveConformanceEntry(
 ): ConformanceEntry {
   const modelDir = dirname(file);
   const repo = repoOverride ?? modelDir;
+  // MIL-202: independent of the state file and of git — the constitution is a per-model fact
+  // every entry carries, including the early-return branches below.
+  const constitution = resolveConstitution(modelDir);
   const loaded = loadStateFile(modelDir);
   if (!loaded.ok) {
-    return { file, modelDir, hasStateFile: false, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: null };
+    return { file, modelDir, hasStateFile: false, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: null };
   }
   const parsed = parseState(loaded.text);
   if (!parsed.ok) {
@@ -268,15 +326,16 @@ export function resolveConformanceEntry(
       repo,
       commitsBehindHead: null,
       slicePRsBehindHead: null,
+      constitution,
       error: `state file: ${parsed.message}`,
     };
   }
   const mismatch = modelPathMismatch(parsed.state.modelPath, file);
   if (mismatch) {
-    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: mismatch };
+    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: mismatch };
   }
   if (!parsed.state.lastConformance) {
-    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, error: null };
+    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: null };
   }
   const { date, revision } = parsed.state.lastConformance;
   const commitsResult = commitsBehindHead(repo, revision, runGit);
@@ -289,6 +348,7 @@ export function resolveConformanceEntry(
       repo,
       commitsBehindHead: null,
       slicePRsBehindHead: null,
+      constitution,
       error: commitsResult.message,
     };
   }
@@ -302,6 +362,7 @@ export function resolveConformanceEntry(
       repo,
       commitsBehindHead: commitsResult.count,
       slicePRsBehindHead: null,
+      constitution,
       error: slicePRsResult.message,
     };
   }
@@ -313,6 +374,7 @@ export function resolveConformanceEntry(
     repo,
     commitsBehindHead: commitsResult.count,
     slicePRsBehindHead: slicePRsResult.count,
+    constitution,
     error: null,
   };
 }
@@ -546,6 +608,13 @@ function formatConformanceValue(entry: ConformanceEntry): string {
   return `\`${entry.lastConformance.revision}\` — ${formatBehindHead(entry)}`;
 }
 
+/** MIL-202: the per-model constitution clause — `present`, or `absent (<expected path>)` with
+ *  the path the entry already resolved (relative to that model's own directory). Shared by the
+ *  text and markdown reports so the two can't drift. Existence only; never a content judgment. */
+export function formatConstitutionPart(entry: ConformanceEntry): string {
+  return entry.constitution.present ? "present" : `absent (${entry.constitution.path ?? "unresolved"})`;
+}
+
 /** The one-line rollup: `"8/8 implemented · 20/20 invariants covered · 0 open issues · last
  *  conformed <rev>, N commits behind HEAD"` (MIL-163's acceptance line). For multiple input
  *  models, the conformance clause reports the FIRST file's entry — a single-file invocation is
@@ -592,6 +661,12 @@ export function formatStatusDetail(report: StatusReport): string {
     const label = multi ? `conformance (${entry.file}): ` : "conformance: ";
     lines.push(`${label}${formatConformancePart(entry)}`);
   }
+  // MIL-202: one constitution line per model, after the conformance lines, same multi-model
+  // labelling convention.
+  for (const entry of report.conformance) {
+    const label = multi ? `constitution (${entry.file}): ` : "constitution: ";
+    lines.push(`${label}${formatConstitutionPart(entry)}`);
+  }
   if (report.diagnostics.length > 0) {
     lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);
   }
@@ -634,6 +709,14 @@ export function formatStatusMarkdown(report: StatusReport): string {
   } else {
     for (const entry of report.conformance) {
       rows.push([`Last conformed (${entry.file})`, formatConformanceValue(entry)]);
+    }
+  }
+  // MIL-202: one Constitution row per model, same single-vs-multi labelling as "Last conformed".
+  if (report.conformance.length <= 1) {
+    rows.push(["Constitution", formatConstitutionPart(report.conformance[0])]);
+  } else {
+    for (const entry of report.conformance) {
+      rows.push([`Constitution (${entry.file})`, formatConstitutionPart(entry)]);
     }
   }
   const header = "| Metric | Value |\n|---|---|";
