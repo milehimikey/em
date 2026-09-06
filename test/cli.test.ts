@@ -1275,6 +1275,66 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   });
 });
 
+describe("em skill install --force reconciles orphans (CLI, real fs, MIL-180)", () => {
+  let target: string;
+
+  beforeAll(() => {
+    target = mkdtempSync(join(tmpdir(), "em-cli-skillinstall-force-"));
+    // Fresh install first, since --force reconciles an EXISTING vendored copy.
+    const r = em(["skill", "install", "--no-agents-md"], target);
+    expect(r.status).toBe(0);
+  });
+  afterAll(() => rmSync(target, { recursive: true, force: true }));
+
+  it("install without --force on an existing bundle still refuses, unchanged", () => {
+    const r = em(["skill", "install"], target);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("skill already installed at");
+    expect(r.stdout).toContain("re-run with --force to overwrite");
+  });
+
+  it("--force removes an orphan file inside a managed bundle directory (simulated pre-MIL-157 layout) and the bundle then passes em skill check", () => {
+    // Simulate the pre-split layout's leftover: a file that lived under
+    // event-modeling/reference/ before the MIL-157 6-directory split and no longer exists in
+    // the packaged bundle.
+    const orphan = join(target, ".claude", "skills", "event-modeling", "reference", "orphan-from-before-the-split.md");
+    mkdirSync(dirname(orphan), { recursive: true });
+    writeFileSync(orphan, "leftover content from a structural bundle change\n");
+    expect(existsSync(orphan)).toBe(true);
+
+    const r = em(["skill", "install", "--force", "--no-agents-md"], target);
+    expect(r.status).toBe(0);
+
+    // (4) the output names the removed file.
+    expect(r.stdout).toContain("removed: event-modeling/reference/orphan-from-before-the-split.md");
+    expect(existsSync(orphan)).toBe(false);
+
+    const check = em(["skill", "check", target], ROOT);
+    expect(check.status).toBe(0);
+    expect(check.stdout).toMatch(/^ok — vendored skill matches em /);
+  });
+
+  it("an unrelated sibling skill directory is byte-untouched by --force", () => {
+    const siblingDir = join(target, ".claude", "skills", "my-team-skill");
+    const siblingFile = join(siblingDir, "NOTES.md");
+    mkdirSync(siblingDir, { recursive: true });
+    writeFileSync(siblingFile, "hand-written notes for an unrelated, non-em skill\n");
+    const before = readFileSync(siblingFile, "utf8");
+
+    // Also drop another orphan into a managed dir so this run has something to reconcile.
+    const orphan = join(target, ".claude", "skills", "event-modeling-shared", "reference", "another-orphan.md");
+    mkdirSync(dirname(orphan), { recursive: true });
+    writeFileSync(orphan, "another leftover file\n");
+
+    const r = em(["skill", "install", "--force", "--no-agents-md"], target);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("removed: event-modeling-shared/reference/another-orphan.md");
+
+    expect(readFileSync(siblingFile, "utf8")).toBe(before);
+    expect(existsSync(siblingFile)).toBe(true);
+  });
+});
+
 describe("em contract (CLI, MIL-129)", () => {
   it("prints the packaged event-modeling-implement/reference/implement.md verbatim", () => {
     const r = em(["contract"], ROOT);
