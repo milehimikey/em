@@ -1858,8 +1858,10 @@ program
   .command("mcp")
   .description(
     "start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-" +
-      "facing alternative to shelling out to `em`; see docs/mcp.md for the full, current tool " +
-      "table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187). " +
+      "facing alternative to shelling out to `em`; every tool mirrors a CLI `--json` surface " +
+      "byte-for-byte. docs/mcp.md isn't vendored into the skill bundle — for the handshake and " +
+      "the full, current tool table (the list changes as commands gain MCP parity, so it's not " +
+      "repeated here — MIL-187) see https://github.com/milehimikey/em/blob/main/docs/mcp.md. " +
       "Equivalent to running the `em-mcp` bin directly",
   )
   .action(async () => {
