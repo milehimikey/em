@@ -97,6 +97,11 @@ draft ──(review session)──▶ reviewed ──(ratification gate)──�
    runs `em slice mark-implemented <model>.em <key> <pr-url>` at merge; the human checkpoint here
    was the PR review, which already happened.
 
+A **continuation slice** (MIL-208 — a later `view X again` instance with no doc of its own)
+skips all four statuses and both gates above: it inherits the originating slice's status
+wholesale, since it isn't a spec unit to review, ratify, or mark implemented separately. See
+[slice-doc-schema.md](slice-doc-schema.md#continuations).
+
 **Re-ratification** re-enters the loop rather than repeating it: `em slice reratify <model>.em
 <key>` ([cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:`, returns a shipped doc
 to `ready-to-implement`, and clears both the old sign-off and the old review record (neither

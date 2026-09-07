@@ -118,6 +118,12 @@ Instances are never connected to one another — continuity is implied by the sh
 the events reaching each instance are what show the view changing over time. See
 [timeline.md](timeline.md).
 
+A later instance is also a **continuation** for the doc lifecycle (MIL-208): it stays a slice on
+the timeline but is not a spec unit — no doc, no status, no ratification, no PR of its own. The
+originating slice's doc carries its behavior, and `em export`'s `alsoReads` field carries the
+union of events read across every instance. See
+[slice-doc-schema.md](slice-doc-schema.md#continuations).
+
 A `ui` only ever wires to a `command` (the State Change pattern) — no pattern has a `ui`
 triggering a `processor`/`automation`/`saga`/`translation`; reactions are triggered by reading a
 read model, or by an external input, never by a person on a screen. A `ui` sharing a reaction's

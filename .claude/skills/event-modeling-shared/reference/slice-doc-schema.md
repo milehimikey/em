@@ -221,6 +221,10 @@ the union of events every later `again` instance of that view reads via `from`, 
 order — so implementing the read model from one export never means walking every `again`
 slice's doc by hand to assemble the full event list.
 
+**Authoring convention:** a continuation's behavior belongs in the originating doc's own
+`## Scenarios (Given / When / Then)` section — one scenario per event a later `again` instance
+feeds — rather than in a doc of its own; no new frontmatter is needed to record it.
+
 **Legacy own doc wins.** A slice that would otherwise be a continuation but still carries its
 own doc — a `note "slices/<again-key>.md"` binding it, or a stray `slices/<again-key>.md` file
 left over from before this rule existed — keeps today's per-instance behavior unchanged: its own

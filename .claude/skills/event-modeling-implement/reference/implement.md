@@ -98,6 +98,10 @@ pattern shape. For machine-readable facts, use `em export <model>.em --slice <sl
 rather than parsing the DSL or the doc's frontmatter yourself: it returns just this slice's
 object — `pattern`, element refs, fields, and the joined doc metadata (`slice.doc.status`,
 `version`, `driftSignal`) — without piping the whole model's export to find one `slice.doc`.
+When the view repeats later via `again` (MIL-208), that same call on the *originating* slice
+also returns `alsoReads: [{ event, atSlice }]` — the union of every event the read model
+consumes across all its later continuations, in timeline order — so implementing it never means
+walking each continuation by hand to assemble the full event list.
 
 If the project ships pattern-specific implementation skills (for example an Axon/DCB skill
 set keyed on a slice doc's `pattern:` frontmatter), route by the slice's pattern and follow
@@ -160,11 +164,15 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 
 **The unit is the slice doc: one slice doc = one PR.** A doc that `covers:` another slice (an
 automation's to-do-list view and its reaction, MIL-121) is one spec, not two — it ships in one
-PR, and `mark-implemented` runs for both keys against the same URL. An `again` view instance has
-its own doc today and therefore its own PR — that's a fact about today's model, not a judgment
-call the constitution gets to override; only MIL-208, changing what an `again` instance is,
-changes it. Never fold multiple slice docs' implementations into one PR because they touch the
-same read model, ship together, or seem small — see §10.
+PR, and `mark-implemented` runs for both keys against the same URL. A read model is one doc,
+even when a `view X again` clause repeats it across later positions on the timeline (MIL-208):
+the later instance is a **continuation** of the slice holding `X`'s first declaration, not a
+spec unit of its own — no doc, no status, no ratification, no PR of its own. Its behavior
+belongs in the originating doc's `## Scenarios` (one scenario per event the later instance
+feeds), not a doc of its own; `em export --slice <originating-key>` lists the full union of
+events the read model consumes across every position via `alsoReads` (§2). Never fold multiple
+slice docs' implementations into one PR because they touch the same read model, ship together,
+or seem small — see §10.
 
 - The PR description cites exactly one slice doc (plus its `covers:` keys, if any) and lists
   that doc's invariants alongside the tests that cover them.
