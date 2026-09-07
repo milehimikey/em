@@ -1273,7 +1273,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     );
     writeFileSync(
       join(dir, "slices", "place.md"),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
         "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n- **INV-2:** rejects an empty cart\n",
     );
     // "INV-1" is cited; "INV-2" is not.
@@ -1284,7 +1284,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
   it("text mode reports cited/uncovered per invariant with citations, plus a summary line", () => {
     const r = em(["coverage", "model.em", "--tests", "tests"], dir);
     expect(r.status).toBe(0); // advisory by default
-    expect(r.stdout).toContain('slice "place" (ready-to-implement):');
+    expect(r.stdout).toContain('slice "place" (implemented):');
     expect(r.stdout).toContain("cited     INV-1");
     expect(r.stdout).toContain("place.test.ts:1");
     expect(r.stdout).toContain("uncovered INV-2");
@@ -1295,15 +1295,16 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     const r = em(["coverage", "model.em", "--tests", "tests", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.coverageSchemaVersion).toBe("1.0");
+    expect(doc.coverageSchemaVersion).toBe("1.1");
     expect(doc.file).toBe("model.em");
     expect(doc.testsDir).toBe("tests");
+    expect(doc.includeReady).toBe(false);
     expect(doc.ok).toBe(false);
     expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
 
     const place = doc.slices.find((s: { key: string }) => s.key === "place");
     expect(place.inScope).toBe(true);
-    expect(place.status).toBe("ready-to-implement");
+    expect(place.status).toBe("implemented");
     expect(place.docReason).toBeNull();
     expect(place.invariants).toContainEqual({ id: "INV-1", cited: true, citations: [{ file: "place.test.ts", line: 1 }] });
     expect(place.invariants).toContainEqual({ id: "INV-2", cited: false, citations: [] });
@@ -1313,6 +1314,63 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     expect(openOrders.status).toBeNull();
     expect(openOrders.docReason).toBe("no-doc-bound");
     expect(openOrders.invariants).toEqual([]);
+  });
+
+  // MIL-207: `ready-to-implement` docs are out of scope by default — a doc-only ratification
+  // PR has nothing yet to cite its invariants.
+  it("MIL-207: a ready-to-implement doc is out of scope by default; --include-ready restores it", () => {
+    const readyDir = mkdtempSync(join(tmpdir(), "em-cli-coverage-ready-"));
+    mkdirSync(join(readyDir, "slices"), { recursive: true });
+    mkdirSync(join(readyDir, "tests"), { recursive: true });
+    writeFileSync(join(readyDir, "model.em"), `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n`);
+    writeFileSync(
+      join(readyDir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n",
+    );
+
+    const byDefault = em(["coverage", "model.em", "--tests", "tests", "--json"], readyDir);
+    expect(byDefault.status).toBe(0);
+    const defaultDoc = JSON.parse(byDefault.stdout);
+    expect(defaultDoc.includeReady).toBe(false);
+    expect(defaultDoc.summary).toEqual({ totalInvariants: 0, cited: 0, uncovered: 0 });
+    const placeByDefault = defaultDoc.slices.find((s: { key: string }) => s.key === "place");
+    expect(placeByDefault.inScope).toBe(false);
+    expect(placeByDefault.status).toBe("ready-to-implement");
+    expect(placeByDefault.invariants).toEqual([]);
+
+    const withReady = em(["coverage", "model.em", "--tests", "tests", "--include-ready", "--json"], readyDir);
+    expect(withReady.status).toBe(0);
+    const readyDoc = JSON.parse(withReady.stdout);
+    expect(readyDoc.includeReady).toBe(true);
+    expect(readyDoc.summary).toEqual({ totalInvariants: 1, cited: 0, uncovered: 1 });
+    const placeWithReady = readyDoc.slices.find((s: { key: string }) => s.key === "place");
+    expect(placeWithReady.inScope).toBe(true);
+    expect(placeWithReady.invariants).toEqual([{ id: "INV-1", cited: false, citations: [] }]);
+
+    rmSync(readyDir, { recursive: true, force: true });
+  });
+
+  // MIL-207: the exact fresh-scaffold scenario the ticket names — a model + a `ready-to-implement`
+  // doc, no `test/` directory created yet. Before the fix this hard-failed with "--tests
+  // directory not found"; after, it's a tolerated 0/0 with a stderr warning, even under --strict.
+  it("MIL-207: tolerates a missing --tests dir when nothing is in scope, even under --strict", () => {
+    const freshDir = mkdtempSync(join(tmpdir(), "em-cli-coverage-fresh-"));
+    mkdirSync(join(freshDir, "slices"), { recursive: true });
+    writeFileSync(join(freshDir, "model.em"), `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n`);
+    writeFileSync(
+      join(freshDir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n",
+    );
+
+    const r = em(["coverage", "model.em", "--tests", "test", "--strict"], freshDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("warn:");
+    expect(r.stderr).toContain("--tests directory not found: test");
+    expect(r.stdout).toContain("0 invariant(s) checked, 0 uncovered");
+
+    rmSync(freshDir, { recursive: true, force: true });
   });
 
   it("advisory mode exits 0 even with uncovered IDs; --strict exits non-zero", () => {
@@ -2456,6 +2514,27 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "no-such-dir"], modelDir);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("--tests directory not found");
+  });
+
+  // MIL-207: same leniency as `em coverage` — a missing --tests dir is only a defect when at
+  // least one model has something in scope (`implemented`) to check.
+  it("MIL-207: tolerates a missing --tests dir when nothing is in scope", () => {
+    const freshDir = mkdtempSync(join(tmpdir(), "em-cli-status-fresh-"));
+    mkdirSync(join(freshDir, "slices"), { recursive: true });
+    writeFileSync(join(freshDir, "model.em"), `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n`);
+    writeFileSync(
+      join(freshDir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n",
+    );
+
+    const r = em(["status", "model.em", "--tests", "test", "--json"], freshDir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("warn:");
+    expect(r.stderr).toContain("--tests directory not found: test");
+    expect(JSON.parse(r.stdout).invariants).toEqual({ testsDir: "test", total: 0, cited: 0, uncovered: 0 });
+
+    rmSync(freshDir, { recursive: true, force: true });
   });
 
   it("refuses (exit 1) when a model has errors, printing diagnostics instead of a report", () => {
@@ -3981,6 +4060,27 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
     const conform = readFileSync(join(dir, ".github", "workflows", "em-conform.yml"), "utf8");
     expect(conform).toContain("name: model-conformance");
     expect(conform).toContain('/event-modeling conform"');
+  });
+
+  // MIL-207: the ticket's own regression scenario — the generated coverage job (`em coverage
+  // <model> --tests <testsDir> --strict`) must be green on a fresh scaffold: a model with a
+  // `ready-to-implement` doc (ratified, not yet implemented) and no `test/` directory at all.
+  it("the generated coverage job is green on a fresh scaffold with a ready-to-implement doc (MIL-207)", () => {
+    em(["ci", "init", "model.em"], dir);
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "model.em"), `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n`);
+    writeFileSync(
+      join(dir, "slices", "place.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+        "## Invariants / Business Rules\n- **INV-1:** rejects a negative amount\n",
+    );
+    // No `test/` directory created — same as Week 0 of a real ratification stack, before any
+    // slice has shipped.
+    expect(existsSync(join(dir, "test"))).toBe(false);
+
+    const r = em(["coverage", "model.em", "--tests", "test", "--strict"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("0 invariant(s) checked, 0 uncovered");
   });
 
   it("--tests changes the coverage/status-badge steps' --tests argument", () => {

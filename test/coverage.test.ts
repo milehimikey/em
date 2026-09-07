@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { extractInvariantIds, scanTestCitations, buildCoverageReport } from "../src/cli/coverage.js";
+import { extractInvariantIds, scanTestCitations, buildCoverageReport, resolveScopedSlices } from "../src/cli/coverage.js";
 
 describe("extractInvariantIds", () => {
   it("extracts the template's bare-numbered form", () => {
@@ -192,21 +192,33 @@ describe("buildCoverageReport", () => {
     );
   }
 
-  function reportFor(src: string, tests: string = testsDir) {
+  function reportFor(src: string, tests: string = testsDir, includeReady = false) {
     const { model, refs } = compile(src);
-    return buildCoverageReport(model, refs, dir, tests);
+    return buildCoverageReport(model, refs, dir, tests, includeReady);
   }
 
-  it("marks a ready-to-implement slice with a bound doc as in scope", () => {
+  // MIL-207: ratification (-> `ready-to-implement`) is the hand-off *before* implementation —
+  // a ready-to-implement doc has, by definition, nothing yet to cite it, so it's out of scope
+  // by default (the every-ratification-PR-fails-coverage bug this fixes).
+  it("marks a ready-to-implement slice out of scope by default (MIL-207)", () => {
     writeDoc("place", "ready-to-implement", "## Invariants\n- **INV-1:** must hold\n");
     const report = reportFor(`slice "Place" {\n  command Do Thing note "slices/place.md"\n}`);
     const entry = report.slices.find((s) => s.key === "place")!;
+    expect(entry.inScope).toBe(false);
+    expect(entry.status).toBe("ready-to-implement");
+    expect(entry.invariants).toEqual([]);
+  });
+
+  it("--include-ready (includeReady: true) restores a ready-to-implement slice to scope (MIL-207)", () => {
+    writeDoc("place-ready", "ready-to-implement", "## Invariants\n- **INV-1:** must hold\n");
+    const report = reportFor(`slice "Place Ready" {\n  command Do Thing note "slices/place-ready.md"\n}`, testsDir, true);
+    const entry = report.slices.find((s) => s.key === "place-ready")!;
     expect(entry.inScope).toBe(true);
     expect(entry.status).toBe("ready-to-implement");
     expect(entry.invariants).toEqual([{ id: "INV-1", cited: false, citations: [] }]);
   });
 
-  it("marks an implemented slice with a bound doc as in scope", () => {
+  it("marks an implemented slice with a bound doc as in scope, even by default", () => {
     writeDoc("ship", "implemented", "- **INV-1:** must hold\n");
     const report = reportFor(`slice "Ship" {\n  command Do Thing note "slices/ship.md"\n}`);
     expect(report.slices.find((s) => s.key === "ship")!.inScope).toBe(true);
@@ -274,5 +286,45 @@ describe("buildCoverageReport", () => {
     const mentioner = report.slices.find((s) => s.key === "mentioner")!;
     expect(origin.invariants.map((i) => i.id)).toEqual(["INV-A-1"]);
     expect(mentioner.invariants).toEqual([]);
+  });
+});
+
+// MIL-207: `resolveScopedSlices` is the cheap, test-tree-free half of `buildCoverageReport` — the
+// thing every `--tests <dir>` consumer calls first to decide whether a missing directory is a
+// defect (something in scope) or a fresh scaffold (nothing in scope yet). Kept in sync with
+// `buildCoverageReport`'s own scoping by construction (buildCoverageReport calls it internally),
+// but tested directly here since callers (cli.ts, mcp/server.ts) depend on it standalone.
+describe("resolveScopedSlices", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-scoped-slices-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "ready.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n- **INV-1:** holds\n",
+    );
+    writeFileSync(
+      join(dir, "slices", "shipped.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n---\n- **INV-2:** holds\n",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const SRC =
+    `slice "Ready" {\n  command Do Ready note "slices/ready.md"\n}\n` +
+    `slice "Shipped" {\n  command Do Shipped note "slices/shipped.md"\n}\n`;
+
+  it("default (includeReady: false): only the implemented slice is in scope", () => {
+    const { model, refs } = compile(SRC);
+    const scoped = resolveScopedSlices(model, refs, dir, false);
+    expect(scoped.find((s) => s.key === "ready")!.inScope).toBe(false);
+    expect(scoped.find((s) => s.key === "shipped")!.inScope).toBe(true);
+  });
+
+  it("includeReady: true: both the ready-to-implement and implemented slices are in scope", () => {
+    const { model, refs } = compile(SRC);
+    const scoped = resolveScopedSlices(model, refs, dir, true);
+    expect(scoped.find((s) => s.key === "ready")!.inScope).toBe(true);
+    expect(scoped.find((s) => s.key === "shipped")!.inScope).toBe(true);
   });
 });

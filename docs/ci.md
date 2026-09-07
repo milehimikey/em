@@ -179,11 +179,18 @@ Same "opt-in unless you install the preset" story as `em ledger` above — `--st
 default in the `em ci init` scaffold, gating the PR rather than only reporting.
 
 `em coverage` (MIL-130) mechanizes `reference/implement.md`'s definition-of-done citation check:
-for every slice whose doc `status` is `ready-to-implement` or `implemented`, every `INV-*`
-invariant ID mentioned in the doc's body must be cited by at least one test under `--tests
-<dir>`. Advisory by default — uncovered IDs are reported but don't fail the run — because a
-freshly-added invariant with a test still in flight is a normal, transient state, not
-automatically a defect the way a ledger mismatch is. `--strict` turns it into a hard CI gate:
+for every slice whose doc `status` is `implemented` (MIL-207), every `INV-*` invariant ID
+mentioned in the doc's body must be cited by at least one test under `--tests <dir>`. Advisory by
+default — uncovered IDs are reported but don't fail the run — because a freshly-added invariant
+with a test still in flight is a normal, transient state, not automatically a defect the way a
+ledger mismatch is. `--strict` turns it into a hard CI gate:
+
+Scope starts at `implemented`, not `ready-to-implement` — ratification is the hand-off *before*
+implementation, and a `ready-to-implement` doc has, by definition, nothing yet to cite it.
+That's also why the generated job is green on a fresh scaffold and on a doc-only ratification
+PR: with zero `implemented` docs there's nothing in scope, so a `test/` directory that doesn't
+exist yet (Week 0, before any slice has shipped) is tolerated rather than a hard failure. Pass
+`--include-ready` for the older, forward-looking report (also counts `ready-to-implement` docs).
 
 ```yaml
       - name: Check invariant test coverage

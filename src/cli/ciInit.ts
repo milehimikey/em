@@ -115,6 +115,9 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
         with:
           node-version: 20
       - name: Check invariant test coverage
+        # Counts INV-* IDs in \`implemented\` slice docs only (MIL-207) — a ready-to-implement
+        # doc has nothing yet to cite it, so this job is green on a fresh scaffold and on a
+        # doc-only ratification PR. Pass --include-ready for the older, forward-looking report.
         run: ${em} coverage "${model}" --tests "${testsDir}" --strict
 
   ledger:

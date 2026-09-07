@@ -69,11 +69,27 @@ const OWNERSHIP_HEADING_RE = /^##\s+(?:Invariants(?:\s*\/\s*Business Rules)?|Del
  *  same as any other continuation line, and never contributes (or steals) an ID. */
 const STRUCTURAL_LINE_RE = /^(?:[-*]\s|#{3,6}\s)/;
 
-/** Statuses `reference/implement.md`'s coverage gate applies to — a slice hasn't reached the
- *  point of needing test citations before `ready-to-implement`, and stays in scope forever after
- *  once `implemented` (tests shouldn't regress away from citing an invariant just because the
- *  slice shipped). Anything else (`draft`, `reviewed`, or no doc at all) is out of scope. */
-const IN_SCOPE_STATUSES = new Set(["ready-to-implement", "implemented"]);
+/** Statuses `reference/implement.md`'s coverage gate applies to, by default (MIL-207). Doc
+ *  ratification (`draft` -> `reviewed` -> `ready-to-implement`) is the hand-off *before*
+ *  implementation, not a claim that implementing code exists yet — a `ready-to-implement` doc
+ *  has, by definition, nothing to cite its invariants, so scoping the gate to it made every
+ *  ratification PR fail coverage before a line of implementing code (or its test) existed
+ *  (`em ci init`'s generated job, gating every PR on `main`). Scope starts at `implemented` and
+ *  stays in scope forever after (tests shouldn't regress away from citing an invariant just
+ *  because the slice shipped). Anything else (`draft`, `reviewed`, or no doc at all) is out of
+ *  scope. */
+const IN_SCOPE_STATUSES_DEFAULT = new Set(["implemented"]);
+
+/** `--include-ready` (CLI `em coverage`; `includeReady` on the MCP `coverage` tool's input)
+ *  opts back into the pre-MIL-207 scope — `ready-to-implement` docs included — for a team that
+ *  wants the forward-looking report: which invariants will need a citing test once
+ *  implementation starts. Never the default, since that's exactly the every-ratification-PR-
+ *  is-red behavior MIL-207 fixes. */
+const IN_SCOPE_STATUSES_WITH_READY = new Set(["ready-to-implement", "implemented"]);
+
+function inScopeStatuses(includeReady: boolean): Set<string> {
+  return includeReady ? IN_SCOPE_STATUSES_WITH_READY : IN_SCOPE_STATUSES_DEFAULT;
+}
 
 /**
  * Extract every distinct `INV-*` token this slice doc *defines*, in first-occurrence order (a
@@ -187,8 +203,9 @@ export interface SliceCoverage {
    *  has `docReason: null`). Lets an out-of-scope reader tell "nothing bound yet" apart from
    *  "bound but broken" without re-running the join themselves. */
   docReason: string | null;
-  /** True when this slice's doc was found, its frontmatter usable, and `status` is
-   *  `ready-to-implement` or `implemented` — the only slices `invariants` is populated for. */
+  /** True when this slice's doc was found, its frontmatter usable, and `status` is in scope —
+   *  `implemented` by default, plus `ready-to-implement` with `--include-ready` (MIL-207). The
+   *  only slices `invariants` is populated for. */
   inScope: boolean;
   invariants: InvariantCoverage[];
 }
@@ -201,49 +218,82 @@ export interface CoverageReport {
   uncoveredCount: number;
 }
 
+/** One slice's doc-join outcome, cheap to resolve (no test-tree scan) — the bit every
+ *  `--tests <dir>` consumer needs to answer "is there anything in scope at all?" before it
+ *  decides whether a missing test directory is an error (MIL-207: with zero in-scope docs
+ *  there's nothing to cite, so a fresh scaffold's absent `test/` isn't a defect). */
+export interface ScopedSlice {
+  key: string;
+  status: string | null;
+  docReason: string | null;
+  inScope: boolean;
+  /** The bound doc's path (`SliceDocExport.path`) — present even when out of scope or unbound,
+   *  same convention as `SliceCoverage.status`/`docReason` above. */
+  docPath: string;
+}
+
 /**
- * Assemble the full coverage report: for every slice in the model, resolve its doc via the same
- * note-binding join `em export`/`--slice-ready` use (resolveSliceDocJoin), decide in-scope status,
- * extract invariant IDs for in-scope slices, then scan `testsDir` once for every ID across the
- * whole model (cheaper than one scan per slice, and citations are looked up per-slice from the
- * single resulting map). `baseDir` is the `.em` file's directory, same convention every doc/note
- * path in `em` uses.
+ * Resolve every slice's doc-join and in-scope status, without touching the test tree. Shared by
+ * `buildCoverageReport` (below) and every `--tests` consumer that needs to know, before checking
+ * whether `--tests <dir>` exists, whether anything is in scope — so "is there anything to check"
+ * has exactly one answer everywhere it's asked (MIL-207: don't fork the leniency logic per
+ * consumer). `includeReady` selects `IN_SCOPE_STATUSES_WITH_READY` over the MIL-207 default.
+ */
+export function resolveScopedSlices(
+  model: NormalizedModel,
+  refs: RefsResult,
+  baseDir: string,
+  includeReady: boolean,
+): ScopedSlice[] {
+  const scopeStatuses = inScopeStatuses(includeReady);
+  return model.slices.map((slice, i) => {
+    const key = refs.sliceKeys[i];
+    const { doc } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
+    const inScope = doc.reason === null && doc.status !== null && scopeStatuses.has(doc.status);
+    return { key, status: doc.status, docReason: doc.reason, inScope, docPath: doc.path };
+  });
+}
+
+/**
+ * Assemble the full coverage report: for every slice in the model, resolve its doc-join/in-scope
+ * status (`resolveScopedSlices`), extract invariant IDs for in-scope slices, then scan `testsDir`
+ * once for every ID across the whole model (cheaper than one scan per slice, and citations are
+ * looked up per-slice from the single resulting map). `baseDir` is the `.em` file's directory,
+ * same convention every doc/note path in `em` uses. `includeReady` (MIL-207, default false)
+ * widens scope to also count `ready-to-implement` docs — when false (the default) and nothing in
+ * the model is `implemented` yet, `allIds` stays empty and `testsDir` is never read, so calling
+ * this with a `testsDir` that doesn't exist yet is safe in that case (see callers' leniency
+ * check via `resolveScopedSlices` before this).
  */
 export function buildCoverageReport(
   model: NormalizedModel,
   refs: RefsResult,
   baseDir: string,
   testsDir: string,
+  includeReady = false,
 ): CoverageReport {
-  const scoped: Array<{ key: string; status: string | null; docReason: string | null; inScope: boolean; ids: string[] }> =
-    [];
+  const scoped = resolveScopedSlices(model, refs, baseDir, includeReady);
   const allIds = new Set<string>();
 
-  for (let i = 0; i < model.slices.length; i++) {
-    const slice = model.slices[i];
-    const key = refs.sliceKeys[i];
-    const { doc } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
-    const inScope = doc.reason === null && doc.status !== null && IN_SCOPE_STATUSES.has(doc.status);
-
+  const withIds = scoped.map(({ key, status, docReason, inScope, docPath }) => {
     let ids: string[] = [];
     if (inScope) {
-      // Re-derive the bound doc's key from doc.path rather than assuming it's this slice's own
-      // — MIL-121's ratified cross-binding can resolve `doc` to a DIFFERENT slice's doc, same
+      // Re-derive the bound doc's key from docPath rather than assuming it's this slice's own
+      // — MIL-121's ratified cross-binding can resolve the doc to a DIFFERENT slice's doc, same
       // re-derivation sliceReadyValidate.ts uses for Open Questions.
-      const boundKey = doc.path.replace(/^slices\//, "").replace(/\.md$/, "");
+      const boundKey = docPath.replace(/^slices\//, "").replace(/\.md$/, "");
       const parsed = readSliceDoc(baseDir, boundKey);
       if (parsed) ids = extractInvariantIds(parsed.body);
     }
-
-    scoped.push({ key, status: doc.status, docReason: doc.reason, inScope, ids });
     for (const id of ids) allIds.add(id);
-  }
+    return { key, status, docReason, inScope, ids };
+  });
 
   const citations = scanTestCitations(testsDir, [...allIds]);
 
   let totalInvariants = 0;
   let uncoveredCount = 0;
-  const slices: SliceCoverage[] = scoped.map(({ key, status, docReason, inScope, ids }) => {
+  const slices: SliceCoverage[] = withIds.map(({ key, status, docReason, inScope, ids }) => {
     const invariants: InvariantCoverage[] = ids.map((id) => {
       const cs = citations.get(id) ?? [];
       totalInvariants++;

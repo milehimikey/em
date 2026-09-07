@@ -42,7 +42,7 @@ import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
-import { buildCoverageReport, CoverageReport } from "../cli/coverage.js";
+import { buildCoverageReport, resolveScopedSlices, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
 import { readContract, contractPath } from "../cli/contract.js";
 import {
@@ -352,32 +352,41 @@ export function createServer(): McpServer {
       title: "Check invariant-to-test citation coverage",
       description:
         "Return the same JSON document `em coverage <file> --tests <dir> --json` prints: for " +
-        "every slice whose joined doc status is ready-to-implement or implemented, each INV-* " +
-        "invariant ID found in the doc body, whether a test file under `testsDir` cites it " +
-        "(word-boundary match on the exact ID), and every citing file:line. Mechanizes " +
-        "reference/implement.md's definition-of-done citation check — confirms an ID is cited, " +
-        "not that the citing test is good or passing (that stays with review and CI). Refuses " +
-        "(tool error) if the model has errors, or if `testsDir` doesn't exist.",
+        "every slice whose joined doc status is implemented (or, with includeReady, also " +
+        "ready-to-implement), each INV-* invariant ID found in the doc body, whether a test " +
+        "file under `testsDir` cites it (word-boundary match on the exact ID), and every " +
+        "citing file:line. Mechanizes reference/implement.md's definition-of-done citation " +
+        "check — confirms an ID is cited, not that the citing test is good or passing (that " +
+        "stays with review and CI). Refuses (tool error) if the model has errors, or if " +
+        "`testsDir` doesn't exist AND at least one doc is in scope (MIL-207: a fresh scaffold " +
+        "with zero implemented docs has nothing to check yet, so a missing testsDir is fine).",
       inputSchema: {
         file: fileParam,
         testsDir: z.string().describe("directory to scan recursively for test files citing invariant IDs"),
+        includeReady: z
+          .boolean()
+          .optional()
+          .describe("also count ready-to-implement docs, not just implemented (MIL-207, forward-looking report)"),
       },
     },
-    async ({ file, testsDir }) => {
+    async ({ file, testsDir, includeReady }) => {
       const compiled = compileFile(file);
       if ("error" in compiled) return errorResult(compiled.error);
       const { model, refs, diagnostics } = compiled;
       if (hasErrors(diagnostics)) {
         return errorResult(`not checking coverage: "${file}" has errors — run \`validate\` first and fix them`);
       }
+      const baseDir = dirname(file);
+      const scope = !!includeReady;
+      const anyInScope = resolveScopedSlices(model, refs, baseDir, scope).some((s) => s.inScope);
       if (!existsSync(testsDir)) {
-        return errorResult(`testsDir not found: ${testsDir}`);
-      }
-      if (!statSync(testsDir).isDirectory()) {
+        if (anyInScope) return errorResult(`testsDir not found: ${testsDir}`);
+        // MIL-207: nothing in scope yet — same leniency `em coverage` gives a fresh scaffold.
+      } else if (!statSync(testsDir).isDirectory()) {
         return errorResult(`testsDir is not a directory: ${testsDir}`);
       }
-      const report = buildCoverageReport(model, refs, dirname(file), testsDir);
-      return textResult(buildCoverageJson(file, testsDir, report));
+      const report = buildCoverageReport(model, refs, baseDir, testsDir, scope);
+      return textResult(buildCoverageJson(file, testsDir, report, scope));
     },
   );
 
@@ -425,9 +434,11 @@ export function createServer(): McpServer {
       },
     },
     async ({ files, testsDir, repo }) => {
-      if (testsDir !== undefined) {
-        if (!existsSync(testsDir)) return errorResult(`testsDir not found: ${testsDir}`);
-        if (!statSync(testsDir).isDirectory()) return errorResult(`testsDir is not a directory: ${testsDir}`);
+      // MIL-207: the "directory not found" half of the testsDir check needs the compiled
+      // model+refs to know whether it's actually a defect (see below) — the isDirectory half
+      // doesn't, so it stays up front.
+      if (testsDir !== undefined && existsSync(testsDir) && !statSync(testsDir).isDirectory()) {
+        return errorResult(`testsDir is not a directory: ${testsDir}`);
       }
 
       const compiledFiles: Array<{ file: string; compiled: CompiledSource }> = [];
@@ -438,6 +449,15 @@ export function createServer(): McpServer {
           return errorResult(`not reporting status: "${file}" has errors — run \`validate\` first and fix them`);
         }
         compiledFiles.push({ file, compiled });
+      }
+
+      if (testsDir !== undefined && !existsSync(testsDir)) {
+        // Same leniency as `em coverage`/`em status`: only a defect when at least one model has
+        // something in scope (`implemented`) to check.
+        const anyInScope = compiledFiles.some(({ file, compiled }) =>
+          resolveScopedSlices(compiled.model, compiled.refs, dirname(file), false).some((s) => s.inScope),
+        );
+        if (anyInScope) return errorResult(`testsDir not found: ${testsDir}`);
       }
 
       const sliceFacts: SliceStatusFact[] = [];

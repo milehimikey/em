@@ -11,7 +11,7 @@
 | `em typespec <file>` | **Experimental/POC** (MIL-159) — generate a TypeSpec contract for a model's commands, public events, and public views |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
-| `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in a ready-to-implement/implemented slice doc is cited by a test (advisory by default, `--strict` for CI) |
+| `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement) |
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
 | `em system <manifest>` | Verify a seam manifest (`system.yaml`) — which model's `public` event/view feeds which other model's reaction — against the models' exports, and emit the org-level context map |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
@@ -1114,21 +1114,27 @@ every other command's own schema):
 
 Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every
 `INV-<MNEMONIC>-n` has a test that cites its ID" (MIL-130). For each slice whose joined doc's `status` is
-`ready-to-implement` or `implemented`, extracts every `INV-*` invariant ID the doc's own
-`## Invariants / Business Rules` or `## Delta` sections *define* (MIL-149; not every ID its prose
-elsewhere merely mentions — see **Token format** below), then scans `--tests <dir>` recursively
-for lines that cite each ID. Reports, per ID,
+`implemented` (MIL-207 — or, with `--include-ready`, also `ready-to-implement`), extracts every
+`INV-*` invariant ID the doc's own `## Invariants / Business Rules` or `## Delta` sections
+*define* (MIL-149; not every ID its prose elsewhere merely mentions — see **Token format**
+below), then scans `--tests <dir>` recursively for lines that cite each ID. Reports, per ID,
 **cited** (every citing `file:line`) or **uncovered**. Checks that an ID is *cited* — not that
 the citing test is good or passing; test quality stays with review, and test passing stays with
 CI (see [ci.md](ci.md#em-coverage-opt-in) for the CI recipe).
 
+**Scope defaults to `implemented` only (MIL-207).** Ratification (`draft` -> `reviewed` ->
+`ready-to-implement`) is the hand-off *before* implementation, not a claim that code (or a test)
+exists yet — gating on `ready-to-implement` made every ratification PR fail coverage before any
+implementing code existed. `--include-ready` opts back into the older, forward-looking scope
+(`ready-to-implement` and `implemented`) for a team that wants early visibility into which
+invariants will need a citation once implementation starts.
+
 Doc resolution is the same note-binding join every other doc-aware command uses
 (`resolveSliceDocJoin`, [docJoin.ts](../src/catalog/docJoin.ts)) — the same join `em export`'s
 doc field and `--slice-ready` use. A slice with no doc bound, a binding pointing at a missing
-file, or unusable frontmatter is simply **not in scope** (none of those can carry a
-ready/implemented status); a bound, usable doc whose `status` isn't `ready-to-implement` or
-`implemented` is in scope for nothing (reported, `invariants: []`) rather than silently
-dropped — see the `--json` shape below.
+file, or unusable frontmatter is simply **not in scope** (none of those can carry an in-scope
+status); a bound, usable doc whose `status` isn't in scope is in scope for nothing (reported,
+`invariants: []`) rather than silently dropped — see the `--json` shape below.
 
 **Token format.** IDs are hand-authored per docs/slice-doc-schema.md ("give each a stable ID"),
 not machine-generated, so no single fixed shape is enforced — the extraction regex matches
@@ -1150,6 +1156,7 @@ while explaining this doc's own rule (MIL-155). Citation matching is word-bounda
 |---|---|
 | `--tests <dir>` | Directory to scan recursively for test files citing invariant IDs (**required**) |
 | `--strict` | Exit non-zero if any invariant ID has zero citations (CI) |
+| `--include-ready` | Also count `ready-to-implement` docs, not just `implemented` (MIL-207, forward-looking report) |
 | `--json` | Print a JSON document instead of the text report |
 
 ```bash
@@ -1163,13 +1170,17 @@ failure; `--strict` is the opt-in CI gate (unlike `em ledger`, where every findi
 defect once you've opted into running the command at all).
 
 A model that doesn't compile is reported with its diagnostics, same as every other command — it
-can't be coverage-checked. A missing `--tests <dir>` is a hard CLI error (no default guessing).
+can't be coverage-checked. A missing `--tests <dir>` is a hard CLI error **unless nothing is in
+scope** (MIL-207): with zero `implemented` docs (zero `ready-to-implement` too, under
+`--include-ready`) there's nothing yet to cite, so a fresh scaffold or a doc-only ratification
+PR reports `0 invariant(s) checked, 0 uncovered` (exit 0, even under `--strict`) with a one-line
+stderr `warn:` that the directory doesn't exist yet, instead of failing outright.
 
 Example output:
 
 ```
 $ em coverage model.em --tests test/
-slice "checkout" (ready-to-implement):
+slice "checkout" (implemented):
   cited     INV-CHK-1
               test/checkout.test.ts:42
   uncovered INV-CHK-2
@@ -1182,11 +1193,13 @@ $ echo $?
 1
 ```
 
-**`--json` shape** (`coverageSchemaVersion: "1.0"`, versioned independently of the npm package
+**`--json` shape** (`coverageSchemaVersion: "1.1"`, versioned independently of the npm package
 and every other command's own schema):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
 - `file` / `testsDir` — the inputs, verbatim.
+- `includeReady` — whether this run counted `ready-to-implement` docs too (MIL-207,
+  `--include-ready`), `false` by default.
 - `ok` — `true` when every in-scope invariant ID has at least one citation (advisory verdict;
   independent of whether `--strict` was passed).
 - `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.
@@ -1198,8 +1211,8 @@ and every other command's own schema):
     doc joined cleanly (whether or not the slice is in scope; a `draft` slice with a perfectly
     good doc still has `docReason: null`). Lets a reader tell "nothing bound yet" apart from
     "bound but broken" without re-deriving the join.
-  - `inScope` — `true` only when the doc was found, usable, and `status` is
-    `ready-to-implement` or `implemented`.
+  - `inScope` — `true` only when the doc was found, usable, and `status` is `implemented` (or,
+    with `includeReady`, also `ready-to-implement`).
   - `invariants` — `{ id, cited, citations }[]`, empty for an out-of-scope slice. `citations` is
     `{ file, line }[]`, relative to `testsDir`.
 
@@ -1278,7 +1291,7 @@ for the same models/tests/git state, same posture as `em export`/`em diff`.
 
 | Flag | Effect |
 |---|---|
-| `--tests <dir>` | Directory to scan for `INV-*` test citations — enables invariant coverage totals (omitted: `invariants` is `null`) |
+| `--tests <dir>` | Directory to scan for `INV-*` test citations — enables invariant coverage totals (omitted: `invariants` is `null`). Missing dir: an error only when at least one model has an `implemented` doc in scope (MIL-207) |
 | `--repo <path>` | Git repo to compute commits-behind-HEAD in (default: each model's own directory — the common single-repo project case; pass this when the implementation lives in a different repo, same convention as `em conform-scope --repo`) |
 | `--json` | Print a JSON document instead of the text report (see below) |
 | `--md` | Print a markdown block suited for README embedding |
