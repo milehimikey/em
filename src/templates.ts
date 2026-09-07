@@ -294,7 +294,10 @@ it is silent, these apply.
 - **Reviewers:** {{who — a team, a CODEOWNERS rule, the slice's ratifier}}
 - **What blocks a merge:** {{e.g. a failing suite, an uncovered invariant, a gap that belongs back
   at the model}}
-- **Branch / commit conventions:** {{...}}
+- **Branch / commit conventions:** {{...}} — name only branch naming and commit-message style
+  here. **One slice doc = one PR is the implement contract's rule, not this document's to
+  amend** — a \`covers:\` doc ships as one PR for both keys; an \`again\` view instance has its own
+  doc and its own PR. See the agent guide's §5/§10.
 - **At merge:** run \`em slice mark-implemented <model>.em <slice-key> <pr-url>\` — the one edit an
   implementing agent makes to a ratified slice doc, run by {{the PR author | CI}}. Never bump
   \`version:\`; that moves only when a delta is ratified.
