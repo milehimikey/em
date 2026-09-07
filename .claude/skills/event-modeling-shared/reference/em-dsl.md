@@ -516,6 +516,11 @@ slice "Read Quote — created" {
   Keep the read model adjacent to its event, and keep a sub-flow that detours into another context
   together rather than parking it at the end of the model.
 
+What this means for whoever builds a slice, not just whoever draws it: a `ui` trigger or
+consumer is an obligation to ship an endpoint, no `ui` means internal-only, and `public` marks
+the published integration surface — see `reference/implement.md`'s "Interface obligations"
+paragraph in the `event-modeling-implement` skill (§2).
+
 ### Reaction wiring — no positional gotcha
 
 A reaction's command is inferred from **same-slice presence**, exactly like `ui -> command`: put

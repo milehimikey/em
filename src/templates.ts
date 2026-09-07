@@ -232,6 +232,9 @@ technical choice" an implementing agent would otherwise make alone.
 - **Architectural pattern:** {{e.g. event-sourced CQRS with vertical slices; layered service over
   a relational store; functional core / imperative shell}}
 - **Where a slice's code lives:** {{one package per slice, per context, ...}}
+- **Interface conventions:** {{resource style — REST/RPC/GraphQL, etc.; error/rejection mapping;
+  versioning; auth at the edge — the shape every \`ui\`-triggered command or \`ui\`-consumed view's
+  endpoint follows, decided once here rather than invented per slice}}
 
 Routing — which implementation skill or approach each of the four slice patterns uses:
 

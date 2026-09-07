@@ -175,11 +175,13 @@ mechanical gate with no judgment call in it.
   propose model edits for a session to take up. Proposals, not commits.
 - **Implementation (stage 4)** — once a slice passes the readiness gate, implementation is
   agent-suitable end to end: the slice doc is a complete brief, the invariants and scenarios
-  compile to tests, and the PR review is the human checkpoint. The bundled skill ships the
-  full contract an implementing agent must follow —
+  compile to tests, and the PR review is the human checkpoint. Before a project's first slice
+  PR, a one-time foundation PR puts every model event (and the constitution's shared interface
+  shell) in place, so no slice PR ever carries another slice's contracts. The bundled skill
+  ships the full contract an implementing agent must follow —
   [the agent guide](../.claude/skills/event-modeling-implement/reference/implement.md) — including the
-  readiness gate, the read-only rule on ratified docs, the propose-don't-decide rule for
-  gaps, the lifecycle flip at merge, and the spec-kit adapter.
+  readiness gate, the foundation step, the read-only rule on ratified docs, the propose-don't-decide
+  rule for gaps, the lifecycle flip at merge, and the spec-kit adapter.
 - **The conform sweep (stage 6)** — an agent gathers the evidence and writes the report;
   every verdict in it is a proposal for stage 7.
 
