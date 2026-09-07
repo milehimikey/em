@@ -100,6 +100,7 @@ function layout(title: string, bodyHtml: string, homeHref: string): string {
     .doc h1 { font-size: 1.3rem; }
     .doc h2 { font-size: 1.05rem; }
     .no-doc { color: #7b8794; font-style: italic; }
+    .covered-by { color: #52606d; font-style: italic; }
     code { background: #eee; padding: .05rem .3rem; border-radius: 3px; }
   </style>
 </head>
@@ -163,8 +164,17 @@ export interface SlicePageArgs {
   pattern: SlicePattern;
   /** Internal Element.id -> em export ref, for stable per-row anchors. */
   elementRefs: Map<string, string>;
+  /** This slice's own doc, OR (MIL-121/MIL-137) a sibling doc that ratifies coverage of this
+   *  slice — either way, the doc whose status/pattern this slice's badge and the index Status
+   *  column should show. Which one it is is `coveredBy`'s job to say. */
   doc: SliceDoc | null;
-  /** slices/<slug>.md, relative to the source .em file — shown when no doc was found. */
+  /** Non-null exactly when `doc` came from a covering sibling rather than this slice's own
+   *  `slices/<key>.md` (MIL-121 `covers:`, MIL-137) — the detail page shows a "documented as
+   *  part of" banner linking to the covering slice's own page instead of inlining `doc`'s body
+   *  under this slice's name. */
+  coveredBy: { key: string; name: string } | null;
+  /** slices/<slug>.md, relative to the source .em file — shown when no doc was found (own or
+   *  covering). */
   docExpectedPath: string;
 }
 
@@ -210,11 +220,16 @@ ${rows}
 }
 
 export function renderSlicePage(args: SlicePageArgs): string {
-  const { modelName, diagramFile, sliceDiagramFile, slice, pattern, elementRefs, doc, docExpectedPath } = args;
+  const { modelName, diagramFile, sliceDiagramFile, slice, pattern, elementRefs, doc, coveredBy, docExpectedPath } = args;
 
-  const docSection = doc
-    ? `    <div class="doc">${doc.html}</div>`
-    : `    <p class="no-doc">No slice doc found at <code>${escapeHtml(docExpectedPath)}</code>.</p>`;
+  // coveredBy checked first: doc is non-null here too (it's the covering doc, borrowed for
+  // status/pattern purposes — see SlicePageArgs), but its body is deliberately never inlined
+  // under a different slice's name (orchestrator ruling, MIL-137) — only the banner is.
+  const docSection = coveredBy
+    ? `    <p class="covered-by">Documented as part of <a href="${escapeHtml(coveredBy.key)}.html">${escapeHtml(coveredBy.name)}</a> — see <code>slices/${escapeHtml(coveredBy.key)}.md</code>.</p>`
+    : doc
+      ? `    <div class="doc">${doc.html}</div>`
+      : `    <p class="no-doc">No slice doc found at <code>${escapeHtml(docExpectedPath)}</code>.</p>`;
 
   return layout(
     `${slice.name} — ${modelName}`,

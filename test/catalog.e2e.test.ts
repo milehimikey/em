@@ -192,4 +192,48 @@ slice "Place Order" {
     expect(collision!.diagnostics[0].message).toContain('slice key "checkout"');
     expect(collision!.diagnostics[0].refs).toEqual(["checkout", fileA, fileB]);
   });
+
+  // MIL-137: a slice with no own doc that's covered by a sibling's `covers:` (MIL-121) gets a
+  // "documented as part of" banner on its detail page, linking to the covering slice's own
+  // page — never the covering doc's body rendered under the covered slice's name.
+  it("shows a 'documented as part of' banner on a covered slice's page, and never inlines the covering doc's body", async () => {
+    const coveredDir = join(dir, "covered-model");
+    mkdirSync(join(coveredDir, "slices"), { recursive: true });
+    const COVERED_MODEL = `slice "View Only" {
+  view Some View from "Thing Done"
+}
+slice "Covering Slice" {
+  processor Reacts from "Some View"
+  command React
+  event Reacted
+}
+`;
+    const coveredFile = join(coveredDir, "model.em");
+    writeFileSync(coveredFile, COVERED_MODEL);
+    writeFileSync(
+      join(coveredDir, "slices", "covering-slice.md"),
+      "---\nstatus: ready-to-implement\ncovers: view-only\n---\n\n## Intent\nBody content that must not leak onto a different slice page.\n",
+    );
+
+    const { model, grid, dot, refs } = compile(COVERED_MODEL);
+    const outDir = join(coveredDir, "out");
+    const result = await buildCatalog([{ file: coveredFile, model, grid, dot, refs }], { outDir });
+    expect(result.diagnostics).toEqual([]);
+
+    const coveredPage = readFileSync(join(outDir, "model", "slices", "view-only.html"), "utf8");
+    expect(coveredPage).toContain("Documented as part of");
+    expect(coveredPage).toContain('href="covering-slice.html">Covering Slice</a>');
+    expect(coveredPage).toContain("slices/covering-slice.md");
+    expect(coveredPage).toContain("ready-to-implement"); // covering doc's status colors this page too
+    expect(coveredPage).not.toContain("Body content that must not leak");
+    expect(coveredPage).not.toContain("No slice doc found");
+
+    // the index Status column reflects the covering doc's status too, not "no doc"
+    const index = readFileSync(join(outDir, "index.html"), "utf8");
+    expect(index).toContain("ready-to-implement");
+
+    // the covering slice's OWN page still renders its doc's body in full
+    const coveringPage = readFileSync(join(outDir, "model", "slices", "covering-slice.html"), "utf8");
+    expect(coveringPage).toContain("Body content that must not leak onto a different slice page.");
+  });
 });

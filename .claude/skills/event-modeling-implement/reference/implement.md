@@ -134,6 +134,16 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 
 ## 5. Definition of done
 
+**The unit is the slice doc: one slice doc = one PR.** A doc that `covers:` another slice (an
+automation's to-do-list view and its reaction, MIL-121) is one spec, not two — it ships in one
+PR, and `mark-implemented` runs for both keys against the same URL. An `again` view instance has
+its own doc today and therefore its own PR — that's a fact about today's model, not a judgment
+call the constitution gets to override; only MIL-208, changing what an `again` instance is,
+changes it. Never fold multiple slice docs' implementations into one PR because they touch the
+same read model, ship together, or seem small — see §10.
+
+- The PR description cites exactly one slice doc (plus its `covers:` keys, if any) and lists
+  that doc's invariants alongside the tests that cover them.
 - Every `INV-<MNEMONIC>-n` invariant has at least one test that cites its ID — checked mechanically by
   `em coverage <model>.em --tests <dir>` (MIL-130); run it (add `--strict` in CI) rather than
   eyeballing citations by hand.
@@ -146,6 +156,10 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   work containers are ephemeral; generated or symlinked specs are renderings).
 
 ## 6. At merge: the lifecycle flip
+
+The PR being merged here is the one doc's PR (§5) — its description cites exactly this slice doc
+(plus any `covers:` keys) and nothing else, which is what makes the flip below unambiguous: one
+PR, one `implementedIn` URL, applied to every key that PR's doc covers.
 
 When the PR merges, exactly **two** frontmatter fields change on the slice doc:
 
@@ -335,6 +349,7 @@ everything a spec holds. Don't introduce an intermediate spec document of your o
 | Never regenerate merged code from the model | Generated-then-owned: post-merge code belongs to its owners |
 | Never commit an authored intermediate spec | The slice is the spec; anything between it and the code is a rendering |
 | Never open a slice PR before the foundation PR has merged | The foundation is what makes an event a stable shared contract — a slice built ahead of it is building on a moving target (§8) |
+| Never implement more than one slice doc in a PR | The PR is the durable record of one spec's implementation; `mark-implemented`, coverage, and conformance all key on one doc ↔ one `implementedIn` |
 
 ## 11. Afterward: the loop closes
 

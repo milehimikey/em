@@ -80,6 +80,7 @@ describe("renderSlicePage", () => {
       pattern: "state-change",
       elementRefs,
       doc,
+      coveredBy: null,
       docExpectedPath: "slices/place-order.md",
     });
 
@@ -110,12 +111,46 @@ describe("renderSlicePage", () => {
       pattern: "state-change",
       elementRefs: new Map(),
       doc: null,
+      coveredBy: null,
       docExpectedPath: "slices/place-order.md",
     });
     expect(html).toContain("No slice doc found");
     expect(html).toContain("slices/place-order.md");
     expect(html).toContain("no doc");
     expect(html).toContain("Checkout"); // element table still renders from the AST alone
+  });
+
+  it("MIL-137: shows a 'documented as part of' banner, not the covering doc's body, when covered", () => {
+    const { model } = compile(`slice "Detect Unpaid Orders" {
+  view Unpaid Orders from "Order Placed"
+  ui Unpaid Orders List @Ops
+}`);
+    const slice = model.slices[0];
+    const coveringDoc = parseSliceDoc(
+      "---\nstatus: ready-to-implement\ncovers: detect-unpaid-orders\n---\nBody content that must not leak onto a different slice's page.\n",
+    );
+
+    const html = renderSlicePage({
+      modelName: "Checkout",
+      diagramFile: "../diagram.svg",
+      sliceDiagramFile: "detect-unpaid-orders.svg",
+      slice,
+      sliceKey: "detect-unpaid-orders",
+      pattern: "state-view",
+      elementRefs: new Map(),
+      doc: coveringDoc,
+      coveredBy: { key: "lapse-unpaid-orders", name: "Lapse Unpaid Orders" },
+      docExpectedPath: "slices/detect-unpaid-orders.md",
+    });
+
+    expect(html).toContain("Documented as part of");
+    expect(html).toContain('href="lapse-unpaid-orders.html">Lapse Unpaid Orders</a>');
+    expect(html).toContain("slices/lapse-unpaid-orders.md");
+    // the covering doc's status still colors this page's badge...
+    expect(html).toContain("ready-to-implement");
+    // ...but its body is never inlined under this (different) slice's name
+    expect(html).not.toContain("Body content that must not leak");
+    expect(html).not.toContain("No slice doc found");
   });
 
   it("always embeds the slice's own diagram as svg, even when the main diagram is png", () => {
@@ -133,6 +168,7 @@ describe("renderSlicePage", () => {
       pattern: "state-change",
       elementRefs: new Map(),
       doc: null,
+      coveredBy: null,
       docExpectedPath: "slices/place-order.md",
     });
     expect(html).toContain('type="image/svg+xml" data="place-order.svg"');
@@ -163,6 +199,7 @@ describe("layout's home link", () => {
       pattern: "state-change",
       elementRefs: new Map(),
       doc: null,
+      coveredBy: null,
       docExpectedPath: "slices/place-order.md",
     });
     expect(html).toContain('href="../../index.html"');
