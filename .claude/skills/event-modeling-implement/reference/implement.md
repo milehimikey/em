@@ -26,18 +26,22 @@ em validate <model>.em --slice-ready <slice-key> --json
 ```
 
 `<slice-key>` is the slice's export key — the kebab-case slug of its name (`"Place Order"` →
-`place-order`). Read the JSON document's `ready` field — don't infer it from the exit code or
-any printed text. `ready: true` means: the slice has a doc bound via `note "slices/<key>.md"`,
-its frontmatter is usable, `status: ready-to-implement`, every `## Open Questions` checkbox is
-checked, and no status/version/link incoherence is flagged — `gates` names each of those 4
-conditions individually (`docBound`/`frontmatterUsable`/`statusReady`/
-`noUncheckedOpenQuestions`) if you need to say which one is blocking.
+`place-order`). Don't guess it or hand-slug the name yourself: list every slice's key with
+`em export <model>.em | jq -r '.model.slices[].key'`. Read the JSON document's `ready` field —
+don't infer it from the exit code or any printed text. `ready: true` means: the slice has a doc
+bound via `note "slices/<key>.md"`, its frontmatter is usable, `status: ready-to-implement`,
+every `## Open Questions` checkbox is checked, and no status/version/link incoherence is flagged
+— `gates` names each of those 4 conditions individually (`docBound`/`frontmatterUsable`/
+`statusReady`/`noUncheckedOpenQuestions`) if you need to say which one is blocking.
 
-**`ready: false` means stop.** Report which `gates` entries are `false` (and any `diagnostics`
-entries concerning this slice) and hand the slice back to the humans. Never make the gate pass
-yourself — checking an open-question box, flipping `status`, or editing frontmatter are
-ratification decisions, and ratification happens in a facilitated session, not in an
-implementation branch.
+**`ready: false` means stop** — with one named exception: a slice already `status: implemented`
+with `driftSignal: in-sync` also reads `ready: false` (its `statusReady` gate fails because
+nothing is newly ratified), and that specific case is re-implementation/repair, not a blocker —
+see §3's third mode before treating it as one. For every other `false`, report which `gates`
+entries are `false` (and any `diagnostics` entries concerning this slice) and hand the slice
+back to the humans. Never make the gate pass yourself — checking an open-question box, flipping
+`status`, or editing frontmatter are ratification decisions, and ratification happens in a
+facilitated session, not in an implementation branch.
 
 ## 2. Read the spec
 
@@ -99,7 +103,7 @@ If the project ships pattern-specific implementation skills (for example an Axon
 set keyed on a slice doc's `pattern:` frontmatter), route by the slice's pattern and follow
 those.
 
-## 3. Two modes: first version vs. ratified delta
+## 3. Three modes: first version, ratified delta, re-implementation/repair
 
 Check the doc's `version:` and `## Delta` section (or `em export`'s `slice.doc.driftSignal`):
 
@@ -113,6 +117,26 @@ Check the doc's `version:` and `## Delta` section (or `em export`'s `slice.doc.d
   **Never regenerate merged code wholesale from the model** — after merge, code is owned by
   the people who've edited it (generated-then-owned); regeneration is legal only for slices
   whose code never merged.
+- **Re-implementation / repair** (`status: implemented`, `implementedIn` set, `driftSignal:
+  in-sync` — `--slice-ready` reports `ready: false` purely because `statusReady` fails, with no
+  other gate false and no doc content changed): the doc hasn't changed, but the shipped code
+  needs rebuilding or fixing — deleted code, a reverted PR, a bug in behavior the doc already
+  specifies. **The doc is still the spec.** The gate's `false` here means "nothing new is
+  ratified," not "stop" — it is not license to self-initiate: proceed only when a human has
+  asked for this specific re-work. Scope the change to what the repair needs, exactly like a
+  delta (generated-then-owned still applies — don't regenerate the whole slice wholesale just
+  because the gate reads oddly); if what you'd change is really a change in behavior rather than
+  a repair of it, that's a ratified delta (the bullet above), not this mode — when unsure which
+  one you're in, ask the human rather than guess.
+
+  No lifecycle flip is needed unless `implementedIn` changes. If it does,
+  `em slice mark-implemented <model>.em <slice-key> <new-pr-url>` will **refuse** rather than
+  overwrite: a doc already `implemented` with a different `implementedIn` URL is left untouched
+  and the command reports the conflict (`src/cli/markImplemented.ts`) instead of silently
+  replacing provenance. That refusal is correct, not a bug to route around — never hand-edit the
+  frontmatter to force it through. Surface the conflict to the human instead: they decide whether
+  the new PR supersedes the recorded one (and re-run `mark-implemented` themselves, or ask you to,
+  once they've decided) or whether the existing link should stand.
 
 ## 4. Gaps: propose, never decide
 

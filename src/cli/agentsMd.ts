@@ -6,7 +6,10 @@
 // slice-readiness gate (`em validate --slice-ready --json`, MIL-128), and the machine-readable
 // read path (`em export --slice`, MIL-128). MIL-21 adds a fourth pointer: `em-mcp`, the MCP
 // server exposing the same contract/gate/read-path (plus full validate/export) as tools for an
-// MCP-native agent, instead of shell commands.
+// MCP-native agent, instead of shell commands. MIL-152 (a later skill-free G5 run) adds two more:
+// how to list a model's slice keys at all (nothing in this chain said so before — the agent had
+// to fall back to a full `em export`), and the MCP handshake doc's URL, since `docs/mcp.md`
+// itself isn't vendored into the installed skill bundle a repo-local agent actually has on disk.
 //
 // Same marker discipline as `em slice index`'s README Slices table (src/cli/sliceIndex.ts,
 // MIL-98): idempotent replace-between-markers via src/util/markers.ts, user content outside the
@@ -41,8 +44,11 @@ agent — Claude Code or otherwise — should follow this contract:
 - **Read path**: \`em export <model>.em --slice <slice-key>\` exports just that slice's
   normalized JSON (pattern, fields, doc) to implement against; \`em export <model>.em\` exports
   the whole model.
-- **MCP alternative**: \`em-mcp\` starts an MCP server exposing the contract, gate, and read
-  path above (plus full validate/export) as tools instead of shell commands — see
+- **Slice keys**: \`em export <model>.em | jq -r '.model.slices[].key'\` lists every slice's
+  export key (the \`<slice-key>\` the gate and read path above take) without reading the DSL.
+- **MCP alternative**: \`em-mcp\` starts a stateless stdio MCP server exposing the contract,
+  gate, and read path above (plus full validate/export) as tools instead of shell commands —
+  every tool mirrors a CLI \`--json\` surface byte-for-byte. Handshake and full tool list:
   [docs/mcp.md](https://github.com/milehimikey/em/blob/main/docs/mcp.md).`;
 
 function markerBlock(): string {
