@@ -272,6 +272,38 @@ sibling slice's package to reuse it — the boundary the constitution drew is go
    the contract itself changes; an event isn't a stable shared type just because it was one
    yesterday.
 
+### Order of work
+
+The foundation PR above answers most of "which slice next" by itself — once every event exists
+as a contract, a read slice no longer has to wait for the write slice that will eventually
+produce it. What's left is ordering the slice PRs against each other, and that ordering comes
+from the dependency graph, not from where a slice sits on the timeline:
+
+1. **Foundation first removes most ordering constraints.** With every event already landed as a
+   contract (rules 1–4 above), a slice's remaining dependency is on other *slices*, not on
+   events existing at all — that's what turns "order every slice against every other slice"
+   into the short, per-pattern list below.
+2. **Then take dependency order from the graph, not the timeline.** Before starting a slice,
+   run `em query upstream <model>.em --of <slice's command-or-view ref>` — anything it returns
+   that's still `ready-to-implement` is a candidate to build first; `em query producers
+   <model>.em --event <name>` names the slices that own a specific event's producing commands
+   when you need to check one directly. Concretely, per pattern:
+   - **State Change** with no upstream is always startable — nothing but the foundation gates it.
+   - **State View** is startable as soon as the events it reads exist as contracts (the
+     foundation alone satisfies this), but build it *after* their producing slices have merged
+     when you can — its fixture tests then exercise real commands instead of hand-rolled event
+     fixtures.
+   - **Automation** goes after both the command it triggers and the to-do-list view it reads
+     (bound via `covers:` when the two are written as one doc) — a reaction can't be tested
+     against a command handler or a to-do list that doesn't exist yet.
+   - **Translation** goes after the command it triggers, same reasoning as an Automation's
+     triggered-command dependency.
+3. **Timeline order is the ratification order, not the build order.** Ratifying slices in
+   timeline order is deliberate — it's the order stakeholders reason about the business process
+   in. Carrying that same order into implementation is the mistake this section exists to head
+   off: build order comes from the dependency graph above, and the two orders routinely
+   disagree.
+
 ## 9. Spec-kit projects: the SDD adapter
 
 If the repository uses spec-kit (a `.specify/` directory exists), do not hand-author spec-kit
