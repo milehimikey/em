@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { compile, CompileOptions, CompileResult } from "./pipeline.js";
 import { isMainModule } from "./util/isMainModule.js";
+import { localIsoDate } from "./util/localDate.js";
 import { NormalizedModel } from "./model/model.js";
 import { RefsResult } from "./model/refs.js";
 import { ParseError } from "./parser/parser.js";
@@ -209,7 +210,7 @@ program
       process.exit(1);
     }
     await mkdir(dirPath, { recursive: true });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIsoDate();
     writeFileSync(join(dirPath, `${slugName}.em`), starterEmFor(name));
     writeFileSync(join(dirPath, "README.md"), scaffoldReadme(name, slugName));
     writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today));
@@ -704,7 +705,7 @@ slice
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
-  .option("--on <date>", "review date, YYYY-MM-DD (default: today)")
+  .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
   .action((file: string, sliceKey: string, opts: { by: string; on?: string }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
@@ -719,7 +720,7 @@ slice
       process.exit(1);
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIsoDate();
     const reviewedOn = opts.on ?? today;
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em slice review: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
@@ -751,7 +752,7 @@ slice
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .requiredOption("--by <name>", "the ratifier's name")
-  .option("--on <date>", "ratification date, YYYY-MM-DD (default: today)")
+  .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-review", "ratify without a recorded review — prints a loud notice on stderr")
   .action((file: string, sliceKey: string, opts: { by: string; on?: string; skipReview?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
@@ -767,7 +768,7 @@ slice
       process.exit(1);
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIsoDate();
     const ratifiedOn = opts.on ?? today;
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em slice ratify: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
@@ -870,7 +871,7 @@ function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: st
     console.error(loaded.message);
     process.exit(1);
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate();
   const result = mutate(loaded.text, today);
   if (!result.ok) {
     console.error(`${cmdLabel}: ${result.message}`);
@@ -977,7 +978,7 @@ state
       console.error(loaded.message);
       process.exit(1);
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIsoDate();
     const result = appendUsageLogEntry(loaded.text, today, phases, categories);
     if (!result.ok) {
       console.error(`em state log-usage: ${result.message}`);
@@ -1089,9 +1090,9 @@ program
   .argument("<report-path>", "path to the conformance report, relative to the model's directory")
   .requiredOption("--as-of <rev>", "the revision this ruling was made against — same value passed to `em state set-conformance`")
   .requiredOption("--findings <spec>", 'which finding number(s) this stamps as ruled, e.g. "1-3" or "1,2,4"')
-  .option("--on <date>", "ruling date, YYYY-MM-DD (default: today)")
+  .option("--on <date>", "ruling date, YYYY-MM-DD (default: today, local date)")
   .action((file: string, reportPath: string, opts: { asOf: string; findings: string; on?: string }) => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIsoDate();
     const on = opts.on ?? today;
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em conform-supersede: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
