@@ -1943,6 +1943,13 @@ are never conflated. Three outcomes, shown as the page/table's Status:
   `ready-to-implement`, `implemented`, …), read from frontmatter if present, else the legacy
   bullet line.
 
+A fourth outcome sits alongside those three: a slice with no own doc that's ratified as
+**covered** by a sibling's frontmatter `covers:` (see
+[Cross-slice coverage](slice-doc-schema.md#cross-slice-coverage-covers)) shows that covering
+doc's Status too, but its detail page renders a "Documented as part of &lt;covering slice&gt;"
+banner linking to the covering slice's own page — never the covering doc's body inlined under
+this slice's name.
+
 Both the main diagram and every per-slice diagram embedded in the catalog carry the same
 status header coloring `em render`/`em watch` do (see above) — one status source, colored
 consistently everywhere it's shown.

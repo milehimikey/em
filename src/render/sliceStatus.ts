@@ -11,16 +11,15 @@
 // docs for them (first one gets the real file, the second honestly gets null).
 //
 // MIL-121 fallback: when a slice has no own `slices/<key>.md`, scan the `slices/` directory for
-// a sibling doc whose frontmatter `covers:` names this slice's key, and borrow IT. This
-// is filename+frontmatter discovery only — same convention as the direct lookup above, and
-// still never reads `note` (the tested invariant test/catalog.e2e.test.ts pins for `em catalog`'s
-// parallel doc discovery) — a slice's `note "slices/<other>.md"` cross-binding declaration is
-// docJoin.ts's concern (`em export`/`em validate --slice-ready`), not this module's.
+// a sibling doc whose frontmatter `covers:` names this slice's key, and borrow IT. The scan
+// itself (readCoverageDocs) is shared with `em catalog`'s own covered-slice handling (MIL-137,
+// src/catalog/coverage.ts) so the two never disagree about which doc covers a slice.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { computeRefs } from "../model/refs.js";
+import { readCoverageDocs, CoveringDoc } from "../catalog/coverage.js";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
 /** Each slice's resolved design doc (own `slices/<key>.md`, or the MIL-121 covering doc, or
@@ -29,14 +28,14 @@ import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 export function readSliceDocs(model: NormalizedModel, baseDir: string): (SliceDoc | null)[] {
   const { sliceKeys } = computeRefs(model);
   const slicesDir = join(baseDir, "slices");
-  let coverage: Map<string, SliceDoc> | null = null; // built lazily, only if ever needed
+  let coverage: Map<string, CoveringDoc> | null = null; // built lazily, only if ever needed
 
   return model.slices.map((_slice, i) => {
     const sliceKey = sliceKeys[i];
     const docPath = join(slicesDir, `${sliceKey}.md`);
     if (existsSync(docPath)) return parseSliceDoc(readFileSync(docPath, "utf8"));
     coverage ??= readCoverageDocs(slicesDir);
-    return coverage.get(sliceKey) ?? null;
+    return coverage.get(sliceKey)?.doc ?? null;
   });
 }
 
@@ -44,21 +43,4 @@ export function readSliceDocs(model: NormalizedModel, baseDir: string): (SliceDo
  *  (own or covering), or the doc has no `- **Status:** ...` line. */
 export function readSliceStatuses(model: NormalizedModel, baseDir: string): (string | null)[] {
   return readSliceDocs(model, baseDir).map((doc) => doc?.status ?? null);
-}
-
-/** Scans every `slices/*.md` file (sorted, for deterministic first-wins on an overlapping
- *  `covers:` claim) and maps each covered slice key to that doc. Directory-scan, not
- *  the single-file existsSync check every other doc lookup in em uses — the one precedent for
- *  it is `em ledger`'s (src/cli/ledgerCheck.ts) own `readdirSync(slicesDir)` sweep. */
-function readCoverageDocs(slicesDir: string): Map<string, SliceDoc> {
-  const coverage = new Map<string, SliceDoc>();
-  if (!existsSync(slicesDir)) return coverage;
-  const files = readdirSync(slicesDir).filter((f) => f.endsWith(".md")).sort();
-  for (const file of files) {
-    const doc = parseSliceDoc(readFileSync(join(slicesDir, file), "utf8"));
-    for (const coveredKey of doc.covers) {
-      if (!coverage.has(coveredKey)) coverage.set(coveredKey, doc);
-    }
-  }
-  return coverage;
 }
