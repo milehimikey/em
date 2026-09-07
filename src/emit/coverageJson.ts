@@ -8,19 +8,23 @@ import { CoverageReport } from "../cli/coverage.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (MIL-130): initial shape.
-export const COVERAGE_SCHEMA_VERSION = "1.0";
+// 1.1 (2026-09-07, MIL-207): added `includeReady` — the default in-scope set narrowed to
+// `implemented` only (a `ready-to-implement` doc has nothing to cite it yet); `includeReady`
+// records whether this run opted back into the older, forward-looking scope via `--include-ready`.
+export const COVERAGE_SCHEMA_VERSION = "1.1";
 
 /** Build the `em coverage <model>.em --tests <dir> --json` document. Pretty-printed (2-space),
  *  no trailing newline — the caller adds it, same convention as buildLedgerJson/buildDiffJson.
  *  `ok` is advisory-mode's own pass/fail (zero uncovered IDs) — it does NOT reflect `--strict`,
  *  which is a CLI exit-code decision layered on top of this same document, not a different
  *  document shape. */
-export function buildCoverageJson(file: string, testsDir: string, report: CoverageReport): string {
+export function buildCoverageJson(file: string, testsDir: string, report: CoverageReport, includeReady: boolean): string {
   const doc = {
     coverageSchemaVersion: COVERAGE_SCHEMA_VERSION,
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     file,
     testsDir,
+    includeReady,
     ok: report.uncoveredCount === 0,
     summary: {
       totalInvariants: report.totalInvariants,

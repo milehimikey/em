@@ -88,7 +88,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `list_markers` | `{ file, issues?, divergences?, public? }` (booleans, default `true`) | The `--list-issues`/`--list-divergences`/`--list-public --json` marker document |
 | `export_model` | `{ file }` | The full `em export` document — refuses (tool error) if the model has errors |
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
-| `coverage` | `{ file, testsDir }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
+| `coverage` | `{ file, testsDir, includeReady? }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
 | `query` | `{ files, verb, event?, of?, depth?, pattern?, status?, context?, persona?, tag?, id?, testsDir?, name?, from?, to? }` | The `em query <verb> <files...> --json` document: deterministic graph queries (consumers/producers/downstream/upstream/slices/invariant/field/path) over the compiled model |
 | `system` | `{ manifest }` | The `em system <manifest> --json` document: a seam manifest (`system.yaml`) verified against each model's export — every `public` event/view bound to another model's reaction — plus the org-level context map |
@@ -140,13 +140,16 @@ of a large, still-WIP model has unrelated errors.
 ### `coverage`
 
 Same document as `em coverage <file> --tests <testsDir> --json`: for every slice whose joined
-doc status is `ready-to-implement` or `implemented`, each `INV-*` invariant ID the doc's own
-`## Invariants` / `## Delta` sections *define* (see **Token format** under
+doc status is `implemented` (or, with `includeReady: true`, also `ready-to-implement` — MIL-207's
+forward-looking report), each `INV-*` invariant ID the doc's own `## Invariants` / `## Delta`
+sections *define* (see **Token format** under
 [`em coverage`](cli.md#em-coverage-file---tests-dir) for exactly what counts as a definition),
 whether a test under `testsDir` cites it, and every citing `file:line`. Refuses (a
-tool error) when the model has errors, or when `testsDir` doesn't exist — matching the CLI's own
-hard-error behavior for a missing `--tests` directory. This is a *checking* tool, not a
-*judgment* one: it confirms an ID is cited, never whether the citing test is good or passing.
+tool error) when the model has errors, or when `testsDir` doesn't exist AND at least one doc is
+in scope — matching the CLI's own behavior: a fresh scaffold or doc-only ratification PR with
+zero `implemented` docs has nothing yet to check, so a missing `--tests` directory there isn't a
+defect (MIL-207). This is a *checking* tool, not a *judgment* one: it confirms an ID is cited,
+never whether the citing test is good or passing.
 
 ### `status`
 

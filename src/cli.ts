@@ -33,7 +33,7 @@ import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
-import { buildCoverageReport, CoverageReport } from "./cli/coverage.js";
+import { buildCoverageReport, resolveScopedSlices, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
 import {
   resolveSliceStatusFacts,
@@ -1415,34 +1415,46 @@ program
 program
   .command("coverage")
   .description(
-    "check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc " +
-      "is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's " +
-      "definition-of-done citation check; advisory by default, --strict for CI",
+    "check that every INV-* invariant ID cited in an implemented slice doc is cited by a test " +
+      "under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's " +
+      "definition-of-done citation check; advisory by default, --strict for CI; " +
+      "--include-ready also counts ready-to-implement docs (forward-looking report)",
   )
   .argument("<file>", "input .em file")
   .requiredOption("--tests <dir>", "directory to scan recursively for test files citing invariant IDs")
   .option("--strict", "exit non-zero if any invariant ID has zero citations (CI)")
+  .option("--include-ready", "also count ready-to-implement docs, not just implemented (MIL-207)")
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
-  .action((file: string, opts: { tests: string; strict?: boolean; json?: boolean }) => {
+  .action((file: string, opts: { tests: string; strict?: boolean; includeReady?: boolean; json?: boolean }) => {
     const { model, diagnostics, refs } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
       console.error("em coverage: model has errors — fix them first");
       process.exit(1);
     }
+
+    const baseDir = dirname(file);
+    const includeReady = !!opts.includeReady;
+    // MIL-207: a missing --tests dir is only a defect when something is actually in scope to
+    // check — cheap to know without touching the test tree (resolveScopedSlices never reads
+    // --tests). A fresh scaffold (or a doc-only ratification PR, with the MIL-207 default scope)
+    // has zero implemented docs, so there's nothing yet for a test to cite.
+    const anyInScope = resolveScopedSlices(model, refs, baseDir, includeReady).some((s) => s.inScope);
     if (!existsSync(opts.tests)) {
-      console.error(`em coverage: --tests directory not found: ${opts.tests}`);
-      process.exit(1);
-    }
-    if (!statSync(opts.tests).isDirectory()) {
+      if (anyInScope) {
+        console.error(`em coverage: --tests directory not found: ${opts.tests}`);
+        process.exit(1);
+      }
+      console.error(`warn: em coverage: --tests directory not found: ${opts.tests} — nothing in scope yet`);
+    } else if (!statSync(opts.tests).isDirectory()) {
       console.error(`em coverage: --tests is not a directory: ${opts.tests}`);
       process.exit(1);
     }
 
-    const report = buildCoverageReport(model, refs, dirname(file), opts.tests);
+    const report = buildCoverageReport(model, refs, baseDir, opts.tests, includeReady);
 
     if (opts.json) {
-      process.stdout.write(buildCoverageJson(file, opts.tests, report) + "\n");
+      process.stdout.write(buildCoverageJson(file, opts.tests, report, includeReady) + "\n");
     } else {
       for (const slice of report.slices) {
         if (!slice.inScope) continue;
@@ -1494,15 +1506,12 @@ program
         console.error("em status: --json, --md, and --badge are mutually exclusive");
         process.exit(1);
       }
-      if (opts.tests) {
-        if (!existsSync(opts.tests)) {
-          console.error(`em status: --tests directory not found: ${opts.tests}`);
-          process.exit(1);
-        }
-        if (!statSync(opts.tests).isDirectory()) {
-          console.error(`em status: --tests is not a directory: ${opts.tests}`);
-          process.exit(1);
-        }
+      // The "directory not found" half of the --tests check is deferred until after compiling
+      // (below) — MIL-207: whether that's an error depends on whether anything is actually in
+      // scope across the given models, which needs the compiled model+refs to answer.
+      if (opts.tests && existsSync(opts.tests) && !statSync(opts.tests).isDirectory()) {
+        console.error(`em status: --tests is not a directory: ${opts.tests}`);
+        process.exit(1);
       }
 
       const compiled: Array<{ file: string; model: NormalizedModel; refs: RefsResult }> = [];
@@ -1516,6 +1525,17 @@ program
       if (anyErrors) {
         console.error("em status: not reporting status — fix the errors above");
         process.exit(1);
+      }
+
+      if (opts.tests && !existsSync(opts.tests)) {
+        // MIL-207: same leniency as `em coverage` — a missing --tests dir is only a defect when
+        // at least one model has something in scope (`implemented`) to check.
+        const anyInScope = compiled.some(({ model, refs, file }) => resolveScopedSlices(model, refs, dirname(file), false).some((s) => s.inScope));
+        if (anyInScope) {
+          console.error(`em status: --tests directory not found: ${opts.tests}`);
+          process.exit(1);
+        }
+        console.error(`warn: em status: --tests directory not found: ${opts.tests} — nothing in scope yet`);
       }
 
       const sliceFacts: SliceStatusFact[] = [];

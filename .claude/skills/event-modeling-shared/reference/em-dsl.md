@@ -102,9 +102,10 @@ em ledger <file> --from <rev>                                 # baseline revisio
 em ledger <file> --to <rev>                                   # compare revision (default: current working tree)
 em ledger <file> --waive <slice-key>                          # excuse a doc-content-without-version-bump finding for this slice key (repeatable; MIL-185, see docs/cli.md) — never waives a version regression or bump-without-content-change
 em ledger <file> --json                                       # print a JSON document instead of the text report (see docs/cli.md)
-em coverage <file>                                            # check that every INV-* invariant ID cited in a ready-to-implement/implemented slice doc is cited by a test under --tests <dir> (MIL-130) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI
+em coverage <file>                                            # check that every INV-* invariant ID cited in an implemented slice doc is cited by a test under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI; --include-ready also counts ready-to-implement docs (forward-looking report)
 em coverage <file> --tests <dir>                              # directory to scan recursively for test files citing invariant IDs
 em coverage <file> --strict                                   # exit non-zero if any invariant ID has zero citations (CI)
+em coverage <file> --include-ready                            # also count ready-to-implement docs, not just implemented (MIL-207)
 em coverage <file> --json                                     # print a JSON document instead of the text report (see docs/cli.md)
 em status <files>                                             # deterministic state-of-the-system rollup over one or more .em models: slices by lifecycle status, driftSignal breakdown, invariant coverage totals (with --tests), open issue markers + unchecked Open Questions, and last-conformance commits-behind-HEAD (MIL-163, see docs/cli.md)
 em status <files> --tests <dir>                               # directory to scan for INV-* test citations — enables invariant coverage totals

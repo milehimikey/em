@@ -67,6 +67,7 @@ slice "Bad" {
 let dir: string;
 let brokenDocDir: string;
 let reviewedDocDir: string;
+let implementedDocDir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-mcp-"));
   writeFileSync(join(dir, "clean.em"), CLEAN);
@@ -117,6 +118,22 @@ beforeAll(() => {
     join(reviewedDocDir, "reviewed.em"),
     'slice "Reviewed Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/reviewed-slice.md"\n  event Thing Done\n}\n' +
       'slice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
+  );
+
+  // MIL-207 fixture: an `implemented` doc — the default in-scope status — kept in its own
+  // directory/model rather than added to `ready.em` (whose "Ready Slice"/"Read Model" pair and
+  // slice-count assertions are shared by many tests above and shouldn't shift). Used to check
+  // that a missing testsDir is still an error once something is actually in scope.
+  implementedDocDir = join(dir, "implemented-model");
+  mkdirSync(join(implementedDocDir, "slices"), { recursive: true });
+  writeFileSync(
+    join(implementedDocDir, "slices", "implemented-slice.md"),
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
+      "## Invariants / Business Rules\n- **INV-IMPL-1:** cited\n",
+  );
+  writeFileSync(
+    join(implementedDocDir, "implemented.em"),
+    'slice "Implemented Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/implemented-slice.md"\n  event Thing Done\n}\n',
   );
 
   // Two-file `diff` tool fixture: clean2 adds one slice on top of CLEAN.
@@ -404,9 +421,12 @@ describe("export_slice tool", () => {
 });
 
 describe("coverage tool", () => {
-  it("happy path: returns the same document `em coverage --json` prints", async () => {
-    const { doc } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "tests") });
-    expect(doc.coverageSchemaVersion).toBe("1.0");
+  // MIL-207: the fixture's "ready-slice" doc is `status: ready-to-implement`, out of scope by
+  // default — `includeReady: true` restores the pre-MIL-207 scope this test originally checked.
+  it("happy path (includeReady: true): returns the same document `em coverage --json --include-ready` prints", async () => {
+    const { doc } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "tests"), includeReady: true });
+    expect(doc.coverageSchemaVersion).toBe("1.1");
+    expect(doc.includeReady).toBe(true);
     expect(doc.ok).toBe(false); // INV-2 is uncovered
     expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
     const readySlice = doc.slices.find((s: any) => s.key === "ready-slice");
@@ -418,20 +438,47 @@ describe("coverage tool", () => {
     expect(readySlice.invariants).toContainEqual({ id: "INV-2", cited: false, citations: [] });
   });
 
+  // MIL-207: default scope (no includeReady) is `implemented` only — a `ready-to-implement` doc
+  // has nothing yet to cite it.
+  it("default scope (MIL-207): a ready-to-implement doc is out of scope", async () => {
+    const { doc } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "tests") });
+    expect(doc.includeReady).toBe(false);
+    expect(doc.ok).toBe(true);
+    expect(doc.summary).toEqual({ totalInvariants: 0, cited: 0, uncovered: 0 });
+    const readySlice = doc.slices.find((s: any) => s.key === "ready-slice");
+    expect(readySlice.inScope).toBe(false);
+    expect(readySlice.invariants).toEqual([]);
+  });
+
   it("refuses (tool error) on an errored model, same as `em coverage`", async () => {
     const { result } = await callJson(client, "coverage", { file: join(dir, "error.em"), testsDir: join(dir, "tests") });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("not checking coverage");
   });
 
-  it("refuses (tool error) when testsDir doesn't exist", async () => {
-    const { result } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "no-such-dir") });
+  it("refuses (tool error) when testsDir doesn't exist and includeReady puts something in scope", async () => {
+    const { result } = await callJson(client, "coverage", {
+      file: join(dir, "ready.em"),
+      testsDir: join(dir, "no-such-dir"),
+      includeReady: true,
+    });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("testsDir not found");
+  });
+
+  // MIL-207: same leniency `em coverage` gives a fresh scaffold — with default scope and
+  // nothing implemented yet, a missing testsDir isn't a defect.
+  it("tolerates a missing testsDir when nothing is in scope (default scope, MIL-207)", async () => {
+    const { doc, result } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "no-such-dir") });
+    expect(result.isError).toBeFalsy();
+    expect(doc.summary).toEqual({ totalInvariants: 0, cited: 0, uncovered: 0 });
   });
 });
 
 describe("status tool", () => {
+  // MIL-207: `ready.em`'s only doc ("ready-slice") is `status: ready-to-implement`, out of scope
+  // for coverage by default — `em status` has no `--include-ready` of its own, so its invariant
+  // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
     expect(doc.statusSchemaVersion).toBe("1.3");
@@ -439,7 +486,7 @@ describe("status tool", () => {
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
     expect(doc.slices.byStatus.noDoc).toBe(1); // "Read Model" has no bound doc
-    expect(doc.invariants).toEqual({ testsDir: join(dir, "tests"), total: 2, cited: 1, uncovered: 1 });
+    expect(doc.invariants).toEqual({ testsDir: join(dir, "tests"), total: 0, cited: 0, uncovered: 0 });
     expect(doc.conformance).toHaveLength(1);
     expect(doc.conformance[0].hasStateFile).toBe(false); // no .event-modeling.md next to ready.em
     expect(doc.conformance[0].slicePRsBehindHead).toBeNull(); // MIL-164 — no state file, nothing to compute
@@ -481,10 +528,22 @@ describe("status tool", () => {
     expect((result.content[0] as { text: string }).text).toContain("not reporting status");
   });
 
-  it("refuses (tool error) when testsDir doesn't exist", async () => {
-    const { result } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "no-such-dir") });
+  it("refuses (tool error) when testsDir doesn't exist and something is implemented (in scope)", async () => {
+    const { result } = await callJson(client, "status", {
+      files: [join(implementedDocDir, "implemented.em")],
+      testsDir: join(dir, "no-such-dir"),
+    });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("testsDir not found");
+  });
+
+  // MIL-207: `ready.em` has nothing `implemented` (only `ready-to-implement`), so with the
+  // default scope a missing testsDir is no longer a defect — same leniency `em status` gives a
+  // fresh scaffold.
+  it("tolerates a missing testsDir when nothing is in scope (MIL-207)", async () => {
+    const { doc, result } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "no-such-dir") });
+    expect(result.isError).toBeFalsy();
+    expect(doc.invariants).toEqual({ testsDir: join(dir, "no-such-dir"), total: 0, cited: 0, uncovered: 0 });
   });
 
   it("a missing file is a tool error, not a crash", async () => {
