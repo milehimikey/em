@@ -3,12 +3,18 @@
 // `--fail-on-issues`: spawns the real CLI (via tsx) so the commander wiring,
 // exit codes, and stdout/stderr split are exercised, not just the underlying
 // functions (which test/export.test.ts and test/validate.test.ts cover).
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Every test in this file spawns the real CLI (`em(...)` below) at least once, several spawn
+// it more than once — each spawn is a fresh `tsx` process costing ~0.9-1.0s on a GitHub
+// runner, so a multi-spawn test can sit right at vitest's 5000ms default `testTimeout` and
+// flake on a slower runner (MIL-205). Raise it file-wide rather than tuning individual tests.
+vi.setConfig({ testTimeout: 20_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
