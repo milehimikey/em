@@ -40,8 +40,11 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    slice, none skipped: `em slice new "<slice name>" --pattern <state-change|state-view|
    automation|translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes
    `slices/<slice-name>.md` at `status: draft` (the same command, flags, and `--wire`
-   note-binding the `slice` phase's step 2 below documents in full). Then, for each freshly
-   scaffolded doc, hold a first-pass Socratic pass and write the happy-path Given/When/Then into
+   note-binding the `slice` phase's step 2 below documents in full). A slice whose only element
+   is a `view X again` instance is a **continuation** (MIL-208), not a slice to scaffold —
+   `--wire` refuses it and names the originating slice holding `X`'s first declaration; its
+   scenarios go into that doc instead. Then, for each freshly scaffolded doc, hold a first-pass
+   Socratic pass and write the happy-path Given/When/Then into
    its `## Scenarios (Given / When / Then)` section and the obvious invariants known so far into
    its `## Invariants / Business Rules` section — **into the doc, never into the state file.**
    Keep this pass shallow (no field tables, alternate/error flows, or NFRs yet — that's the full
@@ -115,6 +118,9 @@ For each slice:
    "slices/<slice-name>.md"` line straight into the `.em`, onto the slice's primary element (the
    command for State Change, the view for State View, the processor for Automation, the
    translation for Translation), matched by export key — see step 4 for when it refuses instead.
+   A slice whose sole candidate view is a later `view X again` instance is a **continuation**
+   (MIL-208): `--wire` refuses it and names the originating slice holding `X`'s first
+   declaration — write this slice's scenarios into that doc instead of scaffolding a new one.
    Both `--pattern` and `--swimlane` are required; an invalid `--pattern` is refused with the
    valid choices listed. Never hand-type this block, and never fall back to a placeholder
    pattern/swimlane to dodge the flags. Then fill in every judgment section below the stub from
@@ -154,5 +160,7 @@ Before the project's first slice is implemented it also needs a ratified impleme
 constitution (stack, code style, testing norms, NFR baselines, review norms) — the
 `event-modeling-implement` skill elicits it, see its `reference/implement.md` §7.
 
-End of phase: every slice that should exist has a doc, `README.md`'s Slices table is current,
-and the model validates clean. Suggest `event-modeling-implement` for each ratified slice.
+End of phase: every slice that should exist has a doc — except a continuation slice (MIL-208, a
+later `view X again` instance), which has none by design and is documented by the originating
+slice instead — `README.md`'s Slices table is current, and the model validates clean. Suggest
+`event-modeling-implement` for each ratified slice.

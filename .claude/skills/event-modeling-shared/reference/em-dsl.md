@@ -225,7 +225,11 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   connected to one another — continuity is implied by the shared name, and the events reaching each
   instance are what show the view changing. `again` with no earlier declaration is a validation error.
   Use `again` (not a plain repeated `view` name) whenever the view is referenced by a
-  `from`/`arrow` — plain repeats are only warning-free while unreferenced.
+  `from`/`arrow` — plain repeats are only warning-free while unreferenced. A later instance is
+  also a **continuation** for the doc lifecycle (MIL-208): it stays a slice on the timeline but
+  is not a spec unit — no doc, no status, no ratification, no PR of its own; the originating
+  slice's doc carries its behavior and `em export`'s `alsoReads` carries the union of events it
+  reads. See `slice-doc-schema.md`'s "Continuations" section for the full contract.
 - **`loops-to "View"`** (events only): marks an event as re-feeding an earlier read model — a
   poll/retry loop where a later fact must re-trigger an automation that already ran (a lapsed
   reservation re-notifying the next person waiting in line, and similar re-triggers). Written

@@ -70,7 +70,11 @@ trustworthy than one that looks finished because somebody guessed.
 
 The `.em` file holds structure. Depth belongs in prose, one markdown file per slice, linked
 from the diagram with `note "slices/<name>.md"`. The `slice` phase produces these: field
-tables with validation rules, named invariants, Given/When/Then scenarios, error flows.
+tables with validation rules, named invariants, Given/When/Then scenarios, error flows. The one
+exception: a later `view X again` instance is a **continuation** of the slice that first
+declared that view (MIL-208), not a doc of its own — its behavior goes into the originating
+doc's own `## Scenarios` section instead. See
+[slice-doc-schema.md#continuations](slice-doc-schema.md#continuations).
 
 Each slice doc carries machine-read YAML frontmatter — the full contract is
 [slice-doc-schema.md](slice-doc-schema.md) — whose `status` moves as the work does:
