@@ -169,10 +169,12 @@ export interface SlicePageArgs {
    *  column should show. Which one it is is `coveredBy`'s job to say. */
   doc: SliceDoc | null;
   /** Non-null exactly when `doc` came from a covering sibling rather than this slice's own
-   *  `slices/<key>.md` (MIL-121 `covers:`, MIL-137) — the detail page shows a "documented as
-   *  part of" banner linking to the covering slice's own page instead of inlining `doc`'s body
-   *  under this slice's name. */
-  coveredBy: { key: string; name: string } | null;
+   *  `slices/<key>.md` — the detail page shows a banner linking to that other slice's own page
+   *  instead of inlining `doc`'s body under this slice's name. `kind` distinguishes the two ways
+   *  that can happen: `"covers"` (MIL-121 `covers:`, MIL-137 — a hand-authored cross-binding)
+   *  vs. `"continuation"` (MIL-208 — an again-view-only slice, structural, no frontmatter
+   *  involved). */
+  coveredBy: { key: string; name: string; kind: "covers" | "continuation" } | null;
   /** slices/<slug>.md, relative to the source .em file — shown when no doc was found (own or
    *  covering). */
   docExpectedPath: string;
@@ -222,11 +224,17 @@ ${rows}
 export function renderSlicePage(args: SlicePageArgs): string {
   const { modelName, diagramFile, sliceDiagramFile, slice, pattern, elementRefs, doc, coveredBy, docExpectedPath } = args;
 
-  // coveredBy checked first: doc is non-null here too (it's the covering doc, borrowed for
-  // status/pattern purposes — see SlicePageArgs), but its body is deliberately never inlined
-  // under a different slice's name (orchestrator ruling, MIL-137) — only the banner is.
+  // coveredBy checked first: doc is non-null here too (it's the covering/originating doc,
+  // borrowed for status/pattern purposes — see SlicePageArgs), but its body is deliberately
+  // never inlined under a different slice's name (orchestrator ruling, MIL-137) — only the
+  // banner is. `kind` picks the wording: MIL-121 `covers:` reads "documented as part of" (a
+  // shared spec for two named-and-ratified slices); MIL-208 `continuation` reads "continuation
+  // of" (a structural fact — later `again` positions of the same read model, no frontmatter
+  // involved).
   const docSection = coveredBy
-    ? `    <p class="covered-by">Documented as part of <a href="${escapeHtml(coveredBy.key)}.html">${escapeHtml(coveredBy.name)}</a> — see <code>slices/${escapeHtml(coveredBy.key)}.md</code>.</p>`
+    ? coveredBy.kind === "continuation"
+      ? `    <p class="covered-by">Continuation of <a href="${escapeHtml(coveredBy.key)}.html">${escapeHtml(coveredBy.name)}</a> — documented in <code>slices/${escapeHtml(coveredBy.key)}.md</code>.</p>`
+      : `    <p class="covered-by">Documented as part of <a href="${escapeHtml(coveredBy.key)}.html">${escapeHtml(coveredBy.name)}</a> — see <code>slices/${escapeHtml(coveredBy.key)}.md</code>.</p>`
     : doc
       ? `    <div class="doc">${doc.html}</div>`
       : `    <p class="no-doc">No slice doc found at <code>${escapeHtml(docExpectedPath)}</code>.</p>`;

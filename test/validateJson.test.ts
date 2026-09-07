@@ -143,10 +143,13 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
   it("all 4 gates false when no note binds a doc", () => {
     const { model, refs } = compile(`slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n`);
     expect(computeSliceReadyGates(model, refs, dir, "unbound")).toEqual({
-      docBound: false,
-      frontmatterUsable: false,
-      statusReady: false,
-      noUncheckedOpenQuestions: false,
+      gates: {
+        docBound: false,
+        frontmatterUsable: false,
+        statusReady: false,
+        noUncheckedOpenQuestions: false,
+      },
+      continuationOf: null,
     });
   });
 
@@ -155,10 +158,13 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
       `slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n`,
     );
     expect(computeSliceReadyGates(model, refs, dir, "ready-slice")).toEqual({
-      docBound: true,
-      frontmatterUsable: true,
-      statusReady: true,
-      noUncheckedOpenQuestions: true,
+      gates: {
+        docBound: true,
+        frontmatterUsable: true,
+        statusReady: true,
+        noUncheckedOpenQuestions: true,
+      },
+      continuationOf: null,
     });
   });
 
@@ -167,19 +173,23 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
       `slice "Invalid Slice" {\n  command Do Thing note "slices/invalid-slice.md"\n  event Thing Done\n}\n`,
     );
     expect(computeSliceReadyGates(model, refs, dir, "invalid-slice")).toEqual({
-      docBound: true,
-      frontmatterUsable: false,
-      statusReady: false,
-      noUncheckedOpenQuestions: false,
+      gates: {
+        docBound: true,
+        frontmatterUsable: false,
+        statusReady: false,
+        noUncheckedOpenQuestions: false,
+      },
+      continuationOf: null,
     });
   });
 
   it("buildSliceReadyJson wraps gates/diagnostics/ready in the versioned envelope, gates null on unknown key", () => {
     const { diagnostics } = compile(`slice "Place" {\n  command Do Thing\n}\n`);
-    const doc = JSON.parse(buildSliceReadyJson("model.em", "no-such-key", null, diagnostics, false));
+    const doc = JSON.parse(buildSliceReadyJson("model.em", "no-such-key", null, diagnostics, false, null));
     expect(doc.validateSliceReadySchemaVersion).toBe(VALIDATE_SLICE_READY_SCHEMA_VERSION);
     expect(doc.sliceKey).toBe("no-such-key");
     expect(doc.gates).toBeNull();
+    expect(doc.continuationOf).toBeNull();
     expect(doc.ready).toBe(false);
     expect(doc.diagnostics.length).toBe(diagnostics.length);
   });

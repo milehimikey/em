@@ -10,6 +10,7 @@ import { isMainModule } from "./util/isMainModule.js";
 import { localIsoDate } from "./util/localDate.js";
 import { NormalizedModel } from "./model/model.js";
 import { RefsResult } from "./model/refs.js";
+import { continuationOf } from "./model/continuation.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from "./render/render.js";
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
@@ -1257,10 +1258,18 @@ program
           // MIL-128: the 4 named gates (see computeSliceReadyGates) plus the same `scoped`
           // diagnostics and `ready` verdict driving the exit code below — replaces both the
           // scraped warning prose and the two hand-parsed English sentences.
-          const gates = computeSliceReadyGates(model, refs, dirname(file), key);
-          process.stdout.write(buildSliceReadyJson(file, key, gates, scoped, ready) + "\n");
+          const result = computeSliceReadyGates(model, refs, dirname(file), key);
+          process.stdout.write(
+            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null) + "\n",
+          );
         } else {
           console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+          // MIL-208: `--slice-ready` on a continuation key transparently reports the
+          // originating slice's own verdict (the doc join resolves straight through) — name
+          // that slice so the text mode doesn't look like this key has a doc of its own.
+          const sliceIdx = refs.sliceKeys.indexOf(key);
+          const continuation = sliceIdx === -1 ? null : continuationOf(model, refs, sliceIdx);
+          if (continuation) console.log(`  (continuation of "${continuation.sliceKey}")`);
         }
         if (!ready) process.exit(1);
         return;
@@ -1419,7 +1428,9 @@ program
     "check that every INV-* invariant ID cited in an implemented slice doc is cited by a test " +
       "under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's " +
       "definition-of-done citation check; advisory by default, --strict for CI; " +
-      "--include-ready also counts ready-to-implement docs (forward-looking report)",
+      "--include-ready also counts ready-to-implement docs (forward-looking report); a " +
+      "continuation slice (an `again` view instance with no doc of its own, MIL-208) is excluded " +
+      "from the report — its invariants, if any, live in the originating slice's own doc",
   )
   .argument("<file>", "input .em file")
   .requiredOption("--tests <dir>", "directory to scan recursively for test files citing invariant IDs")

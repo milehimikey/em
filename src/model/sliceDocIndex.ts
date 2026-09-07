@@ -20,7 +20,9 @@ import { join } from "node:path";
 import { parseSliceDoc, SliceDoc, hasUsableFrontmatter } from "../catalog/sliceDoc.js";
 import { classifyImplementationDrift, DriftSignalKind } from "../catalog/driftSignal.js";
 import { NOTE_SLICE_PATH } from "../catalog/docJoin.js";
-import { Slice } from "./model.js";
+import { NormalizedModel, Slice } from "./model.js";
+import { RefsResult } from "./refs.js";
+import { continuationOf } from "./continuation.js";
 
 /** Matches a slice-doc filename (`slices/<key>.md`) — same kebab-slug grammar
  *  `catalog/sliceDoc.ts`'s SLICE_REF and `docJoin.ts`'s NOTE_SLICE_PATH use for the key itself. */
@@ -78,13 +80,25 @@ export interface SliceQueryDoc {
   /** The doc's body text (post-frontmatter), for `extractInvariantIds()` — null whenever
    *  `found` is false or the frontmatter wasn't usable (nothing safe to scan). */
   body: string | null;
+  /** MIL-208: non-null when this slice is a continuation (an again-view-only slice with no
+   *  legacy doc of its own) — the originating slice's export key. See `docJoin.ts`'s own field
+   *  of the same name for the full contract; identical semantics, just resolved from the
+   *  in-memory `docsByKey` map instead of a per-slice fs read. */
+  continuationOf: string | null;
 }
 
 /** Same resolution semantics as `docJoin.ts`'s resolveSliceDocJoin() — canonical `note` binding
- *  first, then a ratified MIL-121 cross-binding naming this slice in its `covers:` list — but
- *  reading from the in-memory map `loadSliceDocsOnce()` built once for the whole model, instead
- *  of one `readSliceDoc()` fs call per slice/candidate. */
-export function joinSliceDocFast(slice: Slice, sliceKey: string, docsByKey: Map<string, SliceDoc>): SliceQueryDoc {
+ *  first, then a ratified MIL-121 cross-binding naming this slice in its `covers:` list, then
+ *  (MIL-208) an automatic continuation fallback for an again-view-only slice with no doc of its
+ *  own — but reading from the in-memory map `loadSliceDocsOnce()` built once for the whole
+ *  model, instead of one `readSliceDoc()` fs call per slice/candidate. */
+export function joinSliceDocFast(
+  model: NormalizedModel,
+  refs: RefsResult,
+  slice: Slice,
+  sliceKey: string,
+  docsByKey: Map<string, SliceDoc>,
+): SliceQueryDoc {
   const path = `slices/${sliceKey}.md`;
   const boundEls = slice.elements.filter((el) => el.note === path);
 
@@ -99,13 +113,21 @@ export function joinSliceDocFast(slice: Slice, sliceKey: string, docsByKey: Map<
       if (!doc || !hasUsableFrontmatter(doc) || !doc.covers.includes(sliceKey)) continue;
       return foundDoc(`slices/${otherKey}.md`, doc);
     }
-    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, driftSignal: null, body: null };
+    // MIL-208 — see docJoin.ts's own comment: "legacy own doc wins" is satisfied automatically
+    // by `boundEls.length === 0` (no note of its own) plus no ratified cross-binding above.
+    const continuation = continuationOf(model, refs, slice.index);
+    if (continuation) {
+      const originatingSlice = model.slices[continuation.sliceIndex];
+      const originatingDoc = joinSliceDocFast(model, refs, originatingSlice, continuation.sliceKey, docsByKey);
+      return { ...originatingDoc, continuationOf: continuation.sliceKey };
+    }
+    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, driftSignal: null, body: null, continuationOf: null };
   }
 
   const doc = docsByKey.get(sliceKey);
-  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, driftSignal: null, body: null };
+  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, driftSignal: null, body: null, continuationOf: null };
   if (!hasUsableFrontmatter(doc)) {
-    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, driftSignal: null, body: null };
+    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, driftSignal: null, body: null, continuationOf: null };
   }
   return foundDoc(path, doc);
 }
@@ -119,5 +141,6 @@ function foundDoc(path: string, doc: SliceDoc): SliceQueryDoc {
     implementedIn: doc.implementedIn,
     driftSignal: classifyImplementationDrift(doc),
     body: doc.body,
+    continuationOf: null,
   };
 }

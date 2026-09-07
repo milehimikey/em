@@ -538,7 +538,7 @@ slice "List Widgets" {
   view Widget List from "Widget Made" note "slices/list-widgets.md"
 }
 slice "List Widgets Later" {
-  view Widget List again from "Widget Retired" note "slices/list-widgets-later.md"
+  view Widget List again from "Widget Retired"
 }
 slice "Notify From Latest" {
   processor Widget Notifier from "Widget List" note "slices/notify-from-latest.md"
@@ -567,8 +567,14 @@ slice "Notify From Latest" {
     writeFileSync(join(dir, "slices", "list-ready.md"), doc("draft"));
     writeFileSync(join(dir, "slices", "list-ghost.md"), doc("draft"));
     writeFileSync(join(dir, "slices", "list-both.md"), doc("draft"));
-    writeFileSync(join(dir, "slices", "list-widgets.md"), doc("draft"));
-    writeFileSync(join(dir, "slices", "list-widgets-later.md"), doc("draft"));
+    // "reviewed" (distinct from every other doc's "draft" here) so the continuation resolution
+    // test below can tell "resolved through to list-widgets's own doc" apart from "fell back to
+    // no-doc" unambiguously — either bug would otherwise still read plausibly as "draft".
+    writeFileSync(join(dir, "slices", "list-widgets.md"), doc("reviewed"));
+    // list-widgets-later.md deliberately absent — MIL-208: "List Widgets Later" is a
+    // continuation of "List Widgets" (an again-view-only slice with no note of its own), so the
+    // advisory below must resolve its status through to "list-widgets"'s own doc, never
+    // "no doc" (what a genuinely-unbound slice would report).
     writeFileSync(join(dir, "slices", "notify-from-latest.md"), doc("draft"));
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -603,7 +609,14 @@ slice "Notify From Latest" {
     // "Notify From Latest" resolves "Widget List" to the LATEST instance (List Widgets Later,
     // fed by Widget Retired) — List Widgets' own producer (make-widget) must NOT appear just
     // because it's an earlier instance of the same logical view.
-    expect(upstreamFor("notify-from-latest")).toEqual([{ sliceKey: "list-widgets-later", status: "draft" }]);
+    //
+    // MIL-208: "List Widgets Later" is a continuation of "List Widgets" (no note of its own) —
+    // the reported status ("reviewed") is "List Widgets"'s own doc status, resolved THROUGH the
+    // continuation, not "no doc" (what a genuinely unbound slice would report). The upstream
+    // SLICE KEY named is still the actual edge's own slice ("list-widgets-later"), never the
+    // originating one — same "which slice is upstream" answer as before this ticket, just with
+    // its status now correctly attributed.
+    expect(upstreamFor("notify-from-latest")).toEqual([{ sliceKey: "list-widgets-later", status: "reviewed" }]);
   });
 
   it("returns [] for a slice key the model doesn't have", () => {

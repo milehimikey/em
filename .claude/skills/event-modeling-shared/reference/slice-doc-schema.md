@@ -201,6 +201,35 @@ the mismatch, as its own separate rule (MIL-126) — see
 that just doesn't ratify (`covers` doesn't list this slice back), and an extra note doing nothing
 in a slice that's already bound elsewhere, each get their own diagnostic there.
 
+## Continuations
+
+Since `em` 1.12.0 (MIL-208): a `view X again` instance is a **continuation** of the slice
+holding `X`'s first (originating) declaration — one read model, fed by more than one event over
+the timeline — not a spec unit of its own. Unlike `covers` above, this is fully automatic and
+structural: no frontmatter, no `note`, nothing to author. A slice is a continuation iff every
+non-`ui` element it declares is a `view` with `again === true`; the doc join resolves it
+straight through to the originating slice's own doc, exactly the way a ratified `covers:`
+binding resolves a covered slice — same `doc.found`/`status`/`driftSignal`, plus a
+`continuationOf: <originating-key>` field naming why. `em export`, `em status`, `em coverage`,
+`em slice index`, `em catalog`, and the render pipeline's Slice Status legend all resolve a
+continuation slice this way; `em slice ratify`/`review`/`reratify`/`mark-implemented` and
+`em slice new --wire` refuse on one outright, naming the originating slice to act on instead —
+a continuation slice has no status/ratification of its own to flip.
+
+The originating slice's own `em export` object also gains `alsoReads: [{ event, atSlice }]` —
+the union of events every later `again` instance of that view reads via `from`, in timeline
+order — so implementing the read model from one export never means walking every `again`
+slice's doc by hand to assemble the full event list.
+
+**Legacy own doc wins.** A slice that would otherwise be a continuation but still carries its
+own doc — a `note "slices/<again-key>.md"` binding it, or a stray `slices/<again-key>.md` file
+left over from before this rule existed — keeps today's per-instance behavior unchanged: its own
+doc, its own status, its own ratification. `em validate`'s `continuation-has-own-doc` warning
+(see [validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md)) flags it either way, so an author can fold that doc's
+scenarios into `slices/<originating-key>.md` and delete it. This is the migration path — an
+existing model with per-`again`-instance docs keeps working exactly as before until each one is
+folded in.
+
 ## Delta section: grammar and lifecycle
 
 `## Delta` is the body section that pairs with a re-ratification (see "`status` under

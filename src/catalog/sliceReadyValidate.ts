@@ -56,6 +56,8 @@ export function validateSliceReady(
   }
   const slice = model.slices[sliceIndex];
   const { doc, diagnostics: joinDiagnostics } = resolveSliceDocJoin(
+    model,
+    refs,
     slice,
     sliceKey,
     baseDir,
@@ -125,21 +127,33 @@ export interface SliceReadyGates {
   noUncheckedOpenQuestions: boolean;
 }
 
+/** `computeSliceReadyGates`'s full result (MIL-208): the 4 gates plus `continuationOf` — non-
+ *  null when `sliceKey` names a continuation slice (an again-view-only slice with no legacy doc
+ *  of its own), naming the originating slice whose doc/status the gates above actually verify.
+ *  `gates` themselves already reflect the originating slice's verdict transparently (the same
+ *  `resolveSliceDocJoin()` call this function makes resolves straight through) — this field
+ *  only explains WHY, the same "doc reports the real status, continuationOf says why" split
+ *  `em export` uses. */
+export interface SliceReadyResult {
+  gates: SliceReadyGates;
+  continuationOf: string | null;
+}
+
 export function computeSliceReadyGates(
   model: NormalizedModel,
   refs: RefsResult,
   baseDir: string,
   sliceKey: string,
-): SliceReadyGates | null {
+): SliceReadyResult | null {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) return null;
   const slice = model.slices[sliceIndex];
-  const { doc } = resolveSliceDocJoin(slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
+  const { doc, continuationOf } = resolveSliceDocJoin(model, refs, slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
 
   const docBound = doc.reason !== "no-doc-bound";
   const frontmatterUsable = doc.reason === null;
   if (!frontmatterUsable) {
-    return { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false };
+    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false }, continuationOf };
   }
 
   const statusReady = doc.status === "ready-to-implement";
@@ -149,5 +163,5 @@ export function computeSliceReadyGates(
   const parsed = readSliceDoc(baseDir, boundKey)!;
   const noUncheckedOpenQuestions = parsed.openQuestionsUnchecked === 0;
 
-  return { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions };
+  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions }, continuationOf };
 }

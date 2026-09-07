@@ -30,6 +30,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { isValidDateString } from "./stateFile.js";
@@ -157,7 +158,26 @@ export function runReview(
     return { ok: false, message: `no slice with export key "${sliceKey}" in this model` };
   }
   const slice = model.slices[sliceIndex];
-  const { doc } = resolveSliceDocJoin(slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
+  const { doc, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+    model,
+    refs,
+    slice,
+    sliceKey,
+    baseDir,
+    (id) => refs.refById.get(id)!,
+  );
+
+  // MIL-208: see runRatify's own comment — a continuation slice has no status of its own.
+  if (continuationOfKey) {
+    const continuation = continuationOf(model, refs, sliceIndex)!;
+    const viewName = model.byId.get(continuation.viewLogicalId)!.name;
+    return {
+      ok: false,
+      message:
+        `"${sliceKey}" is a continuation of "${continuationOfKey}" (view "${viewName}" again) — ` +
+        `it has no doc of its own; review "${continuationOfKey}" instead`,
+    };
+  }
 
   if (doc.reason === "no-doc-bound") {
     return {

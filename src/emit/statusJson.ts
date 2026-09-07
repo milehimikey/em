@@ -20,7 +20,11 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // the project's implementation constitution exists, and its expected location relative to that
 // entry's own `modelDir` (`/`-separated, never absolute). Existence only; the document's content
 // is never read. See ../cli/status.ts's ConstitutionEntry/resolveConstitution.
-export const STATUS_SCHEMA_VERSION = "1.3";
+// 1.4 (MIL-208): a new top-level `continuations` (number) — count of continuation slices
+// (again-view-only slices with no legacy doc of their own) across every input file, excluded
+// from every `slices.byStatus`/`driftSignal` bucket (the originating slice's own fact already
+// counts once). See ../cli/status.ts's StatusReport.continuations.
+export const STATUS_SCHEMA_VERSION = "1.4";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No
@@ -32,6 +36,7 @@ export function buildStatusJson(report: StatusReport): string {
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     files: report.files,
     slices: report.slices,
+    continuations: report.continuations,
     driftSignal: report.driftSignal,
     invariants: report.invariants,
     issues: report.issues,

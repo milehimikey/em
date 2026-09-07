@@ -84,6 +84,12 @@ export interface SliceStatusFact {
   driftSignal: DriftSignalKind | null;
   openQuestionsTotal: number;
   openQuestionsUnchecked: number;
+  /** MIL-208: non-null when this slice is a continuation (an again-view-only slice with no
+   *  legacy doc of its own) — the originating slice's export key. `buildStatusReport` excludes
+   *  a continuation fact from every `byStatus`/`driftSignal` bucket (the originating slice's own
+   *  fact already counts that status/drift once) and tallies it in `StatusReport.continuations`
+   *  instead. */
+  continuationOf: string | null;
 }
 
 export interface SliceStatusFactsResult {
@@ -107,7 +113,14 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
   const diagnostics: Diagnostic[] = [];
   const facts = model.slices.map((slice, i) => {
     const key = refs.sliceKeys[i];
-    const { doc, diagnostics: docDiags } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
+    const { doc, diagnostics: docDiags, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+      model,
+      refs,
+      slice,
+      key,
+      baseDir,
+      (id) => refs.refById.get(id)!,
+    );
     diagnostics.push(...docDiags);
 
     let docPath: string | null = null;
@@ -136,6 +149,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       driftSignal: doc.driftSignal,
       openQuestionsTotal,
       openQuestionsUnchecked,
+      continuationOf: continuationOfKey,
     };
   });
   return { facts, diagnostics };
@@ -449,6 +463,11 @@ export interface StatusOwnerEntry {
 export interface StatusReport {
   files: string[];
   slices: StatusSliceCounts;
+  /** MIL-208: count of continuation slices (again-view-only slices with no legacy doc of their
+   *  own) across every input file — excluded from every `slices.byStatus`/`driftSignal` bucket
+   *  (they have no status/drift of their own; the originating slice's own fact already counts
+   *  once) but still real slices on the timeline, so tallied here rather than silently dropped. */
+  continuations: number;
   driftSignal: StatusDriftCounts;
   /** Null when `--tests <dir>` wasn't given — invariant coverage is opt-in (it needs a test
    *  tree to scan), unlike every other rollup dimension, which is always computable from the
@@ -494,8 +513,17 @@ export function buildStatusReport(
   // path, since two different input models' `slices/` dirs could otherwise collide on the same
   // relative path string without actually being the same file).
   const countedDocPaths = new Set<string>();
+  let continuations = 0;
 
   for (const f of sliceFacts) {
+    // MIL-208: a continuation slice has no status/drift of its own — the originating slice's
+    // own fact (elsewhere in `sliceFacts`) already counts that status/drift once. Tally it
+    // separately and skip every bucket below (including the Open Questions dedup, which the
+    // originating slice's own turn through this loop already covers via the same `docPath`).
+    if (f.continuationOf !== null) {
+      continuations++;
+      continue;
+    }
     switch (f.bucket) {
       case "draft":
         byStatus.draft++;
@@ -548,6 +576,7 @@ export function buildStatusReport(
   return {
     files,
     slices: { total: sliceFacts.length, byStatus },
+    continuations,
     driftSignal: drift,
     invariants,
     issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked },
@@ -642,6 +671,10 @@ export function formatStatusDetail(report: StatusReport): string {
       `${byStatus.reviewed} reviewed, ${byStatus.draft} draft, ${byStatus.noDoc} no doc, ${byStatus.frontmatterInvalid} frontmatter invalid, ` +
       `${byStatus.unknown} unknown status`,
   );
+  // MIL-208: continuation slices (again-view-only, no doc of their own) are excluded from
+  // `byStatus`/`driftSignal` above (the originating slice's own status/drift already counts
+  // once) — named on their own line rather than silently missing from the total.
+  lines.push(`continuations: ${report.continuations} (again view instances — no status of their own)`);
   const d = report.driftSignal;
   lines.push(
     `driftSignal: ${d.inSync} in-sync, ${d.neverImplemented} never-implemented, ${d.unpropagatedDelta} unpropagated-delta, ` +
@@ -699,6 +732,7 @@ export function formatStatusMarkdown(report: StatusReport): string {
   const { byStatus } = report.slices;
   const rows: Array<[string, string]> = [
     ["Slices", `${byStatus.implemented}/${report.slices.total} implemented (${byStatus.readyToImplement} ready-to-implement, ${byStatus.reviewed} reviewed, ${byStatus.draft} draft)`],
+    ["Continuations", `${report.continuations}`],
     ["Invariants", report.invariants ? `${report.invariants.cited}/${report.invariants.total} covered` : "not checked"],
     ["Open issues", `${report.issues.openIssues}`],
     ["Open questions", `${report.issues.openQuestionsUnchecked} unchecked`],

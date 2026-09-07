@@ -19,6 +19,7 @@ function sampleReport(): StatusReport {
   return {
     files: ["model.em"],
     slices: { total: 8, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, noDoc: 0, frontmatterInvalid: 0, unknown: 0 } },
+    continuations: 0,
     driftSignal: { inSync: 8, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, notApplicable: 0, frontmatterInvalid: 0 },
     invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
     issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
@@ -45,10 +46,11 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.3");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.4");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);
+    expect(doc.continuations).toBe(report.continuations);
     expect(doc.driftSignal).toEqual(report.driftSignal);
     expect(doc.invariants).toEqual(report.invariants);
     expect(doc.issues).toEqual(report.issues);

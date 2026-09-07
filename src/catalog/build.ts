@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
+import { continuationOf } from "../model/continuation.js";
 import { Grid } from "../layout/grid.js";
 import { layoutDot, composeSvg, writeRendered } from "../render/render.js";
 import { buildSliceDiagram } from "../render/sliceDiagram.js";
@@ -127,14 +128,28 @@ export async function buildCatalog(
       // own page instead, never the covering doc's content rendered under a different slice's
       // name.
       let doc = ownDoc;
-      let coveredBy: { key: string; name: string } | null = null;
+      let coveredBy: { key: string; name: string; kind: "covers" | "continuation" } | null = null;
       if (!ownDoc) {
         coverageDocs ??= readCoverageDocs(join(dirname(file), "slices"));
         const covering = coverageDocs.get(sliceKey);
         if (covering) {
           doc = covering.doc;
           const coveringIndex = refs.sliceKeys.indexOf(covering.key);
-          coveredBy = { key: covering.key, name: coveringIndex >= 0 ? model.slices[coveringIndex].name : covering.key };
+          coveredBy = { key: covering.key, name: coveringIndex >= 0 ? model.slices[coveringIndex].name : covering.key, kind: "covers" };
+        } else {
+          // MIL-208: still no doc — check whether this slice is a CONTINUATION (an again-view-
+          // only slice) of another slice's own file, filename-convention resolution's own
+          // fallback (mirrors render/sliceStatus.ts's readSliceDocs). Checked last, after both
+          // the own-file and MIL-121 covers: lookups have already come up empty.
+          const continuation = continuationOf(model, refs, i);
+          if (continuation) {
+            const originatingPath = join(dirname(file), "slices", `${continuation.sliceKey}.md`);
+            if (existsSync(originatingPath)) {
+              doc = parseSliceDoc(readFileSync(originatingPath, "utf8"));
+              const originatingSlice = model.slices[continuation.sliceIndex];
+              coveredBy = { key: continuation.sliceKey, name: originatingSlice.name, kind: "continuation" };
+            }
+          }
         }
       }
 

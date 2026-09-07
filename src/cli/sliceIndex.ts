@@ -42,8 +42,12 @@ function escapeCell(s: string): string {
  *  templates/model-readme.md and reference/extract.md already use for a slice that hasn't
  *  reached the `slice` phase. `doc.found` false covers both of docJoin's not-found reasons
  *  (no-doc-bound and binding-missing-file) — catalog doesn't distinguish them either, since a
- *  broken binding still means "there's no doc a human can currently read." */
-function statusCell(doc: SliceDocExport): string {
+ *  broken binding still means "there's no doc a human can currently read." `continuationOf`
+ *  (MIL-208) wins over both: a continuation slice's row names the originating slice instead of
+ *  echoing its (borrowed) status verbatim, which would otherwise look like an independent slice
+ *  happens to share the same status by coincidence. */
+function statusCell(doc: SliceDocExport, continuationOf: string | null): string {
+  if (continuationOf) return `continuation of \`${continuationOf}\``;
   if (!doc.found) return "no doc yet";
   return doc.status ?? "unknown";
 }
@@ -81,7 +85,9 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
   const rows: SliceIndexRow[] = model.slices.map((slice, i) => {
     const sliceKey = refs.sliceKeys[i];
     const pattern = classifySlicePattern(slice);
-    const { doc, diagnostics: docDiags } = resolveSliceDocJoin(
+    const { doc, diagnostics: docDiags, continuationOf } = resolveSliceDocJoin(
+      model,
+      refs,
       slice,
       sliceKey,
       baseDir,
@@ -92,7 +98,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       index: i + 1,
       name: slice.name,
       pattern: slicePatternLabel(pattern),
-      status: statusCell(doc),
+      status: statusCell(doc, continuationOf),
       reviewedBy: doc.reviewedBy ?? "—",
       ratifiedBy: doc.ratifiedBy ?? "—",
       owner: doc.owner ?? "—",

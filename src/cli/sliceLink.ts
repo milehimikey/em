@@ -39,6 +39,7 @@
 
 import { NormalizedModel, Element } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { indexOfUnquoted, stripComment } from "../parser/lexer.js";
 import { SlicePattern } from "./sliceNew.js";
 
@@ -87,6 +88,22 @@ export function resolvePrimaryElement(
       ok: false,
       message: `slice "${slice.name}" has ${candidates.length} ${kinds.join("/")} elements — ambiguous, wire the note by hand`,
     };
+  }
+  // MIL-208: the sole candidate view is `again` — this slice is a CONTINUATION of the view's
+  // originating slice, which has no doc of its own to scaffold/wire. Refuse and point at the
+  // originating slice's key and doc path instead of wiring a doc this slice can never be
+  // ratified against.
+  if (candidates[0].kind === "view" && candidates[0].again === true) {
+    const continuation = continuationOf(model, refs, sliceIndex);
+    if (continuation) {
+      const viewName = model.byId.get(continuation.viewLogicalId)!.name;
+      return {
+        ok: false,
+        message:
+          `slice "${slice.name}" is a later instance of "${viewName}" (again) — it has no doc of ` +
+          `its own; the doc lives at slices/${continuation.sliceKey}.md (slice "${continuation.sliceKey}")`,
+      };
+    }
   }
   return { ok: true, sliceIndex, element: candidates[0] };
 }

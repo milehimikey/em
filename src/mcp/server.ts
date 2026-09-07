@@ -256,8 +256,10 @@ export function createServer(): McpServer {
       const combined = [...allDiagnostics, ...readyDiagnostics];
       const scoped = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
       const ready = scoped.length === 0;
-      const gates = computeSliceReadyGates(model, refs, baseDir, sliceKey);
-      return textResult(buildSliceReadyJson(file, sliceKey, gates, scoped, ready));
+      const result = computeSliceReadyGates(model, refs, baseDir, sliceKey);
+      return textResult(
+        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null),
+      );
     },
   );
 

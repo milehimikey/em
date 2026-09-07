@@ -132,7 +132,7 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
   const sliceFacts = new Map<string, SliceIndexFact>();
   model.slices.forEach((slice, i) => {
     const key = refs.sliceKeys[i];
-    const doc = joinSliceDocFast(slice, key, docsByKey);
+    const doc = joinSliceDocFast(model, refs, slice, key, docsByKey);
     sliceFacts.set(key, { key, name: slice.name, index: i, line: slice.line, doc });
   });
 

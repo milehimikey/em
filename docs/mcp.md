@@ -118,6 +118,9 @@ bound, frontmatter usable, status `ready-to-implement`, no unchecked Open Questi
 overall `ready` boolean, and the diagnostics behind it. An unknown `sliceKey` is **not** a tool
 error here — it's represented in the document itself (`gates: null`, `ready: false`, a
 `slice-ready-unknown-slice` diagnostic), exactly like the CLI's own `--json` output.
+`continuationOf` (MIL-208) is non-null when `sliceKey` names a continuation slice (an
+again-view-only slice with no legacy doc of its own) — the originating slice's export key;
+`gates` themselves already resolve straight through to that slice's own doc/status.
 
 ### `list_markers`
 
@@ -149,7 +152,9 @@ tool error) when the model has errors, or when `testsDir` doesn't exist AND at l
 in scope — matching the CLI's own behavior: a fresh scaffold or doc-only ratification PR with
 zero `implemented` docs has nothing yet to check, so a missing `--tests` directory there isn't a
 defect (MIL-207). This is a *checking* tool, not a *judgment* one: it confirms an ID is cited,
-never whether the citing test is good or passing.
+never whether the citing test is good or passing. A continuation slice (MIL-208 — an `again`
+view instance with no doc of its own) is excluded from `slices` entirely — its invariants, if
+any, live in the originating slice's own doc, already listed under that key.
 
 ### `status`
 

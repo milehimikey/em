@@ -101,7 +101,20 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    `fields-completeness/view-field-no-source`; the traced form's names must resolve among
 //    the view's actual sources (`derived-from-unresolved` otherwise). See model/validate.ts.
 // Additive-only.
-export const SCHEMA_VERSION = "1.11";
+// 1.12 (MIL-208, "an `again` view instance is a continuation of its originating slice"):
+//  - `slice.continuationOf: string | null` — non-null when this slice is a continuation (an
+//    again-view-only slice with no legacy doc of its own): the originating slice's export key.
+//    `slice.doc` is byte-identical to the originating slice's own `doc` in that case (see
+//    `catalog/docJoin.ts`'s `resolveSliceDocJoin`) — `continuationOf` is what says why. Null
+//    for every ordinary slice, and for a continuation slice that still carries its own legacy
+//    doc (migration path — a `continuation-has-own-doc` warning fires instead, model/rules.ts).
+//  - `slice.alsoReads: { event, atSlice }[]` — for the slice holding a view's ORIGINATING
+//    declaration, the union of events every later `again` instance of that view reads via
+//    `from`, in timeline order, deduped by `(event, atSlice)`. `[]` for every other slice
+//    (including an again-slice's own entry — only the origin carries the union). See
+//    `model/continuation.ts` for the shared predicate/resolution both fields are built on.
+// Additive-only.
+export const SCHEMA_VERSION = "1.12";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -163,6 +176,14 @@ export interface EdgeExport {
   source: EdgeSource;
 }
 
+/** One later `again` instance's event, from `alsoReads` (schema 1.12, MIL-208): the event ref
+ *  a continuation instance of this view reads via `from`, and which slice that instance lives
+ *  in — see `SliceExport.alsoReads`. */
+export interface AlsoReadsExport {
+  event: string;
+  atSlice: string;
+}
+
 /** One slice's exported shape (`model.slices[]`). `doc`/`pattern` are left loosely typed
  *  (`unknown`/`string`) here — no current consumer of this type reads either field through it,
  *  and giving `doc` its full doc-join shape would mean re-declaring `resolveSliceDocJoin`'s
@@ -175,6 +196,22 @@ export interface SliceExport {
   line: number;
   pattern: string;
   doc: unknown;
+  /** MIL-208, schema 1.12: non-null when this slice is a CONTINUATION of another slice — an
+   *  again-view-only slice with no legacy doc of its own — naming that originating slice's
+   *  export key. `doc` above is byte-identical to the originating slice's own `doc` in that
+   *  case (see `catalog/docJoin.ts`'s `resolveSliceDocJoin`); this field says why. Null for
+   *  every ordinary slice, and for a continuation slice that still carries its own legacy doc
+   *  (a `continuation-has-own-doc` warning fires instead — see `model/rules.ts`). */
+  continuationOf: string | null;
+  /** MIL-208, schema 1.12: for the slice holding the ORIGINATING (first) declaration of a
+   *  repeated view, the union of events every later `again` instance of that view reads via
+   *  `from`, in timeline order (by the instance's position in the model), deduped by
+   *  `(event, atSlice)`. Always `[]` for a slice whose view has no later `again` instance, for
+   *  an `again` instance itself (only the origin carries the union), and for any slice with no
+   *  view element at all. `em export --slice <originating-key>` is therefore the one place that
+   *  lists every event a read model consumes across its whole timeline, without walking each
+   *  `again` slice's own doc by hand. */
+  alsoReads: AlsoReadsExport[];
   elements: ElementExport[];
 }
 
@@ -372,6 +409,36 @@ export function buildExportDoc(
     return el.loopsTo.map((name) => ({ name, ref: refOf(resolveLoopsToTarget(model, el, name)?.id) }));
   };
 
+  // MIL-208: `slice.alsoReads` — for each view element THIS slice declares that is itself an
+  // originating (non-`again`) declaration, the union of events every later `again` instance of
+  // that view reads via `from`, across the whole model, merged in origin-view declaration order
+  // and then instance timeline order (`sliceIndex` ascending). A slice with no originating view
+  // element (an ordinary command/event/processor slice, or an `again`-only continuation slice —
+  // only the ORIGIN carries the union, never a later instance) returns `[]`.
+  const alsoReadsFor = (slice: NormalizedModel["slices"][number]): AlsoReadsExport[] => {
+    const originViews = slice.elements.filter((el) => el.kind === "view" && el.again !== true);
+    if (originViews.length === 0) return [];
+    const seen = new Set<string>();
+    const result: AlsoReadsExport[] = [];
+    for (const originEl of originViews) {
+      const followers = model.elements
+        .filter((other) => other.kind === "view" && other.again === true && other.logicalId === originEl.id)
+        .sort((a, b) => a.sliceIndex - b.sliceIndex);
+      for (const follower of followers) {
+        const atSlice = sliceKeys[follower.sliceIndex];
+        for (const name of follower.from ?? []) {
+          const ref = refOf(resolveByName(model.byName, name));
+          if (!ref) continue; // unresolved `from` — validate.ts already errors on this elsewhere
+          const dedupeKey = `${ref}|${atSlice}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+          result.push({ event: ref, atSlice });
+        }
+      }
+    }
+    return result;
+  };
+
   // Identity/composite/external DCB tag metadata (MIL-66) — events only in practice (`tag`
   // clauses are a parse error on any other kind), `null` when the event carries none. Order:
   // inline field identity tags in field order, then element-level composite/external clauses
@@ -386,7 +453,9 @@ export function buildExportDoc(
   // concatenation for both the JSON diagnostics field and the returned ExportResult.
   const slices = model.slices.map((slice, sliceIndex) => {
     const sliceKey = sliceKeys[sliceIndex];
-    const { doc, diagnostics: sliceDocDiags } = resolveSliceDocJoin(
+    const { doc, diagnostics: sliceDocDiags, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+      model,
+      refs,
       slice,
       sliceKey,
       baseDir,
@@ -410,6 +479,9 @@ export function buildExportDoc(
       // found/reason state machine. Never the markdown body: doc.html/doc.raw never
       // appear here (the hard boundary the ticket requires).
       doc,
+      // MIL-208, schema 1.12 — see SliceExport's own field comments.
+      continuationOf: continuationOfKey,
+      alsoReads: alsoReadsFor(slice),
       elements: slice.elements.map((el) => ({
         ref: refById.get(el.id)!,
         kind: el.kind,
