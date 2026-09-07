@@ -142,7 +142,10 @@ Only then does the slice go out.
 For an agent implementer, the bundled skill ships the full contract to follow —
 [the agent guide](../.claude/skills/event-modeling-implement/reference/implement.md): the readiness
 gate, the read-only rule on ratified docs, propose-don't-decide for gaps, the merge-time
-status flip, and the spec-kit adapter (em-sdd-bridge) where one applies.
+status flip, and the spec-kit adapter (em-sdd-bridge) where one applies. Before any slice in the
+project reaches a PR, a one-time foundation PR lands every model event (plus the shared
+interface shell the constitution names), so slice PRs only ever import contracts instead of
+inventing or duplicating them (the agent guide's §8).
 
 For anything programmatic — a generator, a dashboard, an MCP server, your own scripts —
 consume `em export` rather than parsing the DSL:

@@ -554,6 +554,12 @@ event. `em validate` exempts public elements from warnings about unread events a
 views, since their readers/consumers exist outside this model (see
 [validation.md](validation.md)). See [cli.md](cli.md) for all three.
 
+Reachability drawn in the model carries implementation obligations: a `ui` trigger on a command,
+or a `ui` consumer on a view, means that slice ships an endpoint; no `ui` means internal-only;
+`public` means the shape is a ratified contract. The
+[implementation agent guide](../.claude/skills/event-modeling-implement/reference/implement.md)'s
+"Interface obligations" paragraph (§2) spells out what each case requires from the code.
+
 ## Colors
 
 For orientation when reading a render: UI boxes are white, commands blue, events

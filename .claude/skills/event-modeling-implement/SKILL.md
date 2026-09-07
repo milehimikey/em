@@ -16,11 +16,14 @@ the agent builds rather than facilitates.
 **Read `reference/implement.md` before doing any implement work and follow it as the
 contract.** In short: gate on `em validate <model>.em --slice-ready <key>` (stop and hand
 back if it fails — never edit the doc to make the gate pass); read the project's implementation
-constitution before writing code and stay inside its rules; treat the slice doc as the
-spec (read-only, except the merge-time `status`/`implementedIn` flip); surface every gap to
-the user instead of deciding it silently; cover every `INV-<MNEMONIC>-n` and every scenario with
-tests; in spec-kit projects, allocate via em-sdd-bridge (redirect mode) and never run
-`/speckit.specify`.
+constitution before writing code and stay inside its rules; before a project's first slice PR,
+land a one-time foundation PR holding every model event (plus the shared interface shell) so
+slices only ever import contracts, never invent or reach into a sibling's; treat the slice doc as
+the spec (read-only, except the merge-time `status`/`implementedIn` flip); ship the endpoint a
+`ui`-triggered command or `ui`-consumed view obligates, and surface — never invent — one the
+model doesn't show; surface every gap to the user instead of deciding it silently; cover every
+`INV-<MNEMONIC>-n` and every scenario with tests; in spec-kit projects, allocate via
+em-sdd-bridge (redirect mode) and never run `/speckit.specify`.
 
 **Gate: no constitution, no first slice.** The constitution is the project's ratified house rules
 — stack and architectural shape (including which implementation skill each slice pattern routes

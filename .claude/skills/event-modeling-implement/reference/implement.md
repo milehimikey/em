@@ -68,6 +68,26 @@ Then read `slices/<slice-key>.md` end to end — every section is load-bearing:
 | `## Non-Functional Requirements` | Authz, PII, performance — implement or consciously surface, never skip |
 | `## Dependencies & Read Models Affected` | The blast radius — what else to check before and after |
 
+**Interface obligations follow from the model, not from the doc's prose.** The DSL already
+encodes what's reachable — see `em-dsl.md`'s "Headless / API systems & repeated read models"
+section — and the routing from it is mechanical, not a technical choice you make while coding:
+
+- A **command with a `ui` trigger** ships the endpoint that dispatches it as part of this slice
+  — shape, verb, status codes, and error mapping follow the constitution's interface conventions
+  (§7). Because: the model already said this command is reachable from outside; leaving it
+  reachable only through an internal gateway silently narrows what the model ratified.
+- A **view with a `ui` consumer** ships the query endpoint as part of this slice, same
+  conventions.
+- **No `ui`** on the trigger or the consumer (a command dispatched by a processor or a
+  translation, a view read only by a reaction) means internal-only: no endpoint. If one seems
+  needed anyway, that's a gap to surface (§4), not a technical choice to make mid-implementation
+  — adding a route the model doesn't show is exactly the kind of silent divergence §4 exists to
+  catch.
+- **`public` events and views** are the model's published integration surface: their shape is a
+  contract, not an implementation detail. `em validate --list-public` lists them; `em typespec`
+  is the POC generator for a downstream schema. Changing a public element's shape is a ratified
+  delta, never an implementation-time choice.
+
 For timeline context, read the slice's surroundings in the `.em` (what triggers it, what
 consumes its output) — the slice's own diagram (`slices/<slice-key>.svg`) shows its canonical
 pattern shape. For machine-readable facts, use `em export <model>.em --slice <slice-key>`
@@ -122,7 +142,7 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 - Alternate/error flows (idempotency included) are covered by tests.
 - The build and full test suite are green; the model still validates (`em validate` in CI —
   you didn't touch the `.em`, so this only fails if something else broke).
-- Nothing between the slice doc and the code was committed as a source of truth (see §8 —
+- Nothing between the slice doc and the code was committed as a source of truth (see §9 —
   work containers are ephemeral; generated or symlinked specs are renderings).
 
 ## 6. At merge: the lifecycle flip
@@ -165,7 +185,11 @@ parked in the document as open items, exactly like a slice doc's Open Questions:
 1. **Stack and architectural shape** — languages/runtimes, frameworks, the architectural pattern,
    where a slice's code lives, and the routing table: which implementation skill or approach each
    of the four slice patterns uses (for example, State Change slices → the `axon-*` skill set).
-   That table is what you obey in §2 when you read a slice's `pattern:`.
+   That table is what you obey in §2 when you read a slice's `pattern:`. This is also where the
+   **interface conventions** question gets asked — resource style, error/rejection mapping,
+   versioning, auth at the edge — so the shape of every endpoint the interface obligations
+   paragraph (§2) and the foundation step (§8) require is decided once, here, instead of
+   invented per slice.
 2. **Code style** — formatter/linter, naming, module layout, and what "idiomatic" means here.
 3. **Testing norms** — which test levels each pattern requires, where invariant and scenario
    tests live, and the test-naming convention that lets `em coverage` trace `INV-<MNEMONIC>-n`
@@ -197,7 +221,44 @@ spec-kit's own placeholders is the team's call, and em's sections go in alongsid
 `em status` will then report `constitution: present` for the model. That's the whole mechanical
 check — em stores and locates this document, and never validates a word of it.
 
-## 8. Spec-kit projects: the SDD adapter
+## 8. Foundation: contracts first
+
+Once per project, before the first slice PR ever opens, land one **foundation PR** that turns
+the model's events — and the cross-cutting shell the constitution names — into code, and
+nothing else. Skip this and the failure is the same on every project that's skipped it: the
+first slice PR ships fine, then the second one needs an event the first slice already defined
+informally, and every PR after that either redefines it slightly differently or reaches into a
+sibling slice's package to reuse it — the boundary the constitution drew is gone within a week.
+
+1. **What it contains.** Every event `em export <model>.em` lists in `events[]`, each placed in
+   the home the constitution's "where a slice's code lives" rule assigns to its *emitting*
+   slice — not a separate shared "events" module, so nothing about where an event lives depends
+   on this PR existing rather than the constitution. Fields come verbatim from the slice docs'
+   Event tables, with types mapped per the constitution's stack conventions. Add the
+   cross-cutting shell the constitution names: shared ports, and the request/response boundary
+   and error mapping the interface obligations above (§2) plug their endpoints into. **No
+   handlers, no projections — contracts only.** Because: a handler or a projection belongs to
+   the slice that owns the behavior behind it; folding one into the foundation PR turns a shared
+   contract into a pre-empted slice.
+2. **It merges before any slice PR opens.** Every slice branch is cut from `main` *after* the
+   foundation PR has landed there — never from a commit that predates it, and never alongside an
+   open, unmerged foundation PR. A slice PR never carries foundation files. Because: a slice PR
+   opened while the foundation is still in review shows a diff dominated by files the slice
+   didn't write and can't be held accountable for, and its merge depends on someone else's
+   review timeline instead of its own.
+3. **A slice never creates, edits, or reaches into another slice's code.** It *imports* events —
+   only events — from wherever the foundation placed them; a sibling slice's handlers, storage,
+   and other internals stay off limits. Because: the boundary the constitution drew only holds if
+   every slice actually stays inside it — a slice that quietly builds on a sibling's internals has
+   erased that boundary informally, one import at a time.
+4. **A ratified delta that adds or changes an event re-runs this step for that event, first.**
+   Land the code change for the new or changed event — in its emitting slice's home, following
+   rule 1 — before the slice's delta PR opens, exactly as if it were the first pass. Because: the
+   same contract-before-consumer ordering that applies once per project applies again every time
+   the contract itself changes; an event isn't a stable shared type just because it was one
+   yesterday.
+
+## 9. Spec-kit projects: the SDD adapter
 
 If the repository uses spec-kit (a `.specify/` directory exists), do not hand-author spec-kit
 artifacts — allocate through **em-sdd-bridge**, redirect mode preferred:
@@ -229,7 +290,7 @@ plan/tasks as FEATURE_SPEC. The rules that keep redirect mode safe:
 No spec-kit (or any SDD tool)? Implement straight from the slice doc — it already contains
 everything a spec holds. Don't introduce an intermediate spec document of your own.
 
-## 9. Never do
+## 10. Never do
 
 | Rule | Because |
 |---|---|
@@ -241,8 +302,9 @@ everything a spec holds. Don't introduce an intermediate spec document of your o
 | Never invent the house rules a first slice needs (stack, style, testing, NFR defaults) | They're the project's decision, ratified in the constitution — §7, not your judgment call |
 | Never regenerate merged code from the model | Generated-then-owned: post-merge code belongs to its owners |
 | Never commit an authored intermediate spec | The slice is the spec; anything between it and the code is a rendering |
+| Never open a slice PR before the foundation PR has merged | The foundation is what makes an event a stable shared contract — a slice built ahead of it is building on a moving target (§8) |
 
-## 10. Afterward: the loop closes
+## 11. Afterward: the loop closes
 
 Implementation isn't the end of the slice's story. On a cadence — or whenever someone asks —
 the `conform` phase checks implemented slices against the code, using the `implementedIn` link
