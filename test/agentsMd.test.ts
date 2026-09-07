@@ -27,7 +27,7 @@ describe("syncAgentsMd", () => {
       expect(content).toContain("em contract");
       expect(content).toContain("em validate <model>.em --slice-ready <slice-key> --json");
       expect(content).toContain("em export <model>.em --slice <slice-key>");
-      expect(content).toContain("em export <model>.em --json | jq -r '.slices[].key'");
+      expect(content).toContain("em export <model>.em | jq -r '.model.slices[].key'");
       expect(content).toContain("em-mcp");
       expect(content).toContain("https://github.com/milehimikey/em/blob/main/docs/mcp.md");
     } finally {

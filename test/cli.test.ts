@@ -1554,7 +1554,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(agentsMd).toContain("em contract");
       expect(agentsMd).toContain("em validate <model>.em --slice-ready <slice-key> --json");
       expect(agentsMd).toContain("em export <model>.em --slice <slice-key>");
-      expect(agentsMd).toContain("em export <model>.em --json | jq -r '.slices[].key'");
+      expect(agentsMd).toContain("em export <model>.em | jq -r '.model.slices[].key'");
       expect(agentsMd).toContain("em-mcp");
       expect(agentsMd).toContain("https://github.com/milehimikey/em/blob/main/docs/mcp.md");
 

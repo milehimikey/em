@@ -27,7 +27,7 @@ em validate <model>.em --slice-ready <slice-key> --json
 
 `<slice-key>` is the slice's export key — the kebab-case slug of its name (`"Place Order"` →
 `place-order`). Don't guess it or hand-slug the name yourself: list every slice's key with
-`em export <model>.em --json | jq -r '.slices[].key'`. Read the JSON document's `ready` field —
+`em export <model>.em | jq -r '.model.slices[].key'`. Read the JSON document's `ready` field —
 don't infer it from the exit code or any printed text. `ready: true` means: the slice has a doc
 bound via `note "slices/<key>.md"`, its frontmatter is usable, `status: ready-to-implement`,
 every `## Open Questions` checkbox is checked, and no status/version/link incoherence is flagged

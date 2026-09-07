@@ -44,7 +44,7 @@ agent — Claude Code or otherwise — should follow this contract:
 - **Read path**: \`em export <model>.em --slice <slice-key>\` exports just that slice's
   normalized JSON (pattern, fields, doc) to implement against; \`em export <model>.em\` exports
   the whole model.
-- **Slice keys**: \`em export <model>.em --json | jq -r '.slices[].key'\` lists every slice's
+- **Slice keys**: \`em export <model>.em | jq -r '.model.slices[].key'\` lists every slice's
   export key (the \`<slice-key>\` the gate and read path above take) without reading the DSL.
 - **MCP alternative**: \`em-mcp\` starts a stateless stdio MCP server exposing the contract,
   gate, and read path above (plus full validate/export) as tools instead of shell commands —
