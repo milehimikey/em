@@ -46,6 +46,7 @@
 
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
 import { NOTE_SLICE_PATH, resolveCrossCandidate } from "./docJoin.js";
@@ -61,6 +62,25 @@ export function validateNoteBindings(model: NormalizedModel, refs: RefsResult, b
     const sliceKey = refs.sliceKeys[sliceIndex];
     const canonicalPath = `slices/${sliceKey}.md`;
     const hasCanonical = slice.elements.some((el) => el.note === canonicalPath);
+
+    // MIL-208: a continuation slice (an again-view-only slice) that still carries its own
+    // canonical note-bound doc is the "legacy own doc" migration case — resolveSliceDocJoin
+    // never redirects it (today's behavior is unchanged), but it's flagged here so an author
+    // knows to fold this doc into the originating slice's and delete it.
+    if (hasCanonical) {
+      const continuation = continuationOf(model, refs, sliceIndex);
+      if (continuation) {
+        const boundEl = slice.elements.find((el) => el.note === canonicalPath)!;
+        const viewName = model.byId.get(continuation.viewLogicalId)!.name;
+        pushDiag(diags, "continuation-has-own-doc", {
+          message:
+            `slice "${slice.name}" is a continuation of "${continuation.sliceKey}" (view "${viewName}" again) ` +
+            `but still has its own doc at "${canonicalPath}" — fold it into slices/${continuation.sliceKey}.md and delete it`,
+          line: boundEl.line,
+          refs: [sliceKey, refs.refById.get(boundEl.id)!],
+        });
+      }
+    }
 
     // Mirrors resolveSliceDocJoin's own precedence exactly: canonical (any element noting the
     // exact own path, regardless of whether that doc actually resolves) wins outright; otherwise

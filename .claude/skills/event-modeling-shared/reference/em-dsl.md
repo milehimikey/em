@@ -102,7 +102,7 @@ em ledger <file> --from <rev>                                 # baseline revisio
 em ledger <file> --to <rev>                                   # compare revision (default: current working tree)
 em ledger <file> --waive <slice-key>                          # excuse a doc-content-without-version-bump finding for this slice key (repeatable; MIL-185, see docs/cli.md) — never waives a version regression or bump-without-content-change
 em ledger <file> --json                                       # print a JSON document instead of the text report (see docs/cli.md)
-em coverage <file>                                            # check that every INV-* invariant ID cited in an implemented slice doc is cited by a test under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI; --include-ready also counts ready-to-implement docs (forward-looking report)
+em coverage <file>                                            # check that every INV-* invariant ID cited in an implemented slice doc is cited by a test under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI; --include-ready also counts ready-to-implement docs (forward-looking report); a continuation slice (an `again` view instance with no doc of its own, MIL-208) is excluded from the report — its invariants, if any, live in the originating slice's own doc
 em coverage <file> --tests <dir>                              # directory to scan recursively for test files citing invariant IDs
 em coverage <file> --strict                                   # exit non-zero if any invariant ID has zero citations (CI)
 em coverage <file> --include-ready                            # also count ready-to-implement docs, not just implemented (MIL-207)
@@ -652,6 +652,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
+| `continuation-has-own-doc` | warning | Continuation slice has its own doc | Fold this doc's scenarios into slices/<originating-key>.md and delete it; a later `view X again` instance is documented by the view's originating slice. |
 | `cross-model-slice-doc-collision` | warning | Colliding slice doc path across models | Give each model its own directory (see docs/cli.md, "Multi-model projects"). |
 | `dangling-public-event` | warning | Public event/view no seam consumes | Declare the seam that reads it, or drop `public` if nothing outside the model does. |
 | `derived-from-unresolved` | error | `derived from` names an unknown event | Name one of the view's actual sources, or drop the traced event from `derived from`. |

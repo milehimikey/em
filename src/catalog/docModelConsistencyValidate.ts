@@ -203,7 +203,7 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
   const groups = new Map<string, number[]>();
   model.slices.forEach((slice, i) => {
     const sliceKey = refs.sliceKeys[i];
-    const { doc } = resolveSliceDocJoin(slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
+    const { doc } = resolveSliceDocJoin(model, refs, slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
     if (!doc.found || doc.reason !== null) return; // unbound, missing file, or unusable frontmatter
     const arr = groups.get(doc.path);
     if (arr) arr.push(i);

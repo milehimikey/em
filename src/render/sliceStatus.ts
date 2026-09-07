@@ -14,19 +14,27 @@
 // a sibling doc whose frontmatter `covers:` names this slice's key, and borrow IT. The scan
 // itself (readCoverageDocs) is shared with `em catalog`'s own covered-slice handling (MIL-137,
 // src/catalog/coverage.ts) so the two never disagree about which doc covers a slice.
+//
+// MIL-208 fallback (checked last, after own file and the covers: scan both come up empty): a
+// continuation slice (an again-view-only slice) borrows the ORIGINATING slice's own file
+// directly — same predicate/resolution as catalog/docJoin.ts's note-gated join, model/
+// continuation.ts, just applied to this module's filename-convention resolution instead of
+// notes.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { computeRefs } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { readCoverageDocs, CoveringDoc } from "../catalog/coverage.js";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
-/** Each slice's resolved design doc (own `slices/<key>.md`, or the MIL-121 covering doc, or
- *  null), same order as model.slices (and so the same order as the header row's columns —
- *  see layout/grid.ts's sliceNames). */
+/** Each slice's resolved design doc (own `slices/<key>.md`, the MIL-121 covering doc, the
+ *  MIL-208 originating slice's own file, or null), same order as model.slices (and so the same
+ *  order as the header row's columns — see layout/grid.ts's sliceNames). */
 export function readSliceDocs(model: NormalizedModel, baseDir: string): (SliceDoc | null)[] {
-  const { sliceKeys } = computeRefs(model);
+  const refs = computeRefs(model);
+  const { sliceKeys } = refs;
   const slicesDir = join(baseDir, "slices");
   let coverage: Map<string, CoveringDoc> | null = null; // built lazily, only if ever needed
 
@@ -35,7 +43,14 @@ export function readSliceDocs(model: NormalizedModel, baseDir: string): (SliceDo
     const docPath = join(slicesDir, `${sliceKey}.md`);
     if (existsSync(docPath)) return parseSliceDoc(readFileSync(docPath, "utf8"));
     coverage ??= readCoverageDocs(slicesDir);
-    return coverage.get(sliceKey)?.doc ?? null;
+    const covering = coverage.get(sliceKey)?.doc;
+    if (covering) return covering;
+    const continuation = continuationOf(model, refs, i);
+    if (continuation) {
+      const originatingPath = join(slicesDir, `${continuation.sliceKey}.md`);
+      if (existsSync(originatingPath)) return parseSliceDoc(readFileSync(originatingPath, "utf8"));
+    }
+    return null;
   });
 }
 

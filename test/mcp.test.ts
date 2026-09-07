@@ -68,6 +68,7 @@ let dir: string;
 let brokenDocDir: string;
 let reviewedDocDir: string;
 let implementedDocDir: string;
+let continuationDir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-mcp-"));
   writeFileSync(join(dir, "clean.em"), CLEAN);
@@ -134,6 +135,24 @@ beforeAll(() => {
   writeFileSync(
     join(implementedDocDir, "implemented.em"),
     'slice "Implemented Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/implemented-slice.md"\n  event Thing Done\n}\n',
+  );
+
+  // MIL-208 fixture: an originating view slice with its own doc, plus a later `again` instance
+  // that has NO doc of its own — export_slice on the again-key must return the originating
+  // doc byte-identical, with `continuationOf` naming it.
+  continuationDir = join(dir, "continuation-model");
+  mkdirSync(join(continuationDir, "slices"), { recursive: true });
+  writeFileSync(
+    join(continuationDir, "slices", "browse-widgets.md"),
+    "---\nschemaVersion: 1\npattern: state-view\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+      "## Scenarios\n- lists widgets\n",
+  );
+  writeFileSync(
+    join(continuationDir, "continuation.em"),
+    'slice "Make Widget" {\n  command Make Widget\n  event Widget Made\n}\n' +
+      'slice "Browse Widgets" {\n  view Widget List from "Widget Made" note "slices/browse-widgets.md"\n  ui Widget List Screen @Customer\n}\n' +
+      'slice "Retire Widget" {\n  command Retire Widget\n  event Widget Retired\n}\n' +
+      'slice "Widget List Shows Retirement" {\n  view Widget List again from "Widget Retired"\n}\n',
   );
 
   // Two-file `diff` tool fixture: clean2 adds one slice on top of CLEAN.
@@ -389,7 +408,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.11");
+    expect(doc.schemaVersion).toBe("1.12");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -417,6 +436,25 @@ describe("export_slice tool", () => {
     const { result } = await callJson(client, "export_slice", { file: join(dir, "clean.em"), sliceKey: "no-such-key" });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("no-such-key");
+  });
+
+  it("MIL-208: a continuation key's doc/status is byte-identical to `em export --slice <originating-key>`, with continuationOf naming it", async () => {
+    const modelFile = join(continuationDir, "continuation.em");
+    const { result, doc } = await callJson(client, "export_slice", {
+      file: modelFile,
+      sliceKey: "widget-list-shows-retirement",
+    });
+    expect(result.isError).toBeFalsy();
+    expect(doc.sliceKey).toBe("widget-list-shows-retirement");
+    expect(doc.slice.continuationOf).toBe("browse-widgets");
+    expect(doc.slice.doc).toMatchObject({ found: true, path: "slices/browse-widgets.md", status: "ready-to-implement" });
+
+    const cli = em(["export", modelFile, "--slice", "browse-widgets"], continuationDir);
+    expect(cli.status).toBe(0);
+    const cliDoc = JSON.parse(cli.stdout);
+    // The doc object itself is identical to the ORIGINATING slice's own export — only the
+    // sliceKey/slice envelope differs (this key vs. that one).
+    expect(doc.slice.doc).toEqual(cliDoc.slice.doc);
   });
 });
 
@@ -481,11 +519,12 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.3");
+    expect(doc.statusSchemaVersion).toBe("1.4");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
     expect(doc.slices.byStatus.noDoc).toBe(1); // "Read Model" has no bound doc
+    expect(doc.continuations).toBe(0);
     expect(doc.invariants).toEqual({ testsDir: join(dir, "tests"), total: 0, cited: 0, uncovered: 0 });
     expect(doc.conformance).toHaveLength(1);
     expect(doc.conformance[0].hasStateFile).toBe(false); // no .event-modeling.md next to ready.em
@@ -494,7 +533,7 @@ describe("status tool", () => {
   });
 
   // MIL-202: the constitution fact rides on the shared builder, so the tool's document must stay
-  // byte-identical to `em status --json` — including the new field and the 1.3 schema version.
+  // byte-identical to `em status --json` — including the new field and the 1.4 schema version.
   it("byte-identical to `em status <file> --json`, constitution field included", async () => {
     const model = join(dir, "ready.em");
     writeFileSync(join(dir, "constitution.md"), "# house rules\n");

@@ -316,16 +316,17 @@ from) — dedupe that field yourself rather than reaching for a separate flag; t
 Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff --json`:
 `severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`.
 
-**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.0"`) — see the
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.1"`) — see the
 `--slice-ready` section below for what each gate means:
 
 ```json
 {
-  "validateSliceReadySchemaVersion": "1.0",
+  "validateSliceReadySchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "sliceKey": "checkout",
   "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false },
+  "continuationOf": null,
   "ready": false,
   "diagnostics": [ … ]
 }
@@ -340,6 +341,13 @@ an earlier one failed (e.g. `statusReady` when the doc itself isn't bound) repor
 named gates pass, if something else concerning this slice is broken (e.g. a plain
 `both-ends-of-a-flow` diagnostic on one of its own elements); `diagnostics` carries the full
 scoped list so a consumer sees exactly why, not just the 4 named gates.
+
+`continuationOf` (added in schema `1.1`, MIL-208) is non-null when `sliceKey` names a
+continuation slice (an again-view-only slice with no legacy doc of its own) — the originating
+slice's export key. `gates` themselves already resolve straight through to the originating
+slice's own doc/status (the same doc join `em export` uses) — this field only explains why; the
+text report prints a `(continuation of "<originating-key>")` line alongside the ready/not-ready
+verdict in that case.
 
 **`--list-issues`/`--list-divergences`/`--list-public --json`** (`validateListSchemaVersion:
 "1.0"`) — each flag independently gates its own marker kind, same as text mode; passing more than
@@ -420,7 +428,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.11",
+  "schemaVersion": "1.12",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "modelKey": "order-fulfilment",
@@ -430,7 +438,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.11` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.12` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -439,7 +447,7 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.11"`):
+**Schema summary** (`schemaVersion: "1.12"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -493,6 +501,20 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
       mirroring this slice: `em` only stores and displays it, it never talks to a tracker
       itself. Full contract: [slice-doc-schema.md](slice-doc-schema.md).
+    `continuationOf` and `alsoReads` (added in schema `1.12`, MIL-208) — a `view X again`
+    instance is a **continuation** of the slice holding `X`'s first declaration, not a spec
+    unit of its own: `continuationOf` is that originating slice's export key, or `null` for an
+    ordinary slice (including a continuation slice that still keeps its own legacy doc — see
+    [slice-doc-schema.md#continuations](slice-doc-schema.md#continuations)). When
+    `continuationOf` is non-null, `doc` above is **byte-identical** to the originating slice's
+    own `doc` object — `em export --slice <again-key>` reports the real status while
+    `continuationOf` says why. `alsoReads` is `[{ event, atSlice }]` — for the slice holding a
+    view's ORIGINATING declaration, the union of events every later `again` instance of that
+    view reads via `from`, in timeline order, deduped by `(event, atSlice)`; `[]` for every
+    other slice, including an `again` instance's own entry (only the origin carries the union).
+    `em export --slice <originating-key>` is therefore the one place that lists every event a
+    read model consumes across its whole timeline, without walking each `again` slice's own doc
+    by hand.
     Elements appear only inside their slice, not flattened at `model.elements`.
   - Each **element** has a stable `ref` — `<sliceKey>/<kind>.<slug(name)>`, suffixed the same
     way on a same-kind-same-name collision within one slice — plus `kind`, `name`, `line`,
@@ -1204,7 +1226,11 @@ and every other command's own schema):
   independent of whether `--strict` was passed).
 - `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.
 - `slices` — `{ key, status, docReason, inScope, invariants }[]`, one entry per slice in the
-  model (including out-of-scope ones, for transparency):
+  model EXCEPT a continuation slice (MIL-208 — an `again` view instance with no doc of its own):
+  it has nothing of its own to cite (its invariants, if any, live in the originating slice's own
+  doc, already listed under that key), so it's omitted entirely rather than duplicating the
+  originating slice's row under a second key. Every other slice appears, including out-of-scope
+  ones, for transparency:
   - `status` — the joined doc's `status`, or `null` when no usable doc was found.
   - `docReason` — the `resolveSliceDocJoin` join reason behind a `null` `status`:
     `"no-doc-bound"`, `"binding-missing-file"`, or `"frontmatter-invalid"` — or `null` when the
@@ -1230,7 +1256,10 @@ nothing here re-derives a rule another module owns:
   a binding naming a missing file) and `frontmatterInvalid` (a doc *was* bound and found, but its
   frontmatter is missing or malformed — kept distinct from `no-doc`, since "nothing was ever
   referenced" and "something's referenced but broken" are different states worth telling apart)
-  and `unknown` (a found, *usable* doc whose `status` isn't one of the 4 canonical strings).
+  and `unknown` (a found, *usable* doc whose `status` isn't one of the 4 canonical strings). A
+  continuation slice (MIL-208 — an `again` view instance with no legacy doc of its own) leaves
+  every bucket above — the originating slice's own fact already counts that status once — and is
+  tallied instead in the separate top-level `continuations` count (see the JSON shape below).
 - **`driftSignal` breakdown** — the same status/`implementedIn` coherence classification
   `em export`'s `slice.doc.driftSignal` carries (`catalog/driftSignal.ts`): `inSync`,
   `neverImplemented`, `unpropagatedDelta`, `implementedWithoutLink`, tallied across every slice
@@ -1345,13 +1374,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.3"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.4"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.3",
+  "statusSchemaVersion": "1.4",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1361,6 +1390,7 @@ see [mcp.md](mcp.md)):
       "noDoc": 0, "frontmatterInvalid": 0, "unknown": 0
     }
   },
+  "continuations": 0,
   "driftSignal": {
     "inSync": 8, "neverImplemented": 0, "unpropagatedDelta": 0, "implementedWithoutLink": 0,
     "notApplicable": 0, "frontmatterInvalid": 0
@@ -1396,6 +1426,12 @@ not an error, just nothing to report yet. `error` is also set (non-null) — wit
 `Model file:` bullet names a different file than the one being reported on (see above); a
 consumer that needs to tell "no history yet" apart from "history exists but couldn't be
 attributed/verified" should check `error`, not just `lastConformance`.
+
+`continuations` (added in schema `1.4`, MIL-208) is the count of continuation slices (`again`
+view instances with no legacy doc of their own) across every input file — excluded from every
+`slices.byStatus`/`driftSignal` bucket above (the originating slice's own fact already counts
+that status/drift once) but still real slices on the timeline, so tallied here rather than
+silently dropped from the total. The text/`--md` reports show it on its own line/row.
 
 `constitution` (added in schema `1.3`, MIL-202) is per model, inside its `conformance[]` entry:
 `present` is a plain existence check, and `path` is the **expected** location — set whether or not
@@ -2066,6 +2102,7 @@ paste by hand.
 | `no slice with export key "<key>" in this model` | `<model-file>` has no slice matching `<name>`'s export key |
 | `slice "<name>" has no <kind> element to wire the note onto` | The slice has zero elements of the pattern's primary kind |
 | `slice "<name>" has N <kind> elements — ambiguous, wire the note by hand` | More than one candidate — which one is genuine judgment |
+| `slice "<name>" is a later instance of "<view>" (again) — it has no doc of its own; the doc lives at slices/<originating-key>.md (slice "<originating-key>")` | (MIL-208) The sole `view` candidate is `again` — this slice is a **continuation** of the view's originating slice, which has the real doc; wire/ratify that slice instead |
 | `this line already has a note clause — edit it by hand instead` | The primary element is already wired (or has a conflicting `note`) |
 
 ## `em slice index <file>`
@@ -2089,7 +2126,7 @@ pair around an empty table.
 | `#` | Row position (declaration order) |
 | `Slice` | Slice name |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
-| `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), or `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" |
+| `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" — or, for a continuation slice (MIL-208, no legacy doc of its own), `` continuation of `<originating-key>` `` with the Design doc column pointing at the originating slice's doc |
 | `Reviewed by` | The doc's `reviewedBy` (MIL-201), or `—` |
 | `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
 | `Owner` | The doc's `owner` (MIL-171), or `—` |
@@ -2166,6 +2203,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | Error | Meaning |
 |---|---|
 | `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; review "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — review the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
@@ -2260,6 +2298,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | Error | Meaning |
 |---|---|
 | `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; ratify "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — ratify the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
@@ -2333,6 +2372,7 @@ an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't bloc
 | Error | Meaning |
 |---|---|
 | `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; mark-implemented "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — mark the originating slice named implemented instead |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
@@ -2392,6 +2432,7 @@ still-WIP model doesn't block it.
 | Error | Meaning |
 |---|---|
 | `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; reratify "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — reratify the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |

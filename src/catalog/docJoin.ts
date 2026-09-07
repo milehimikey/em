@@ -35,7 +35,9 @@
 // one) to tell "extra" from "dangling" from "unratified". It reuses `NOTE_SLICE_PATH` and
 // `resolveCrossCandidate` below rather than re-deriving the ratification predicate.
 
-import { Slice } from "../model/model.js";
+import { NormalizedModel, Slice } from "../model/model.js";
+import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { Diagnostic } from "../model/validate.js";
 import { makeDiag } from "../model/rules.js";
 import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
@@ -125,6 +127,14 @@ export interface SliceDocExport {
 export interface SliceDocJoinResult {
   doc: SliceDocExport;
   diagnostics: Diagnostic[];
+  /** MIL-208: non-null when this slice is a CONTINUATION of another slice — an again-view-only
+   *  slice with no legacy doc of its own (see the module comment's "Legacy own doc wins")
+   *  — naming that originating slice's export key. `doc` is byte-identical to the originating
+   *  slice's own join in that case (the SAME object, not a re-derived copy): `em export
+   *  --slice <again-key>` reports the real status via `doc` while `continuationOf` says why.
+   *  Null for every ordinary slice, and for a continuation slice that still carries its own
+   *  legacy doc (a `continuation-has-own-doc` warning fires instead — see rules.ts). */
+  continuationOf: string | null;
 }
 
 const EMPTY_CONTENT = {
@@ -151,6 +161,8 @@ const EMPTY_CONTENT = {
  * diagnostic does — never a second identifier scheme.
  */
 export function resolveSliceDocJoin(
+  model: NormalizedModel,
+  refs: RefsResult,
   slice: Slice,
   sliceKey: string,
   baseDir: string,
@@ -181,9 +193,37 @@ export function resolveSliceDocJoin(
       // read — `slices/request-payment.md` — not the note's original casing. Otherwise a
       // consumer that re-derives the key from `doc.path` (sliceReadyValidate.ts) would try to
       // re-read the mixed-case path and get null on a case-sensitive filesystem.
-      return { doc: foundDoc(`slices/${otherKey}.md`, result.doc), diagnostics: [] };
+      return { doc: foundDoc(`slices/${otherKey}.md`, result.doc), diagnostics: [], continuationOf: null };
     }
-    return { doc: { found: false, path, reason: "no-doc-bound", ...EMPTY_CONTENT }, diagnostics: [] };
+
+    // MIL-208: no note-bound doc of its own (`boundEls.length === 0`, checked above) and no
+    // ratified MIL-121 cross-binding (the loop just above) — "legacy own doc wins" is
+    // satisfied automatically by that same check: an author who wants the old per-instance doc
+    // behavior keeps it simply by keeping the `note` on the again view. If this slice is an
+    // again-view-only continuation, resolve to the ORIGINATING slice's own doc join instead of
+    // falling to `no-doc-bound` — recursing once (never more: the originating slice always
+    // holds a plain, non-`again` first declaration, so it can never itself resolve as a
+    // continuation — see continuation.ts's own-slice guard).
+    const continuation = continuationOf(model, refs, slice.index);
+    if (continuation) {
+      const originatingSlice = model.slices[continuation.sliceIndex];
+      const originatingJoin = resolveSliceDocJoin(
+        model,
+        refs,
+        originatingSlice,
+        continuation.sliceKey,
+        baseDir,
+        elementRefOf,
+      );
+      // Diagnostics are NOT forwarded here: the originating slice is itself a member of
+      // `model.slices` and gets its own resolveSliceDocJoin() call in the same per-slice loop
+      // every caller already runs, which already reports these diagnostics once under the
+      // originating slice's own refs — repeating them here would duplicate every
+      // binding-missing-file/frontmatter-invalid finding under two different `refs`.
+      return { doc: originatingJoin.doc, diagnostics: [], continuationOf: continuation.sliceKey };
+    }
+
+    return { doc: { found: false, path, reason: "no-doc-bound", ...EMPTY_CONTENT }, diagnostics: [], continuationOf: null };
   }
 
   const parsed = readSliceDoc(baseDir, sliceKey);
@@ -197,6 +237,7 @@ export function resolveSliceDocJoin(
           refs: [sliceKey, ...boundEls.map((el) => elementRefOf(el.id))],
         }),
       ],
+      continuationOf: null,
     };
   }
 
@@ -212,10 +253,11 @@ export function resolveSliceDocJoin(
           refs: [sliceKey],
         }),
       ],
+      continuationOf: null,
     };
   }
 
-  return { doc: foundDoc(path, parsed), diagnostics: [] };
+  return { doc: foundDoc(path, parsed), diagnostics: [], continuationOf: null };
 }
 
 /** Builds the `found: true, reason: null` doc join result shared by a canonical binding and a

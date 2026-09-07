@@ -36,6 +36,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
 import { hasUsableFrontmatter, parseSliceDoc } from "./sliceDoc.js";
@@ -46,11 +47,15 @@ import { hasUsableFrontmatter, parseSliceDoc } from "./sliceDoc.js";
  * `baseDir` is the `.em` file's directory, same convention every other doc/note path in em uses.
  * Returns `[]` when `slices/` doesn't exist at all — nothing to a scan with no directory to walk,
  * the ordinary state for a model that hasn't authored any slice docs yet.
+ *
+ * MIL-208: also flags (`continuation-has-own-doc`) a file that DOES match a current slice's key
+ * — so it isn't "orphaned" in this rule's usual rename/removal sense — when that slice is a
+ * continuation (an again-view-only slice) and the file isn't actually bound via `note`. Such a
+ * file is invisible to everything else: `docJoin.ts`'s continuation fallback only ever engages
+ * when the slice carries no note at all, so it silently ignores the file rather than reading it
+ * — the note-bound sibling case is `noteBindingValidate.ts`'s to catch instead.
  */
-export function validateOrphanedSliceDocs(_model: NormalizedModel, refs: RefsResult, baseDir: string): Diagnostic[] {
-  // `_model` is unused — `refs.sliceKeys` already carries every current slice's key. Kept in the
-  // signature anyway to match every sibling fs-aware rule's `(model, refs, baseDir)` shape, so
-  // every call site can pass the same three arguments uniformly.
+export function validateOrphanedSliceDocs(model: NormalizedModel, refs: RefsResult, baseDir: string): Diagnostic[] {
   const slicesDir = join(baseDir, "slices");
   let entries: string[];
   try {
@@ -67,7 +72,31 @@ export function validateOrphanedSliceDocs(_model: NormalizedModel, refs: RefsRes
   for (const entry of entries.slice().sort()) {
     if (!entry.toLowerCase().endsWith(".md")) continue; // not a slice-doc-shaped file at all
     const key = entry.slice(0, -".md".length);
-    if (liveKeys.has(key.toLowerCase())) continue; // matches a current slice's key by name — never orphaned
+    if (liveKeys.has(key.toLowerCase())) {
+      // Matches a current slice's key by name — never "orphaned" in this rule's usual sense —
+      // UNLESS (MIL-208) that slice is a continuation with no note actually binding this file:
+      // the file then sits there invisible to docJoin's continuation fallback (which only
+      // engages on a noteless slice, but never reads a stray file either).
+      const sliceIndex = refs.sliceKeys.findIndex((k) => k.toLowerCase() === key.toLowerCase());
+      const continuation = sliceIndex === -1 ? null : continuationOf(model, refs, sliceIndex);
+      if (continuation) {
+        const slice = model.slices[sliceIndex];
+        const sliceKey = refs.sliceKeys[sliceIndex];
+        const canonicalPath = `slices/${sliceKey}.md`;
+        const hasCanonical = slice.elements.some((el) => el.note === canonicalPath);
+        if (!hasCanonical) {
+          const viewName = model.byId.get(continuation.viewLogicalId)!.name;
+          pushDiag(diags, "continuation-has-own-doc", {
+            message:
+              `slice "${slice.name}" is a continuation of "${continuation.sliceKey}" (view "${viewName}" again) ` +
+              `— "slices/${entry}" exists but isn't bound via \`note\`, so it's never read — fold it into ` +
+              `slices/${continuation.sliceKey}.md and delete it`,
+            refs: [sliceKey],
+          });
+        }
+      }
+      continue;
+    }
 
     let parsed;
     try {

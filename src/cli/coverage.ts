@@ -246,12 +246,26 @@ export function resolveScopedSlices(
   includeReady: boolean,
 ): ScopedSlice[] {
   const scopeStatuses = inScopeStatuses(includeReady);
-  return model.slices.map((slice, i) => {
+  const result: ScopedSlice[] = [];
+  model.slices.forEach((slice, i) => {
     const key = refs.sliceKeys[i];
-    const { doc } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
+    const { doc, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+      model,
+      refs,
+      slice,
+      key,
+      baseDir,
+      (id) => refs.refById.get(id)!,
+    );
+    // MIL-208: a continuation slice (an again-view-only slice with no legacy doc of its own)
+    // has nothing of its own to cite — its invariants, if any, live in the ORIGINATING slice's
+    // doc, which already gets its own entry here. Including the continuation key too would just
+    // duplicate that entry under a second key.
+    if (continuationOfKey !== null) return;
     const inScope = doc.reason === null && doc.status !== null && scopeStatuses.has(doc.status);
-    return { key, status: doc.status, docReason: doc.reason, inScope, docPath: doc.path };
+    result.push({ key, status: doc.status, docReason: doc.reason, inScope, docPath: doc.path });
   });
+  return result;
 }
 
 /**

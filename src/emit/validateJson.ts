@@ -52,7 +52,12 @@ export function buildValidateJson(file: string, diagnostics: Diagnostic[]): stri
 }
 
 // 1.0 (MIL-128): initial shape.
-export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-208): `continuationOf` — non-null when `sliceKey` names a continuation slice (an
+// again-view-only slice with no legacy doc of its own), naming the originating slice whose doc
+// the `gates` above actually verify. `gates` themselves already resolve straight through to the
+// originating slice's own doc/status (see `computeSliceReadyGates`); this field only explains
+// why. Additive-only.
+export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.1";
 
 /** Build the `em validate <file> --slice-ready <key> --json` document — the machine verdict
  *  replacing the two hand-parsed English sentences ("is ready-to-implement" /
@@ -63,13 +68,15 @@ export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.0";
  *  for `--slice-ready` (scoped diagnostics empty) — it is the AND of the 4 gates only when
  *  `gates` is non-null AND nothing else concerning this slice is broken (e.g. a plain
  *  both-ends-of-a-flow diagnostic on one of its own elements); `diagnostics` carries that full
- *  scoped list so a consumer sees exactly why, never just the 4 named gates. */
+ *  scoped list so a consumer sees exactly why, never just the 4 named gates. `continuationOf`
+ *  (MIL-208) is `null` for an ordinary slice or when `gates` is `null`. */
 export function buildSliceReadyJson(
   file: string,
   sliceKey: string,
   gates: SliceReadyGates | null,
   diagnostics: Diagnostic[],
   ready: boolean,
+  continuationOf: string | null,
 ): string {
   const doc = {
     validateSliceReadySchemaVersion: VALIDATE_SLICE_READY_SCHEMA_VERSION,
@@ -77,6 +84,7 @@ export function buildSliceReadyJson(
     file,
     sliceKey,
     gates,
+    continuationOf,
     ready,
     diagnostics: diagnostics.map(serializeDiagnosticWithUsage),
   };

@@ -45,6 +45,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { buildModelIndex } from "../model/queryIndex.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
@@ -274,7 +275,31 @@ export function runRatify(
     return { ok: false, message: `no slice with export key "${sliceKey}" in this model` };
   }
   const slice = model.slices[sliceIndex];
-  const { doc } = resolveSliceDocJoin(slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
+  const { doc, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+    model,
+    refs,
+    slice,
+    sliceKey,
+    baseDir,
+    (id) => refs.refById.get(id)!,
+  );
+
+  // MIL-208: a continuation slice (an again-view-only slice with no legacy doc of its own) has
+  // no status/ratification of its own to flip — refuse rather than silently mutating the
+  // ORIGINATING slice's doc under this key's name. `doc.continuationOf` is already the
+  // "legacy own doc wins" precedence applied (see docJoin.ts): a continuation slice that still
+  // carries its own doc is NOT refused here — that's the migration path, flagged instead by the
+  // `continuation-has-own-doc` warning.
+  if (continuationOfKey) {
+    const continuation = continuationOf(model, refs, sliceIndex)!;
+    const viewName = model.byId.get(continuation.viewLogicalId)!.name;
+    return {
+      ok: false,
+      message:
+        `"${sliceKey}" is a continuation of "${continuationOfKey}" (view "${viewName}" again) — ` +
+        `it has no doc of its own; ratify "${continuationOfKey}" instead`,
+    };
+  }
 
   if (doc.reason === "no-doc-bound") {
     return {

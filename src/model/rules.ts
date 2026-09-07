@@ -345,6 +345,12 @@ export const RULES = {
     usageCategory: "orphaned slice doc left behind by a rename or removal",
     docAnchor: "orphaned-slice-doc",
   },
+  "continuation-has-own-doc": {
+    severity: "warning",
+    title: "Continuation slice has its own doc",
+    fix: "Fold this doc's scenarios into slices/<originating-key>.md and delete it; a later `view X again` instance is documented by the view's originating slice.",
+    usageCategory: "continuation slice has its own doc",
+  },
   "duplicate-slice-name": {
     severity: "warning",
     title: "Duplicate slice name",

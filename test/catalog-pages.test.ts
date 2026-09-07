@@ -139,7 +139,7 @@ describe("renderSlicePage", () => {
       pattern: "state-view",
       elementRefs: new Map(),
       doc: coveringDoc,
-      coveredBy: { key: "lapse-unpaid-orders", name: "Lapse Unpaid Orders" },
+      coveredBy: { key: "lapse-unpaid-orders", name: "Lapse Unpaid Orders", kind: "covers" },
       docExpectedPath: "slices/detect-unpaid-orders.md",
     });
 

@@ -31,7 +31,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.11"); // MIL-199: release-wide export bump
+    expect(doc.schemaVersion).toBe("1.12"); // MIL-208: continuationOf/alsoReads bump
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -1069,8 +1069,8 @@ type Order { billing: Address }
     ]);
   });
 
-  it("bumps schemaVersion to 1.11 (em 1.11.0), additive over 1.10", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.11");
+  it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.12");
   });
 });
 

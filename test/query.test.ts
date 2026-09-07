@@ -883,7 +883,7 @@ slice "Refund Order" {
       const i = model.slices.findIndex((s) => s.name === name);
       const key = refs.sliceKeys[i];
       const fast = index.sliceFacts.get(key)!.doc;
-      const slow = resolveSliceDocJoin(model.slices[i], key, dir, (id) => refs.refById.get(id)!).doc;
+      const slow = resolveSliceDocJoin(model, refs, model.slices[i], key, dir, (id) => refs.refById.get(id)!).doc;
       return { fast, slow };
     };
     return { both, index };

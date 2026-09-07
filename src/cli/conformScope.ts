@@ -128,11 +128,24 @@ export interface SliceDocFactsResult {
  *  `em slice index` does. */
 export function resolveSliceDocFacts(model: NormalizedModel, refs: RefsResult, baseDir: string): SliceDocFactsResult {
   const diagnostics: Diagnostic[] = [];
-  const facts: SliceDocFacts[] = model.slices.map((slice, i) => {
+  const facts: SliceDocFacts[] = [];
+  model.slices.forEach((slice, i) => {
     const key = refs.sliceKeys[i];
-    const { doc, diagnostics: docDiags } = resolveSliceDocJoin(slice, key, baseDir, (id) => refs.refById.get(id)!);
+    const { doc, diagnostics: docDiags, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+      model,
+      refs,
+      slice,
+      key,
+      baseDir,
+      (id) => refs.refById.get(id)!,
+    );
     diagnostics.push(...docDiags);
-    return { key, status: doc.status, implementedIn: doc.implementedIn };
+    // MIL-208: a continuation slice carries the SAME status/implementedIn as the originating
+    // slice (identical doc join) — including it here would list the same PR as a candidate
+    // under two different keys for one actual change. The originating slice's own fact already
+    // covers it.
+    if (continuationOfKey !== null) return;
+    facts.push({ key, status: doc.status, implementedIn: doc.implementedIn });
   });
   return { facts, diagnostics };
 }
