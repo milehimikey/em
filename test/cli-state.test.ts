@@ -107,16 +107,23 @@ describe("em state (CLI)", () => {
     });
   });
 
-  it("set-review validates the date and round-trips through read", () => {
-    const bad = em(["state", "set-review", "not-a-date", modelDir()], cwd);
-    expect(bad.status).toBe(1);
-    expect(bad.stderr).toContain("YYYY-MM-DD");
+  it(
+    "set-review validates the date and round-trips through read",
+    () => {
+      // 3 real CLI spawns in one test (MIL-205) — same headroom concern as the multi-spawn
+      // tests below: each spawn is a fresh `tsx` process, so this can sit close to vitest's
+      // 5000ms default on a slow runner.
+      const bad = em(["state", "set-review", "not-a-date", modelDir()], cwd);
+      expect(bad.status).toBe(1);
+      expect(bad.stderr).toContain("YYYY-MM-DD");
 
-    const w = em(["state", "set-review", "2026-08-21", modelDir()], cwd);
-    expect(w.status).toBe(0);
-    const r = em(["state", "read", modelDir()], cwd);
-    expect(JSON.parse(r.stdout).lastReview).toBe("2026-08-21");
-  });
+      const w = em(["state", "set-review", "2026-08-21", modelDir()], cwd);
+      expect(w.status).toBe(0);
+      const r = em(["state", "read", modelDir()], cwd);
+      expect(JSON.parse(r.stdout).lastReview).toBe("2026-08-21");
+    },
+    20000,
+  );
 
   it("writers leave the rest of the file byte-identical", () => {
     const before = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
@@ -216,26 +223,36 @@ describe("em usage-report (CLI, MIL-161)", () => {
     20000,
   );
 
-  it("--json prints a versioned document with the same counts", () => {
-    em(["scaffold", "Model One"], cwd);
-    em(["state", "log-usage", join(cwd, "model-one", "model-one.em"), "--phases", "discover"], cwd);
+  it(
+    "--json prints a versioned document with the same counts",
+    () => {
+      // 3 real CLI spawns (MIL-205) — same headroom concern as the "aggregates..." test above.
+      em(["scaffold", "Model One"], cwd);
+      em(["state", "log-usage", join(cwd, "model-one", "model-one.em"), "--phases", "discover"], cwd);
 
-    const r = em(["usage-report", cwd, "--json"], cwd);
-    expect(r.status).toBe(0);
-    const doc = JSON.parse(r.stdout);
-    expect(doc.usageReportSchemaVersion).toBe("1.0");
-    expect(doc.sessions).toBe(1);
-    expect(doc.phaseCounts).toEqual([{ key: "discover", count: 1 }]);
-    expect(doc.unparseableLines).toEqual([]);
-  });
+      const r = em(["usage-report", cwd, "--json"], cwd);
+      expect(r.status).toBe(0);
+      const doc = JSON.parse(r.stdout);
+      expect(doc.usageReportSchemaVersion).toBe("1.0");
+      expect(doc.sessions).toBe(1);
+      expect(doc.phaseCounts).toEqual([{ key: "discover", count: 1 }]);
+      expect(doc.unparseableLines).toEqual([]);
+    },
+    20000,
+  );
 
-  it("defaults [root] to the current directory", () => {
-    em(["scaffold", "Model One"], cwd);
-    em(["state", "log-usage", join(cwd, "model-one", "model-one.em"), "--phases", "discover"], cwd);
-    const r = em(["usage-report"], cwd);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("1 state file(s)");
-  });
+  it(
+    "defaults [root] to the current directory",
+    () => {
+      // 3 real CLI spawns (MIL-205) — same headroom concern as the "aggregates..." test above.
+      em(["scaffold", "Model One"], cwd);
+      em(["state", "log-usage", join(cwd, "model-one", "model-one.em"), "--phases", "discover"], cwd);
+      const r = em(["usage-report"], cwd);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("1 state file(s)");
+    },
+    20000,
+  );
 
   it("reports zero files/sessions cleanly when nothing is found", () => {
     const r = em(["usage-report", cwd], cwd);
