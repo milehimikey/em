@@ -18,7 +18,8 @@ contract.** In short: gate on `em validate <model>.em --slice-ready <key>` (stop
 back if it fails — never edit the doc to make the gate pass); read the project's implementation
 constitution before writing code and stay inside its rules; before a project's first slice PR,
 land a one-time foundation PR holding every model event (plus the shared interface shell) so
-slices only ever import contracts, never invent or reach into a sibling's; treat the slice doc as
+slices only ever import contracts, never invent or reach into a sibling's; build in dependency
+order from `em query upstream`, not timeline order; treat the slice doc as
 the spec (read-only, except the merge-time `status`/`implementedIn` flip); ship the endpoint a
 `ui`-triggered command or `ui`-consumed view obligates, and surface — never invent — one the
 model doesn't show; surface every gap to the user instead of deciding it silently; cover every
