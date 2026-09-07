@@ -180,6 +180,12 @@ reads a bound doc's canonical fields (`em export`'s `slice.doc`, `em validate --
 `implementedIn`/lineage/Open Questions, not the covered slice's own (nonexistent) file. A doc
 covers its own canonical slice key implicitly — `covers` never needs to list it.
 
+`em catalog` (MIL-137) is one such consumer, via the same filename+frontmatter `covers:` scan
+(`src/catalog/coverage.ts`), never the `note` clause itself: a covered slice's detail page shows
+the covering doc's Status, but a "Documented as part of &lt;covering slice&gt;" banner instead
+of the covering doc's body — linking to the covering slice's own catalog page rather than
+inlining content authored under a different slice's name.
+
 `covers` is a plain list of slice keys (`<slice-key>`, e.g. `detect-unpaid-orders`), **not** the
 `<slice-key>@v<N>` ref grammar the lineage keys use above: coverage is a standing "this doc also
 serves that slice" declaration, with no version component — unlike lineage, which records a

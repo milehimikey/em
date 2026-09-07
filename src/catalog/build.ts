@@ -22,6 +22,7 @@ import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 import { classifySlicePattern } from "./classify.js";
+import { CoveringDoc, readCoverageDocs } from "./coverage.js";
 import { detectSliceDocCollisions } from "./modelCollisionValidate.js";
 import { parseSliceDoc } from "./sliceDoc.js";
 import { renderIndexPage, renderSlicePage, CatalogModelSummary, CatalogSliceSummary } from "./pages.js";
@@ -97,6 +98,11 @@ export async function buildCatalog(
 
     if (refs.diagnostics.length > 0) diagnostics.push({ file, diagnostics: refs.diagnostics });
     const sliceSummaries: CatalogSliceSummary[] = [];
+    // MIL-137: built lazily, only if some slice below actually lacks its own doc — same
+    // shared scan (src/catalog/coverage.ts) the render pipeline's Slice Status legend uses
+    // (src/render/sliceStatus.ts), so a covered slice never resolves to a different doc
+    // depending on which command asked.
+    let coverageDocs: Map<string, CoveringDoc> | null = null;
 
     for (let i = 0; i < model.slices.length; i++) {
       const slice = model.slices[i];
@@ -111,7 +117,26 @@ export async function buildCatalog(
       // instead of silently rendering the first slice's doc content on both pages.
       const docRelPath = join("slices", `${sliceKey}.md`);
       const docPath = join(dirname(file), docRelPath);
-      const doc = existsSync(docPath) ? parseSliceDoc(readFileSync(docPath, "utf8")) : null;
+      const ownDoc = existsSync(docPath) ? parseSliceDoc(readFileSync(docPath, "utf8")) : null;
+
+      // MIL-137: no own doc -> fall back to a sibling doc that ratifies coverage of this slice
+      // (MIL-121 `covers:`). The covering doc's status/pattern act as this slice's own for the
+      // index Status column and this page's header badge (same "one doc, one status" rule the
+      // render pipeline's Slice Status legend already applies), but its BODY is never inlined —
+      // the detail page shows a "documented as part of" banner linking to the covering slice's
+      // own page instead, never the covering doc's content rendered under a different slice's
+      // name.
+      let doc = ownDoc;
+      let coveredBy: { key: string; name: string } | null = null;
+      if (!ownDoc) {
+        coverageDocs ??= readCoverageDocs(join(dirname(file), "slices"));
+        const covering = coverageDocs.get(sliceKey);
+        if (covering) {
+          doc = covering.doc;
+          const coveringIndex = refs.sliceKeys.indexOf(covering.key);
+          coveredBy = { key: covering.key, name: coveringIndex >= 0 ? model.slices[coveringIndex].name : covering.key };
+        }
+      }
 
       // Same sibling-file convention as the doc lookup above, one extension over: a
       // slice diagram authored by `em render --slice` (per the event-modeling skill)
@@ -152,6 +177,7 @@ export async function buildCatalog(
         pattern,
         elementRefs,
         doc,
+        coveredBy,
         docExpectedPath: docRelPath,
       });
       await writeFile(join(slicesDir, `${sliceKey}.html`), page, "utf8");
