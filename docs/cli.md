@@ -2113,8 +2113,8 @@ flips `reviewed` → `ready-to-implement` (`em slice ratify`). A facilitator run
 session ends each walked slice here and never reaches for `ratify`.
 
 `--by <name>` is required — free text, typically the facilitator's or reviewer's name (spaces are
-fine). `--on <date>` is optional, `YYYY-MM-DD`; defaults to today, same convention `em slice
-ratify --on` uses. `reviewedBy`/`reviewedOn` are additive, optional frontmatter keys in *every*
+fine). `--on <date>` is optional, `YYYY-MM-DD`; defaults to today (local date), same convention
+`em slice ratify --on` uses. `reviewedBy`/`reviewedOn` are additive, optional frontmatter keys in *every*
 status (docs/slice-doc-schema.md) — a doc that never went through this command simply has
 neither, and every existing `em` command already tolerates an absent field.
 
@@ -2141,7 +2141,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | Flag | Effect |
 |---|---|
 | `--by <name>` | **Required.** The reviewer's (or facilitator's) name |
-| `--on <date>` | Review date, `YYYY-MM-DD` (default: today) |
+| `--on <date>` | Review date, `YYYY-MM-DD` (default: today, local date) |
 
 | Error | Meaning |
 |---|---|
@@ -2234,7 +2234,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | Flag | Effect |
 |---|---|
 | `--by <name>` | **Required.** The ratifier's name |
-| `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today) |
+| `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr |
 
 | Error | Meaning |
@@ -2704,7 +2704,7 @@ compiled, and neither the `.em` nor any slice doc is touched.
 |---|---|
 | `--as-of <rev>` | The revision this ruling was made against — pass the same value you're about to (or just did) hand to `em state set-conformance` (required) |
 | `--findings <spec>` | Which finding number(s) this stamps as ruled, e.g. `"1-3"` or `"1,2,4"` (required) |
-| `--on <date>` | Ruling date, `YYYY-MM-DD` (default: today) |
+| `--on <date>` | Ruling date, `YYYY-MM-DD` (default: today, local date) |
 
 ```bash
 em conform-supersede model.em conformance/2026-08-23-report.md --as-of a1b2c3d --findings 1-3

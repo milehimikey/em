@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { localIsoDate } from "../src/util/localDate.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
@@ -3203,7 +3204,9 @@ describe("em slice ratify (CLI, MIL-165)", () => {
     const content = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
     expect(content).toContain("status: ready-to-implement");
     expect(content).toContain("ratifiedBy: Alex Rivera");
-    expect(content).toMatch(/ratifiedOn: \d{4}-\d{2}-\d{2}/);
+    // MIL-206: the default must be the LOCAL calendar date (localIsoDate()), not UTC's — a
+    // bare format regex would pass even if the CLI reverted to toISOString().slice(0, 10).
+    expect(content).toContain(`ratifiedOn: ${localIsoDate()}`);
     expect(content).toContain("version: 1"); // never bumped
   });
 
