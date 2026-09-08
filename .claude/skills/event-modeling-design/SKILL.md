@@ -1,6 +1,6 @@
 ---
 name: event-modeling-design
-em-version: 1.11.0
+em-version: 1.12.0
 description: >-
   Use when structuring a draft event model into swimlanes and the four patterns (State Change,
   State View, Automation, Translation), evaluating a model's structural completeness, or writing
