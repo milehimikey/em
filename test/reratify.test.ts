@@ -222,7 +222,15 @@ describe("runReratify (note-binding resolution + fs orchestration)", () => {
 
   it("bumps a note-bound doc and writes it to disk", () => {
     const result = run("shipped.em", "shipped-slice");
-    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", newVersion: 2 });
+    // MIL-214: the fixture doc has no conformedVersion at all (never certified), and there's no
+    // conformance/ directory beside the model — so the advisory reports neverCertified: true,
+    // unruledFindingsCount: 0.
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/shipped-slice.md",
+      newVersion: 2,
+      advisory: { neverCertified: true, unruledFindingsCount: 0 },
+    });
     const written = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
     expect(written).toContain("version: 2");
@@ -267,9 +275,96 @@ describe("runReratify (note-binding resolution + fs orchestration)", () => {
 
   it("resolves a MIL-121 cross-binding to the covering doc's own path and writes there", () => {
     const result = run("cross.em", "view-only");
-    expect(result).toEqual({ ok: true, path: "slices/covering-slice.md", newVersion: 2 });
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/covering-slice.md",
+      newVersion: 2,
+      advisory: { neverCertified: true, unruledFindingsCount: 0 },
+    });
     const written = readFileSync(join(dir, "slices", "covering-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
     expect(written).toContain("version: 2");
+  });
+});
+
+describe("reratifyAdvisory / runReratify's MIL-214 certification advisory", () => {
+  let dir: string;
+  const CERTIFIED_DOC =
+    "---\n" +
+    "schemaVersion: 1\n" +
+    "pattern: state-change\n" +
+    "swimlane: order\n" +
+    "status: implemented\n" +
+    "version: 1\n" +
+    "implementedIn: https://github.com/org/repo/pull/9\n" +
+    "conformedVersion: 1\n" +
+    "conformedAt: 8f12ed8\n" +
+    "conformedOn: 2026-08-15\n" +
+    "---\n" +
+    "body\n";
+  const UNCERTIFIED_DOC = CERTIFIED_DOC.replace(
+    "conformedVersion: 1\nconformedAt: 8f12ed8\nconformedOn: 2026-08-15\n",
+    "",
+  );
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-reratify-advisory-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(join(dir, "slices", "certified-slice.md"), CERTIFIED_DOC);
+    writeFileSync(
+      join(dir, "certified.em"),
+      'slice "Certified Slice" {\n  command Do Thing note "slices/certified-slice.md"\n  event Thing Done\n}\n',
+    );
+    writeFileSync(join(dir, "slices", "unruled-slice.md"), UNCERTIFIED_DOC);
+    writeFileSync(
+      join(dir, "unruled.em"),
+      'slice "Unruled Slice" {\n  command Do Other note "slices/unruled-slice.md"\n  event Other Done\n}\n',
+    );
+    writeFileSync(
+      join(dir, "conformance", "2026-08-20-findings.json"),
+      JSON.stringify(
+        {
+          findingsSchemaVersion: "1.0",
+          model: "unruled.em",
+          report: "conformance/2026-08-20-report.md",
+          revision: "8f12ed8",
+          findings: [
+            {
+              id: 1,
+              surface: "structural",
+              class: "Real drift",
+              slice: "unruled-slice",
+              evidence: "code shows X",
+              locus: null,
+              resolvedBy: null,
+              resolvedOn: null,
+            },
+          ],
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(file: string, sliceKey: string) {
+    const { model, refs } = compile(readFileSync(join(dir, file), "utf8"));
+    return runReratify(model, refs, dir, sliceKey);
+  }
+
+  it("neverCertified: false when the current version was certified and has no unruled findings", () => {
+    const result = run("certified.em", "certified-slice");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.advisory).toEqual({ neverCertified: false, unruledFindingsCount: 0 });
+  });
+
+  it("reports both neverCertified and unruledFindingsCount when a slice has an outstanding finding", () => {
+    const result = run("unruled.em", "unruled-slice");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.advisory).toEqual({ neverCertified: true, unruledFindingsCount: 1 });
   });
 });

@@ -33,18 +33,23 @@ or doc; write the as-is picture into that scratch model (`<model-name>-asis.em`,
 canonical model's names wherever the code matches them); run `em diff <model-name>.em
 <model-name>-asis.em --json` and let `em` decide the structural deltas; classify every finding
 (real drift / model gap / internal inconsistency / uncertainty) with cited evidence; write
-`conformance/<date>-report.md` with proposed `issue "conformance: …"` red notes; apply only the
-proposals the user ratifies, then re-render and validate; run `em state set-conformance
-<revision> --report <path>` to update the state file's `Last conformance:` marker.
+`conformance/<date>-report.md` **and its structured twin `conformance/<date>-findings.json`**
+(one entry per finding, `em conform-findings check <path>` to verify) with proposed `issue
+"conformance: …"` red notes; apply only the proposals the user ratifies, then re-render and
+validate; run `em state set-conformance <revision> --report <path>` to update the state file's
+`Last conformance:` marker.
 
 Ruling on a finding is a human gate, like ratifying a slice
 (docs/process.md#the-slice-lifecycle-gates): the sweep gathers evidence and proposes, a person
-decides, and `em state set-conformance` records the decision — never run it on your own judgment.
+decides, and `em conform-supersede ... --locus <model|doc|code|none> --by <name>` records the
+ruling on the findings record (and stamps the report) — never rule on your own judgment. Once
+every finding touching a slice is ruled, `em slice conform <model-name>.em <key> --at <rev>`
+certifies that version of the slice.
 
-End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance`),
-Decisions log entry if any
-proposals were applied. Conform doesn't chain to another phase — it's a recurring loop, run
-again whenever the codebase has moved.
+End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance` —
+refuses while any `implemented` slice still has an unruled finding; `--partial` escapes with a
+loud notice), Decisions log entry if any proposals were applied. Conform doesn't chain to
+another phase — it's a recurring loop, run again whenever the codebase has moved.
 
 ## Phase: `validate`
 

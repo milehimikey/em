@@ -23,8 +23,19 @@ import { applyMarker } from "../util/markers.js";
 export const SLICE_INDEX_MARKER = "slices";
 
 const TABLE_HEADER =
-  "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
-  "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|";
+  "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Conformed | Design doc |\n" +
+  "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|-----------|------------|";
+
+/** MIL-214: `v<N> @ <rev>` when this slice's current version has a conformance certification
+ *  (`doc.conformedVersion`/`doc.conformedAt` both set — always set together, `em slice conform`'s
+ *  only write path), `—` otherwise. Deliberately reports the RECORDED certification verbatim,
+ *  even when it's stale (`conformedVersion !== doc.version`, the `uncertified` driftSignal case)
+ *  — `em status`/`em export`'s `driftSignal` is where "is this still current" is judged; this
+ *  column is just "what was last certified, and against what revision". */
+function conformedCell(doc: SliceDocExport): string {
+  if (doc.conformedVersion === null || doc.conformedAt === null) return "—";
+  return `v${doc.conformedVersion} @ ${doc.conformedAt}`;
+}
 
 /** Escape characters that would break a markdown table cell: `|` (the column separator) and
  *  newlines (a slice name is always one line, but a doc's freeform `implementedIn` text isn't
@@ -64,6 +75,8 @@ export interface SliceIndexRow {
   owner: string;
   tracking: string;
   implementedIn: string;
+  /** MIL-214: `v<N> @ <rev>`, or `—` — see `conformedCell`. */
+  conformed: string;
   docPath: string;
 }
 
@@ -104,6 +117,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       owner: doc.owner ?? "—",
       tracking: doc.tracking ?? "—",
       implementedIn: doc.implementedIn ?? "—",
+      conformed: conformedCell(doc),
       docPath: doc.path,
     };
   });
@@ -112,7 +126,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
     (r) =>
       `| ${r.index} | ${escapeCell(r.name)} | ${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
       `${escapeCell(r.reviewedBy)} | ${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ` +
-      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | [${r.docPath}](${r.docPath}) |`,
+      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | ${escapeCell(r.conformed)} | [${r.docPath}](${r.docPath}) |`,
   );
 
   return { markdown: [TABLE_HEADER, ...lines].join("\n"), rows, diagnostics };

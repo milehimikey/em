@@ -5,7 +5,7 @@
 // (test/changelog.test.ts vs the "em changelog (CLI, real git repo)" block in test/cli.test.ts).
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { localIsoDate } from "../src/util/localDate.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -105,7 +105,58 @@ describe("em state (CLI)", () => {
       date: localIsoDate(),
       revision: "abc123f",
       report: "conformance/2026-08-21-report.md",
+      partial: false,
     });
+  });
+
+  it("set-conformance refuses while a slice:null finding is unruled, and --partial escapes with a notice", () => {
+    mkdirSync(join(modelDir(), "conformance"), { recursive: true });
+    writeFileSync(
+      join(modelDir(), "conformance", "2026-08-25-findings.json"),
+      JSON.stringify(
+        {
+          findingsSchemaVersion: "1.0",
+          model: "order-fulfillment.em",
+          report: "conformance/2026-08-25-report.md",
+          revision: "def456a",
+          findings: [
+            {
+              id: 1,
+              surface: "internal",
+              class: "Internal inconsistency",
+              slice: null,
+              evidence: "e1",
+              locus: null,
+              resolvedBy: null,
+              resolvedOn: null,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const refused = em(
+      ["state", "set-conformance", "def456a", modelDir(), "--report", "conformance/2026-08-25-report.md"],
+      cwd,
+    );
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("1 unruled conformance finding(s) among implemented slices");
+    expect(refused.stderr).toContain("--partial");
+
+    const partial = em(
+      ["state", "set-conformance", "def456a", modelDir(), "--report", "conformance/2026-08-25-report.md", "--partial"],
+      cwd,
+    );
+    expect(partial.status).toBe(0);
+    expect(partial.stderr).toContain("notice: conformance marker recorded as PARTIAL — 1 finding(s) unruled");
+    const text = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
+    expect(text).toContain(
+      "- **Last conformance:** " + localIsoDate() + " @ def456a — report: conformance/2026-08-25-report.md (partial)",
+    );
+    const r = em(["state", "read", modelDir()], cwd);
+    expect(JSON.parse(r.stdout).lastConformance.partial).toBe(true);
   });
 
   it(

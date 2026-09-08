@@ -276,12 +276,13 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the fifteen documented tools", async () => {
+  it("exposes exactly the sixteen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
         "changelog",
+        "conform_findings_check",
         "conform_scope",
         "contract",
         "coverage",
@@ -408,7 +409,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.12");
+    expect(doc.schemaVersion).toBe("1.13");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -519,7 +520,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.4");
+    expect(doc.statusSchemaVersion).toBe("1.5");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -607,7 +608,7 @@ describe("freshness tool (MIL-164)", () => {
   it("happy path: returns the same document `em freshness --json` prints, byte-identical to status's own conformance[0]", async () => {
     const { doc: statusDoc } = await callJson(client, "status", { files: [join(dir, "ready.em")] });
     const { doc } = await callJson(client, "freshness", { file: join(dir, "ready.em") });
-    expect(doc.freshnessSchemaVersion).toBe("1.1");
+    expect(doc.freshnessSchemaVersion).toBe("1.2");
     expect(doc.file).toBe(join(dir, "ready.em"));
     expect(doc.hasStateFile).toBe(false);
     expect(doc.slicePRsBehindHead).toBeNull();
@@ -628,6 +629,48 @@ describe("freshness tool (MIL-164)", () => {
     const { result } = await callJson(client, "freshness", { file: join(dir, "no-such-file.em") });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+});
+
+describe("conform_findings_check tool (MIL-214)", () => {
+  it("returns the same document `em conform-findings check <path> --json` prints, byte-identical, for a valid file", async () => {
+    const findingsPath = join(dir, "conformance", "2026-09-01-findings.json");
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(
+      findingsPath,
+      JSON.stringify(
+        {
+          findingsSchemaVersion: "1.0",
+          model: "model.em",
+          report: "conformance/2026-09-01-report.md",
+          revision: "8f12ed8",
+          findings: [
+            { id: 1, surface: "structural", class: "Real drift", slice: "checkout", evidence: "e1", locus: null, resolvedBy: null, resolvedOn: null },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    const { doc } = await callJson(client, "conform_findings_check", { path: findingsPath });
+    expect(doc).toEqual({ ok: true, path: findingsPath, findingsCount: 1, errors: [] });
+
+    const cli = em(["conform-findings", "check", findingsPath, "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout)).toEqual(doc);
+  });
+
+  it("reports shape errors for an invalid file, byte-identical to the CLI (both exit non-error at the tool/exit-code level differently, but the JSON body matches)", async () => {
+    const findingsPath = join(dir, "conformance", "2026-09-02-findings.json");
+    writeFileSync(findingsPath, "not json");
+    const { doc } = await callJson(client, "conform_findings_check", { path: findingsPath });
+    expect(doc.ok).toBe(false);
+    expect(doc.findingsCount).toBeNull();
+    expect(doc.errors[0]).toContain("not valid JSON");
+
+    const cli = em(["conform-findings", "check", findingsPath, "--json"], dir);
+    expect(cli.status).toBe(1);
+    expect(JSON.parse(cli.stdout)).toEqual(doc);
   });
 });
 
@@ -776,7 +819,7 @@ describe("conform_scope tool", () => {
     expect(result.isError).toBeFalsy();
     const text = (result.content[0] as { type: "text"; text: string }).text;
     const doc = JSON.parse(text);
-    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: conformBaseRev });
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: conformBaseRev });
     expect(doc.changedPaths).toEqual(["src/checkout/Handler.kt"]);
     expect(doc.candidateSlices).toEqual([
       { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },

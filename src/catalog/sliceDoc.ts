@@ -47,6 +47,18 @@
 // particular is the field em-tracker-bridge reads to find the mirrored ticket, so its export
 // name/shape is a cross-tool contract — see docJoin.ts/emit/json.ts. Additive,
 // tolerate-unknown-fields: absent on every doc predating this feature.
+//
+// `conformedVersion`/`conformedAt`/`conformedOn` (MIL-214) are a ninth, tenth, and eleventh
+// optional frontmatter-only field: per-slice-per-version certification, written only by
+// `em slice conform` (cli/sliceConform.ts) — same "one write path" discipline `implementedIn`
+// has with `em slice mark-implemented`. `conformedVersion` is this slice's own `version:` at the
+// time a conform sweep last certified it (a cache of git truth, not derived/validated against
+// git history — same convention `version` itself already uses); `conformedAt` is the TARGET
+// REPO'S revision that sweep diffed against (a plain revision string, not a slice-doc lineage
+// ref — deliberately NOT `<slice-key>@v<N>` shaped); `conformedOn` is the local date the
+// certification was recorded. All three additive, tolerate-unknown-fields: absent on every doc
+// predating this feature, or one never yet conformed. See catalog/driftSignal.ts's `uncertified`
+// classification, which compares `conformedVersion` against `version`.
 
 import { marked } from "marked";
 
@@ -135,6 +147,18 @@ export interface SliceDoc {
    *  to find the ticket mirroring this slice — its export name/shape (docJoin.ts) is a
    *  cross-tool contract, not just an internal display field. */
   tracking: string | null;
+  /** MIL-214: `conformedVersion:` — this slice's `version:` at the time a conform sweep last
+   *  certified it, or null when never certified. Written only by `em slice conform`. Paired with
+   *  `version` to compute `driftSignal`'s `uncertified` case (catalog/driftSignal.ts). */
+  conformedVersion: number | null;
+  /** MIL-214: `conformedAt:` — the target repo's revision that certification sweep diffed
+   *  against, or null when absent. Written only by `em slice conform`; a plain revision string,
+   *  NOT a `<slice-key>@v<N>` lineage ref. */
+  conformedAt: string | null;
+  /** MIL-214: `conformedOn:` — a `YYYY-MM-DD` date string, or null when absent. Written only by
+   *  `em slice conform`; validated by the CLI layer, not re-validated here (this parser stays as
+   *  lenient about value shape as every other frontmatter field). */
+  conformedOn: string | null;
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -317,6 +341,9 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     ratifiedOn: fields.get("ratifiedon") ?? null,
     owner: fields.get("owner") ?? null,
     tracking: fields.get("tracking") ?? null,
+    conformedVersion: parseVersion(fields.get("conformedversion")),
+    conformedAt: fields.get("conformedat") ?? null,
+    conformedOn: fields.get("conformedon") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,

@@ -53,7 +53,7 @@ export interface CandidateSlice {
  *  parsed from the state file even under `--full` — the caller always knows what was on record,
  *  even when scoping ignored it for this run. */
 export interface ConformScopeJson {
-  lastConformance: { date: string; revision: string } | null;
+  lastConformance: { date: string; revision: string; partial: boolean } | null;
   changedPaths: string[];
   candidateSlices: CandidateSlice[];
   unmappedPaths: string[];
@@ -95,7 +95,9 @@ export function buildConformScope(
   changedPaths: string[],
   full: boolean,
 ): ConformScopeJson {
-  const lastConformanceOut = lastConformance ? { date: lastConformance.date, revision: lastConformance.revision } : null;
+  const lastConformanceOut = lastConformance
+    ? { date: lastConformance.date, revision: lastConformance.revision, partial: lastConformance.partial }
+    : null;
 
   if (full || lastConformance === null) {
     const candidateSlices: CandidateSlice[] = slices

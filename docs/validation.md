@@ -313,10 +313,14 @@ until the new version ships. That mismatch (`status` no longer `implemented`, `i
 still set) is the expected signature of a ratified-but-unshipped delta, not incoherence — see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification).
 Flagging it would train people to ignore the warning, which is worse than not having the rule at
-all. `em export`'s `slice.doc.driftSignal` (schema `1.5`) carries the same classification
-(`in-sync` / `never-implemented` / `unpropagated-delta` / `implemented-without-link`) for
-consumers — like the event-modeling skill's `conform` phase — that need to distinguish "known,
-unpropagated delta" from "real drift" without re-deriving this rule's logic themselves.
+all. `em export`'s `slice.doc.driftSignal` (schema `1.5`, extended in schema `1.13`/MIL-214)
+carries the same classification (`in-sync` / `never-implemented` / `unpropagated-delta` /
+`implemented-without-link` / `uncertified`) for consumers — like the event-modeling skill's
+`conform` phase — that need to distinguish "known, unpropagated delta" from "real drift" without
+re-deriving this rule's logic themselves. `uncertified` (MIL-214 — `status: implemented` with a
+link, but `conformedVersion` absent or not matching the current `version`) is the same "expected,
+not a defect" shape as `unpropagated-delta`: this rule never flags it either — it's the normal
+post-ship-before-first-conform state, not incoherence.
 
 ### Slice readiness
 

@@ -256,14 +256,23 @@ log is what `em changelog` weaves back into stage 5, which is how a decision mad
 conformance review in July is still explaining itself to somebody in November.
 
 Once you're done ruling, run `em conform-supersede <model> <report-path> --as-of <rev>
---findings <spec>` on the report you just walked (MIL-164) — it stamps the report with a
-"superseded as of `<rev>`" banner so anyone who later opens it (say, via a stale search
-result or a bookmark) sees immediately that its file:line citations describe an ancestor of
-the current model, not its current state. Cheap, additive, and safe to run even for a
-partial ruling — findings ruled on later just add another stamp.
+--findings <spec> --locus <model|doc|code|none> --by <name>` on the report you just walked
+(MIL-164/MIL-214) — it records the ruling itself (`locus`/`resolvedBy`/`resolvedOn`) on the
+structured findings record beside the report AND stamps the report with a "superseded as of
+`<rev>`" banner, so anyone who later opens it (say, via a stale search result or a bookmark)
+sees immediately that its file:line citations describe an ancestor of the current model, not
+its current state. Cheap, additive, and safe to run even for a partial ruling — findings
+ruled on later just add another stamp. `locus: code` is the carrier for "the spec was right,
+the code is wrong" — no model/doc edit needed for that case.
 
-Update the state file's `Last conformance:` marker and you're back at stage 1 with a model
-you have fresh evidence to trust.
+Once every finding touching a slice is ruled, run `em slice conform <model> <key> --at <rev>`
+(MIL-214) — the per-slice-per-version certification fact `driftSignal: in-sync` now depends
+on (a slice sits at `uncertified` from the moment it ships until the first conform sweep
+certifies it).
+
+Update the state file's `Last conformance:` marker (`em state set-conformance` — refuses
+while any `implemented` slice still has an unruled finding, `--partial` escapes with a loud
+notice) and you're back at stage 1 with a model you have fresh evidence to trust.
 
 ## Adopting this incrementally
 

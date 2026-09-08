@@ -49,7 +49,7 @@ export interface ParsedState {
   phase: string;
   step: string;
   lastUpdated: string;
-  lastConformance: { date: string; revision: string; report: string } | null;
+  lastConformance: { date: string; revision: string; report: string; partial: boolean } | null;
   lastReview: string | null;
 }
 
@@ -92,7 +92,10 @@ export function loadStateFile(dirOrFile: string): LoadResult {
   return { ok: true, path, text: readFileSync(path, "utf8") };
 }
 
-const LAST_CONFORMANCE_RE = /^(\d{4}-\d{2}-\d{2}) @ (.+?) — report: (.+)$/;
+// MIL-214: the `( (partial)`)?` tail is `--partial`'s marker — see `setConformance` below. The
+// report capture stays non-greedy (`.+?`) so the optional suffix, not the report path, absorbs
+// a trailing "(partial)" when present.
+const LAST_CONFORMANCE_RE = /^(\d{4}-\d{2}-\d{2}) @ (.+?) — report: (.+?)( \(partial\))?$/;
 const LEADING_DATE_RE = /^(\d{4}-\d{2}-\d{2})\b/;
 
 /** Parse the six mechanical bullets out of a state file's raw text. `ok: false` when the file
@@ -126,7 +129,7 @@ export function parseState(text: string): ParseStateResult {
         message: `"- **Last conformance:**" doesn't match "YYYY-MM-DD @ <revision> — report: <path>" or "never": ${lastConformanceRaw}`,
       };
     }
-    lastConformance = { date: m[1], revision: m[2], report: m[3] };
+    lastConformance = { date: m[1], revision: m[2], report: m[3], partial: m[4] !== undefined };
   }
 
   const lastReviewRaw = raw[LABELS.lastStakeholderReview];
@@ -206,9 +209,13 @@ export function setPhase(text: string, phase: Phase, today: string, step?: strin
 /** `em state set-conformance`: rewrite `Last conformance:` in the EXACT format
  *  reference/conform.md's "keep the format exact" instruction specifies — the next conform
  *  run's scoping (reference/conform.md step 1) parses this line back out — plus `Last
- *  updated:`. */
-export function setConformance(text: string, revision: string, report: string, today: string): PatchResult {
-  const value = `${today} @ ${revision} — report: ${report}`;
+ *  updated:`. `partial` (MIL-214, `--partial`) appends a ` (partial)` suffix — the marker for a
+ *  conformance sweep whose findings weren't ALL ruled on before the marker was recorded
+ *  (`em state set-conformance`'s own refusal, cli.ts, is what `--partial` escapes) — parsed back
+ *  out by `LAST_CONFORMANCE_RE`/`ParsedState.lastConformance.partial` above, and surfaced by
+ *  every reader of `Last conformance:` (conform-scope.ts, status.ts, freshnessJson.ts). */
+export function setConformance(text: string, revision: string, report: string, today: string, partial = false): PatchResult {
+  const value = `${today} @ ${revision} — report: ${report}${partial ? " (partial)" : ""}`;
   return applyBulletUpdates(text, [
     { label: LABELS.lastConformance, value },
     { label: LABELS.lastUpdated, value: today },

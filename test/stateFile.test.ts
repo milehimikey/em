@@ -105,9 +105,30 @@ describe("parseState", () => {
         phase: "discover",
         step: "1",
         lastUpdated: "2026-08-20",
-        lastConformance: { date: "2026-08-01", revision: "abc123f", report: "conformance/2026-08-01-report.md" },
+        lastConformance: {
+          date: "2026-08-01",
+          revision: "abc123f",
+          report: "conformance/2026-08-01-report.md",
+          partial: false,
+        },
         lastReview: "2026-08-02",
       },
+    });
+  });
+
+  it("reads the MIL-214 ` (partial)` suffix as partial: true", () => {
+    const partialFilled = FILLED.replace(
+      "- **Last conformance:** 2026-08-01 @ abc123f — report: conformance/2026-08-01-report.md",
+      "- **Last conformance:** 2026-08-01 @ abc123f — report: conformance/2026-08-01-report.md (partial)",
+    );
+    const result = parseState(partialFilled);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.lastConformance).toEqual({
+      date: "2026-08-01",
+      revision: "abc123f",
+      report: "conformance/2026-08-01-report.md",
+      partial: true,
     });
   });
 
@@ -207,6 +228,25 @@ describe("setConformance", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain('"- **Last conformance:**"');
   });
+
+  it("MIL-214: appends ` (partial)` when partial is true", () => {
+    const result = setConformance(SCAFFOLDED, "abc123f", "conformance/2026-08-21-report.md", "2026-08-21", true);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.text).toContain(
+      "- **Last conformance:** 2026-08-21 @ abc123f — report: conformance/2026-08-21-report.md (partial)",
+    );
+  });
+
+  it("omits the suffix when partial is false (the default)", () => {
+    const result = setConformance(SCAFFOLDED, "abc123f", "conformance/2026-08-21-report.md", "2026-08-21", false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.text).toContain(
+      "- **Last conformance:** 2026-08-21 @ abc123f — report: conformance/2026-08-21-report.md",
+    );
+    expect(result.text).not.toContain("(partial)");
+  });
 });
 
 describe("setReview", () => {
@@ -265,6 +305,22 @@ describe("round-trip: set then read", () => {
       date: "2026-08-21",
       revision: "deadbeef",
       report: "conformance/2026-08-21-report.md",
+      partial: false,
+    });
+  });
+
+  it("setConformance's partial marker round-trips through parseState", () => {
+    const written = setConformance(SCAFFOLDED, "deadbeef", "conformance/2026-08-21-report.md", "2026-08-21", true);
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    const read = parseState(written.text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.state.lastConformance).toEqual({
+      date: "2026-08-21",
+      revision: "deadbeef",
+      report: "conformance/2026-08-21-report.md",
+      partial: true,
     });
   });
 
@@ -283,6 +339,7 @@ describe("round-trip: set then read", () => {
       date: "2026-08-21",
       revision,
       report: "report.md",
+      partial: false,
     });
   });
 

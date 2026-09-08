@@ -237,7 +237,7 @@ step 2 — sorts into exactly one class:
 Every classification must cite the evidence recorded in step 2 (or the `em diff` entry, for
 structural findings) — a finding with no citation isn't ready to report.
 
-### 5. Report + proposals
+### 5. Report + findings record + proposals
 
 Write `conformance/<YYYY-MM-DD>-report.md` in the model directory, from
 `../../event-modeling-shared/templates/conformance-report.md`. For a real-drift or model-gap finding, propose a
@@ -250,6 +250,71 @@ stays auditable) but don't ask the user to ratify what's already ratified. **You
 canonical model or a slice doc unprompted** — walk the report with the user, apply only the
 proposals they approve, then re-render and `em validate`.
 
+**Also write the findings JSON (MIL-214).** Alongside the report, write
+`conformance/<YYYY-MM-DD>-findings.json` — one entry per `### n.` finding, ids matching the
+report's own numbering. Shape (`findingsSchemaVersion: "1.0"`, additive-only, 2-space indent,
+keys sorted, findings sorted by `id`, trailing newline):
+
+```json
+{
+  "findingsSchemaVersion": "1.0",
+  "model": "checkout.em",
+  "report": "conformance/YYYY-MM-DD-report.md",
+  "revision": "<target-repo revision>",
+  "findings": [
+    {
+      "id": 1,
+      "surface": "structural",
+      "class": "Real drift",
+      "slice": "checkout",
+      "evidence": "code shows X at path/to/File.kt:42",
+      "locus": null,
+      "resolvedBy": null,
+      "resolvedOn": null
+    }
+  ]
+}
+```
+
+`surface` is one of `structural` (`.em` <-> code — step 3's diff), `spec` (slice doc <-> code —
+step 2's invariant/scenario walk), `internal` (slice doc <-> `.em` — step 2's `doc-model-*`
+diagnostics), or `other`. `class` is the step-4 classification verbatim (Real drift, Model gap,
+Internal inconsistency, Accepted divergence, Unpropagated delta, Extraction uncertainty). `slice`
+is the concerned slice's export key, or `null` for a finding that isn't attributable to one
+(counts as in-scope for every slice's unruled-findings check). `locus`/`resolvedBy`/`resolvedOn`
+start `null` — a later `em conform-supersede --locus --by` call fills them in once a human rules.
+Run `em conform-findings check conformance/YYYY-MM-DD-findings.json` before ending the session —
+a headless run's mechanical proof it wrote a valid record.
+
+**Ruling on a finding (MIL-214) — once the user decides.** Run, per finding or batch of findings
+ruled the same way:
+
+```
+em conform-supersede <model-name>.em conformance/YYYY-MM-DD-report.md --as-of <target-repo revision> \
+  --findings <spec> --locus <model|doc|code|none> --by <name>
+```
+
+— this records `locus`/`resolvedBy`/`resolvedOn` on the named findings in the JSON (refusing to
+silently overwrite an already-different `locus`) AND stamps the report's "superseded as of `<rev>`"
+banner in the same call (see below). `locus: code` on an unresolved finding is the carrier for
+"the spec is right, the code is wrong" — no doc delta required for that case any more; `locus:
+model` means fix the `.em` (apply the proposed red note, or a stronger edit the user chose
+instead); `locus: doc` means the slice doc needs a delta/re-ratification; `locus: none` covers
+Accepted divergence/Unpropagated delta/Extraction uncertainty, where nothing needs to change.
+
+**Certifying a slice, once every finding touching it is ruled (MIL-214).** For each in-scope
+slice with no unruled findings left:
+
+```
+em slice conform <model-name>.em <slice-key> --at <target-repo revision>
+```
+
+— records `conformedVersion`/`conformedAt`/`conformedOn` on that slice's doc, so
+`driftSignal` reads `in-sync` again (it reads `uncertified` for an implemented slice that's never
+been through this) instead of just trusting `implementedIn`. Legal only for `status: implemented`
+with a link, and itself refuses if an unruled finding for that slice still exists at this
+revision — the mechanical proof this step comes only after rulings, not before.
+
 End of run: update the state file's `Last conformance:` marker with
 
 ```
@@ -258,14 +323,21 @@ em state set-conformance <target-repo revision> --report conformance/YYYY-MM-DD-
 
 — the revision is the one you just diffed against, so the next run's scope starts from here.
 The command writes the exact format step 1 parses back out; never hand-edit the bullet.
+**Refuses (MIL-214) while any `implemented` slice still has an unruled finding** in the findings
+JSON beside the report — rule on every finding first (or certify what's already ruled via `em
+slice conform` above), or pass `--partial` to record the marker with a loud notice instead
+(`notice: conformance marker recorded as PARTIAL — N finding(s) unruled`) when the team
+deliberately wants to advance the marker without finishing every ruling this session.
 **The marker only advances with the human in the loop**: in an interactive session, run it
-after walking the report with the user; a headless/scheduled run writes the report but never
-the marker (nobody ratified the outcome), so the next run re-walks the same span — see
-`docs/ci.md`. If any proposals were ratified and applied, log a Decisions entry noting what
+after walking the report with the user; a headless/scheduled run writes the report and findings
+JSON but never the marker (nobody ratified the outcome), so the next run re-walks the same span —
+see `docs/ci.md`. If any proposals were ratified and applied, log a Decisions entry noting what
 changed and why.
 
-**Superseding the report you just walked (MIL-164).** Once the user has ruled on this run's
-findings, also run:
+**Superseding the report you just walked (MIL-164).** The `--locus`/`--by` call above already
+stamps the report's banner in the same call when a ruling was recorded; if a finding's ruling
+doesn't need `--locus`/`--by` recorded (a migration-path report predating the findings JSON, or
+a ruling you're only banner-stamping after the fact), run the same command without them:
 
 ```
 em conform-supersede <model-name>.em conformance/YYYY-MM-DD-report.md --as-of <target-repo revision> --findings <spec>
@@ -298,10 +370,11 @@ each call adds its own stamp rather than overwriting the last.
 ## Completion & handoff
 
 Conform is complete when: every in-scope slice has been walked (step 2), the scratch model has
-been diffed (step 3), every finding is classified with cited evidence (step 4), the report is
-written (step 5), the state file's `Last conformance:` marker is updated, and the user has seen
-the report and said which proposals (if any) to apply. Applied proposals get re-rendered and
-re-validated before you call the run done.
+been diffed (step 3), every finding is classified with cited evidence (step 4), the report AND
+its findings JSON are written (step 5), the state file's `Last conformance:` marker is updated
+(or deliberately left as `--partial`), and the user has seen the report and said which proposals
+(if any) to apply and which findings resolve to which locus. Applied proposals get re-rendered
+and re-validated before you call the run done.
 
 Conform doesn't chain to another phase automatically — it's a recurring loop, not a step in
 building the model. Suggest running it again next time the target codebase has moved, at

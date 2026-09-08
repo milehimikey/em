@@ -96,7 +96,8 @@ working directory — the same working-directory convention every `em` CLI comma
 | `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
 | `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
-| `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD |
+| `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
+| `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214) |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -270,6 +271,15 @@ agent that only wants to qualify an answer ("per the model, last verified agains
 ago") without paying for a full state-of-the-system compile. `repo` is optional, mirroring the
 CLI's `--repo` flag. Refuses (tool error) when the model has errors, matching `em freshness`'s
 own CLI refusal. See [`em freshness`](cli.md#em-freshness-file) for the full JSON shape.
+
+### `conform_findings_check`
+
+Same document as `em conform-findings check <path> --json` (MIL-214): shape-validates a
+`conformance/<date>-findings.json` file — `findingsSchemaVersion`/required fields/enum values/
+sorted-unique ids/a ruled finding carrying `resolvedBy`+`resolvedOn` — and reports the finding
+count when valid. Read-only; the file itself is written by the conform skill directly (there's no
+MCP write tool for it, same as every other write/mutate command). See
+[`em conform-findings check`](cli.md#em-conform-findings-check-path) for the full JSON shape.
 
 ### `contract`
 

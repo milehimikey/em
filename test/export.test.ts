@@ -31,7 +31,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.12"); // MIL-208: continuationOf/alsoReads bump
+    expect(doc.schemaVersion).toBe("1.13"); // MIL-208: continuationOf/alsoReads bump
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -84,6 +84,9 @@ slice "Submit Order" {
       ratifiedOn: null,
       owner: null,
       tracking: null,
+      conformedVersion: null,
+      conformedAt: null,
+      conformedOn: null,
     });
     expect(slice.elements[0]).toMatchObject({
       ref: "submit-order/command.submit-order",
@@ -1070,7 +1073,7 @@ type Order { billing: Address }
   });
 
   it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.12");
+    expect(docOf(SRC).schemaVersion).toBe("1.13");
   });
 });
 
@@ -1123,6 +1126,9 @@ describe("slice-doc join (MIL-91)", () => {
         "status: implemented",
         "version: 2",
         "implementedIn: https://github.com/example/pr/41",
+        "conformedVersion: 2",
+        "conformedAt: 8f12ed8",
+        "conformedOn: 2026-08-15",
         "---",
         "# Slice: Checkout",
         "",
@@ -1273,6 +1279,9 @@ describe("slice-doc join (MIL-91)", () => {
       ratifiedOn: null,
       owner: null,
       tracking: null,
+      conformedVersion: 2,
+      conformedAt: "8f12ed8",
+      conformedOn: "2026-08-15",
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
   });
@@ -1368,6 +1377,9 @@ describe("slice-doc join: cross-binding (MIL-121)", () => {
       ratifiedOn: null,
       owner: null,
       tracking: null,
+      conformedVersion: null,
+      conformedAt: null,
+      conformedOn: null,
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
   });
@@ -1433,7 +1445,7 @@ describe("driftSignal (MIL-85, status/implementedIn coherence)", () => {
     dir = mkdtempSync(join(tmpdir(), "em-export-drift-signal-"));
     modelFile = join(dir, "model.em");
     mkdirSync(join(dir, "slices"), { recursive: true });
-    const writeDoc = (sliceKey: string, status: string, implementedIn: string | null) =>
+    const writeDoc = (sliceKey: string, status: string, implementedIn: string | null, conformedVersion: number | null = null) =>
       writeFileSync(
         join(dir, "slices", `${sliceKey}.md`),
         [
@@ -1444,15 +1456,23 @@ describe("driftSignal (MIL-85, status/implementedIn coherence)", () => {
           `status: ${status}`,
           "version: 2",
           ...(implementedIn ? [`implementedIn: ${implementedIn}`] : []),
+          ...(conformedVersion !== null ? [`conformedVersion: ${conformedVersion}`, "conformedAt: 8f12ed8", "conformedOn: 2026-08-15"] : []),
           "---",
           "body",
           "",
         ].join("\n"),
       );
-    writeDoc("in-sync", "implemented", "https://github.com/example/pr/1");
+    // MIL-214: conformedVersion (2) matches this doc's own version (2) — the certified-current case.
+    writeDoc("in-sync", "implemented", "https://github.com/example/pr/1", 2);
     writeDoc("no-link", "implemented", null);
     writeDoc("re-ratified", "ready-to-implement", "https://github.com/example/pr/1");
     writeDoc("not-shipped", "draft", null);
+    // MIL-214: implemented with a link, but never certified at all — the normal post-ship-
+    // before-first-conform state.
+    writeDoc("never-certified", "implemented", "https://github.com/example/pr/2");
+    // MIL-214: implemented with a link, certified — but at a STALE version (1, not the current 2)
+    // — a reratify happened since the last conform sweep.
+    writeDoc("stale-certified", "implemented", "https://github.com/example/pr/3", 1);
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -1481,6 +1501,14 @@ describe("driftSignal (MIL-85, status/implementedIn coherence)", () => {
 
   it("never-implemented: not yet shipped, no link", () => {
     expect(driftSignalOf("Not Shipped", "not-shipped")).toBe("never-implemented");
+  });
+
+  it("uncertified: implemented with a link, never certified", () => {
+    expect(driftSignalOf("Never Certified", "never-certified")).toBe("uncertified");
+  });
+
+  it("uncertified: implemented with a link, certified but at a stale version", () => {
+    expect(driftSignalOf("Stale Certified", "stale-certified")).toBe("uncertified");
   });
 });
 

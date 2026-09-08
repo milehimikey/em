@@ -31,7 +31,14 @@ Replace bracketed placeholders; delete guidance comments before finishing.
 ## Findings
 
 <!-- One subsection per finding. Group however reads clearest (by slice, or by surface) but keep
-     every field below for every finding. Order doesn't matter; classification does. -->
+     every field below for every finding. Order doesn't matter; classification does.
+
+     MIL-214: this section's structured twin is `conformance/{{YYYY-MM-DD}}-findings.json`,
+     written ALONGSIDE this report (not after it) — one JSON entry per `### n.` finding below,
+     `id` matching `{{n}}`. See reference/conform.md step 5 for the exact shape and the write-then-
+     `em conform-findings check`-it discipline. A later `em conform-supersede --locus --by` call
+     records the ruling on both the JSON (locus/resolvedBy/resolvedOn) and this report's banner
+     in one call. -->
 
 ### {{n}}. {{Short finding title}}
 

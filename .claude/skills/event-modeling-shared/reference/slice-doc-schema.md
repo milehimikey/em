@@ -69,6 +69,9 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `ratifiedOn` | string | `YYYY-MM-DD` | written only by `em slice ratify` (MIL-165); joined into `em export`'s `slice.doc.ratifiedOn` (schema `1.8`) |
 | `owner` | string | free text (typically a person or team name) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.owner` (schema `1.9`, MIL-171), `em slice index`'s Owner column, and `em status`'s per-slice `owners[]` |
 | `tracking` | string | free text (typically an external ticket/issue URL) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.tracking` (schema `1.9`, MIL-171) and `em slice index`'s Tracking column. This is the exact field `em-tracker-bridge` reads to find the ticket mirroring this slice — `em` only stores and displays it, it never talks to a tracker itself |
+| `conformedVersion` | integer | positive integer | written only by `em slice conform` (MIL-214 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-conform-file-slice-key---at-rev)): this slice's `version:` at the time a conform sweep last certified it. Joined into `em export`'s `slice.doc.conformedVersion` (schema `1.13`); paired with `version` to compute `slice.doc.driftSignal`'s `"uncertified"` case |
+| `conformedAt` | string | free text (a target-repo revision, NOT a `<slice-key>@v<N>` lineage ref) | written only by `em slice conform` (MIL-214): the revision that certification sweep diffed against. Joined into `em export`'s `slice.doc.conformedAt` (schema `1.13`) and `em slice index`'s Conformed column |
+| `conformedOn` | string | `YYYY-MM-DD` | written only by `em slice conform` (MIL-214). Joined into `em export`'s `slice.doc.conformedOn` (schema `1.13`) |
 
 Five keys — `schemaVersion`/`pattern`/`swimlane`/`status`/`version` — are what
 `hasUsableFrontmatter()` requires: a doc omitting any of them is `frontmatter-invalid` to
@@ -89,6 +92,7 @@ convention, not parser-enforced.
 | `reviewedBy`, `reviewedOn` | optional in every state — present once `em slice review` (MIL-201) has run at least once; a doc that never went through the review gate, or was hand-flipped to `reviewed`, simply omits both. `em slice ratify` never clears them; `em slice reratify` does (they describe the version that shipped) |
 | `ratifiedBy`, `ratifiedOn` | optional in every state — present once `em slice ratify` (MIL-165) has run at least once; a doc predating this feature, or ratified by hand, simply omits both |
 | `owner`, `tracking` | optional in every state — hand-filled whenever a team wants a who-holds-this / external-tracker link; most docs never carry either (MIL-171) |
+| `conformedVersion`, `conformedAt`, `conformedOn` | optional in every state — present once `em slice conform` (MIL-214) has run at least once for the CURRENT version; a doc that's never been through a conform sweep, or whose `version` has since bumped past what was certified, simply has none of the three (or a stale triple — see `driftSignal`'s `uncertified` case below) |
 
 `em export`'s slice-doc join (MIL-91) is the first `em` command to mechanically check the
 required row above: a bound doc missing any of `schemaVersion`/`pattern`/`swimlane`/`status`/

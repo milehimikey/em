@@ -18,10 +18,21 @@
 // block reads as a small history of rulings, not a single mutable fact. Calling again with the
 // EXACT same revision/findings/date is a no-op (`changed: false`), same idempotency convention
 // every other `em` write command holds.
+//
+// MIL-214: `--locus <model|doc|code|none> --by <name>` (both required together, `--on` optional)
+// additionally record the RULING itself — not just that a ruling happened — onto the findings
+// JSON beside the report (`conformance/<date>-findings.json`, cli/findings.ts), via
+// `applyFindingsRuling`. This is the mechanical half of docs/process.md's "Ruling on conformance
+// findings": the banner alone only ever said "this report is superseded," never "and here's what
+// was decided about finding N." Without `--locus`/`--by`, behavior is byte-identical to before
+// this ticket (banner only). With them but no findings JSON present beside the report (a report
+// written before MIL-214, or authored by hand), the ruling can't be recorded anywhere structured
+// — warn once and fall back to banner-only, the documented migration path.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isValidDateString } from "./stateFile.js";
+import { applyFindingsRuling, FindingLocus, lookupFindingsBesideReport, parseFindingsSpec, serializeFindingsDoc } from "./findings.js";
 
 const BANNER_PREFIX = "> **Superseded as of `";
 
@@ -86,19 +97,73 @@ export function applySupersededBanner(raw: string, revision: string, findings: s
   return { ok: true, content, changed: true };
 }
 
-export type RunConformSupersedeResult = { ok: true; path: string; changed: boolean } | { ok: false; message: string };
+/** MIL-214: `--locus`/`--by` — optional, both-or-neither. */
+export interface ConformSupersedeRuling {
+  locus: FindingLocus;
+  by: string;
+}
+
+/** What happened on the findings-JSON side of a `--locus`/`--by` call — `"not-requested"` when
+ *  neither flag was passed (pre-MIL-214 behavior, banner only). */
+export type FindingsRulingOutcome =
+  | { kind: "not-requested" }
+  | { kind: "no-findings-file"; warning: string }
+  | { kind: "applied"; path: string; changed: boolean; ids: number[] };
+
+export type RunConformSupersedeResult =
+  | { ok: true; path: string; changed: boolean; findingsRuling: FindingsRulingOutcome }
+  | { ok: false; message: string };
 
 /**
  * Resolves `reportPath` (relative to `baseDir` — the `.em` file's directory, same convention
  * every doc/note/report path in `em` uses) and applies the banner. Refuses cleanly when the
  * report doesn't exist rather than creating one — `em conform-supersede` stamps an existing
- * report, it never authors one.
+ * report, it never authors one. When `ruling` is given, also records `locus`/`resolvedBy`/
+ * `resolvedOn` on the findings named by `findings` in the sibling `-findings.json` — see module
+ * header.
  */
-export function runConformSupersede(baseDir: string, reportPath: string, revision: string, findings: string, on: string): RunConformSupersedeResult {
+export function runConformSupersede(
+  baseDir: string,
+  reportPath: string,
+  revision: string,
+  findings: string,
+  on: string,
+  ruling?: ConformSupersedeRuling,
+): RunConformSupersedeResult {
   const absPath = join(baseDir, reportPath);
   if (!existsSync(absPath)) {
     return { ok: false, message: `no such report: ${reportPath}` };
   }
+
+  let findingsRuling: FindingsRulingOutcome = { kind: "not-requested" };
+  if (ruling) {
+    const ids = parseFindingsSpec(findings);
+    if (ids === null) {
+      return { ok: false, message: `--findings "${findings}" doesn't parse into finding id(s) — expected e.g. "1-3" or "1, 2, 4"` };
+    }
+    const lookup = lookupFindingsBesideReport(baseDir, reportPath);
+    if (lookup.kind === "invalid") {
+      return { ok: false, message: lookup.message };
+    }
+    if (lookup.kind === "absent") {
+      findingsRuling = {
+        kind: "no-findings-file",
+        warning:
+          `no findings JSON found beside ${reportPath} — recording the banner only; the ruling ` +
+          "(locus/resolvedBy/resolvedOn) isn't recorded anywhere structured (migration path for a report written before `em conform-findings`)",
+      };
+    } else {
+      const applied = applyFindingsRuling(lookup.doc, ids, ruling.locus, ruling.by, on);
+      if (!applied.ok) {
+        return { ok: false, message: applied.message };
+      }
+      if (applied.changed) {
+        writeFileSync(join(baseDir, lookup.path), serializeFindingsDoc(applied.doc), "utf8");
+      }
+      findingsRuling = { kind: "applied", path: lookup.path, changed: applied.changed, ids };
+    }
+  }
+
   const raw = readFileSync(absPath, "utf8");
   const result = applySupersededBanner(raw, revision, findings, on);
   if (!result.ok) {
@@ -107,5 +172,5 @@ export function runConformSupersede(baseDir: string, reportPath: string, revisio
   if (result.changed) {
     writeFileSync(absPath, result.content, "utf8");
   }
-  return { ok: true, path: reportPath, changed: result.changed };
+  return { ok: true, path: reportPath, changed: result.changed, findingsRuling };
 }
