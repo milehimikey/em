@@ -13,6 +13,8 @@
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement) |
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
+| `em freshness <file>` | Standalone "last conformed `<rev>` — N commits/M slice-PRs behind HEAD" for one model |
+| `em metrics <file> --from <rev>` | The pilot metrics from git history: ratification turnaround, conform cadence + findings, status-vs-reality disagreement (a fourth is not computable) |
 | `em system <manifest>` | Verify a seam manifest (`system.yaml`) — which model's `public` event/view feeds which other model's reaction — against the models' exports, and emit the org-level context map |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
@@ -1590,6 +1592,117 @@ way `constitution` does — see [`em status`](#em-status-files) above for what t
 carried because this document *is* one `ConformanceEntry`, not because staleness has anything to
 do with house rules. See [`em status`](#em-status-files) for what it means.
 
+## `em metrics <file>`
+
+The four pilot metrics named in advance (MIL-170, see [usage-data.md](usage-data.md)):
+ratification turnaround, conform-cycle cadence + finding counts, status-vs-reality disagreement,
+and whether the readiness gate changes what gets built — computed from git history over a
+revision range, `--from <rev>` (required) through `--to <rev>` (default `HEAD`). The first three
+are deterministically computable from what's already in the repo; the fourth is not (see below).
+
+`<file>` is an anchor `.em` file, used only to locate `slices/`, `conformance/`, and
+`.event-modeling.md` relative to it — same "never parsed or compiled" convention as `em ledger`.
+
+| Flag | Effect |
+|---|---|
+| `--from <rev>` | Baseline revision (required) |
+| `--to <rev>` | Compare revision (default: `HEAD`) |
+| `--json` | Print a JSON document instead of the text report |
+
+```bash
+em metrics model.em --from v1.0                  # v1.0 through HEAD
+em metrics model.em --from v1.0 --to v1.1         # two tags
+em metrics model.em --from HEAD~50 --json          # machine-readable form
+```
+
+**Deterministic.** Every date comes from git's own commit-date formatting (`--date=format:...`,
+which renders using the timezone recorded WITH the commit — identical on any machine, unlike
+`--date=format-local`), and nothing reads "now": the same repository and the same `--from`/`--to`
+range produce byte-identical output, run twice, on any machine.
+
+**Metric 1 — ratification turnaround.** Per slice, the two lifecycle gaps: days from the commit
+that first set `reviewedOn:` (i.e. `em slice review`) to the commit that first set `ratifiedOn:`
+(`em slice ratify`) within the range, and from that commit to the one that first set
+`implementedIn:` (`em slice mark-implemented`). Derived by walking `slices/<key>.md`'s commit
+history in the range and diffing each touched revision's doc against the one before it — a slice
+re-ratified more than once within the same range reports only its first review-to-ratify-to-
+implement cycle (a documented simplification, not every possible cycle). Reported as
+median/min/max/count across all slices with a resolvable gap, plus the full per-slice table
+(dates `null` when that field's appearance commit falls outside the range).
+
+**Metric 2 — conform cadence + findings.** Every `conformance/<date>-report.md` added within the
+range: its date (from the filename — the conform run's own record of when it ran), the commit
+that added it, the finding/ruled/unruled counts from its sibling
+`conformance/<date>-findings.json` (MIL-214) when one exists **at `--to`** (the range's end, so a
+findings record filled in over several commits after the report itself lands is still counted),
+and the revision it was run against — taken from that findings file's own `revision` field when
+present, else the `Last conformance:` marker read from `.event-modeling.md` **at the adding
+commit** when its `report:` value names this same report. `daysSincePrevious` is the gap to the
+previous report in the range (`null` for the first); `medianCadenceDays` is the median of those
+gaps.
+
+**Metric 3 — status-vs-reality disagreement.** A small time series, one point per commit in the
+range that touched `slices/*.md` or `.event-modeling.md`: at that commit, the count of
+`status: implemented` slice docs whose `driftSignal` (see [`em status`](#em-status-files)) is
+`implemented-without-link` or `uncertified` (`disagreementCount` — status claims more than the
+doc can back up), and the count that are `unpropagated-delta` (`unpropagatedCount` — an expected,
+not-yet-shipped re-ratification in flight, reported separately since it isn't a disagreement).
+`current` repeats the same computation at `--to`.
+
+**Metric 4 — readiness-gate effect.** Whether the readiness gate (a slice reaching
+`ready-to-implement` before it's built) actually changes what gets built is **not computable from
+git history alone** — answering it needs a counterfactual (what would have shipped without the
+gate) that doesn't exist in any one repository's commit log. The text report prints exactly the
+line `Readiness-gate effect: not computable from history — see docs/usage-data.md`; the JSON
+carries `readinessGateEffect: null`. No proxy metric is substituted for it.
+
+**`--json` shape** (`metricsSchemaVersion: "1.0"` — this is also the exact document the MCP
+`metrics` tool returns, see [mcp.md](mcp.md)):
+
+```json
+{
+  "metricsSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "from": "v1.0",
+  "to": "HEAD",
+  "ratificationTurnaround": {
+    "slices": [
+      {
+        "key": "checkout",
+        "reviewedOn": { "commit": "abc123f", "date": "2026-08-01" },
+        "ratifiedOn": { "commit": "def456a", "date": "2026-08-03" },
+        "implementedIn": { "commit": "789fedc", "date": "2026-08-10" },
+        "reviewToRatifyDays": 2,
+        "ratifyToImplementDays": 7
+      }
+    ],
+    "reviewToRatify": { "count": 1, "medianDays": 2, "minDays": 2, "maxDays": 2 },
+    "ratifyToImplement": { "count": 1, "medianDays": 7, "minDays": 7, "maxDays": 7 }
+  },
+  "conformCadence": {
+    "entries": [
+      {
+        "date": "2026-08-15",
+        "path": "conformance/2026-08-15-report.md",
+        "commit": "abc123f",
+        "revision": "def456a",
+        "revisionSource": "findings",
+        "findingsCount": 3,
+        "ruledCount": 3,
+        "unruledCount": 0,
+        "daysSincePrevious": null
+      }
+    ],
+    "medianCadenceDays": null
+  },
+  "statusVsReality": {
+    "series": [{ "commit": "abc123f", "date": "2026-08-01", "disagreementCount": 0, "unpropagatedCount": 0 }],
+    "current": { "disagreementCount": 0, "unpropagatedCount": 0 }
+  },
+  "readinessGateEffect": null
+}
+```
+
 ## `em query <verb> <files...>`
 
 Deterministic graph queries over the compiled model (MIL-168): scoped, token-cheap answers —
@@ -2126,6 +2239,7 @@ the slice's primary element by hand.
 | `--swimlane <swimlane>` | **Required.** Free text, conventionally `<Persona> → <Context>` |
 | `-f, --force` | Overwrite the file if it already exists |
 | `--wire <model-file>` | Also insert the `note "slices/<key>.md"` line into this `.em` file (MIL-161) — see below |
+| `--stub` | Write a near-free stub instead (MIL-184) — see below |
 
 ```bash
 em slice new "Request Payment" --pattern automation --swimlane "System → Payment"
@@ -2134,6 +2248,30 @@ em slice new "Request Payment" --pattern automation --swimlane "System → Payme
 em slice new "Request Payment" --pattern automation --swimlane "System → Payment" --wire model.em
 # -> writes slices/request-payment.md AND inserts the note line into model.em directly
 ```
+
+### `--stub` (MIL-184)
+
+Writes the same 5 required-at-`status: draft` frontmatter keys as the ordinary (non-`--stub`)
+form, but the body is a single placeholder line instead of the diagram-image stub and every
+judgment section:
+
+```markdown
+# Slice: Request Payment
+
+_Stub — deepen with the slice phase (see slice-doc-schema.md)._
+```
+
+A stub is a real doc with a real, machine-read `status` — every lifecycle tool that keys on
+`doc.status` (render/`em watch` coloring, `em status`, `driftSignal`, `em slice index`) treats it
+exactly like any other doc, since it's the same frontmatter dialect. It exists so a slice can
+carry status before anyone's ready to write the real spec — see
+[slice-doc-schema.md#stub-docs](slice-doc-schema.md#stub-docs) for what a stub can and can't pass.
+Deepen it later: re-run `em slice new` (no `--stub`) with `-f`/`--force` to overwrite the
+placeholder body once the team writes the real judgment sections; `--stub` and `--force` compose
+freely with `--wire` exactly like the ordinary form.
+
+`em slice stub-all` (below) is the batch form — one stub per undocumented slice in a whole model,
+in a single command.
 
 ### `--wire <model-file>` (MIL-161)
 
@@ -2165,6 +2303,65 @@ paste by hand.
 | `slice "<name>" has N <kind> elements — ambiguous, wire the note by hand` | More than one candidate — which one is genuine judgment |
 | `slice "<name>" is a later instance of "<view>" (again) — it has no doc of its own; the doc lives at slices/<originating-key>.md (slice "<originating-key>")` | (MIL-208) The sole `view` candidate is `again` — this slice is a **continuation** of the view's originating slice, which has the real doc; wire/ratify that slice instead |
 | `this line already has a note clause — edit it by hand instead` | The primary element is already wired (or has a conflicting `note`) |
+
+## `em slice stub-all <file>`
+
+The batch form of `em slice new --stub` (MIL-184): one stub doc, wired, for **every** slice in
+`<file>` with no resolvable doc — the fast path to status coloring for an exploratory or
+backbone-mapping model, without hand-running `slice new` once per slice. Requires a clean
+compile first (same as `--wire` above); refuses, writing nothing, if `<file>` has errors.
+
+For each slice, in model declaration order:
+
+- A **continuation** slice (MIL-208, an again-view-only instance) is skipped — it has no doc of
+  its own; the message names the originating slice.
+- A slice whose doc already resolves cleanly (found, usable frontmatter) is skipped —
+  **already documented**.
+- A slice `classifySlicePattern` can't assign one of the 4 `pattern` values to (`unclassified` —
+  an empty/malformed slice `em validate` already flags elsewhere) is skipped.
+- A slice with no doc note at all, whose canonical `slices/<key>.md` path already holds a file on
+  disk (an orphaned doc nothing notes), is skipped rather than silently overwritten — this
+  command offers no `--force`.
+- A slice with an invalid/unparseable doc already on disk is skipped — fix it by hand
+  (`em validate` explains what's wrong).
+- Everything else gets a fresh stub: pattern from `classifySlicePattern`, swimlane derived from
+  the slice's own shape (below), wired via the exact same `wireSliceNote` `--wire` above uses. A
+  slice whose note already points at the canonical path but whose file is simply missing is
+  stubbed **without** re-wiring — the note is already there.
+
+**Swimlane derivation:** the slice's first `ui` element's resolved persona, arrow-joined to its
+first `event` element's resolved context, both in declaration order — `"Customer → Order"` for a
+typical State Change slice with a screen. Falls back to the literal placeholder `"— → —"` when
+either side is missing (a pure Automation/Translation reaction has no `ui` of its own; a bare
+State View slice has no `event` of its own).
+
+| Flag | Effect |
+|---|---|
+| `--status <status>` | Target status for every fresh stub: `draft` (default) \| `reviewed` \| `ready-to-implement` \| `implemented` |
+| `--by <name>` | Identity for `reviewedBy`/`ratifiedBy` — **required** for any `--status` other than `draft` |
+| `--implemented-in <url>` | PR/commit URL for `implementedIn` — **required** with `--status implemented` |
+| `--dry-run` | List what would be stubbed/wired without writing anything |
+
+`--status` escalates each fresh stub past `draft` using the exact frontmatter writers
+`em slice review`/`em slice ratify`/`em slice mark-implemented` already own — never a
+reimplementation of what those statuses write. `reviewed` applies the review writer once;
+`ready-to-implement` applies review then ratify (the freshly-reviewed doc always satisfies
+ratify's own review-gate check, so this never needs `--skip-review`); `implemented` applies
+review, then ratify, then mark-implemented. One `--by`/today's date stamps every escalated field
+this run touches — a batch scaffold, not a record of N separate human review sessions. There is
+no fifth "backbone"/"existing" status: an established, already-shipped slice is
+`--status implemented --implemented-in <url>`, the same four lifecycle values every other `em`
+command already understands.
+
+Prints one line per slice, in model order — `stubbed ...`/`would stub ...` or `skip ... — <reason>`.
+`--dry-run` never writes a stub file, and never rewrites `<file>`.
+
+```bash
+em slice stub-all model.em                                    # one draft stub per undocumented slice
+em slice stub-all model.em --dry-run                           # preview only
+em slice stub-all model.em --status implemented \
+  --by "Alex Rivera" --implemented-in https://github.com/org/repo/pull/1   # backbone/established slices
+```
 
 ## `em slice index <file>`
 

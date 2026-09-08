@@ -183,3 +183,25 @@ which skill phases the team actually spends time in, and which validate warnings
 enough to be worth designing around, instead of guessing from the code. Counts are only as
 clean as entries sticking to the fixed [Categories](#categories) list above — which every line
 written by `em state log-usage` always does.
+
+## The pilot metrics
+
+Naming the metrics a pilot team will be judged by, before the pilot starts, is itself part of
+the honesty this convention is built on. `em metrics <file> --from <rev>` (MIL-170, see
+[cli.md](cli.md#em-metrics-file)) computes three of the four metrics named in advance, straight
+from git history — no usage log, no telemetry, nothing extra to instrument:
+
+- **Ratification turnaround** — how many days a slice doc sits reviewed before it's ratified,
+  and ratified before it ships.
+- **Conform cadence + findings** — how often the team actually runs a conformance sweep, and
+  what it finds each time.
+- **Status-vs-reality disagreement** — how often a slice doc's `status:`/`implementedIn:` claims
+  outrun what a conform sweep would actually certify.
+
+The fourth — whether the readiness gate changes what gets built — is **not computable from git
+history alone**: answering it needs a counterfactual (what would have shipped without the gate)
+that no single repository's commit log contains. `em metrics` says so plainly rather than
+substituting a proxy: the text report prints "not computable from history — see this page," and
+the JSON document carries `readinessGateEffect: null`. If a pilot wants an answer to that
+question, it has to come from outside git — a controlled comparison, or a team's own retro
+judgment — not from a number `em` fabricates to fill the slot.

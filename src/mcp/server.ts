@@ -67,6 +67,8 @@ import { buildChangelogDoc } from "../cli/changelogBuild.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
 import { loadStateFile, parseState, modelPathMismatch } from "../cli/stateFile.js";
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
+import { computeMetrics } from "../cli/metrics.js";
+import { buildMetricsJson } from "../emit/metricsJson.js";
 import { checkFindingsFile, buildCheckFindingsJson } from "../cli/findings.js";
 import { compileForQuery } from "../query/pipeline.js";
 import type { ModelIndex } from "../model/queryIndex.js";
@@ -211,7 +213,7 @@ const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all seventeen MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all eighteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -748,6 +750,33 @@ export function createServer(): McpServer {
         ? { version: certifiedFound.version, at: certifiedFound.certified.at, on: certifiedFound.certified.on }
         : null;
       return textResult(JSON.stringify({ file, design, certified }, null, 2));
+    },
+  );
+
+  server.registerTool(
+    "metrics",
+    {
+      title: "The pilot metrics from git history",
+      description:
+        "Return the same JSON document `em metrics <file> --from <rev> [--to <rev>] --json` " +
+        "prints (MIL-170): ratification turnaround (reviewed -> ratified -> implemented), " +
+        "conform-cycle cadence + finding counts, and status-vs-reality disagreement over time — " +
+        "computed from git history over `from..to` (`to` defaults to `HEAD`). A fourth metric " +
+        "(readiness-gate effect) is not computable from history; the document always carries " +
+        "`readinessGateEffect: null`. `file` is an anchor .em model, used only to locate " +
+        "slices/, conformance/, and .event-modeling.md relative to it — never parsed or " +
+        "compiled. Refuses (tool error) when `file` isn't inside a git repository, or `from`/" +
+        "`to` doesn't resolve to a commit.",
+      inputSchema: {
+        file: z.string().describe("anchor .em model file"),
+        from: z.string().describe("baseline revision"),
+        to: z.string().optional().describe("compare revision (default: HEAD)"),
+      },
+    },
+    async ({ file, from, to }) => {
+      const computed = computeMetrics(file, from, to ?? "HEAD");
+      if (!computed.ok) return errorResult(computed.message);
+      return textResult(buildMetricsJson(computed.result));
     },
   );
 

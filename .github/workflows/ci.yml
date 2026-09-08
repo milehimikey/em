@@ -6,6 +6,13 @@ name: CI
 # gate 3's release gate: it needs a PR base revision to diff against, so it only runs on
 # pull_request (a direct push to main has no PR base and must not fail the job that isn't
 # applicable to it).
+#
+# MIL-216: `npm test` above runs in the runner's default UTC. A test that computes an expected
+# "today" from `toISOString().slice(0, 10)` instead of `localIsoDate()` reads the same instant
+# either way and never fails here — it only diverges on a contributor's machine, west of UTC,
+# after ~17:00 local (see docs/architecture.md "Testing conventions"). The extra step below
+# reruns the date-sensitive files under a west-of-UTC zone so that divergence is reproducible on
+# the runner too; test/noUtcToday.test.ts is the static guard against the pattern recurring.
 
 on:
   push:
@@ -25,6 +32,8 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
+      - name: date-sensitive tests, west-of-UTC zone (MIL-216)
+        run: TZ=America/Denver npx vitest run test/cli-state.test.ts test/cli.test.ts -t "today|mechanical fields|writes the exact format"
 
   skill-version-stamp:
     if: github.event_name == 'pull_request'

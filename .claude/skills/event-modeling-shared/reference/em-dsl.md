@@ -49,6 +49,12 @@ em slice new <name> --pattern <pattern>                       # slice pattern: s
 em slice new <name> --swimlane <swimlane>                     # swimlane, e.g. "Persona → Context"
 em slice new <name> -f, --force                               # overwrite the file if it already exists
 em slice new <name> --wire <model-file>                       # also insert the `note "slices/<key>.md"` line onto the slice's primary element in this .em file (matched by export key), instead of just printing it to paste by hand (MIL-161)
+em slice new <name> --stub                                    # write a near-free stub instead: same 5 frontmatter keys, but a one-line placeholder body instead of the diagram-image stub and every judgment section (MIL-184) — deepen it later by re-running without --stub and -f
+em slice stub-all <file>                                      # scaffold + wire a near-free stub (`em slice new --stub`'s content, MIL-184) for every slice in <file> with no resolvable doc — the fast path to status coloring for an exploratory/backbone model without hand-running `slice new` per slice. Skips a continuation slice (MIL-208, it has no doc of its own), an already-documented slice, and a slice whose pattern can't be classified
+em slice stub-all <file> --status <status>                    # target status for every stub: draft | reviewed | ready-to-implement | implemented
+em slice stub-all <file> --by <name>                          # identity for reviewedBy/ratifiedBy — required unless --status draft
+em slice stub-all <file> --implemented-in <url>               # PR/commit URL for implementedIn — required with --status implemented
+em slice stub-all <file> --dry-run                            # list what would be stubbed/wired without writing anything
 em slice index <file>                                         # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
 em slice index <file> --check                                 # verify the table is current; exit non-zero on drift without writing (CI)
 em slice mark-implemented <file> <slice-key> <pr-url>         # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` or the doc body
@@ -132,6 +138,10 @@ em status <files> -o, --out <path>                            # write output to 
 em freshness <file>                                           # standalone freshness signal for one model's conformance record (MIL-164): "last conformed <rev> — N commits and M slice-PRs behind HEAD", computed from the same conform-scope machinery `em status`'s conformance clause uses — for when you want just this fact, no full state-of-the-system rollup (see docs/cli.md)
 em freshness <file> --repo <path>                             # git repo to compute behind-HEAD in (default: the model's own directory)
 em freshness <file> --json                                    # print a JSON document instead of the text line
+em metrics <file>                                             # the pilot metrics named in advance by the register, computed from git history alone (MIL-170): ratification turnaround (reviewed -> ratified -> implemented), conform-cycle cadence + finding counts, and status-vs-reality disagreement over time — plus a fourth, reported as not computable from history (see docs/usage-data.md). `<file>` is an anchor .em file, used only to locate slices/, conformance/, and .event-modeling.md relative to it — same convention as em ledger; never parsed or compiled
+em metrics <file> --from <rev>                                # baseline revision
+em metrics <file> --to <rev>                                  # compare revision (default: HEAD)
+em metrics <file> --json                                      # print a JSON document instead of the text report (see docs/cli.md)
 em query consumers <files>                                    # views/reactions consuming an event, plus their slices
 em query consumers <files> --event <ref-or-name>              # the event's export ref or display name
 em query consumers <files> --json                             # print a JSON document instead of the text report

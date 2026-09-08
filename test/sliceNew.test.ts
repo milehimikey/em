@@ -4,7 +4,7 @@
 // exit-code/process coverage (writing the file, --force, the printed `note` line, directory
 // creation) lives in test/cli.test.ts, same split as `em slice index`.
 import { describe, it, expect } from "vitest";
-import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "../src/cli/sliceNew.js";
+import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "../src/cli/sliceNew.js";
 
 describe("SLICE_PATTERNS / isSlicePattern", () => {
   it("is exactly the 4-value enum from docs/slice-doc-schema.md", () => {
@@ -68,5 +68,42 @@ describe("buildSliceDocContent", () => {
     // comment lines (the frontmatter template's lineage-key comments) anywhere else.
     const commentLines = content.split("\n").filter((line) => line.startsWith("#") && !line.startsWith("# Slice:"));
     expect(commentLines).toEqual([]);
+  });
+});
+
+// MIL-184: `em slice new --stub` / `em slice stub-all`'s content builder — same 5-key
+// frontmatter as buildSliceDocContent, but a one-line placeholder body instead of the
+// diagram-image stub and every judgment section.
+describe("buildStubDocContent", () => {
+  it("writes exactly the same 5 frontmatter keys as buildSliceDocContent, no more", () => {
+    const content = buildStubDocContent("Request Payment", "automation", "System → Payment");
+    const fence = content.match(/^---\n([\s\S]*?)\n---\n/);
+    expect(fence).not.toBeNull();
+    const keys = fence![1]
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.split(":")[0]);
+    expect(keys).toEqual(["schemaVersion", "pattern", "swimlane", "status", "version"]);
+  });
+
+  it("fills schemaVersion/pattern/swimlane/status/version with the correct values", () => {
+    const content = buildStubDocContent("Request Payment", "automation", "System → Payment");
+    expect(content).toContain("schemaVersion: 1\n");
+    expect(content).toContain("pattern: automation\n");
+    expect(content).toContain("swimlane: System → Payment\n");
+    expect(content).toContain("status: draft\n");
+    expect(content).toContain("version: 1\n");
+  });
+
+  it("body is the # Slice: heading plus a single stub placeholder line — no diagram image", () => {
+    const content = buildStubDocContent("Request Payment", "automation", "System → Payment");
+    const body = content.slice(content.indexOf("---\n", 4) + 4);
+    expect(body).toBe("# Slice: Request Payment\n\n_Stub — deepen with the slice phase (see slice-doc-schema.md)._\n");
+    expect(content).not.toContain("![Diagram]");
+  });
+
+  it("carries no judgment-section headings (Intent, Scenarios, Open Questions, ...)", () => {
+    const content = buildStubDocContent("Request Payment", "automation", "System → Payment");
+    expect(content).not.toContain("## ");
   });
 });

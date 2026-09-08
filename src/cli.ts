@@ -55,6 +55,8 @@ import {
 } from "./cli/status.js";
 import { buildStatusJson } from "./emit/statusJson.js";
 import { buildFreshnessJson } from "./emit/freshnessJson.js";
+import { computeMetrics, formatMetricsText } from "./cli/metrics.js";
+import { buildMetricsJson } from "./emit/metricsJson.js";
 import { planSkillSyncBundle, applySkillSyncBundle } from "./cli/skillSync.js";
 import { checkSkillSyncBundle } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
@@ -82,8 +84,9 @@ import { runRatify } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
 import { runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
-import { buildSliceDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
+import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { wireSliceNote } from "./cli/sliceLink.js";
+import { isStubStatus, runStubAll, STUB_STATUSES } from "./cli/sliceStubAll.js";
 import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runReratify } from "./cli/reratify.js";
@@ -588,7 +591,13 @@ slice
     "also insert the `note \"slices/<key>.md\"` line onto the slice's primary element in this " +
       ".em file (matched by export key), instead of just printing it to paste by hand (MIL-161)",
   )
-  .action((name: string, opts: { pattern: string; swimlane: string; force?: boolean; wire?: string }) => {
+  .option(
+    "--stub",
+    "write a near-free stub instead: same 5 frontmatter keys, but a one-line placeholder body " +
+      "instead of the diagram-image stub and every judgment section (MIL-184) — deepen it later " +
+      "by re-running without --stub and -f",
+  )
+  .action((name: string, opts: { pattern: string; swimlane: string; force?: boolean; wire?: string; stub?: boolean }) => {
     if (!isSlicePattern(opts.pattern)) {
       console.error(
         `em slice new: invalid --pattern "${opts.pattern}" — expected one of: ${SLICE_PATTERNS.join(", ")}`,
@@ -624,7 +633,10 @@ slice
     }
 
     mkdirSync(dir, { recursive: true });
-    writeFileSync(path, buildSliceDocContent(name, key, opts.pattern, opts.swimlane));
+    const content = opts.stub
+      ? buildStubDocContent(name, opts.pattern, opts.swimlane)
+      : buildSliceDocContent(name, key, opts.pattern, opts.swimlane);
+    writeFileSync(path, content);
     console.log(`wrote ${path}`);
 
     if (wired) {
@@ -633,6 +645,68 @@ slice
     } else {
       console.log(`add this to the slice's primary element in the .em file:`);
       console.log(`  note "${path}"`);
+    }
+  });
+
+slice
+  .command("stub-all")
+  .description(
+    "scaffold + wire a near-free stub (`em slice new --stub`'s content, MIL-184) for every " +
+      "slice in <file> with no resolvable doc — the fast path to status coloring for an " +
+      "exploratory/backbone model without hand-running `slice new` per slice. Skips a " +
+      "continuation slice (MIL-208, it has no doc of its own), an already-documented slice, and " +
+      "a slice whose pattern can't be classified",
+  )
+  .argument("<file>", "input .em file")
+  .option("--status <status>", `target status for every stub: ${STUB_STATUSES.join(" | ")}`, "draft")
+  .option("--by <name>", "identity for reviewedBy/ratifiedBy — required unless --status draft")
+  .option("--implemented-in <url>", "PR/commit URL for implementedIn — required with --status implemented")
+  .option("--dry-run", "list what would be stubbed/wired without writing anything")
+  .action((file: string, opts: { status: string; by?: string; implementedIn?: string; dryRun?: boolean }) => {
+    if (!isStubStatus(opts.status)) {
+      console.error(`em slice stub-all: invalid --status "${opts.status}" — expected one of: ${STUB_STATUSES.join(", ")}`);
+      process.exit(1);
+    }
+    if (opts.status !== "draft" && !opts.by) {
+      console.error(`em slice stub-all: --status ${opts.status} requires --by <name>`);
+      process.exit(1);
+    }
+    if (opts.status === "implemented" && !opts.implementedIn) {
+      console.error("em slice stub-all: --status implemented requires --implemented-in <url>");
+      process.exit(1);
+    }
+
+    const { model, refs, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("em slice stub-all: not stubbing — fix the errors above");
+      process.exit(1);
+    }
+
+    mkdirSync(join(dirname(file), "slices"), { recursive: true });
+    const result = runStubAll(model, refs, dirname(file), source, {
+      status: opts.status,
+      by: opts.by ?? null,
+      on: localIsoDate(),
+      implementedInUrl: opts.implementedIn ?? null,
+      dryRun: opts.dryRun === true,
+    });
+
+    for (const outcome of result.outcomes) {
+      if (outcome.kind === "skip") {
+        console.log(`skip ${outcome.sliceKey} — ${outcome.reason}`);
+        continue;
+      }
+      const verb = opts.dryRun ? "would stub" : "stubbed";
+      const wireNote = outcome.wired ? `wired onto ${outcome.elementName}` : "already wired";
+      console.log(
+        `${verb} ${outcome.path} (${outcome.sliceKey}, pattern: ${outcome.pattern}, swimlane: "${outcome.swimlane}", ` +
+          `status: ${outcome.status}, ${wireNote})`,
+      );
+    }
+
+    if (!opts.dryRun && result.source !== source) {
+      writeFileSync(file, result.source);
     }
   });
 
@@ -1954,6 +2028,34 @@ program
       process.stdout.write(buildFreshnessJson(entry) + "\n");
     } else {
       console.log(formatConformancePart(entry));
+    }
+  });
+
+program
+  .command("metrics")
+  .description(
+    "the pilot metrics named in advance by the register, computed from git history alone " +
+      "(MIL-170): ratification turnaround (reviewed -> ratified -> implemented), conform-cycle " +
+      "cadence + finding counts, and status-vs-reality disagreement over time — plus a fourth, " +
+      "reported as not computable from history (see docs/usage-data.md). `<file>` is an anchor " +
+      ".em file, used only to locate slices/, conformance/, and .event-modeling.md relative to " +
+      "it — same convention as em ledger; never parsed or compiled",
+  )
+  .argument("<file>", "anchor .em file")
+  .requiredOption("--from <rev>", "baseline revision")
+  .option("--to <rev>", "compare revision (default: HEAD)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { from: string; to?: string; json?: boolean }) => {
+    const to = opts.to ?? "HEAD";
+    const computed = computeMetrics(file, opts.from, to);
+    if (!computed.ok) {
+      console.error(computed.message);
+      process.exit(1);
+    }
+    if (opts.json) {
+      process.stdout.write(buildMetricsJson(computed.result) + "\n");
+    } else {
+      console.log(formatMetricsText(computed.result));
     }
   });
 

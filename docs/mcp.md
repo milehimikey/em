@@ -97,6 +97,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
 | `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
 | `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
+| `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214) |
 | `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
@@ -272,6 +273,18 @@ agent that only wants to qualify an answer ("per the model, last verified agains
 ago") without paying for a full state-of-the-system compile. `repo` is optional, mirroring the
 CLI's `--repo` flag. Refuses (tool error) when the model has errors, matching `em freshness`'s
 own CLI refusal. See [`em freshness`](cli.md#em-freshness-file) for the full JSON shape.
+
+### `metrics`
+
+Same document as `em metrics <file> --from <rev> [--to <rev>] --json` (MIL-170): the pilot
+metrics named in advance — ratification turnaround, conform-cycle cadence + finding counts, and
+status-vs-reality disagreement over time — computed from git history over `from..to` (`to`
+defaults to `HEAD`, mirroring the CLI). A fourth metric (readiness-gate effect) is not computable
+from history; the document always carries `readinessGateEffect: null`. `file` is an anchor `.em`
+model, used only to locate `slices/`/`conformance/`/`.event-modeling.md` relative to it — never
+parsed or compiled, same as the CLI. Refuses (tool error) when `file` isn't inside a git
+repository, or `from`/`to` doesn't resolve to a commit. See [`em metrics`](cli.md#em-metrics-file)
+for the full JSON shape.
 
 ### `conform_findings_check`
 
