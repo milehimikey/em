@@ -59,3 +59,29 @@ export function buildSliceDocContent(displayName: string, key: string, pattern: 
     `![Diagram](./${key}.svg)\n`
   );
 }
+
+/**
+ * Build the full contents of a fresh, near-free `slices/<key>.md` STUB (MIL-184: `em slice new
+ * --stub` / `em slice stub-all`) — the same 5 frontmatter keys `buildSliceDocContent` writes
+ * (nothing else, same as above), but the body is one placeholder line instead of the
+ * diagram-image stub and every judgment section (Intent, Command, Scenarios, Open Questions,
+ * ...) a full slice doc eventually carries. Exists purely so the slice has a real, single-
+ * source-of-truth `status` — every lifecycle tool that reads `doc.status` (render coloring,
+ * `em status`, `driftSignal`, `em slice index`) treats a stub exactly like any other doc, since
+ * it's the same frontmatter dialect. Deepen it later with `em slice new` (no `--stub`) + `-f` to
+ * overwrite this placeholder body once the team is ready to write the real spec.
+ */
+export function buildStubDocContent(displayName: string, pattern: SlicePattern, swimlane: string): string {
+  return (
+    `---\n` +
+    `schemaVersion: ${SCHEMA_VERSION}\n` +
+    `pattern: ${pattern}\n` +
+    `swimlane: ${swimlane}\n` +
+    `status: draft\n` +
+    `version: 1\n` +
+    `---\n` +
+    `# Slice: ${displayName}\n` +
+    `\n` +
+    `_Stub — deepen with the slice phase (see slice-doc-schema.md)._\n`
+  );
+}
