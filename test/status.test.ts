@@ -32,11 +32,14 @@ import {
   formatStatusMarkdown,
   buildStatusBadge,
   renderBadgeSvg,
+  resolveModelVersionStatusEntry,
+  formatModelVersionPart,
   StatusReport,
   SliceStatusFact,
   StatusDiagnostic,
   ConformanceEntry,
 } from "../src/cli/status.js";
+import { runModelVersionBump, runCertifyModelVersion } from "../src/cli/modelVersion.js";
 import { buildCoverageReport } from "../src/cli/coverage.js";
 
 const fakeGit = (responses: GitResult[]): GitRunner => {
@@ -738,6 +741,7 @@ describe("text/markdown/badge formatting", () => {
       conformance: [
         { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" , partial: false }, unruledFindings: null, repo: ".", commitsBehindHead: 3, slicePRsBehindHead: 3, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
+      modelVersion: [{ file: "model.em", design: 2, certified: { version: 2, at: "abc123f", on: "2026-08-01" }, drifted: false, changes: { hashChanged: false, slices: [] } }],
       diagnostics: [],
       owners: [],
       ...overrides,
@@ -1064,6 +1068,58 @@ describe("text/markdown/badge formatting", () => {
     );
     expect(svg).not.toContain("#4c1");
     expect(svg).toContain("#dfb317");
+  });
+});
+
+describe("resolveModelVersionStatusEntry / formatModelVersionPart (MIL-218)", () => {
+  const SRC = 'slice "Place Order" {\n  command Place Order\n  event Order Placed\n}\n';
+
+  it("reports design: null, certified: null, drifted: false before any bump", () => {
+    const { model, refs } = compile(SRC);
+    const dir = mkdtempSync(join(tmpdir(), "em-status-model-version-"));
+    const entry = resolveModelVersionStatusEntry("m.em", model, refs, SRC);
+    rmSync(dir, { recursive: true, force: true });
+    expect(entry).toEqual({
+      file: "m.em",
+      design: null,
+      certified: null,
+      drifted: false,
+      changes: { hashChanged: false, slices: [] },
+    });
+    expect(formatModelVersionPart(entry)).toBe("never bumped");
+  });
+
+  it("reports design/certified and drifted: false right after a bump and certify", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-status-model-version-"));
+    const file = join(dir, "m.em");
+    writeFileSync(file, SRC);
+    const { model, refs } = compile(SRC);
+    runModelVersionBump(dir, "m.em", model, refs, SRC, "Alex", "2026-09-08", "1.12.0", false);
+    runCertifyModelVersion(dir, model, refs, SRC, "8f12ed8", "2026-09-08", "conformance/2026-09-08-report.md", null);
+    const entry = resolveModelVersionStatusEntry(file, model, refs, SRC);
+    rmSync(dir, { recursive: true, force: true });
+    expect(entry).toEqual({
+      file,
+      design: 1,
+      certified: { version: 1, at: "8f12ed8", on: "2026-09-08" },
+      drifted: false,
+      changes: { hashChanged: false, slices: [] },
+    });
+    expect(formatModelVersionPart(entry)).toBe("v1 — certified v1 @ 8f12ed8");
+  });
+
+  it("reports drifted: true once the model changes without a re-bump", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-status-model-version-"));
+    const file = join(dir, "m.em");
+    writeFileSync(file, SRC);
+    const { model, refs } = compile(SRC);
+    runModelVersionBump(dir, "m.em", model, refs, SRC, "Alex", "2026-09-08", "1.12.0", false);
+    const changed = SRC + '\nslice "Cancel Order" {\n  command Cancel Order\n  event Order Cancelled\n}\n';
+    const changedCompiled = compile(changed);
+    const entry = resolveModelVersionStatusEntry(file, changedCompiled.model, changedCompiled.refs, changed);
+    rmSync(dir, { recursive: true, force: true });
+    expect(entry.drifted).toBe(true);
+    expect(formatModelVersionPart(entry)).toBe("v1 — never certified (drifted since bump)");
   });
 });
 

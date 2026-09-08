@@ -69,6 +69,7 @@ let brokenDocDir: string;
 let reviewedDocDir: string;
 let implementedDocDir: string;
 let continuationDir: string;
+let modelVersionDir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "em-mcp-"));
   writeFileSync(join(dir, "clean.em"), CLEAN);
@@ -104,6 +105,24 @@ beforeAll(() => {
   mkdirSync(join(brokenDocDir, "slices"), { recursive: true });
   writeFileSync(join(brokenDocDir, "slices", "broken.md"), "# Slice: Broken\nNo frontmatter fence at all.\n");
   writeFileSync(join(brokenDocDir, "status-broken-doc.em"), 'slice "Broken" {\n  ui Broken Screen @Customer note "slices/broken.md"\n}\n');
+
+  // MIL-218 (model_version_show tool) fixture — own directory, since it grows its own
+  // model-versions/ manifest and must not affect any other fixture's status/export doc.
+  modelVersionDir = join(dir, "model-version-model");
+  mkdirSync(modelVersionDir, { recursive: true });
+  writeFileSync(join(modelVersionDir, "mv.em"), 'slice "Place Order" {\n  command Place Order\n  event Order Placed\n}\n');
+  // `em model version bump` refuses without a state file — minimal hand-built one, same
+  // shape conformDir's own fixture below uses.
+  writeFileSync(
+    join(modelVersionDir, ".event-modeling.md"),
+    "# Event Modeling Progress — Model Version Fixture\n\n" +
+      "- **Model file:** `mv.em`\n" +
+      "- **Current phase:** discover\n" +
+      "- **Current step:** 1\n" +
+      "- **Last updated:** 2026-09-08\n" +
+      "- **Last conformance:** never\n" +
+      "- **Last stakeholder review:** never\n",
+  );
 
   // MIL-201 parity fixture: a slice doc carrying `reviewedBy:`/`reviewedOn:`, so export's new
   // doc-join fields are actually populated (not just null) in the byte-identity assertion below.
@@ -276,7 +295,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the seventeen documented tools", async () => {
+  it("exposes exactly the eighteen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -293,6 +312,7 @@ describe("tools/list", () => {
         "glossary",
         "list_markers",
         "metrics",
+        "model_version_show",
         "query",
         "slice_ready",
         "system",
@@ -410,7 +430,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.13");
+    expect(doc.schemaVersion).toBe("1.14");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -521,7 +541,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.5");
+    expect(doc.statusSchemaVersion).toBe("1.6");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -630,6 +650,38 @@ describe("freshness tool (MIL-164)", () => {
     const { result } = await callJson(client, "freshness", { file: join(dir, "no-such-file.em") });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+});
+
+describe("model_version_show tool (MIL-218)", () => {
+  it("reports design: null, certified: null before any bump", async () => {
+    const { doc } = await callJson(client, "model_version_show", { file: join(modelVersionDir, "mv.em") });
+    expect(doc).toEqual({ file: join(modelVersionDir, "mv.em"), design: null, certified: null });
+  });
+
+  it("byte-identical to `em model version show --json` once bumped", async () => {
+    const bump = em(["model", "version", "bump", join(modelVersionDir, "mv.em"), "--by", "Alex", "--on", "2026-09-08"], modelVersionDir);
+    expect(bump.status).toBe(0);
+
+    const { doc } = await callJson(client, "model_version_show", { file: join(modelVersionDir, "mv.em") });
+    expect(doc).toEqual({ file: join(modelVersionDir, "mv.em"), design: 1, certified: null });
+
+    const cli = em(["model", "version", "show", join(modelVersionDir, "mv.em"), "--json"], modelVersionDir);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout)).toEqual(doc);
+  });
+});
+
+describe("status tool: modelVersion field (MIL-218)", () => {
+  it("surfaces the design/certified version, byte-identical to `em status --json`", async () => {
+    const { doc } = await callJson(client, "status", { files: [join(modelVersionDir, "mv.em")] });
+    expect(doc.modelVersion).toEqual([
+      { file: join(modelVersionDir, "mv.em"), design: 1, certified: null, drifted: false, changes: { hashChanged: false, slices: [] } },
+    ]);
+
+    const cli = em(["status", join(modelVersionDir, "mv.em"), "--json"], modelVersionDir);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout).modelVersion).toEqual(doc.modelVersion);
   });
 });
 

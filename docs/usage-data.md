@@ -90,6 +90,7 @@ affected lines written by hand.
 | implemented without link |
 | invalid or missing frontmatter |
 | model element missing from doc |
+| model version stale |
 | open issue |
 | orphaned slice doc left behind by a rename or removal |
 | public event not consumed by any seam |

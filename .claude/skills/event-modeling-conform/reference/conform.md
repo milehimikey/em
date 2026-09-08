@@ -376,6 +376,18 @@ its findings JSON are written (step 5), the state file's `Last conformance:` mar
 (if any) to apply and which findings resolve to which locus. Applied proposals get re-rendered
 and re-validated before you call the run done.
 
+A full (non-`--partial`) `em state set-conformance` does one more thing (MIL-218): it also
+**certifies** the model's current design version — writes `certified: { at, on, report,
+findings }` into that version's `model-versions/v<N>.json` manifest, and rewrites the state
+file's `Certified:` bullet. This is the "conform ran clean against version N" fact a
+stakeholder or a release note can point at. It only works on an already-**bumped** design
+version — `em state set-conformance` refuses (pointing at `em model version bump`) if no
+manifest exists yet, or if the model has drifted since the last bump (the certification would
+otherwise name a version that isn't what conform actually walked). If the model changed during
+this conform run (a slice's `version:` moved, or the `.em` file itself changed), bump a new
+design version (`em model version bump --by <name>`) before the final `em state
+set-conformance` call. `--partial` never certifies. See `docs/model-versions.md`.
+
 Conform doesn't chain to another phase automatically — it's a recurring loop, not a step in
 building the model. Suggest running it again next time the target codebase has moved, at
 whatever cadence the user wants (see `docs/ci.md` for a scheduled-run recipe).

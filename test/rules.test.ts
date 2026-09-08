@@ -26,6 +26,7 @@ const KNOWN_DOC_ANCHORS = new Set([
   "doc-model-consistency",
   "orphaned-slice-doc",
   "seam-manifest",
+  "model-version-stale",
 ]);
 
 const SLICE_READY_CODES = [
@@ -37,7 +38,7 @@ const SLICE_READY_CODES = [
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(66); // MIL-208: +continuation-has-own-doc
+    expect(Object.keys(RULES).length).toBe(67); // MIL-218: +model-version-stale
   });
 
   it("marks exactly sliceReadyValidate.ts's 4 codes as optIn — nothing else", () => {

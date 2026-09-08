@@ -464,6 +464,18 @@ export const RULES = {
     usageCategory: "undeclared seam candidate",
     docAnchor: "seam-manifest",
   },
+  // MIL-218: the model-level counterpart to `em slice conform`'s per-slice certification — warns
+  // when the `.em` content hash or the slice-version vector has moved since the last `em model
+  // version bump` (src/catalog/modelVersionValidate.ts, modelVersion.ts's `modelVersionDrift`
+  // predicate). Silent when no `model-versions/*.json` manifest exists at all — a repo that
+  // never bumped a design version isn't nagged.
+  "model-version-stale": {
+    severity: "warning",
+    title: "Model version stale",
+    fix: "Run `em model version bump` to record the current model content/slice-version vector.",
+    usageCategory: "model version stale",
+    docAnchor: "model-version-stale",
+  },
   "slice-ready-unknown-slice": {
     severity: "error",
     title: "Unknown --slice-ready key",

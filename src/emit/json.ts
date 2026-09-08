@@ -21,6 +21,7 @@ import { EdgeSource, resolveLoopsToTarget, semanticEdges } from "../model/edges.
 import { classifySlicePattern } from "../catalog/classify.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
+import { findCertifiedVersion, latestModelVersionNumber } from "../cli/modelVersion.js";
 
 // Read once from package.json (two levels up from src/emit/ and dist/emit/
 // alike) so `generator.version` can never drift from the released version.
@@ -122,7 +123,14 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // implemented, implementedIn set, but `conformedVersion` is absent or doesn't match the current
 // `version`) — see catalog/driftSignal.ts. Additive-only (new optional fields, new enum member
 // on an existing string field).
-export const SCHEMA_VERSION = "1.13";
+// 1.14 (MIL-218, "model-level version"): `model.version` — `{ design: N|null, certified: {
+// version, at, on } | null }`. `design` is the highest `em model version bump`-written
+// `model-versions/v<N>.json` beside the `.em` file (null if never bumped); `certified` names
+// the most recently CERTIFIED design version (from that manifest's own `certified` field,
+// written by a full, non-`--partial` `em state set-conformance`) — which need not equal
+// `design` itself, since a later bump can outrun certification. See src/cli/modelVersion.ts.
+// Additive-only.
+export const SCHEMA_VERSION = "1.14";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -238,6 +246,9 @@ export interface ExportDoc {
     personas: string[];
     contexts: string[];
     hasAutomation: boolean;
+    /** MIL-218, schema 1.14: the model-level design/certified version — see `SCHEMA_VERSION`'s
+     *  own doc comment above. */
+    version: { design: number | null; certified: { version: number; at: string; on: string } | null };
     types: TypeExport[];
     slices: SliceExport[];
     arrows: unknown[];
@@ -381,6 +392,23 @@ export function buildSliceExport(
     ),
   };
   return { text: JSON.stringify(sliceDoc, null, 2), found: true, diagnostics: allDiagnostics };
+}
+
+/** MIL-218, schema 1.14: `model.version` — read straight from `model-versions/*.json` beside
+ *  the `.em` file (never from the model/refs themselves; a design version is a human-bumped
+ *  fact, not derived from the model's own content). `design` is the highest bumped version, or
+ *  `null` if `em model version bump` has never run here. `certified` names the most recently
+ *  CERTIFIED design version — `findCertifiedVersion`'s own "newest certified wins, not
+ *  necessarily newest bumped" contract — which need not equal `design` itself. */
+function modelVersionExport(baseDir: string): ExportDoc["model"]["version"] {
+  const design = latestModelVersionNumber(baseDir);
+  const certifiedFound = findCertifiedVersion(baseDir);
+  return {
+    design,
+    certified: certifiedFound
+      ? { version: certifiedFound.version, at: certifiedFound.certified.at, on: certifiedFound.certified.on }
+      : null,
+  };
 }
 
 /** The shared body of `buildExport`/`buildSliceExport`: builds the full export document as a
@@ -533,6 +561,8 @@ export function buildExportDoc(
       personas: model.personas,
       contexts: model.contexts,
       hasAutomation: model.hasAutomation,
+      // MIL-218, schema 1.14 — see SCHEMA_VERSION's own doc comment.
+      version: modelVersionExport(baseDir),
       // Declared named types (MIL-64) — independent of the slice timeline, so listed
       // once here rather than nested inside any slice.
       types: model.types.map((t) => ({

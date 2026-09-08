@@ -22,6 +22,8 @@ import {
   parseState,
   setPhase,
   setConformance,
+  setModelVersion,
+  setCertified,
   setReview,
   modelPathMismatch,
   STATE_FILE_NAME,
@@ -91,6 +93,8 @@ describe("parseState", () => {
         step: "1",
         lastUpdated: "2026-08-20",
         lastConformance: null,
+        modelVersion: null,
+        certified: null,
         lastReview: null,
       },
     });
@@ -111,6 +115,8 @@ describe("parseState", () => {
           report: "conformance/2026-08-01-report.md",
           partial: false,
         },
+        modelVersion: null,
+        certified: null,
         lastReview: "2026-08-02",
       },
     });
@@ -153,6 +159,55 @@ describe("parseState", () => {
     const result = parseState(bad);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain("Last stakeholder review");
+  });
+
+  describe("MIL-218 migration tolerance", () => {
+    // A state file predating Model version:/Certified: — both bullets stripped entirely,
+    // simulating a file scaffolded before this feature existed.
+    const PRE_MIGRATION = SCAFFOLDED.split("\n")
+      .filter((l) => !l.startsWith("- **Model version:**") && !l.startsWith("- **Certified:**"))
+      .join("\n");
+
+    it("parses a state file missing both bullets as modelVersion: null, certified: null — not an error", () => {
+      const result = parseState(PRE_MIGRATION);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.modelVersion).toBeNull();
+      expect(result.state.certified).toBeNull();
+    });
+
+    it("parses a bumped Model version: N", () => {
+      const withVersion = PRE_MIGRATION.replace("- **Last conformance:** never", "- **Last conformance:** never\n- **Model version:** 3");
+      const result = parseState(withVersion);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.modelVersion).toBe(3);
+    });
+
+    it("parses a filled Certified: v<N> @ <rev> (date)", () => {
+      const withCertified = PRE_MIGRATION.replace(
+        "- **Last conformance:** never",
+        "- **Last conformance:** never\n- **Certified:** v2 @ abc123f (2026-09-08)",
+      );
+      const result = parseState(withCertified);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.certified).toEqual({ version: 2, revision: "abc123f", date: "2026-09-08" });
+    });
+
+    it("errors on a Model version: line that is neither a bare integer nor 'none'", () => {
+      const bad = SCAFFOLDED.replace("- **Model version:** none", "- **Model version:** garbage");
+      const result = parseState(bad);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toContain("Model version");
+    });
+
+    it("errors on a Certified: line that matches neither the documented format nor 'never'", () => {
+      const bad = SCAFFOLDED.replace("- **Certified:** never", "- **Certified:** garbage");
+      const result = parseState(bad);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toContain("Certified");
+    });
   });
 });
 
@@ -246,6 +301,87 @@ describe("setConformance", () => {
       "- **Last conformance:** 2026-08-21 @ abc123f — report: conformance/2026-08-21-report.md",
     );
     expect(result.text).not.toContain("(partial)");
+  });
+});
+
+describe("setModelVersion (MIL-218)", () => {
+  it("updates Model version: in place when already present", () => {
+    const result = setModelVersion(SCAFFOLDED, 1, "2026-09-08");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.text).toContain("- **Model version:** 1");
+    expect(result.text).toContain("- **Last updated:** 2026-09-08");
+    expect(result.text).not.toContain("- **Model version:** none");
+  });
+
+  it("inserts Model version: right after Last conformance: on a pre-migration file", () => {
+    const preMigration = SCAFFOLDED.split("\n")
+      .filter((l) => !l.startsWith("- **Model version:**") && !l.startsWith("- **Certified:**"))
+      .join("\n");
+    const result = setModelVersion(preMigration, 1, "2026-09-08");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const lines = result.text.split("\n");
+    const idx = lines.findIndex((l) => l.startsWith("- **Last conformance:**"));
+    expect(lines[idx + 1]).toBe("- **Model version:** 1");
+  });
+
+  it("round-trips through parseState", () => {
+    const written = setModelVersion(SCAFFOLDED, 2, "2026-09-08");
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    const read = parseState(written.text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.state.modelVersion).toBe(2);
+  });
+});
+
+describe("setCertified (MIL-218)", () => {
+  it("updates Certified: in place when already present", () => {
+    const result = setCertified(SCAFFOLDED, 1, "abc123f", "2026-09-08", "2026-09-08");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.text).toContain("- **Certified:** v1 @ abc123f (2026-09-08)");
+    expect(result.text).not.toContain("- **Certified:** never");
+  });
+
+  it("inserts Certified: right after Model version: when that bullet is already present", () => {
+    const withVersion = setModelVersion(SCAFFOLDED, 1, "2026-09-08");
+    expect(withVersion.ok).toBe(true);
+    if (!withVersion.ok) return;
+    const preMigrationButVersioned = withVersion.text
+      .split("\n")
+      .filter((l) => !l.startsWith("- **Certified:**"))
+      .join("\n");
+    const result = setCertified(preMigrationButVersioned, 1, "abc123f", "2026-09-08", "2026-09-08");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const lines = result.text.split("\n");
+    const idx = lines.findIndex((l) => l.startsWith("- **Model version:**"));
+    expect(lines[idx + 1]).toBe("- **Certified:** v1 @ abc123f (2026-09-08)");
+  });
+
+  it("falls back to inserting right after Last conformance: when Model version: is absent", () => {
+    const preMigration = SCAFFOLDED.split("\n")
+      .filter((l) => !l.startsWith("- **Model version:**") && !l.startsWith("- **Certified:**"))
+      .join("\n");
+    const result = setCertified(preMigration, 1, "abc123f", "2026-09-08", "2026-09-08");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const lines = result.text.split("\n");
+    const idx = lines.findIndex((l) => l.startsWith("- **Last conformance:**"));
+    expect(lines[idx + 1]).toBe("- **Certified:** v1 @ abc123f (2026-09-08)");
+  });
+
+  it("round-trips through parseState", () => {
+    const written = setCertified(SCAFFOLDED, 3, "deadbeef", "2026-09-08", "2026-09-08");
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    const read = parseState(written.text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.state.certified).toEqual({ version: 3, revision: "deadbeef", date: "2026-09-08" });
   });
 });
 

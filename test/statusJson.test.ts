@@ -37,6 +37,7 @@ function sampleReport(): StatusReport {
         error: null,
       },
     ],
+    modelVersion: [{ file: "model.em", design: 2, certified: { version: 1, at: "abc123f", on: "2026-08-01" }, drifted: false, changes: { hashChanged: false, slices: [] } }],
     diagnostics: [{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3 }],
     owners: [{ file: "model.em", key: "checkout", owner: "Alex Rivera" }, { file: "model.em", key: "billing", owner: null }],
   };
@@ -47,7 +48,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.5");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.6");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);
@@ -58,6 +59,8 @@ describe("buildStatusJson", () => {
     expect(doc.conformance).toEqual(report.conformance);
     // MIL-202: the constitution fact rides inside each conformance entry, verbatim.
     expect(doc.conformance[0].constitution).toEqual({ present: true, path: "constitution.md" });
+    // MIL-218: modelVersion carried verbatim.
+    expect(doc.modelVersion).toEqual(report.modelVersion);
     expect(doc.owners).toEqual(report.owners);
     expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
   });

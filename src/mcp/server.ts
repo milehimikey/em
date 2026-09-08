@@ -41,6 +41,7 @@ import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceVal
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
+import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
 import { buildCoverageReport, resolveScopedSlices, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
@@ -51,10 +52,12 @@ import {
   resolveConformanceEntry,
   aggregateInvariantTotals,
   buildStatusReport,
+  resolveModelVersionStatusEntry,
   SliceStatusFact,
   StatusDiagnostic,
 } from "../cli/status.js";
 import { buildStatusJson } from "../emit/statusJson.js";
+import { findCertifiedVersion, latestModelVersionNumber } from "../cli/modelVersion.js";
 import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "../cli/diff-inputs.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, GlossaryModelInput } from "../model/glossary.js";
@@ -170,6 +173,7 @@ function compileWithValidation(file: string): (CompiledSource & { allDiagnostics
     ...validateNoteBindings(model, refs, baseDir),
     ...validateDocModelConsistency(model, refs, baseDir),
     ...validateOrphanedSliceDocs(model, refs, baseDir),
+    ...validateModelVersionStale(model, refs, baseDir, compiled.source),
   ];
   return { ...compiled, allDiagnostics };
 }
@@ -209,7 +213,7 @@ const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all fifteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all eighteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -491,8 +495,11 @@ export function createServer(): McpServer {
         const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn }));
         return resolveConformanceEntry(file, repo, sliceDocFacts);
       });
+      // MIL-218: one model-version entry per input file — same computation cli.ts's `status`
+      // action makes, for MCP parity.
+      const modelVersion = compiledFiles.map(({ file, compiled }) => resolveModelVersionStatusEntry(file, compiled.model, compiled.refs, compiled.source));
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion);
       return textResult(buildStatusJson(report));
     },
   );
@@ -719,6 +726,30 @@ export function createServer(): McpServer {
       const { facts } = resolveSliceDocFacts(model, refs, baseDir);
       const entry = resolveConformanceEntry(file, repo, facts);
       return textResult(buildFreshnessJson(entry));
+    },
+  );
+
+  server.registerTool(
+    "model_version_show",
+    {
+      title: "Show the model's design/certified version",
+      description:
+        "Return the same JSON document `em model version show <file> --json` prints (MIL-218): " +
+        "the model's current design version (from model-versions/*.json, or null if it has " +
+        "never been bumped via `em model version bump`) and the most recently certified " +
+        "version, if any (`{ version, at, on }`, written by a full, non---partial `em state " +
+        "set-conformance`). Reads only the manifest files beside the model — never compiles it, " +
+        "so this works even on a model with errors.",
+      inputSchema: { file: fileParam },
+    },
+    async ({ file }) => {
+      const baseDir = dirname(file);
+      const design = latestModelVersionNumber(baseDir);
+      const certifiedFound = findCertifiedVersion(baseDir);
+      const certified = certifiedFound
+        ? { version: certifiedFound.version, at: certifiedFound.certified.at, on: certifiedFound.certified.on }
+        : null;
+      return textResult(JSON.stringify({ file, design, certified }, null, 2));
     },
   );
 

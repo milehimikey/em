@@ -51,6 +51,12 @@ refuses while any `implemented` slice still has an unruled finding; `--partial` 
 loud notice), Decisions log entry if any proposals were applied. Conform doesn't chain to
 another phase — it's a recurring loop, run again whenever the codebase has moved.
 
+A full (non-`--partial`) `em state set-conformance` also **certifies the model's current design
+version** (MIL-218, `docs/process.md#model-versions`) — it refuses if no design version has ever
+been bumped ("bump a model version first") or if the model changed during this run without a
+re-bump; run `em model version bump <model-name>.em --by <name>` before the final `em state
+set-conformance` call if either applies.
+
 ## Phase: `validate`
 
 Run `em validate <model-name>.em` and walk through each diagnostic with the user, explaining the

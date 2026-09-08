@@ -126,6 +126,31 @@ slice" are different decisions, made by different people, often days apart. Coll
 whoever facilitated the review also authorized the build — which is exactly the failure the
 one rule at the top of this document exists to prevent.
 
+## Model versions
+
+Every slice carries its own `version:`, but nothing above names *the model as a whole* — until
+now (MIL-218). Two facts, kept deliberately separate, because they answer different questions:
+
+- **Design version** — what was *decided*. An explicit, human-bumped integer, same identity
+  discipline as ratification: `em model version bump <model>.em --by <name>`
+  ([cli.md](cli.md#em-model-version-bump-file---by-name)). Bump it when the structure changes
+  (a slice added or removed, a seam changed) or when a batch of slice deltas is ratified
+  together — the same judgment call that decides "is this worth a changelog entry."
+- **Certified version** — what was *proven*. Set by a full (non-`--partial`) `em state
+  set-conformance` ([cli.md](cli.md#em-state-set-conformance)): "design version N was certified
+  at revision R on date D." A `--partial` marker never certifies. Certification only applies to
+  an already-bumped design version — it names what conform actually walked, never a guess.
+
+Both facts live in a sidecar manifest per design version, `model-versions/v<N>.json` (history,
+not progress — see [model-versions.md](model-versions.md) for the shape), pointed to from two
+new bullets in `.event-modeling.md`: `Model version:` and `Certified:`.
+
+**`em` warns, never auto-bumps.** If the slice-version vector or the `.em` file's own content
+has moved since the last bump, `em status`, `em validate` (`model-version-stale`), and `em slice
+ratify`/`reratify` all say so — on stderr or in their JSON — but nothing forces a bump. The same
+"humans ratify, tools verify" rule the rest of this document holds: a design version is a
+deliberate checkpoint the team calls, not a side effect of an unrelated edit.
+
 ## The lifecycle, by responsibility
 
 Same seven stages, same numbering, as [workflow.md](workflow.md) — this table adds the
