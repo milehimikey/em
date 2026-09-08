@@ -87,7 +87,9 @@ section — and the routing from it is mechanical, not a technical choice you ma
   translation, a view read only by a reaction) means internal-only: no endpoint. If one seems
   needed anyway, that's a gap to surface (§4), not a technical choice to make mid-implementation
   — adding a route the model doesn't show is exactly the kind of silent divergence §4 exists to
-  catch.
+  catch. An endpoint on a view the model shows no `ui` reading is a gap to surface the same way
+  (MIL-215) — conform will classify it as a **model gap**, never drift to delete, once you flag
+  it (`../../event-modeling-conform/reference/conform.md`, Flow step 4).
 - **`public` events and views** are the model's published integration surface: their shape is a
   contract, not an implementation detail. `em validate --list-public` lists them; `em typespec`
   is the POC generator for a downstream schema. Changing a public element's shape is a ratified

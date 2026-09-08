@@ -234,6 +234,18 @@ step 2 — sorts into exactly one class:
   which finding. Cite `slice.doc.driftSignal` and `slice.doc.version` together as evidence.
 - **Extraction uncertainty** — no evidence either way. Never reported as drift or a gap.
 
+**Read-model exposure (MIL-215).** Two rulings apply the classes above to a `view`'s exposure —
+whether it ships a query endpoint — instead of leaving each case to fresh judgment:
+
+- An **internal view** (no `ui` reads it, and it isn't marked `public`) implemented as
+  criteria-sourced state (a reaction's own read, no materialized projection — the general idiom
+  step 2 already names) or as an unexposed projection is **Conformant, never dead code to
+  flag**. It's the read operation the model draws to say an automation or translation *must*
+  read, not an endpoint promise; don't propose deleting it.
+- An **endpoint in code on a view the model shows no `ui` reading and no `public` marking** is a
+  **Model gap** — "add the `ui` or remove the endpoint" — **never Real drift to delete**.
+  Nobody decided whether that view is exposed; deleting the code decides it for them.
+
 Every classification must cite the evidence recorded in step 2 (or the `em diff` entry, for
 structural findings) — a finding with no citation isn't ready to report.
 

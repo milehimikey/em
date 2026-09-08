@@ -122,6 +122,18 @@ slice "Open Orders" {
 }
 `;
 
+// MIL-215: a public view with no `ui`/reaction reader anywhere in this model — the
+// `--list-public` "(no in-model reader)" audit note, never a validate diagnostic.
+const WITH_PUBLIC_UNREAD = `slice "Place" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Order
+}
+slice "Public Feed" {
+  view Order Feed public from "Order Placed"
+}
+`;
+
 // `em catalog` fixture: two slices sharing a name, to exercise computeRefs's ref-collision
 // warning surfacing through the catalog command (see test/catalog.e2e.test.ts for the
 // build-level coverage of the same scenario).
@@ -170,6 +182,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "scoped-error.em"), SCOPED_ERROR);
   writeFileSync(join(dir, "divergence.em"), WITH_DIVERGENCE);
   writeFileSync(join(dir, "public.em"), WITH_PUBLIC);
+  writeFileSync(join(dir, "public-unread.em"), WITH_PUBLIC_UNREAD);
   writeFileSync(join(dir, "glossary-a.em"), GLOSSARY_A);
   writeFileSync(join(dir, "glossary-b-clean.em"), GLOSSARY_B_CLEAN);
   writeFileSync(join(dir, "glossary-b-conflict.em"), GLOSSARY_B_CONFLICT);
@@ -349,6 +362,18 @@ describe("em validate --list-public (CLI)", () => {
     expect(em(["validate", "--list-public", "public.em"], dir).status).toBe(0);
     expect(em(["validate", "--list-public", "clean.em"], dir).status).toBe(0);
   });
+
+  it("MIL-215: annotates a public view with no ui/reaction reader as '(no in-model reader)', never as a diagnostic", () => {
+    const r = em(["validate", "--list-public", "public-unread.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/public :7 slice "Public Feed" view "Order Feed" \(no in-model reader\)/);
+    expect(r.stdout).not.toMatch(/warn|error/i);
+  });
+
+  it("MIL-215: a public view with a ui/reaction reader carries no annotation", () => {
+    const r = em(["validate", "--list-public", "public.em"], dir);
+    expect(r.stdout).toMatch(/public :10 slice "Open Orders" view "Open Orders"\n/);
+  });
 });
 
 describe("em validate --json (CLI, MIL-128)", () => {
@@ -413,7 +438,7 @@ describe("em validate --list-issues/--list-divergences/--list-public --json (CLI
     const r = em(["validate", "--list-issues", "issue.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.validateListSchemaVersion).toBe("1.0");
+    expect(doc.validateListSchemaVersion).toBe("1.1");
     expect(doc.markers).toEqual([
       {
         markerKind: "issue",
@@ -423,6 +448,7 @@ describe("em validate --list-issues/--list-divergences/--list-public --json (CLI
         elementKind: "command",
         elementName: "Place Order",
         text: "who validates the discount code?",
+        noInModelReader: null,
         line: 2,
       },
     ]);
@@ -451,11 +477,32 @@ describe("em validate --list-issues/--list-divergences/--list-public --json (CLI
     expect(doc.markers).toHaveLength(2);
     expect(doc.markers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ markerKind: "public", elementKind: "event", elementName: "Order Placed", text: null }),
-        expect.objectContaining({ markerKind: "public", elementKind: "view", elementName: "Open Orders", text: null }),
+        expect.objectContaining({
+          markerKind: "public",
+          elementKind: "event",
+          elementName: "Order Placed",
+          text: null,
+          noInModelReader: null,
+        }),
+        expect.objectContaining({
+          markerKind: "public",
+          elementKind: "view",
+          elementName: "Open Orders",
+          text: null,
+          noInModelReader: false,
+        }),
       ]),
     );
     expect(doc.markers.some((m: { elementName: string }) => m.elementName === "Internal Retry")).toBe(false);
+  });
+
+  it("MIL-215: --list-public --json sets noInModelReader true for a public view nothing in-model reads", () => {
+    const r = em(["validate", "--list-public", "public-unread.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.markers).toEqual([
+      expect.objectContaining({ elementKind: "view", elementName: "Order Feed", noInModelReader: true }),
+    ]);
   });
 
   it("an empty list reports an empty markers array, not an error", () => {

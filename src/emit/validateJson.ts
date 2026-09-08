@@ -16,7 +16,7 @@
 // already draw from. No new judgment: this module only reshapes what the validator and
 // `RULES` already compute, never adds a check of its own.
 
-import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
+import { Diagnostic, serializeDiagnostic, publicViewsWithoutInModelReader } from "../model/validate.js";
 import { RULES, RuleCode } from "../model/rules.js";
 import { Element, NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -92,13 +92,19 @@ export function buildSliceReadyJson(
 }
 
 // 1.0 (MIL-128): initial shape.
-export const VALIDATE_LIST_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-215): `noInModelReader` on `public` markers — true for a `view` no `ui`/reaction
+// reads anywhere on its timeline, false for one that is read, `null` for `event` markers and
+// every `issue`/`divergence` marker (the signal only applies to views). Additive-only.
+export const VALIDATE_LIST_SCHEMA_VERSION = "1.1";
 
 /** One `--list-issues`/`--list-divergences`/`--list-public` entry — the structured replacement
  *  for the `  issue :12 slice "X" command "Y": text` eyeball format. `elementRef` is the same
  *  export-stable ref (`<sliceKey>/<kind>.<slug>`) `em export`/`em diff` use — never a second
  *  identifier scheme. `text` is the `issue`/`divergence` annotation's own text; `null` for a
- *  `public` marker, which carries no text. */
+ *  `public` marker, which carries no text. `noInModelReader` (MIL-215) is the `--list-public`
+ *  audit note ("no in-model reader") for a `public` `view` marker — see
+ *  `publicViewsWithoutInModelReader` (model/validate.ts) for why this is an audit annotation,
+ *  not a validate warning; `null` for an `event` marker or any `issue`/`divergence` marker. */
 export interface MarkerEntry {
   markerKind: "issue" | "divergence" | "public";
   sliceKey: string;
@@ -107,6 +113,7 @@ export interface MarkerEntry {
   elementKind: string;
   elementName: string;
   text: string | null;
+  noInModelReader: boolean | null;
   line: number;
 }
 
@@ -120,7 +127,12 @@ export function collectMarkers(
   kinds: { issues?: boolean; divergences?: boolean; public?: boolean },
 ): MarkerEntry[] {
   const markers: MarkerEntry[] = [];
-  const entryFor = (el: Element, markerKind: MarkerEntry["markerKind"], text: string | null): MarkerEntry => ({
+  const entryFor = (
+    el: Element,
+    markerKind: MarkerEntry["markerKind"],
+    text: string | null,
+    noInModelReader: boolean | null = null,
+  ): MarkerEntry => ({
     markerKind,
     sliceKey: refs.sliceKeys[el.sliceIndex],
     sliceName: model.slices[el.sliceIndex].name,
@@ -128,6 +140,7 @@ export function collectMarkers(
     elementKind: el.kind,
     elementName: el.name,
     text,
+    noInModelReader,
     line: el.line,
   });
   if (kinds.issues) {
@@ -137,8 +150,12 @@ export function collectMarkers(
     for (const el of model.elements) if (el.divergence) markers.push(entryFor(el, "divergence", el.divergence));
   }
   if (kinds.public) {
+    const noReader = publicViewsWithoutInModelReader(model);
     for (const el of model.elements) {
-      if (el.public && (el.kind === "event" || el.kind === "view")) markers.push(entryFor(el, "public", null));
+      if (el.public && (el.kind === "event" || el.kind === "view")) {
+        const flag = el.kind === "view" ? noReader.has(el.logicalId) : null;
+        markers.push(entryFor(el, "public", null, flag));
+      }
     }
   }
   return markers;

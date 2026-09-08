@@ -44,6 +44,21 @@ const WITH_ISSUE = `slice "Place" {
 }
 `;
 
+// MIL-215: one public view with no in-model reader, one with a `ui` reader.
+const WITH_PUBLIC_VIEWS = `context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Order Feed" {
+  view Order Feed public from "Order Placed"
+}
+slice "Order Summary" {
+  view Order Summary public from "Order Placed"
+  ui Summary Screen @Customer
+}
+`;
+
 describe("buildValidateJson", () => {
   it("versions the document and reports ok/summary/diagnostics on a clean model", () => {
     const { diagnostics } = compile(CLEAN);
@@ -95,6 +110,7 @@ describe("collectMarkers / buildValidateListJson", () => {
         elementKind: "command",
         elementName: "Place Order",
         text: "who validates the discount code?",
+        noInModelReader: null,
         line: 2,
       },
     ]);
@@ -103,6 +119,15 @@ describe("collectMarkers / buildValidateListJson", () => {
   it("returns nothing when the flag isn't set, even if the model has issues", () => {
     const { model, refs } = compile(WITH_ISSUE);
     expect(collectMarkers(model, refs, { divergences: true, public: true })).toEqual([]);
+  });
+
+  it("MIL-215: flags noInModelReader on a public view with no ui/reaction reader, clears it once one exists, and leaves events untouched", () => {
+    const { model, refs } = compile(WITH_PUBLIC_VIEWS);
+    const markers = collectMarkers(model, refs, { public: true });
+    expect(markers.map((m) => [m.elementName, m.elementKind, m.noInModelReader])).toEqual([
+      ["Order Feed", "view", true],
+      ["Order Summary", "view", false],
+    ]);
   });
 
   it("buildValidateListJson wraps markers + diagnostics in the versioned envelope", () => {

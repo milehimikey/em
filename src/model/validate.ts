@@ -412,46 +412,13 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   // Every read model must be consumed. A view nothing displays or watches is the output-side
   // half-slice: information projected out of the system and then dropped on the floor. A
   // complete State View is event -> read model -> ui (or -> reaction, the Automation pattern).
-  const consumedViews = new Set<string>();
-  for (const el of model.elements) {
-    // The renderer draws a reaction's `from` arrow to the nearest view instance at-or-before
-    // it — that resolution is unchanged. But em's span-1/wire-once DSL rules force an
-    // accumulating view across multiple slice instances, each re-declaring it with `from`
-    // naming only the newly adjacent event, and the consuming reaction legitimately sits only
-    // at the LAST instance. Crediting just that nearest instance (as before MIL-75) left every
-    // earlier "fold" instance falsely warning "no consumer," even though it feeds the instance
-    // the reaction reads. So for a reaction (AUTOMATION_KINDS), every instance at-or-before it
-    // counts as consumed, not just the nearest one (MIL-75). Instances strictly after the last
-    // consuming reaction still warn — they accumulate state nothing later reads — and a
-    // logical view no reaction ever reads still warns on every instance.
-    if (el.kind === "view") continue;
-    for (const name of el.from ?? []) {
-      const bucket = model.byName.get(normalizeName(name));
-      if (!bucket) continue;
-      const views = bucket.filter((x) => x.kind === "view");
-      const atOrBefore = views
-        .filter((x) => x.sliceIndex <= el.sliceIndex)
-        .sort((a, b) => b.sliceIndex - a.sliceIndex);
-      if (atOrBefore.length === 0) {
-        // A reaction before any instance of the view (separately flagged by
-        // reaction-from-future-view) — credit the first instance, same as pre-MIL-75 behavior.
-        // There's no instance at-or-before to propagate backward from.
-        if (views[0]) consumedViews.add(views[0].id);
-      } else if (AUTOMATION_KINDS.has(el.kind)) {
-        for (const v of atOrBefore) consumedViews.add(v.id);
-      } else {
-        consumedViews.add(atOrBefore[0].id);
-      }
-    }
-  }
-  for (const a of model.arrows) {
-    if (a.fromId && model.byId.get(a.fromId)?.kind === "view") consumedViews.add(a.fromId);
-  }
-  for (const slice of model.slices) {
-    const consumerInSlice = slice.elements.some(
-      (e) => e.kind === "ui" || AUTOMATION_KINDS.has(e.kind),
-    );
-    if (consumerInSlice) continue;
+  // `computeViewReaders` (below `validate()`) does the actual per-instance walk — shared with
+  // MIL-215's `publicViewsWithoutInModelReader`, which needs the identical "does anything in
+  // this model read this view instance" signal for `public` instances, just as an audit
+  // annotation instead of a diagnostic.
+  const { readByArrowOrFrom: consumedViews, slicesWithReader } = computeViewReaders(model);
+  for (const [sliceIdx, slice] of model.slices.entries()) {
+    if (slicesWithReader.has(sliceIdx)) continue;
     for (const view of slice.elements.filter((e) => e.kind === "view")) {
       if (consumedViews.has(view.id)) continue;
       // A `public` view is a published read API/webhook — its consumer is outside this
@@ -714,6 +681,88 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   }
 
   return diags;
+}
+
+/** Per-view-instance "does anything in this model read it" — the same signal the
+ *  `view-unconsumed` warning above fires on for a non-`public` instance: either its own slice
+ *  also holds a `ui` or a reaction (same-slice consumption, no arrow needed — the renderer
+ *  infers it the same way), or something's `from`/arrow explicitly reads it. Factored out so
+ *  MIL-215's `publicViewsWithoutInModelReader` (below) can reuse the identical walk for
+ *  `public` instances instead of duplicating it. */
+function computeViewReaders(model: NormalizedModel): {
+  readByArrowOrFrom: Set<string>;
+  slicesWithReader: Set<number>;
+} {
+  const readByArrowOrFrom = new Set<string>();
+  for (const el of model.elements) {
+    // See the MIL-75 note this function replaces (git blame) for why a reaction credits every
+    // instance at-or-before it, not just the nearest one.
+    if (el.kind === "view") continue;
+    for (const name of el.from ?? []) {
+      const bucket = model.byName.get(normalizeName(name));
+      if (!bucket) continue;
+      const views = bucket.filter((x) => x.kind === "view");
+      const atOrBefore = views
+        .filter((x) => x.sliceIndex <= el.sliceIndex)
+        .sort((a, b) => b.sliceIndex - a.sliceIndex);
+      if (atOrBefore.length === 0) {
+        if (views[0]) readByArrowOrFrom.add(views[0].id);
+      } else if (AUTOMATION_KINDS.has(el.kind)) {
+        for (const v of atOrBefore) readByArrowOrFrom.add(v.id);
+      } else {
+        readByArrowOrFrom.add(atOrBefore[0].id);
+      }
+    }
+  }
+  for (const a of model.arrows) {
+    if (a.fromId && model.byId.get(a.fromId)?.kind === "view") readByArrowOrFrom.add(a.fromId);
+  }
+  const slicesWithReader = new Set<number>();
+  for (const [i, slice] of model.slices.entries()) {
+    if (slice.elements.some((e) => e.kind === "ui" || AUTOMATION_KINDS.has(e.kind))) {
+      slicesWithReader.add(i);
+    }
+  }
+  return { readByArrowOrFrom, slicesWithReader };
+}
+
+/** `public` views (MIL-215) with no `ui`/reaction reader anywhere on their timeline — the
+ *  logical view's `logicalId`s (not individual instance ids), so a reader credited to ANY
+ *  instance of a repeated (`again`, MIL-208 continuations included) view satisfies every
+ *  instance of that same logical view, not just the one instance that happens to carry
+ *  `public`.
+ *
+ *  Deliberately NOT a validate diagnostic, even though the shape mirrors `view-unconsumed`
+ *  above. `em validate` compiles one model file at a time and has no visibility into another
+ *  model's seam-side reaction; a genuinely cross-model `public` view's reader is a reaction in
+ *  ANOTHER model by design (`seam-consumer-not-reaction`, checked by `em system <manifest>`'s
+ *  `dangling-public-event` — the check that actually has seam knowledge). `em validate` has
+ *  always stayed quiet here on purpose (docs/validation.md, "Seam manifest": "a `public` event
+ *  with no reader in its own model ... is a legitimate single-model shape") — dsl.md's own
+ *  canonical example (`view Order Summary public`) is annotated "no consumers in this model"
+ *  as the EXPECTED case. A validate-time warning on this exact shape would false-positive on
+ *  every textbook-correct use of `public`, the opposite of what MIL-215 asked for ("no false
+ *  positives on legitimate seams"). Surfaced instead as a `--list-public` audit annotation
+ *  (`em validate --list-public`/`--json`) — advisory only, same as every other `--list-public`
+ *  entry, never affecting the exit code. */
+export function publicViewsWithoutInModelReader(model: NormalizedModel): Set<string> {
+  const { readByArrowOrFrom, slicesWithReader } = computeViewReaders(model);
+  const byLogical = new Map<string, Element[]>();
+  for (const el of model.elements) {
+    if (el.kind !== "view") continue;
+    const bucket = byLogical.get(el.logicalId);
+    if (bucket) bucket.push(el);
+    else byLogical.set(el.logicalId, [el]);
+  }
+  const result = new Set<string>();
+  for (const [logicalId, instances] of byLogical) {
+    if (!instances.some((v) => v.public)) continue;
+    const hasReader = instances.some(
+      (v) => readByArrowOrFrom.has(v.id) || slicesWithReader.has(v.sliceIndex),
+    );
+    if (!hasReader) result.add(logicalId);
+  }
+  return result;
 }
 
 /**

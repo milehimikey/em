@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
-import { validate } from "../src/model/validate.js";
+import { validate, publicViewsWithoutInModelReader } from "../src/model/validate.js";
 import { resolveLoopsToTarget } from "../src/model/edges.js";
 import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
@@ -1524,6 +1524,115 @@ slice "Feed" {
 }
 `);
     expect(diags.filter((d) => d.message.includes("has no consumer"))).toHaveLength(1);
+  });
+});
+
+describe("publicViewsWithoutInModelReader (MIL-215) — audit signal, never a diagnostic", () => {
+  const logicalIdOf = (model: ReturnType<typeof modelFrom>, name: string) =>
+    model.elements.find((e) => e.kind === "view" && e.name === name)!.logicalId;
+
+  it("fires for a public view with no `ui` and no reaction reading it anywhere", () => {
+    const model = modelFrom(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Public Feed" {
+  view Order Feed public from "Order Placed"
+}
+`);
+    const noReader = publicViewsWithoutInModelReader(model);
+    expect(noReader.has(logicalIdOf(model, "Order Feed"))).toBe(true);
+  });
+
+  it("is silent for a public view a `ui` reads in the same slice", () => {
+    const model = modelFrom(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Summary" {
+  view Order Summary public from "Order Placed"
+  ui Summary Screen @Customer
+}
+`);
+    const noReader = publicViewsWithoutInModelReader(model);
+    expect(noReader.has(logicalIdOf(model, "Order Summary"))).toBe(false);
+  });
+
+  it("is silent for a public view a reaction (processor) reads", () => {
+    const model = modelFrom(`
+context Billing
+slice "Backlog" {
+  view Refund Backlog public from "Refund Requested"
+}
+slice "Issue Refund" {
+  processor Refund Gateway from "Refund Backlog"
+  command Issue Refund
+  event Refund Issued @Billing
+}
+`);
+    const noReader = publicViewsWithoutInModelReader(model);
+    expect(noReader.has(logicalIdOf(model, "Refund Backlog"))).toBe(false);
+  });
+
+  it("credits a reader on ANY instance of a repeated view to every instance (MIL-208 continuations)", () => {
+    // The first instance is `public` and has no reader of its own; a later `again` instance
+    // (not itself marked public — same logical view) is read by a `ui`. The logical view as a
+    // whole has an in-model reader, so the public-marked first instance is not flagged.
+    const model = modelFrom(`
+context Ticket
+slice "Open" {
+  command Open Ticket
+  event Ticket Opened @Ticket
+}
+slice "Queue" {
+  view Ticket Queue public from "Ticket Opened"
+}
+slice "Assign" {
+  command Assign Ticket
+  event Ticket Assigned @Ticket
+}
+slice "Queue Again" {
+  view Ticket Queue again from "Ticket Assigned"
+  ui Queue Screen @Support
+}
+`);
+    const noReader = publicViewsWithoutInModelReader(model);
+    expect(noReader.has(logicalIdOf(model, "Ticket Queue"))).toBe(false);
+  });
+
+  it("is silent for a non-public view regardless of reader status", () => {
+    const model = modelFrom(`
+context Order
+slice "Place" {
+  command Place Order
+  event Order Placed @Order
+}
+slice "Feed" {
+  view Order Feed from "Order Placed"
+}
+`);
+    const noReader = publicViewsWithoutInModelReader(model);
+    expect(noReader.has(logicalIdOf(model, "Order Feed"))).toBe(false);
+    expect(noReader.size).toBe(0);
+  });
+
+  it("never raises a validate diagnostic for the no-reader case — this is an audit signal only", () => {
+    const diags = diagsFor(`
+context Order
+slice "Place" {
+  ui New Order @Customer
+  command Place Order
+  event Order Placed @Order
+}
+slice "Public Feed" {
+  view Order Feed public from "Order Placed"
+}
+`);
+    expect(diags).toHaveLength(0);
   });
 });
 

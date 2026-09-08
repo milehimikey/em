@@ -17,7 +17,7 @@ import { buildSliceDiagram } from "./render/sliceDiagram.js";
 import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
-import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
+import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader } from "./model/validate.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
 import { buildTypeSpec } from "./emit/typespec.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
@@ -2848,16 +2848,22 @@ function printDivergences(model: NormalizedModel): void {
   }
 }
 
-/** Print only elements marked `public`: slice, kind, name, line — for an integration-surface audit. */
+/** Print only elements marked `public`: slice, kind, name, line — for an integration-surface
+ *  audit. A `public` view also gets a "(no in-model reader)" note (MIL-215) when no `ui`/
+ *  reaction anywhere on its timeline reads it — an audit hint, not a warning: a genuinely
+ *  cross-model `public` view's reader legitimately lives outside this file (see
+ *  `publicViewsWithoutInModelReader`'s own header for why this stays advisory). */
 function printPublicElements(model: NormalizedModel): void {
   const pub = model.elements.filter((el) => el.public && (el.kind === "event" || el.kind === "view"));
   if (pub.length === 0) {
     console.log("no public elements");
     return;
   }
+  const noReader = publicViewsWithoutInModelReader(model);
   for (const el of pub) {
     const slice = model.slices[el.sliceIndex];
-    console.log(`  public :${el.line} slice "${slice.name}" ${el.kind} "${el.name}"`);
+    const note = el.kind === "view" && noReader.has(el.logicalId) ? " (no in-model reader)" : "";
+    console.log(`  public :${el.line} slice "${slice.name}" ${el.kind} "${el.name}"${note}`);
   }
 }
 

@@ -278,7 +278,7 @@ exists at all).
 |---|---|
 | `--list-issues` | Print only the open `issue "text"` diagnostics (slice, element, line, text) instead of the full diagnostic list |
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
-| `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code |
+| `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code. A `public` view with no `ui`/reaction reading it anywhere in this model gets a "(no in-model reader)" note (MIL-215) — an audit hint, not a warning: a genuinely cross-model `public` view's reader lives in another model, which `em validate` can't see (`em system <manifest>` checks that claim). |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 | `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
 | `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
@@ -357,16 +357,16 @@ text report prints a `(continuation of "<originating-key>")` line alongside the 
 verdict in that case.
 
 **`--list-issues`/`--list-divergences`/`--list-public --json`** (`validateListSchemaVersion:
-"1.0"`) — each flag independently gates its own marker kind, same as text mode; passing more than
+"1.1"`) — each flag independently gates its own marker kind, same as text mode; passing more than
 one merges their markers into the same array:
 
 ```json
 {
-  "validateListSchemaVersion": "1.0",
+  "validateListSchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "markers": [
-    { "markerKind": "issue", "sliceKey": "checkout", "sliceName": "Checkout", "elementRef": "checkout/command.place-order", "elementKind": "command", "elementName": "Place Order", "text": "who validates the discount code?", "line": 2 }
+    { "markerKind": "issue", "sliceKey": "checkout", "sliceName": "Checkout", "elementRef": "checkout/command.place-order", "elementKind": "command", "elementName": "Place Order", "text": "who validates the discount code?", "noInModelReader": null, "line": 2 }
   ],
   "diagnostics": [ … ]
 }
@@ -374,6 +374,9 @@ one merges their markers into the same array:
 
 `elementRef` is the same export-stable ref `em export`/`em diff` use. `text` is the `issue`/
 `divergence` annotation's own text; `null` for a `public` marker, which carries no text.
+`noInModelReader` (MIL-215, schema 1.1) is the `--list-public` audit note for a `public` `view`
+marker — `true` when no `ui`/reaction reads any instance of the logical view anywhere in this
+model, `false` when one does; `null` for an `event` marker or any `issue`/`divergence` marker.
 `diagnostics` is the same errors-only list text mode still prints — a genuine error still fails
 the run regardless of which `--list-*` flag was passed.
 
