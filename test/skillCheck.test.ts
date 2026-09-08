@@ -78,7 +78,7 @@ describe("checkSkillSync", () => {
       expect(result.ok).toBe(false);
       expect(result.findings).toContainEqual({
         code: "skill-check-stamp-mismatch",
-        message: "vendored skill's em-version: stamp (1.7.0) doesn't match installed em (1.8.0) — run `em skill sync`",
+        message: "vendored skill's em-version: stamp (1.7.0) doesn't match installed em (1.8.0) — run `em skill sync` (or `em upgrade`)",
         vendoredStamp: "1.7.0",
         installedVersion: "1.8.0",
       });
@@ -99,7 +99,7 @@ describe("checkSkillSync", () => {
       expect(result.findings).toEqual([
         {
           code: "skill-check-content-drift",
-          message: "vendored skill differs from the packaged skill in 1 file(s) — run `em skill sync`",
+          message: "vendored skill differs from the packaged skill in 1 file(s) — run `em skill sync` (or `em upgrade`)",
           driftedFiles: ["reference/em-dsl.md"],
         },
       ]);

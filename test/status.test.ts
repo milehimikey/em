@@ -742,6 +742,7 @@ describe("text/markdown/badge formatting", () => {
         { file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f" , partial: false }, unruledFindings: null, repo: ".", commitsBehindHead: 3, slicePRsBehindHead: 3, constitution: { present: false, path: "constitution.md" }, error: null },
       ],
       modelVersion: [{ file: "model.em", design: 2, certified: { version: 2, at: "abc123f", on: "2026-08-01" }, drifted: false, changes: { hashChanged: false, slices: [] } }],
+      emVersion: [{ file: "model.em", recorded: "1.13.0", installed: "1.13.0", behind: false }],
       diagnostics: [],
       owners: [],
       ...overrides,

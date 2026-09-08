@@ -77,7 +77,17 @@ right here as `reference/slice-doc-schema.md` (kept in sync with the em repo's
 
 1. Check the tool: `em --version`. If missing, tell the user to run `npm i -g @milehimikey/em`
    and stop until installed.
-2. Locate the model. Look for an existing `<dir>/.event-modeling.md` and `*.em` in the working
+2. Check this vendored skill bundle's own currency (MIL-219): read this file's `em-version:`
+   frontmatter stamp (or any sibling skill's SKILL.md — they're stamped together) and compare it
+   to `em --version` from step 1. **If the installed em is ahead by a minor version or more
+   (1.9.x → 1.11.x, or any major bump), STOP** — don't proceed with discover/model/slice/
+   implement/conform/review work on this stamp. Tell the user the vendored bundle is stale and to
+   run `em skill sync` (refresh the bundle only) or `em upgrade` (the bundle plus the model
+   repo's other mechanical migrations, docs/upgrading.md) before continuing. A patch-only gap
+   (1.11.2 → 1.11.4) is never worth stopping over — proceed normally. This matters because a
+   stale bundle silently follows old rules: an agent reading superseded preconditions/gates
+   can hand back work that looks right by last week's contract and wrong by this week's.
+3. Locate the model. Look for an existing `<dir>/.event-modeling.md` and `*.em` in the working
    directory, or — for a multi-model project laid out per the convention below — one level down
    inside a `models/` subfolder (each model gets its own `models/<slug>/` directory; check each
    candidate for its own `.event-modeling.md`/`*.em` pair). If found, run `em state read <dir>`
@@ -85,12 +95,12 @@ right here as `reference/slice-doc-schema.md` (kept in sync with the em repo's
    conformance, last review) as JSON — don't parse the bullets by hand. If not, and the phase
    needs one, ask the user for the model name and where to create it (a lone model goes at the
    project root; one of several goes under `models/`, per "Multi-model projects" below).
-3. If you're not sure which phase applies, or the user gave no phase, use `em state read <dir>`'s
+4. If you're not sure which phase applies, or the user gave no phase, use `em state read <dir>`'s
    `phase`/`step` to resume the recorded phase/step — or invoke the `event-modeling` skill, which
    does exactly this and routes to the right skill. If no model exists, propose starting
    `discover` (greenfield, `event-modeling-discover`) or `extract` (modeling an existing system,
    also `event-modeling-discover`).
-4. Populate the state file's Participants section at session start. For a live workshop, ask for
+5. Populate the state file's Participants section at session start. For a live workshop, ask for
    a single human proxy to relay questions to the room, and attribute every answer/decision in
    the Decisions log to a named participant.
 

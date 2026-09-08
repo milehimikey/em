@@ -7,6 +7,7 @@ Keep it current at the end of every working session.
 # Event Modeling Progress — {{Model Name}}
 
 - **Model file:** `{{model-name}}.em`
+- **Em version:** {{X.Y.Z}}
 - **Current phase:** {{discover | extract | model | slice | implement | conform | review | validate}}
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}

@@ -100,6 +100,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214) |
 | `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
+| `upgrade` | `{ file }` (git — see below) | The `em upgrade <file> --json` document (MIL-219): dry-run only, never applies anything |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -303,6 +304,19 @@ recently certified version, if any (`{ version, at, on }`). Read-only, and reads
 manifest files beside the model — never compiles it, so this works even on a model with errors.
 See [`em model version show`](cli.md#em-model-version-show-file---json) for the full JSON shape.
 
+### `upgrade`
+
+Same document as `em upgrade <file> --json` (MIL-219): dry-run only — this tool NEVER applies
+anything, unlike the CLI's `--apply`. Returns the `from`/`to` em versions, every mechanical step
+(`skill-bundle`, `reaction-shape`, `state-file`, `ci-block`, `constitution`) with whether it's
+applicable and why, and the human list of things no command can safely decide by itself. Requires
+`file`'s directory to be inside a git repository (tool error otherwise). Unlike most tools here,
+this one does NOT refuse when the model has validation errors — the old pre-1.7.1 two-slice
+reaction shape `reaction-shape` migrates is itself such an error, so refusing would make it (and
+the `predates-1.6` human item) unreachable for exactly the repos that need them; only a parse
+error is a tool error. See [`em upgrade`](cli.md#em-upgrade-file) and
+[upgrading.md](upgrading.md) for the full shape and the mechanical-step/human-item catalog.
+
 ### `contract`
 
 No input. Returns `reference/implement.md` verbatim, from the skill directory bundled with
@@ -329,13 +343,14 @@ model files the CLI already reads.
 A missing file, a parse error, or (for `export_slice`) an unknown slice key comes back as an
 MCP tool error (`isError: true`, with a message explaining what went wrong) — never a process
 crash and never a bare protocol-level error. A model *with validation errors* is not a tool
-error for `validate`/`slice_ready`/`list_markers`: those are exactly the tools built to work on
-a broken model. `export_model`/`export_slice`/`diff`/`glossary`/`conform_scope`/`status`/`query`/`system` do refuse on
+error for `validate`/`slice_ready`/`list_markers`/`upgrade`: those (plus `upgrade`, MIL-219 — see
+its own section above for why) are exactly the tools built to work on a broken model.
+`export_model`/`export_slice`/`diff`/`glossary`/`conform_scope`/`status`/`query`/`system` do refuse on
 errors (as tool errors), matching each command's own CLI behavior (`system` refuses only when the
-manifest or a model source can't be loaded — a failing *seam* is reported inside the document). The three git-backed tools
-(`diff`'s revision form, `changelog`, `conform_scope`) surface every git failure mode the same
-way — not inside a git repository, an untracked file, an unknown revision — as a tool error with
-the same message the CLI would print to stderr, never a crash.
+manifest or a model source can't be loaded — a failing *seam* is reported inside the document). The four git-backed tools
+(`diff`'s revision form, `changelog`, `conform_scope`, `upgrade`) surface every git failure mode
+the same way — not inside a git repository, an untracked file, an unknown revision — as a tool
+error with the same message the CLI would print to stderr, never a crash.
 
 ## See also
 

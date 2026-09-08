@@ -20,6 +20,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const CLI = join(ROOT, "src", "cli.ts");
 
+const PKG_VERSION: string = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
+
 function em(args: string[], cwd: string) {
   const res = spawnSync(process.execPath, [TSX, CLI, ...args], { cwd, encoding: "utf8" });
   return { status: res.status, stdout: res.stdout, stderr: res.stderr };
@@ -48,6 +50,7 @@ describe("em state (CLI)", () => {
       lastConformance: null,
       modelVersion: null,
       certified: null,
+      emVersion: PKG_VERSION,
       lastReview: null,
     });
   });

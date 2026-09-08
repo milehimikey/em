@@ -36,6 +36,7 @@ import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
 import { lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
 import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, ModelVersionSliceChange } from "./modelVersion.js";
+import { isOlder } from "../util/semver.js";
 
 /** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
  *  `em catalog`'s header coloring and `em render`'s status legend already recognize. */
@@ -452,6 +453,33 @@ export function resolveModelVersionStatusEntry(file: string, model: NormalizedMo
   };
 }
 
+// ---- Em version (MIL-219) ----
+
+/** One model directory's recorded-vs-installed `em` fact — the state file's `Em version:`
+ *  bullet against the em actually running `em status`. `recorded: null` covers both "no state
+ *  file bullet yet" (a repo predating MIL-219) and the file's own `unknown` sentinel — same
+ *  "null means no evidence" reading `stateFile.ts`'s `ParsedState.emVersion` already holds.
+ *  `behind` is `util/semver.ts`'s `isOlder` verbatim — `false` (never a crash) when `recorded`
+ *  is null or unparseable, since "can't prove it's behind" reads the same as "not behind" for a
+ *  warn-only advisory (`em upgrade` is the actual authority on whether a repo needs work). */
+export interface EmVersionStatusEntry {
+  file: string;
+  recorded: string | null;
+  installed: string;
+  behind: boolean;
+}
+
+/** Resolve one input model's `EmVersionStatusEntry` — `null` when its state file is missing or
+ *  fails to parse at all (same non-fatal "nothing to report" treatment `resolveConformanceEntry`
+ *  gives a missing state file, rather than surfacing a second copy of that error here). */
+export function resolveEmVersionStatusEntry(file: string, installedVersion: string): EmVersionStatusEntry | null {
+  const loaded = loadStateFile(dirname(file));
+  if (!loaded.ok) return null;
+  const parsed = parseState(loaded.text);
+  if (!parsed.ok) return null;
+  return { file, recorded: parsed.state.emVersion, installed: installedVersion, behind: isOlder(parsed.state.emVersion, installedVersion) };
+}
+
 // ---- Aggregation ----
 
 export interface StatusSliceCounts {
@@ -543,6 +571,11 @@ export interface StatusReport {
    *  drifted since the design version was bumped. Named `modelVersion` (singular), valued as an
    *  array — same per-file breakdown shape `conformance`/`owners` already hold. */
   modelVersion: ModelVersionStatusEntry[];
+  /** MIL-219: one entry per input file whose state file resolved — recorded `Em version:` vs.
+   *  the em actually running, and whether it's behind. Same per-file array shape `modelVersion`
+   *  holds (not a single flat object) — a repo's several models can share directories with
+   *  DIFFERENT state files, so "one recorded fact" isn't well-defined at the report level. */
+  emVersion: EmVersionStatusEntry[];
   /** Doc-join diagnostics (`binding-missing-file`/`frontmatter-invalid` warnings) collected
    *  while resolving every slice's doc, across every input file — carried here rather than
    *  discarded, so a state-of-the-system report doesn't hide a broken doc reference just
@@ -564,6 +597,7 @@ export function buildStatusReport(
   conformance: ConformanceEntry[],
   diagnostics: StatusDiagnostic[],
   modelVersion: ModelVersionStatusEntry[] = [],
+  emVersion: EmVersionStatusEntry[] = [],
 ): StatusReport {
   const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
   const drift: StatusDriftCounts = {
@@ -655,6 +689,7 @@ export function buildStatusReport(
     issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked },
     conformance,
     modelVersion,
+    emVersion,
     diagnostics,
     owners: sliceFacts.map((f) => ({ file: f.file, key: f.key, owner: f.owner })),
   };
@@ -742,6 +777,16 @@ export function formatModelVersionPart(entry: ModelVersionStatusEntry): string {
   return `v${entry.design} — ${certifiedPart}${driftPart}`;
 }
 
+/** MIL-219: `"recorded 1.10.0, installed 1.13.0 — behind, run \`em upgrade\`"`, or `"recorded
+ *  unknown, installed 1.13.0"` when the state file predates the `Em version:` bullet — never
+ *  claims "behind" without a recorded value to compare (same conservative reading
+ *  `resolveEmVersionStatusEntry`'s own `isOlder` call holds). */
+export function formatEmVersionPart(entry: EmVersionStatusEntry): string {
+  const recordedPart = entry.recorded ?? "unknown";
+  const behindPart = entry.behind ? " — behind, run `em upgrade`" : "";
+  return `recorded ${recordedPart}, installed ${entry.installed}${behindPart}`;
+}
+
 /** The one-line rollup: `"8/8 implemented · 20/20 invariants covered · 0 open issues · last
  *  conformed <rev>, N commits behind HEAD"` (MIL-163's acceptance line). For multiple input
  *  models, the conformance clause reports the FIRST file's entry — a single-file invocation is
@@ -806,6 +851,13 @@ export function formatStatusDetail(report: StatusReport): string {
     const label = multiModelVersion ? `model version (${entry.file}): ` : "model version: ";
     lines.push(`${label}${formatModelVersionPart(entry)}`);
   }
+  // MIL-219: one em version line per model whose state file resolved, after the model version
+  // lines, same multi-model labelling convention.
+  const multiEmVersion = report.emVersion.length > 1;
+  for (const entry of report.emVersion) {
+    const label = multiEmVersion ? `em version (${entry.file}): ` : "em version: ";
+    lines.push(`${label}${formatEmVersionPart(entry)}`);
+  }
   if (report.diagnostics.length > 0) {
     lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);
   }
@@ -865,6 +917,15 @@ export function formatStatusMarkdown(report: StatusReport): string {
   } else {
     for (const entry of report.modelVersion) {
       rows.push([`Model version (${entry.file})`, formatModelVersionPart(entry)]);
+    }
+  }
+  // MIL-219: one Em version row per model whose state file resolved, same single-vs-multi
+  // labelling as "Model version".
+  if (report.emVersion.length === 1) {
+    rows.push(["Em version", formatEmVersionPart(report.emVersion[0])]);
+  } else {
+    for (const entry of report.emVersion) {
+      rows.push([`Em version (${entry.file})`, formatEmVersionPart(entry)]);
     }
   }
   const header = "| Metric | Value |\n|---|---|";

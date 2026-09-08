@@ -17,13 +17,17 @@ record of it and of the one-time setup it depends on.
    agree with package.json); regenerate skill docs; run build + typecheck + tests.
 4. **Notes** — title `X.Y.Z: <short narrative theme>`; body: theme paragraph, then
    Features / Fixes / Docs bullets with PR numbers and MIL-* ids.
-5. **Ship** — commit `release: vX.Y.Z` to main, push, then
+5. **Upgrading doc** — add this release's row to
+   [docs/upgrading.md](upgrading.md): what changed for a model repo, and whether
+   `em upgrade` handles it (a step id, a `human: <item>`, or "no action needed"),
+   sourced from the same notes as step 4. Include it in the release commit.
+6. **Ship** — commit `release: vX.Y.Z` to main, push, then
    `gh release create vX.Y.Z` with the notes. Creating the release creates the tag.
-6. **Publish** — the tag push triggers `.github/workflows/release.yml`, which
+7. **Publish** — the tag push triggers `.github/workflows/release.yml`, which
    verifies the tag matches package.json and runs `npm publish`. The existing
    `prepublishOnly` script (build + typecheck + test) gates the publish itself.
    Verify with `npm view @milehimikey/em version`.
-7. **Linear** — stamp every shipped MIL-* issue with the release: the GitHub
+8. **Linear** — stamp every shipped MIL-* issue with the release: the GitHub
    release URL attached as a link titled "Shipped in vX.Y.Z", and a check that
    the issue is actually Done. (Linear's first-class Releases feature is
    Business-plan only; on the free plan the issues themselves carry the record.)

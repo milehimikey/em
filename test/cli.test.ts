@@ -5048,3 +5048,116 @@ slice "To Ship" {
     ]);
   });
 });
+
+// CLI wiring for `em upgrade` (MIL-219) — the orchestration logic itself (steps, human list,
+// git-commit-per-step, idempotency) is covered directly against src/cli/upgrade.ts in
+// test/upgrade.test.ts; this just exercises commander wiring, exit codes, and --json/--apply/
+// --check flag handling end to end.
+describe("em upgrade (CLI, real git repo)", () => {
+  const git = (args: string[], cwd: string) =>
+    spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+
+  const OLD_SHAPE = `slice "Payments To Process" {
+  view Payments To Process from "Payment Requested"
+  processor Payment Gateway
+}
+
+slice "Capture Payment" {
+  command Capture Payment
+  event Payment Captured @Payment
+}
+`;
+
+  const SIX_BULLET_STATE = `# Event Modeling Progress — Checkout
+
+- **Model file:** \`checkout.em\`
+- **Current phase:** slice
+- **Current step:** 4
+- **Last updated:** 2026-01-01
+- **Last conformance:** never
+- **Last stakeholder review:** never
+`;
+
+  function makeRepo(): string {
+    const dir = mkdtempSync(join(tmpdir(), "em-cli-upgrade-"));
+    writeFileSync(join(dir, "checkout.em"), OLD_SHAPE);
+    writeFileSync(join(dir, ".event-modeling.md"), SIX_BULLET_STATE);
+    git(["init", "-q"], dir);
+    git(["add", "-A"], dir);
+    git(["commit", "-qm", "init"], dir);
+    return dir;
+  }
+
+  it("dry-run --json prints the same shape as detectUpgrade, never writing anything", () => {
+    const dir = makeRepo();
+    try {
+      const res = em(["upgrade", "checkout.em", "--json"], dir);
+      expect(res.status).toBe(0);
+      const doc = JSON.parse(res.stdout);
+      expect(doc.from.version).toBe("1.6.0");
+      const byId = Object.fromEntries(doc.steps.map((s: { id: string; applicable: boolean }) => [s.id, s.applicable]));
+      expect(byId["reaction-shape"]).toBe(true);
+      expect(byId["state-file"]).toBe(true);
+      expect(git(["status", "--porcelain"], dir).stdout.trim()).toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("--apply makes one commit per step plus a final Em version commit, and a second run is a no-op", () => {
+    const dir = makeRepo();
+    try {
+      const applied = em(["upgrade", "checkout.em", "--apply"], dir);
+      expect(applied.status).toBe(0);
+      const log = git(["log", "--format=%s"], dir).stdout.trim().split("\n");
+      expect(log[0]).toMatch(/^em upgrade: em-version \(1\.6\.0 → \d+\.\d+\.\d+\)$/);
+      const to = log[0].match(/→ (.+)\)$/)![1];
+      expect(log).toContain(`em upgrade: reaction-shape (1.6.0 → ${to})`);
+      expect(readFileSync(join(dir, ".event-modeling.md"), "utf8")).toMatch(/- \*\*Em version:\*\* \d+\.\d+\.\d+/);
+
+      const second = em(["upgrade", "checkout.em", "--apply"], dir);
+      expect(second.status).toBe(0);
+      expect(second.stdout).toContain("already up to date — no commit needed");
+      const logAfter = git(["log", "--format=%s"], dir).stdout.trim().split("\n");
+      expect(logAfter).toEqual(log);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("--apply refuses on a dirty working tree", () => {
+    const dir = makeRepo();
+    try {
+      writeFileSync(join(dir, "untracked.txt"), "dirty");
+      const res = em(["upgrade", "checkout.em", "--apply"], dir);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("working tree is not clean");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("--check exits 0 on the ordinary case and reports the lists on stderr", () => {
+    const dir = makeRepo();
+    try {
+      const res = em(["upgrade", "checkout.em", "--check"], dir);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("em upgrade --check:");
+      expect(res.stderr).toContain("ok — no hard incompatibility");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("--apply and --check are mutually exclusive", () => {
+    const dir = makeRepo();
+    try {
+      const res = em(["upgrade", "checkout.em", "--apply", "--check"], dir);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("mutually exclusive");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

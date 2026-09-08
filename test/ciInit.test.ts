@@ -26,7 +26,7 @@ describe("buildCiWorkflowFile", () => {
     expect(content).toContain("name: em ci");
     expect(content).toContain("on:\n  pull_request:");
     expect(content).toContain("push:\n    branches: [main]");
-    for (const job of ["validate:", "slice-index:", "coverage:", "ledger:", "skill-check:", "glossary:", "status-badge:"]) {
+    for (const job of ["validate:", "slice-index:", "coverage:", "ledger:", "skill-check:", "upgrade-check:", "glossary:", "status-badge:"]) {
       expect(content).toContain(`\n  ${job}\n`);
     }
   });
@@ -36,10 +36,11 @@ describe("buildCiWorkflowFile", () => {
     expect(content).toContain('npx @milehimikey/em@1.9.0 coverage "order-fulfillment/order-fulfillment.em" --tests "test" --strict');
     expect(content).toContain('npx @milehimikey/em@1.9.0 ledger "order-fulfillment/order-fulfillment.em" --from');
     expect(content).toContain('npx @milehimikey/em@1.9.0 status "order-fulfillment/order-fulfillment.em" --tests "test" --badge -o status-badge.svg');
+    expect(content).toContain('npx @milehimikey/em@1.9.0 upgrade "order-fulfillment/order-fulfillment.em" --check');
   });
 
-  it("gates validate/slice-index/coverage/ledger/skill-check/glossary on pull_request, and status-badge on push only", () => {
-    const gateJobs = ["validate", "slice-index", "coverage", "ledger", "skill-check", "glossary"];
+  it("gates validate/slice-index/coverage/ledger/skill-check/upgrade-check/glossary on pull_request, and status-badge on push only", () => {
+    const gateJobs = ["validate", "slice-index", "coverage", "ledger", "skill-check", "upgrade-check", "glossary"];
     for (const job of gateJobs) {
       const re = new RegExp(`\\n  ${job}:\\n(?:.*\\n)*?    if: github\\.event_name == 'pull_request'`);
       expect(content).toMatch(re);

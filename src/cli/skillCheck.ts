@@ -67,7 +67,7 @@ export function checkSkillSync(packagedDir: string, vendoredDir: string, install
   } else if (vendoredStamp !== installedVersion) {
     findings.push({
       code: "skill-check-stamp-mismatch",
-      message: `vendored skill's em-version: stamp (${vendoredStamp}) doesn't match installed em (${installedVersion}) — run \`em skill sync\``,
+      message: `vendored skill's em-version: stamp (${vendoredStamp}) doesn't match installed em (${installedVersion}) — run \`em skill sync\` (or \`em upgrade\`)`,
       vendoredStamp,
       installedVersion,
     });
@@ -78,7 +78,7 @@ export function checkSkillSync(packagedDir: string, vendoredDir: string, install
     const driftedFiles = plan.changes.map((c) => c.relPath).sort();
     findings.push({
       code: "skill-check-content-drift",
-      message: `vendored skill differs from the packaged skill in ${driftedFiles.length} file(s) — run \`em skill sync\``,
+      message: `vendored skill differs from the packaged skill in ${driftedFiles.length} file(s) — run \`em skill sync\` (or \`em upgrade\`)`,
       driftedFiles,
     });
   }
