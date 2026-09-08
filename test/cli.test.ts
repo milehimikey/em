@@ -1590,6 +1590,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "freshness",
           "glossary",
           "list_markers",
+          "metrics",
           "query",
           "slice_ready",
           "status",

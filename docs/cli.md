@@ -13,6 +13,8 @@
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement) |
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
+| `em freshness <file>` | Standalone "last conformed `<rev>` — N commits/M slice-PRs behind HEAD" for one model |
+| `em metrics <file> --from <rev>` | The pilot metrics from git history: ratification turnaround, conform cadence + findings, status-vs-reality disagreement (a fourth is not computable) |
 | `em system <manifest>` | Verify a seam manifest (`system.yaml`) — which model's `public` event/view feeds which other model's reaction — against the models' exports, and emit the org-level context map |
 | `em glossary <files...>` | Cross-model glossary of terms, with consistency checks across models |
 | `em catalog <files...>` | Generate a browsable static HTML catalog site over one or more models |
@@ -1556,6 +1558,117 @@ way `constitution` does — see [`em status`](#em-status-files) above for what t
 `constitution` (added in schema `1.1`, MIL-202) is the same per-model fact `em status` reports —
 carried because this document *is* one `ConformanceEntry`, not because staleness has anything to
 do with house rules. See [`em status`](#em-status-files) for what it means.
+
+## `em metrics <file>`
+
+The four pilot metrics named in advance (MIL-170, see [usage-data.md](usage-data.md)):
+ratification turnaround, conform-cycle cadence + finding counts, status-vs-reality disagreement,
+and whether the readiness gate changes what gets built — computed from git history over a
+revision range, `--from <rev>` (required) through `--to <rev>` (default `HEAD`). The first three
+are deterministically computable from what's already in the repo; the fourth is not (see below).
+
+`<file>` is an anchor `.em` file, used only to locate `slices/`, `conformance/`, and
+`.event-modeling.md` relative to it — same "never parsed or compiled" convention as `em ledger`.
+
+| Flag | Effect |
+|---|---|
+| `--from <rev>` | Baseline revision (required) |
+| `--to <rev>` | Compare revision (default: `HEAD`) |
+| `--json` | Print a JSON document instead of the text report |
+
+```bash
+em metrics model.em --from v1.0                  # v1.0 through HEAD
+em metrics model.em --from v1.0 --to v1.1         # two tags
+em metrics model.em --from HEAD~50 --json          # machine-readable form
+```
+
+**Deterministic.** Every date comes from git's own commit-date formatting (`--date=format:...`,
+which renders using the timezone recorded WITH the commit — identical on any machine, unlike
+`--date=format-local`), and nothing reads "now": the same repository and the same `--from`/`--to`
+range produce byte-identical output, run twice, on any machine.
+
+**Metric 1 — ratification turnaround.** Per slice, the two lifecycle gaps: days from the commit
+that first set `reviewedOn:` (i.e. `em slice review`) to the commit that first set `ratifiedOn:`
+(`em slice ratify`) within the range, and from that commit to the one that first set
+`implementedIn:` (`em slice mark-implemented`). Derived by walking `slices/<key>.md`'s commit
+history in the range and diffing each touched revision's doc against the one before it — a slice
+re-ratified more than once within the same range reports only its first review-to-ratify-to-
+implement cycle (a documented simplification, not every possible cycle). Reported as
+median/min/max/count across all slices with a resolvable gap, plus the full per-slice table
+(dates `null` when that field's appearance commit falls outside the range).
+
+**Metric 2 — conform cadence + findings.** Every `conformance/<date>-report.md` added within the
+range: its date (from the filename — the conform run's own record of when it ran), the commit
+that added it, the finding/ruled/unruled counts from its sibling
+`conformance/<date>-findings.json` (MIL-214) when one exists **at `--to`** (the range's end, so a
+findings record filled in over several commits after the report itself lands is still counted),
+and the revision it was run against — taken from that findings file's own `revision` field when
+present, else the `Last conformance:` marker read from `.event-modeling.md` **at the adding
+commit** when its `report:` value names this same report. `daysSincePrevious` is the gap to the
+previous report in the range (`null` for the first); `medianCadenceDays` is the median of those
+gaps.
+
+**Metric 3 — status-vs-reality disagreement.** A small time series, one point per commit in the
+range that touched `slices/*.md` or `.event-modeling.md`: at that commit, the count of
+`status: implemented` slice docs whose `driftSignal` (see [`em status`](#em-status-files)) is
+`implemented-without-link` or `uncertified` (`disagreementCount` — status claims more than the
+doc can back up), and the count that are `unpropagated-delta` (`unpropagatedCount` — an expected,
+not-yet-shipped re-ratification in flight, reported separately since it isn't a disagreement).
+`current` repeats the same computation at `--to`.
+
+**Metric 4 — readiness-gate effect.** Whether the readiness gate (a slice reaching
+`ready-to-implement` before it's built) actually changes what gets built is **not computable from
+git history alone** — answering it needs a counterfactual (what would have shipped without the
+gate) that doesn't exist in any one repository's commit log. The text report prints exactly the
+line `Readiness-gate effect: not computable from history — see docs/usage-data.md`; the JSON
+carries `readinessGateEffect: null`. No proxy metric is substituted for it.
+
+**`--json` shape** (`metricsSchemaVersion: "1.0"` — this is also the exact document the MCP
+`metrics` tool returns, see [mcp.md](mcp.md)):
+
+```json
+{
+  "metricsSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "from": "v1.0",
+  "to": "HEAD",
+  "ratificationTurnaround": {
+    "slices": [
+      {
+        "key": "checkout",
+        "reviewedOn": { "commit": "abc123f", "date": "2026-08-01" },
+        "ratifiedOn": { "commit": "def456a", "date": "2026-08-03" },
+        "implementedIn": { "commit": "789fedc", "date": "2026-08-10" },
+        "reviewToRatifyDays": 2,
+        "ratifyToImplementDays": 7
+      }
+    ],
+    "reviewToRatify": { "count": 1, "medianDays": 2, "minDays": 2, "maxDays": 2 },
+    "ratifyToImplement": { "count": 1, "medianDays": 7, "minDays": 7, "maxDays": 7 }
+  },
+  "conformCadence": {
+    "entries": [
+      {
+        "date": "2026-08-15",
+        "path": "conformance/2026-08-15-report.md",
+        "commit": "abc123f",
+        "revision": "def456a",
+        "revisionSource": "findings",
+        "findingsCount": 3,
+        "ruledCount": 3,
+        "unruledCount": 0,
+        "daysSincePrevious": null
+      }
+    ],
+    "medianCadenceDays": null
+  },
+  "statusVsReality": {
+    "series": [{ "commit": "abc123f", "date": "2026-08-01", "disagreementCount": 0, "unpropagatedCount": 0 }],
+    "current": { "disagreementCount": 0, "unpropagatedCount": 0 }
+  },
+  "readinessGateEffect": null
+}
+```
 
 ## `em query <verb> <files...>`
 

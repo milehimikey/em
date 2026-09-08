@@ -132,6 +132,10 @@ em status <files> -o, --out <path>                            # write output to 
 em freshness <file>                                           # standalone freshness signal for one model's conformance record (MIL-164): "last conformed <rev> — N commits and M slice-PRs behind HEAD", computed from the same conform-scope machinery `em status`'s conformance clause uses — for when you want just this fact, no full state-of-the-system rollup (see docs/cli.md)
 em freshness <file> --repo <path>                             # git repo to compute behind-HEAD in (default: the model's own directory)
 em freshness <file> --json                                    # print a JSON document instead of the text line
+em metrics <file>                                             # the pilot metrics named in advance by the register, computed from git history alone (MIL-170): ratification turnaround (reviewed -> ratified -> implemented), conform-cycle cadence + finding counts, and status-vs-reality disagreement over time — plus a fourth, reported as not computable from history (see docs/usage-data.md). `<file>` is an anchor .em file, used only to locate slices/, conformance/, and .event-modeling.md relative to it — same convention as em ledger; never parsed or compiled
+em metrics <file> --from <rev>                                # baseline revision
+em metrics <file> --to <rev>                                  # compare revision (default: HEAD)
+em metrics <file> --json                                      # print a JSON document instead of the text report (see docs/cli.md)
 em query consumers <files>                                    # views/reactions consuming an event, plus their slices
 em query consumers <files> --event <ref-or-name>              # the event's export ref or display name
 em query consumers <files> --json                             # print a JSON document instead of the text report

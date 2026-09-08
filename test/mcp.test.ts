@@ -276,7 +276,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the sixteen documented tools", async () => {
+  it("exposes exactly the seventeen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -292,6 +292,7 @@ describe("tools/list", () => {
         "freshness",
         "glossary",
         "list_markers",
+        "metrics",
         "query",
         "slice_ready",
         "system",
