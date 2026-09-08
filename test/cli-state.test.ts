@@ -3,13 +3,18 @@
 // underlying pure logic (parsing, formatting, byte-identical rewrites) is covered without
 // spawning a process in test/stateFile.test.ts — same split as em changelog
 // (test/changelog.test.ts vs the "em changelog (CLI, real git repo)" block in test/cli.test.ts).
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { localIsoDate } from "../src/util/localDate.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// MIL-205 follow-up: every test here spawns the real CLI (~1 s each on a GitHub runner); the
+// multi-spawn tests sit at vitest's 5 s default and flaked under CI load (a MIL-214 test in this
+// file timed out on 2026-09-08). File-level timeout, same as test/cli.test.ts.
+vi.setConfig({ testTimeout: 20_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
