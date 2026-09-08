@@ -2322,7 +2322,7 @@ describe("em conform-supersede (CLI, MIL-164)", () => {
   });
 
   it("--on defaults to today when omitted", () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localIsoDate();
     const r = em(["conform-supersede", "checkout.em", "conformance/2026-08-23-report.md", "--as-of", "e4f5a6b", "--findings", "4"], dir);
     expect(r.status).toBe(0);
     const onDisk = readFileSync(join(dir, "conformance", "2026-08-23-report.md"), "utf8");

@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { localIsoDate } from "../src/util/localDate.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +39,7 @@ describe("em state (CLI)", () => {
       modelPath: "order-fulfillment.em",
       phase: "discover",
       step: "1",
-      lastUpdated: new Date().toISOString().slice(0, 10),
+      lastUpdated: localIsoDate(),
       lastConformance: null,
       lastReview: null,
     });
@@ -96,12 +97,12 @@ describe("em state (CLI)", () => {
     const text = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
     expect(text).toContain(
       "- **Last conformance:** " +
-        new Date().toISOString().slice(0, 10) +
+        localIsoDate() +
         " @ abc123f — report: conformance/2026-08-21-report.md",
     );
     const r = em(["state", "read", modelDir()], cwd);
     expect(JSON.parse(r.stdout).lastConformance).toEqual({
-      date: new Date().toISOString().slice(0, 10),
+      date: localIsoDate(),
       revision: "abc123f",
       report: "conformance/2026-08-21-report.md",
     });
