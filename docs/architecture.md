@@ -66,3 +66,13 @@ flowchart LR
 
 Everything in steps 1–3 is bundled with the npm package; see
 [dependencies.md](dependencies.md) for what's in-process versus optional.
+
+## Testing conventions
+
+A test that computes an expected "today" must build it with `localIsoDate()`
+(`src/util/localDate.ts`), never `new Date().toISOString().slice(0, 10)` or its
+`.substring`/`.split("T")[0]` siblings — those read the UTC calendar date, while every
+date-defaulting command has stamped the *local* one since MIL-206, so the two silently diverge
+(and the test only fails on a contributor's machine, never in CI, which runs in UTC) after
+~17:00 in any zone west of UTC. `test/noUtcToday.test.ts` guards against the pattern
+reappearing.
