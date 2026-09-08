@@ -51,7 +51,11 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    deep-dive in the `slice` phase below); the docs are the home for everything collected from
    here on, not yet implementation-ready specs. Because every doc already exists by the time the
    `slice` phase begins, its own step 2 scaffolding call is then a no-op — that phase picks up
-   at its step 1's deeper pass.
+   at its step 1's deeper pass. For a purely exploratory/backbone-mapping model that only needs
+   status coloring right now (not a full spec per slice yet), `em slice stub-all <model>.em` is
+   the one-command fast path: a near-free stub per undocumented slice, wired, in slice order
+   (MIL-184) — skip the per-slice `em slice new` calls above and deepen individual docs later
+   when the team is ready.
 3. **Evaluate completeness (step 7).** Walk the model: every slice is a **complete** pattern, not a
    half-slice — **every command has something that triggers it**, every command emits an event,
    **every event is read by a read model**, **every read model has a consumer**, every view has a
