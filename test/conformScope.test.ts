@@ -68,13 +68,18 @@ describe("buildConformScope", () => {
     { key: "billing", status: "implemented", implementedIn: "https://github.com/example/repo/pull/9" },
     { key: "draft-slice", status: "draft", implementedIn: null },
   ];
-  const lastConformance: LastConformance = { date: "2026-08-01", revision: "abc123", report: "conformance/2026-08-01-report.md" };
+  const lastConformance: LastConformance = {
+    date: "2026-08-01",
+    revision: "abc123",
+    report: "conformance/2026-08-01-report.md",
+    partial: false,
+  };
 
   it("diff-scoped: maps a changed path via implementedIn, leaves a URL-only slice and unmatched paths as unmapped", () => {
     const changedPaths = ["src/checkout/CheckoutHandler.kt", "src/billing/Invoice.kt", "README.md"];
     const result = buildConformScope(slices, lastConformance, changedPaths, false);
     expect(result).toEqual({
-      lastConformance: { date: "2026-08-01", revision: "abc123" },
+      lastConformance: { date: "2026-08-01", revision: "abc123", partial: false },
       changedPaths,
       candidateSlices: [{ key: "checkout", matchedBy: "implementedIn", paths: ["src/checkout/CheckoutHandler.kt"] }],
       unmappedPaths: ["src/billing/Invoice.kt", "README.md"],
@@ -97,7 +102,7 @@ describe("buildConformScope", () => {
   it("--full overrides a set lastConformance: full candidate set, lastConformance still echoed back", () => {
     const result = buildConformScope(slices, lastConformance, [], true);
     expect(result).toEqual({
-      lastConformance: { date: "2026-08-01", revision: "abc123" },
+      lastConformance: { date: "2026-08-01", revision: "abc123", partial: false },
       changedPaths: [],
       candidateSlices: [
         { key: "checkout", matchedBy: "full", paths: [] },

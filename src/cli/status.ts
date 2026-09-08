@@ -34,6 +34,7 @@ import { CoverageReport } from "./coverage.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
+import { lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
 
 /** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
  *  `em catalog`'s header coloring and `em render`'s status legend already recognize. */
@@ -167,7 +168,15 @@ export interface ConformanceEntry {
   file: string;
   modelDir: string;
   hasStateFile: boolean;
-  lastConformance: { date: string; revision: string } | null;
+  lastConformance: { date: string; revision: string; partial: boolean } | null;
+  /** MIL-214: unruled (`locus: null`) conformance findings in scope (every `implemented` slice;
+   *  a `slice: null` finding counts as in scope for all of them) from the findings JSON beside
+   *  `lastConformance`'s report — the same file `em state set-conformance`'s refusal/`--partial`
+   *  gate reads (cli/findings.ts's `unruledFindingsInScope`). Null when there's no
+   *  `lastConformance` to look beside, or no findings JSON exists there (a report written before
+   *  MIL-214 — the documented migration path, same non-fatal "nothing to report" `null` every
+   *  other opt-in count in this document uses). */
+  unruledFindings: number | null;
   /** The repo `commitsBehindHead` was computed in — `--repo` when given, else the model's own
    *  directory (works out of the box for a single-repo project; conform-scope's `--repo`
    *  convention still applies for a model whose implementation lives in a different repo). */
@@ -289,10 +298,10 @@ export function resolveSlicePRsBehindHead(
 ): { ok: true; count: number } | { ok: false; message: string } {
   const changed = changedPathsSince(repo, revision, runGit);
   if (!changed.ok) return { ok: false, message: changed.message };
-  // `date`/`report` are irrelevant to matching (buildConformScope only echoes them back in its
-  // own `lastConformance` field, which this function discards) — only `revision` drives the
-  // implementedIn-to-changed-path match below.
-  const scope = buildConformScope(slices, { date: "", revision, report: "" }, changed.paths, false);
+  // `date`/`report`/`partial` are irrelevant to matching (buildConformScope only echoes them
+  // back in its own `lastConformance` field, which this function discards) — only `revision`
+  // drives the implementedIn-to-changed-path match below.
+  const scope = buildConformScope(slices, { date: "", revision, report: "", partial: false }, changed.paths, false);
   return { ok: true, count: scope.candidateSlices.length };
 }
 
@@ -328,7 +337,7 @@ export function resolveConformanceEntry(
   const constitution = resolveConstitution(modelDir);
   const loaded = loadStateFile(modelDir);
   if (!loaded.ok) {
-    return { file, modelDir, hasStateFile: false, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: null };
+    return { file, modelDir, hasStateFile: false, lastConformance: null, unruledFindings: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: null };
   }
   const parsed = parseState(loaded.text);
   if (!parsed.ok) {
@@ -337,6 +346,7 @@ export function resolveConformanceEntry(
       modelDir,
       hasStateFile: true,
       lastConformance: null,
+      unruledFindings: null,
       repo,
       commitsBehindHead: null,
       slicePRsBehindHead: null,
@@ -346,19 +356,27 @@ export function resolveConformanceEntry(
   }
   const mismatch = modelPathMismatch(parsed.state.modelPath, file);
   if (mismatch) {
-    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: mismatch };
+    return { file, modelDir, hasStateFile: true, lastConformance: null, unruledFindings: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: mismatch };
   }
   if (!parsed.state.lastConformance) {
-    return { file, modelDir, hasStateFile: true, lastConformance: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: null };
+    return { file, modelDir, hasStateFile: true, lastConformance: null, unruledFindings: null, repo, commitsBehindHead: null, slicePRsBehindHead: null, constitution, error: null };
   }
-  const { date, revision } = parsed.state.lastConformance;
+  const { date, revision, report, partial } = parsed.state.lastConformance;
+  // MIL-214: independent of the git-backed commits/slice-PRs-behind-HEAD facts below — reads a
+  // findings JSON off disk beside the recorded report, not git. Every `implemented` slice is in
+  // scope, same "in scope" definition `em state set-conformance`'s own refusal/`--partial` gate
+  // uses (a `slice: null` finding counts as in scope for all of them).
+  const inScope = new Set(sliceDocFacts.filter((s) => s.status === "implemented").map((s) => s.key));
+  const findingsLookup = lookupFindingsBesideReport(modelDir, report);
+  const unruledFindings = findingsLookup.kind === "found" ? unruledFindingsInScope(findingsLookup.doc.findings, inScope).length : null;
   const commitsResult = commitsBehindHead(repo, revision, runGit);
   if (!commitsResult.ok) {
     return {
       file,
       modelDir,
       hasStateFile: true,
-      lastConformance: { date, revision },
+      lastConformance: { date, revision, partial },
+      unruledFindings,
       repo,
       commitsBehindHead: null,
       slicePRsBehindHead: null,
@@ -372,7 +390,8 @@ export function resolveConformanceEntry(
       file,
       modelDir,
       hasStateFile: true,
-      lastConformance: { date, revision },
+      lastConformance: { date, revision, partial },
+      unruledFindings,
       repo,
       commitsBehindHead: commitsResult.count,
       slicePRsBehindHead: null,
@@ -384,7 +403,8 @@ export function resolveConformanceEntry(
     file,
     modelDir,
     hasStateFile: true,
-    lastConformance: { date, revision },
+    lastConformance: { date, revision, partial },
+    unruledFindings,
     repo,
     commitsBehindHead: commitsResult.count,
     slicePRsBehindHead: slicePRsResult.count,
@@ -417,6 +437,11 @@ export interface StatusDriftCounts {
   neverImplemented: number;
   unpropagatedDelta: number;
   implementedWithoutLink: number;
+  /** MIL-214: status: implemented, implementedIn set, but `conformedVersion` is absent or
+   *  doesn't match the current `version` — nobody has certified THIS version yet. Expected
+   *  post-ship default (`em validate` never warns on it), same treatment `unpropagatedDelta`
+   *  gets — see catalog/driftSignal.ts's `uncertified`. */
+  uncertified: number;
   /** Slices with no doc bound at all (or a binding naming a missing file) — driftSignal is null
    *  because there's nothing to classify. Distinct from `frontmatterInvalid` below: THIS bucket
    *  is `resolveSliceDocJoin`'s `found: false`, in either dimension. */
@@ -502,6 +527,7 @@ export function buildStatusReport(
     neverImplemented: 0,
     unpropagatedDelta: 0,
     implementedWithoutLink: 0,
+    uncertified: 0,
     notApplicable: 0,
     frontmatterInvalid: 0,
   };
@@ -559,6 +585,9 @@ export function buildStatusReport(
         break;
       case "implemented-without-link":
         drift.implementedWithoutLink++;
+        break;
+      case "uncertified":
+        drift.uncertified++;
         break;
       case null:
         if (f.docReason === "frontmatter-invalid") drift.frontmatterInvalid++;
@@ -618,13 +647,26 @@ function formatBehindHead(entry: ConformanceEntry): string {
   return `${pluralize(commits, "commit")} and ${pluralize(slicePRs, "slice-PR")} behind HEAD`;
 }
 
+/** MIL-214: the `(partial, N unruled finding(s))`/`(partial)`/`(N unruled finding(s))` suffix
+ *  both text formatters below append — `""` when the marker isn't partial and there's nothing
+ *  (or nothing known) to report. `unruledFindings` is reported even on a non-partial marker: a
+ *  marker can only be non-partial with unruled findings outstanding when `em state
+ *  set-conformance` predates MIL-214's refusal (an older marker) or the findings surfaced after
+ *  the marker was recorded — worth showing either way, never treated as a contradiction. */
+function formatConformanceCaveats(entry: ConformanceEntry): string {
+  const parts: string[] = [];
+  if (entry.lastConformance?.partial) parts.push("partial");
+  if (entry.unruledFindings !== null && entry.unruledFindings > 0) parts.push(pluralize(entry.unruledFindings, "unruled finding"));
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
 /** Exported for `em freshness` (freshness.ts, MIL-164) — the standalone surface for exactly
  *  this one clause, without pulling in the rest of `em status`'s rollup. */
 export function formatConformancePart(entry: ConformanceEntry): string {
   if (entry.error) return `conformance unknown (${entry.error})`;
   if (!entry.hasStateFile) return "no state file";
   if (!entry.lastConformance) return "never conformed";
-  return `last conformed ${entry.lastConformance.revision} — ${formatBehindHead(entry)}`;
+  return `last conformed ${entry.lastConformance.revision} — ${formatBehindHead(entry)}${formatConformanceCaveats(entry)}`;
 }
 
 /** Same facts as `formatConformancePart`, without the leading "last conformed"/"conformance
@@ -634,7 +676,7 @@ function formatConformanceValue(entry: ConformanceEntry): string {
   if (entry.error) return `unknown (${entry.error})`;
   if (!entry.hasStateFile) return "no state file";
   if (!entry.lastConformance) return "never conformed";
-  return `\`${entry.lastConformance.revision}\` — ${formatBehindHead(entry)}`;
+  return `\`${entry.lastConformance.revision}\` — ${formatBehindHead(entry)}${formatConformanceCaveats(entry)}`;
 }
 
 /** MIL-202: the per-model constitution clause — `present`, or `absent (<expected path>)` with
@@ -678,7 +720,8 @@ export function formatStatusDetail(report: StatusReport): string {
   const d = report.driftSignal;
   lines.push(
     `driftSignal: ${d.inSync} in-sync, ${d.neverImplemented} never-implemented, ${d.unpropagatedDelta} unpropagated-delta, ` +
-      `${d.implementedWithoutLink} implemented-without-link, ${d.notApplicable} n/a (no doc), ${d.frontmatterInvalid} n/a (frontmatter invalid)`,
+      `${d.implementedWithoutLink} implemented-without-link, ${d.uncertified} uncertified, ${d.notApplicable} n/a (no doc), ` +
+      `${d.frontmatterInvalid} n/a (frontmatter invalid)`,
   );
   lines.push(
     report.invariants

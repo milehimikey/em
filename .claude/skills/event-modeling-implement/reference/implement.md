@@ -35,9 +35,10 @@ every `## Open Questions` checkbox is checked, and no status/version/link incohe
 `statusReady`/`noUncheckedOpenQuestions`) if you need to say which one is blocking.
 
 **`ready: false` means stop** — with one named exception: a slice already `status: implemented`
-with `driftSignal: in-sync` also reads `ready: false` (its `statusReady` gate fails because
-nothing is newly ratified), and that specific case is re-implementation/repair, not a blocker —
-see §3's third mode before treating it as one. For every other `false`, report which `gates`
+with `driftSignal: in-sync` or `uncertified` (MIL-214) also reads `ready: false` (its
+`statusReady` gate fails because nothing is newly ratified), and that specific case is
+re-implementation/repair, not a blocker — see §3's third mode before treating it as one. For
+every other `false`, report which `gates`
 entries are `false` (and any `diagnostics` entries concerning this slice) and hand the slice
 back to the humans. Never make the gate pass yourself — checking an open-question box, flipping
 `status`, or editing frontmatter are ratification decisions, and ratification happens in a
@@ -122,8 +123,11 @@ Check the doc's `version:` and `## Delta` section (or `em export`'s `slice.doc.d
   the people who've edited it (generated-then-owned); regeneration is legal only for slices
   whose code never merged.
 - **Re-implementation / repair** (`status: implemented`, `implementedIn` set, `driftSignal:
-  in-sync` — `--slice-ready` reports `ready: false` purely because `statusReady` fails, with no
-  other gate false and no doc content changed): the doc hasn't changed, but the shipped code
+  in-sync` **or** `uncertified` (MIL-214 — certification status is orthogonal to whether the doc
+  changed; most shipped slices sit at `uncertified` until a conform sweep certifies them, which
+  doesn't change which mode this is) — `--slice-ready` reports `ready: false` purely because
+  `statusReady` fails, with no other gate false and no doc content changed): the doc hasn't
+  changed, but the shipped code
   needs rebuilding or fixing — deleted code, a reverted PR, a bug in behavior the doc already
   specifies. **The doc is still the spec.** The gate's `false` here means "nothing new is
   ratified," not "stop" — it is not license to self-initiate: proceed only when a human has

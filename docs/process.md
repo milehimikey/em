@@ -58,13 +58,25 @@ three specific points:
    phase reports drift between model and code, a human rules on every finding (fix the model,
    open a red note, fix the prose — [workflow.md](workflow.md#7-rule-on-the-findings)). A ruling is a
    human gate, the same shape as ratifying a slice: an agent gathers evidence and proposes, a person decides, and the decision
-   is recorded with a name and a date. The report proposes; you decide. `em state
-   set-conformance` records the ruling; nothing writes it for you.
-   `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec>` (MIL-164,
-   [cli.md](cli.md#em-conform-supersede-file-report-path)) stamps the ruled-on report with a
-   "superseded as of `<rev>`" banner once you're done, so the record of what was decided
+   is recorded with a name and a date. The report proposes; you decide.
+   **The findings themselves are structured data** (MIL-214): the conform skill writes
+   `conformance/<date>-findings.json` alongside its `<date>-report.md`, one entry per `### n.`
+   finding, ids matching (shape: [slice-doc-schema.md](slice-doc-schema.md);
+   `em conform-findings check <path>` verifies a headless run wrote it correctly).
+   `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec> --locus <model|doc|code|none> --by <name>`
+   (MIL-164/MIL-214,
+   [cli.md](cli.md#em-conform-supersede-file-report-path)) is what records BOTH the ruling
+   itself — `locus`/`resolvedBy`/`resolvedOn` on the named findings in that JSON — and the
+   ruled-on report's "superseded as of `<rev>`" banner, so the record of what was decided
    stays legible without misleading a later reader into treating a historical report's
-   file:line citations as current.
+   file:line citations as current. `locus: code` on an unresolved finding is the first-class
+   carrier for "spec is right, code is wrong" — no doc delta needed for that case any more.
+   Once every in-scope finding touching a slice is ruled, `em slice conform <model> <key> --at
+   <rev>` (MIL-214, [cli.md](cli.md#em-slice-conform-file-slice-key---at-rev)) records that
+   THIS VERSION of that slice was certified — a fact `em state set-conformance` (below) checks
+   before advancing the model-wide marker.
+   `em state set-conformance` refuses while any `implemented` slice still has an unruled finding
+   in scope (`--partial` escapes with a loud notice); nothing writes the marker for you.
 
 ## The slice lifecycle gates
 

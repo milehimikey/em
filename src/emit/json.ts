@@ -114,7 +114,15 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    (including an again-slice's own entry — only the origin carries the union). See
 //    `model/continuation.ts` for the shared predicate/resolution both fields are built on.
 // Additive-only.
-export const SCHEMA_VERSION = "1.12";
+// 1.13 (MIL-214, "certification is per slice per version"): `slice.doc` gains
+// `conformedVersion`/`conformedAt`/`conformedOn` — the version, target-repo revision, and local
+// date a conform sweep last certified this slice (frontmatter `conformedVersion:`/
+// `conformedAt:`/`conformedOn:`), written only by `em slice conform`. All three null when never
+// certified. Also: `slice.doc.driftSignal` gains a new possible value, `"uncertified"` (status:
+// implemented, implementedIn set, but `conformedVersion` is absent or doesn't match the current
+// `version`) — see catalog/driftSignal.ts. Additive-only (new optional fields, new enum member
+// on an existing string field).
+export const SCHEMA_VERSION = "1.13";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

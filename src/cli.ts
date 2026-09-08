@@ -85,6 +85,8 @@ import { wireSliceNote } from "./cli/sliceLink.js";
 import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runReratify } from "./cli/reratify.js";
+import { runSliceConform } from "./cli/sliceConform.js";
+import { checkFindingsFile, buildCheckFindingsJson, lookupFindingsBesideReport, unruledFindingsInScope, Finding, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -835,7 +837,71 @@ slice
       console.error(`em slice reratify: ${result.message}`);
       process.exit(1);
     }
+    // MIL-214: advisory only, never refuses — see reratify.ts's reratifyAdvisory. Both warnings
+    // can fire together (a version that was never certified AND still carries unruled findings).
+    if (result.advisory.neverCertified) {
+      console.error(`warn: reratifying "${sliceKey}" whose v${result.newVersion - 1} was never certified`);
+    }
+    if (result.advisory.unruledFindingsCount > 0) {
+      console.error(`warn: reratifying "${sliceKey}" has ${result.advisory.unruledFindingsCount} unruled conformance finding(s)`);
+    }
     console.log(`reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement)`);
+  });
+
+slice
+  .command("conform")
+  .description(
+    "record per-slice-per-version conformance certification: sets `conformedVersion:`/" +
+      "`conformedAt:`/`conformedOn:` on a slice doc (MIL-214) — the fact `driftSignal: in-sync` " +
+      "now depends on. Legal only for `status: implemented` with an `implementedIn:` link. " +
+      "Idempotent on the same (version, --at) pair; a different --at simply overwrites (a " +
+      "later re-certification is normal — there's no way for em to tell 'later' from 'earlier' " +
+      "for an arbitrary revision string, so there's no --force to reach for). Refuses when the " +
+      "newest conformance/*-findings.json matching --at still has an unruled finding in scope " +
+      "for this slice; --skip-findings-check overrides with a loud notice.",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .requiredOption("--at <rev>", "the target-repo revision this certification sweep diffed against")
+  .option("--on <date>", "certification date, YYYY-MM-DD (default: today, local date)")
+  .option("--skip-findings-check", "certify even with unruled findings in scope — prints a loud notice on stderr")
+  .action((file: string, sliceKey: string, opts: { at: string; on?: string; skipFindingsCheck?: boolean }) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics);
+
+    // Scoped the same way `em slice ratify`/`em slice reratify`/`em slice mark-implemented` are:
+    // only an error concerning THIS slice refuses.
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice conform: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const today = localIsoDate();
+    const on = opts.on ?? today;
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em slice conform: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+
+    const result = runSliceConform(model, refs, dirname(file), sliceKey, opts.at, on, opts.skipFindingsCheck === true);
+    if (!result.ok) {
+      console.error(`em slice conform: ${result.message}`);
+      process.exit(1);
+    }
+    if (result.skippedFindingsCheck !== null) {
+      console.error(
+        `notice: --skip-findings-check — certifying "${sliceKey}" with ${result.skippedFindingsCheck.length} ` +
+          `unruled conformance finding(s) still in scope (id ${result.skippedFindingsCheck.join(", ")})`,
+      );
+    }
+    console.log(
+      result.changed
+        ? `certified: ${result.path} (conformedVersion: ${result.version}, conformedAt: ${opts.at}, conformedOn: ${on})`
+        : `already certified (no-op): ${result.path}`,
+    );
   });
 
 program
@@ -920,12 +986,74 @@ state
 
 state
   .command("set-conformance")
-  .description("rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses")
+  .description(
+    "rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md " +
+      "parses. Refuses (MIL-214) while any `implemented` slice has an unruled conformance " +
+      "finding in the findings JSON beside --report (a `slice: null` finding blocks every " +
+      "slice); --partial records the marker with a ` (partial)` suffix instead, with a loud " +
+      "notice. Without a findings JSON beside --report: warns once and records the marker as " +
+      "given (migration path for a report predating `em conform-findings`)",
+  )
   .argument("<revision>", "target-repo revision just diffed against")
   .argument("[dir]", STATE_DIR_HELP, ".")
   .requiredOption("--report <path>", "path to the conformance report just written")
-  .action((revision: string, dir: string, opts: { report: string }) => {
-    writeStateUpdate(dir, "em state set-conformance", (text, today) => setConformance(text, revision, opts.report, today));
+  .option("--partial", "record the marker as PARTIAL even though some in-scope findings are still unruled")
+  .action((revision: string, dir: string, opts: { report: string; partial?: boolean }) => {
+    const loaded = loadStateFile(dir);
+    if (!loaded.ok) {
+      console.error(loaded.message);
+      process.exit(1);
+    }
+    const parsed = parseState(loaded.text);
+    if (!parsed.ok) {
+      console.error(`em state set-conformance: ${parsed.message}`);
+      process.exit(1);
+    }
+    const modelDir = dirname(loaded.path);
+    const modelFile = join(modelDir, parsed.state.modelPath);
+
+    // The "in scope" set for the findings gate below — every `implemented` slice, per the
+    // ruling. Best-effort: a model that doesn't exist or doesn't compile cleanly can't tell us
+    // its implemented slices, so the gate is skipped (not refused) in that case rather than
+    // blocking a state-file operation on an unrelated model problem — `em validate` is where
+    // that problem gets its own diagnostic.
+    let inScope = new Set<string>();
+    if (existsSync(modelFile)) {
+      const compiled = compileFile(modelFile);
+      if (!hasErrors(compiled.diagnostics)) {
+        const { facts } = resolveSliceDocFacts(compiled.model, compiled.refs, modelDir);
+        inScope = new Set(facts.filter((f) => f.status === "implemented").map((f) => f.key));
+      }
+    }
+
+    let unruled: Finding[] = [];
+    const lookup = lookupFindingsBesideReport(modelDir, opts.report);
+    if (lookup.kind === "invalid") {
+      console.error(`em state set-conformance: ${lookup.message}`);
+      process.exit(1);
+    } else if (lookup.kind === "absent") {
+      console.error(
+        `warn: no findings JSON found beside ${opts.report} — recording the marker without verifying every ` +
+          "finding is ruled (migration path for a report written before `em conform-findings`)",
+      );
+    } else {
+      unruled = unruledFindingsInScope(lookup.doc.findings, inScope);
+    }
+
+    const partialFlag = opts.partial === true;
+    if (unruled.length > 0 && !partialFlag) {
+      console.error(
+        `em state set-conformance: ${unruled.length} unruled conformance finding(s) among implemented slices ` +
+          `(id ${unruled.map((f) => f.id).join(", ")}) — rule on them (\`em conform-supersede --locus --by\`) or pass --partial`,
+      );
+      process.exit(1);
+    }
+    const recordPartial = partialFlag && unruled.length > 0;
+    if (recordPartial) {
+      console.error(`notice: conformance marker recorded as PARTIAL — ${unruled.length} finding(s) unruled`);
+    }
+
+    writeStateUpdate(dir, "em state set-conformance", (text, today) => setConformance(text, revision, opts.report, today, recordPartial));
   });
 
 state
@@ -1085,31 +1213,79 @@ program
       "at ratification time so a reader following the report's file:line citations knows they " +
       "describe an ancestor of the current model. Additive-only splice, never a rewrite of the " +
       "report; idempotent on the same --as-of/--findings/--on stamp; refuses if the report " +
-      "doesn't exist",
+      "doesn't exist. --locus/--by (MIL-214, both required together) additionally record the " +
+      "ruling itself — locus/resolvedBy/resolvedOn — on the findings named by --findings in the " +
+      "sibling conformance/<date>-findings.json, when one exists (warns once and stamps the " +
+      "banner only when it doesn't — the migration path for a report predating em conform-findings)",
   )
   .argument("<file>", "input .em file (used only to resolve the report path's base directory)")
   .argument("<report-path>", "path to the conformance report, relative to the model's directory")
   .requiredOption("--as-of <rev>", "the revision this ruling was made against — same value passed to `em state set-conformance`")
   .requiredOption("--findings <spec>", 'which finding number(s) this stamps as ruled, e.g. "1-3" or "1,2,4"')
   .option("--on <date>", "ruling date, YYYY-MM-DD (default: today, local date)")
-  .action((file: string, reportPath: string, opts: { asOf: string; findings: string; on?: string }) => {
+  .option("--locus <locus>", `who/what the named finding(s) say is wrong: ${FINDING_LOCI.join(" | ")} (requires --by)`)
+  .option("--by <name>", "who ruled on the named finding(s) (requires --locus)")
+  .action((file: string, reportPath: string, opts: { asOf: string; findings: string; on?: string; locus?: string; by?: string }) => {
     const today = localIsoDate();
     const on = opts.on ?? today;
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em conform-supersede: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
       process.exit(1);
     }
+    if ((opts.locus !== undefined) !== (opts.by !== undefined)) {
+      console.error("em conform-supersede: --locus and --by must be given together");
+      process.exit(1);
+    }
+    if (opts.locus !== undefined && !(FINDING_LOCI as readonly string[]).includes(opts.locus)) {
+      console.error(`em conform-supersede: invalid --locus "${opts.locus}" — expected one of: ${FINDING_LOCI.join(", ")}`);
+      process.exit(1);
+    }
+    const ruling = opts.locus !== undefined && opts.by !== undefined ? { locus: opts.locus as FindingLocus, by: opts.by } : undefined;
 
-    const result = runConformSupersede(dirname(file), reportPath, opts.asOf, opts.findings, on);
+    const result = runConformSupersede(dirname(file), reportPath, opts.asOf, opts.findings, on, ruling);
     if (!result.ok) {
       console.error(`em conform-supersede: ${result.message}`);
       process.exit(1);
+    }
+    if (result.findingsRuling.kind === "no-findings-file") {
+      console.error(`warn: ${result.findingsRuling.warning}`);
+    } else if (result.findingsRuling.kind === "applied") {
+      console.log(
+        result.findingsRuling.changed
+          ? `ruled: ${result.findingsRuling.path} (finding(s) ${result.findingsRuling.ids.join(", ")} -> locus: ${opts.locus}, by: ${opts.by})`
+          : `already ruled (no-op): ${result.findingsRuling.path}`,
+      );
     }
     console.log(
       result.changed
         ? `stamped superseded: ${result.path} (as of ${opts.asOf}, findings ${opts.findings}, on ${on})`
         : `already stamped (no-op): ${result.path}`,
     );
+  });
+
+const conformFindings = program.command("conform-findings").description("read-only checks for the conformance findings record (MIL-214)");
+
+conformFindings
+  .command("check")
+  .description(
+    "shape-validate a conformance/<date>-findings.json file (findingsSchemaVersion, required " +
+      "fields, enum values, ids sorted+unique, a ruled finding carries resolvedBy+resolvedOn) — " +
+      "exit 1 on shape errors. The conform skill writes this file directly alongside its report; " +
+      "this is how a headless run verifies what it just wrote.",
+  )
+  .argument("<path>", "path to a conformance/<date>-findings.json file")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((path: string, opts: { json?: boolean }) => {
+    const result = checkFindingsFile(path);
+    if (opts.json) {
+      console.log(buildCheckFindingsJson(result));
+    } else if (result.ok) {
+      console.log(`ok — ${result.path}: ${result.findingsCount} finding(s), shape valid`);
+    } else {
+      console.error(`em conform-findings check: ${result.path} — shape errors:`);
+      for (const e of result.errors) console.error(`  - ${e}`);
+    }
+    if (!result.ok) process.exit(1);
   });
 
 program

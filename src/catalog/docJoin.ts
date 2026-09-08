@@ -122,6 +122,15 @@ export interface SliceDocExport {
    *  em-tracker-bridge reads to find the mirrored ticket — its name/shape here is a cross-tool
    *  contract, not just an internal display field. */
   tracking: string | null;
+  /** MIL-214: this slice's `version:` at the time a conform sweep last certified it (frontmatter
+   *  `conformedVersion:`), written only by `em slice conform` — null when never certified. */
+  conformedVersion: number | null;
+  /** MIL-214: the target repo's revision that certification sweep diffed against (frontmatter
+   *  `conformedAt:`), written only by `em slice conform` — null when never certified. */
+  conformedAt: string | null;
+  /** MIL-214: the local date that certification was recorded (frontmatter `conformedOn:`),
+   *  written only by `em slice conform` — null when never certified. */
+  conformedOn: string | null;
 }
 
 export interface SliceDocJoinResult {
@@ -151,6 +160,9 @@ const EMPTY_CONTENT = {
   ratifiedOn: null as string | null,
   owner: null as string | null,
   tracking: null as string | null,
+  conformedVersion: null as number | null,
+  conformedAt: null as string | null,
+  conformedOn: null as string | null,
 };
 
 /**
@@ -280,5 +292,8 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     ratifiedOn: parsed.ratifiedOn,
     owner: parsed.owner,
     tracking: parsed.tracking,
+    conformedVersion: parsed.conformedVersion,
+    conformedAt: parsed.conformedAt,
+    conformedOn: parsed.conformedOn,
   };
 }

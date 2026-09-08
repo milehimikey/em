@@ -24,7 +24,14 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // (again-view-only slices with no legacy doc of their own) across every input file, excluded
 // from every `slices.byStatus`/`driftSignal` bucket (the originating slice's own fact already
 // counts once). See ../cli/status.ts's StatusReport.continuations.
-export const STATUS_SCHEMA_VERSION = "1.4";
+// 1.5 (MIL-214): `driftSignal` gains `uncertified` (number) — status: implemented slices whose
+// current version has no matching conformance certification (see catalog/driftSignal.ts). Each
+// `conformance[]` entry gains `unruledFindings` (number | null) — unruled conformance findings
+// in scope for that model's last conformance run (null when no findings JSON exists beside the
+// recorded report), and `lastConformance` gains `partial` (boolean) — whether the marker was
+// recorded with `em state set-conformance --partial`. See ../cli/status.ts's
+// StatusDriftCounts.uncertified/ConformanceEntry.unruledFindings/ConformanceEntry.lastConformance.
+export const STATUS_SCHEMA_VERSION = "1.5";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No

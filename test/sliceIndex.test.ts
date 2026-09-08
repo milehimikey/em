@@ -37,6 +37,9 @@ ratifiedBy: Alex Rivera
 ratifiedOn: 2026-08-01
 owner: Team Checkout
 tracking: https://tracker.example/issue/42
+conformedVersion: 2
+conformedAt: 8f12ed8
+conformedOn: 2026-08-15
 ---
 ## Intent
 Let customers place orders.
@@ -46,8 +49,8 @@ const README_WITH_MARKERS = `# Demo
 
 ## Slices
 <!-- GENERATED:${SLICE_INDEX_MARKER}:start -->
-| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |
-|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|
+| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Conformed | Design doc |
+|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|-----------|------------|
 <!-- GENERATED:${SLICE_INDEX_MARKER}:end -->
 
 ## Status
@@ -88,16 +91,17 @@ describe("buildSliceIndexTable", () => {
       owner: "Team Checkout",
       tracking: "https://tracker.example/issue/42",
       implementedIn: "https://github.com/example/repo/pull/42",
+      conformed: "v2 @ 8f12ed8",
       docPath: "slices/place-order.md",
     });
     expect(markdown).toContain(
       "| 1 | Place Order | State Change | implemented | Sam Okafor | Alex Rivera | Team Checkout | " +
-        "https://tracker.example/issue/42 | https://github.com/example/repo/pull/42 | " +
+        "https://tracker.example/issue/42 | https://github.com/example/repo/pull/42 | v2 @ 8f12ed8 | " +
         "[slices/place-order.md](slices/place-order.md) |",
     );
   });
 
-  it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Reviewed by/Ratified by/Owner/Tracking/Implemented in", () => {
+  it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Reviewed by/Ratified by/Owner/Tracking/Implemented in/Conformed", () => {
     const { model, refs } = compile(MODEL);
     const { rows } = buildSliceIndexTable(model, refs, dir);
 
@@ -111,6 +115,7 @@ describe("buildSliceIndexTable", () => {
       owner: "—",
       tracking: "—",
       implementedIn: "—",
+      conformed: "—",
       docPath: "slices/open-orders.md",
     });
   });
@@ -135,8 +140,8 @@ describe("buildSliceIndexTable", () => {
     const { markdown, rows } = buildSliceIndexTable(model, refs, dir);
     expect(rows).toEqual([]);
     expect(markdown).toBe(
-      "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|",
+      "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Conformed | Design doc |\n" +
+        "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|-----------|------------|",
     );
   });
 

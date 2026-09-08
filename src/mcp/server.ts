@@ -64,6 +64,7 @@ import { buildChangelogDoc } from "../cli/changelogBuild.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
 import { loadStateFile, parseState, modelPathMismatch } from "../cli/stateFile.js";
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
+import { checkFindingsFile, buildCheckFindingsJson } from "../cli/findings.js";
 import { compileForQuery } from "../query/pipeline.js";
 import type { ModelIndex } from "../model/queryIndex.js";
 import { buildQuerySystem, QuerySystem } from "../query/system.js";
@@ -716,6 +717,26 @@ export function createServer(): McpServer {
       const { facts } = resolveSliceDocFacts(model, refs, baseDir);
       const entry = resolveConformanceEntry(file, repo, facts);
       return textResult(buildFreshnessJson(entry));
+    },
+  );
+
+  server.registerTool(
+    "conform_findings_check",
+    {
+      title: "Shape-validate a conformance findings record",
+      description:
+        "Return the same JSON document `em conform-findings check <path> --json` prints " +
+        "(MIL-214): whether a conformance/<date>-findings.json file is shape-valid " +
+        "(findingsSchemaVersion, required fields, enum values, ids sorted+unique, a ruled " +
+        "finding carries resolvedBy+resolvedOn), and the finding count when it is. The conform " +
+        "skill writes this file directly alongside its report; this is how a headless run " +
+        "verifies what it just wrote.",
+      inputSchema: {
+        path: z.string().describe("path to a conformance/<date>-findings.json file"),
+      },
+    },
+    async ({ path }) => {
+      return textResult(buildCheckFindingsJson(checkFindingsFile(path)));
     },
   );
 

@@ -428,7 +428,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.12",
+  "schemaVersion": "1.13",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "modelKey": "order-fulfilment",
@@ -447,7 +447,7 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.12"`):
+**Schema summary** (`schemaVersion: "1.13"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
@@ -480,15 +480,19 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       frontmatter block, or is missing a required key — warns). `reason` is `null` exactly
       when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
       `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, `driftSignal`,
-      `reviewedBy`, `reviewedOn`, `ratifiedBy`, `ratifiedOn`, `owner`, and `tracking` are
+      `reviewedBy`, `reviewedOn`, `ratifiedBy`, `ratifiedOn`, `owner`, `tracking`,
+      `conformedVersion`, `conformedAt`, and `conformedOn` are
       populated from it (each `null`/`[]` otherwise).
       `driftSignal` (added in schema `1.5`,
-      MIL-85) is `"in-sync"` | `"never-implemented"` | `"unpropagated-delta"` |
-      `"implemented-without-link"` — the status/implementedIn coherence classification also
+      MIL-85; gained `"uncertified"` in schema `1.13`, MIL-214) is `"in-sync"` |
+      `"never-implemented"` | `"unpropagated-delta"` | `"implemented-without-link"` |
+      `"uncertified"` — the status/implementedIn/conformedVersion coherence classification also
       driving `em validate`'s frontmatter-coherence warning (see
-      [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence)); it's paired
-      with `version` from the same doc parse, so a consumer reporting drift should always cite
-      both together. `reviewedBy`/`reviewedOn` (added in schema `1.11`, MIL-201) are the doc's
+      [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence), which never
+      warns on `uncertified` — it's the expected post-ship default until the first conform, same
+      treatment `unpropagated-delta` gets); it's paired with `version` from the same doc parse, so
+      a consumer reporting drift should always cite both together. `reviewedBy`/`reviewedOn`
+      (added in schema `1.11`, MIL-201) are the doc's
       `reviewedBy:`/`reviewedOn:` frontmatter, written only by `em slice review` — both `null`
       when absent (a doc that hasn't reached the review gate, one predating this feature, or one
       reviewed by hand). `ratifiedBy`/`ratifiedOn` (added in schema `1.8`, MIL-165) are the doc's
@@ -500,7 +504,12 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       frontmatter — hand-filled, no `em` command writes either — both `null` when absent.
       `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
       mirroring this slice: `em` only stores and displays it, it never talks to a tracker
-      itself. Full contract: [slice-doc-schema.md](slice-doc-schema.md).
+      itself. `conformedVersion`/`conformedAt`/`conformedOn` (added in schema `1.13`, MIL-214)
+      are the doc's `conformedVersion:`/`conformedAt:`/`conformedOn:` frontmatter — the version,
+      target-repo revision, and local date a conform sweep last certified this slice, written
+      only by `em slice conform` (see [`em slice conform`](#em-slice-conform-file-slice-key---at-rev)
+      below) — all three `null` when never certified. Full contract:
+      [slice-doc-schema.md](slice-doc-schema.md).
     `continuationOf` and `alsoReads` (added in schema `1.12`, MIL-208) — a `view X again`
     instance is a **continuation** of the slice holding `X`'s first declaration, not a spec
     unit of its own: `continuationOf` is that originating slice's export key, or `null` for an
@@ -1260,13 +1269,20 @@ nothing here re-derives a rule another module owns:
   continuation slice (MIL-208 — an `again` view instance with no legacy doc of its own) leaves
   every bucket above — the originating slice's own fact already counts that status once — and is
   tallied instead in the separate top-level `continuations` count (see the JSON shape below).
-- **`driftSignal` breakdown** — the same status/`implementedIn` coherence classification
-  `em export`'s `slice.doc.driftSignal` carries (`catalog/driftSignal.ts`): `inSync`,
-  `neverImplemented`, `unpropagatedDelta`, `implementedWithoutLink`, tallied across every slice
-  with a usable doc. Two buckets exist for "nothing to classify," mirroring the status split
-  above: `notApplicable` (no doc found at all) and `frontmatterInvalid` (a doc found, but
+- **`driftSignal` breakdown** — the same status/`implementedIn`/`conformedVersion` coherence
+  classification `em export`'s `slice.doc.driftSignal` carries (`catalog/driftSignal.ts`):
+  `inSync`, `neverImplemented`, `unpropagatedDelta`, `implementedWithoutLink`, `uncertified`
+  (added in schema `1.5`, MIL-214 — `status: implemented` with a link but no matching
+  `conformedVersion`, the normal post-ship-before-first-conform state), tallied across every
+  slice with a usable doc. Two buckets exist for "nothing to classify," mirroring the status
+  split above: `notApplicable` (no doc found at all) and `frontmatterInvalid` (a doc found, but
   unusable) — always equal to `slices.byStatus.frontmatterInvalid`, since it's the same slices in
   both dimensions.
+- **`unruledFindings` per model** (added in schema `1.5`, MIL-214) — unruled (`locus: null`)
+  conformance findings in scope (every `implemented` slice; a `slice: null` finding counts as in
+  scope for all of them) from the `conformance/<date>-findings.json` beside that model's recorded
+  `Last conformance:` report — `null` when no findings JSON exists there (a report predating
+  `em conform-findings`, the migration path).
 - **invariant coverage totals** — `em coverage`'s own report builder, summed across every input
   model. Opt-in: only computed when `--tests <dir>` is given (see below).
 - **open `issue` markers + unchecked Open Questions** — the same `issue "text"` predicate
@@ -1346,7 +1362,7 @@ $ em status model.em --tests test/
 8/8 implemented · 20/20 invariants covered · 0 open issues · last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
 
 slices: 8 total — 8 implemented, 0 ready-to-implement, 0 reviewed, 0 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status
-driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc), 0 n/a (frontmatter invalid)
+driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 uncertified, 0 n/a (no doc), 0 n/a (frontmatter invalid)
 invariants: 20/20 covered (0 uncovered) — test/
 issues: 0 open issues, 0/0 open question(s) unchecked
 conformance: last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
@@ -1374,13 +1390,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.4"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.5"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.4",
+  "statusSchemaVersion": "1.5",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1393,7 +1409,7 @@ see [mcp.md](mcp.md)):
   "continuations": 0,
   "driftSignal": {
     "inSync": 8, "neverImplemented": 0, "unpropagatedDelta": 0, "implementedWithoutLink": 0,
-    "notApplicable": 0, "frontmatterInvalid": 0
+    "uncertified": 0, "notApplicable": 0, "frontmatterInvalid": 0
   },
   "invariants": { "testsDir": "test/", "total": 20, "cited": 20, "uncovered": 0 },
   "issues": { "openIssues": 0, "openQuestionsTotal": 0, "openQuestionsUnchecked": 0 },
@@ -1402,7 +1418,8 @@ see [mcp.md](mcp.md)):
       "file": "model.em",
       "modelDir": ".",
       "hasStateFile": true,
-      "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
+      "lastConformance": { "date": "2026-08-01", "revision": "abc123f", "partial": false },
+      "unruledFindings": 0,
       "repo": ".",
       "commitsBehindHead": 0,
       "slicePRsBehindHead": 0,
@@ -1420,12 +1437,19 @@ see [mcp.md](mcp.md)):
 
 `invariants` is `null` when `--tests <dir>` wasn't given. `conformance` has one entry per input
 file, in argument order; a model with no sibling state file reports `hasStateFile: false`,
-`lastConformance: null`, `commitsBehindHead: null`, `slicePRsBehindHead: null`, `error: null` —
+`lastConformance: null`, `unruledFindings: null`, `commitsBehindHead: null`,
+`slicePRsBehindHead: null`, `error: null` —
 not an error, just nothing to report yet. `error` is also set (non-null) — with
 `lastConformance`/`commitsBehindHead`/`slicePRsBehindHead` all `null` — when the state file's own
 `Model file:` bullet names a different file than the one being reported on (see above); a
 consumer that needs to tell "no history yet" apart from "history exists but couldn't be
 attributed/verified" should check `error`, not just `lastConformance`.
+
+`lastConformance.partial` (added in schema `1.5`, MIL-214) is `true` when the marker was recorded
+via `em state set-conformance --partial` — findings were still outstanding when the marker was
+written (see [`em state set-conformance`](#em-state-set-conformance-revision-dir) below).
+`unruledFindings` (added in schema `1.5`, MIL-214) is the count described above — `null` when no
+findings JSON exists beside the recorded report.
 
 `continuations` (added in schema `1.4`, MIL-208) is the count of continuation slices (`again`
 view instances with no legacy doc of their own) across every input file — excluded from every
@@ -1504,19 +1528,20 @@ The model must compile without errors (same refusal convention as `em status`). 
 diagnostics (`binding-missing-file`/`frontmatter-invalid`) are printed to stderr, non-fatal, same
 as `em status`.
 
-**`--json` shape** (`freshnessSchemaVersion: "1.1"` — this is also the exact document the MCP
+**`--json` shape** (`freshnessSchemaVersion: "1.2"` — this is also the exact document the MCP
 `freshness` tool returns, see [mcp.md](mcp.md)): the envelope wraps the model's single
 `ConformanceEntry` verbatim, the same shape one entry of `em status --json`'s `conformance[]`
 array carries:
 
 ```json
 {
-  "freshnessSchemaVersion": "1.1",
+  "freshnessSchemaVersion": "1.2",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "modelDir": ".",
   "hasStateFile": true,
-  "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
+  "lastConformance": { "date": "2026-08-01", "revision": "abc123f", "partial": false },
+  "unruledFindings": 0,
   "repo": ".",
   "commitsBehindHead": 2,
   "slicePRsBehindHead": 1,
@@ -1524,6 +1549,9 @@ array carries:
   "error": null
 }
 ```
+
+`lastConformance.partial`/`unruledFindings` (added in schema `1.2`, MIL-214) ride along the same
+way `constitution` does — see [`em status`](#em-status-files) above for what they mean.
 
 `constitution` (added in schema `1.1`, MIL-202) is the same per-model fact `em status` reports —
 carried because this document *is* one `ConformanceEntry`, not because staleness has anything to
@@ -2132,6 +2160,7 @@ pair around an empty table.
 | `Owner` | The doc's `owner` (MIL-171), or `—` |
 | `Tracking` | The doc's `tracking` (MIL-171), or `—` |
 | `Implemented in` | The doc's `implementedIn`, or `—` |
+| `Conformed` | (MIL-214) `v<N> @ <rev>` from the doc's `conformedVersion`/`conformedAt`, or `—` when never certified. Reports the recorded certification verbatim, even when stale (`conformedVersion` no longer matches the current `version` — `driftSignal: uncertified`); `em status`/`em export`'s `driftSignal` is where "is this still current" is judged |
 | `Design doc` | Always a link to the conventional `slices/<slice-key>.md` path, whether or not that file exists yet |
 
 | Flag | Effect |
@@ -2444,6 +2473,101 @@ em slice reratify model.em request-payment
 # -> reratified: slices/request-payment.md (version: 2, status: ready-to-implement)
 ```
 
+**Certification advisory (MIL-214).** Never refuses — printed to stderr, computed from the
+version being SUPERSEDED (i.e. before the bump): `warn: reratifying "<key>" whose v<N> was never
+certified` when the current version's `conformedVersion` is absent or doesn't match it, and/or
+`warn: reratifying "<key>" has <n> unruled conformance finding(s)` when any
+`conformance/*-findings.json` beside the model still has an unruled (`locus: null`) finding in
+scope for this slice — the same advisory pattern `em slice ratify`'s MIL-198 upstream-timeline
+warning uses (data, not a gate: the team may have good reason to move on before a conform sweep
+ever ran).
+
+## `em slice conform <file> <slice-key> --at <rev>`
+
+Records per-slice-per-version conformance certification (MIL-214): "a conform sweep walked THIS
+version of this slice's code, against target-repo revision `<rev>`, and found nothing left
+unruled." Sets exactly three frontmatter fields on the doc resolved from `<slice-key>` via the
+same note-binding join `ratify`/`reratify`/`mark-implemented`/`em export` use
+(`resolveSliceDocJoin` — MIL-121 cross-binding included), inserted directly after
+`implementedIn:` when none of the three exist yet:
+
+```yaml
+conformedVersion: <doc.version>
+conformedAt: <rev>
+conformedOn: <local date>
+```
+
+| Flag | Effect |
+|---|---|
+| `--at <rev>` | Required. The target-repo revision this certification sweep diffed against |
+| `--on <date>` | Certification date, `YYYY-MM-DD` (default: today, local date) |
+| `--skip-findings-check` | Certify even with unruled findings in scope — prints a loud notice on stderr |
+
+Legal only for `status: implemented` with a non-empty `implementedIn:` link — refuses otherwise
+(there's no code to certify, or nothing to certify it against). Idempotent on the exact same
+`(conformedVersion, conformedAt)` pair (re-running is a no-op, `conformedOn` untouched); a
+DIFFERENT `--at` for the same version simply OVERWRITES — a later re-certification is legal and
+common, and `em` has no way to tell "later" from "earlier" for an arbitrary target-repo revision
+string without walking that repo's own git history (which this command never does), so there's no
+`--force` escape hatch to reach for. Refuses a continuation key (MIL-208 — `<slice-key>` is an
+again-view-only slice with no doc of its own).
+
+**The findings-check gate.** Refuses when the newest `conformance/<date>-findings.json` (by
+filename, i.e. by date) whose `revision` equals `--at` still has an unruled (`locus: null`)
+finding in scope for this slice (`slice` equal to `<slice-key>`, or `slice: null` — ambiguous/
+whole-model findings block every slice) — the whole point of this command existing:
+certification means every finding touching this slice's version was actually ruled on.
+`--skip-findings-check` overrides, printing `notice: --skip-findings-check — certifying "<key>"
+with <n> unruled conformance finding(s) still in scope (id ...)` on stderr — never silent. No
+matching findings file at all (none for that revision, or no `conformance/` directory) is not an
+error — nothing to check, certification proceeds.
+
+| Error | Meaning |
+|---|---|
+| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; conform "<originating-key>" instead` | (MIL-208) certify the originating slice named instead |
+| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
+| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
+| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key |
+| `slice "<key>" is \`status: <x>\` — only a slice at \`status: implemented\` can be certified; ...` | The status precondition |
+| `slice "<key>" has \`status: implemented\` but no \`implementedIn:\` link — nothing to certify against` | The implementedIn precondition |
+| `doc's \`version:\` value "<x>" isn't a positive integer — refusing to certify` | Can't derive `conformedVersion` from an unparseable `version:` |
+| `slice "<key>" has <n> unruled conformance finding(s) in ... — rule on them (...) or pass --skip-findings-check` | The findings-check gate — see above |
+
+```bash
+em slice conform model.em request-payment --at 8f12ed8
+# -> certified: slices/request-payment.md (conformedVersion: 2, conformedAt: 8f12ed8, conformedOn: 2026-09-08)
+em slice conform model.em request-payment --at 8f12ed8 --skip-findings-check
+```
+
+## `em conform-findings check <path>`
+
+Read-only shape validator for a `conformance/<date>-findings.json` file (MIL-214) — the
+structured findings record the conform skill writes directly alongside its report (no dedicated
+`em conform-findings <model> <report> --add` writer exists; see
+[slice-doc-schema.md](slice-doc-schema.md) / [process.md](process.md) for the record's full
+shape). Checks: `findingsSchemaVersion`/`model`/`report`/`revision` are non-empty strings; each
+finding has an integer `id` (unique, ascending); `surface` is one of `structural`/`spec`/
+`internal`/`other`; `class`/`evidence` are non-empty strings; `slice` is a string or `null`;
+`locus` is `null` or one of `model`/`doc`/`code`/`none`; `resolvedBy`/`resolvedOn` are non-empty/
+valid-date-or-`null`, and BOTH are required once `locus` is non-null (a ruling is recorded with
+who and when, same discipline every other ratify/review/rule act in `em` holds).
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print a JSON document instead of the text report |
+
+```bash
+em conform-findings check conformance/2026-09-08-findings.json
+# -> ok — conformance/2026-09-08-findings.json: 3 finding(s), shape valid
+em conform-findings check conformance/2026-09-08-findings.json --json
+```
+
+Exit 1 (with each shape error printed, one per line) on any problem — this is how a headless
+conform run verifies what it just wrote. `--json` shape: `{ ok, path, findingsCount, errors }` —
+`findingsCount` is `null` on failure, `errors` is `[]` on success. Also exposed as the MCP
+`conform_findings_check` tool (see [mcp.md](mcp.md)).
+
 ## `em changelog <file>`
 
 Renders the model's git history as a business-readable ledger — one section per commit
@@ -2576,10 +2700,31 @@ parses back out:
 | Flag | Effect |
 |---|---|
 | `--report <path>` | Path to the conformance report just written (required) |
+| `--partial` | Record the marker as PARTIAL even though some in-scope findings are still unruled |
 
 ```bash
 em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
 ```
+
+**The findings gate (MIL-214).** Refuses when the `conformance/<date>-findings.json` beside
+`--report` has any unruled (`locus: null`) finding in scope — every `implemented` slice in the
+sibling state file's own model (compiled to find them; a model that doesn't exist or has errors
+skips this gate rather than blocking on an unrelated problem), plus every `slice: null` finding
+regardless (ambiguous — blocks the whole marker). `--partial` records the marker with a trailing
+` (partial)` suffix instead of refusing, and prints `notice: conformance marker recorded as
+PARTIAL — N finding(s) unruled` on stderr — the `ratify --skip-review` escape-hatch pattern, never
+a silent bypass. Without a findings JSON beside `--report` at all (a report predating `em
+conform-findings`): warns once on stderr and records the marker as given — the migration path.
+
+```bash
+em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md --partial
+# -> notice: conformance marker recorded as PARTIAL — 2 finding(s) unruled
+# -> wrote my-model/.event-modeling.md
+```
+
+`partial` is parsed back out on `em state read` as `lastConformance.partial: true`, and surfaced
+by every reader of `Last conformance:` — `em conform-scope`'s own `lastConformance.partial`,
+`em status`/`em freshness`'s `conformance[].lastConformance.partial`.
 
 ### `em state set-review <date> [dir]`
 
@@ -2766,6 +2911,8 @@ compiled, and neither the `.em` nor any slice doc is touched.
 | `--as-of <rev>` | The revision this ruling was made against — pass the same value you're about to (or just did) hand to `em state set-conformance` (required) |
 | `--findings <spec>` | Which finding number(s) this stamps as ruled, e.g. `"1-3"` or `"1,2,4"` (required) |
 | `--on <date>` | Ruling date, `YYYY-MM-DD` (default: today, local date) |
+| `--locus <locus>` | (MIL-214) `model` \| `doc` \| `code` \| `none` — who/what the named finding(s) say is wrong. Requires `--by` |
+| `--by <name>` | (MIL-214) Who ruled on the named finding(s). Requires `--locus` |
 
 ```bash
 em conform-supersede model.em conformance/2026-08-23-report.md --as-of a1b2c3d --findings 1-3
@@ -2800,6 +2947,22 @@ banner. Refuses (exit 1) when `<report-path>` doesn't exist — this command sta
 report, it never authors one — or when `--as-of`/`--findings`/`--on` fail their own validation
 (a control character or backtick in the revision, an unsafe `--findings` value, a malformed
 `--on` date).
+
+**`--locus`/`--by` (MIL-214, both required together).** Additionally records the RULING itself —
+not just that a ruling happened — onto the `conformance/<date>-findings.json` beside the report
+(same date, `-report.md` -> `-findings.json`), via the same refuse-different-identity discipline
+`em slice ratify` holds for `ratifiedBy`/`ratifiedOn`: refuses to change an already-different
+`locus` recorded on a named finding, rather than silently overwriting a prior ruling. Idempotent
+on the exact same locus/by/on. When no findings JSON exists beside the report at all (a report
+predating `em conform-findings`): warns once on stderr and stamps the banner only — the migration
+path.
+
+```bash
+em conform-supersede model.em conformance/2026-08-23-report.md --as-of a1b2c3d --findings 1 \
+  --locus code --by "Alex Rivera"
+# -> ruled: conformance/2026-08-23-findings.json (finding(s) 1 -> locus: code, by: Alex Rivera)
+# -> stamped superseded: conformance/2026-08-23-report.md (as of a1b2c3d, findings 1, on 2026-09-08)
+```
 
 There is no MCP tool for this command: it's a write/mutate operation (same as `em slice ratify`),
 and MCP parity in this codebase covers *read* surfaces with `--json` (see docs/mcp.md).

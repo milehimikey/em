@@ -39,6 +39,13 @@
 // (best-effort) the file's own line-ending style — is copied through verbatim. The `## Delta`
 // section (docs/slice-doc-schema.md#delta-section-grammar-and-lifecycle) recording WHAT changed
 // stays entirely hand-authored — this command only ever touches the two lifecycle fields above.
+//
+// MIL-214: `reratifyAdvisory` below is the certification-aware counterpart to MIL-198's
+// upstream-timeline advisory (ratify.ts's `upstreamUnratifiedSlices`) — same shape, same
+// never-refuses stance. Bumping a version whose CURRENT one was never certified (or still has
+// unruled conformance findings) isn't wrong — the team may have good reason to move on before a
+// conform sweep ever ran — so this is advisory only, printed by the CLI layer, never gating the
+// bump itself.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,6 +54,7 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
+import { listAllFindingsFiles, unruledFindingsInScope } from "./findings.js";
 
 /** The status a doc must already be in for `reratify` to apply — mirrors `RATIFIED_STATUS` in
  *  ratify.ts (the status this command flips TO), named separately since it's the precondition
@@ -120,8 +128,38 @@ export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
   return { ok: true, content, newVersion };
 }
 
+/** MIL-214: the certification-aware advisory `runReratify` computes about the version being
+ *  superseded — never gates the bump, see module header. */
+export interface ReratifyAdvisory {
+  /** True when the CURRENT (pre-bump) version has no matching `conformedVersion` — either never
+   *  certified at all, or certified against a different version. */
+  neverCertified: boolean;
+  /** Count of unruled (`locus: null`) conformance findings in scope for this slice, across every
+   *  `conformance/*-findings.json` beside the model — not scoped to one revision, since a
+   *  reratify has no `--at` of its own to anchor on. */
+  unruledFindingsCount: number;
+}
+
+/** Pure: the two facts `runReratify`'s advisory reports, from the doc's own pre-bump
+ *  `version`/`conformedVersion` plus a scan of every findings file beside the model — see
+ *  `ReratifyAdvisory`. No refusal here or anywhere downstream; this is data for the CLI layer to
+ *  print as `warn:` lines. */
+export function reratifyAdvisory(
+  baseDir: string,
+  sliceKey: string,
+  currentVersion: number | null,
+  conformedVersion: number | null,
+): ReratifyAdvisory {
+  const neverCertified = conformedVersion === null || conformedVersion !== currentVersion;
+  let unruledFindingsCount = 0;
+  for (const { doc } of listAllFindingsFiles(baseDir)) {
+    unruledFindingsCount += unruledFindingsInScope(doc.findings, new Set([sliceKey])).length;
+  }
+  return { neverCertified, unruledFindingsCount };
+}
+
 export type RunReratifyResult =
-  | { ok: true; path: string; newVersion: number }
+  | { ok: true; path: string; newVersion: number; advisory: ReratifyAdvisory }
   | { ok: false; message: string };
 
 /**
@@ -178,6 +216,11 @@ export function runReratify(
     };
   }
 
+  // MIL-214: computed from the doc's PRE-BUMP version/certification — the question is "was the
+  // version we're about to supersede ever fully certified," which is only answerable before the
+  // write below changes `version`.
+  const advisory = reratifyAdvisory(baseDir, sliceKey, doc.version, doc.conformedVersion);
+
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
   const result = applyReratifyFrontmatter(raw);
@@ -185,5 +228,5 @@ export function runReratify(
     return { ok: false, message: `${doc.path}: ${result.message}` };
   }
   writeFileSync(absPath, result.content, "utf8");
-  return { ok: true, path: doc.path, newVersion: result.newVersion };
+  return { ok: true, path: doc.path, newVersion: result.newVersion, advisory };
 }
