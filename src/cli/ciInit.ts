@@ -151,6 +151,23 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
             echo "no vendored skill at .claude/skills/event-modeling — skipping (run \`em skill install\` to opt in)"
           fi
 
+  upgrade-check:
+    name: "em upgrade --check (advisory — hard incompatibilities only, MIL-219)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check for hard upgrade incompatibilities
+        # Advisory: exits non-zero ONLY on a hard incompatibility (an unparseable state file, an
+        # old .em shape em migrate itself refuses) — never on the ordinary "some mechanical
+        # steps are applicable" case. See docs/upgrading.md.
+        run: ${em} upgrade "${model}" --check
+
   glossary:
     name: "em glossary --fail-on-conflicts (cross-model vocabulary)"
     if: github.event_name == 'pull_request'

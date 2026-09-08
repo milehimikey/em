@@ -22,6 +22,19 @@
 // update it in place afterward — the only two writers in this module that ever ADD a line
 // rather than only ever replacing one that's already there.
 //
+// MIL-219: `Em version:` — which `em` last wrote this file — is a THIRD migration-tolerant
+// bullet, same "absent parses as the sentinel, never an error" treatment (its sentinel is the
+// literal `unknown`, not `none`/`never` — there's no meaningful zero value for "which em," just
+// "we don't know"). Anchored right after `Model file:` (the state file's very first bullet)
+// rather than beside the other two MIL-218 bullets — it's provenance about the TOOL, not about
+// the model's own version history, so it reads first. Written by `em scaffold` (the installed
+// em at scaffold time) and, per the MIL-219 ruling, by EVERY `em state` writer: cli.ts's shared
+// `writeStateUpdate` helper stamps it on every successful write, since each of those write paths
+// is already rewriting the file — see that function, not this module, for the actual stamping
+// (this module only exposes the pure `setEmVersion` patch, same split every other bullet here
+// holds). `em upgrade --apply` additionally writes it as its own dedicated final commit,
+// regardless of whether any of its five mechanical steps applied — see src/cli/upgrade.ts.
+//
 // Pure text in, text/data out (parseState, setPhase, setConformance, setModelVersion,
 // setCertified, setReview); `loadStateFile` is the one bit of fs I/O, kept here so both `em
 // state` (src/cli.ts) and any future caller share the same file-location convention instead of
@@ -53,12 +66,13 @@ const LABELS = {
   lastStakeholderReview: "Last stakeholder review",
 } as const;
 
-/** MIL-218: the two migration-tolerant bullets — see module header. Kept in a separate map
- *  from `LABELS` (rather than folded in) so `parseState`'s missing-bullet loop can treat them
- *  differently: absent is `none`/`never`, never a parse error. */
+/** MIL-218/MIL-219: the three migration-tolerant bullets — see module header. Kept in a separate
+ *  map from `LABELS` (rather than folded in) so `parseState`'s missing-bullet loop can treat them
+ *  differently: absent is `none`/`never`/`unknown`, never a parse error. */
 const OPTIONAL_LABELS = {
   modelVersion: "Model version",
   certified: "Certified",
+  emVersion: "Em version",
 } as const;
 
 /** The state file's mechanical fields, decoded to plain data. `lastConformance`/`lastReview`
@@ -73,6 +87,12 @@ export interface ParsedState {
   lastConformance: { date: string; revision: string; report: string; partial: boolean } | null;
   modelVersion: number | null;
   certified: { version: number; revision: string; date: string } | null;
+  /** MIL-219: the `Em version:` bullet's value, or `null` for the `unknown` sentinel (including
+   *  when the bullet is missing entirely from a state file predating this feature — same
+   *  migration-tolerant treatment `modelVersion`/`certified` get). Never validated as a real
+   *  semver here — this module only reads/writes the bullet text; `util/semver.ts` is where a
+   *  caller that needs to compare it against the installed version goes. */
+  emVersion: string | null;
   lastReview: string | null;
 }
 
@@ -150,7 +170,8 @@ export function parseState(text: string): ParseStateResult {
   }
   const optionalRaw: Record<string, string> = {};
   for (const label of Object.values(OPTIONAL_LABELS)) {
-    optionalRaw[label] = bulletValue(text, label) ?? (label === OPTIONAL_LABELS.modelVersion ? "none" : "never");
+    const sentinel = label === OPTIONAL_LABELS.modelVersion ? "none" : label === OPTIONAL_LABELS.emVersion ? "unknown" : "never";
+    optionalRaw[label] = bulletValue(text, label) ?? sentinel;
   }
 
   const modelPath = raw[LABELS.modelFile].replace(/^`|`$/g, "");
@@ -207,6 +228,9 @@ export function parseState(text: string): ParseStateResult {
     certified = { version: Number(m[1]), revision: m[2], date: m[3] };
   }
 
+  const emVersionRaw = optionalRaw[OPTIONAL_LABELS.emVersion];
+  const emVersion = emVersionRaw === "unknown" ? null : emVersionRaw;
+
   return {
     ok: true,
     state: {
@@ -217,6 +241,7 @@ export function parseState(text: string): ParseStateResult {
       lastConformance,
       modelVersion,
       certified,
+      emVersion,
       lastReview,
     },
   };
@@ -306,6 +331,18 @@ export function setConformance(text: string, revision: string, report: string, t
   ]);
 }
 
+/** MIL-219: rewrite `Em version:` (inserting it right after `Model file:` — the state file's
+ *  very first bullet, module header — the first time a migrated file is touched) plus `Last
+ *  updated:`. `version` is trusted to already be the em that's doing the writing — every caller
+ *  passes its own `PKG_VERSION`/installed version, never a value read back from somewhere else.
+ *  The one writer every OTHER `em state` mutator's output is piped through (cli.ts's
+ *  `writeStateUpdate`) — see module header — so this is rarely called directly outside that
+ *  wrapper and `em upgrade`'s own final commit (src/cli/upgrade.ts). */
+export function setEmVersion(text: string, version: string, today: string): PatchResult {
+  const withVersion = insertOrUpdateBullet(text, OPTIONAL_LABELS.emVersion, version, LABELS.modelFile);
+  return applyBulletUpdates(withVersion, [{ label: LABELS.lastUpdated, value: today }]);
+}
+
 /** `em model version bump` (MIL-218): rewrite `Model version:` (inserting it right after `Last
  *  conformance:` the first time a migrated file is touched — see module header) plus `Last
  *  updated:`. `version` is trusted to already be the freshly-bumped design version — the CLI
@@ -330,6 +367,31 @@ export function setCertified(text: string, version: number, revision: string, da
   const anchor = bulletLineRegex(OPTIONAL_LABELS.modelVersion).test(text) ? OPTIONAL_LABELS.modelVersion : LABELS.lastConformance;
   const withCertified = insertOrUpdateBullet(text, OPTIONAL_LABELS.certified, value, anchor);
   return applyBulletUpdates(withCertified, [{ label: LABELS.lastUpdated, value: today }]);
+}
+
+/** `em upgrade`'s `state-file` step (MIL-219): insert whichever of `Model version:`/`Certified:`
+ *  are missing from `text` ENTIRELY, each at its own template default (`none`/`never` — same
+ *  sentinels `parseState` already tolerates when a bullet is absent) — everything else, byte for
+ *  byte, untouched. Deliberately excludes `Em version:`: that bullet gets its own dedicated
+ *  final commit from `em upgrade --apply` (src/cli/upgrade.ts), regardless of whether this step
+ *  ran at all, so folding it in here would double-write it across two commits on a first-ever
+ *  upgrade. A no-op (both bullets already present) returns `text` unchanged — the caller decides
+ *  whether "nothing changed" means "nothing to commit," same idempotency contract every other
+ *  upgrade step holds. */
+export function ensureOptionalBullets(text: string, today: string): PatchResult {
+  let result = text;
+  let changed = false;
+  if (!bulletLineRegex(OPTIONAL_LABELS.modelVersion).test(result)) {
+    result = insertOrUpdateBullet(result, OPTIONAL_LABELS.modelVersion, "none", LABELS.lastConformance);
+    changed = true;
+  }
+  if (!bulletLineRegex(OPTIONAL_LABELS.certified).test(result)) {
+    const anchor = bulletLineRegex(OPTIONAL_LABELS.modelVersion).test(result) ? OPTIONAL_LABELS.modelVersion : LABELS.lastConformance;
+    result = insertOrUpdateBullet(result, OPTIONAL_LABELS.certified, "never", anchor);
+    changed = true;
+  }
+  if (!changed) return { ok: true, text };
+  return applyBulletUpdates(result, [{ label: LABELS.lastUpdated, value: today }]);
 }
 
 /** `em state set-review`: rewrite `Last stakeholder review:` (per templates/state.md's format)

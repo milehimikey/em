@@ -8,7 +8,8 @@ linter would. This is a copy-paste GitHub Actions workflow that does that, plus 
 **Installed, not just copy-pasted:** `em ci init <model>` (MIL-166, see
 [cli.md](cli.md#em-ci-initmodel)) scaffolds most of this page's recipe as two ready-to-commit
 GitHub Actions files — `em validate` below, `em slice index --check`, `em coverage --strict`,
-`em ledger`, `em skill check`, `em glossary --fail-on-conflicts`, a status-badge rebuild, and
+`em ledger`, `em skill check`, `em upgrade --check` (advisory, MIL-219 — see
+[upgrading.md](upgrading.md)), `em glossary --fail-on-conflicts`, a status-badge rebuild, and
 the conformance cadence — in one command, marker-delimited and idempotent the same way `em
 skill install` is. The rest of this page stays the reference for what each check does and why;
 reach for `em ci init` when you just want it wired.
@@ -284,6 +285,13 @@ version CI just installed, add `em skill check` as its own gate instead of silen
 `em skill check` exits non-zero on any mismatch — a stale `em-version:` stamp, or content that
 diverges from the packaged skill even with a matching stamp (e.g. a hand-edited file). See
 [cli.md](cli.md#em-skill-check-path) for the full flag/output reference and `--json` shape.
+
+`em upgrade <model>.em --check` (MIL-219, wired by default in the `em ci init` scaffold) is the
+broader advisory version of the same idea: it exits non-zero only on a HARD incompatibility (an
+unparseable state file, or an old `.em` shape `em migrate` itself refuses) rather than on every
+drift signal — a repo with mechanical steps left to apply, or human items to work through, stays
+green. See [upgrading.md](upgrading.md) for the full step/human-item catalog and the
+release-by-release ledger of what changed.
 
 Ground rules, matching the phase's own stance (see
 `.claude/skills/event-modeling-conform/reference/conform.md` once the skill is installed):

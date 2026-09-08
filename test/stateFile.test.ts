@@ -29,7 +29,7 @@ import {
   STATE_FILE_NAME,
 } from "../src/cli/stateFile.js";
 
-const SCAFFOLDED = scaffoldStateFile("Order Fulfillment", "order-fulfillment", "2026-08-20");
+const SCAFFOLDED = scaffoldStateFile("Order Fulfillment", "order-fulfillment", "2026-08-20", "1.13.0");
 
 // A hand-built state file with both markers filled, mirroring what set-conformance/set-review
 // would have written on a prior run — used to test parseState's "filled" path since
@@ -95,6 +95,7 @@ describe("parseState", () => {
         lastConformance: null,
         modelVersion: null,
         certified: null,
+        emVersion: "1.13.0",
         lastReview: null,
       },
     });
@@ -117,6 +118,7 @@ describe("parseState", () => {
         },
         modelVersion: null,
         certified: null,
+        emVersion: "1.13.0",
         lastReview: "2026-08-02",
       },
     });

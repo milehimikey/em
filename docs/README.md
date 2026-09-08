@@ -27,6 +27,7 @@ agent can carry with human review.
 | Give an MCP client (Claude Code, Cursor, ...) structured tool access to a model | [mcp.md](mcp.md) |
 | Check vocabulary consistency across multiple models | [cli.md](cli.md#em-glossary-files) |
 | Validate models in CI, or run conformance on a schedule | [ci.md](ci.md) |
+| Bring a model repo forward across em releases (`em upgrade`) | [upgrading.md](upgrading.md) |
 | Know what's bundled vs. what needs a system install | [dependencies.md](dependencies.md) |
 | See what usage data em captures, and how to roll it up for a retro | [usage-data.md](usage-data.md) |
 | Understand how rendering works under the hood | [architecture.md](architecture.md) |

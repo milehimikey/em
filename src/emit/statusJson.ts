@@ -35,7 +35,10 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // version (from `model-versions/*.json`, or null if never bumped), the most recently certified
 // version (if any), and whether the vector has drifted since the design version was bumped.
 // See ../cli/status.ts's ModelVersionStatusEntry.
-export const STATUS_SCHEMA_VERSION = "1.6";
+// 1.7 (MIL-219): a new top-level `emVersion` array — one entry per input file whose state file
+// resolved: the recorded `Em version:` bullet (null when absent/unknown), the em actually
+// running, and whether the recorded one is behind. See ../cli/status.ts's EmVersionStatusEntry.
+export const STATUS_SCHEMA_VERSION = "1.7";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No
@@ -53,6 +56,7 @@ export function buildStatusJson(report: StatusReport): string {
     issues: report.issues,
     conformance: report.conformance,
     modelVersion: report.modelVersion,
+    emVersion: report.emVersion,
     owners: report.owners,
     // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
     // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,

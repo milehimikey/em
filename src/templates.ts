@@ -120,6 +120,7 @@ Keep it current at the end of every working session.
 # Event Modeling Progress — {{Model Name}}
 
 - **Model file:** \`{{model-name}}.em\`
+- **Em version:** {{X.Y.Z}}
 - **Current phase:** {{discover | extract | model | slice | implement | conform | review | validate}}
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}
@@ -336,12 +337,13 @@ export function scaffoldReadme(displayName: string, slugName: string): string {
  *  Usage log, Open questions) is dropped rather than filled, leaving a real empty heading with
  *  the template's own guidance comment intact where it has one — per the skill's "don't guess,
  *  park it" principle, never a fabricated example. Never leaves \`{{...}}\` in the result. */
-export function scaffoldStateFile(displayName: string, slugName: string, today: string): string {
+export function scaffoldStateFile(displayName: string, slugName: string, today: string, emVersion: string): string {
   // Replacer functions for the display-name/slug fills, not string patterns — a string
   // replacement would let `$&`/`$$`/etc. in the value expand against the match instead of
   // being inserted literally.
   const filled = STATE_TEMPLATE.replace("{{Model Name}}", () => displayName)
     .replace("{{model-name}}", () => slugName)
+    .replace("{{X.Y.Z}}", () => emVersion) // "Em version:" (MIL-219) — the installed em at scaffold time
     .replace("{{discover | extract | model | slice | implement | conform | review | validate}}", "discover")
     .replace("{{1\u20137, see methodology; or extraction round R1\u2013R7}}", "1")
     .replace("{{YYYY-MM-DD}}", today) // "Last updated" — the first occurrence; later ones belong to

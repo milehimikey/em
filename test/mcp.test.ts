@@ -295,7 +295,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the eighteen documented tools", async () => {
+  it("exposes exactly the nineteen documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -317,6 +317,7 @@ describe("tools/list", () => {
         "slice_ready",
         "system",
         "status",
+        "upgrade",
         "validate",
       ].sort(),
     );
@@ -541,7 +542,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.6");
+    expect(doc.statusSchemaVersion).toBe("1.7");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -682,6 +683,54 @@ describe("status tool: modelVersion field (MIL-218)", () => {
     const cli = em(["status", join(modelVersionDir, "mv.em"), "--json"], modelVersionDir);
     expect(cli.status).toBe(0);
     expect(JSON.parse(cli.stdout).modelVersion).toEqual(doc.modelVersion);
+  });
+});
+
+describe("upgrade tool (MIL-219)", () => {
+  let upgradeDir: string;
+
+  beforeAll(() => {
+    upgradeDir = mkdtempSync(join(tmpdir(), "em-mcp-upgrade-"));
+    writeFileSync(
+      join(upgradeDir, "checkout.em"),
+      'slice "Payments To Process" {\n  view Payments To Process from "Payment Requested"\n  processor Payment Gateway\n}\n\nslice "Capture Payment" {\n  command Capture Payment\n  event Payment Captured @Payment\n}\n',
+    );
+    writeFileSync(
+      join(upgradeDir, ".event-modeling.md"),
+      "# Event Modeling Progress — Upgrade Fixture\n\n" +
+        "- **Model file:** `checkout.em`\n" +
+        "- **Current phase:** slice\n" +
+        "- **Current step:** 4\n" +
+        "- **Last updated:** 2026-01-01\n" +
+        "- **Last conformance:** never\n" +
+        "- **Last stakeholder review:** never\n",
+    );
+    git(["init", "-q"], upgradeDir);
+    git(["add", "-A"], upgradeDir);
+    git(["commit", "-qm", "init"], upgradeDir);
+  });
+
+  afterAll(() => {
+    rmSync(upgradeDir, { recursive: true, force: true });
+  });
+
+  it("dry-run reports the old two-slice reaction shape as applicable, never writing anything (byte-identical to `em upgrade --json`)", async () => {
+    const { doc } = await callJson(client, "upgrade", { file: join(upgradeDir, "checkout.em") });
+    expect(doc.from.version).toBe("1.6.0");
+    const byId = Object.fromEntries(doc.steps.map((s: { id: string; applicable: boolean }) => [s.id, s.applicable]));
+    expect(byId["reaction-shape"]).toBe(true);
+    expect(byId["state-file"]).toBe(true);
+
+    const cli = em(["upgrade", join(upgradeDir, "checkout.em"), "--json"], upgradeDir);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout)).toEqual(doc);
+    // Never writes: still the exact same working tree the CLI call above also left clean.
+    expect(git(["status", "--porcelain"], upgradeDir).stdout.trim()).toBe("");
+  });
+
+  it("does not refuse on a model with validation errors — the old shape IS such an error", async () => {
+    const { result } = await callJson(client, "upgrade", { file: join(upgradeDir, "checkout.em") });
+    expect(result.isError).toBeFalsy();
   });
 });
 

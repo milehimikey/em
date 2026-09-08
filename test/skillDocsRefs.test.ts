@@ -29,7 +29,7 @@ const OPERATING_PRINCIPLES_MD = join(SKILLS_ROOT, "event-modeling-shared/referen
 // can live without mid-task, covered by operating-principles.md's one convention note rather
 // than a per-occurrence marker. Adding a name here is itself the deliberate triage decision the
 // header comment above describes.
-const EM_REPO_ONLY_DOCS = new Set(["cli", "ci", "process", "mcp", "usage-data", "validation", "dsl", "model-versions"]);
+const EM_REPO_ONLY_DOCS = new Set(["cli", "ci", "process", "mcp", "usage-data", "validation", "dsl", "model-versions", "upgrading"]);
 
 function skillMarkdownFiles(): string[] {
   const out: string[] = [];

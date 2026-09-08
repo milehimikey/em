@@ -28,6 +28,8 @@
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
+| `em ci init <model>` | Install the CI enforcement preset — two GitHub Actions workflow files, marker-managed and idempotent |
+| `em upgrade <file>` | Bring a model repo authored under an older em (1.6 forward) up to the installed version: mechanical steps + a human list |
 
 Every command that reads a model also parses and validates it first, printing any
 diagnostics (see [validation.md](validation.md)).
@@ -56,7 +58,7 @@ a single `-`); the display name you passed is used as-is for titles/prose. Creat
 |---|---|
 | `<slug>/<slug>.em` | The same starter model `em init` writes, titled `model "<name>"` |
 | `<slug>/README.md` | Overview + slice index, `{{Model Name}}`/`{{model-name}}` filled in; the `GENERATED:slices` table stays empty (run `em slice index` once the model has slices) |
-| `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
+| `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Em version:` = the installed em, `Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
 | `<slug>/constitution.md` | The implementation constitution (MIL-202) — the project's house rules (stack + pattern→skill routing, code style, testing norms, NFR baselines, review/merge norms). Only the project name is filled: every section keeps the elicitation question it opens with and its `{{...}}` answer block, and `ratifiedBy:`/`ratifiedOn:` ship empty, because an unanswered, unratified constitution must read as one. **Not written in a spec-kit project** — see below |
 
 This is the machinery behind the bundled `event-modeling` Claude Code skill's "scaffold the
@@ -1403,13 +1405,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.6"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.7"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.6",
+  "statusSchemaVersion": "1.7",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1448,6 +1450,9 @@ see [mcp.md](mcp.md)):
       "drifted": false,
       "changes": { "hashChanged": false, "slices": [] }
     }
+  ],
+  "emVersion": [
+    { "file": "model.em", "recorded": "1.12.0", "installed": "1.13.0", "behind": true }
   ],
   "owners": [
     { "file": "model.em", "key": "checkout", "owner": "Team Checkout" },
@@ -1502,6 +1507,19 @@ report prints one `model version: v<N> — certified v<M> @ <rev>` line per mode
 when `design` is `null`, ` (drifted since bump)` appended when `drifted` is `true`), labelled
 `model version (<file>):` when there's more than one input; `--md` carries a matching `Model
 version` row. See [model-versions.md](model-versions.md).
+
+`emVersion` (added in schema `1.7`, MIL-219) has one entry per input file whose state file
+resolved (skipped entirely, not a `null` placeholder, when the state file is missing or fails to
+parse — same non-fatal treatment `modelVersion`'s per-file resolution gets) — `recorded` is the
+state file's `Em version:` bullet verbatim (`null` for the `unknown` sentinel, including a state
+file that predates the bullet entirely), `installed` is the em actually running, and `behind` is
+`true` only when `recorded` parses and is strictly older than `installed` (never `true` off an
+unparseable/absent `recorded` — "can't prove it's behind" reads the same as "not behind" for a
+warn-only advisory; `em upgrade` is the actual authority on whether a repo needs work). The text
+report prints one `em version: recorded <x>, installed <y>` line per model (` — behind, run \`em
+upgrade\`` appended when `behind`), labelled `em version (<file>):` when there's more than one
+input; `--md` carries a matching `Em version` row. `em skill check` prints the same behind-advisory
+line, independently, for its own `[path]` argument's state file. See [upgrading.md](upgrading.md).
 
 `owners` (added in schema `1.2`, MIL-171) is a flat, one-entry-per-slice list across every input
 file — `owner` is the slice's bound doc's `owner:` frontmatter verbatim, `null` when absent or
@@ -2930,17 +2948,21 @@ derived values.
 
 Reads and writes the **mechanical** fields of a model's state file (`.event-modeling.md`,
 see [ai-workflow.md](ai-workflow.md) and the `event-modeling` skill's `templates/state.md`):
-`Model file:`, `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Model
-version:`, `Certified:`, `Last stakeholder review:`. This is the enforcement point for the
-phase enum and for the exact `Last conformance:`/`Model version:`/`Certified:`/`Last
-stakeholder review:` formats the skill's `conform`/`review` phases (and `em model version`,
-MIL-218) depend on — hand-editing these bullets risks a typo the next resume/conform run can't
-parse.
+`Model file:`, `Em version:`, `Current phase:`, `Current step:`, `Last updated:`, `Last
+conformance:`, `Model version:`, `Certified:`, `Last stakeholder review:`. This is the
+enforcement point for the phase enum and for the exact `Last conformance:`/`Model
+version:`/`Certified:`/`Last stakeholder review:` formats the skill's `conform`/`review` phases
+(and `em model version`, MIL-218) depend on — hand-editing these bullets risks a typo the next
+resume/conform run can't parse.
 
-`Model version:`/`Certified:` are **migration-tolerant**: a state file predating MIL-218
-parses as `modelVersion: null`/`certified: null` (their `none`/`never` markers) rather than
-failing — the only two bullets `em state read` treats this way. See
-[model-versions.md](model-versions.md).
+`Model version:`/`Certified:`/`Em version:` are **migration-tolerant**: a state file predating
+MIL-218/MIL-219 parses as `modelVersion: null`/`certified: null`/`emVersion: null` (their
+`none`/`never`/`unknown` markers) rather than failing — the only three bullets `em state read`
+treats this way. `Em version:` (MIL-219) records which `em` last wrote the file — `em scaffold`
+writes it at the installed version, and every `em state` writer above refreshes it to the
+currently-running em automatically (each is already rewriting the file); `em upgrade --apply`
+also writes it, as its own dedicated final commit. See [model-versions.md](model-versions.md)
+and [upgrading.md](upgrading.md).
 
 Everything else in the file — Session inputs, Participants, Decisions log, Open questions, Slice
 inventory — is agent-authored prose and stays out of `em state`'s reach; every mechanical-field
@@ -2970,6 +2992,7 @@ Prints the mechanical fields as JSON on stdout:
   "lastConformance": null,
   "modelVersion": null,
   "certified": null,
+  "emVersion": "1.13.0",
   "lastReview": null
 }
 ```
@@ -2978,8 +3001,10 @@ Prints the mechanical fields as JSON on stdout:
 "report" }` parsed from the `Last conformance:` bullet. `modelVersion` (MIL-218) is `null` for
 `none` (or a missing bullet — migration path), otherwise the bumped design version number.
 `certified` is `null` for `never` (or a missing bullet), otherwise `{ "version", "revision",
-"date" }` parsed from the `Certified:` bullet. `lastReview` is `null` for `never`, otherwise the
-`YYYY-MM-DD` at the start of the `Last stakeholder review:` bullet.
+"date" }` parsed from the `Certified:` bullet. `emVersion` (MIL-219) is `null` for `unknown` (or
+a missing bullet — migration path), otherwise the recorded version string verbatim. `lastReview`
+is `null` for `never`, otherwise the `YYYY-MM-DD` at the start of the `Last stakeholder review:`
+bullet.
 
 ### `em state set-phase <phase> [dir]`
 
@@ -3433,11 +3458,17 @@ it concerns. `[path]` defaults to the current directory, same convention as `syn
 
 ```
 $ em skill check
-[event-modeling-conform] vendored skill's em-version: stamp (1.6.0) doesn't match installed em (1.7.0) — run `em skill sync`
+[event-modeling-conform] vendored skill's em-version: stamp (1.6.0) doesn't match installed em (1.7.0) — run `em skill sync` (or `em upgrade`)
 1 mismatch(es)
 $ echo $?
 1
 ```
+
+Also warns (independently, on stderr, never affecting this command's own exit code) when
+`[path]`'s own state file records an `Em version:` behind the installed `em` (MIL-219) — the same
+advisory `em status`'s `emVersion` field carries, best-effort (a missing or unparseable state
+file is silently skipped, since that's `em upgrade`'s own hard-incompatibility case to report,
+not this command's).
 
 or `ok — vendored skill matches em <version>` when everything agrees. Every finding is a
 defect once you've opted into running this command — `em skill check` exits 1 on any mismatch,
@@ -3470,7 +3501,7 @@ gets them by running one command instead of copy-pasting YAML (MIL-166):
 
 | File | Triggers | Jobs |
 |---|---|---|
-| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check`, `glossary` — all PR merge gates; `status-badge` — push-triggered, publish-only, never a gate |
+| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check`, `glossary` — all PR merge gates; `upgrade-check` — advisory, fails only on a hard incompatibility (MIL-219); `status-badge` — push-triggered, publish-only, never a gate |
 | `em-conform.yml` | `schedule` (weekly), `workflow_dispatch` | `conform` — advisory only, see [ci.md#conformance-cadence-advisory](ci.md#conformance-cadence-advisory) |
 
 `<model>` is the anchor `.em` file the `slice index`/`coverage`/`ledger`/`status-badge` steps
@@ -3509,6 +3540,87 @@ em ci init order-fulfillment/order-fulfillment.em
 Every argument is validated against the shell-injection-relevant characters it would otherwise
 carry into the generated workflow's `run:` steps (`"`, `` ` ``, `$`, a newline) — `em ci init`
 refuses rather than emit a file with a broken (or exploitable) shell command.
+
+## `em upgrade <file>`
+
+Brings a model repo authored under an older `em` (1.6 forward) up to the installed version
+(MIL-219): an ordered list of mechanical, idempotent steps — each detected first, applied only
+with `--apply` — plus a human list of things no command can safely decide by itself. See
+[upgrading.md](upgrading.md) for the release-by-release catalog of what changed and how `em
+upgrade` handles it.
+
+| Flag | Effect |
+|---|---|
+| `--apply` | Apply every applicable mechanical step, one git commit each, then a final `Em version:` commit |
+| `--check` | Exit non-zero only on a hard incompatibility (unparseable state file, an un-migratable `.em` shape) — writes nothing; what CI runs |
+| `--json` | Print a JSON document instead of text (dry-run/`--check` only, never with `--apply`) |
+
+Determines `from` = the state file's recorded `Em version:` bullet, or — when absent — inferred
+from whatever evidence is on disk (an old two-slice reaction shape, the vendored skill bundle's
+own `em-version:` stamp, or the presence of MIL-218's `Model version:`/`Certified:` bullets),
+with the inference always stated in the output; `to` = the installed `em`.
+
+The five mechanical steps, in this fixed order:
+
+1. **`skill-bundle`** — delegates to `em skill sync`'s own plan/apply: refreshes the vendored
+   `.claude/skills/` bundle. Not applicable when no bundle is vendored at all (`em upgrade` never
+   installs one that wasn't there).
+2. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
+   pre-1.7.1 two-slice Automation/Translation shape into the merged single-slice shape.
+3. **`state-file`** — adds any missing `Model version:`/`Certified:` bullets (MIL-218) with their
+   template defaults (`none`/`never`), preserving everything else byte-for-byte. `Em version:`
+   itself is NOT this step's job — see below.
+4. **`ci-block`** — refreshes the `GENERATED:em-ci`/`GENERATED:em-conform` blocks via `em ci
+   init`'s own plan/apply, reusing whatever `<model>`/`--tests` arguments the existing
+   `em-ci.yml` was generated with. Only touches a file that already carries the markers — never
+   creates a workflow the repo didn't ask for.
+5. **`constitution`** — scaffolds `constitution.md` (MIL-202, draft, unratified) when it's absent
+   and the repo has no `.specify/` directory. When `.specify/` exists instead, that's a human
+   item, not mechanical (spec-kit owns the slot).
+
+Deliberately does **not** refuse when the model has validation errors: the old two-slice reaction
+shape `reaction-shape` migrates is itself such an error under the current `em validate` rules, so
+refusing up front would make that step (and the `predates-1.6` human item below) unreachable for
+exactly the repos that need them.
+
+`--apply` makes **one git commit per applicable step** (`em upgrade: <step-id> (<from> →
+<to>)`), so a reviewer can inspect or cherry-pick each one individually; refuses outright on a
+dirty starting working tree, or when no git identity (`user.name`/`user.email`) is configured
+(say so either way, write nothing); stops at the first failing step with every
+prior commit intact and that step's own partial writes discarded. On full success, writes `Em
+version: <to>` to the state file as its own dedicated final commit — always, even when every
+step above was a no-op, unless the bullet already reads `<to>` (an idempotent second run makes
+zero commits).
+
+The human list — detect-only, never applied, printed by every mode:
+
+| Item | When it fires |
+|---|---|
+| `no-model-version` | `Model version: none` and at least one slice is `implemented` — run `em model version bump --by <name>` |
+| `continuation-has-own-doc` | Count of the existing `continuation-has-own-doc` `em validate` warning (MIL-208): an `again`-view continuation slice still carries its own doc file |
+| `ready-to-implement-no-ratifiedby` | A `ready-to-implement` doc has no `ratifiedBy:` — run `em slice ratify --by <name>` |
+| `coverage-scope-default` | `em-ci.yml` runs `em coverage --strict` and no doc is `implemented` yet (MIL-207 scopes `--strict` to `implemented` docs only — the gate is trivially green until then) |
+| `unratified-constitution` | `constitution.md` (or `.specify/memory/constitution.md`) exists with an empty `ratifiedBy:` |
+| `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
+
+`--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a
+hard incompatibility — an unparseable/missing state file, or the `predates-1.6` human item —
+never on the ordinary "some steps are applicable" case; otherwise exits 0 with both lists on
+stderr, writing nothing.
+
+```bash
+em upgrade order-fulfillment/order-fulfillment.em
+# dry run: prints from/to, every step's applicability + reason, and the human list
+
+em upgrade order-fulfillment/order-fulfillment.em --apply
+# applies every applicable step, one commit each, then the Em version commit
+
+em upgrade order-fulfillment/order-fulfillment.em --check
+# exit 0/1 for CI, writes nothing
+```
+
+The MCP `upgrade` tool (see [mcp.md](mcp.md#upgrade)) returns the same dry-run JSON document —
+dry-run only, MCP never applies anything.
 
 ## Working with an AI agent: the `AGENTS.md` managed section
 

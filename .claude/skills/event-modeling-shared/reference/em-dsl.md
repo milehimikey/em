@@ -190,6 +190,10 @@ em ci init <model>                                            # install .github/
 em ci init <model> --tests <dir>                              # test directory the coverage/status steps scan for INV-* citations
 em ci init <model> -f, --force                                # replace an existing workflow file that has no GENERATED markers
 em ci init <model> --check                                    # verify both files match the current preset; exit non-zero on drift without writing (CI)
+em upgrade <file>                                             # bring a model repo authored under an older em (1.6 forward) up to the installed version: an ordered list of mechanical steps (skill bundle, reaction shape, state-file bullets, generated CI blocks, constitution scaffold) plus a human list of things no command can safely decide by itself (MIL-219, see docs/upgrading.md). Dry-run by default; --apply makes one git commit per applicable step, refusing on a dirty working tree
+em upgrade <file> --apply                                     # apply every applicable mechanical step, one git commit each, then a final `Em version:` commit
+em upgrade <file> --check                                     # exit non-zero only on a hard incompatibility (unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs
+em upgrade <file> --json                                      # print a JSON document instead of text (dry-run/--check only, never with --apply)
 ```
 <!-- GENERATED:cli:end -->
 

@@ -41,7 +41,7 @@ describe("scaffoldReadme", () => {
 });
 
 describe("scaffoldStateFile", () => {
-  const state = scaffoldStateFile("Widget Returns", "widget-returns", "2026-08-20");
+  const state = scaffoldStateFile("Widget Returns", "widget-returns", "2026-08-20", "1.13.0");
 
   it("fills every mechanical field", () => {
     expect(state).toContain("# Event Modeling Progress — Widget Returns");

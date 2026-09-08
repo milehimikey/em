@@ -49,14 +49,24 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
 - Write the notes to a scratch file and show them to the user for approval
   before shipping. Do not proceed without approval.
 
-## 5. Ship
+## 5. Add this release's row to docs/upgrading.md
+
+- From the approved notes, add a row/section for `X.Y.Z` to
+  [docs/upgrading.md](../../docs/upgrading.md): what changed for a model repo
+  (state-file bullets, slice-doc frontmatter, `.em` syntax, the skill bundle,
+  generated CI files, `constitution.md`, `model-versions/` manifests), and
+  whether `em upgrade` handles it — a step id, a `human: <item>`, or "no
+  action needed". Skip or note-only anything that isn't model-repo-facing.
+- Fold `docs/upgrading.md` into the release commit alongside the version bumps.
+
+## 6. Ship
 
 - Commit the version bump as `release: vX.Y.Z` directly to main and push.
 - Create the GitHub release (this also creates the tag, which triggers the npm
   publish workflow):
   `gh release create vX.Y.Z --title "X.Y.Z: <theme>" --notes-file <scratch-file>`
 
-## 6. Watch the publish
+## 7. Watch the publish
 
 - Watch the Release workflow: `gh run watch` (or poll `gh run list --workflow Release`).
 - If it fails, diagnose and fix before touching Linear — the release isn't real
@@ -64,7 +74,7 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
   re-pushing the tag, or `gh run rerun`.
 - Verify: `npm view @milehimikey/em version` returns the new version.
 
-## 7. Update Linear
+## 8. Update Linear
 
 (Linear's Releases feature is Business-plan only; this workspace is on the free
 plan, so releases are stamped onto the issues themselves.)
@@ -76,7 +86,7 @@ For every shipped issue from step 2:
 - Confirm the issue is in state Done; flag any that aren't rather than
   silently closing them.
 
-## 8. Report
+## 9. Report
 
 Give the user: the GitHub release URL, the npm version confirmation, and the
 list of Linear issues stamped. Note any shipped issues that weren't Done.

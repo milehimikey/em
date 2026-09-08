@@ -46,6 +46,8 @@ import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceRead
 import { buildCoverageReport, resolveScopedSlices, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
 import { readContract, contractPath } from "../cli/contract.js";
+import { UpgradeContext, resolveRepoRoot, detectUpgrade } from "../cli/upgrade.js";
+import { buildUpgradeJson } from "../emit/upgradeJson.js";
 import {
   resolveSliceStatusFacts,
   countOpenIssues,
@@ -53,6 +55,8 @@ import {
   aggregateInvariantTotals,
   buildStatusReport,
   resolveModelVersionStatusEntry,
+  resolveEmVersionStatusEntry,
+  EmVersionStatusEntry,
   SliceStatusFact,
   StatusDiagnostic,
 } from "../cli/status.js";
@@ -104,6 +108,14 @@ export const SERVER_VERSION = GENERATOR_VERSION;
  *  (MIL-157) — see src/cli/skillDirs.ts. */
 function packagedSkillDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".claude", "skills", "event-modeling-implement");
+}
+
+/** The `.claude/skills/` root itself (not one specific skill directory inside it) — same
+ *  resolution as src/cli.ts's own packagedSkillsRoot(), computed independently here for the
+ *  same reason packagedSkillDir() above is: `upgrade`'s `skill-bundle` step needs the whole
+ *  bundle root, not just `event-modeling-implement/`. */
+function packagedSkillsRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".claude", "skills");
 }
 
 function textResult(text: string): CallToolResult {
@@ -498,9 +510,54 @@ export function createServer(): McpServer {
       // MIL-218: one model-version entry per input file — same computation cli.ts's `status`
       // action makes, for MCP parity.
       const modelVersion = compiledFiles.map(({ file, compiled }) => resolveModelVersionStatusEntry(file, compiled.model, compiled.refs, compiled.source));
+      // MIL-219: same em-version resolution the CLI's `status` action makes, for MCP parity.
+      const emVersion = compiledFiles
+        .map(({ file }) => resolveEmVersionStatusEntry(file, GENERATOR_VERSION))
+        .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion);
       return textResult(buildStatusJson(report));
+    },
+  );
+
+  server.registerTool(
+    "upgrade",
+    {
+      title: "Dry-run em upgrade: what would bring this repo up to date",
+      description:
+        "Return the same JSON document `em upgrade <file> --json` prints (MIL-219, dry-run — " +
+        "this tool never writes anything, unlike the CLI's `--apply`): from/to em versions, " +
+        "every mechanical step (skill bundle, reaction shape, state-file bullets, generated CI " +
+        "blocks, constitution scaffold) with whether it's applicable and why, and the human " +
+        "list of things no command can safely decide by itself. REQUIRES `file`'s directory to " +
+        "be inside a git repository. Unlike most tools here, this one does NOT refuse when the " +
+        "model has validation errors — the old pre-1.7.1 reaction shape `reaction-shape` " +
+        "migrates is itself such an error, so refusing would make it (and the `predates-1.6` " +
+        "human item) unreachable for exactly the repos that need them. Only a parse error " +
+        "(can't compile at all) is a tool error.",
+      inputSchema: {
+        file: z.string().describe("input .em model file"),
+      },
+    },
+    async ({ file }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const { model, refs } = compiled;
+
+      const repoRootResult = resolveRepoRoot(dirname(file));
+      if (!repoRootResult.ok) return errorResult(repoRootResult.message);
+
+      const ctx: UpgradeContext = {
+        modelFile: file,
+        baseDir: dirname(file),
+        repoRoot: repoRootResult.repoRoot,
+        installedVersion: GENERATOR_VERSION,
+        packagedSkillsRoot: packagedSkillsRoot(),
+        model,
+        refs,
+      };
+      const report = detectUpgrade(ctx);
+      return textResult(buildUpgradeJson(file, report));
     },
   );
 

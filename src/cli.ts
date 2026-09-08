@@ -50,6 +50,8 @@ import {
   formatConformancePart,
   findSpecifyRoot,
   resolveModelVersionStatusEntry,
+  resolveEmVersionStatusEntry,
+  EmVersionStatusEntry,
   SliceStatusFact,
   StatusDiagnostic,
 } from "./cli/status.js";
@@ -102,6 +104,7 @@ import {
   setConformance,
   setModelVersion,
   setCertified,
+  setEmVersion,
   setReview,
   isValidDateString,
   modelPathMismatch,
@@ -130,6 +133,9 @@ import {
   CONFORM_WORKFLOW_MARKER,
   CiFileStatus,
 } from "./cli/ciInit.js";
+import { UpgradeContext, resolveRepoRoot, detectUpgrade, applyUpgrade, checkUpgrade } from "./cli/upgrade.js";
+import { buildUpgradeJson } from "./emit/upgradeJson.js";
+import { isOlder } from "./util/semver.js";
 import { RULES, RuleCode } from "./model/rules.js";
 import {
   USAGE_PHASES,
@@ -230,7 +236,7 @@ program
     const today = localIsoDate();
     writeFileSync(join(dirPath, `${slugName}.em`), starterEmFor(name));
     writeFileSync(join(dirPath, "README.md"), scaffoldReadme(name, slugName));
-    writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today));
+    writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today, PKG_VERSION));
     // MIL-202: the implementation constitution. One document per project, never two — in a
     // spec-kit project `.specify/memory/constitution.md` already IS that slot, so em defers to it
     // and writes nothing rather than seeding a second, competing copy beside the model. Same
@@ -1017,12 +1023,17 @@ program
 const STATE_DIR_HELP =
   "model directory containing .event-modeling.md, or a direct path to that file (default: current directory)";
 
-/** Shared by every `em state` writer: load, apply the pure patch, write, report — the only
- *  difference between set-phase/set-conformance/set-review/set-model-version is which `mutate`
- *  closure they pass. `today` defaults to `localIsoDate()`; a caller that also needs to stamp a
- *  SECOND artifact (MIL-218: `em state set-conformance`'s model-version certify step) with the
- *  exact same date passes it in explicitly, computed once, rather than each call independently
- *  reading the clock and risking a midnight-rollover mismatch between the two. */
+/** Shared by every `em state` writer: load, apply the pure patch, stamp `Em version:` to the
+ *  running em (MIL-219 ruling A — every state-file writer refreshes it, since each is already
+ *  rewriting the file), write, report — the only difference between set-phase/set-conformance/
+ *  set-review/set-model-version is which `mutate` closure they pass. `today` defaults to
+ *  `localIsoDate()`; a caller that also needs to stamp a SECOND artifact (MIL-218: `em state
+ *  set-conformance`'s model-version certify step) with the exact same date passes it in
+ *  explicitly, computed once, rather than each call independently reading the clock and risking
+ *  a midnight-rollover mismatch between the two. The `Em version:` stamp is best-effort — a
+ *  failure there (should never happen: `Model file:` is one of the six bullets a successful
+ *  `loadStateFile`+`mutate` already proves is present) falls back to `mutate`'s own output rather
+ *  than losing the write the caller actually asked for. */
 function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: string, today: string) => PatchResult, today: string = localIsoDate()): void {
   const loaded = loadStateFile(dirOrFile);
   if (!loaded.ok) {
@@ -1034,7 +1045,8 @@ function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: st
     console.error(`${cmdLabel}: ${result.message}`);
     process.exit(1);
   }
-  writeFileSync(loaded.path, result.text);
+  const stamped = setEmVersion(result.text, PKG_VERSION, today);
+  writeFileSync(loaded.path, stamped.ok ? stamped.text : result.text);
   console.log(`wrote ${loaded.path}`);
 }
 
@@ -1981,8 +1993,12 @@ program
       });
       // MIL-218: one model-version entry per input file.
       const modelVersion = compiled.map(({ file, model, refs, source }) => resolveModelVersionStatusEntry(file, model, refs, source));
+      // MIL-219: one em-version entry per input file whose state file resolved.
+      const emVersion = compiled
+        .map(({ file }) => resolveEmVersionStatusEntry(file, PKG_VERSION))
+        .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion);
 
       let output: string;
       if (opts.json) output = buildStatusJson(report);
@@ -2455,6 +2471,19 @@ skill
       console.log(result.ok ? `ok — vendored skill matches em ${PKG_VERSION}` : `${result.findings.length} mismatch(es)`);
     }
 
+    // MIL-219 ruling A: `em skill check` also warns when [path]'s own state file records an
+    // `Em version:` behind the installed em — best-effort (no state file, or an unparseable
+    // one, is silently skipped; that's `em upgrade`'s own hard-incompatibility case to report,
+    // not this command's). Always stderr, independent of --json/exit code — advisory only, and
+    // this command's own exit code stays about skill-bundle drift, never about this.
+    const loaded = loadStateFile(resolve(path));
+    if (loaded.ok) {
+      const parsed = parseState(loaded.text);
+      if (parsed.ok && isOlder(parsed.state.emVersion, PKG_VERSION)) {
+        console.error(`warn: recorded Em version (${parsed.state.emVersion}) is behind installed em (${PKG_VERSION}) — run \`em upgrade\``);
+      }
+    }
+
     // Set the code rather than process.exit(): same rationale as em ledger/em diff — stdout to
     // a pipe (a --json document) shouldn't risk truncation.
     if (!result.ok) process.exitCode = 1;
@@ -2541,6 +2570,102 @@ ci.command("init")
       else if (status.kind === "missing-markers") console.log(`${path} already exists — re-run with --force to overwrite`);
       else console.log(`${path} already up to date`);
     }
+  });
+
+program
+  .command("upgrade")
+  .description(
+    "bring a model repo authored under an older em (1.6 forward) up to the installed version: " +
+      "an ordered list of mechanical steps (skill bundle, reaction shape, state-file bullets, " +
+      "generated CI blocks, constitution scaffold) plus a human list of things no command can " +
+      "safely decide by itself (MIL-219, see docs/upgrading.md). Dry-run by default; --apply " +
+      "makes one git commit per applicable step, refusing on a dirty working tree",
+  )
+  .argument("<file>", "input .em model file")
+  .option("--apply", "apply every applicable mechanical step, one git commit each, then a final `Em version:` commit")
+  .option("--check", "exit non-zero only on a hard incompatibility (unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs")
+  .option("--json", "print a JSON document instead of text (dry-run/--check only, never with --apply)")
+  .action((file: string, opts: { apply?: boolean; check?: boolean; json?: boolean }) => {
+    if (opts.apply && opts.check) {
+      console.error("em upgrade: --apply and --check are mutually exclusive");
+      process.exit(1);
+    }
+    const { model, refs, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics);
+    // Deliberately does NOT refuse on hasErrors(diagnostics), unlike every other command that
+    // compiles a model first: the old pre-1.7.1 two-slice reaction shape `reaction-shape`
+    // migrates is itself a validation ERROR under the current rules (MIL-120 changed what
+    // `em validate` accepts) — refusing here would make that step, and the `predates-1.6` human
+    // item, unreachable for exactly the repos that need them. Every step/human-detector either
+    // reads the raw source directly (reaction-shape/predates-1.6, via planMigration) or a
+    // best-effort compiled model that's still structurally usable even with validation errors
+    // present (compile() never throws for a semantic error, only a parse error — already
+    // handled by compileFile() above).
+    if (hasErrors(diagnostics)) {
+      console.error(`em upgrade: "${file}" has validation errors — proceeding anyway (this is often exactly what needs upgrading)`);
+    }
+    void source; // compileFile's own source read; steps re-read from disk themselves (module header)
+
+    const baseDir = dirname(file);
+    const repoRootResult = resolveRepoRoot(baseDir);
+    if (!repoRootResult.ok) {
+      console.error(repoRootResult.message);
+      process.exit(1);
+    }
+    const ctx: UpgradeContext = {
+      modelFile: file,
+      baseDir,
+      repoRoot: repoRootResult.repoRoot,
+      installedVersion: PKG_VERSION,
+      packagedSkillsRoot: packagedSkillsRoot(),
+      model,
+      refs,
+    };
+
+    if (opts.check) {
+      const { ok, report } = checkUpgrade(ctx);
+      console.error(`em upgrade --check: from ${report.from.version}${report.from.inferred ? ` (inferred: ${report.from.basis})` : ""} → to ${report.to}`);
+      for (const s of report.steps) {
+        console.error(`  [${s.applicable ? "x" : " "}] ${s.id} (since ${s.sinceVersion}): ${s.reason}`);
+      }
+      for (const h of report.human) console.error(`  human: ${h.id}: ${h.reason}`);
+      console.error(ok ? "ok — no hard incompatibility" : "em upgrade --check: hard incompatibility found");
+      if (!ok) process.exitCode = 1;
+      return;
+    }
+
+    if (opts.apply) {
+      const result = applyUpgrade(ctx);
+      for (const s of result.applied) {
+        if (s.applied) console.log(`applied: ${s.id} — ${s.changedFiles.join(", ")} (${s.commit})`);
+        else console.log(`skipped: ${s.id}`);
+      }
+      if (!result.ok) {
+        console.error(result.message);
+        process.exit(1);
+      }
+      if (result.emVersionCommit) console.log(`recorded: ${result.emVersionCommit}`);
+      else console.log("Em version: already up to date — no commit needed");
+      for (const h of result.report.human) console.log(`human: ${h.id}: ${h.reason}`);
+      return;
+    }
+
+    const report = detectUpgrade(ctx);
+    if (opts.json) {
+      console.log(buildUpgradeJson(file, report));
+      return;
+    }
+    console.log(`em upgrade: from ${report.from.version}${report.from.inferred ? ` (inferred: ${report.from.basis})` : ""} → to ${report.to}`);
+    if (report.stateFileError) console.log(`state file: ${report.stateFileError}`);
+    console.log("Steps:");
+    for (const s of report.steps) {
+      console.log(`  [${s.applicable ? "x" : " "}] ${s.id} (since ${s.sinceVersion}): ${s.reason}`);
+    }
+    console.log("Human:");
+    if (report.human.length === 0) console.log("  (none)");
+    for (const h of report.human) console.log(`  ${h.id}: ${h.reason}`);
+    const applicableCount = report.steps.filter((s) => s.applicable).length;
+    console.log(`${applicableCount} step(s) applicable, ${report.human.length} human item(s) — re-run with --apply to apply mechanical steps`);
   });
 
 // Exported so dev tooling (e.g. scripts/generate-skill-docs.ts) can introspect the registered
