@@ -172,15 +172,21 @@ its own slice.
 | `em export` schema 1.12 adds `continuationOf`/`alsoReads` | no action needed |
 | **Release note: run `em skill sync` in each consumer repo** (contract, constitution template, and design skill changed) | `skill-bundle` |
 
-## 1.13.0 (pending)
+## 1.13.0
 
-Not yet released — this section is a placeholder to be filled in properly at release time.
-Work merged to `main` ahead of the 1.13.0 tag, scoped to model-repo-facing changes:
+The conformance loop: certification becomes per slice per version, the model gets a design
+version and a certified version, and `em upgrade` itself ships. Three behavior changes.
 
-| What's changing for a model repo | Handled by `em upgrade`? |
+| What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
-| Per-slice certification: `em slice conform` writes `conformedVersion`/`conformedAt`/`conformedOn` frontmatter to a slice doc; `driftSignal` gains an `"uncertified"` case (MIL-214) | no action needed — written by `em slice conform`, nothing to migrate on existing docs |
-| Model-level design/certified version: `Model version:`/`Certified:` state-file bullets, `model-versions/v<N>.json` manifests, `em model version bump`/`em model version show` (MIL-218) | `state-file` adds the two bullets with their defaults (`none`/`never`); human item ("no model version yet") for a repo that's ready to bump |
-| `Em version:` state-file bullet — which `em` last wrote the file — plus `em upgrade` itself (MIL-219, this ticket) | `em upgrade --apply` writes this bullet as its own final commit on every run |
-
-This section will be rewritten with the real release notes when 1.13.0 ships.
+| **Behavior change:** a full `em state set-conformance` refuses while any in-scope finding in `conformance/<date>-findings.json` is unruled, and certifies the *current design version* — so it refuses until a model version exists (MIL-214, MIL-218) | human: run `em model version bump --by <name>` once before the first full conformance after upgrading — the `no-model-version` human item |
+| **Behavior change:** `driftSignal: in-sync` now means certified-current; a shipped slice with no `conformedVersion` reads `uncertified` (expected, never a validate warning) (MIL-214) | no action needed — run `em slice conform` per slice after the next conform sweep |
+| **Behavior change:** the vendored skill bundle's preconditions STOP the agent when the installed em is a minor version or more ahead of the bundle's `em-version:` stamp (MIL-219) | `skill-bundle` |
+| New state-file bullets `Model version:`, `Certified:`, `Em version:` — a state file predating them parses as `none`/`never`/`unknown`, never an error (MIL-218, MIL-219) | `state-file` adds them with their defaults; `Em version:` is `em upgrade --apply`'s own final commit |
+| `model-versions/v<N>.json` manifests (new directory beside `slices/`), written by `em model version bump` and certified by a full `set-conformance` (MIL-218) | human: bump when ready — never auto-created |
+| `conformance/<date>-findings.json` beside each report (new file the conform skill writes; `em conform-findings check` validates it) (MIL-214) | no action needed for existing reports — `conform-supersede`/`set-conformance` warn once and fall back to banner-only behavior when a report has no findings file |
+| Slice-doc frontmatter gains `conformedVersion`/`conformedAt`/`conformedOn`, written only by `em slice conform` (MIL-214) | no action needed |
+| Generated CI block gains an advisory `upgrade-check` job (MIL-219) | `ci-block` |
+| `em slice new --stub` / `em slice stub-all` — optional, for models without docs (MIL-184) | no action needed |
+| `em metrics --from` — reads history, writes nothing (MIL-170) | no action needed |
+| **Release note: run `em upgrade <model>.em` (dry-run, then `--apply`) in each consumer repo** | `em upgrade` |
