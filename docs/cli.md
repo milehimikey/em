@@ -2093,6 +2093,7 @@ the slice's primary element by hand.
 | `--swimlane <swimlane>` | **Required.** Free text, conventionally `<Persona> → <Context>` |
 | `-f, --force` | Overwrite the file if it already exists |
 | `--wire <model-file>` | Also insert the `note "slices/<key>.md"` line into this `.em` file (MIL-161) — see below |
+| `--stub` | Write a near-free stub instead (MIL-184) — see below |
 
 ```bash
 em slice new "Request Payment" --pattern automation --swimlane "System → Payment"
@@ -2101,6 +2102,30 @@ em slice new "Request Payment" --pattern automation --swimlane "System → Payme
 em slice new "Request Payment" --pattern automation --swimlane "System → Payment" --wire model.em
 # -> writes slices/request-payment.md AND inserts the note line into model.em directly
 ```
+
+### `--stub` (MIL-184)
+
+Writes the same 5 required-at-`status: draft` frontmatter keys as the ordinary (non-`--stub`)
+form, but the body is a single placeholder line instead of the diagram-image stub and every
+judgment section:
+
+```markdown
+# Slice: Request Payment
+
+_Stub — deepen with the slice phase (see slice-doc-schema.md)._
+```
+
+A stub is a real doc with a real, machine-read `status` — every lifecycle tool that keys on
+`doc.status` (render/`em watch` coloring, `em status`, `driftSignal`, `em slice index`) treats it
+exactly like any other doc, since it's the same frontmatter dialect. It exists so a slice can
+carry status before anyone's ready to write the real spec — see
+[slice-doc-schema.md#stub-docs](slice-doc-schema.md#stub-docs) for what a stub can and can't pass.
+Deepen it later: re-run `em slice new` (no `--stub`) with `-f`/`--force` to overwrite the
+placeholder body once the team writes the real judgment sections; `--stub` and `--force` compose
+freely with `--wire` exactly like the ordinary form.
+
+`em slice stub-all` (below) is the batch form — one stub per undocumented slice in a whole model,
+in a single command.
 
 ### `--wire <model-file>` (MIL-161)
 
@@ -2132,6 +2157,65 @@ paste by hand.
 | `slice "<name>" has N <kind> elements — ambiguous, wire the note by hand` | More than one candidate — which one is genuine judgment |
 | `slice "<name>" is a later instance of "<view>" (again) — it has no doc of its own; the doc lives at slices/<originating-key>.md (slice "<originating-key>")` | (MIL-208) The sole `view` candidate is `again` — this slice is a **continuation** of the view's originating slice, which has the real doc; wire/ratify that slice instead |
 | `this line already has a note clause — edit it by hand instead` | The primary element is already wired (or has a conflicting `note`) |
+
+## `em slice stub-all <file>`
+
+The batch form of `em slice new --stub` (MIL-184): one stub doc, wired, for **every** slice in
+`<file>` with no resolvable doc — the fast path to status coloring for an exploratory or
+backbone-mapping model, without hand-running `slice new` once per slice. Requires a clean
+compile first (same as `--wire` above); refuses, writing nothing, if `<file>` has errors.
+
+For each slice, in model declaration order:
+
+- A **continuation** slice (MIL-208, an again-view-only instance) is skipped — it has no doc of
+  its own; the message names the originating slice.
+- A slice whose doc already resolves cleanly (found, usable frontmatter) is skipped —
+  **already documented**.
+- A slice `classifySlicePattern` can't assign one of the 4 `pattern` values to (`unclassified` —
+  an empty/malformed slice `em validate` already flags elsewhere) is skipped.
+- A slice with no doc note at all, whose canonical `slices/<key>.md` path already holds a file on
+  disk (an orphaned doc nothing notes), is skipped rather than silently overwritten — this
+  command offers no `--force`.
+- A slice with an invalid/unparseable doc already on disk is skipped — fix it by hand
+  (`em validate` explains what's wrong).
+- Everything else gets a fresh stub: pattern from `classifySlicePattern`, swimlane derived from
+  the slice's own shape (below), wired via the exact same `wireSliceNote` `--wire` above uses. A
+  slice whose note already points at the canonical path but whose file is simply missing is
+  stubbed **without** re-wiring — the note is already there.
+
+**Swimlane derivation:** the slice's first `ui` element's resolved persona, arrow-joined to its
+first `event` element's resolved context, both in declaration order — `"Customer → Order"` for a
+typical State Change slice with a screen. Falls back to the literal placeholder `"— → —"` when
+either side is missing (a pure Automation/Translation reaction has no `ui` of its own; a bare
+State View slice has no `event` of its own).
+
+| Flag | Effect |
+|---|---|
+| `--status <status>` | Target status for every fresh stub: `draft` (default) \| `reviewed` \| `ready-to-implement` \| `implemented` |
+| `--by <name>` | Identity for `reviewedBy`/`ratifiedBy` — **required** for any `--status` other than `draft` |
+| `--implemented-in <url>` | PR/commit URL for `implementedIn` — **required** with `--status implemented` |
+| `--dry-run` | List what would be stubbed/wired without writing anything |
+
+`--status` escalates each fresh stub past `draft` using the exact frontmatter writers
+`em slice review`/`em slice ratify`/`em slice mark-implemented` already own — never a
+reimplementation of what those statuses write. `reviewed` applies the review writer once;
+`ready-to-implement` applies review then ratify (the freshly-reviewed doc always satisfies
+ratify's own review-gate check, so this never needs `--skip-review`); `implemented` applies
+review, then ratify, then mark-implemented. One `--by`/today's date stamps every escalated field
+this run touches — a batch scaffold, not a record of N separate human review sessions. There is
+no fifth "backbone"/"existing" status: an established, already-shipped slice is
+`--status implemented --implemented-in <url>`, the same four lifecycle values every other `em`
+command already understands.
+
+Prints one line per slice, in model order — `stubbed ...`/`would stub ...` or `skip ... — <reason>`.
+`--dry-run` never writes a stub file, and never rewrites `<file>`.
+
+```bash
+em slice stub-all model.em                                    # one draft stub per undocumented slice
+em slice stub-all model.em --dry-run                           # preview only
+em slice stub-all model.em --status implemented \
+  --by "Alex Rivera" --implemented-in https://github.com/org/repo/pull/1   # backbone/established slices
+```
 
 ## `em slice index <file>`
 

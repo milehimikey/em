@@ -3853,6 +3853,29 @@ describe("em slice new (CLI, MIL-97 item 3)", () => {
     expect(content).toContain("pattern: state-change\n");
     expect(content).toContain("swimlane: System → Payment v2\n");
   });
+
+  it("--stub writes the near-free placeholder body instead of the diagram-image stub (MIL-184)", () => {
+    const r = em(
+      ["slice", "new", "Stub Slice", "--pattern", "state-view", "--swimlane", "Customer → Orders", "--stub"],
+      cwd,
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote slices/stub-slice.md");
+    const content = readFileSync(join(cwd, "slices", "stub-slice.md"), "utf8");
+    expect(content).toBe(
+      "---\n" +
+        "schemaVersion: 1\n" +
+        "pattern: state-view\n" +
+        "swimlane: Customer → Orders\n" +
+        "status: draft\n" +
+        "version: 1\n" +
+        "---\n" +
+        "# Slice: Stub Slice\n" +
+        "\n" +
+        "_Stub — deepen with the slice phase (see slice-doc-schema.md)._\n",
+    );
+    expect(content).not.toContain("![Diagram]");
+  });
 });
 
 describe("em slice new --wire (CLI, MIL-161)", () => {
@@ -3934,6 +3957,93 @@ describe("em slice new --wire (CLI, MIL-161)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('note "slices/yet-another.md"');
     expect(r.stdout).not.toContain("wired ");
+  });
+});
+
+describe("em slice stub-all (CLI, MIL-184)", () => {
+  // Per-slice decision-tree coverage (continuation, already-documented, binding-missing-file,
+  // frontmatter-invalid, orphaned file, unclassifiable) lives in test/sliceStub.test.ts against
+  // `runStubAll` directly — this block is exit-code/flag-validation/process-level only, same
+  // split as `em slice new`/`em slice new --wire` above.
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-slice-stub-all-"));
+    writeFileSync(
+      join(dir, "model.em"),
+      [
+        'persona Customer',
+        'context Order',
+        'slice "Place Order" {',
+        "  ui Order Screen @Customer",
+        "  command Place Order",
+        "  event Order Placed @Order",
+        "}",
+      ].join("\n") + "\n",
+    );
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("stubs and wires every undocumented slice, creating slices/", () => {
+    expect(existsSync(join(dir, "slices"))).toBe(false);
+    const r = em(["slice", "stub-all", "model.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("stubbed slices/place-order.md (place-order, pattern: state-change");
+    expect(r.stdout).toContain("wired onto Place Order");
+    expect(existsSync(join(dir, "slices", "place-order.md"))).toBe(true);
+    const emContent = readFileSync(join(dir, "model.em"), "utf8");
+    expect(emContent).toContain('command Place Order note "slices/place-order.md"');
+  });
+
+  it("--dry-run reports the plan without writing anything", () => {
+    const before = readFileSync(join(dir, "model.em"), "utf8");
+    const r = em(["slice", "stub-all", "model.em", "--dry-run"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("would stub slices/place-order.md");
+    expect(existsSync(join(dir, "slices", "place-order.md"))).toBe(false);
+    expect(readFileSync(join(dir, "model.em"), "utf8")).toBe(before);
+  });
+
+  it("rejects an invalid --status, listing the 4 valid values", () => {
+    const r = em(["slice", "stub-all", "model.em", "--status", "bogus"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("bogus");
+    expect(r.stderr).toContain("draft");
+    expect(r.stderr).toContain("reviewed");
+    expect(r.stderr).toContain("ready-to-implement");
+    expect(r.stderr).toContain("implemented");
+    expect(existsSync(join(dir, "slices"))).toBe(false);
+  });
+
+  it("requires --by for any --status other than draft", () => {
+    const r = em(["slice", "stub-all", "model.em", "--status", "reviewed"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--status reviewed requires --by <name>");
+    expect(existsSync(join(dir, "slices"))).toBe(false);
+  });
+
+  it("requires --implemented-in for --status implemented", () => {
+    const r = em(["slice", "stub-all", "model.em", "--status", "implemented", "--by", "Alex Rivera"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--status implemented requires --implemented-in <url>");
+    expect(existsSync(join(dir, "slices"))).toBe(false);
+  });
+
+  it("--status ready-to-implement --by writes ratifiedBy/On on the fresh stub", () => {
+    const r = em(["slice", "stub-all", "model.em", "--status", "ready-to-implement", "--by", "Alex Rivera"], dir);
+    expect(r.status).toBe(0);
+    const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
+    expect(content).toContain("status: ready-to-implement");
+    expect(content).toContain("ratifiedBy: Alex Rivera");
+    expect(content).toContain(`ratifiedOn: ${localIsoDate()}`);
+  });
+
+  it("fails clearly on a model with errors, writing nothing", () => {
+    writeFileSync(join(dir, "broken.em"), 'slice "Broken" {\n  view Only View from "Nope"\n}\n');
+    const r = em(["slice", "stub-all", "broken.em"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("not stubbing");
+    expect(existsSync(join(dir, "slices"))).toBe(false);
   });
 });
 

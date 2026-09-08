@@ -99,6 +99,32 @@ No `em` command fails a build over this table. `em validate`'s frontmatter-coher
 (never fails) on the one combination checkable without git history: `status: implemented` with
 no `implementedIn` link at all.
 
+## Stub docs
+
+`em slice new --stub` and `em slice stub-all` (MIL-184, ruled 2026-09-08 on GH #128 — see that
+issue for the fuller design rationale) write a **stub**: the exact same 5 required-at-`status:
+draft` frontmatter keys above, but a one-line placeholder body (`_Stub — deepen with the slice
+phase (see slice-doc-schema.md)._`) instead of the diagram-image stub and every judgment section
+(Intent, Command, Scenarios, Open Questions, …) a full slice doc eventually carries.
+
+A stub is not a lesser doc, frontmatter-wise — it's a real doc with a real `status`, parsed and
+joined by `em export`/`em catalog`/`em status`/`em slice index` exactly like a fully-written one,
+because it's the same frontmatter dialect. The doc stays the single source of truth for
+`status`; a stub is just the cheapest possible way to give a slice one before anyone's ready to
+write the real spec.
+
+**A stub CAN pass `em validate --slice-ready`.** That gate checks four things (`computeSliceReadyGates`,
+[validation.md#slice-readiness](validation.md#slice-readiness)): a doc is bound, its frontmatter
+is usable, `status` is `ready-to-implement`, and its Open Questions count has none unchecked. A
+stub with no `## Open Questions` section at all has `openQuestionsTotal: 0` (see
+[Open Questions section: lifecycle](#open-questions-section-lifecycle) below) — zero unchecked is
+vacuously true — so a stub escalated to `ready-to-implement` (`em slice stub-all --status
+ready-to-implement --by <name>`) passes cleanly. The readiness gate is frontmatter-plus-checkbox-
+count only; it has no opinion about whether Intent/Command/Scenarios/Invariants were ever
+written. Demanding that content is the `slice` phase's (and, for a live walkthrough, the review
+skill's) job, not a machine gate's — see `../.claude/skills/event-modeling-design/SKILL.md` and
+`../.claude/skills/event-modeling-review/SKILL.md`.
+
 ## Lineage: grammar and cardinality
 
 Grammar: `<slice-key>@v<N>` — `<slice-key>` is the referenced slice's kebab-case filename stem
