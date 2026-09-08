@@ -3585,7 +3585,8 @@ exactly the repos that need them.
 
 `--apply` makes **one git commit per applicable step** (`em upgrade: <step-id> (<from> →
 <to>)`), so a reviewer can inspect or cherry-pick each one individually; refuses outright on a
-dirty starting working tree (say so, write nothing); stops at the first failing step with every
+dirty starting working tree, or when no git identity (`user.name`/`user.email`) is configured
+(say so either way, write nothing); stops at the first failing step with every
 prior commit intact and that step's own partial writes discarded. On full success, writes `Em
 version: <to>` to the state file as its own dedicated final commit — always, even when every
 step above was a no-op, unless the bullet already reads `<to>` (an idempotent second run makes

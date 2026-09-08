@@ -424,6 +424,19 @@ export function isWorkingTreeClean(repoRoot: string, runGit: GitRunner = realGit
   return r.status === 0 && r.stdout.trim().length === 0;
 }
 
+/** `true` when `git commit` in `repoRoot` would actually succeed identity-wise — `git config
+ *  user.name`/`user.email` (the merged local+global+system view, same one `git commit` itself
+ *  consults) both resolve to something non-empty. Checked once, up front, alongside the
+ *  dirty-tree refusal: failing here with a clear, single message beats discovering it deep into
+ *  step 1's own `git commit` with a confusing passthrough error, and it's a real gap to check —
+ *  a CI runner (unlike a developer's own machine) routinely has no git identity configured at
+ *  all. */
+export function hasGitIdentity(repoRoot: string, runGit: GitRunner = realGit): boolean {
+  const name = runGit(["-C", repoRoot, "config", "user.name"]);
+  const email = runGit(["-C", repoRoot, "config", "user.email"]);
+  return name.status === 0 && name.stdout.trim().length > 0 && email.status === 0 && email.stdout.trim().length > 0;
+}
+
 function gitCommitAll(repoRoot: string, message: string, runGit: GitRunner): { ok: true } | { ok: false; message: string } {
   const add = runGit(["-C", repoRoot, "add", "-A"]);
   if (add.status !== 0) return { ok: false, message: `git add failed: ${(add.stderr || "").trim() || "unknown error"}` };
@@ -510,6 +523,16 @@ export function applyUpgrade(ctx: UpgradeContext, runGit: GitRunner = realGit): 
   }
   if (!isWorkingTreeClean(ctx.repoRoot, runGit)) {
     return { ok: false, message: "em upgrade --apply: working tree is not clean — commit or stash first", report, applied: [] };
+  }
+  if (!hasGitIdentity(ctx.repoRoot, runGit)) {
+    return {
+      ok: false,
+      message:
+        "em upgrade --apply: no git identity configured — run `git config user.name <name>` and " +
+        "`git config user.email <email>` first (add --global to set it once for every repo)",
+      report,
+      applied: [],
+    };
   }
 
   const applied: ApplyStepResult[] = [];

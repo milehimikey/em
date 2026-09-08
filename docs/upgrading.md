@@ -31,8 +31,10 @@ cherry-pick each one individually:
    repo has no `.specify/` directory.
 
 Each step is detected first and applied only under `--apply`; a step that finds nothing to
-do makes no commit. `em upgrade` refuses to start on a dirty working tree, and stops at the
-first failing step with the prior steps' commits intact. Once every applicable step has
+do makes no commit. `--apply` refuses to start on a dirty working tree, or with no git
+identity configured (`git config user.name`/`user.email` — needed before `git commit` can
+work at all), and stops at the first failing step with the prior steps' commits intact. Once
+every applicable step has
 run, `--apply` writes the final `Em version: <to>` bullet to the state file as its own last
 commit — that write happens every run, independent of which of the five steps applied.
 

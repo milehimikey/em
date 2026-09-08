@@ -1596,6 +1596,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "slice_ready",
           "status",
           "system",
+          "upgrade",
           "validate",
         ].sort(),
       );
@@ -2566,7 +2567,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.6");
+    expect(doc.statusSchemaVersion).toBe("1.7");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -4480,7 +4481,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.6");
+    expect(doc.statusSchemaVersion).toBe("1.7");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);
@@ -5083,6 +5084,11 @@ slice "Capture Payment" {
     writeFileSync(join(dir, "checkout.em"), OLD_SHAPE);
     writeFileSync(join(dir, ".event-modeling.md"), SIX_BULLET_STATE);
     git(["init", "-q"], dir);
+    // Persistent repo-local identity (not just this file's own `-c user.name=...` override,
+    // which never writes `.git/config`) — the CLI's own internal `git commit` calls (inside
+    // `em upgrade --apply`) carry no such override and need a real config to read.
+    git(["config", "user.email", "t@t.test"], dir);
+    git(["config", "user.name", "t"], dir);
     git(["add", "-A"], dir);
     git(["commit", "-qm", "init"], dir);
     return dir;

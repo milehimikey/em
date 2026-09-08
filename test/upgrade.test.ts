@@ -19,6 +19,7 @@ import {
   resolveFromVersion,
   resolveRepoRoot,
   isWorkingTreeClean,
+  hasGitIdentity,
   detectUpgrade,
   applyUpgrade,
   checkUpgrade,
@@ -87,6 +88,13 @@ function makeFixtureRepo(opts: FixtureOptions = {}): { dir: string; packagedSkil
   const dir = mkdtempSync(join(tmpdir(), "em-upgrade-fixture-"));
   tmpDirs.push(dir);
   git(dir, "init", "-q");
+  // Persistent repo-local identity, not just this test file's own `-c user.name=...` override
+  // (a one-shot flag, never written to `.git/config`): `applyUpgrade`'s internal `git commit`
+  // calls (inside the CLI/module under test, via `realGit`) carry no such override of their own
+  // and would otherwise depend on the *running machine's* global git config — absent on a CI
+  // runner, present on a dev machine, which is exactly why this passed locally and failed in CI.
+  git(dir, "config", "user.email", "t@t.test");
+  git(dir, "config", "user.name", "t");
   writeFileSync(join(dir, "checkout.em"), opts.source ?? OLD_SHAPE_SOURCE);
   const stateFile = opts.stateFile === undefined ? SIX_BULLET_STATE_FILE : opts.stateFile;
   if (stateFile !== null) writeFileSync(join(dir, STATE_FILE_NAME), stateFile);
@@ -153,6 +161,11 @@ describe("resolveRepoRoot / isWorkingTreeClean", () => {
     tmpDirs.push(dir);
     const result = resolveRepoRoot(dir);
     expect(result.ok).toBe(false);
+  });
+
+  it("hasGitIdentity is true once the fixture's own repo-local config is set", () => {
+    const { dir } = makeFixtureRepo();
+    expect(hasGitIdentity(dir)).toBe(true);
   });
 });
 
@@ -426,6 +439,26 @@ describe("applyUpgrade — 1.6-shape fixture", () => {
     const result = applyUpgrade(ctx);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toMatch(/working tree is not clean/);
+    expect(result.applied).toEqual([]);
+  });
+
+  it("refuses to start with no git identity configured, saying so, without touching anything", () => {
+    // A real fixture DOES have identity (makeFixtureRepo sets it) — this simulates the CI-runner
+    // case (no git identity anywhere) by intercepting only `git config user.name`/`user.email`
+    // and delegating every other call to the real git, rather than actually clearing this
+    // machine's own config.
+    const { dir, packagedSkillsRoot } = makeFixtureRepo();
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    const noIdentityGit = (args: string[]) => {
+      if (args[0] === "-C" && args[2] === "config" && (args[3] === "user.name" || args[3] === "user.email")) {
+        return { status: 1, stdout: "", stderr: "" };
+      }
+      const r = spawnSync("git", args, { encoding: "utf8" });
+      return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+    };
+    const result = applyUpgrade(ctx, noIdentityGit);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/no git identity configured/);
     expect(result.applied).toEqual([]);
   });
 });
