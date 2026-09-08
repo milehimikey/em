@@ -41,6 +41,8 @@ describe("em state (CLI)", () => {
       step: "1",
       lastUpdated: localIsoDate(),
       lastConformance: null,
+      modelVersion: null,
+      certified: null,
       lastReview: null,
     });
   });
@@ -88,25 +90,47 @@ describe("em state (CLI)", () => {
     expect(after).toBe(before);
   });
 
-  it("set-conformance writes the exact format and round-trips through read", () => {
+  it("set-conformance refuses to write anything (MIL-218) when no model-versions/ manifest exists yet", () => {
+    const before = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
+    const r = em(
+      ["state", "set-conformance", "abc123f", modelDir(), "--report", "conformance/2026-08-21-report.md"],
+      cwd,
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("bump a model version first");
+    // Refuses BEFORE writing anything — Last conformance: must stay untouched.
+    const after = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
+    expect(after).toBe(before);
+  });
+
+  it("set-conformance writes the exact format, certifies the bumped model version, and round-trips through read", () => {
+    const bump = em(["model", "version", "bump", join(modelDir(), "order-fulfillment.em"), "--by", "Alex"], cwd);
+    expect(bump.status).toBe(0);
+
     const w = em(
       ["state", "set-conformance", "abc123f", modelDir(), "--report", "conformance/2026-08-21-report.md"],
       cwd,
     );
     expect(w.status).toBe(0);
+    expect(w.stdout).toContain("certified:");
     const text = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
     expect(text).toContain(
       "- **Last conformance:** " +
         localIsoDate() +
         " @ abc123f — report: conformance/2026-08-21-report.md",
     );
+    expect(text).toContain("- **Model version:** 1");
+    expect(text).toContain("- **Certified:** v1 @ abc123f (" + localIsoDate() + ")");
     const r = em(["state", "read", modelDir()], cwd);
-    expect(JSON.parse(r.stdout).lastConformance).toEqual({
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.lastConformance).toEqual({
       date: localIsoDate(),
       revision: "abc123f",
       report: "conformance/2026-08-21-report.md",
       partial: false,
     });
+    expect(parsed.modelVersion).toBe(1);
+    expect(parsed.certified).toEqual({ version: 1, revision: "abc123f", date: localIsoDate() });
   });
 
   it("set-conformance refuses while a slice:null finding is unruled, and --partial escapes with a notice", () => {

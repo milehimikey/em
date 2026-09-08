@@ -11,6 +11,8 @@ Keep it current at the end of every working session.
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}
 - **Last conformance:** {{YYYY-MM-DD @ <target-repo revision> — report: conformance/<date>-report.md | never}}
+- **Model version:** {{N | none}}
+- **Certified:** {{v<N> @ <target-repo revision> (YYYY-MM-DD) | never}}
 - **Last stakeholder review:** {{YYYY-MM-DD — attendees: see Participants | never}}
 
 ## Session inputs

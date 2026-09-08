@@ -216,7 +216,7 @@ describe("em export: continuationOf / alsoReads (src/emit/json.ts)", () => {
   it("bumps schemaVersion to 1.12", () => {
     const { model, refs, diagnostics } = compile(MODEL);
     const { text } = buildExport(model, refs, diagnostics, MODEL, join(dir, "model.em"));
-    expect(JSON.parse(text).schemaVersion).toBe("1.13");
+    expect(JSON.parse(text).schemaVersion).toBe("1.14");
   });
 
   it("originating slice's alsoReads lists both later events in timeline order, continuationOf null", () => {

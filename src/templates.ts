@@ -124,6 +124,8 @@ Keep it current at the end of every working session.
 - **Current step:** {{1–7, see methodology; or extraction round R1–R7}}
 - **Last updated:** {{YYYY-MM-DD}}
 - **Last conformance:** {{YYYY-MM-DD @ <target-repo revision> — report: conformance/<date>-report.md | never}}
+- **Model version:** {{N | none}}
+- **Certified:** {{v<N> @ <target-repo revision> (YYYY-MM-DD) | never}}
 - **Last stakeholder review:** {{YYYY-MM-DD — attendees: see Participants | never}}
 
 ## Session inputs
@@ -345,6 +347,8 @@ export function scaffoldStateFile(displayName: string, slugName: string, today: 
     .replace("{{YYYY-MM-DD}}", today) // "Last updated" — the first occurrence; later ones belong to
     // judgment-section placeholder bullets and are dropped whole below.
     .replace("{{YYYY-MM-DD @ <target-repo revision> \u2014 report: conformance/<date>-report.md | never}}", "never")
+    .replace("{{N | none}}", "none") // "Model version:" (MIL-218) \u2014 never bumped yet
+    .replace("{{v<N> @ <target-repo revision> (YYYY-MM-DD) | never}}", "never") // "Certified:" (MIL-218)
     .replace("{{YYYY-MM-DD \u2014 attendees: see Participants | never}}", "never");
 
   return filled

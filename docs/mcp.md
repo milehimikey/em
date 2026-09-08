@@ -98,6 +98,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
 | `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214) |
+| `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
 
 Each document's shape — field names, `schemaVersion`, diagnostic codes — is documented once, in
@@ -280,6 +281,14 @@ sorted-unique ids/a ruled finding carrying `resolvedBy`+`resolvedOn` — and rep
 count when valid. Read-only; the file itself is written by the conform skill directly (there's no
 MCP write tool for it, same as every other write/mutate command). See
 [`em conform-findings check`](cli.md#em-conform-findings-check-path) for the full JSON shape.
+
+### `model_version_show`
+
+Same document as `em model version show <file> --json` (MIL-218): the model's design version
+(from `model-versions/*.json`, `null` if never bumped via `em model version bump`) and the most
+recently certified version, if any (`{ version, at, on }`). Read-only, and reads only the
+manifest files beside the model — never compiles it, so this works even on a model with errors.
+See [`em model version show`](cli.md#em-model-version-show-file---json) for the full JSON shape.
 
 ### `contract`
 

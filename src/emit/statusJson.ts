@@ -31,7 +31,11 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // recorded report), and `lastConformance` gains `partial` (boolean) — whether the marker was
 // recorded with `em state set-conformance --partial`. See ../cli/status.ts's
 // StatusDriftCounts.uncertified/ConformanceEntry.unruledFindings/ConformanceEntry.lastConformance.
-export const STATUS_SCHEMA_VERSION = "1.5";
+// 1.6 (MIL-218): a new top-level `modelVersion` array — one entry per input file: design
+// version (from `model-versions/*.json`, or null if never bumped), the most recently certified
+// version (if any), and whether the vector has drifted since the design version was bumped.
+// See ../cli/status.ts's ModelVersionStatusEntry.
+export const STATUS_SCHEMA_VERSION = "1.6";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No
@@ -48,6 +52,7 @@ export function buildStatusJson(report: StatusReport): string {
     invariants: report.invariants,
     issues: report.issues,
     conformance: report.conformance,
+    modelVersion: report.modelVersion,
     owners: report.owners,
     // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
     // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,

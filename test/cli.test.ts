@@ -184,14 +184,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.13"); // MIL-208: continuationOf/alsoReads bump
+    expect(doc.schemaVersion).toBe("1.14"); // MIL-218: model.version bump
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.13");
+    expect(doc.schemaVersion).toBe("1.14");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -207,7 +207,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.13");
+    expect(doc.schemaVersion).toBe("1.14");
     expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
@@ -1590,6 +1590,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "freshness",
           "glossary",
           "list_markers",
+          "model_version_show",
           "query",
           "slice_ready",
           "status",
@@ -2056,6 +2057,11 @@ describe("em conform-scope (CLI, real git repo)", () => {
     git(["commit", "-qam", "initial"], targetRepo);
     baseRev = git(["rev-parse", "HEAD"], targetRepo).stdout.trim();
 
+    // MIL-218: a full em state set-conformance now also certifies the current design version —
+    // bump one first so the certify step has a manifest to write into.
+    const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], modelDir);
+    expect(bump.status).toBe(0);
+
     const setConformance = em(
       ["state", "set-conformance", baseRev, "--report", "conformance/2026-08-01-report.md"],
       modelDir,
@@ -2167,6 +2173,8 @@ describe("em conform-scope (CLI, real git repo)", () => {
       mkdirSync(join(badRevDir, "slices"), { recursive: true });
       writeFileSync(join(badRevDir, "slices", "place-order.md"), docWithImplementedIn("src/checkout"));
       writeFileSync(join(badRevDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
+      const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], badRevDir);
+      expect(bump.status).toBe(0);
       const setConformance = em(
         ["state", "set-conformance", "not-a-real-rev", "--report", "conformance/2026-08-01-report.md"],
         badRevDir,
@@ -2263,6 +2271,11 @@ describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
     git(["add", "."], targetRepo);
     git(["commit", "-qam", "initial"], targetRepo);
     baseRev = git(["rev-parse", "HEAD"], targetRepo).stdout.trim();
+
+    // MIL-218: a full em state set-conformance now also certifies the current design version —
+    // bump one first so the certify step has a manifest to write into.
+    const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], modelDir);
+    expect(bump.status).toBe(0);
 
     // The state file (shared by every .em in this directory) names checkout.em explicitly.
     const setConformance = em(["state", "set-conformance", baseRev, "--report", "conformance/2026-08-01-report.md"], modelDir);
@@ -2515,6 +2528,11 @@ slice "Billing" {
     git(["commit", "-qam", "initial"], modelDir);
     baseRev = git(["rev-parse", "HEAD"], modelDir).stdout.trim();
 
+    // MIL-218: a full em state set-conformance now also certifies the current design version —
+    // bump one first so the certify step has a manifest to write into.
+    const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], modelDir);
+    expect(bump.status).toBe(0);
+
     const setConformance = em(["state", "set-conformance", baseRev, "--report", "conformance/r.md"], modelDir);
     expect(setConformance.status).toBe(0);
     git(["add", "."], modelDir);
@@ -2547,7 +2565,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.5");
+    expect(doc.statusSchemaVersion).toBe("1.6");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -2677,6 +2695,8 @@ slice "Billing" {
       mkdirSync(join(dir, "slices"), { recursive: true });
       writeFileSync(join(dir, "slices", "place-order.md"), PLACE_ORDER_DOC);
       writeFileSync(join(dir, "slices", "billing.md"), BILLING_DOC);
+      const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], dir);
+      expect(bump.status).toBe(0);
       em(["state", "set-conformance", targetRev, "--report", "conformance/r.md"], dir);
 
       const r = em(["status", "checkout.em", "--repo", targetRepo, "--json"], dir);
@@ -2776,6 +2796,8 @@ slice "Billing" {
         expect(seeded.status).toBe(0);
         expect(existsSync(join(modelDir2, "checkout-asis.em"))).toBe(true);
 
+        const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], modelDir2);
+        expect(bump.status).toBe(0);
         const setConformance = em(["state", "set-conformance", "deadbeef", "--report", "r.md"], modelDir2);
         expect(setConformance.status).toBe(0);
 
@@ -2808,6 +2830,8 @@ slice "Billing" {
         expect(scaffolded.status).toBe(0);
         const modelDir3 = join(cwd, "checkout");
         writeFileSync(join(modelDir3, "checkout.em"), 'slice "A" {\n  ui Dashboard @Customer\n}\n');
+        const bump = em(["model", "version", "bump", "checkout.em", "--by", "Alex Rivera"], modelDir3);
+        expect(bump.status).toBe(0);
         const setConformance = em(["state", "set-conformance", "abc123f", "--report", "r.md"], modelDir3);
         expect(setConformance.status).toBe(0);
 
@@ -3685,6 +3709,101 @@ describe("em slice conform (CLI, MIL-214)", () => {
   });
 });
 
+describe("em model version (CLI, MIL-218)", () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-model-version-"));
+    writeFileSync(join(dir, "orders.em"), 'slice "Place Order" {\n  command Place Order\n  event Order Placed\n}\n');
+    // Hand-built state file (not `em scaffold`, which would overwrite orders.em with its own
+    // starter template) — same convention test/cli-state.test.ts's fixtures use.
+    writeFileSync(
+      join(dir, ".event-modeling.md"),
+      "# Event Modeling Progress — Orders\n\n" +
+        "- **Model file:** `orders.em`\n" +
+        "- **Current phase:** discover\n" +
+        "- **Current step:** 1\n" +
+        "- **Last updated:** 2026-09-08\n" +
+        "- **Last conformance:** never\n" +
+        "- **Last stakeholder review:** never\n",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("show reports design: null, certified: null before any bump", () => {
+    const r = em(["model", "version", "show", "orders.em", "--json"], dir);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ file: "orders.em", design: null, certified: null });
+  });
+
+  it("show's text form reports 'none'/'never'", () => {
+    const r = em(["model", "version", "show", "orders.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("design version: none");
+    expect(r.stdout).toContain("certified: never");
+  });
+
+  it("bump refuses without a state file, pointing at em scaffold, without writing anything", () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), "em-cli-model-version-empty-"));
+    writeFileSync(join(emptyDir, "solo.em"), 'slice "S" {\n  command Do Thing\n  event Thing Done\n}\n');
+    const r = em(["model", "version", "bump", "solo.em", "--by", "Alex"], emptyDir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("no state file");
+    expect(r.stderr).toContain("em scaffold");
+    expect(existsSync(join(emptyDir, "model-versions"))).toBe(false);
+    rmSync(emptyDir, { recursive: true, force: true });
+  });
+
+  it("bump requires --by", () => {
+    const r = em(["model", "version", "bump", "orders.em", "--by", "   "], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--by");
+  });
+
+  it("bumps to v1, writes the manifest, and rewrites the state file's Model version: bullet", () => {
+    const r = em(["model", "version", "bump", "orders.em", "--by", "Alex Rivera", "--on", "2026-09-08"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("bumped:");
+    expect(r.stdout).toContain("v1");
+    const manifest = JSON.parse(readFileSync(join(dir, "model-versions", "v1.json"), "utf8"));
+    expect(manifest).toMatchObject({ model: "orders.em", version: 1, bumpedBy: "Alex Rivera", bumpedOn: "2026-09-08", certified: null });
+    const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
+    expect(state).toContain("- **Model version:** 1");
+
+    const shown = em(["model", "version", "show", "orders.em", "--json"], dir);
+    expect(JSON.parse(shown.stdout)).toEqual({ file: "orders.em", design: 1, certified: null });
+  });
+
+  it("refuses a no-op re-bump without --force, and --force writes v2 anyway", () => {
+    const noop = em(["model", "version", "bump", "orders.em", "--by", "Alex Rivera"], dir);
+    expect(noop.status).not.toBe(0);
+    expect(noop.stderr).toContain("nothing has changed since v1");
+    expect(noop.stderr).toContain("--force");
+
+    const forced = em(["model", "version", "bump", "orders.em", "--by", "Alex Rivera", "--force"], dir);
+    expect(forced.status).toBe(0);
+    expect(forced.stdout).toContain("v2");
+    expect(existsSync(join(dir, "model-versions", "v2.json"))).toBe(true);
+  });
+
+  it("em slice ratify warns when the write moved the model past the last bumped version", () => {
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "place-order.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n---\nbody\n",
+    );
+    const modelFile = join(dir, "orders.em");
+    const withNote = readFileSync(modelFile, "utf8").replace(
+      "command Place Order",
+      'command Place Order note "slices/place-order.md"',
+    );
+    writeFileSync(modelFile, withNote);
+    const r = em(["slice", "ratify", "orders.em", "place-order", "--by", "Alex Rivera"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('warn: ratifying "place-order" moved the model past v2 — run `em model version bump` to record it');
+  });
+});
+
 describe("em conform-findings check (CLI, MIL-214)", () => {
   let dir: string;
   beforeAll(() => {
@@ -4242,7 +4361,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.5");
+    expect(doc.statusSchemaVersion).toBe("1.6");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);

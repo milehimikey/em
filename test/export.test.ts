@@ -16,6 +16,7 @@ import { buildExport, buildSliceExport } from "../src/emit/json.js";
 import { STARTER_EM } from "../src/templates.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 import { DERIVED_FIXTURE } from "./helpers/derivedFixture.js";
+import { runModelVersionBump, runCertifyModelVersion } from "../src/cli/modelVersion.js";
 
 const PKG_VERSION: string = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
@@ -31,7 +32,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.13"); // MIL-208: continuationOf/alsoReads bump
+    expect(doc.schemaVersion).toBe("1.14"); // MIL-218: model.version bump
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -239,7 +240,7 @@ slice "Orders Again" {
   it("lists `edges` after `arrows` on `model`, and exports `[]` for a model with no connections", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc.model)).toEqual([
-      "name", "key", "personas", "contexts", "hasAutomation", "types", "slices", "arrows", "edges",
+      "name", "key", "personas", "contexts", "hasAutomation", "version", "types", "slices", "arrows", "edges",
     ]);
     expect(docOf(`slice "Lonely" {
   event Nothing Happened
@@ -1073,7 +1074,7 @@ type Order { billing: Address }
   });
 
   it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.13");
+    expect(docOf(SRC).schemaVersion).toBe("1.14");
   });
 });
 
@@ -1543,5 +1544,37 @@ describe("refuses to export when the model has errors (the gate `em export` chec
     expect(hasErrors(diagnostics)).toBe(false);
     const doc = docOf(src);
     expect(doc.diagnostics.some((d: any) => d.severity === "warning")).toBe(true);
+  });
+});
+
+describe("`model.version` — the model-level design/certified version (MIL-218, schema 1.14)", () => {
+  it("is { design: null, certified: null } when no model-versions/ manifest exists", () => {
+    const doc = docOf(STARTER_EM);
+    expect(doc.model.version).toEqual({ design: null, certified: null });
+  });
+
+  it("reflects the bumped design version, with certified: null before any certification", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-export-model-version-"));
+    const src = STARTER_EM;
+    const { model, refs } = compile(src);
+    runModelVersionBump(dir, "model.em", model, refs, src, "Alex", "2026-09-08", "1.12.0", false);
+    const doc = docOf(src, join(dir, "model.em"));
+    rmSync(dir, { recursive: true, force: true });
+    expect(doc.model.version).toEqual({ design: 1, certified: null });
+  });
+
+  it("reflects the most recently certified version once em state set-conformance's certify step has run", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-export-model-version-certified-"));
+    const src = STARTER_EM;
+    const { model, refs } = compile(src);
+    runModelVersionBump(dir, "model.em", model, refs, src, "Alex", "2026-09-08", "1.12.0", false);
+    const certify = runCertifyModelVersion(dir, model, refs, src, "8f12ed8", "2026-09-08", "conformance/2026-09-08-report.md", null);
+    expect(certify.ok).toBe(true);
+    const doc = docOf(src, join(dir, "model.em"));
+    rmSync(dir, { recursive: true, force: true });
+    expect(doc.model.version).toEqual({
+      design: 1,
+      certified: { version: 1, at: "8f12ed8", on: "2026-09-08" },
+    });
   });
 });

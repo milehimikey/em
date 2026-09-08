@@ -257,15 +257,18 @@ non-zero if there are errors; exits zero on warnings or a clean model, printing
 honest. Takes exactly one file — passing more (`em validate a.em b.em`) errors out rather
 than silently checking only the first one (MIL-123).
 
-Every always-on rule except two is a pure function of the `.em` source (the opt-in
-`--slice-ready` gate below reads the slice doc as well, by design). Both always-on exceptions
-read `slices/*.md` frontmatter alongside the model: lineage-ref resolution (MIL-84) checks
-`split-from`/`merged-from`/`superseded-by` refs against the current tree — see
-[validation.md#lineage](validation.md#lineage); frontmatter coherence (MIL-85) flags a slice
-doc whose `status: implemented` has no `implementedIn` link — see
+Most always-on rules are a pure function of the `.em` source; a handful are fs-aware, reading
+alongside the model (the opt-in `--slice-ready` gate below reads the slice doc too, by design):
+lineage-ref resolution (MIL-84, `split-from`/`merged-from`/`superseded-by` refs against the
+current tree — see [validation.md#lineage](validation.md#lineage)), frontmatter coherence
+(MIL-85, a slice doc whose `status: implemented` has no `implementedIn` link — see
 [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence) for exactly what's
-checked (and, just as deliberately, what's never flagged — a re-ratified slice's stale
-`implementedIn` is expected, not incoherent).
+checked, and, just as deliberately, what's never flagged — a re-ratified slice's stale
+`implementedIn` is expected, not incoherent), note-binding mismatches (MIL-126), doc↔model
+consistency (MIL-124), orphaned slice docs (MIL-183), and model-version staleness (MIL-218,
+`model-versions/*.json` against the current model content/slice-version vector — see
+[validation.md#model-version-stale](validation.md#model-version-stale); silent when no manifest
+exists at all).
 
 | Flag | Effect |
 |---|---|
@@ -428,7 +431,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 
 ```json
 {
-  "schemaVersion": "1.13",
+  "schemaVersion": "1.14",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "modelKey": "order-fulfilment",
@@ -438,7 +441,7 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 }
 ```
 
-`schemaVersion` is the same `1.12` the full export uses — `slice` is byte-for-byte the same shape
+`schemaVersion` is the same `1.14` the full export uses — `slice` is byte-for-byte the same shape
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
@@ -447,16 +450,23 @@ model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON p
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of
 the source text, so a consumer can tell whether an export is stale without re-running `em`.
 
-**Schema summary** (`schemaVersion: "1.13"`):
+**Schema summary** (`schemaVersion: "1.14"`):
 
 - `generator` — `{ name, version }` of the tool that produced the export.
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `types`, `slices`, `arrows`, `edges`.
+- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `slices`, `arrows`, `edges`.
   - `key` (added in schema `1.10`, MIL-193) is the model's own key in em's one cross-model
     addressing scheme — see **Model-qualified refs** below for how it's derived and used. The
     `--slice` envelope carries the same value as top-level `modelKey`.
+  - `version` (added in schema `1.14`, MIL-218) — `{ design: N|null, certified: { version, at,
+    on } | null }`, read straight from `model-versions/*.json` beside the `.em` file (never
+    from the model's own content — a design version is a human-bumped fact). `design` is the
+    highest bumped version, `null` if `em model version bump` has never run here. `certified`
+    names the most recently CERTIFIED design version (which need not equal `design` itself — a
+    later bump can outrun certification), `null` if nothing has ever been certified. See
+    [model-versions.md](model-versions.md).
   - `types` (added in schema `1.3`) lists every declared named type (see
     [dsl.md](dsl.md#named-types)), independent of the slice timeline. Each has a stable `ref`
     (`types/<slug(name)>`, suffixed `~2`, `~3`, … — plus a warning diagnostic — on a name
@@ -1367,6 +1377,7 @@ invariants: 20/20 covered (0 uncovered) — test/
 issues: 0 open issues, 0/0 open question(s) unchecked
 conformance: last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
 constitution: present
+model version: v2 — certified v1 @ 8f12ed8
 ```
 
 A `doc issues: N warning(s) — see diagnostics (<codes>)` line is appended when any doc-join
@@ -1390,13 +1401,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.5"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.6"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.5",
+  "statusSchemaVersion": "1.6",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1425,6 +1436,15 @@ see [mcp.md](mcp.md)):
       "slicePRsBehindHead": 0,
       "constitution": { "present": true, "path": "constitution.md" },
       "error": null
+    }
+  ],
+  "modelVersion": [
+    {
+      "file": "model.em",
+      "design": 2,
+      "certified": { "version": 1, "at": "8f12ed8", "on": "2026-08-01" },
+      "drifted": false,
+      "changes": { "hashChanged": false, "slices": [] }
     }
   ],
   "owners": [
@@ -1467,6 +1487,19 @@ machine-independent: `constitution.md` for a model with no spec-kit above it,
 `constitution: present` or `constitution: absent (<expected path>)` per model (labelled
 `constitution (<file>):` when there's more than one input), and `--md` carries a matching
 `Constitution` row.
+
+`modelVersion` (added in schema `1.6`, MIL-218) has one entry per input file — `design` is the
+highest bumped `model-versions/*.json` version (`null` if never bumped), `certified` names the
+most recently CERTIFIED design version (which need not equal `design` itself — a later bump can
+outrun certification), and `drifted`/`changes` are the same `modelVersionDrift` predicate `em
+validate`'s `model-version-stale` warning and the `em slice ratify`/`reratify` advisory read:
+`drifted: true` when the `.em` file's content hash and/or the slice-version vector has moved
+since `design` was bumped (`changes.hashChanged`, `changes.slices: [{ key, from, to }]`).
+`drifted` is always `false` when `design` is `null` — nothing to be stale against. The text
+report prints one `model version: v<N> — certified v<M> @ <rev>` line per model (`never bumped`
+when `design` is `null`, ` (drifted since bump)` appended when `drifted` is `true`), labelled
+`model version (<file>):` when there's more than one input; `--md` carries a matching `Model
+version` row. See [model-versions.md](model-versions.md).
 
 `owners` (added in schema `1.2`, MIL-171) is a flat, one-entry-per-slice list across every input
 file — `owner` is the slice's bound doc's `owner:` frontmatter verbatim, `null` when absent or
@@ -2367,6 +2400,18 @@ silent. A repeated read model's own earlier instance (`view X again`) is never c
 upstream dependency by itself — only a genuine producing edge into an element of the slice being
 ratified counts.
 
+**Model-version advisory (MIL-218).** After the write, checks whether it pushed the model's
+slice-version vector (or content hash) past the last bumped design version
+(`model-versions/v<N>.json` — see [model-versions.md](model-versions.md)) and, if so, prints
+one line to stderr:
+
+```
+warn: ratifying "<key>" moved the model past v<N> — run `em model version bump` to record it
+```
+
+Silent when no manifest exists at all — a repo that's never bumped a design version isn't
+nagged. Advisory only, same never-refuses posture as the upstream advisory above.
+
 ## `em slice mark-implemented <file> <slice-key> <pr-url>`
 
 The lifecycle flip a ratified slice's doc gets at merge (MIL-103) — see
@@ -2482,6 +2527,10 @@ scope for this slice — the same advisory pattern `em slice ratify`'s MIL-198 u
 warning uses (data, not a gate: the team may have good reason to move on before a conform sweep
 ever ran).
 
+**Model-version advisory (MIL-218).** Same `warn: reratifying "<key>" moved the model past v<N>
+— run \`em model version bump\` to record it` line `em slice ratify` prints, checked after the
+write — see that command's own section above for the full contract.
+
 ## `em slice conform <file> <slice-key> --at <rev>`
 
 Records per-slice-per-version conformance certification (MIL-214): "a conform sweep walked THIS
@@ -2539,6 +2588,60 @@ em slice conform model.em request-payment --at 8f12ed8
 # -> certified: slices/request-payment.md (conformedVersion: 2, conformedAt: 8f12ed8, conformedOn: 2026-09-08)
 em slice conform model.em request-payment --at 8f12ed8 --skip-findings-check
 ```
+
+## `em model version bump <file> --by <name>`
+
+Bumps the model's **design version** (MIL-218, [process.md#model-versions](process.md#model-versions)):
+writes `model-versions/v<N+1>.json` (`N` = the highest existing version, or `0` for the
+first-ever bump — sibling of `slices/`/`conformance/`, see
+[model-versions.md](model-versions.md) for the manifest shape) and rewrites the state file's
+`Model version:` bullet.
+
+| Flag | Effect |
+|---|---|
+| `--by <name>` | Required. The bumper's name |
+| `--on <date>` | Bump date, `YYYY-MM-DD` (default: today, local date) |
+| `--force` | Bump even though nothing has changed since the current version — the one case this flag is right for |
+
+Refuses (nothing written) when:
+
+| Error | Meaning |
+|---|---|
+| `no state file — run \`em scaffold\` first (...)` | A model-version bump needs a resumable state file to point its `Model version:` bullet at |
+| `"<file>" has errors — fix them first` | Same refusal every other write command holds — a design version bumped against an erroring model isn't a fact worth recording |
+| `a bumper name is required (--by)` | `--by` was empty/whitespace-only |
+| `nothing has changed since v<N> (same model content and slice versions) — pass --force to bump anyway` | The `.em` file's content hash AND every slice's own `version:` are identical to the last bump — pass `--force` to stamp a new version anyway |
+
+```bash
+em model version bump model.em --by "Alex Rivera"
+# -> bumped: model-versions/v2.json (v2)
+```
+
+## `em model version show <file> [--json]`
+
+Prints the model's current design version and the most recently **certified** version, if any —
+reads only the `model-versions/*.json` manifests, never compiles the model, so it works even on
+a model with errors.
+
+```bash
+em model version show model.em
+# design version: 2
+# certified: v1 @ 8f12ed8 (2026-09-08)
+
+em model version show model.em --json
+```
+
+```json
+{
+  "file": "model.em",
+  "design": 2,
+  "certified": { "version": 1, "at": "8f12ed8", "on": "2026-09-08" }
+}
+```
+
+`certified` names the most recently CERTIFIED design version — which need not equal `design`
+itself, since a later bump can outrun certification (the example above: v2 was bumped, but only
+v1 was ever certified). `null` for either field means "never bumped"/"never certified".
 
 ## `em conform-findings check <path>`
 
@@ -2630,10 +2733,17 @@ derived values.
 
 Reads and writes the **mechanical** fields of a model's state file (`.event-modeling.md`,
 see [ai-workflow.md](ai-workflow.md) and the `event-modeling` skill's `templates/state.md`):
-`Model file:`, `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Last
-stakeholder review:`. This is the enforcement point for the phase enum and for the exact
-`Last conformance:`/`Last stakeholder review:` formats the skill's `conform`/`review` phases
-depend on — hand-editing these bullets risks a typo the next resume/conform run can't parse.
+`Model file:`, `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Model
+version:`, `Certified:`, `Last stakeholder review:`. This is the enforcement point for the
+phase enum and for the exact `Last conformance:`/`Model version:`/`Certified:`/`Last
+stakeholder review:` formats the skill's `conform`/`review` phases (and `em model version`,
+MIL-218) depend on — hand-editing these bullets risks a typo the next resume/conform run can't
+parse.
+
+`Model version:`/`Certified:` are **migration-tolerant**: a state file predating MIL-218
+parses as `modelVersion: null`/`certified: null` (their `none`/`never` markers) rather than
+failing — the only two bullets `em state read` treats this way. See
+[model-versions.md](model-versions.md).
 
 Everything else in the file — Session inputs, Participants, Decisions log, Open questions, Slice
 inventory — is agent-authored prose and stays out of `em state`'s reach; every mechanical-field
@@ -2652,7 +2762,7 @@ file — or the section/bullet it targets — is missing.
 
 ### `em state read [dir]`
 
-Prints the six mechanical fields as JSON on stdout:
+Prints the mechanical fields as JSON on stdout:
 
 ```json
 {
@@ -2661,13 +2771,18 @@ Prints the six mechanical fields as JSON on stdout:
   "step": "1",
   "lastUpdated": "2026-08-20",
   "lastConformance": null,
+  "modelVersion": null,
+  "certified": null,
   "lastReview": null
 }
 ```
 
 `lastConformance` is `null` for the template's `never` marker, otherwise `{ "date", "revision",
-"report" }` parsed from the `Last conformance:` bullet. `lastReview` is `null` for `never`,
-otherwise the `YYYY-MM-DD` at the start of the `Last stakeholder review:` bullet.
+"report" }` parsed from the `Last conformance:` bullet. `modelVersion` (MIL-218) is `null` for
+`none` (or a missing bullet — migration path), otherwise the bumped design version number.
+`certified` is `null` for `never` (or a missing bullet), otherwise `{ "version", "revision",
+"date" }` parsed from the `Certified:` bullet. `lastReview` is `null` for `never`, otherwise the
+`YYYY-MM-DD` at the start of the `Last stakeholder review:` bullet.
 
 ### `em state set-phase <phase> [dir]`
 
@@ -2725,6 +2840,24 @@ em state set-conformance abc123f my-model/ --report conformance/2026-08-20-repor
 `partial` is parsed back out on `em state read` as `lastConformance.partial: true`, and surfaced
 by every reader of `Last conformance:` — `em conform-scope`'s own `lastConformance.partial`,
 `em status`/`em freshness`'s `conformance[].lastConformance.partial`.
+
+**Certification (MIL-218).** A FULL (non-`--partial`) run also certifies the model's current
+design version: writes `certified: { at, on, report, findings }` into the CURRENT design
+version's `model-versions/v<N>.json` manifest, and rewrites the state file's `Certified:`
+bullet. Refuses (nothing written — not even `Last conformance:`) when no manifest exists yet
+("bump a model version first — `em model version bump`") or when the model has drifted since
+the current manifest was bumped (a slice's `version:` moved, or the `.em` file itself changed —
+the certification would otherwise name a version that isn't what this conform run actually
+walked). `--partial` never certifies; this step is silently skipped (not a failure) when the
+model doesn't compile cleanly, same leniency the findings gate above holds. See
+[model-versions.md](model-versions.md).
+
+```bash
+em model version bump my-model/my-model.em --by "Alex Rivera"
+em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
+# -> certified: my-model/model-versions/v1.json (v1 @ abc123f)
+# -> wrote my-model/.event-modeling.md
+```
 
 ### `em state set-review <date> [dir]`
 

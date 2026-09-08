@@ -1,20 +1,31 @@
 // SPDX-License-Identifier: MIT
 // Reads and writes the MECHANICAL fields of a model's resumable state file
 // (`.event-modeling.md`, see .claude/skills/event-modeling/templates/state.md): `Model file:`,
-// `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Last stakeholder
-// review:`. This is the ONE parser for those bullets — `em changelog` (src/emit/changelog.ts,
-// parseDecisionsLog) parses a disjoint section of the same file (the `## Decisions log`) and
-// stays a separate function for that reason, but shares STATE_FILE_NAME with this module rather
-// than hard-coding the filename a second time.
+// `Current phase:`, `Current step:`, `Last updated:`, `Last conformance:`, `Model version:`,
+// `Certified:`, `Last stakeholder review:`. This is the ONE parser for those bullets — `em
+// changelog` (src/emit/changelog.ts, parseDecisionsLog) parses a disjoint section of the same
+// file (the `## Decisions log`) and stays a separate function for that reason, but shares
+// STATE_FILE_NAME with this module rather than hard-coding the filename a second time.
 //
 // Deliberately narrow: judgment content (Session inputs, Participants, Decisions log, Usage
 // log, Open questions, Slice inventory) is agent-authored prose and out of scope here — this
-// module only ever touches the six mechanical bullets above, byte-for-byte leaving every other
+// module only ever touches the mechanical bullets above, byte-for-byte leaving every other
 // line alone.
 //
-// Pure text in, text/data out (parseState, setPhase, setConformance, setReview); `loadStateFile`
-// is the one bit of fs I/O, kept here so both `em state` (src/cli.ts) and any future caller
-// share the same file-location convention instead of re-deriving it.
+// MIL-218: `Model version:`/`Certified:` are a POINTER into the `model-versions/*.json`
+// manifests (modelVersion.ts) — history lives there, not here. Both are MIGRATION-TOLERANT,
+// unlike the other six bullets: a state file predating this feature parses as `modelVersion:
+// null`/`certified: null` (the `none`/`never` markers) rather than failing outright — the
+// existing "missing bullet is an error" behavior stays exactly as strict as before for every
+// OTHER bullet. `setModelVersion`/`setCertified` insert the bullet (right after `Last
+// conformance:`, the ruling's own placement) the first time a migrated file is touched, and
+// update it in place afterward — the only two writers in this module that ever ADD a line
+// rather than only ever replacing one that's already there.
+//
+// Pure text in, text/data out (parseState, setPhase, setConformance, setModelVersion,
+// setCertified, setReview); `loadStateFile` is the one bit of fs I/O, kept here so both `em
+// state` (src/cli.ts) and any future caller share the same file-location convention instead of
+// re-deriving it.
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -42,14 +53,26 @@ const LABELS = {
   lastStakeholderReview: "Last stakeholder review",
 } as const;
 
+/** MIL-218: the two migration-tolerant bullets — see module header. Kept in a separate map
+ *  from `LABELS` (rather than folded in) so `parseState`'s missing-bullet loop can treat them
+ *  differently: absent is `none`/`never`, never a parse error. */
+const OPTIONAL_LABELS = {
+  modelVersion: "Model version",
+  certified: "Certified",
+} as const;
+
 /** The state file's mechanical fields, decoded to plain data. `lastConformance`/`lastReview`
- *  are `null` for the template's `never` marker (never run yet). */
+ *  are `null` for the template's `never` marker (never run yet). `modelVersion`/`certified`
+ *  (MIL-218) are `null` for their own `none`/`never` markers, INCLUDING when the bullet is
+ *  missing entirely from an older state file — see module header. */
 export interface ParsedState {
   modelPath: string;
   phase: string;
   step: string;
   lastUpdated: string;
   lastConformance: { date: string; revision: string; report: string; partial: boolean } | null;
+  modelVersion: number | null;
+  certified: { version: number; revision: string; date: string } | null;
   lastReview: string | null;
 }
 
@@ -98,10 +121,19 @@ export function loadStateFile(dirOrFile: string): LoadResult {
 const LAST_CONFORMANCE_RE = /^(\d{4}-\d{2}-\d{2}) @ (.+?) — report: (.+?)( \(partial\))?$/;
 const LEADING_DATE_RE = /^(\d{4}-\d{2}-\d{2})\b/;
 
-/** Parse the six mechanical bullets out of a state file's raw text. `ok: false` when the file
- *  is missing one of the bullet lines entirely, or when `Last conformance:`/`Last stakeholder
- *  review:` holds neither `never` nor its documented format — both are the file failing to be
- *  the thing resume/conform scoping needs, so both are reported the same way. */
+// MIL-218: `Model version:` holds a bare positive integer or the literal `none`.
+const MODEL_VERSION_RE = /^(\d+)$/;
+// MIL-218: `Certified:` holds `v<N> @ <revision> (YYYY-MM-DD)` or the literal `never` — same
+// `v<N>` prefix convention lineage refs use elsewhere in em (docs/dsl.md).
+const CERTIFIED_RE = /^v(\d+) @ (.+) \((\d{4}-\d{2}-\d{2})\)$/;
+
+/** Parse the mechanical bullets out of a state file's raw text. `ok: false` when the file is
+ *  missing one of the six REQUIRED bullet lines entirely, or when `Last conformance:`/`Last
+ *  stakeholder review:` holds neither `never` nor its documented format — both are the file
+ *  failing to be the thing resume/conform scoping needs, so both are reported the same way.
+ *  MIL-218: `Model version:`/`Certified:` are migration-tolerant — see module header — so a
+ *  missing bullet there is never added to `missing`; it parses as the `none`/`never` default
+ *  instead, same as if the bullet were present and held that literal value. */
 export function parseState(text: string): ParseStateResult {
   const missing: string[] = [];
   const raw: Record<string, string> = {};
@@ -115,6 +147,10 @@ export function parseState(text: string): ParseStateResult {
       ok: false,
       message: `missing bullet line(s): ${missing.map((l) => `"- **${l}:**"`).join(", ")}`,
     };
+  }
+  const optionalRaw: Record<string, string> = {};
+  for (const label of Object.values(OPTIONAL_LABELS)) {
+    optionalRaw[label] = bulletValue(text, label) ?? (label === OPTIONAL_LABELS.modelVersion ? "none" : "never");
   }
 
   const modelPath = raw[LABELS.modelFile].replace(/^`|`$/g, "");
@@ -145,6 +181,32 @@ export function parseState(text: string): ParseStateResult {
     lastReview = m[1];
   }
 
+  const modelVersionRaw = optionalRaw[OPTIONAL_LABELS.modelVersion];
+  let modelVersion: number | null = null;
+  if (modelVersionRaw !== "none") {
+    const m = MODEL_VERSION_RE.exec(modelVersionRaw);
+    if (!m) {
+      return {
+        ok: false,
+        message: `"- **Model version:**" doesn't match a bare integer or "none": ${modelVersionRaw}`,
+      };
+    }
+    modelVersion = Number(m[1]);
+  }
+
+  const certifiedRaw = optionalRaw[OPTIONAL_LABELS.certified];
+  let certified: ParsedState["certified"] = null;
+  if (certifiedRaw !== "never") {
+    const m = CERTIFIED_RE.exec(certifiedRaw);
+    if (!m) {
+      return {
+        ok: false,
+        message: `"- **Certified:**" doesn't match "v<N> @ <revision> (YYYY-MM-DD)" or "never": ${certifiedRaw}`,
+      };
+    }
+    certified = { version: Number(m[1]), revision: m[2], date: m[3] };
+  }
+
   return {
     ok: true,
     state: {
@@ -153,6 +215,8 @@ export function parseState(text: string): ParseStateResult {
       step: raw[LABELS.currentStep],
       lastUpdated: raw[LABELS.lastUpdated],
       lastConformance,
+      modelVersion,
+      certified,
       lastReview,
     },
   };
@@ -196,6 +260,26 @@ function applyBulletUpdates(text: string, updates: Array<{ label: string; value:
   return { ok: true, text: result };
 }
 
+/** MIL-218: update `label`'s bullet if present, else INSERT it right after `afterLabel`'s own
+ *  bullet line — the one-time migration act for a state file predating `Model version:`/
+ *  `Certified:` (module header). Matches the line-ending style already in use right after
+ *  `afterLabel`'s line (CRLF if that's what follows, else LF) so a migrated file doesn't end up
+ *  with mixed endings. `afterLabel` is trusted to already exist (`setModelVersion`/
+ *  `setCertified` only ever anchor on `Last conformance:`, one of the six REQUIRED bullets
+ *  `loadStateFile`'s caller has already confirmed is present via a successful `parseState`). */
+function insertOrUpdateBullet(text: string, label: string, value: string, afterLabel: string): string {
+  const re = bulletLineRegex(label);
+  if (re.test(text)) {
+    return text.replace(re, () => `- **${label}:** ${value}`);
+  }
+  const afterRe = bulletLineRegex(afterLabel);
+  const m = afterRe.exec(text);
+  if (!m) return text; // afterLabel missing — shouldn't happen on a real caller's already-parsed text
+  const insertPos = m.index + m[0].length;
+  const eol = text.slice(insertPos, insertPos + 2) === "\r\n" ? "\r\n" : "\n";
+  return `${text.slice(0, insertPos)}${eol}- **${label}:** ${value}${text.slice(insertPos)}`;
+}
+
 /** `em state set-phase`: rewrite `Current phase:` (and `Current step:` when `step` is given)
  *  plus `Last updated:`. `phase` is trusted to already be a validated `Phase` — the CLI layer
  *  checks against `PHASES` before calling this so the enum has exactly one home. */
@@ -220,6 +304,32 @@ export function setConformance(text: string, revision: string, report: string, t
     { label: LABELS.lastConformance, value },
     { label: LABELS.lastUpdated, value: today },
   ]);
+}
+
+/** `em model version bump` (MIL-218): rewrite `Model version:` (inserting it right after `Last
+ *  conformance:` the first time a migrated file is touched — see module header) plus `Last
+ *  updated:`. `version` is trusted to already be the freshly-bumped design version — the CLI
+ *  layer computes it via `modelVersion.ts`'s `runModelVersionBump` before calling this. */
+export function setModelVersion(text: string, version: number, today: string): PatchResult {
+  const withVersion = insertOrUpdateBullet(text, OPTIONAL_LABELS.modelVersion, String(version), LABELS.lastConformance);
+  return applyBulletUpdates(withVersion, [{ label: LABELS.lastUpdated, value: today }]);
+}
+
+/** `em state set-conformance` (non-`--partial`, MIL-218 ruling D): rewrite `Certified:` plus
+ *  `Last updated:`. Inserting it for the first time anchors on `Model version:` when that
+ *  bullet is already present (the ordinary case — a model version must exist before it can be
+ *  certified, `runCertifyModelVersion`'s own refusal), so the canonical bullet order (`Last
+ *  conformance`, `Model version`, `Certified`, `Last stakeholder review`) holds regardless of
+ *  which of the two migration inserts happens first; falls back to `Last conformance:` only
+ *  for the edge case of a state file that somehow carries `Certified:` without `Model
+ *  version:` yet. `version`/`revision`/`date` are trusted to already be the just-recorded
+ *  certification — the CLI layer computes them via `modelVersion.ts`'s
+ *  `runCertifyModelVersion` before calling this. */
+export function setCertified(text: string, version: number, revision: string, date: string, today: string): PatchResult {
+  const value = `v${version} @ ${revision} (${date})`;
+  const anchor = bulletLineRegex(OPTIONAL_LABELS.modelVersion).test(text) ? OPTIONAL_LABELS.modelVersion : LABELS.lastConformance;
+  const withCertified = insertOrUpdateBullet(text, OPTIONAL_LABELS.certified, value, anchor);
+  return applyBulletUpdates(withCertified, [{ label: LABELS.lastUpdated, value: today }]);
 }
 
 /** `em state set-review`: rewrite `Last stakeholder review:` (per templates/state.md's format)

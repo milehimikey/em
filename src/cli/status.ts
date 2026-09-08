@@ -35,6 +35,7 @@ import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
 import { lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
+import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, ModelVersionSliceChange } from "./modelVersion.js";
 
 /** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
  *  `em catalog`'s header coloring and `em render`'s status legend already recognize. */
@@ -413,6 +414,44 @@ export function resolveConformanceEntry(
   };
 }
 
+// ---- Model version (MIL-218) ----
+
+/** One model's design/certified version facts (`em model version bump`/`em state
+ *  set-conformance`'s certify step, modelVersion.ts) — the state-of-the-system rollup's own
+ *  window onto the same `model-versions/*.json` manifests `em model version show` reads
+ *  directly. `certified` names the most recently CERTIFIED design version, which need not be
+ *  `design` itself (a later bump can outrun certification — `findCertifiedVersion`'s own
+ *  "newest certified wins, not necessarily newest bumped" contract). `drifted`/`changes` are
+ *  `modelVersionDrift`'s own predicate, verbatim — the same one `em validate`'s
+ *  `model-version-stale` warning and the `em slice ratify`/`reratify` advisory read, never
+ *  re-derived a third way. */
+export interface ModelVersionStatusEntry {
+  file: string;
+  design: number | null;
+  certified: { version: number; at: string; on: string } | null;
+  drifted: boolean;
+  changes: { hashChanged: boolean; slices: ModelVersionSliceChange[] };
+}
+
+/** Resolve one input model's `ModelVersionStatusEntry`. `source` is that model's own `.em` text
+ *  (for the modelHash comparison inside `modelVersionDrift`) — the caller's `compileFile(file)`
+ *  result already carries it, never re-read here. */
+export function resolveModelVersionStatusEntry(file: string, model: NormalizedModel, refs: RefsResult, source: string): ModelVersionStatusEntry {
+  const baseDir = dirname(file);
+  const design = latestModelVersionNumber(baseDir);
+  const certifiedFound = findCertifiedVersion(baseDir);
+  const drift = modelVersionDrift(baseDir, model, refs, source);
+  return {
+    file,
+    design,
+    certified: certifiedFound
+      ? { version: certifiedFound.version, at: certifiedFound.certified.at, on: certifiedFound.certified.on }
+      : null,
+    drifted: drift.current !== null && (drift.hashChanged || drift.slicesChanged.length > 0),
+    changes: { hashChanged: drift.hashChanged, slices: drift.slicesChanged },
+  };
+}
+
 // ---- Aggregation ----
 
 export interface StatusSliceCounts {
@@ -500,6 +539,10 @@ export interface StatusReport {
   invariants: StatusInvariantTotals | null;
   issues: StatusIssueTotals;
   conformance: ConformanceEntry[];
+  /** MIL-218: one entry per input file — design/certified version, and whether the vector has
+   *  drifted since the design version was bumped. Named `modelVersion` (singular), valued as an
+   *  array — same per-file breakdown shape `conformance`/`owners` already hold. */
+  modelVersion: ModelVersionStatusEntry[];
   /** Doc-join diagnostics (`binding-missing-file`/`frontmatter-invalid` warnings) collected
    *  while resolving every slice's doc, across every input file — carried here rather than
    *  discarded, so a state-of-the-system report doesn't hide a broken doc reference just
@@ -520,6 +563,7 @@ export function buildStatusReport(
   invariants: StatusInvariantTotals | null,
   conformance: ConformanceEntry[],
   diagnostics: StatusDiagnostic[],
+  modelVersion: ModelVersionStatusEntry[] = [],
 ): StatusReport {
   const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
   const drift: StatusDriftCounts = {
@@ -610,6 +654,7 @@ export function buildStatusReport(
     invariants,
     issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked },
     conformance,
+    modelVersion,
     diagnostics,
     owners: sliceFacts.map((f) => ({ file: f.file, key: f.key, owner: f.owner })),
   };
@@ -686,6 +731,17 @@ export function formatConstitutionPart(entry: ConformanceEntry): string {
   return entry.constitution.present ? "present" : `absent (${entry.constitution.path ?? "unresolved"})`;
 }
 
+/** MIL-218: the per-model model-version clause — design version, most recently certified
+ *  version (if any), and whether the vector has drifted since the design version was bumped.
+ *  `"never bumped"` when `entry.design` is `null` — the routine state for a model that hasn't
+ *  opted into `em model version bump` yet. */
+export function formatModelVersionPart(entry: ModelVersionStatusEntry): string {
+  if (entry.design === null) return "never bumped";
+  const certifiedPart = entry.certified ? `certified v${entry.certified.version} @ ${entry.certified.at}` : "never certified";
+  const driftPart = entry.drifted ? " (drifted since bump)" : "";
+  return `v${entry.design} — ${certifiedPart}${driftPart}`;
+}
+
 /** The one-line rollup: `"8/8 implemented · 20/20 invariants covered · 0 open issues · last
  *  conformed <rev>, N commits behind HEAD"` (MIL-163's acceptance line). For multiple input
  *  models, the conformance clause reports the FIRST file's entry — a single-file invocation is
@@ -743,6 +799,13 @@ export function formatStatusDetail(report: StatusReport): string {
     const label = multi ? `constitution (${entry.file}): ` : "constitution: ";
     lines.push(`${label}${formatConstitutionPart(entry)}`);
   }
+  // MIL-218: one model version line per model, after the constitution lines, same multi-model
+  // labelling convention.
+  const multiModelVersion = report.modelVersion.length > 1;
+  for (const entry of report.modelVersion) {
+    const label = multiModelVersion ? `model version (${entry.file}): ` : "model version: ";
+    lines.push(`${label}${formatModelVersionPart(entry)}`);
+  }
   if (report.diagnostics.length > 0) {
     lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);
   }
@@ -794,6 +857,14 @@ export function formatStatusMarkdown(report: StatusReport): string {
   } else {
     for (const entry of report.conformance) {
       rows.push([`Constitution (${entry.file})`, formatConstitutionPart(entry)]);
+    }
+  }
+  // MIL-218: one Model version row per model, same single-vs-multi labelling.
+  if (report.modelVersion.length <= 1) {
+    if (report.modelVersion[0]) rows.push(["Model version", formatModelVersionPart(report.modelVersion[0])]);
+  } else {
+    for (const entry of report.modelVersion) {
+      rows.push([`Model version (${entry.file})`, formatModelVersionPart(entry)]);
     }
   }
   const header = "| Metric | Value |\n|---|---|";

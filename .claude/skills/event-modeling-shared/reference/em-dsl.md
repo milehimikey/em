@@ -77,6 +77,12 @@ em state set-conformance <revision> [dir] --partial           # record the marke
 em state set-review <date> [dir]                              # rewrite Last stakeholder review: (and Last updated:)
 em state log-usage <file>                                     # append one Usage log line — phase(s) touched + em validate's diagnostic categories hit, deduped and canonically formatted (MIL-161, docs/usage-data.md) — the mechanical half of 'save state at the end of every session' that used to be run-validate-then-hand-format; state file resolved next to <file>, same convention as em conform-scope
 em state log-usage <file> --phases <list>                     # comma-separated phase(s) touched this session: discover, extract, model, slice, implement, conform, review, validate, watch
+em model version bump <file>                                  # bump the model's design version: write model-versions/v<N+1>.json (sibling of slices/, conformance/) and rewrite the state file's `Model version:` bullet (MIL-218). Refuses when the state file is missing (run `em scaffold` first), when --by is empty, and when nothing has changed since the current version (same model content hash AND same slice-version vector) unless --force — a no-op bump is the one case --force is right for.
+em model version bump <file> --by <name>                      # the bumper's name
+em model version bump <file> --on <date>                      # bump date, YYYY-MM-DD (default: today, local date)
+em model version bump <file> --force                          # bump even though nothing has changed since the current version
+em model version show <file>                                  # print the model's current design version and the most recently certified version, if any (model-versions/*.json — MIL-218)
+em model version show <file> --json                           # print a JSON document instead of text
 em usage-report [root]                                        # aggregate every .event-modeling.md's Usage log under [root] into phase/diagnostic-category tallies (MIL-161) — replaces docs/usage-data.md's hand-rolled grep/awk/sort pipeline; a logged line that doesn't match the canonical em state log-usage format is reported under unparseableLines rather than silently mistallied or dropped
 em usage-report [root] --json                                 # print a JSON document instead of the text report
 em conform-scope <file>                                       # mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — --seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)
@@ -690,6 +696,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `lineage-version-impossible` | error | Impossible lineage version | Fix the referenced version, or ratify the target slice first. |
 | `loops-to-forward` | error | `loops-to` target not earlier on the timeline | Point `loops-to` at an earlier view, or use `from` on a later `view … again` instance instead. |
 | `loops-to-unresolved` | error | `loops-to` target unresolved | Name a view that exists, or declare it before this event. |
+| `model-version-stale` | warning | Model version stale | Run `em model version bump` to record the current model content/slice-version vector. |
 | `note-binding-dangling` | warning | Dangling cross-slice note | Create the doc at that path, or fix/remove the note. |
 | `note-binding-extra` | warning | Extra doc-binding note, ignored | Remove the note, or point it at the slice's actual bound doc. |
 | `note-binding-unratified` | warning | Unratified cross-slice note | Add `covers: <this-slice-key>` to that doc's frontmatter, or correct the note's path. |

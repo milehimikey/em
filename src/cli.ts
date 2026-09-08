@@ -18,7 +18,7 @@ import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic } from "./model/validate.js";
-import { buildExport, buildSliceExport } from "./emit/json.js";
+import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
 import { buildTypeSpec } from "./emit/typespec.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
@@ -30,6 +30,7 @@ import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceVali
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
+import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
@@ -48,6 +49,7 @@ import {
   buildStatusBadge,
   formatConformancePart,
   findSpecifyRoot,
+  resolveModelVersionStatusEntry,
   SliceStatusFact,
   StatusDiagnostic,
 } from "./cli/status.js";
@@ -95,11 +97,20 @@ import {
   parseState,
   setPhase,
   setConformance,
+  setModelVersion,
+  setCertified,
   setReview,
   isValidDateString,
   modelPathMismatch,
   PatchResult,
 } from "./cli/stateFile.js";
+import {
+  findCertifiedVersion,
+  latestModelVersionNumber,
+  modelVersionDrift,
+  runCertifyModelVersion,
+  runModelVersionBump,
+} from "./cli/modelVersion.js";
 import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile, scaffoldConstitution } from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
 import {
@@ -758,7 +769,7 @@ slice
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-review", "ratify without a recorded review — prints a loud notice on stderr")
   .action((file: string, sliceKey: string, opts: { by: string; on?: string; skipReview?: boolean }) => {
-    const { model, refs, diagnostics } = compileFile(file);
+    const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
 
     // Scoped the same way `em slice mark-implemented`/`em export --slice`/`em validate
@@ -804,6 +815,7 @@ slice
         ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn})`
         : `already ratified (no-op): ${result.path}`,
     );
+    warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);
   });
 
 slice
@@ -819,7 +831,7 @@ slice
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .action((file: string, sliceKey: string) => {
-    const { model, refs, diagnostics } = compileFile(file);
+    const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
 
     // Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
@@ -846,6 +858,7 @@ slice
       console.error(`warn: reratifying "${sliceKey}" has ${result.advisory.unruledFindingsCount} unruled conformance finding(s)`);
     }
     console.log(`reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement)`);
+    warnModelVersionDrift(dirname(file), model, refs, source, `reratifying "${sliceKey}"`);
   });
 
 slice
@@ -931,14 +944,17 @@ const STATE_DIR_HELP =
   "model directory containing .event-modeling.md, or a direct path to that file (default: current directory)";
 
 /** Shared by every `em state` writer: load, apply the pure patch, write, report — the only
- *  difference between set-phase/set-conformance/set-review is which `mutate` closure they pass. */
-function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: string, today: string) => PatchResult): void {
+ *  difference between set-phase/set-conformance/set-review/set-model-version is which `mutate`
+ *  closure they pass. `today` defaults to `localIsoDate()`; a caller that also needs to stamp a
+ *  SECOND artifact (MIL-218: `em state set-conformance`'s model-version certify step) with the
+ *  exact same date passes it in explicitly, computed once, rather than each call independently
+ *  reading the clock and risking a midnight-rollover mismatch between the two. */
+function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: string, today: string) => PatchResult, today: string = localIsoDate()): void {
   const loaded = loadStateFile(dirOrFile);
   if (!loaded.ok) {
     console.error(loaded.message);
     process.exit(1);
   }
-  const today = localIsoDate();
   const result = mutate(loaded.text, today);
   if (!result.ok) {
     console.error(`${cmdLabel}: ${result.message}`);
@@ -946,6 +962,19 @@ function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: st
   }
   writeFileSync(loaded.path, result.text);
   console.log(`wrote ${loaded.path}`);
+}
+
+/** MIL-218 ruling C: the one-line advisory `em slice ratify`/`reratify` print when the write
+ *  they just made pushed the slice-version vector (or, in principle, the `.em` content hash —
+ *  never true for these two commands, which only ever edit a slice doc's frontmatter, but
+ *  checked anyway so this helper stays the one true predicate) past the last bumped design
+ *  version. Silent when no manifest exists at all (`drift.current === null`) — a repo that
+ *  never bumped a design version has nothing to be stale against, same silence
+ *  `model-version-stale` (rules.ts) holds. Never refuses; advisory only. */
+function warnModelVersionDrift(baseDir: string, model: NormalizedModel, refs: RefsResult, source: string, cmdLabel: string): void {
+  const drift = modelVersionDrift(baseDir, model, refs, source);
+  if (drift.current === null || (!drift.hashChanged && drift.slicesChanged.length === 0)) return;
+  console.error(`warn: ${cmdLabel} moved the model past v${drift.current} — run \`em model version bump\` to record it`);
 }
 
 const state = program
@@ -1016,13 +1045,17 @@ state
     // ruling. Best-effort: a model that doesn't exist or doesn't compile cleanly can't tell us
     // its implemented slices, so the gate is skipped (not refused) in that case rather than
     // blocking a state-file operation on an unrelated model problem — `em validate` is where
-    // that problem gets its own diagnostic.
+    // that problem gets its own diagnostic. Also the compiled model MIL-218's certify step
+    // needs below (kept, not just the derived `inScope` set, since certify needs the model/refs
+    // themselves — never re-compiled a second time).
     let inScope = new Set<string>();
+    let compiledForCertify: { model: NormalizedModel; refs: RefsResult; source: string } | null = null;
     if (existsSync(modelFile)) {
       const compiled = compileFile(modelFile);
       if (!hasErrors(compiled.diagnostics)) {
         const { facts } = resolveSliceDocFacts(compiled.model, compiled.refs, modelDir);
         inScope = new Set(facts.filter((f) => f.status === "implemented").map((f) => f.key));
+        compiledForCertify = { model: compiled.model, refs: compiled.refs, source: compiled.source };
       }
     }
 
@@ -1053,7 +1086,43 @@ state
       console.error(`notice: conformance marker recorded as PARTIAL — ${unruled.length} finding(s) unruled`);
     }
 
-    writeStateUpdate(dir, "em state set-conformance", (text, today) => setConformance(text, revision, opts.report, today, recordPartial));
+    const today = localIsoDate();
+
+    // MIL-218 ruling D: a FULL (non-`--partial`) marker also certifies the current design
+    // version's model-versions/*.json manifest. Checked (and, on success, WRITTEN) before the
+    // `Last conformance:` bullet below — a refusal here (no manifest yet, or the vector has
+    // drifted since it was bumped) must leave the state file untouched, same "refuse before any
+    // write" discipline every other em command holds; never leaves `Last conformance:` updated
+    // with no matching `Certified:` to show for it. Best-effort, same posture as the `inScope`
+    // computation above, for exactly one case: a model that doesn't compile cleanly can't be
+    // certified against, so certification is silently SKIPPED (not a `set-conformance` failure)
+    // rather than blocking the conformance marker on an unrelated model problem — `em validate`
+    // is where that problem gets its own diagnostic.
+    let certifiedVersion: number | null = null;
+    if (!recordPartial && compiledForCertify) {
+      const findingsPath = lookup.kind === "found" ? lookup.path : null;
+      const certifyResult = runCertifyModelVersion(
+        modelDir,
+        compiledForCertify.model,
+        compiledForCertify.refs,
+        compiledForCertify.source,
+        revision,
+        today,
+        opts.report,
+        findingsPath,
+      );
+      if (!certifyResult.ok) {
+        console.error(`em state set-conformance: ${certifyResult.message}`);
+        process.exit(1);
+      }
+      certifiedVersion = certifyResult.version;
+      console.log(`certified: ${certifyResult.path} (v${certifyResult.version} @ ${revision})`);
+    }
+
+    writeStateUpdate(dir, "em state set-conformance", (text, t) => setConformance(text, revision, opts.report, t, recordPartial), today);
+    if (certifiedVersion !== null) {
+      writeStateUpdate(dir, "em state set-conformance", (text, t) => setCertified(text, certifiedVersion!, revision, t, t), today);
+    }
   });
 
 state
@@ -1097,8 +1166,8 @@ state
     }
     const phases = sortUsagePhases(rawPhases);
 
-    const { model, diagnostics, refs } = compileFile(file);
-    const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics);
+    const { model, diagnostics, refs, source } = compileFile(file);
+    const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
     const categorySet = new Set(allDiagnostics.map((d) => RULES[d.code as RuleCode].usageCategory));
     const categories = categorySet.size > 0 ? [...categorySet].sort() : ["none"];
 
@@ -1115,6 +1184,75 @@ state
     }
     writeFileSync(loaded.path, result.text);
     console.log(`wrote ${loaded.path} — phases: ${phases.join(", ")} — validate: ${categories.join(", ")}`);
+  });
+
+const model = program.command("model").description("model-level version: design version + certified version (see docs/model-versions.md)");
+const modelVersionCmd = model.command("version").description("bump/inspect the model's design version (MIL-218)");
+
+modelVersionCmd
+  .command("bump")
+  .description(
+    "bump the model's design version: write model-versions/v<N+1>.json (sibling of slices/, " +
+      "conformance/) and rewrite the state file's `Model version:` bullet (MIL-218). Refuses " +
+      "when the state file is missing (run `em scaffold` first), when --by is empty, and when " +
+      "nothing has changed since the current version (same model content hash AND same " +
+      "slice-version vector) unless --force — a no-op bump is the one case --force is right for.",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--by <name>", "the bumper's name")
+  .option("--on <date>", "bump date, YYYY-MM-DD (default: today, local date)")
+  .option("--force", "bump even though nothing has changed since the current version")
+  .action((file: string, opts: { by: string; on?: string; force?: boolean }) => {
+    const baseDir = dirname(file);
+    const loaded = loadStateFile(baseDir);
+    if (!loaded.ok) {
+      console.error(`em model version bump: no state file — run \`em scaffold\` first (${loaded.message})`);
+      process.exit(1);
+    }
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em model version bump: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+    const today = localIsoDate();
+    const on = opts.on ?? today;
+
+    const { model: compiledModel, refs, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error(`em model version bump: "${file}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const result = runModelVersionBump(baseDir, basename(file), compiledModel, refs, source, opts.by, on, GENERATOR_VERSION, opts.force === true);
+    if (!result.ok) {
+      console.error(`em model version bump: ${result.message}`);
+      process.exit(1);
+    }
+    writeStateUpdate(baseDir, "em model version bump", (text, t) => setModelVersion(text, result.version, t), today);
+    console.log(`bumped: ${result.path} (v${result.version})`);
+  });
+
+modelVersionCmd
+  .command("show")
+  .description(
+    "print the model's current design version and the most recently certified version, if any " +
+      "(model-versions/*.json — MIL-218)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--json", "print a JSON document instead of text")
+  .action((file: string, opts: { json?: boolean }) => {
+    const baseDir = dirname(file);
+    const design = latestModelVersionNumber(baseDir);
+    const certifiedFound = findCertifiedVersion(baseDir);
+    const certified = certifiedFound
+      ? { version: certifiedFound.version, at: certifiedFound.certified.at, on: certifiedFound.certified.on }
+      : null;
+    if (opts.json) {
+      console.log(JSON.stringify({ file, design, certified }, null, 2));
+    } else {
+      console.log(`design version: ${design ?? "none"}`);
+      console.log(`certified: ${certified ? `v${certified.version} @ ${certified.at} (${certified.on})` : "never"}`);
+    }
   });
 
 program
@@ -1407,8 +1545,8 @@ program
         json?: boolean;
       },
     ) => {
-      const { model, diagnostics, refs } = compileFile(file);
-      const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics);
+      const { model, diagnostics, refs, source } = compileFile(file);
+      const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
@@ -1702,13 +1840,13 @@ program
         process.exit(1);
       }
 
-      const compiled: Array<{ file: string; model: NormalizedModel; refs: RefsResult }> = [];
+      const compiled: Array<{ file: string; model: NormalizedModel; refs: RefsResult; source: string }> = [];
       let anyErrors = false;
       for (const file of files) {
-        const { model, refs, diagnostics } = compileFile(file);
+        const { model, refs, diagnostics, source } = compileFile(file);
         printDiagnosticsFor(file, diagnostics);
         if (hasErrors(diagnostics)) anyErrors = true;
-        compiled.push({ file, model, refs });
+        compiled.push({ file, model, refs, source });
       }
       if (anyErrors) {
         console.error("em status: not reporting status — fix the errors above");
@@ -1767,8 +1905,10 @@ program
         const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn }));
         return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
       });
+      // MIL-218: one model-version entry per input file.
+      const modelVersion = compiled.map(({ file, model, refs, source }) => resolveModelVersionStatusEntry(file, model, refs, source));
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion);
 
       let output: string;
       if (opts.json) output = buildStatusJson(report);
@@ -2346,15 +2486,17 @@ function compileFile(
 }
 
 /** Lineage-ref resolution (MIL-84), frontmatter-coherence (MIL-85), note-binding mismatches
- *  (MIL-126), doc↔model consistency (MIL-124), and orphaned slice docs (MIL-183) are `em
- *  validate`'s fs-aware rules — every other diagnostic in `diagnostics` (from `compileFile`) is a
- *  pure function of the .em source. All five read `slices/*.md` alongside the model. Doc↔model
- *  consistency and orphaned-slice-doc are deliberately validate-only (unlike note-binding, which
- *  `em render` also folds in) — both are conform-phase concerns, not something every render needs
- *  to recheck. Shared by `em validate` and `em state log-usage` (MIL-161) — the latter needs the
- *  exact same diagnostic set `em validate --json` would report, since its whole job is logging
- *  which categories fired. */
-function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsResult, diagnostics: Diagnostic[]): Diagnostic[] {
+ *  (MIL-126), doc↔model consistency (MIL-124), orphaned slice docs (MIL-183), and model-version
+ *  staleness (MIL-218) are `em validate`'s fs-aware rules — every other diagnostic in
+ *  `diagnostics` (from `compileFile`) is a pure function of the .em source. All six read
+ *  `slices/*.md`/`model-versions/*.json` alongside the model. Doc↔model consistency,
+ *  orphaned-slice-doc, and model-version-stale are deliberately validate-only (unlike
+ *  note-binding, which `em render` also folds in) — all three are conform-phase concerns, not
+ *  something every render needs to recheck. Shared by `em validate` and `em state log-usage`
+ *  (MIL-161) — the latter needs the exact same diagnostic set `em validate --json` would
+ *  report, since its whole job is logging which categories fired. `source` is the `.em` file's
+ *  own text — only `validateModelVersionStale` reads it (the modelHash comparison). */
+function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsResult, diagnostics: Diagnostic[], source: string): Diagnostic[] {
   return [
     ...diagnostics,
     ...validateLineage(model, refs, dirname(file)),
@@ -2362,6 +2504,7 @@ function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsR
     ...validateNoteBindings(model, refs, dirname(file)),
     ...validateDocModelConsistency(model, refs, dirname(file)),
     ...validateOrphanedSliceDocs(model, refs, dirname(file)),
+    ...validateModelVersionStale(model, refs, dirname(file), source),
   ];
 }
 
