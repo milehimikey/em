@@ -4206,11 +4206,17 @@ describe("em status — orphaned slice docs (CLI, real fs, MIL-183)", () => {
 describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
   let cwd: string;
 
-  beforeAll(() => {
+  // MIL-217: a fresh dir per `it`, not once per describe (via beforeAll) — the third test used to
+  // reach into the FIRST test's scaffolded checkout/ directory instead of creating its own, so it
+  // silently passed only because sibling `it`s always ran before it in file order. That broke the
+  // moment a name filter (`-t "em status"`) skipped those siblings and left checkout/ never
+  // scaffolded: `em status` was run against a model that didn't exist. Each `it` below is now
+  // self-contained.
+  beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-specify-"));
     mkdirSync(join(cwd, ".specify", "memory"), { recursive: true });
   });
-  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+  afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
   it("writes no constitution.md and notes spec-kit's file instead", () => {
     const r = em(["scaffold", "Checkout"], cwd);
@@ -4238,6 +4244,8 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
   });
 
   it("`em status` reports the same resolution the scaffold used", () => {
+    const scaffolded = em(["scaffold", "Checkout"], cwd);
+    expect(scaffolded.status).toBe(0);
     const model = join(cwd, "checkout", "checkout.em");
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
