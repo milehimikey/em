@@ -231,6 +231,9 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       ratifiedOn: null,
       owner: null,
       tracking: null,
+      conformedVersion: null,
+      conformedAt: null,
+      conformedOn: null,
     });
     // Only the one slice's object — never the whole model's slices array.
     expect(doc.model).toBeUndefined();
@@ -1577,6 +1580,7 @@ describe("em mcp (CLI, MIL-21)", () => {
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "changelog",
+          "conform_findings_check",
           "conform_scope",
           "contract",
           "coverage",
@@ -2076,7 +2080,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
     const doc = JSON.parse(r.stdout);
-    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: baseRev });
     expect(doc.changedPaths.sort()).toEqual(["README.md", "src/checkout/Handler.kt"]);
     expect(doc.candidateSlices).toEqual([
       { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
@@ -2088,7 +2092,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
     const r = em(["conform-scope", "checkout.em", "--repo", targetRepo, "--full"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: baseRev });
     expect(doc.changedPaths).toEqual([]);
     expect(doc.unmappedPaths).toEqual([]);
     expect(doc.candidateSlices.map((c: { key: string }) => c.key).sort()).toEqual(["place-order", "ship-order"]);
@@ -2191,10 +2195,10 @@ describe("em conform-scope (CLI, real git repo)", () => {
     const r = em(["freshness", "checkout.em", "--repo", targetRepo, "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.freshnessSchemaVersion).toBe("1.1");
+    expect(doc.freshnessSchemaVersion).toBe("1.2");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.file).toBe("checkout.em");
-    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: baseRev });
     expect(doc.commitsBehindHead).toBe(2);
     expect(doc.slicePRsBehindHead).toBe(1);
     expect(doc.error).toBeNull();
@@ -2278,7 +2282,7 @@ describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
     const doc = JSON.parse(r.stdout);
-    expect(doc.lastConformance).toEqual({ date: expect.any(String), revision: baseRev });
+    expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: baseRev });
     expect(doc.stateFile).toBeUndefined();
   });
 
@@ -2482,7 +2486,8 @@ slice "Billing" {
 `;
 
   const PLACE_ORDER_DOC =
-    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n---\n" +
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: PR#1\n" +
+    "conformedVersion: 1\nconformedAt: 8f12ed8\nconformedOn: 2026-08-15\n---\n" +
     "## Invariants / Business Rules\n- **INV-CHK-1:** total must be positive\n- **INV-CHK-2:** discount cannot exceed total\n\n" +
     "## Open Questions\n- [x] resolved\n";
 
@@ -2531,7 +2536,7 @@ slice "Billing" {
       "slices: 2 total — 1 implemented, 0 ready-to-implement, 0 reviewed, 1 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status",
     );
     expect(detail).toContain(
-      "driftSignal: 1 in-sync, 1 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 n/a (no doc), 0 n/a (frontmatter invalid)",
+      "driftSignal: 1 in-sync, 1 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 uncertified, 0 n/a (no doc), 0 n/a (frontmatter invalid)",
     );
     expect(detail).toContain("invariants: 1/2 covered (1 uncovered) — tests");
     expect(detail).toContain("issues: 1 open issue, 1/2 open question(s) unchecked");
@@ -2542,7 +2547,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.4");
+    expect(doc.statusSchemaVersion).toBe("1.5");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -2555,6 +2560,7 @@ slice "Billing" {
       neverImplemented: 1,
       unpropagatedDelta: 0,
       implementedWithoutLink: 0,
+      uncertified: 0,
       notApplicable: 0,
       frontmatterInvalid: 0,
     });
@@ -2564,7 +2570,8 @@ slice "Billing" {
     expect(doc.conformance[0]).toMatchObject({
       file: "checkout.em",
       hasStateFile: true,
-      lastConformance: { date: expect.any(String), revision: baseRev },
+      lastConformance: { date: expect.any(String), partial: false, revision: baseRev },
+      unruledFindings: null,
       commitsBehindHead: 1,
       slicePRsBehindHead: 0,
       error: null,
@@ -3010,7 +3017,7 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote README.md");
     const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
-    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | — | — | [slices/place.md](slices/place.md) |");
     expect(readme).toContain("Open Orders");
   });
 
@@ -4235,7 +4242,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.4");
+    expect(doc.statusSchemaVersion).toBe("1.5");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);
