@@ -39,6 +39,10 @@ screen. Use Prev/Next (or the left/right arrow keys) to step through slices in d
 order — each one pans/zooms into view with everything else dimmed, so the room's attention
 tracks one slice at a time.
 
+**When a State View slice is on screen, ask who reads it (MIL-215):** a person or client in the
+room → the `ui` should draw it; another system → `public`; only an automation → nothing, it's
+internal by design and needs no endpoint.
+
 **Live capture:** when a stakeholder raises something unresolved, add `issue "..."` to the
 relevant element in the `.em` file and save — exactly the same mechanism `event-modeling-conform`
 uses for any other issue. The browser updates over the existing SSE push within moments, without

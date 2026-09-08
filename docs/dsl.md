@@ -566,6 +566,23 @@ or a `ui` consumer on a view, means that slice ships an endpoint; no `ui` means 
 [implementation agent guide](../.claude/skills/event-modeling-implement/reference/implement.md)'s
 "Interface obligations" paragraph (§2) spells out what each case requires from the code.
 
+### Exposure of a read model (MIL-215)
+
+A `view`'s exposure — whether it ships a query endpoint — follows from who reads it in the
+model, not from a dedicated keyword; the DSL already has the two signals it needs:
+
+1. **A person or client reads it** — draw the `ui` that reads it. That `ui` consumer is the
+   obligation to ship the query endpoint (see above).
+2. **Another model or system reads it** — mark it `public`. Its reader is outside this model
+   (possibly outside this system entirely); `em system <manifest>` verifies the cross-model
+   claim against a declared seam, not `em validate`.
+3. **Only an automation reads it** — nothing. No `ui`, no `public`: this is the read operation
+   an Automation/Translation reaction is required to make, drawn to say "the automation must
+   read this," not "this is an endpoint." Internal by design.
+
+A third `internal`/`published` marker would give a view three overlapping exposure controls and
+a precedence table for no gain — the owner ruled against adding one (2026-09-08).
+
 ## Colors
 
 For orientation when reading a render: UI boxes are white, commands blue, events

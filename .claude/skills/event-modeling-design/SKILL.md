@@ -67,6 +67,10 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    For an unread event, don't just bolt on a view to silence the warning: ask the user who looks at
    this fact and what they do with it. The honest answers are "here's the read model we missed" or
    "nobody — so why are we recording it", and both improve the model.
+   **Per `view`, also ask who reads it (MIL-215):** a person or client reads it → draw the `ui`
+   that reads it; another model/system reads it → mark it `public`; only an automation reads
+   it → nothing, it's internal by design. No new keyword — reachability is already what `ui` and
+   `public` mean.
 
 End of phase: render, update state (`em state set-phase slice` — the mechanical marker the state
 machine expects), and stop. Every slice already has a draft doc ready to receive the deep spec,

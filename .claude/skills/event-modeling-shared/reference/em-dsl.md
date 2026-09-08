@@ -299,6 +299,14 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   this model). `em export` carries it as `public: true`/`false`; `em diff` reports a flip as
   `event marked public`/`event unmarked public` (the entry cites the element's kind, so a
   view flip reads `view "X"`); `em validate --list-public` audits the whole public surface.
+  **Exposure of a read model (MIL-215) is three cases, no dedicated keyword:** a person/client
+  reads it → draw the `ui` that reads it (ships the endpoint); another model/system reads it →
+  `public` (a cross-model contract, verified by `em system <manifest>`, not `em validate`); only
+  an automation reads it → nothing — internal by design, the read a reaction is required to
+  make, not an endpoint. `em validate --list-public` flags a `public` view with no `ui`/reaction
+  reading it anywhere in this model as an audit note ("no in-model reader"), not a warning — a
+  cross-model `public` view's reader legitimately lives outside this file (see "`em validate`
+  rules" below).
 - **`tag`** (events only): declares a DCB (Dynamic Consistency Boundary) tag key. Three forms:
   a trailing `tag` on a field line inside the event's `{ … }` block (`priceId: UUID tag`, or
   typeless `priceId tag`) — an identity tag, key defaults to the field's own name; a bare field
