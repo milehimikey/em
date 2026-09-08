@@ -53,6 +53,8 @@ import {
 } from "./cli/status.js";
 import { buildStatusJson } from "./emit/statusJson.js";
 import { buildFreshnessJson } from "./emit/freshnessJson.js";
+import { computeMetrics, formatMetricsText } from "./cli/metrics.js";
+import { buildMetricsJson } from "./emit/metricsJson.js";
 import { planSkillSyncBundle, applySkillSyncBundle } from "./cli/skillSync.js";
 import { checkSkillSyncBundle } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
@@ -1814,6 +1816,34 @@ program
       process.stdout.write(buildFreshnessJson(entry) + "\n");
     } else {
       console.log(formatConformancePart(entry));
+    }
+  });
+
+program
+  .command("metrics")
+  .description(
+    "the pilot metrics named in advance by the register, computed from git history alone " +
+      "(MIL-170): ratification turnaround (reviewed -> ratified -> implemented), conform-cycle " +
+      "cadence + finding counts, and status-vs-reality disagreement over time — plus a fourth, " +
+      "reported as not computable from history (see docs/usage-data.md). `<file>` is an anchor " +
+      ".em file, used only to locate slices/, conformance/, and .event-modeling.md relative to " +
+      "it — same convention as em ledger; never parsed or compiled",
+  )
+  .argument("<file>", "anchor .em file")
+  .requiredOption("--from <rev>", "baseline revision")
+  .option("--to <rev>", "compare revision (default: HEAD)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { from: string; to?: string; json?: boolean }) => {
+    const to = opts.to ?? "HEAD";
+    const computed = computeMetrics(file, opts.from, to);
+    if (!computed.ok) {
+      console.error(computed.message);
+      process.exit(1);
+    }
+    if (opts.json) {
+      process.stdout.write(buildMetricsJson(computed.result) + "\n");
+    } else {
+      console.log(formatMetricsText(computed.result));
     }
   });
 
