@@ -838,8 +838,12 @@ slice
   .description(
     "flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/" +
       "`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#the-slice-lifecycle-gates) " +
-      "that makes who ratified, and when, a first-class recorded fact. Refuses a doc that never " +
-      "passed the review gate (`em slice review`) unless --skip-review is passed. Idempotent on " +
+      "that makes who ratified, and when, a first-class recorded fact. The review gate is a check " +
+      "on the doc's current `status:`, not on whether `reviewedBy:`/`reviewedOn:` are populated: " +
+      "a doc at `reviewed` or `ready-to-implement` passes (the latter is where `em slice " +
+      "reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status " +
+      "— a `draft` that never went through `em slice review` — is refused unless --skip-review " +
+      "is passed. Idempotent on " +
       "the same --by/--on pair; refuses to overwrite a different one already recorded; never " +
       "touches `version:` or the doc body",
   )

@@ -398,7 +398,7 @@ manifest exists yet, or if the model has drifted since the last bump (the certif
 otherwise name a version that isn't what conform actually walked). If the model changed during
 this conform run (a slice's `version:` moved, or the `.em` file itself changed), bump a new
 design version (`em model version bump --by <name>`) before the final `em state
-set-conformance` call. `--partial` never certifies. See `docs/model-versions.md`.
+set-conformance` call. `--partial` never certifies. See `docs/process.md#model-versions`.
 
 Conform doesn't chain to another phase automatically — it's a recurring loop, not a step in
 building the model. Suggest running it again next time the target codebase has moved, at

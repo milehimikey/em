@@ -32,7 +32,8 @@ phase lives in.
 1. Check the tool: `em --version`. If missing, tell the user to run `npm i -g @milehimikey/em`
    and stop until installed. Then check this vendored bundle's own currency against it — see
    `../event-modeling-shared/reference/operating-principles.md`'s Preconditions step 2: a bundle
-   more than a minor version stale is a STOP, not a warning.
+   even one minor version behind the installed em is a STOP, not a warning — only a patch-only
+   gap proceeds normally.
 2. Parse `$ARGUMENTS` for a phase name.
    - **A recognized phase name** (`discover`, `extract`, `model`, `slice`, `implement`,
      `conform`, `validate`, `watch`, `review`): look it up in the table above and invoke that
