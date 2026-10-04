@@ -115,7 +115,16 @@ For each slice:
    anything unresolved rather than guessing. If the slice lives in an existing codebase, Grep/Read
    adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling
    contexts) before finalizing field names/types or invariants — don't guess a shape that's
-   already defined elsewhere.
+   already defined elsewhere. Before finalizing an invariant, also compare it with the slices in
+   **this same model** — never another `.em` model — that make the same kind of change (other
+   `Archive*` or `Create*` state changes on different entities, say). If one of them already
+   states an analogous rule, either state the same rule here — written out in this doc under
+   this slice's own `INV-<MNEMONIC>-n` ID, not by pointing at the sibling's — or record why this
+   slice's case differs. If this slice has a rule those siblings lack, raise that with the user
+   as an open question against each of them; a ratified sibling changes only through its own
+   re-ratification, never as a side effect of this slice. Repeating a rule across slice docs is
+   correct: each doc is a self-contained spec, and whether the code behind those rules is shared
+   is the constitution's call, not this doc's.
 2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
    frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
    translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes `slices/<slice-name>.md`
