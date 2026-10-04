@@ -1839,7 +1839,7 @@ program
   .option(
     "--slice <key>",
     "only this slice (export key), whether ready-to-implement or implemented — no --include-ready needed; " +
-      "--strict then fails only on this slice's uncited invariants (MIL-255)",
+      "--strict then fails on this slice's uncited invariants, or if the slice is not in scope (draft/reviewed/unbound: nothing checked) (MIL-255)",
   )
   .option("--strict", "exit non-zero if any invariant ID has zero citations (CI)")
   .option("--include-ready", "also count ready-to-implement docs, not just implemented (MIL-207)")
@@ -1886,6 +1886,20 @@ program
 
     const report = buildCoverageReport(model, refs, baseDir, opts.tests, includeReady, onlyKey);
 
+    // MIL-255: a scoped slice whose doc is draft/reviewed/unbound/unusable is out of scope — the
+    // same way the unscoped report treats it — but under --strict "nothing was checked" must not
+    // exit 0, or the pre-merge check passes vacuously (the very bug --slice exists to fix). So:
+    // advisory (no --strict) prints the note on stdout and exits 0; --strict prints it on stderr
+    // and exits 1 (also in --json mode, whose document shape is unchanged — consumers read the
+    // slice's `inScope` alongside `ok`). An in-scope doc with zero invariants stays a pass.
+    const unchecked = onlyKey === undefined ? undefined : report.slices.find((sl) => !sl.inScope);
+    const uncheckedNote = unchecked
+      ? `slice "${unchecked.key}" is not in scope (${unchecked.status ?? unchecked.docReason ?? "no doc"}) — nothing checked; only ready-to-implement/implemented docs are checked`
+      : null;
+    if (uncheckedNote !== null && (opts.strict || !opts.json)) {
+      (opts.strict ? console.error : console.log)(uncheckedNote);
+    }
+
     if (opts.json) {
       const sliceScope = opts.slice === undefined ? null : { requested: opts.slice, continuationOf: continuationOfKey };
       process.stdout.write(buildCoverageJson(file, opts.tests, report, includeReady, sliceScope) + "\n");
@@ -1893,20 +1907,13 @@ program
       if (continuationOfKey !== null) {
         console.log(`slice "${opts.slice}" is a continuation of "${continuationOfKey}" — checking "${continuationOfKey}"`);
       }
-      // MIL-255: a scoped slice whose doc is draft/reviewed/unbound is out of scope, the same
-      // way the unscoped report treats it (skipped, never a failure) — but say so out loud
-      // rather than printing "0 invariant(s) checked" as if something had been verified.
-      for (const slice of report.slices) {
-        if (onlyKey !== undefined && !slice.inScope) {
-          const why = slice.status ?? slice.docReason ?? "no doc";
-          console.log(`slice "${slice.key}" is not in scope (${why}) — nothing checked; only ready-to-implement/implemented docs are checked`);
-        }
-      }
       for (const slice of report.slices) {
         if (!slice.inScope) continue;
         console.log(`slice "${slice.key}" (${slice.status}):`);
         if (slice.invariants.length === 0) {
-          console.log(`  (no INV-* invariant IDs found in the doc body)`);
+          // MIL-255: said as "checked" so an in-scope doc defining zero invariants (a legitimate
+          // pass) is distinguishable from the "not in scope — nothing checked" case above.
+          console.log(`  (checked — the doc defines 0 INV-* invariant IDs)`);
           continue;
         }
         for (const inv of slice.invariants) {
@@ -1924,7 +1931,7 @@ program
     // Advisory by default (exit 0 even with uncovered IDs) — --strict is the opt-in CI gate,
     // same "set exitCode, don't truncate stdout" rationale as em ledger/em diff for the --json
     // form, and consistent for the text form too.
-    if (opts.strict && report.uncoveredCount > 0) process.exitCode = 1;
+    if (opts.strict && (report.uncoveredCount > 0 || uncheckedNote !== null)) process.exitCode = 1;
   });
 
 program

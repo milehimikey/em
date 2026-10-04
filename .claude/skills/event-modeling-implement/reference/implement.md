@@ -190,7 +190,7 @@ or seem small — see §10.
   the §6 flip — so the default form reports it `inScope: false`, checks nothing, and exits 0. It
   is a regression check for shipped slices, not the definition-of-done check. (`--include-ready`
   is no substitute: it counts every ratified slice, so `--strict` fails on slices nobody has
-  started.) A continuation key resolves to its originating slice's doc.
+  started.) A continuation key resolves to its originating slice's doc. If it exits 1 with "not in scope", the slice's doc is not `ready-to-implement`/`implemented` — nothing was checked, so stop and surface it rather than treating the run as a pass.
 - Every scenario in `## Scenarios (Given / When / Then)` exists as a passing test; rejection
   scenarios assert the doc's named rejection reason.
 - Alternate/error flows (idempotency included) are covered by tests.

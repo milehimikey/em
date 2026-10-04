@@ -151,7 +151,9 @@ doc status is `implemented` (or, with `includeReady: true`, also `ready-to-imple
 forward-looking report; or, with `slice: "<key>"`, only that one slice whatever its status — the
 pre-merge check for a slice under build, MIL-255, same semantics as the CLI's `--slice`: unknown
 key is a tool error, a continuation key resolves to its originating slice and `continuationOf`
-names it), each `INV-*` invariant ID the doc's own `## Invariants` / `## Delta`
+names it; read the slice entry's `inScope` as well as `ok` — `ok: true` with `inScope: false`
+(a draft/reviewed/unbound doc) means nothing was checked, and the tool does not turn that
+into an error), each `INV-*` invariant ID the doc's own `## Invariants` / `## Delta`
 sections *define* (see **Token format** under
 [`em coverage`](cli.md#em-coverage-file---tests-dir) for exactly what counts as a definition),
 whether a test under `testsDir` cites it, and every citing `file:line`. Refuses (a

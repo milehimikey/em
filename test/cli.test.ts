@@ -1325,7 +1325,8 @@ describe("em coverage --slice (CLI, real fs, MIL-255)", () => {
         `slice "Cancel" {\n  command Cancel Order note "slices/cancel.md"\n  event Order Cancelled\n}\n` +
         `slice "Orders" {\n  view Orders from "Order Placed" note "slices/orders.md"\n  ui Order List @Customer\n}\n` +
         `slice "Orders Show Cancel" {\n  view Orders again from "Order Cancelled"\n}\n` +
-        `slice "Draft Thing" {\n  command Draft Thing note "slices/draft-thing.md"\n  event Thing Drafted\n}\n`,
+        `slice "Draft Thing" {\n  command Draft Thing note "slices/draft-thing.md"\n  event Thing Drafted\n}\n` +
+        `slice "Empty Thing" {\n  command Empty Thing note "slices/empty-thing.md"\n  event Thing Emptied\n}\n`,
     );
     const doc = (status: string, inv: string) =>
       `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ${status}\nversion: 1\n---\n` +
@@ -1334,6 +1335,10 @@ describe("em coverage --slice (CLI, real fs, MIL-255)", () => {
     writeFileSync(join(dir, "slices", "cancel.md"), doc("ready-to-implement", "INV-CA-1"));
     writeFileSync(join(dir, "slices", "orders.md"), doc("ready-to-implement", "INV-OR-1"));
     writeFileSync(join(dir, "slices", "draft-thing.md"), doc("draft", "INV-DR-1"));
+    writeFileSync(
+      join(dir, "slices", "empty-thing.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n## Invariants / Business Rules\n",
+    );
     writeFileSync(join(dir, "tests", "place.test.ts"), `it("rule (INV-PL-1)", () => {});\n`);
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -1395,10 +1400,29 @@ describe("em coverage --slice (CLI, real fs, MIL-255)", () => {
     expect(json.continuationOf).toBe("orders");
   });
 
-  it("a draft slice is out of scope: said out loud, nothing checked, exit 0 even under --strict", () => {
+  it("a draft slice + --slice --strict exits 1 (nothing checked must not pass), message on stderr", () => {
     const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "draft-thing", "--strict"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('slice "draft-thing" is not in scope (draft)');
+    const json = em(["coverage", "model.em", "--tests", "tests", "--slice", "draft-thing", "--strict", "--json"], dir);
+    expect(json.status).toBe(1);
+    const doc = JSON.parse(json.stdout);
+    expect(doc.ok).toBe(true); // documented meaning: zero uncovered IDs — read inScope too
+    expect(doc.slices[0].inScope).toBe(false);
+  });
+
+  it("a draft slice + --slice without --strict stays advisory: message on stdout, exit 0", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "draft-thing"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('slice "draft-thing" is not in scope (draft)');
+  });
+
+  it("an in-scope slice whose doc defines zero invariants passes --strict and says it was checked", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "empty-thing", "--strict"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('slice "empty-thing" (ready-to-implement):');
+    expect(r.stdout).toContain("checked — the doc defines 0 INV-* invariant IDs");
+    expect(r.stdout).not.toContain("not in scope");
   });
 });
 

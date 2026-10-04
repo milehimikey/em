@@ -1227,10 +1227,13 @@ takes; an unknown key is an error (exit 1, `no slice with export key "<key>"`), 
 vacuously passing empty report. A **continuation key** (MIL-208, an `again` view instance)
 resolves to its originating slice — whose doc carries the invariants — and the text output says
 `continuation of "<originating>"` (the same `continuationOf` `--slice-ready` reports). A slice
-whose doc is `draft`, `reviewed`, or unbound stays out of scope, treated exactly as the
-unscoped report treats it (nothing checked, exit 0 even under `--strict`), but the text output
-says so (`slice "<key>" is not in scope (<status>) — nothing checked`) rather than printing a
-bare `0 invariant(s) checked`; ratification is gated separately by `--slice-ready`. The
+whose doc is `draft`, `reviewed`, unbound, or has unusable frontmatter is **not in scope**
+and nothing is checked: without `--strict` that is advisory (the message `slice "<key>" is not
+in scope (<status>) — nothing checked` on stdout, exit 0), but **with `--strict` it exits 1**
+(message on stderr) — a strict pre-merge check must never pass vacuously. A slice that *is* in
+scope but whose doc defines zero invariants is a legitimate pass (exit 0 under `--strict`); its
+text output says `checked — the doc defines 0 INV-* invariant IDs`, so it is distinguishable
+from "nothing checked". Ratification itself is gated separately by `--slice-ready`. The
 whole-model error guard is unchanged: a model with errors anywhere is refused. The MCP
 `coverage` tool takes the same optional `slice` input.
 
@@ -1280,7 +1283,10 @@ and every other command's own schema):
   `--include-ready`), `false` by default.
 - `slice` / `continuationOf` — (1.2, MIL-255, additive) the `--slice <key>` as requested, and
   the originating slice's key when it was a continuation key; both `null` on an unscoped run.
-  When `slice` is set, `slices` holds only the resolved slice's entry.
+  When `slice` is set, `slices` holds only the resolved slice's entry. **A consumer of the
+  scoped document must read that entry's `inScope` as well as `ok`:** `ok` keeps its meaning
+  (zero uncovered IDs), so `ok: true` with `inScope: false` means nothing was checked (the CLI's
+  `--strict` exits 1 in that case, but the document itself is unchanged).
 - `ok` — `true` when every in-scope invariant ID has at least one citation (advisory verdict;
   independent of whether `--strict` was passed).
 - `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.
