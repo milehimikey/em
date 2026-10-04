@@ -183,8 +183,14 @@ or seem small — see §10.
 - The PR description cites exactly one slice doc (plus its `covers:` keys, if any) and lists
   that doc's invariants alongside the tests that cover them.
 - Every `INV-<MNEMONIC>-n` invariant has at least one test that cites its ID — checked mechanically by
-  `em coverage <model>.em --tests <dir>` (MIL-130); run it (add `--strict` in CI) rather than
-  eyeballing citations by hand.
+  `em coverage <model>.em --slice <slice-key> --tests <dir> --strict` (MIL-130, MIL-255); run it
+  before merge rather than eyeballing citations by hand. `--slice` is what makes this check the
+  slice under build: the default form, `em coverage <model>.em --tests <dir>`, counts only slices
+  already flipped to `implemented` (MIL-207), and your slice is still `ready-to-implement` until
+  the §6 flip — so the default form reports it `inScope: false`, checks nothing, and exits 0. It
+  is a regression check for shipped slices, not the definition-of-done check. (`--include-ready`
+  is no substitute: it counts every ratified slice, so `--strict` fails on slices nobody has
+  started.) A continuation key resolves to its originating slice's doc.
 - Every scenario in `## Scenarios (Given / When / Then)` exists as a passing test; rejection
   scenarios assert the doc's named rejection reason.
 - Alternate/error flows (idempotency included) are covered by tests.

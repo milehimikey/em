@@ -198,6 +198,13 @@ exist yet (Week 0, before any slice has shipped) is tolerated rather than a hard
         run: npx @milehimikey/em coverage model.em --tests test/ --strict
 ```
 
+The generated job runs the default form, which covers only slices already flipped to
+`implemented` — it does **not** cover a slice's own PR, since that slice is still
+`ready-to-implement` until the merge-time flip. The pre-merge check for the slice under build is
+`em coverage <model>.em --slice <slice-key> --tests <dir> --strict` (MIL-255), run by the
+implementing agent per `reference/implement.md` §5; it fails only on that slice's uncited
+invariants, unlike `--include-ready`, which would fail on every ratified slice nobody has started.
+
 Add this once your team wants "every invariant is cited by a test" enforced rather than left to
 review discipline — a natural pairing with the `em validate --slice-ready` gate an implementing
 agent already runs before starting work (`reference/implement.md`, §1 and §5). Like `em ledger`,

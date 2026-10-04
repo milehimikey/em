@@ -11,20 +11,30 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // 1.1 (2026-09-07, MIL-207): added `includeReady` — the default in-scope set narrowed to
 // `implemented` only (a `ready-to-implement` doc has nothing to cite it yet); `includeReady`
 // records whether this run opted back into the older, forward-looking scope via `--include-ready`.
-export const COVERAGE_SCHEMA_VERSION = "1.1";
+// 1.2 (MIL-255, additive): added `slice` and `continuationOf` — `em coverage --slice <key>`
+// scopes the report to one slice whatever its status; both are null on an unscoped run.
+export const COVERAGE_SCHEMA_VERSION = "1.2";
 
 /** Build the `em coverage <model>.em --tests <dir> --json` document. Pretty-printed (2-space),
  *  no trailing newline — the caller adds it, same convention as buildLedgerJson/buildDiffJson.
  *  `ok` is advisory-mode's own pass/fail (zero uncovered IDs) — it does NOT reflect `--strict`,
  *  which is a CLI exit-code decision layered on top of this same document, not a different
  *  document shape. */
-export function buildCoverageJson(file: string, testsDir: string, report: CoverageReport, includeReady: boolean): string {
+export function buildCoverageJson(
+  file: string,
+  testsDir: string,
+  report: CoverageReport,
+  includeReady: boolean,
+  slice: { requested: string; continuationOf: string | null } | null = null,
+): string {
   const doc = {
     coverageSchemaVersion: COVERAGE_SCHEMA_VERSION,
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     file,
     testsDir,
     includeReady,
+    slice: slice?.requested ?? null,
+    continuationOf: slice?.continuationOf ?? null,
     ok: report.uncoveredCount === 0,
     summary: {
       totalInvariants: report.totalInvariants,

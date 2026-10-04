@@ -36,7 +36,7 @@ import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
-import { buildCoverageReport, resolveScopedSlices, CoverageReport } from "./cli/coverage.js";
+import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
 import {
   resolveSliceStatusFacts,
@@ -1830,14 +1830,21 @@ program
       "definition-of-done citation check; advisory by default, --strict for CI; " +
       "--include-ready also counts ready-to-implement docs (forward-looking report); a " +
       "continuation slice (an `again` view instance with no doc of its own, MIL-208) is excluded " +
-      "from the report — its invariants, if any, live in the originating slice's own doc",
+      "from the report — its invariants, if any, live in the originating slice's own doc; " +
+      "--slice <key> scopes the report to one slice whatever its status (MIL-255), the " +
+      "pre-merge definition-of-done check",
   )
   .argument("<file>", "input .em file")
   .requiredOption("--tests <dir>", "directory to scan recursively for test files citing invariant IDs")
+  .option(
+    "--slice <key>",
+    "only this slice (export key), whether ready-to-implement or implemented — no --include-ready needed; " +
+      "--strict then fails only on this slice's uncited invariants (MIL-255)",
+  )
   .option("--strict", "exit non-zero if any invariant ID has zero citations (CI)")
   .option("--include-ready", "also count ready-to-implement docs, not just implemented (MIL-207)")
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
-  .action((file: string, opts: { tests: string; strict?: boolean; includeReady?: boolean; json?: boolean }) => {
+  .action((file: string, opts: { tests: string; slice?: string; strict?: boolean; includeReady?: boolean; json?: boolean }) => {
     const { model, diagnostics, refs } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
@@ -1847,11 +1854,25 @@ program
 
     const baseDir = dirname(file);
     const includeReady = !!opts.includeReady;
+    // MIL-255: resolve --slice before anything else — an unknown key is an error (never a
+    // vacuously passing empty report), and a continuation key (MIL-208) scopes to its
+    // originating slice, which the output names (matching `em validate --slice-ready`).
+    let onlyKey: string | undefined;
+    let continuationOfKey: string | null = null;
+    if (opts.slice !== undefined) {
+      const target = resolveCoverageSliceKey(model, refs, opts.slice);
+      if (!target) {
+        console.error(`em coverage --slice: no slice with export key "${opts.slice}" in this model`);
+        process.exit(1);
+      }
+      onlyKey = target.key;
+      continuationOfKey = target.continuationOf;
+    }
     // MIL-207: a missing --tests dir is only a defect when something is actually in scope to
     // check — cheap to know without touching the test tree (resolveScopedSlices never reads
     // --tests). A fresh scaffold (or a doc-only ratification PR, with the MIL-207 default scope)
     // has zero implemented docs, so there's nothing yet for a test to cite.
-    const anyInScope = resolveScopedSlices(model, refs, baseDir, includeReady).some((s) => s.inScope);
+    const anyInScope = resolveScopedSlices(model, refs, baseDir, includeReady, onlyKey).some((s) => s.inScope);
     if (!existsSync(opts.tests)) {
       if (anyInScope) {
         console.error(`em coverage: --tests directory not found: ${opts.tests}`);
@@ -1863,11 +1884,24 @@ program
       process.exit(1);
     }
 
-    const report = buildCoverageReport(model, refs, baseDir, opts.tests, includeReady);
+    const report = buildCoverageReport(model, refs, baseDir, opts.tests, includeReady, onlyKey);
 
     if (opts.json) {
-      process.stdout.write(buildCoverageJson(file, opts.tests, report, includeReady) + "\n");
+      const sliceScope = opts.slice === undefined ? null : { requested: opts.slice, continuationOf: continuationOfKey };
+      process.stdout.write(buildCoverageJson(file, opts.tests, report, includeReady, sliceScope) + "\n");
     } else {
+      if (continuationOfKey !== null) {
+        console.log(`slice "${opts.slice}" is a continuation of "${continuationOfKey}" — checking "${continuationOfKey}"`);
+      }
+      // MIL-255: a scoped slice whose doc is draft/reviewed/unbound is out of scope, the same
+      // way the unscoped report treats it (skipped, never a failure) — but say so out loud
+      // rather than printing "0 invariant(s) checked" as if something had been verified.
+      for (const slice of report.slices) {
+        if (onlyKey !== undefined && !slice.inScope) {
+          const why = slice.status ?? slice.docReason ?? "no doc";
+          console.log(`slice "${slice.key}" is not in scope (${why}) — nothing checked; only ready-to-implement/implemented docs are checked`);
+        }
+      }
       for (const slice of report.slices) {
         if (!slice.inScope) continue;
         console.log(`slice "${slice.key}" (${slice.status}):`);

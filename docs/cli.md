@@ -11,7 +11,7 @@
 | `em typespec <file>` | **Experimental/POC** (MIL-159) — generate a TypeSpec contract for a model's commands, public events, and public views |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
-| `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement) |
+| `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement; `--slice <key>` scopes to one slice for the pre-merge check) |
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
 | `em freshness <file>` | Standalone "last conformed `<rev>` — N commits/M slice-PRs behind HEAD" for one model |
 | `em metrics <file> --from <rev>` | The pilot metrics from git history: ratification turnaround, conform cadence + findings, status-vs-reality disagreement (a fourth is not computable) |
@@ -1205,13 +1205,43 @@ while explaining this doc's own rule (MIL-155). Citation matching is word-bounda
 | `--tests <dir>` | Directory to scan recursively for test files citing invariant IDs (**required**) |
 | `--strict` | Exit non-zero if any invariant ID has zero citations (CI) |
 | `--include-ready` | Also count `ready-to-implement` docs, not just `implemented` (MIL-207, forward-looking report) |
+| `--slice <key>` | Report only this slice (export key, same convention as `em export --slice` / `em validate --slice-ready`), whatever its status — see **Scoped check** below (MIL-255) |
 | `--json` | Print a JSON document instead of the text report |
 
 ```bash
 em coverage model.em --tests test/                 # advisory — exits 0 regardless of uncovered IDs
 em coverage model.em --tests test/ --strict         # CI gate — exits 1 on any uncovered ID
 em coverage model.em --tests test/ --json           # machine-readable form
+em coverage model.em --slice checkout --tests test/ --strict   # pre-merge definition-of-done check for ONE slice
 ```
+
+**Scoped check: `--slice <key>` (MIL-255).** The default form covers only slices already flipped
+to `implemented`, so it is a *regression* check, not the definition-of-done check: the slice
+under build is still `ready-to-implement` until the merge-time flip, so the default form reports
+it `inScope: false`, checks nothing, and exits 0. `--include-ready` is no substitute — it counts
+every `ready-to-implement` doc, so `--strict` fails on every ratified slice nobody has started.
+`--slice <key>` reports only that slice's invariants, whether its doc is `ready-to-implement` or
+`implemented` (so `--include-ready` is not needed with it), and `--strict` exits non-zero only
+if *that* slice has an uncited invariant. The key is the same export key `em export --slice`
+takes; an unknown key is an error (exit 1, `no slice with export key "<key>"`), never a
+vacuously passing empty report. A **continuation key** (MIL-208, an `again` view instance)
+resolves to its originating slice — whose doc carries the invariants — and the text output says
+`continuation of "<originating>"` (the same `continuationOf` `--slice-ready` reports). A slice
+whose doc is `draft`, `reviewed`, or unbound stays out of scope, treated exactly as the
+unscoped report treats it (nothing checked, exit 0 even under `--strict`), but the text output
+says so (`slice "<key>" is not in scope (<status>) — nothing checked`) rather than printing a
+bare `0 invariant(s) checked`; ratification is gated separately by `--slice-ready`. The
+whole-model error guard is unchanged: a model with errors anywhere is refused. The MCP
+`coverage` tool takes the same optional `slice` input.
+
+```bash
+# before merging the PR for slice "checkout" (still ready-to-implement):
+em coverage model.em --slice checkout --tests test/ --strict
+```
+
+The generated CI coverage job (`em ci init`) runs the *default* form, so it does not cover a
+slice's own PR (that slice is not `implemented` until the merge-time flip) — the scoped check is
+the pre-merge one, run by the implementing agent per `reference/implement.md` §5.
 
 **Advisory by default** — a model with uncovered invariant IDs is not, by itself, a build
 failure; `--strict` is the opt-in CI gate (unlike `em ledger`, where every finding is already a
@@ -1241,13 +1271,16 @@ $ echo $?
 1
 ```
 
-**`--json` shape** (`coverageSchemaVersion: "1.1"`, versioned independently of the npm package
+**`--json` shape** (`coverageSchemaVersion: "1.2"`, versioned independently of the npm package
 and every other command's own schema):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
 - `file` / `testsDir` — the inputs, verbatim.
 - `includeReady` — whether this run counted `ready-to-implement` docs too (MIL-207,
   `--include-ready`), `false` by default.
+- `slice` / `continuationOf` — (1.2, MIL-255, additive) the `--slice <key>` as requested, and
+  the originating slice's key when it was a continuation key; both `null` on an unscoped run.
+  When `slice` is set, `slices` holds only the resolved slice's entry.
 - `ok` — `true` when every in-scope invariant ID has at least one citation (advisory verdict;
   independent of whether `--strict` was passed).
 - `summary` — `{ totalInvariants, cited, uncovered }`, across every in-scope slice.

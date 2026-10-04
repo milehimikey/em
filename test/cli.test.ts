@@ -1308,6 +1308,100 @@ describe("em ledger --waive: flag waiver and non-waivable codes (CLI, real git r
   });
 });
 
+// MIL-255 (GitHub #178/#179): `em coverage --slice <key>` — the strict pre-merge check for the
+// slice under build. Ready-to-implement slices, one fully cited and one not started: the scoped
+// form passes/fails per slice, while the default form (implemented-only, MIL-207) is unchanged
+// and --include-ready still counts every ratified slice.
+describe("em coverage --slice (CLI, real fs, MIL-255)", () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-coverage-slice-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(
+      join(dir, "model.em"),
+      `slice "Place" {\n  command Place Order note "slices/place.md"\n  event Order Placed\n}\n` +
+        `slice "Cancel" {\n  command Cancel Order note "slices/cancel.md"\n  event Order Cancelled\n}\n` +
+        `slice "Orders" {\n  view Orders from "Order Placed" note "slices/orders.md"\n  ui Order List @Customer\n}\n` +
+        `slice "Orders Show Cancel" {\n  view Orders again from "Order Cancelled"\n}\n` +
+        `slice "Draft Thing" {\n  command Draft Thing note "slices/draft-thing.md"\n  event Thing Drafted\n}\n`,
+    );
+    const doc = (status: string, inv: string) =>
+      `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ${status}\nversion: 1\n---\n` +
+      `## Invariants / Business Rules\n- **${inv}:** a rule\n`;
+    writeFileSync(join(dir, "slices", "place.md"), doc("ready-to-implement", "INV-PL-1"));
+    writeFileSync(join(dir, "slices", "cancel.md"), doc("ready-to-implement", "INV-CA-1"));
+    writeFileSync(join(dir, "slices", "orders.md"), doc("ready-to-implement", "INV-OR-1"));
+    writeFileSync(join(dir, "slices", "draft-thing.md"), doc("draft", "INV-DR-1"));
+    writeFileSync(join(dir, "tests", "place.test.ts"), `it("rule (INV-PL-1)", () => {});\n`);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("--slice <cited> --strict exits 0 and lists its invariants, without --include-ready", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "place", "--strict"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('slice "place" (ready-to-implement):');
+    expect(r.stdout).toContain("cited     INV-PL-1");
+    expect(r.stdout).not.toContain("INV-CA-1");
+    expect(r.stdout).toContain("1 invariant(s) checked, 0 uncovered");
+  });
+
+  it("--slice <unstarted> --strict exits 1; without --strict it is advisory", () => {
+    const strict = em(["coverage", "model.em", "--tests", "tests", "--slice", "cancel", "--strict"], dir);
+    expect(strict.status).toBe(1);
+    expect(strict.stdout).toContain("uncovered INV-CA-1");
+    expect(strict.stdout).not.toContain("INV-PL-1");
+    const advisory = em(["coverage", "model.em", "--tests", "tests", "--slice", "cancel"], dir);
+    expect(advisory.status).toBe(0);
+  });
+
+  it("the default form is unchanged: ready-to-implement slices are out of scope, exit 0 under --strict", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--strict", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.slice).toBeNull();
+    expect(doc.continuationOf).toBeNull();
+    expect(doc.summary).toEqual({ totalInvariants: 0, cited: 0, uncovered: 0 });
+    // --include-ready still counts every ratified slice (the #178 behavior --slice exists to avoid).
+    const widened = em(["coverage", "model.em", "--tests", "tests", "--include-ready", "--strict"], dir);
+    expect(widened.status).toBe(1);
+  });
+
+  it("--json carries the additive slice/continuationOf fields", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "place", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.coverageSchemaVersion).toBe("1.2");
+    expect(doc.slice).toBe("place");
+    expect(doc.continuationOf).toBeNull();
+    expect(doc.slices.map((s: { key: string }) => s.key)).toEqual(["place"]);
+    expect(doc.slices[0].inScope).toBe(true);
+  });
+
+  it("an unknown key is an error naming the key", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "no-such-slice", "--strict"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no slice with export key "no-such-slice"');
+  });
+
+  it("a continuation key resolves to its originating slice and says so", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "orders-show-cancel", "--strict"], dir);
+    expect(r.status).toBe(1); // INV-OR-1 (the originating slice's) is uncited
+    expect(r.stdout).toContain('continuation of "orders"');
+    expect(r.stdout).toContain("uncovered INV-OR-1");
+    const json = JSON.parse(em(["coverage", "model.em", "--tests", "tests", "--slice", "orders-show-cancel", "--json"], dir).stdout);
+    expect(json.slice).toBe("orders-show-cancel");
+    expect(json.continuationOf).toBe("orders");
+  });
+
+  it("a draft slice is out of scope: said out loud, nothing checked, exit 0 even under --strict", () => {
+    const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "draft-thing", "--strict"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('slice "draft-thing" is not in scope (draft)');
+  });
+});
+
 describe("em coverage (CLI, real fs, MIL-130)", () => {
   let dir: string, tests: string;
 
@@ -1346,7 +1440,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     const r = em(["coverage", "model.em", "--tests", "tests", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.coverageSchemaVersion).toBe("1.1");
+    expect(doc.coverageSchemaVersion).toBe("1.2");
     expect(doc.file).toBe("model.em");
     expect(doc.testsDir).toBe("tests");
     expect(doc.includeReady).toBe(false);

@@ -43,7 +43,7 @@ import { validateDocModelConsistency } from "../catalog/docModelConsistencyValid
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
-import { buildCoverageReport, resolveScopedSlices, CoverageReport } from "../cli/coverage.js";
+import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
 import { readContract, contractPath } from "../cli/contract.js";
 import { UpgradeContext, resolveRepoRoot, detectUpgrade } from "../cli/upgrade.js";
@@ -374,7 +374,7 @@ export function createServer(): McpServer {
       description:
         "Return the same JSON document `em coverage <file> --tests <dir> --json` prints: for " +
         "every slice whose joined doc status is implemented (or, with includeReady, also " +
-        "ready-to-implement), each INV-* invariant ID found in the doc body, whether a test " +
+        "ready-to-implement), or with `slice`, only that one slice whatever its status, each INV-* invariant ID found in the doc body, whether a test " +
         "file under `testsDir` cites it (word-boundary match on the exact ID), and every " +
         "citing file:line. Mechanizes reference/implement.md's definition-of-done citation " +
         "check — confirms an ID is cited, not that the citing test is good or passing (that " +
@@ -388,9 +388,17 @@ export function createServer(): McpServer {
           .boolean()
           .optional()
           .describe("also count ready-to-implement docs, not just implemented (MIL-207, forward-looking report)"),
+        slice: z
+          .string()
+          .optional()
+          .describe(
+            "only this slice (export key), whether ready-to-implement or implemented — the pre-merge " +
+              "check for a slice under build (MIL-255); includeReady is not needed with it. An unknown " +
+              "key is a tool error; a continuation key resolves to its originating slice",
+          ),
       },
     },
-    async ({ file, testsDir, includeReady }) => {
+    async ({ file, testsDir, includeReady, slice }) => {
       const compiled = compileFile(file);
       if ("error" in compiled) return errorResult(compiled.error);
       const { model, refs, diagnostics } = compiled;
@@ -399,15 +407,25 @@ export function createServer(): McpServer {
       }
       const baseDir = dirname(file);
       const scope = !!includeReady;
-      const anyInScope = resolveScopedSlices(model, refs, baseDir, scope).some((s) => s.inScope);
+      // MIL-255: same --slice resolution as the CLI — unknown key is an error, a continuation
+      // key scopes to its originating slice.
+      let onlyKey: string | undefined;
+      let sliceScope: { requested: string; continuationOf: string | null } | null = null;
+      if (slice !== undefined) {
+        const target = resolveCoverageSliceKey(model, refs, slice);
+        if (!target) return errorResult(`no slice with export key "${slice}" in this model`);
+        onlyKey = target.key;
+        sliceScope = { requested: slice, continuationOf: target.continuationOf };
+      }
+      const anyInScope = resolveScopedSlices(model, refs, baseDir, scope, onlyKey).some((s) => s.inScope);
       if (!existsSync(testsDir)) {
         if (anyInScope) return errorResult(`testsDir not found: ${testsDir}`);
         // MIL-207: nothing in scope yet — same leniency `em coverage` gives a fresh scaffold.
       } else if (!statSync(testsDir).isDirectory()) {
         return errorResult(`testsDir is not a directory: ${testsDir}`);
       }
-      const report = buildCoverageReport(model, refs, baseDir, testsDir, scope);
-      return textResult(buildCoverageJson(file, testsDir, report, scope));
+      const report = buildCoverageReport(model, refs, baseDir, testsDir, scope, onlyKey);
+      return textResult(buildCoverageJson(file, testsDir, report, scope, sliceScope));
     },
   );
 

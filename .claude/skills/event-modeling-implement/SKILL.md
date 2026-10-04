@@ -25,7 +25,9 @@ slice doc per PR — a `covers:` doc's two keys ship together in that one PR, an
 instance gets its own; ship the endpoint a
 `ui`-triggered command or `ui`-consumed view obligates, and surface — never invent — one the
 model doesn't show; surface every gap to the user instead of deciding it silently; cover every
-`INV-<MNEMONIC>-n` and every scenario with tests; in spec-kit projects, allocate via
+`INV-<MNEMONIC>-n` and every scenario with tests, proving the citations before merge with
+`em coverage <model>.em --slice <key> --tests <dir> --strict` (the default form skips a
+`ready-to-implement` slice); in spec-kit projects, allocate via
 em-sdd-bridge (redirect mode) and never run `/speckit.specify`.
 
 **Gate: no constitution, no first slice.** The constitution is the project's ratified house rules

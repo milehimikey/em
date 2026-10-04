@@ -164,7 +164,7 @@ beforeAll(() => {
   writeFileSync(
     join(continuationDir, "slices", "browse-widgets.md"),
     "---\nschemaVersion: 1\npattern: state-view\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
-      "## Scenarios\n- lists widgets\n",
+      "## Scenarios\n- lists widgets\n## Invariants / Business Rules\n- **INV-W-1:** list excludes retired widgets\n",
   );
   writeFileSync(
     join(continuationDir, "continuation.em"),
@@ -486,7 +486,7 @@ describe("coverage tool", () => {
   // default — `includeReady: true` restores the pre-MIL-207 scope this test originally checked.
   it("happy path (includeReady: true): returns the same document `em coverage --json --include-ready` prints", async () => {
     const { doc } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "tests"), includeReady: true });
-    expect(doc.coverageSchemaVersion).toBe("1.1");
+    expect(doc.coverageSchemaVersion).toBe("1.2");
     expect(doc.includeReady).toBe(true);
     expect(doc.ok).toBe(false); // INV-2 is uncovered
     expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
@@ -533,6 +533,52 @@ describe("coverage tool", () => {
     const { doc, result } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "no-such-dir") });
     expect(result.isError).toBeFalsy();
     expect(doc.summary).toEqual({ totalInvariants: 0, cited: 0, uncovered: 0 });
+  });
+});
+
+describe("coverage tool, slice input (MIL-255)", () => {
+  it("scopes to one ready-to-implement slice without includeReady", async () => {
+    const { result, doc } = await callJson(client, "coverage", {
+      file: join(dir, "ready.em"),
+      testsDir: join(dir, "tests"),
+      slice: "ready-slice",
+    });
+    expect(result.isError).toBeFalsy();
+    expect(doc.coverageSchemaVersion).toBe("1.2");
+    expect(doc.slice).toBe("ready-slice");
+    expect(doc.continuationOf).toBeNull();
+    expect(doc.includeReady).toBe(false);
+    expect(doc.slices.map((s: any) => s.key)).toEqual(["ready-slice"]);
+    expect(doc.summary).toEqual({ totalInvariants: 2, cited: 1, uncovered: 1 });
+  });
+
+  it("an unknown slice key is a tool error", async () => {
+    const { result } = await callJson(client, "coverage", {
+      file: join(dir, "ready.em"),
+      testsDir: join(dir, "tests"),
+      slice: "no-such-key",
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("no-such-key");
+  });
+
+  it("a continuation key resolves to its originating slice and names it", async () => {
+    const { result, doc } = await callJson(client, "coverage", {
+      file: join(continuationDir, "continuation.em"),
+      testsDir: join(dir, "tests"),
+      slice: "widget-list-shows-retirement",
+    });
+    expect(result.isError).toBeFalsy();
+    expect(doc.slice).toBe("widget-list-shows-retirement");
+    expect(doc.continuationOf).toBe("browse-widgets");
+    expect(doc.slices.map((s: any) => s.key)).toEqual(["browse-widgets"]);
+    expect(doc.slices[0].invariants).toEqual([{ id: "INV-W-1", cited: false, citations: [] }]);
+  });
+
+  it("the default (unscoped) document carries slice: null, continuationOf: null", async () => {
+    const { doc } = await callJson(client, "coverage", { file: join(dir, "ready.em"), testsDir: join(dir, "tests") });
+    expect(doc.slice).toBeNull();
+    expect(doc.continuationOf).toBeNull();
   });
 });
 

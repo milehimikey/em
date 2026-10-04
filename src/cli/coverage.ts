@@ -31,6 +31,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { walkDir } from "../util/walkDir.js";
@@ -244,11 +245,19 @@ export function resolveScopedSlices(
   refs: RefsResult,
   baseDir: string,
   includeReady: boolean,
+  onlyKey?: string,
 ): ScopedSlice[] {
-  const scopeStatuses = inScopeStatuses(includeReady);
+  // MIL-255: `--slice <key>` scopes the report to one slice, whatever its status — a slice under
+  // build is `ready-to-implement` until the merge-time flip, so the MIL-207 default (implemented
+  // only) would report `inScope: false` and check nothing, while `--include-ready` would widen to
+  // every ratified-but-unstarted slice. Scoped, both ready-to-implement and implemented count, so
+  // `--include-ready` is not needed (and is moot) alongside it. `onlyKey` must already be the
+  // RESOLVED key (see resolveCoverageSliceKey) — a continuation key never reaches this loop.
+  const scopeStatuses = inScopeStatuses(includeReady || onlyKey !== undefined);
   const result: ScopedSlice[] = [];
   model.slices.forEach((slice, i) => {
     const key = refs.sliceKeys[i];
+    if (onlyKey !== undefined && key !== onlyKey) return;
     const { doc, continuationOf: continuationOfKey } = resolveSliceDocJoin(
       model,
       refs,
@@ -268,6 +277,33 @@ export function resolveScopedSlices(
   return result;
 }
 
+/** Result of resolving a `--slice <key>` argument (MIL-255). */
+export interface CoverageSliceTarget {
+  /** The slice key the report is scoped to: the requested key, or — for a continuation key
+   *  (MIL-208) — the ORIGINATING slice's key, since a continuation has no doc of its own. */
+  key: string;
+  /** The originating slice's key when the requested key was a continuation, else null — same
+   *  field `em validate --slice-ready` reports (sliceReadyValidate.ts). */
+  continuationOf: string | null;
+}
+
+/** Resolve `--slice <key>` against the model's export keys (same convention as `em export
+ *  --slice` and `em validate --slice-ready`). Null when no slice has that key — the caller turns
+ *  that into an error, never an empty (vacuously passing) report. A continuation key resolves to
+ *  its originating slice (MIL-208), whose doc carries the invariants. */
+export function resolveCoverageSliceKey(
+  model: NormalizedModel,
+  refs: RefsResult,
+  key: string,
+): CoverageSliceTarget | null {
+  const idx = refs.sliceKeys.indexOf(key);
+  if (idx === -1) return null;
+  const continuation = continuationOf(model, refs, idx);
+  return continuation
+    ? { key: continuation.sliceKey, continuationOf: continuation.sliceKey }
+    : { key, continuationOf: null };
+}
+
 /**
  * Assemble the full coverage report: for every slice in the model, resolve its doc-join/in-scope
  * status (`resolveScopedSlices`), extract invariant IDs for in-scope slices, then scan `testsDir`
@@ -285,8 +321,9 @@ export function buildCoverageReport(
   baseDir: string,
   testsDir: string,
   includeReady = false,
+  onlyKey?: string,
 ): CoverageReport {
-  const scoped = resolveScopedSlices(model, refs, baseDir, includeReady);
+  const scoped = resolveScopedSlices(model, refs, baseDir, includeReady, onlyKey);
   const allIds = new Set<string>();
 
   const withIds = scoped.map(({ key, status, docReason, inScope, docPath }) => {
