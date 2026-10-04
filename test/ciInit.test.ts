@@ -9,12 +9,16 @@ import {
   buildCiWorkflowFile,
   buildConformWorkflowFile,
   ciManagedBody,
+  conformManagedBody,
+  managedBlockModel,
   planCiFile,
   applyCiFile,
   findUnsafeCiInitArg,
   CI_WORKFLOW_MARKER,
   CONFORM_WORKFLOW_MARKER,
 } from "../src/cli/ciInit.js";
+import { spawnSync } from "node:child_process";
+import { parse as parseYaml } from "yaml";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -187,5 +191,145 @@ describe("planCiFile / applyCiFile", () => {
     } finally {
       rmSync(path, { force: true });
     }
+  });
+});
+
+// ---- MIL-256 (#173): generated workflows are lint-clean and ASCII-only ----
+
+type Job = { steps?: Array<{ name?: string; run?: string }> };
+
+/** Every `run:` script in a generated workflow, parsed from the YAML rather than regex-scraped. */
+function runScripts(content: string): Array<{ job: string; step: string; script: string }> {
+  const doc = parseYaml(content) as { jobs: Record<string, Job> };
+  const out: Array<{ job: string; step: string; script: string }> = [];
+  for (const [job, def] of Object.entries(doc.jobs)) {
+    for (const step of def.steps ?? []) {
+      if (typeof step.run === "string") out.push({ job, step: step.name ?? "", script: step.run });
+    }
+  }
+  return out;
+}
+
+/** actionlint (and GitHub) evaluate `${{ ... }}` before the shell sees the script; mirror that
+ *  with a plain word so shellcheck lints the shell, not the expression syntax. */
+function neutralizeExpressions(script: string): string {
+  return script.replace(/\$\{\{[^}]*\}\}/g, "EXPR");
+}
+
+function onPath(cmd: string): boolean {
+  return !spawnSync(cmd, ["--version"], { encoding: "utf8" }).error;
+}
+
+const generatedFiles: Array<[string, string]> = [
+  ["em-ci.yml", buildCiWorkflowFile("orders/orders.em", "test", "1.13.0")],
+  ["em-conform.yml", buildConformWorkflowFile("orders/orders.em", "1.13.0")],
+];
+
+describe("generated workflows are lint-clean (MIL-256, #173)", () => {
+  for (const [name, content] of generatedFiles) {
+    it(`${name} is ASCII-only`, () => {
+      // eslint-disable-next-line no-control-regex
+      expect(content.match(/[^\x00-\x7F]/g)).toBeNull();
+    });
+
+    it(`${name}: no run: script has a backtick inside a double-quoted string (SC2006-style command substitution)`, () => {
+      const scripts = runScripts(content);
+      expect(scripts.length).toBeGreaterThan(0);
+      for (const { script } of scripts) {
+        for (const quoted of neutralizeExpressions(script).match(/"(?:[^"\\]|\\.)*"/g) ?? []) {
+          expect(quoted).not.toContain("`");
+        }
+      }
+    });
+  }
+
+  it.skipIf(!onPath("shellcheck"))("every generated run: script passes shellcheck at the default severity", () => {
+    for (const [name, content] of generatedFiles) {
+      for (const { job, step, script } of runScripts(content)) {
+        const r = spawnSync("shellcheck", ["--shell=bash", "-"], { input: neutralizeExpressions(script), encoding: "utf8" });
+        expect(r.stdout, `${name} ${job} / ${step}`).toBe("");
+        expect(r.status, `${name} ${job} / ${step}`).toBe(0);
+      }
+    }
+  });
+
+  it.skipIf(!onPath("actionlint"))("actionlint accepts both generated workflow files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-ci-actionlint-"));
+    try {
+      for (const [name, content] of generatedFiles) {
+        const path = join(dir, name);
+        writeFileSync(path, content, "utf8");
+        const r = spawnSync("actionlint", [path], { encoding: "utf8" });
+        expect(r.stdout, name).toBe("");
+        expect(r.status, name).toBe(0);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---- MIL-256 (#174): a second model never silently replaces the first model's block ----
+
+describe("single-model guard (MIL-256, #174)", () => {
+  function setup(): { ci: string; conform: string } {
+    const dir = mkdtempSync(join(tmpdir(), "em-ci-guard-"));
+    return { ci: join(dir, "em-ci.yml"), conform: join(dir, "em-conform.yml") };
+  }
+  const gen = (model: string, ver = "1.14.0") => ({
+    ci: [buildCiWorkflowFile(model, "test", ver), ciManagedBody(model, "test", ver)] as const,
+    conform: [buildConformWorkflowFile(model, ver), conformManagedBody(model, ver)] as const,
+  });
+
+  it("derives the model from the block content, ignoring the version pin", () => {
+    expect(managedBlockModel(CI_WORKFLOW_MARKER, ciManagedBody("orders/orders.em", "test", "1.13.0"))).toBe("orders/orders.em");
+    expect(managedBlockModel(CI_WORKFLOW_MARKER, ciManagedBody("orders/orders.em", "test", "9.9.9"))).toBe("orders/orders.em");
+    expect(managedBlockModel(CONFORM_WORKFLOW_MARKER, conformManagedBody("orders/orders.em", "1.13.0"))).toBe("orders");
+  });
+
+  it("refuses a different model in em-ci.yml, naming the original, and leaves the file untouched", () => {
+    const { ci } = setup();
+    writeFileSync(ci, gen("orders/orders.em").ci[0], "utf8");
+    const before = readFileSync(ci, "utf8");
+    const status = planCiFile(ci, ...gen("billing/billing.em").ci, CI_WORKFLOW_MARKER, false);
+    expect(status).toEqual({ kind: "other-model", previous: "orders/orders.em" });
+    applyCiFile(ci, status);
+    expect(readFileSync(ci, "utf8")).toBe(before);
+  });
+
+  it("refuses a different model in em-conform.yml (named by its directory)", () => {
+    const { conform } = setup();
+    writeFileSync(conform, gen("orders/orders.em").conform[0], "utf8");
+    const status = planCiFile(conform, ...gen("billing/billing.em").conform, CONFORM_WORKFLOW_MARKER, false);
+    expect(status).toEqual({ kind: "other-model", previous: "orders" });
+  });
+
+  it("--force replaces the block and retargets the generated header, keeping the repo's own jobs", () => {
+    const { ci } = setup();
+    writeFileSync(ci, gen("orders/orders.em").ci[0].replace("jobs:\n", "jobs:\n  mine:\n    runs-on: ubuntu-latest\n    steps: []\n\n"), "utf8");
+    const status = planCiFile(ci, ...gen("billing/billing.em").ci, CI_WORKFLOW_MARKER, true);
+    expect(status.kind).toBe("replace-model");
+    applyCiFile(ci, status);
+    const after = readFileSync(ci, "utf8");
+    expect(after).toContain('slice index "billing/billing.em" --check');
+    expect(after).not.toContain("orders/orders.em");
+    expect(after).toContain("em ci init billing/billing.em");
+    expect(after).toContain("  mine:");
+  });
+
+  it("the same model still updates as 'stale' - an old pin or old non-ASCII text is not a different model", () => {
+    const { ci } = setup();
+    // A block as em 1.13.0 wrote it: older pin, an em dash in a job name.
+    const old = gen("orders/orders.em", "1.13.0").ci[0].replace("rebuild status badge (advisory - publish", "rebuild status badge (advisory — publish");
+    writeFileSync(ci, old, "utf8");
+    const status = planCiFile(ci, ...gen("orders/orders.em", "1.14.0").ci, CI_WORKFLOW_MARKER, false);
+    expect(status.kind).toBe("stale");
+  });
+
+  it("a block with no recognizable model (hand-edited) is treated as the same model, not refused", () => {
+    const { ci } = setup();
+    const edited = gen("orders/orders.em").ci[0].replace(/slice index "[^"]*" --check/, "slice index --check");
+    writeFileSync(ci, edited, "utf8");
+    expect(planCiFile(ci, ...gen("billing/billing.em").ci, CI_WORKFLOW_MARKER, false).kind).toBe("stale");
   });
 });

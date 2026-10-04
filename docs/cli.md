@@ -3515,7 +3515,7 @@ file-scoped command uses). `--tests <dir>` (default `test`) is the directory the
 | Flag | Effect |
 |---|---|
 | `--tests <dir>` | Test directory for the `coverage`/`status-badge` steps (default `test`) |
-| `-f, --force` | Replace an existing workflow file that has no `GENERATED` markers |
+| `-f, --force` | Replace an existing workflow file that has no `GENERATED` markers, or a managed block generated for a different model |
 | `--check` | Verify both files match the current preset; exit non-zero on drift without writing (CI) |
 
 ```bash
@@ -3539,6 +3539,20 @@ em ci init order-fulfillment/order-fulfillment.em
   the initial `em ci init`, edit them freely. `--check` is there for a team that would rather
   pin the vanilla preset and gate on drift, the same opt-in posture `em skill check` already
   has in the cookbook above ("if you'd rather pin ... add `em skill check` as its own gate").
+
+**The managed block is single-model until 1.14.0** (multi-model support is tracked as MIL-233).
+If a file's block was generated for a different model than `<model>` (read from the block's own
+content, so blocks written by older `em` versions are recognized too; a version-pin or wording
+difference alone is still `stale`, never a different model), `em ci init` **refuses**: exit 1,
+neither file written, and the message names the model it was generated for. `--check` reports
+the same condition as `different model` (exit 1), distinct from `stale`. `--force` replaces the
+managed block and retargets the generated header comment (`em ci init <model>` wording above
+the start marker) at the new model; jobs you added outside the markers are kept, and a header
+you reworded is left as is. For `em-conform.yml`, which only records the model's directory, the
+message names that directory.
+
+Both generated files are ASCII-only and pass `shellcheck` (tested in CI) and are written to satisfy `actionlint`, as generated
+(MIL-256), so a repo that lints its workflows needs no edits inside the markers.
 
 Every argument is validated against the shell-injection-relevant characters it would otherwise
 carry into the generated workflow's `run:` steps (`"`, `` ` ``, `$`, a newline) — `em ci init`

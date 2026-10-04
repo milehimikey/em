@@ -26,7 +26,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { applyMarker, markerPair } from "../util/markers.js";
+import { applyMarker, markerPair, markerRegex } from "../util/markers.js";
 
 export const CI_WORKFLOW_MARKER = "em-ci";
 export const CONFORM_WORKFLOW_MARKER = "em-conform";
@@ -115,7 +115,7 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
         with:
           node-version: 20
       - name: Check invariant test coverage
-        # Counts INV-* IDs in \`implemented\` slice docs only (MIL-207) — a ready-to-implement
+        # Counts INV-* IDs in \`implemented\` slice docs only (MIL-207) - a ready-to-implement
         # doc has nothing yet to cite it, so this job is green on a fresh scaffold and on a
         # doc-only ratification PR. Pass --include-ready for the older, forward-looking report.
         run: ${em} coverage "${model}" --tests "${testsDir}" --strict
@@ -148,11 +148,11 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
           if [ -d .claude/skills/event-modeling ]; then
             ${em} skill check
           else
-            echo "no vendored skill at .claude/skills/event-modeling — skipping (run \`em skill install\` to opt in)"
+            echo "no vendored skill at .claude/skills/event-modeling - skipping (run em skill install to opt in)"
           fi
 
   upgrade-check:
-    name: "em upgrade --check (advisory — hard incompatibilities only, MIL-219)"
+    name: "em upgrade --check (advisory - hard incompatibilities only, MIL-219)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -164,7 +164,7 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
           node-version: 20
       - name: Check for hard upgrade incompatibilities
         # Advisory: exits non-zero ONLY on a hard incompatibility (an unparseable state file, an
-        # old .em shape em migrate itself refuses) — never on the ordinary "some mechanical
+        # old .em shape em migrate itself refuses) - never on the ordinary "some mechanical
         # steps are applicable" case. See docs/upgrading.md.
         run: ${em} upgrade "${model}" --check
 
@@ -178,10 +178,12 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
         with:
           node-version: 20
       - name: Check glossary consistency across models
-        run: ${em} glossary $(git ls-files '*.em') --fail-on-conflicts
+        run: |
+          mapfile -t models < <(git ls-files '*.em')
+          ${em} glossary "\${models[@]}" --fail-on-conflicts
 
   status-badge:
-    name: rebuild status badge (advisory — publish only, never a gate)
+    name: rebuild status badge (advisory - publish only, never a gate)
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -207,14 +209,14 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
 }
 
 function ciWorkflowHeader(model: string, emVersion: string): string {
-  return `# Generated once by \`em ci init ${model}\` (em ${emVersion}) — docs/ci.md
+  return `# Generated once by \`em ci init ${model}\` (em ${emVersion}) - docs/ci.md
 #
 # This file is yours from here: edit it, add jobs, remove ones you don't want. The content
 # between the GENERATED:${CI_WORKFLOW_MARKER} markers below is what a future \`em ci init\`
-# (e.g. after upgrading em) refreshes in place — add your own jobs above or below the markers,
+# (e.g. after upgrading em) refreshes in place - add your own jobs above or below the markers,
 # at the same indent under \`jobs:\`, and they survive a re-run untouched. Every gate here fails
 # the PR the same way any other required check does; the status-badge job only ever publishes.
-# \`em ci init ${model} --check\` reports drift in the managed block — advisory unless you wire
+# \`em ci init ${model} --check\` reports drift in the managed block - advisory unless you wire
 # it into a gate yourself (docs/ci.md).
 name: em ci
 
@@ -258,7 +260,7 @@ export function conformManagedBody(model: string, emVersion: string): string {
           node-version: 20
 
       - name: Note reports already present
-        run: ls "$MODEL_DIR"/conformance/*-report.md 2>/dev/null | sort > /tmp/reports-before
+        run: find "$MODEL_DIR/conformance" -maxdepth 1 -name '*-report.md' 2>/dev/null | sort > /tmp/reports-before
 
       - name: Run conform phase
         run: |
@@ -271,10 +273,10 @@ export function conformManagedBody(model: string, emVersion: string): string {
 
       - name: Post report
         run: |
-          ls "$MODEL_DIR"/conformance/*-report.md 2>/dev/null | sort > /tmp/reports-after
+          find "$MODEL_DIR/conformance" -maxdepth 1 -name '*-report.md' 2>/dev/null | sort > /tmp/reports-after
           report=$(comm -13 /tmp/reports-before /tmp/reports-after | tail -1)
           if [ -z "$report" ]; then
-            echo "the run produced no new report — nothing to post"
+            echo "the run produced no new report - nothing to post"
             exit 0
           fi
           gh issue create --title "Model conformance report $(date +%F)" \\
@@ -286,9 +288,9 @@ export function conformManagedBody(model: string, emVersion: string): string {
 }
 
 function conformWorkflowHeader(model: string, emVersion: string): string {
-  return `# Generated once by \`em ci init ${model}\` (em ${emVersion}) — docs/ci.md#conformance-cadence-advisory
+  return `# Generated once by \`em ci init ${model}\` (em ${emVersion}) - docs/ci.md#conformance-cadence-advisory
 #
-# This file is yours from here: edit it freely. It is advisory-only by construction — the job
+# This file is yours from here: edit it freely. It is advisory-only by construction - the job
 # never fails the build on drift (findings become a GitHub issue for a human to ratify), and
 # the state file's \`Last conformance:\` marker only advances when a human ratifies the run's
 # outcome locally and commits that update. Resist wiring this to every push; cadence, not
@@ -320,7 +322,52 @@ export type CiFileStatus =
   | { kind: "ok"; content: string }
   | { kind: "stale"; content: string; current: string }
   | { kind: "missing-markers" }
-  | { kind: "would-replace"; content: string };
+  | { kind: "would-replace"; content: string }
+  // MIL-256 (#174): the existing managed block was generated for a different model. Without
+  // `--force` this is a refusal (nothing written); `previous` is what the block was generated
+  // for (a model path for em-ci.yml, a model DIRECTORY for em-conform.yml, which only bakes
+  // `MODEL_DIR` in).
+  | { kind: "other-model"; previous: string }
+  // The same condition under `--force`: the managed block is replaced; the generated header
+  // comment (outside the markers) is retargeted too when it still has its generated wording.
+  | { kind: "replace-model"; content: string; previous: string };
+
+/**
+ * Which model an existing managed block was generated for, read from the block's own content
+ * (MIL-256). Deliberately content-derived rather than a new marker line: blocks written by em
+ * 1.13.0 and earlier carry no machine-readable model, but every one of them bakes the model into
+ * the per-model `run:` lines (em-ci.yml: `slice index "<model>" --check`; em-conform.yml:
+ * `MODEL_DIR: <dir>`). Neither pattern includes the `npx @milehimikey/em@<ver>` pin, so a
+ * version difference can never read as a different model. Returns null when the block was
+ * hand-edited past recognition - callers then treat it as the same model (the conservative,
+ * pre-MIL-256 behavior) rather than refusing on a guess.
+ */
+export function managedBlockModel(markerName: string, blockBody: string): string | null {
+  if (markerName === CONFORM_WORKFLOW_MARKER) {
+    const m = /^\s*MODEL_DIR: (.+?)\s*$/m.exec(blockBody);
+    return m ? m[1] : null;
+  }
+  const m = /\bslice index "([^"]*)" --check\b/.exec(blockBody);
+  return m ? m[1] : null;
+}
+
+function existingBlockBody(content: string, markerName: string): string | null {
+  const m = markerRegex(markerName, "hash").exec(content);
+  return m ? m[2] : null;
+}
+
+/** `--force` over another model's block also retargets the generated header's own wording
+ *  (`em ci init <model>` on `#` comment lines above the start marker) at the new model, taken
+ *  from the freshly generated header. Only those exact generated phrasings are touched; a
+ *  header the repo reworded, and everything below the start marker, is left alone. */
+function retargetHeader(content: string, generated: string, markerName: string): string {
+  const startLine = markerPair(markerName, "hash").start;
+  const at = content.indexOf(startLine);
+  const nextModel = /^#.*`em ci init ([^ `]+)/m.exec(generated)?.[1];
+  if (at < 0 || !nextModel) return content;
+  const head = content.slice(0, at).replace(/^(#.*`em ci init )([^ `]+)/gm, (_w, pre: string) => `${pre}${nextModel}`);
+  return head + content.slice(at);
+}
 
 /**
  * Decide what to do with one generated file: create it if missing, patch the managed block if
@@ -331,6 +378,12 @@ export type CiFileStatus =
  * marker-wrapped body) — written verbatim for `create`/`would-replace`. `managedBody` is just
  * the text between the markers, reused to patch an existing marked file in place without
  * touching whatever a repo added around it.
+ *
+ * MIL-256 (#174): the managed block is single-model (multi-model is MIL-233). A marked file
+ * whose block was generated for a DIFFERENT model than `managedBody` is `other-model` (refused)
+ * unless `force`, then `replace-model`. The same model with any other difference (version pin,
+ * old text) stays `stale`, exactly as before. `em upgrade`'s ci-block step re-derives the model
+ * from the existing file itself, so it only ever plans the same model.
  */
 export function planCiFile(
   path: string,
@@ -347,11 +400,20 @@ export function planCiFile(
   if (updated === null) {
     return force ? { kind: "would-replace", content: generated } : { kind: "missing-markers" };
   }
-  return updated === original ? { kind: "ok", content: original } : { kind: "stale", content: updated, current: original };
+  if (updated === original) return { kind: "ok", content: original };
+
+  const existing = existingBlockBody(original, markerName);
+  const previous = existing === null ? null : managedBlockModel(markerName, existing);
+  const next = managedBlockModel(markerName, managedBody);
+  if (previous !== null && next !== null && previous !== next) {
+    if (!force) return { kind: "other-model", previous };
+    return { kind: "replace-model", content: retargetHeader(updated, generated, markerName), previous };
+  }
+  return { kind: "stale", content: updated, current: original };
 }
 
 export function applyCiFile(path: string, status: CiFileStatus): void {
-  if (status.kind === "create" || status.kind === "stale" || status.kind === "would-replace") {
+  if (status.kind === "create" || status.kind === "stale" || status.kind === "would-replace" || status.kind === "replace-model") {
     writeFileSync(path, status.content, "utf8");
   }
 }

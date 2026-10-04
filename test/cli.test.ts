@@ -4608,7 +4608,8 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
     expect(ci).toContain(`${pinned} validate "$f"`);
     expect(ci).toContain(`${pinned} slice index "model.em" --check`);
     expect(ci).toContain(`${pinned} coverage "model.em" --tests "test" --strict`);
-    expect(ci).toContain(`${pinned} glossary $(git ls-files '*.em') --fail-on-conflicts`);
+    // MIL-256 (#173): the .em list is read into an array and expanded quoted (SC2046).
+    expect(ci).toContain(`${pinned} glossary "\${models[@]}" --fail-on-conflicts`);
     expect(ci).not.toContain("npx @milehimikey/em ");
 
     const conform = readFileSync(join(dir, ".github", "workflows", "em-conform.yml"), "utf8");
@@ -4653,6 +4654,29 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("already up to date");
     expect(readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8")).toBe(before);
+  });
+
+  // MIL-256 (#174): the managed block is single-model; a second model must not silently replace it.
+  it("refuses a different model without --force (naming the first, files untouched); --check says 'different model'; --force replaces (MIL-256)", () => {
+    em(["ci", "init", "orders/orders.em"], dir);
+    const ciPath = join(dir, ".github", "workflows", "em-ci.yml");
+    const conformPath = join(dir, ".github", "workflows", "em-conform.yml");
+    const before = [readFileSync(ciPath, "utf8"), readFileSync(conformPath, "utf8")];
+
+    const refused = em(["ci", "init", "billing/billing.em"], dir);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("orders/orders.em");
+    expect([readFileSync(ciPath, "utf8"), readFileSync(conformPath, "utf8")]).toEqual(before);
+
+    const check = em(["ci", "init", "billing/billing.em", "--check"], dir);
+    expect(check.status).toBe(1);
+    expect(check.stdout).toContain("different model:");
+    expect(check.stdout).not.toContain("stale:");
+
+    const forced = em(["ci", "init", "billing/billing.em", "--force"], dir);
+    expect(forced.status).toBe(0);
+    expect(readFileSync(ciPath, "utf8")).toContain('slice index "billing/billing.em" --check');
+    expect(readFileSync(ciPath, "utf8")).not.toContain("orders/orders.em");
   });
 
   it("--check exits 0 and reports ok when both files match the current preset", () => {

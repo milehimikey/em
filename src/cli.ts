@@ -2501,7 +2501,7 @@ ci.command("init")
   )
   .argument("<model>", "anchor .em file the coverage/ledger/slice-index/status steps point at")
   .option("--tests <dir>", "test directory the coverage/status steps scan for INV-* citations", "test")
-  .option("-f, --force", "replace an existing workflow file that has no GENERATED markers")
+  .option("-f, --force", "replace an existing workflow file that has no GENERATED markers, or a managed block generated for a different model")
   .option("--check", "verify both files match the current preset; exit non-zero on drift without writing (CI)")
   .action((model: string, opts: { tests: string; force?: boolean; check?: boolean }) => {
     const unsafe = findUnsafeCiInitArg(model) ?? findUnsafeCiInitArg(opts.tests);
@@ -2540,10 +2540,18 @@ ci.command("init")
       ],
     ];
 
+    // MIL-256 (#174): the managed block is single-model (multi-model: MIL-233). Another model's
+    // block is its own condition - never `stale`, never silently replaced.
+    const otherModel = (previous: string, path: string): string =>
+      `${path} was generated for ${previous}, not ${model} - the managed block is single-model until multi-model support lands (MIL-233)`;
+
     if (opts.check) {
       let drift = false;
       for (const [path, status] of files) {
-        if (status.kind === "create") {
+        if (status.kind === "other-model" || status.kind === "replace-model") {
+          console.log(`different model: ${otherModel(status.previous, path)} (re-run \`em ci init ${model} --force\` to replace it)`);
+          drift = true;
+        } else if (status.kind === "create") {
           console.log(`missing: ${path} — run \`em ci init ${model}\` to create it`);
           drift = true;
         } else if (status.kind === "missing-markers") {
@@ -2561,10 +2569,21 @@ ci.command("init")
       return;
     }
 
+    // Refuse before writing anything, so a refusal on one file never leaves the other updated.
+    const refused = files.filter(([, s]) => s.kind === "other-model");
+    if (refused.length > 0) {
+      for (const [path, status] of refused) {
+        if (status.kind === "other-model") console.error(`em ci init: ${otherModel(status.previous, path)}; re-run with --force to replace it`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
     mkdirSync(dirname(ciPath), { recursive: true });
     for (const [path, status] of files) {
       applyCiFile(path, status);
-      if (status.kind === "create") console.log(`installed ${path}`);
+      if (status.kind === "replace-model") console.log(`replaced ${path} (--force; was generated for ${status.previous})`);
+      else if (status.kind === "create") console.log(`installed ${path}`);
       else if (status.kind === "stale") console.log(`updated ${path}`);
       else if (status.kind === "would-replace") console.log(`replaced ${path} (--force)`);
       else if (status.kind === "missing-markers") console.log(`${path} already exists — re-run with --force to overwrite`);
