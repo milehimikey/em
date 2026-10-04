@@ -50,6 +50,10 @@ three specific points:
    [cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:` and flips `status` back to
    `ready-to-implement` mechanically — mirroring `em slice mark-implemented`'s shape at the other
    end of the lifecycle ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
+   The same command changes a ratified doc that **never shipped** (MIL-258 — typically a gap
+   answered mid-build): it bumps `version:` and clears the sign-off but leaves `status:` at
+   `ready-to-implement`. Either way the doc is not ratified until `em slice ratify --by <name>`
+   records the new sign-off.
 2. **Ratifying model changes** — every edit to a committed `.em` or slice doc is a ratified
    decision, made in (or reviewed out of) a facilitated session. The PR review of a model
    change is part of this: the diff *is* the decision record.
@@ -116,7 +120,8 @@ wholesale, since it isn't a spec unit to review, ratify, or mark implemented sep
 
 **Re-ratification** re-enters the loop rather than repeating it: `em slice reratify <model>.em
 <key>` ([cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:`, returns a shipped doc
-to `ready-to-implement`, and clears both the old sign-off and the old review record (neither
+to `ready-to-implement` (a ratified doc that never shipped, MIL-258, is already there and keeps
+its status), and clears both the old sign-off and the old review record (neither
 describes the new version). A `em slice ratify --by <name>` following a `reratify` **does not need
 a fresh review session** — the doc is already `ready-to-implement`, which the review gate accepts;
 the delta was decided when it was written into the `## Delta` section.

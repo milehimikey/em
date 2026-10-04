@@ -144,7 +144,12 @@ For each slice:
    doc's authored body) — run `em slice reratify <model>.em <slice-key>` instead: it bumps
    `version` and flips `status` back to `ready-to-implement` in the existing frontmatter,
    clearing any stale `ratifiedBy:`/`ratifiedOn:` from the prior version so a follow-up
-   `em slice ratify --by <name>` (if the team records that) applies cleanly.
+   `em slice ratify --by <name>` (if the team records that) applies cleanly. The same command
+   changes a ratified doc that **never shipped** (`ready-to-implement` with `ratifiedBy` set — a
+   gap answered mid-build, MIL-258): it bumps `version` and clears the sign-off but leaves
+   `status` alone. Either way the doc is not ratified until `em slice ratify --by <name>` records
+   the new sign-off. A `ready-to-implement` doc with no `ratifiedBy` is already awaiting that
+   sign-off and refuses a second `reratify`; a `draft`/`reviewed` doc is simply edited.
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
    slices/<slice-name>.svg` (kebab-case, matching the doc's filename and the `![Diagram]` stub
    `em slice new` already wrote) — redraws just this slice in its own canonical pattern shape.

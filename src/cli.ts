@@ -903,7 +903,10 @@ slice
   .description(
     "bump `version:` and flip a shipped slice doc's frontmatter back to `status: " +
       "ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice " +
-      "mark-implemented`). Only applies to a doc at `status: implemented`; clears any stale " +
+      "mark-implemented`). Applies to a doc at `status: implemented`, or (MIL-258) to a " +
+      "`ready-to-implement` doc that is ratified but not yet shipped — there it bumps `version:` " +
+      "and clears the sign-off but leaves `status:` alone; a `ready-to-implement` doc with no " +
+      "`ratifiedBy:` refuses (awaiting `em slice ratify --by`). Clears any stale " +
       "`ratifiedBy:`/`ratifiedOn:`/`reviewedBy:`/`reviewedOn:` (they describe the PRIOR version's " +
       "review and sign-off) so a follow-up `em slice ratify --by` applies cleanly — and needs no " +
       "fresh review; never touches `implementedIn:` or the doc body",
@@ -931,13 +934,21 @@ slice
     }
     // MIL-214: advisory only, never refuses — see reratify.ts's reratifyAdvisory. Both warnings
     // can fire together (a version that was never certified AND still carries unruled findings).
-    if (result.advisory.neverCertified) {
+    if (result.advisory?.neverCertified) {
       console.error(`warn: reratifying "${sliceKey}" whose v${result.newVersion - 1} was never certified`);
     }
-    if (result.advisory.unruledFindingsCount > 0) {
+    if (result.advisory && result.advisory.unruledFindingsCount > 0) {
       console.error(`warn: reratifying "${sliceKey}" has ${result.advisory.unruledFindingsCount} unruled conformance finding(s)`);
     }
-    console.log(`reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement)`);
+    if (result.kind === "unshipped") {
+      // MIL-258: nothing was flipped — say what DID happen, and that the new version is unsigned.
+      console.log(
+        `reratified: ${result.path} (version: ${result.newVersion - 1} -> ${result.newVersion}, sign-off cleared, ` +
+          `status unchanged: ready-to-implement) — not ratified until \`em slice ratify --by <name>\` records the new sign-off`,
+      );
+    } else {
+      console.log(`reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement)`);
+    }
     warnModelVersionDrift(dirname(file), model, refs, source, `reratifying "${sliceKey}"`);
   });
 

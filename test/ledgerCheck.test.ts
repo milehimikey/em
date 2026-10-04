@@ -129,6 +129,15 @@ describe("checkLedger: findings", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("MIL-258: passes an unshipped ratified doc whose body changed together with reratify's bump and sign-off clear", () => {
+    // `em slice reratify` on a ratified ready-to-implement doc bumps version and clears the
+    // sign-off fields (status untouched); the hand-authored body change lands with it.
+    const oldDoc = doc(1, "ready-to-implement", "", "Original body.", "ratifiedBy: Pat\nratifiedOn: 2026-10-01\n");
+    const newDoc = doc(2, "ready-to-implement", "", "Body with the answered gap.");
+    const result = checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", oldDoc, newDoc)));
+    expect(result.findings).toEqual([]);
+  });
+
   it("does not flag an implementedIn-only change (ship-time link added)", () => {
     const body = "Unchanged body.";
     const oldDoc = doc(2, "ready-to-implement", "", body);

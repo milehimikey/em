@@ -2687,15 +2687,25 @@ version: <current + 1>
 status: ready-to-implement
 ```
 
-Only applies to a doc currently `status: implemented` — the precondition
+Two cases apply. The **shipped** case (MIL-161): a doc currently `status: implemented` — the
+precondition
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)
-describes ("a new version is ratified for a slice whose previous version already shipped").
-Refuses, non-zero exit, leaving the file untouched, for any other current status: a
-`draft`/`reviewed`/`ready-to-implement` doc hasn't shipped yet (first-time authoring uses
-`em slice new`, not this command), and a doc already `ready-to-implement` may already have been
-reratified — re-running would silently double-increment `version`, which this command never does
-(unlike `ratify`/`mark-implemented`'s idempotent same-value no-op, a version bump has no natural
-idempotent form, so the refusal is the safety net instead).
+describes ("a new version is ratified for a slice whose previous version already shipped"); the
+status flips back to `ready-to-implement`. The **unshipped** case (MIL-258): a doc at
+`status: ready-to-implement` that still has `ratifiedBy:` set — a ratified version that has not
+shipped, the usual state when an implementer hits a gap, a human answers it, and the doc must
+change before the build resumes. There `version:` is bumped and the sign-off cleared, but `status:`
+is already `ready-to-implement` and is left alone (an absent `implementedIn:` stays absent). After
+either case the doc is **not ratified** until `em slice ratify --by <name>` records the new
+sign-off.
+
+Refuses, non-zero exit, leaving the file untouched, otherwise. A `ready-to-implement` doc with no
+`ratifiedBy:` is the exact state a reratify leaves behind (or a doc never signed off): it is
+awaiting ratification, so the message points at `em slice ratify --by` — re-running would silently
+double-increment `version`, which this command never does (unlike `ratify`/`mark-implemented`'s
+idempotent same-value no-op, a version bump has no natural idempotent form, so the refusal is the
+safety net instead). `draft`/`reviewed` docs are not ratified and refuse too — they can simply be
+edited (first-time authoring uses `em slice new`, not this command).
 
 Also clears `ratifiedBy:`/`ratifiedOn:` if either is present, since they describe who signed off
 the PRIOR version — leaving them in place would make the brand-new, not-yet-reviewed version read
@@ -2728,15 +2738,20 @@ still-WIP model doesn't block it.
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
-| `doc is status: <x>, not implemented — ...` | The precondition guard — see above |
+| `doc is status: <x> — reratify only applies to ...` | (`draft`/`reviewed`/empty) not ratified, so there is nothing to re-ratify — edit the doc |
+| `doc is status: ready-to-implement with no ratifiedBy: — it is awaiting ratification ...` | (MIL-258) the double-bump guard — record the sign-off with `em slice ratify --by <name>` |
 | `doc's version: "<x>" isn't a positive integer` | Refuses rather than guess a bump when `version:` isn't parseable |
 
 ```bash
 em slice reratify model.em request-payment
 # -> reratified: slices/request-payment.md (version: 2, status: ready-to-implement)
+
+# a ratified doc that never shipped (MIL-258): status is unchanged, only the version and sign-off move
+em slice reratify model.em place-order
+# -> reratified: slices/place-order.md (version: 1 -> 2, sign-off cleared, status unchanged: ready-to-implement) — not ratified until `em slice ratify --by <name>` records the new sign-off
 ```
 
-**Certification advisory (MIL-214).** Never refuses — printed to stderr, computed from the
+**Certification advisory (MIL-214).** Shipped case only (MIL-258: an unshipped version has no certification to lack, so that case prints neither warning below). Never refuses — printed to stderr, computed from the
 version being SUPERSEDED (i.e. before the bump): `warn: reratifying "<key>" whose v<N> was never
 certified` when the current version's `conformedVersion` is absent or doesn't match it, and/or
 `warn: reratifying "<key>" has <n> unruled conformance finding(s)` when any

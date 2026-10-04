@@ -3633,10 +3633,50 @@ describe("em slice reratify (CLI, MIL-161)", () => {
     expect(content).toContain("version: 2"); // ratify never bumps version
   });
 
-  it("refuses a second reratify run — status is no longer implemented", () => {
+  it("MIL-258: a re-signed (ratified, unshipped) doc takes the unshipped path; a repeat before re-signing refuses", () => {
+    // The previous test left shipped-slice ratified at v2 and never reimplemented, so reratify
+    // now treats it as an unshipped version (v2 -> v3, status untouched) — and refuses again
+    // until `ratify --by` records a new sign-off.
     const r = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("status: ready-to-implement");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("version: 2 -> 3");
+    expect(r.stderr).not.toContain("never certified");
+    const again = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
+    expect(again.status).not.toBe(0);
+    expect(again.stderr).toContain("awaiting ratification");
+  });
+
+  it("MIL-258: reratify on a ratified, unshipped doc bumps version, clears sign-off, then ratify --by applies; a second reratify before re-signing refuses", () => {
+    writeFileSync(
+      join(dir, "slices", "unshipped-slice.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n" +
+        "ratifiedBy: Pat\nratifiedOn: 2026-10-01\n---\n# Slice: Unshipped Slice\n\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "unshipped.em"),
+      'slice "Unshipped Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/unshipped-slice.md"\n  event Thing Done\n}\n',
+    );
+    const r = em(["slice", "reratify", "unshipped.em", "unshipped-slice"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("version: 1 -> 2");
+    expect(r.stdout).toContain("status unchanged");
+    expect(r.stderr).not.toContain("never certified");
+    let content = readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8");
+    expect(content).toContain("status: ready-to-implement");
+    expect(content).toContain("version: 2");
+    expect(content).not.toContain("ratifiedBy:");
+    expect(content).not.toContain("ratifiedOn:");
+
+    const again = em(["slice", "reratify", "unshipped.em", "unshipped-slice"], dir);
+    expect(again.status).not.toBe(0);
+    expect(again.stderr).toContain("awaiting ratification");
+    expect(readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8")).toContain("version: 2");
+
+    const ratify = em(["slice", "ratify", "unshipped.em", "unshipped-slice", "--by", "Pat", "--on", "2026-10-03"], dir);
+    expect(ratify.status).toBe(0);
+    content = readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8");
+    expect(content).toContain("ratifiedBy: Pat");
+    expect(content).toContain("version: 2");
   });
 
   it("errors clearly for a key that names no slice in the model", () => {

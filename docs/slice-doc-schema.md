@@ -392,6 +392,15 @@ frontmatter-coherence check (MIL-85) deliberately never flags this combination â
 `status: implemented` with no `implementedIn` link at all is checkable incoherence; see
 [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence).
 
+**An unshipped version has nothing to flip back** (MIL-258). A ratified doc that has not shipped
+yet (`status: ready-to-implement` with `ratifiedBy:` set) changes the same way: `em slice
+reratify` bumps `version:` and clears `ratifiedBy`/`ratifiedOn`/`reviewedBy`/`reviewedOn`, but
+leaves `status` at `ready-to-implement` (and any `implementedIn` as it was â€” an absent one stays
+absent). This is the path for an answered gap mid-build. In both cases the new version is not
+ratified until `em slice ratify --by <name>` records the sign-off. A `ready-to-implement` doc with
+no `ratifiedBy` is awaiting that sign-off, so a second `reratify` refuses rather than
+double-bump; `draft`/`reviewed` docs are not ratified and are simply edited.
+
 Pair a re-ratification with a `## Delta` section (see
 [Delta section: grammar and lifecycle](#delta-section-grammar-and-lifecycle) above) recording
 the ratified change in typed operation blocks, so it's reviewable without opening git.

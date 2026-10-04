@@ -10,15 +10,25 @@
 //   version: <current + 1>
 //   status: ready-to-implement
 //
-// Only applies to a doc currently `status: implemented` — the precondition
+// MIL-258: that is the SHIPPED path. A second path covers a doc at `status: ready-to-implement`
+// that still carries `ratifiedBy:` — a ratified version that has not shipped (the most common
+// change during delivery: an implementer hits a gap, a human answers it, the doc changes before
+// the build resumes). It bumps `version:` and clears the same four sign-off fields but leaves
+// `status:` (and any `implementedIn:`) alone, since there is nothing to flip back. A
+// `ready-to-implement` doc with NO `ratifiedBy:` still refuses: that is the exact state a
+// reratify leaves a doc in, so refusing keeps the double-bump guard — the doc is awaiting
+// `em slice ratify --by`, not another bump. `draft`/`reviewed` docs are not ratified and refuse
+// too; they can simply be edited.
+//
+// Shipped path precondition (original, MIL-161) — a doc currently `status: implemented`, the precondition
 // docs/slice-doc-schema.md#status-under-re-ratification describes ("a new version is ratified
 // for a slice whose previous version already shipped"). Refuses (never guesses) otherwise: a
 // `draft`/`reviewed` doc hasn't shipped yet, so there's no prior version to bump FROM, and a
-// doc already `ready-to-implement` means either first-time authoring (never touch this doc with
-// reratify at all — `em slice new` is what scaffolds those) or a reratify that already ran (a
-// second bump would silently double-increment `version`, which this command deliberately never
-// does — bumping isn't naturally idempotent the way ratify/mark-implemented's absolute-value
-// writes are).
+// doc already `ready-to-implement` WITHOUT `ratifiedBy:` means either first-time authoring (never
+// touch this doc with reratify at all — `em slice new` is what scaffolds those) or a reratify
+// that already ran (a second bump would silently double-increment `version`, which this command
+// deliberately never does — bumping isn't naturally idempotent the way ratify/mark-implemented's
+// absolute-value writes are).
 //
 // Also clears `ratifiedBy:`/`ratifiedOn:` if either is present: those fields record who signed
 // off the PRIOR version (`em slice ratify`, MIL-165) and describing the brand-new, not-yet-
@@ -45,7 +55,8 @@
 // never-refuses stance. Bumping a version whose CURRENT one was never certified (or still has
 // unruled conformance findings) isn't wrong — the team may have good reason to move on before a
 // conform sweep ever ran — so this is advisory only, printed by the CLI layer, never gating the
-// bump itself.
+// bump itself. MIL-258: the advisory is about superseding a SHIPPED version, so the unshipped
+// path skips it entirely (`advisory: null`) — an unshipped version has no certification to lack.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -63,13 +74,18 @@ const IMPLEMENTED_STATUS = "implemented";
 const TARGET_STATUS = "ready-to-implement";
 
 export type ApplyReratifyResult =
-  | { ok: true; content: string; newVersion: number }
+  | { ok: true; content: string; newVersion: number; kind: ReratifyKind }
   | { ok: false; message: string };
+
+/** MIL-258: `shipped` = the doc was `status: implemented` (status flips back); `unshipped` = a
+ *  ratified `ready-to-implement` doc that never shipped (status untouched). */
+export type ReratifyKind = "shipped" | "unshipped";
 
 /**
  * Pure text transform: bumps `version:` by 1 and flips `status:` to `ready-to-implement` in
  * `raw`'s frontmatter block, clearing any `ratifiedBy:`/`ratifiedOn:` lines found (see module
- * header). Refuses (`ok: false`) unless the doc's CURRENT `status:` is exactly `implemented` —
+ * header). Refuses (`ok: false`) unless the doc's CURRENT `status:` is `implemented`, or
+ * `ready-to-implement` with `ratifiedBy:` set (MIL-258, `kind: "unshipped"`, status left alone) —
  * see module header for why this precondition (not idempotent-no-op) is the right refusal
  * shape here. No fs access — the caller reads/writes; see `runReratify` below.
  */
@@ -81,15 +97,30 @@ export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
   const statusMatch = fieldLineRegex("status").exec(inner);
   if (!statusMatch) return { ok: false, message: "no `status:` field found in frontmatter" };
   const currentStatus = normalizeFieldValue(statusMatch[2])?.toLowerCase() ?? null;
+  let kind: ReratifyKind = "shipped";
   if (currentStatus !== IMPLEMENTED_STATUS) {
-    return {
-      ok: false,
-      message:
-        `doc is \`status: ${currentStatus ?? "(empty)"}\`, not \`implemented\` — reratify only applies to a ` +
-        "slice doc that has already shipped (see docs/slice-doc-schema.md#status-under-re-ratification); " +
-        "first-time authoring uses `em slice new`, and a doc already `ready-to-implement` may already " +
-        "have been reratified",
-    };
+    const ratifiedByMatch = fieldLineRegex("ratifiedBy").exec(inner);
+    const hasRatifiedBy = ratifiedByMatch !== null && normalizeFieldValue(ratifiedByMatch[2]) !== null;
+    if (currentStatus === TARGET_STATUS && hasRatifiedBy) {
+      kind = "unshipped";
+    } else if (currentStatus === TARGET_STATUS) {
+      return {
+        ok: false,
+        message:
+          "doc is `status: ready-to-implement` with no `ratifiedBy:` — it is awaiting ratification " +
+          "(a reratify already ran, or it was never signed off), so another version bump would " +
+          "double-increment `version:`; record the sign-off with `em slice ratify --by <name>`",
+      };
+    } else {
+      return {
+        ok: false,
+        message:
+          `doc is \`status: ${currentStatus ?? "(empty)"}\` — reratify only applies to a slice doc that has ` +
+          "shipped (`status: implemented`) or to a ratified `ready-to-implement` doc that has not (see " +
+          "docs/slice-doc-schema.md#status-under-re-ratification); a `draft`/`reviewed` doc is not ratified " +
+          "and can simply be edited, and first-time authoring uses `em slice new`",
+      };
+    }
   }
 
   const versionMatch = fieldLineRegex("version").exec(inner);
@@ -107,7 +138,10 @@ export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
   // Apply from the highest index first so an earlier edit's index stays valid — same convention
   // markImplemented.ts/ratify.ts use.
   const edits = [
-    { index: statusMatch.index, oldLen: statusMatch[0].length, next: `${statusMatch[1]}${TARGET_STATUS}` },
+    // MIL-258: the unshipped path is already at the target status — nothing to flip.
+    ...(kind === "shipped"
+      ? [{ index: statusMatch.index, oldLen: statusMatch[0].length, next: `${statusMatch[1]}${TARGET_STATUS}` }]
+      : []),
     { index: versionMatch.index, oldLen: versionMatch[0].length, next: `${versionMatch[1]}${newVersion}` },
   ].sort((a, b) => b.index - a.index);
   let updatedInner = inner;
@@ -125,7 +159,7 @@ export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
   }
 
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
-  return { ok: true, content, newVersion };
+  return { ok: true, content, newVersion, kind };
 }
 
 /** MIL-214: the certification-aware advisory `runReratify` computes about the version being
@@ -159,7 +193,7 @@ export function reratifyAdvisory(
 }
 
 export type RunReratifyResult =
-  | { ok: true; path: string; newVersion: number; advisory: ReratifyAdvisory }
+  | { ok: true; path: string; newVersion: number; kind: ReratifyKind; advisory: ReratifyAdvisory | null }
   | { ok: false; message: string };
 
 /**
@@ -216,17 +250,18 @@ export function runReratify(
     };
   }
 
-  // MIL-214: computed from the doc's PRE-BUMP version/certification — the question is "was the
-  // version we're about to supersede ever fully certified," which is only answerable before the
-  // write below changes `version`.
-  const advisory = reratifyAdvisory(baseDir, sliceKey, doc.version, doc.conformedVersion);
-
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
   const result = applyReratifyFrontmatter(raw);
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
   }
+  // MIL-214: computed from the doc's PRE-BUMP version/certification (`doc` was resolved before
+  // the write below changes `version`) — "was the version we're about to supersede ever fully
+  // certified". MIL-258: only meaningful for a SHIPPED version; an unshipped one has no
+  // certification to lack, so that path carries no advisory at all.
+  const advisory =
+    result.kind === "shipped" ? reratifyAdvisory(baseDir, sliceKey, doc.version, doc.conformedVersion) : null;
   writeFileSync(absPath, result.content, "utf8");
-  return { ok: true, path: doc.path, newVersion: result.newVersion, advisory };
+  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, advisory };
 }

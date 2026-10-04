@@ -157,6 +157,12 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   your recommendation. The human resolves it — at the model, where the resolution lands as an
   answered open question or a small ratified delta alongside your fix, so the decision is
   recorded instead of buried in an implementation diff.
+- **How a delta is ratified on a doc that never shipped** (it is `ready-to-implement` with
+  `ratifiedBy` set): once the human has answered, the doc changes by `em slice reratify
+  <model>.em <slice-key>` (bumps `version:`, clears the old sign-off, leaves `status` alone),
+  the answer is written into the doc, and the human re-signs with `em slice ratify <model>.em
+  <slice-key> --by <name>`. That is the human's step, not yours — you never run `ratify`, and
+  the doc is not ratified again until they do; resume the build after that.
 - **Never edit the ratified doc to record your own answer**, and never quietly pick a behavior
   a business person could have an opinion on. Silent divergence is the failure mode the whole
   conformance loop exists to catch — don't manufacture it.

@@ -86,7 +86,16 @@ describe("applyReratifyFrontmatter (pure text surgery)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toContain("status: draft");
-    expect(result.message).toContain("not `implemented`");
+    expect(result.message).toContain("can simply be edited");
+  });
+
+  it("refuses a doc that's reviewed — not ratified, so it can simply be edited (MIL-258)", () => {
+    const reviewed =
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\nratifiedBy: Pat\n---\nbody\n";
+    const result = applyReratifyFrontmatter(reviewed);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("status: reviewed");
   });
 
   it("refuses a doc already ready-to-implement — a bump here would silently double-increment", () => {
@@ -96,6 +105,51 @@ describe("applyReratifyFrontmatter (pure text surgery)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toContain("status: ready-to-implement");
+    expect(result.message).toContain("awaiting ratification");
+    expect(result.message).toContain("em slice ratify --by");
+  });
+
+  const UNSHIPPED_DOC =
+    "---\n" +
+    "schemaVersion: 1\n" +
+    "pattern: state-change\n" +
+    "swimlane: order\n" +
+    "status: ready-to-implement\n" +
+    "version: 1\n" +
+    "reviewedBy: Sam Okafor\n" +
+    "reviewedOn: 2026-09-28\n" +
+    "ratifiedBy: Pat\n" +
+    "ratifiedOn: 2026-10-01\n" +
+    "---\n" +
+    "# Slice: Place Order\n\nbody\n";
+
+  it("MIL-258: accepts a ratified ready-to-implement doc — bumps version, clears sign-off, leaves status", () => {
+    const result = applyReratifyFrontmatter(UNSHIPPED_DOC);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.kind).toBe("unshipped");
+    expect(result.newVersion).toBe(2);
+    expect(result.content).toBe(
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 2\n---\n" +
+        "# Slice: Place Order\n\nbody\n",
+    );
+    // No implementedIn was invented.
+    expect(result.content).not.toContain("implementedIn:");
+  });
+
+  it("MIL-258: the state the unshipped path leaves behind refuses a second bump", () => {
+    const first = applyReratifyFrontmatter(UNSHIPPED_DOC);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const second = applyReratifyFrontmatter(first.content);
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.message).toContain("awaiting ratification");
+  });
+
+  it("MIL-258: the shipped path reports kind: shipped", () => {
+    const result = applyReratifyFrontmatter(IMPLEMENTED_DOC);
+    expect(result.ok && result.kind).toBe("shipped");
   });
 
   it("refuses with a clear error when there is no frontmatter block at all", () => {
@@ -229,6 +283,7 @@ describe("runReratify (note-binding resolution + fs orchestration)", () => {
       ok: true,
       path: "slices/shipped-slice.md",
       newVersion: 2,
+      kind: "shipped",
       advisory: { neverCertified: true, unruledFindingsCount: 0 },
     });
     const written = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
@@ -279,6 +334,7 @@ describe("runReratify (note-binding resolution + fs orchestration)", () => {
       ok: true,
       path: "slices/covering-slice.md",
       newVersion: 2,
+      kind: "shipped",
       advisory: { neverCertified: true, unruledFindingsCount: 0 },
     });
     const written = readFileSync(join(dir, "slices", "covering-slice.md"), "utf8");
@@ -315,6 +371,15 @@ describe("reratifyAdvisory / runReratify's MIL-214 certification advisory", () =
     writeFileSync(
       join(dir, "certified.em"),
       'slice "Certified Slice" {\n  command Do Thing note "slices/certified-slice.md"\n  event Thing Done\n}\n',
+    );
+    writeFileSync(
+      join(dir, "slices", "unshipped-slice.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n" +
+        "ratifiedBy: Pat\nratifiedOn: 2026-10-01\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "unshipped.em"),
+      'slice "Unshipped Slice" {\n  command Do Third note "slices/unshipped-slice.md"\n  event Third Done\n}\n',
     );
     writeFileSync(join(dir, "slices", "unruled-slice.md"), UNCERTIFIED_DOC);
     writeFileSync(
@@ -366,5 +431,14 @@ describe("reratifyAdvisory / runReratify's MIL-214 certification advisory", () =
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.advisory).toEqual({ neverCertified: true, unruledFindingsCount: 1 });
+  });
+
+  it("MIL-258: an unshipped (ratified ready-to-implement) doc carries no advisory — no 'never certified' claim", () => {
+    const result = run("unshipped.em", "unshipped-slice");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.kind).toBe("unshipped");
+    expect(result.advisory).toBeNull();
+    expect(readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8")).toContain("version: 2");
   });
 });
