@@ -10,7 +10,10 @@ import { UpgradeReport } from "../cli/upgrade.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0: initial shape (MIL-219).
-export const UPGRADE_SCHEMA_VERSION = "1.0";
+// 1.1: (MIL-257) no shape change, but `stateFileError` semantics changed: it is `null` for an
+//      ABSENT state file (the `state-file` step scaffolds it and shows as an applicable step) and
+//      is set only for a file that exists but doesn't parse, as a sentence naming the file.
+export const UPGRADE_SCHEMA_VERSION = "1.1";
 
 /** Build the `em upgrade <file> --json` document. Pretty-printed (2-space), no trailing newline
  *  — the caller adds it, same convention as buildLedgerJson/buildDiffJson/buildSkillCheckJson. */

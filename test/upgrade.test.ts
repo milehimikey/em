@@ -25,7 +25,7 @@ import {
   checkUpgrade,
   UPGRADE_STEPS,
 } from "../src/cli/upgrade.js";
-import { STATE_FILE_NAME } from "../src/cli/stateFile.js";
+import { STATE_FILE_NAME, loadStateFile, parseState } from "../src/cli/stateFile.js";
 
 const INSTALLED_VERSION = "1.13.0";
 
@@ -495,5 +495,74 @@ describe("checkUpgrade", () => {
     const ctx2 = makeCtx(dir, packagedSkillsRoot);
     const { ok } = checkUpgrade(ctx2);
     expect(ok).toBe(true);
+  });
+});
+
+// MIL-257: `--check` says WHY it exits 1, and a repo with no state file has a path to green.
+describe("state-file step — missing file is scaffolded, broken file is explained (MIL-257)", () => {
+  const FOUR_OF_SIX = "- **Model file:** checkout.em\n- **Current phase:** slice\n- **Last updated:** 2026-01-01\n- **Last conformance:** never\n";
+
+  it("no state file: stateFileError is null, state-file is a pending step, --check passes", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ stateFile: null, source: "slice \"Place Order\" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n" });
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    const { ok, report, reasons } = checkUpgrade(ctx);
+    expect(ok).toBe(true);
+    expect(reasons).toEqual([]);
+    expect(report.stateFileError).toBeNull();
+    const step = report.steps.find((s) => s.id === "state-file")!;
+    expect(step.applicable).toBe(true);
+    expect(step.reason).toContain("will scaffold");
+  });
+
+  it("--apply scaffolds a parseable state file as one commit, after which --check is still ok and the step is done", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ stateFile: null, source: "slice \"Place Order\" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n" });
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    const stateStep = result.ok ? result.applied.find((a) => a.id === "state-file")! : null;
+    expect(stateStep?.applied).toBe(true);
+    const log = spawnSync("git", ["-C", dir, "log", "--format=%s"], { encoding: "utf8" }).stdout.trim().split("\n");
+    expect(log.filter((l) => l.startsWith("em upgrade: state-file"))).toHaveLength(1);
+
+    const loaded = loadStateFile(dir);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const parsed = parseState(loaded.text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state.emVersion).toBe(INSTALLED_VERSION);
+    expect(parsed.state.modelVersion).toBeNull();
+    expect(parsed.state.lastConformance).toBeNull();
+    expect(parsed.state.lastReview).toBeNull();
+    expect(loaded.text).toContain("`checkout.em`"); // Model file: names the model actually upgraded
+
+    const again = checkUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(again.ok).toBe(true);
+    expect(again.report.steps.find((s) => s.id === "state-file")!.applicable).toBe(false);
+  });
+
+  it("existing state file missing required bullets: hard incompatibility naming the file and the bullets; checklist shows the real cause", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ stateFile: FOUR_OF_SIX });
+    const { ok, report, reasons } = checkUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(ok).toBe(false);
+    expect(report.stateFileError).toContain(join(dir, STATE_FILE_NAME));
+    expect(report.stateFileError).toContain('is missing bullet line(s): "- **Current step:**", "- **Last stakeholder review:**"');
+    expect(reasons).toEqual([report.stateFileError]);
+    const step = report.steps.find((s) => s.id === "state-file")!;
+    expect(step.applicable).toBe(false);
+    expect(step.reason).toBe(report.stateFileError);
+  });
+
+  it("--apply keeps refusing on a broken existing state file, with the specific reason", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ stateFile: FOUR_OF_SIX });
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('"- **Current step:**"');
+  });
+
+  it("predates-1.6 is also named in the reasons", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: REFUSAL_SHAPE_SOURCE });
+    const { ok, reasons } = checkUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(ok).toBe(false);
+    expect(reasons.some((r) => r.startsWith("predates-1.6:"))).toBe(true);
   });
 });

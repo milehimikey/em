@@ -42,9 +42,10 @@ commit — that write happens every run, independent of which of the five steps 
 state file predating this feature), `em upgrade` infers `from` from other evidence and says
 so in its output. `to` is the installed `em`'s own version.
 
-`--check` is what CI runs: it exits 1 only on a hard incompatibility (an unparseable state
-file, an `.em` shape `em migrate` can't cleanly rewrite) and otherwise exits 0, listing both
-the mechanical and human items on stderr.
+`--check` is what CI runs: it exits 1 only on a hard incompatibility (a state file that exists
+but is unparseable, an `.em` shape `em migrate` can't cleanly rewrite) and otherwise exits 0,
+listing both the mechanical and human items on stderr. The final line names the cause. A repo
+with no state file at all is not a failure: the `state-file` step scaffolds one under `--apply`.
 
 **Version support.** `em upgrade` handles a repo authored under em 1.6 forward. Anything
 older may need `em migrate` (or other manual prep) run by hand first — see the "repo

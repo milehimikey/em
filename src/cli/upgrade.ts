@@ -23,7 +23,7 @@
 // "changed since when" or "commit per step" without one).
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
@@ -45,8 +45,8 @@ import {
   CONFORM_WORKFLOW_MARKER,
 } from "./ciInit.js";
 import { findSpecifyRoot } from "./status.js";
-import { scaffoldConstitution } from "../templates.js";
-import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets } from "./stateFile.js";
+import { scaffoldConstitution, scaffoldStateFile } from "../templates.js";
+import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolveStateFilePath } from "./stateFile.js";
 import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner } from "./frontmatterSurgery.js";
 import { localIsoDate } from "../util/localDate.js";
 
@@ -142,13 +142,41 @@ function applyReactionShape(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: [ctx.modelFile] };
 }
 
-// ---- Step 3: state-file — ensure Model version:/Certified: are present (MIL-218 defaults). ----
-// `Em version:` itself is deliberately NOT this step's job — `runUpgradeApply` always writes it
-// as its own dedicated final commit, whether or not this step ran (module header).
+// ---- Step 3: state-file — scaffold when absent (MIL-257); else ensure Model version:/Certified:
+// are present (MIL-218 defaults). ----
+// `Em version:` itself is deliberately NOT this step's job when the file already exists —
+// `runUpgradeApply` always writes it as its own dedicated final commit, whether or not this step
+// ran (module header). A freshly scaffolded file is written already carrying the installed
+// version (scaffoldStateFile's own `Em version:` fill), so that final commit is then a no-op.
+
+/** MIL-257: the one human-readable sentence for "the state file exists but `parseState` rejected
+ *  it", naming the file so the `--check` final line / `--apply` refusal is self-explanatory.
+ *  `parseState`'s "missing bullet line(s): ..." reads as `is missing ...`; its format-mismatch
+ *  messages (`"- **X:**" doesn't match ...`) follow a colon instead. */
+export function describeStateFileFailure(path: string, parseMessage: string): string {
+  return parseMessage.startsWith("missing ") ? `state file ${path} is ${parseMessage}` : `state file ${path}: ${parseMessage}`;
+}
+
+/** MIL-257: non-null when the state file exists but isn't parseable — shared by `detectStateFile`
+ *  (so the checklist line shows the real cause rather than the migration-tolerant
+ *  `Model version:`/`Certified:` item) and `applyStateFile`. */
+function stateFileParseFailure(ctx: UpgradeContext): string | null {
+  const loaded = loadStateFile(ctx.baseDir);
+  if (!loaded.ok) return null; // absent — scaffolded, not an error (MIL-257)
+  const parsed = parseState(loaded.text);
+  return parsed.ok ? null : describeStateFileFailure(loaded.path, parsed.message);
+}
 
 function detectStateFile(ctx: UpgradeContext): StepDetection {
   const loaded = loadStateFile(ctx.baseDir);
-  if (!loaded.ok) return { applicable: false, reason: loaded.message };
+  if (!loaded.ok) {
+    return {
+      applicable: true,
+      reason: `no state file at ${resolveStateFilePath(ctx.baseDir)} — em upgrade will scaffold one (Current phase: discover, Current step: 1, Last conformance/Last stakeholder review: never)`,
+    };
+  }
+  const failure = stateFileParseFailure(ctx);
+  if (failure !== null) return { applicable: false, reason: failure };
   const patched = ensureOptionalBullets(loaded.text, "1970-01-01");
   if (!patched.ok) return { applicable: false, reason: patched.message };
   if (patched.text === loaded.text) return { applicable: false, reason: "Model version:/Certified: bullets already present" };
@@ -157,8 +185,17 @@ function detectStateFile(ctx: UpgradeContext): StepDetection {
 
 function applyStateFile(ctx: UpgradeContext): StepApplyOutcome {
   const loaded = loadStateFile(ctx.baseDir);
-  if (!loaded.ok) return { ok: false, message: loaded.message };
   const today = localIsoDate();
+  if (!loaded.ok) {
+    // MIL-257: reuse `em scaffold`'s own generator (templates.ts scaffoldStateFile) rather than a
+    // second one. `Model file:` names the model actually being upgraded (its own basename).
+    const path = resolveStateFilePath(ctx.baseDir);
+    const slug = basename(ctx.modelFile, extname(ctx.modelFile));
+    writeFileSync(path, scaffoldStateFile(ctx.model.name, slug, today, ctx.installedVersion));
+    return { ok: true, changedFiles: [path] };
+  }
+  const failure = stateFileParseFailure(ctx);
+  if (failure !== null) return { ok: false, message: failure };
   const patched = ensureOptionalBullets(loaded.text, today);
   if (!patched.ok) return { ok: false, message: patched.message };
   if (patched.text === loaded.text) return { ok: false, message: "nothing to change" };
@@ -478,12 +515,13 @@ export interface UpgradeReport {
 export function detectUpgrade(ctx: UpgradeContext): UpgradeReport {
   const loaded = loadStateFile(ctx.baseDir);
   let recorded: string | null = null;
+  // MIL-257: an ABSENT state file is no longer an error — the `state-file` step scaffolds it — so
+  // `stateFileError` is `null` for it (the pending step's own reason carries the detail). It is
+  // set only for a file that exists but doesn't parse, and now names the file.
   let stateFileError: string | null = null;
-  if (!loaded.ok) {
-    stateFileError = loaded.message;
-  } else {
+  if (loaded.ok) {
     const parsed = parseState(loaded.text);
-    if (!parsed.ok) stateFileError = parsed.message;
+    if (!parsed.ok) stateFileError = describeStateFileFailure(loaded.path, parsed.message);
     else recorded = parsed.state.emVersion;
   }
 
@@ -574,13 +612,23 @@ export function applyUpgrade(ctx: UpgradeContext, runGit: GitRunner = realGit): 
   return { ok: true, report, applied, emVersionCommit };
 }
 
+/** MIL-257: every cause that makes `--check` exit 1, each as one sentence, so the final line
+ *  always says why. Empty when there is no hard incompatibility. */
+export function hardIncompatibilityReasons(report: UpgradeReport): string[] {
+  const reasons: string[] = [];
+  if (report.stateFileError !== null) reasons.push(report.stateFileError);
+  for (const h of report.human) if (h.id === "predates-1.6") reasons.push(`predates-1.6: ${h.reason}`);
+  return reasons;
+}
+
 /** `--check` (what CI runs): exit-worthiness only — no writes. Hard incompatibilities are the
- *  ONLY thing that makes this fail: an unparseable/missing state file, or a `predates-1.6` human
- *  item (an old reaction shape `em migrate` itself refuses to touch). Every other human item —
- *  including the ordinary "some steps are applicable" case — is advisory, same as running
- *  `em upgrade` without `--apply` at all. */
-export function checkUpgrade(ctx: UpgradeContext): { ok: boolean; report: UpgradeReport } {
+ *  ONLY thing that makes this fail: a state file that exists but is unparseable (a MISSING one is
+ *  scaffolded by the `state-file` step, MIL-257, so it is a pending step, not a failure), or a
+ *  `predates-1.6` human item (an old reaction shape `em migrate` itself refuses to touch). Every
+ *  other human item — including the ordinary "some steps are applicable" case — is advisory, same
+ *  as running `em upgrade` without `--apply` at all. `reasons` (MIL-257) is why `ok` is false. */
+export function checkUpgrade(ctx: UpgradeContext): { ok: boolean; report: UpgradeReport; reasons: string[] } {
   const report = detectUpgrade(ctx);
-  const hardIncompatibility = report.stateFileError !== null || report.human.some((h) => h.id === "predates-1.6");
-  return { ok: !hardIncompatibility, report };
+  const reasons = hardIncompatibilityReasons(report);
+  return { ok: reasons.length === 0, report, reasons };
 }

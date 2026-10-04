@@ -3570,9 +3570,17 @@ The five mechanical steps, in this fixed order:
    installs one that wasn't there).
 2. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
    pre-1.7.1 two-slice Automation/Translation shape into the merged single-slice shape.
-3. **`state-file`** — adds any missing `Model version:`/`Certified:` bullets (MIL-218) with their
-   template defaults (`none`/`never`), preserving everything else byte-for-byte. `Em version:`
-   itself is NOT this step's job — see below.
+3. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same
+   generator `em scaffold` uses, so it parses and carries `Em version:` = the installed em,
+   `Model version: none`, `Certified: never`; honest initial values: `Current phase: discover`,
+   `Current step: 1`, `Last conformance: never`, `Last stakeholder review: never` — edit them with
+   `em state set-phase` to where the model really is). Note this writes a new file into a repo
+   that never had one. When the file exists, adds any missing `Model version:`/`Certified:`
+   bullets (MIL-218) with their template defaults (`none`/`never`), preserving everything else
+   byte-for-byte. A file that exists but lacks one of the six required bullets is NOT repaired
+   (em can't guess `Current step:` etc.): it is a hard incompatibility, and this step's checklist
+   line shows the specific reason. `Em version:` itself is NOT this step's job for an existing
+   file — see below.
 4. **`ci-block`** — refreshes the `GENERATED:em-ci`/`GENERATED:em-conform` blocks via `em ci
    init`'s own plan/apply, reusing whatever `<model>`/`--tests` arguments the existing
    `em-ci.yml` was generated with. Only touches a file that already carries the markers — never
@@ -3607,9 +3615,17 @@ The human list — detect-only, never applied, printed by every mode:
 | `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
 
 `--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a
-hard incompatibility — an unparseable/missing state file, or the `predates-1.6` human item —
-never on the ordinary "some steps are applicable" case; otherwise exits 0 with both lists on
-stderr, writing nothing.
+hard incompatibility — a state file that exists but is unparseable (e.g. missing required
+bullets), or the `predates-1.6` human item — never on the ordinary "some steps are applicable"
+case (a **missing** state file is just a pending `state-file` step, MIL-257); otherwise exits 0
+with both lists on stderr, writing nothing. On exit 1 the final line says why, e.g. `em upgrade
+--check: hard incompatibility found: state file orders/.event-modeling.md is missing bullet
+line(s): "- **Current step:**", "- **Last stakeholder review:**"` (several causes are joined with
+`; `). `--apply` refuses the same unparseable file with the same reason.
+
+`--json` (`upgradeSchemaVersion` `1.1`, MIL-257): `stateFileError` is `null` when the state file is
+absent (see the pending `state-file` step's `reason` instead) and a sentence naming the file when
+it exists but doesn't parse. The shape is otherwise unchanged.
 
 ```bash
 em upgrade order-fulfillment/order-fulfillment.em

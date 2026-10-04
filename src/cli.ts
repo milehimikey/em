@@ -2583,7 +2583,7 @@ program
   )
   .argument("<file>", "input .em model file")
   .option("--apply", "apply every applicable mechanical step, one git commit each, then a final `Em version:` commit")
-  .option("--check", "exit non-zero only on a hard incompatibility (unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs")
+  .option("--check", "exit non-zero only on a hard incompatibility (an existing but unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs; the final line says why")
   .option("--json", "print a JSON document instead of text (dry-run/--check only, never with --apply)")
   .action((file: string, opts: { apply?: boolean; check?: boolean; json?: boolean }) => {
     if (opts.apply && opts.check) {
@@ -2623,13 +2623,14 @@ program
     };
 
     if (opts.check) {
-      const { ok, report } = checkUpgrade(ctx);
+      const { ok, report, reasons } = checkUpgrade(ctx);
       console.error(`em upgrade --check: from ${report.from.version}${report.from.inferred ? ` (inferred: ${report.from.basis})` : ""} → to ${report.to}`);
       for (const s of report.steps) {
         console.error(`  [${s.applicable ? "x" : " "}] ${s.id} (since ${s.sinceVersion}): ${s.reason}`);
       }
       for (const h of report.human) console.error(`  human: ${h.id}: ${h.reason}`);
-      console.error(ok ? "ok — no hard incompatibility" : "em upgrade --check: hard incompatibility found");
+      // MIL-257: the final line always says why (previously visible only via --json).
+      console.error(ok ? "ok — no hard incompatibility" : `em upgrade --check: hard incompatibility found: ${reasons.join("; ")}`);
       if (!ok) process.exitCode = 1;
       return;
     }

@@ -5203,6 +5203,34 @@ slice "Capture Payment" {
     }
   });
 
+  it("--check on a state file missing required bullets exits 1 and the final line names the file and bullets (MIL-257)", () => {
+    const dir = makeRepo();
+    try {
+      writeFileSync(join(dir, ".event-modeling.md"), "- **Model file:** checkout.em\n- **Current phase:** slice\n- **Last updated:** 2026-01-01\n- **Last conformance:** never\n");
+      const res = em(["upgrade", "checkout.em", "--check"], dir);
+      expect(res.status).toBe(1);
+      const lastLine = res.stderr.trim().split("\n").pop()!;
+      expect(lastLine).toContain("em upgrade --check: hard incompatibility found: state file");
+      expect(lastLine).toContain('is missing bullet line(s): "- **Current step:**", "- **Last stakeholder review:**"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("--check with no state file exits 0 and lists state-file as pending (MIL-257)", () => {
+    const dir = makeRepo();
+    try {
+      rmSync(join(dir, ".event-modeling.md"));
+      git(["commit", "-qam", "drop state"], dir);
+      const res = em(["upgrade", "checkout.em", "--check"], dir);
+      // checkout.em is OLD_SHAPE (migratable), so no predates-1.6; state-file is merely pending.
+      expect(res.status).toBe(0);
+      expect(res.stderr).toMatch(/\[x\] state-file .*will scaffold/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("--apply and --check are mutually exclusive", () => {
     const dir = makeRepo();
     try {
