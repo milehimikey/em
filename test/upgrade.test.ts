@@ -230,12 +230,13 @@ describe("detectUpgrade — 1.6-shape fixture", () => {
     expect(report.steps.map((s) => s.id)).toEqual(UPGRADE_STEPS.map((s) => s.id));
   });
 
-  it("finds skill-bundle applicable when a stale vendored bundle exists", () => {
+  it("a stale vendored bundle is handled by skill-plugin, not skill-bundle (MIL-232)", () => {
     const { dir, packagedSkillsRoot } = makeFixtureRepo({ vendoredSkillStamp: "1.7.0" });
     const ctx = makeCtx(dir, packagedSkillsRoot);
     const report = detectUpgrade(ctx);
     const skillStep = report.steps.find((s) => s.id === "skill-bundle")!;
-    expect(skillStep.applicable).toBe(true);
+    expect(skillStep.applicable).toBe(false);
+    expect(report.steps.find((s) => s.id === "skill-plugin")!.applicable).toBe(true);
   });
 
   it("reports the predates-1.6 human item (never a step) for a refusal shape", () => {
@@ -868,10 +869,10 @@ describe("skill-plugin step", () => {
 
   const step = UPGRADE_STEPS.find((s) => s.id === "skill-plugin")!;
 
-  it("sits after skill-bundle and before reaction-shape", () => {
+  it("is the first step, ahead of skill-bundle", () => {
     const ids = UPGRADE_STEPS.map((s) => s.id);
-    expect(ids.indexOf("skill-plugin")).toBe(ids.indexOf("skill-bundle") + 1);
-    expect(ids.indexOf("skill-plugin")).toBeLessThan(ids.indexOf("reaction-shape"));
+    expect(ids[0]).toBe("skill-plugin");
+    expect(ids[1]).toBe("skill-bundle");
     expect(step.sinceVersion).toBe("1.14.0");
   });
 
@@ -880,6 +881,8 @@ describe("skill-plugin step", () => {
     const report = detectUpgrade(makeCtx(dir, packagedSkillsRoot));
     const s = report.steps.find((x) => x.id === "skill-plugin")!;
     expect(s.applicable).toBe(true);
+    expect(report.steps[0].id).toBe("skill-plugin");
+    expect(report.steps.find((x) => x.id === "skill-bundle")!.applicable).toBe(false);
     for (const d of BUNDLE_DIR_NAMES) expect(s.reason).toContain(`.claude/skills/${d}`);
     expect(s.reason).toContain('extraKnownMarketplaces["em-1-13-0"]');
     expect(s.reason).toContain('enabledPlugins["em@em-1-13-0"]');
@@ -906,6 +909,8 @@ describe("skill-plugin step", () => {
     expect(agents).toContain("claude plugin marketplace add milehimikey/em@v<version> --scope project");
     expect(isWorkingTreeClean(dir)).toBe(true);
     const applied = result.ok ? result.applied : [];
+    expect(applied.find((a) => a.id === "skill-bundle")!.applied).toBe(false);
+    expect(rows.filter((r) => /skill-/.test(r[1]))).toHaveLength(1);
     expect(applied.find((a) => a.id === "skill-plugin")!.changedFiles).toContain(join(".claude", "settings.json"));
   });
 
@@ -925,7 +930,7 @@ describe("skill-plugin step", () => {
     expect(spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout).toBe(before);
     const rep = detectUpgrade(makeCtx(dir, packagedSkillsRoot));
     expect(rep.steps.find((x) => x.id === "skill-plugin")!.applicable).toBe(false);
-    expect(rep.steps.find((x) => x.id === "skill-bundle")!.reason).toBe("plugin repo — the vendored bundle is gone; nothing to sync");
+    expect(rep.steps.find((x) => x.id === "skill-bundle")!.reason).toBe("plugin repo — nothing to sync");
   });
 
   it("is not applicable when the plugin is already declared, or no bundle is vendored", () => {

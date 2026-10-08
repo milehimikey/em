@@ -19,13 +19,14 @@ Dry-run is the default: `em upgrade` reports what it would do and stops. `--appl
 **one git commit per applicable step**, in a fixed order, so a reviewer can inspect or
 cherry-pick each one individually:
 
-1. `skill-bundle` — refresh the vendored `.claude/skills/` bundle (same logic as `em skill
-   sync`). Not applicable once the plugin is declared.
-2. `skill-plugin` — migrate a vendored bundle to the pinned em plugin in one commit (see
+1. `skill-plugin` — migrate a vendored bundle to the pinned em plugin in one commit (see
    [1.14.0](#1140)): removes the seven bundle directories, writes the pinned
    `extraKnownMarketplaces`/`enabledPlugins` entries into `.claude/settings.json`, and refreshes the
    `AGENTS.md` managed section with the `/em:*` skill names. The per-machine registration is a
-   human item (`plugin-install-locally`).
+   human item (`plugin-install-locally`). It runs first so `skill-bundle` never makes a throwaway
+   sync commit of directories this step deletes.
+2. `skill-bundle` — refresh the vendored `.claude/skills/` bundle (same logic as `em skill
+   sync`). Not applicable once the plugin is declared or `skill-plugin` is pending.
 3. `reaction-shape` — rewrite a pre-1.7.1 two-slice Automation/Translation into the merged
    single-slice shape (same logic as `em migrate`).
 4. `state-file` — add any missing state-file bullets with their defaults, byte-for-byte

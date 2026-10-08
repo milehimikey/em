@@ -109,7 +109,9 @@ function detectSkillBundle(ctx: UpgradeContext): StepDetection {
   const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
   // MIL-231/232: a repo that declares the plugin has no bundle to sync (any stray vendored copy is
   // the `skill-plugin` step's business, not this one's).
-  if (detectPlugin(ctx.repoRoot)) return { applicable: false, reason: "plugin repo — the vendored bundle is gone; nothing to sync" };
+  if (detectPlugin(ctx.repoRoot)) return { applicable: false, reason: "plugin repo — nothing to sync" };
+  // MIL-232: the vendored bundle is about to be removed by `skill-plugin` (ordered first) — syncing it would be a throwaway commit.
+  if (detectSkillPlugin(ctx).applicable) return { applicable: false, reason: "the vendored bundle is migrated to the plugin by skill-plugin — nothing to sync" };
   if (!existsSync(join(vendoredRoot, EM_SKILL_ANCHOR_DIR))) {
     return { applicable: false, reason: "no vendored skill bundle installed at .claude/skills/ — run `em skill install` first if you want one" };
   }
@@ -557,8 +559,8 @@ function applySystemManifest(ctx: UpgradeContext): StepApplyOutcome {
 }
 
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
-  { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
   { id: "skill-plugin", sinceVersion: "1.14.0", detect: detectSkillPlugin, apply: applySkillPlugin },
+  { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },
