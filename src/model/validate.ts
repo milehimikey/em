@@ -4,8 +4,10 @@
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
 import {
+  collectModelInvariants,
   collectTags,
   Element,
+  MODEL_INVARIANT_ID_RE,
   NormalizedModel,
   PUBLIC_SCALAR_TYPE_NAMES,
   TypeDecl,
@@ -742,6 +744,35 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       message: formatUnresolvedPublicField(f),
       line: f.line,
       refs: [f.owner.kind === "type" ? refs.refByTypeId.get(f.owner.id)! : refs.refById.get(f.owner.id)!],
+    });
+  }
+
+  // MIL-265: model-declared invariants. Both checks are silent on a model with no `invariant`
+  // line (every 1.13 model), so they never turn a previously clean model red. The ID shape is
+  // the documented `INV-<MNEMONIC>-<n>` convention, strict on the model side only — slice-doc
+  // bodies keep the lenient `INV_TOKEN_RE` reader (a 1.13 doc's bare `INV-1` stays clean).
+  const invariantsById = new Map<string, ReturnType<typeof collectModelInvariants>>();
+  for (const inv of collectModelInvariants(model)) {
+    if (!MODEL_INVARIANT_ID_RE.test(inv.id)) {
+      pushDiag(diags, "invariants/malformed-id", {
+        message:
+          `invariant "${inv.id}" on ${inv.element.kind} "${inv.element.name}" does not match ` +
+          `INV-<MNEMONIC>-<n> (a 2-4 character uppercase/digit mnemonic and a number, e.g. INV-ORD-1)`,
+        line: inv.line,
+        refs: [refOf(inv.element.id)],
+      });
+    }
+    const bucket = invariantsById.get(inv.id);
+    if (bucket) bucket.push(inv);
+    else invariantsById.set(inv.id, [inv]);
+  }
+  for (const [id, decls] of invariantsById) {
+    if (decls.length < 2) continue;
+    const where = decls.map((d) => `${d.element.kind} "${d.element.name}" (line ${d.line})`).join(", ");
+    pushDiag(diags, "invariants/duplicate-id", {
+      message: `invariant "${id}" is declared ${decls.length} times in the model: ${where}`,
+      line: decls[1].line,
+      refs: [...new Set(decls.map((d) => refOf(d.element.id)))],
     });
   }
 

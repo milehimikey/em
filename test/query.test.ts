@@ -23,6 +23,7 @@ import {
 } from "../src/query/verbs.js";
 import { formatField } from "../src/query/format.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
+import { invariantFixtureModel, PLACE_ORDER_DOC, writeInvariantFixture } from "./helpers/invariantFixture.js";
 
 const FIXTURE = `model "Query Fixture"
 
@@ -938,7 +939,7 @@ slice "Refund Order" {
     expect(fast).toMatchObject({ found: true, reason: "frontmatter-invalid", status: null, body: null });
     expect([fast.found, fast.path, fast.reason, fast.status]).toEqual([slow.found, slow.path, slow.reason, slow.status]);
     // The one invariant in the fixture is attributed to its canonical slice only.
-    expect(index.invariants.get("INV-PAY-1")).toEqual({ id: "INV-PAY-1", sliceKey: "request-payment" });
+    expect(index.invariants.get("INV-PAY-1")).toEqual({ id: "INV-PAY-1", sliceKey: "request-payment", rule: null, declaredIn: "doc" });
   });
 
   it("a mixed-case filename is a doc exactly where readSliceDoc() would find it", async () => {
@@ -1006,7 +1007,7 @@ slice "Show Receipt" {
     // Both slices resolve to the same doc — the covering one first in document order.
     expect(compiled.index.sliceFacts.get("request-payment")!.doc.path).toBe("slices/process-payment.md");
     expect(compiled.index.sliceFacts.get("process-payment")!.doc.path).toBe("slices/process-payment.md");
-    expect(compiled.index.invariants.get("INV-PP-1")).toEqual({ id: "INV-PP-1", sliceKey: "process-payment" });
+    expect(compiled.index.invariants.get("INV-PP-1")).toEqual({ id: "INV-PP-1", sliceKey: "process-payment", rule: null, declaredIn: "doc" });
 
     const system = buildQuerySystem([{ file: "o.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
     const result = queryInvariant(system, "INV-PP-1");
@@ -1036,7 +1037,7 @@ slice "Show Requests" {
 `;
     const compiled = compileForQuery(onlyCovering, dir);
     expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-    expect(compiled.index.invariants.get("INV-PP-1")).toEqual({ id: "INV-PP-1", sliceKey: "request-payment" });
+    expect(compiled.index.invariants.get("INV-PP-1")).toEqual({ id: "INV-PP-1", sliceKey: "request-payment", rule: null, declaredIn: "doc" });
   });
 });
 
@@ -1045,5 +1046,58 @@ describe("buildQueryJson — omitted optional args echo as null", () => {
     const { buildQueryJson } = await import("../src/emit/queryJson.js");
     const doc = JSON.parse(buildQueryJson("slices", ["m.em"], { pattern: undefined, status: "draft", tag: undefined }, []));
     expect(doc.args).toEqual({ pattern: null, status: "draft", tag: null });
+  });
+});
+
+// MIL-265: model-declared invariants are claimed before either doc pass.
+describe("invariant — model-declared first (MIL-265)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-query-inv-model-"));
+    writeInvariantFixture(dir, true);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const systemFor = (withGrammar: boolean) => {
+    const compiled = compileForQuery(invariantFixtureModel(withGrammar), dir);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    return { compiled, system: buildQuerySystem([{ file: "model.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]) };
+  };
+
+  it("indexes model ids with their rule and declaredIn: model; doc-only ids stay declaredIn: doc", () => {
+    const { compiled } = systemFor(true);
+    expect([...compiled.index.invariants.values()]).toEqual([
+      { id: "INV-ORD-1", sliceKey: "place-order", rule: "Order total must be positive", declaredIn: "model" },
+      { id: "INV-ORD-2", sliceKey: "place-order", rule: "An order is placed at most once", declaredIn: "model" },
+      { id: "INV-1", sliceKey: "cancel-order", rule: null, declaredIn: "doc" },
+    ]);
+  });
+
+  it("a model id cited on another slice's Invariants bullet stays with its owning slice", () => {
+    const { system } = systemFor(true);
+    const result = queryInvariant(system, "INV-ORD-1", join(dir, "tests"));
+    expect(result).toEqual({
+      ok: true,
+      results: [
+        {
+          id: "INV-ORD-1",
+          sliceRef: "place-order",
+          sliceName: "Place Order",
+          docPath: "slices/place-order.md",
+          status: "implemented",
+          citations: [{ file: "orders.test.ts", line: 1 }],
+          rule: "Order total must be positive",
+          declaredIn: "model",
+        },
+      ],
+    });
+  });
+
+  it("finds a model-declared id no doc mentions at all", () => {
+    writeFileSync(join(dir, "slices", "place-order.md"), PLACE_ORDER_DOC.replace(" (INV-ORD-2)", ""));
+    const { system } = systemFor(true);
+    const result = queryInvariant(system, "INV-ORD-2");
+    expect(result.ok && result.results[0]).toMatchObject({ sliceRef: "place-order", declaredIn: "model" });
+    writeFileSync(join(dir, "slices", "place-order.md"), PLACE_ORDER_DOC);
   });
 });

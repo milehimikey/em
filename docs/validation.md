@@ -524,6 +524,28 @@ decimal, currency: string }` and `total: Money`), spell a list `X[]` rather than
 drop `public` if the element is not part of the integration surface. `em upgrade` lists every
 offending field as the human item `public-field-types-unresolved`.
 
+### Invariants
+
+MIL-265: checks on first-class invariants — `invariant INV-<MNEMONIC>-<n> "rule"` lines after a
+`command` or `event` (see [dsl.md](dsl.md#invariants)). The model is the preferred declaring
+place; a slice doc's `## Invariants / Business Rules` section elaborates and cites the ID. A doc
+that still declares its own invariants (the 1.13 style, bare `INV-1` included) keeps working —
+the doc-body reader is the fallback for every ID the model does not declare.
+
+| Code | Severity | Rule | Fix |
+|---|---|---|---|
+| `invariants/malformed-id` | error | A model-declared ID does not match `INV-<MNEMONIC>-<n>` (`^INV-[A-Z0-9]{2,4}-[0-9]+$`). Model side only: slice-doc bodies keep accepting any `INV-…` token, so a 1.13 doc's `INV-1` stays clean | Rename the ID, e.g. `INV-ORD-1` |
+| `invariants/duplicate-id` | error | The same ID is declared twice in the model (on any elements) | Give each rule its own ID; declare it once, on the element it guards |
+| `invariants/public-command-without-invariants` | warning | A `public` command has no `invariant` line AND its slice doc's Invariants section declares none | Add an `invariant` line after the command (or declare the rules in the doc) |
+| `invariants/doc-cites-undeclared` | warning | A slice doc (any status, anywhere in its body) mentions an `INV-…` token that neither the model nor any slice doc's Invariants/Delta section declares | Declare the ID, or fix the citation |
+| `invariants/declared-in-both` | warning | An ID declared in the model is also restated as a rule in a doc — written with the declaring label `**INV-X:**` (or `**INV-X**:`) on an Invariants/Delta bullet | Keep the model line; in the doc, cite the ID (`- INV-ORD-1 — why / edge cases`) and elaborate |
+
+`declared-in-both` is the ticket's "hint": em's diagnostics have only `error` and `warning`
+severities, so it is a warning. It and `doc-cites-undeclared` carry no slice ref, so neither ever
+blocks [`--slice-ready`](#slice-readiness) — a 1.13 doc that passed the gate still passes, and a
+half-finished migration is never a blocker. On a model with no `invariant` line only
+`doc-cites-undeclared` can fire.
+
 ### Ref and key collisions
 
 `em export`'s identities are slugs of declared names (see [cli.md](cli.md#model-qualified-refs)),

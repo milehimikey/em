@@ -15,7 +15,9 @@
 //    follow so "what's downstream of this event" reaches every later timeline instance of a
 //    read model it feeds, not just the first (MIL-191's design note: a query-engine rule).
 //  - `sliceFacts`: the doc join done once via `sliceDocIndex.ts`'s single `readdirSync`.
-//  - `invariants`: INV-* id -> declaring slice, extracted from EVERY found slice doc's body
+//  - `invariants`: INV-* id -> declaring slice. Model-declared ids (MIL-265 `invariant` lines)
+//    first, owned by their element's slice; then, for ids the model does not declare, extracted
+//    from EVERY found slice doc's body
 //    regardless of its status — reuses `cli/coverage.ts`'s extraction (never re-derives the
 //    ownership-heading / structural-line rules a second time), but NOT coverage's in-scope
 //    status gate: that gate decides which invariants must be cited by tests, whereas a lookup
@@ -24,7 +26,7 @@
 //    asks about one ID at a time — see `em query invariant`) — the CLI/MCP layer calls
 //    `scanTestCitations()` (also coverage.ts) directly when `--tests` is given.
 
-import { Element, NormalizedModel } from "./model.js";
+import { collectModelInvariants, Element, NormalizedModel } from "./model.js";
 import { RefsResult } from "./refs.js";
 import { semanticEdges, connectionKind, ConnectionKind } from "./edges.js";
 import { loadSliceDocsOnce, joinSliceDocFast, SliceQueryDoc } from "./sliceDocIndex.js";
@@ -56,6 +58,12 @@ export interface SliceIndexFact {
 export interface InvariantIndexEntry {
   id: string;
   sliceKey: string;
+  /** The model's quoted rule sentence (MIL-265) — null for a doc-declared id, or a
+   *  model-declared one whose `invariant` line gives no rule. */
+  rule: string | null;
+  /** Where the id is declared (MIL-265): `"model"` — an `invariant` line on an element of
+   *  `sliceKey` — or `"doc"`, the 1.13 fallback (extracted from a slice doc's body). */
+  declaredIn: "model" | "doc";
 }
 
 export interface ModelIndex {
@@ -74,7 +82,9 @@ export interface ModelIndex {
   instances: Map<string, string[]>;
   /** Slice export key -> its doc-join facts, in `model.slices` order. */
   sliceFacts: Map<string, SliceIndexFact>;
-  /** INV-* id -> the slice that declares it. A doc is scanned once per slice it resolves for
+  /** INV-* id -> the slice that declares it. Model-declared ids (MIL-265) are claimed first,
+   *  owned by the slice of the element they are declared on, full stop — no doc mention can
+   *  move them. Doc-body extraction then fills only ids the model does not declare. A doc is scanned once per slice it resolves for
    *  (its own canonical slice, plus every slice it ratifies via MIL-121 `covers:`), so the
    *  CANONICAL binding (`doc.path === slices/<thisSliceKey>.md`) always owns the id, whatever
    *  the slices' document order; a cross-bound slice claims an id only when no canonical slice
@@ -150,11 +160,24 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
     }
     return ids;
   };
+  // MIL-265: model-declared ids first — owned by their element's slice, before either doc pass
+  // can claim them (closes the MIL-149/155 cross-credit class for anything declared in the model).
+  // A duplicate model id is an `invariants/duplicate-id` error; first declaration wins here.
+  for (const inv of collectModelInvariants(model)) {
+    if (!invariants.has(inv.id)) {
+      invariants.set(inv.id, {
+        id: inv.id,
+        sliceKey: refs.sliceKeys[inv.element.sliceIndex],
+        rule: inv.rule,
+        declaredIn: "model",
+      });
+    }
+  }
   const claim = (canonical: boolean) => {
     for (const { key, doc } of sliceFacts.values()) {
       if (doc.body === null || (doc.path === `slices/${key}.md`) !== canonical) continue;
       for (const id of idsOf(doc)) {
-        if (!invariants.has(id)) invariants.set(id, { id, sliceKey: key });
+        if (!invariants.has(id)) invariants.set(id, { id, sliceKey: key, rule: null, declaredIn: "doc" });
       }
     }
   };

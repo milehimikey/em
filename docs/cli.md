@@ -1251,6 +1251,14 @@ continuation line or a bare paragraph, either of which may legitimately cite a s
 while explaining this doc's own rule (MIL-155). Citation matching is word-boundary-anchored so
 `INV-KEY-1` never matches inside `INV-KEY-12`.
 
+**Model-declared invariants first (MIL-265).** An ID declared in the model by an `invariant`
+line (see [dsl.md](dsl.md#invariants)) belongs to the slice of the element that declares it,
+full stop: each in-scope slice's ledger lists its elements' model-declared IDs first (document
+order), then the IDs its doc defines that the model does not declare anywhere. A model-declared
+ID cited in another slice's doc is never credited to that slice — the MIL-149/155 cross-credit
+class is closed at the root for anything migrated into the model. A model with no `invariant`
+line produces byte-identical output to 1.13.
+
 | Flag | Effect |
 |---|---|
 | `--tests <dir>` | Directory to scan recursively for test files citing invariant IDs (**required**) |
@@ -1963,8 +1971,13 @@ whose entries are verb-shaped:
   that producing command).
 - `downstream`/`upstream` results add `depth` (hop count from `--of`) to the same shape.
 - `slices` results carry `{ ref, name, index, pattern, status, personas, contexts, tags }`.
-- `invariant` results carry `{ id, sliceRef, sliceName, docPath, status, citations }` —
+- `invariant` results carry `{ id, sliceRef, sliceName, docPath, status, citations, rule, declaredIn }` —
   `citations` is `null` when `--tests` wasn't given, else `{ file, line }[]` (possibly empty).
+  `declaredIn` (query schema 1.2, MIL-265) is `"model"` for an id declared by an `invariant`
+  line in the `.em` file — owned by the slice of the element that declares it, whatever any doc's
+  prose says — or `"doc"` for the 1.13-style fallback (extracted from a slice doc's body, for ids
+  the model does not declare). `rule` is the model's quoted rule sentence, `null` for a
+  doc-declared id or an `invariant` line without one.
   Lookup is status-agnostic: an id declared in a `draft` doc is found like any other, with that
   status reported (`em coverage`'s in-scope rule decides which invariants *must* be cited, not
   which ones exist).

@@ -14,6 +14,7 @@ context Name                     # an event swimlane row (one per bounded contex
 slice "Name" [source "url"] {    # one column; time runs left -> right; source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row
   command Free Text              # state-changing request
+  invariant INV-ORD-1 "Rule"     # a rule guarding the command/event just above (MIL-265)
   view Free Text from "Event A", "Event B"    # read model fed by event(s)
   event Free Text @Context       # recorded fact; @Context picks its row
   event Free Text @Context public   # marks it part of the public integration surface
@@ -537,6 +538,56 @@ in slice docs. It's purely metadata: no visual marker, no legend entry, and `em 
 doesn't require or check it. Optional — omit it and the field exports as `null`.
 
 Don't confuse this with an element's `note "path.md"`, which links a markdown file, not a URL.
+
+## Invariants
+
+A `command` or `event` can declare the business rules that guard it, each on its own standalone
+`invariant` line directly after the element (MIL-265) — the same continuation-line shape as a
+standalone `tag` line:
+
+```
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order { orderId: UUID, total: Money }
+  invariant INV-ORD-1 "Order total must be positive"
+  invariant INV-ORD-2 "A cart with no line items cannot be placed"
+  event Order Placed { orderId: UUID, total: Money } @Order
+  invariant INV-ORD-3 "An order is placed at most once per cart"
+}
+```
+
+- **ID, then an optional quoted rule.** The ID follows the `INV-<MNEMONIC>-<n>` convention: a
+  2-4 character uppercase/digit mnemonic and a number (`INV-ORD-1`). `em validate` errors on a
+  model-declared ID that doesn't (`invariants/malformed-id`) and on the same ID declared twice
+  anywhere in the model (`invariants/duplicate-id`). The rule sentence is for humans and
+  generators — there is no expression language and nothing evaluates it. Write one anyway: the
+  design skill always does.
+- **Commands and events only.** An `invariant` line after a `view`, `ui`, or reaction — or
+  before any element in the slice — is a parse error: a rule guards the decision that records a
+  fact. Multiple lines accumulate in order. It never goes inside a `{ … }` field block (the block
+  is comma-split; the parser refuses it there).
+- **The model declares; the slice doc elaborates.** The doc's `## Invariants / Business Rules`
+  section cites the ID and carries the detail — why the rule exists, edge cases, the error a
+  violation returns — instead of re-declaring it (see
+  [slice-doc-schema.md](slice-doc-schema.md#invariants)). A model-declared ID belongs to the
+  slice of the element that declares it: `em coverage`, `em query invariant`, and the query
+  index read it first, and a mention in another slice's doc never moves it.
+- **Docs still work.** A doc that declares its own invariants (the 1.13 style, bare `INV-1`
+  included) is the fallback for every ID the model does not declare — its `em coverage` and
+  `em query invariant` output is unchanged. Move the invariants into the model to get the
+  validation above.
+
+`em export` carries them as `invariants: [{ id, rule }]` on each element (`null` when it has
+none; `rule` is `null` when the line gives none).
+
+**Migrating a doc-declared invariant.** Move the ID and its rule sentence into the model as an
+`invariant` line after the command or event it guards; in the doc, keep the elaboration and turn
+the declaring bullet into a citation — `- **INV-ORD-1:** Order total must be positive` becomes
+`- INV-ORD-1 — a zero-total cart is rejected before payment is attempted`. Until you do, `em
+validate` prints `invariants/declared-in-both` for an ID the model declares and a doc still
+restates with the `**INV-…:**` label (a warning; it never blocks `--slice-ready`). Doc-only IDs
+in the bare `INV-n` form can stay as they are, or be renamed to the mnemonic form on the way
+into the model.
 
 ## Integration surface
 

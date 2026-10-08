@@ -347,6 +347,33 @@ stale reads as current, unlike git which is honestly historical), and forces eve
 work out which delta is the live one — exactly the ambiguity `driftSignal` (MIL-85, below) is
 built to avoid.
 
+## Invariants
+
+Since MIL-265 the **model is the preferred place to declare an invariant**: an `invariant
+INV-<MNEMONIC>-<n> "rule"` line after the command or event it guards (see
+[dsl.md](dsl.md#invariants)) carries the ID and the one-line rule sentence. The doc's
+`## Invariants / Business Rules` section then **cites** each model-declared ID and elaborates —
+why the rule exists, what a violation looks like, edge cases, the error returned:
+
+```markdown
+## Invariants / Business Rules
+- INV-ORD-1 — a zero-total cart is rejected before payment is attempted
+  - the check runs on the server; the UI's own check is a convenience only
+```
+
+Write the citation as a plain mention (`- INV-ORD-1 — …`), not with the declaring label
+`**INV-ORD-1:**` — restating a model-declared ID with that label is
+`invariants/declared-in-both` (a warning pointing at the migration). Ownership follows the model:
+a model-declared ID belongs to the slice of the element that declares it, for `em coverage` and
+`em query invariant`, whatever any doc says.
+
+**Doc declaration is still honoured.** A doc that declares its own invariants
+(`- **INV-CHK-1:** rule`, or a 1.13 doc's bare `- **INV-1:** rule`) keeps working exactly as
+before: for every ID the model does not declare, the doc-body reader (`## Invariants` and
+`## Delta` sections, top-level bullet/subheading lines only — MIL-149/155) is the fallback.
+A doc mentioning an `INV-…` ID that neither the model nor any doc declares gets
+`invariants/doc-cites-undeclared`. See [validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md#invariants).
+
 ## Open Questions section: lifecycle
 
 `## Open Questions` (MIL-87 for the counting mechanics; MIL-156 for this lifecycle) had no

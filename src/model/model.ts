@@ -2,7 +2,7 @@
 // Normalizes a parsed AST into a resolved model: stable ids, resolved
 // persona/context lanes, and lookup indexes used by layout and validation.
 
-import { AUTOMATION_KINDS, ElementKind, Field, ModelNode, TagClause } from "../parser/ast.js";
+import { AUTOMATION_KINDS, ElementKind, Field, InvariantDecl, ModelNode, TagClause } from "../parser/ast.js";
 import { dedupe, slug } from "../util/slug.js";
 
 /** A declared named type (`type Name { … }`) — its own top-level namespace, separate from
@@ -64,6 +64,9 @@ export interface Element {
    *  other models' public surface, as written. Never resolved here (compile isolation); `em
    *  system` resolves them. `undefined` when absent. */
   consumes?: string[];
+  /** Model-declared `invariant INV-… "rule"` lines — command or event only (MIL-265).
+   *  `undefined` when absent. See `collectModelInvariants` for the model-wide list. */
+  invariants?: InvariantDecl[];
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -144,6 +147,29 @@ export interface NormalizedModel {
   typesByName: Map<string, TypeDecl>;
 }
 
+/** One model-declared invariant with the element that declares it (MIL-265). */
+export interface ModelInvariant {
+  id: string;
+  rule: string | null;
+  line: number;
+  element: Element;
+}
+
+/** The ID shape a model-declared invariant must have (MIL-265, `invariants/malformed-id`): the
+ *  documented `INV-<MNEMONIC>-<n>` convention — a 2-4 character uppercase/digit mnemonic and a
+ *  number. Deliberately stricter than the doc-body reader's `INV_TOKEN_RE` (cli/coverage.ts),
+ *  which keeps accepting a 1.13 doc's bare `INV-1`. */
+export const MODEL_INVARIANT_ID_RE = /^INV-[A-Z0-9]{2,4}-[0-9]+$/;
+
+/** Every model-declared invariant, in document order (slice, element, line). */
+export function collectModelInvariants(model: NormalizedModel): ModelInvariant[] {
+  const out: ModelInvariant[] = [];
+  for (const element of model.elements) {
+    for (const inv of element.invariants ?? []) out.push({ id: inv.id, rule: inv.rule, line: inv.line, element });
+  }
+  return out;
+}
+
 export function normalizeName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -206,6 +232,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         renamedFrom: el.renamedFrom,
         loopsTo: el.loopsTo,
         consumes: el.consumes,
+        invariants: el.invariants,
       };
 
       if (el.kind === "ui") {

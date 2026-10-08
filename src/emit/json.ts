@@ -140,6 +140,9 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //  - MIL-237: `fields[].optional: boolean` (types' fields too) — `true` when the field is written
 //    `name?: Type` (may be absent), `false` otherwise; always present. `elements[].public` may
 //    now be `true` on a command (`public` is legal on commands).
+//  - MIL-265: `elements[].invariants: { id, rule }[] | null` — the element's model-declared
+//    `invariant INV-<MNEMONIC>-<n> "rule"` lines (command/event only), in declaration order;
+//    `rule` is null when the line gives none. `null` on every element without one.
 // Additive-only.
 export const SCHEMA_VERSION = "1.15";
 
@@ -193,6 +196,10 @@ export interface ElementExport {
    *  kind and on a translation with none. As written: never resolved against another model at
    *  export time (`em system` does that, src/system/verify.ts). */
   consumes: string[] | null;
+  /** Model-declared invariants (MIL-265, schema 1.15) — command/event only, `null` on every
+   *  other kind and on an element with none. Declaration order; `rule` is `null` when the
+   *  `invariant` line gives no quoted rule. */
+  invariants: { id: string; rule: string | null }[] | null;
 }
 
 /** One semantic edge's exported shape (`model.edges[]`, schema 1.10 / MIL-191): both endpoints
@@ -561,6 +568,10 @@ export function buildExportDoc(
           el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
         loopsTo: loopsToOf(el),
         consumes: el.consumes && el.consumes.length > 0 ? [...el.consumes] : null,
+        invariants:
+          el.invariants && el.invariants.length > 0
+            ? el.invariants.map((inv) => ({ id: inv.id, rule: inv.rule }))
+            : null,
       })),
     };
   });

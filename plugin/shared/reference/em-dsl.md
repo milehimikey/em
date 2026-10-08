@@ -225,6 +225,7 @@ context Name                     # an event swimlane row (bounded context / aggr
 slice "Name" [source "url"] {    # one vertical time step (a column); source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row (defaults to first/"User")
   command Free Text              # state-changing request (API band)
+  invariant INV-ORD-1 "Rule"     # rule guarding the command/event just above (see Clauses)
   view Free Text from "Event A", "Event B"   # read model fed by event(s)
   view Free Text again from "Event C"        # later instance of an evolving read model (see Clauses)
   event Free Text @Context       # recorded fact; @Context picks its row (defaults to "Domain")
@@ -241,9 +242,9 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 | Keyword | Band | Meaning | Tag | Extra clauses |
 |---|---|---|---|---|
 | `ui` | persona | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
-| `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `renamed from`, `{ fields }` |
+| `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `renamed from`, `{ fields }`, standalone `invariant` line |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
-| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, `loops-to`, field-level `assigned`, `{ fields }` |
+| `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, `loops-to`, field-level `assigned`, `{ fields }`, standalone `invariant` line |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }`; `translation` only: `consumes` |
 
 ### Clauses
@@ -395,6 +396,17 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured
   reference. Keep these light; full field specs with rules live in the slice doc.
+- **`invariant`** (command/event only, MIL-265): a standalone line directly after the element,
+  `invariant INV-ORD-1 "Order total must be positive"` — ID, then an optional quoted rule
+  sentence (always write one). Several lines accumulate in order. Parse error after a
+  view/`ui`/reaction, before any element, or inside a `{ … }` block. The ID must match
+  `INV-<MNEMONIC>-<n>` (2-4 uppercase letters/digits, a number) — `invariants/malformed-id` and
+  `invariants/duplicate-id` are errors. **The model declares the ID and the rule; the slice doc's
+  Invariants section cites the ID and elaborates** (`- INV-ORD-1 — why, edge cases`), never
+  restating it as a `**INV-ORD-1:**` rule (`invariants/declared-in-both`). A model-declared ID
+  belongs to its element's slice for `em coverage`/`em query invariant`; doc-declared IDs (the
+  1.13 style) still work as the fallback. `em export` carries `invariants: [{ id, rule }] | null`
+  per element.
 - **Comments:** `# ...` anywhere outside quotes (full-line or trailing).
 - **Quoted strings:** everything between a `"` and its matching `"` is literal — `{`, `}`, `#`
   included, never re-interpreted as a field block or comment — so REST path-template
@@ -743,6 +755,11 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `frontmatter-coherence-implemented-without-link` | warning | Implemented without a link | Add `implementedIn` once the slice ships. |
 | `frontmatter-invalid` | warning | Invalid or missing frontmatter | Add the required frontmatter keys, or add a frontmatter block. |
 | `grid-collision` | error | Band collision | Split the colliding elements into separate slices. |
+| `invariants/declared-in-both` | warning | Invariant declared in the model and in a slice doc | Keep the model's `invariant` line; in the doc, cite the ID and elaborate instead of restating it as a `**INV-…:**` rule. |
+| `invariants/doc-cites-undeclared` | warning | Slice doc cites an undeclared invariant | Declare the ID in the model (or in a slice doc's Invariants section), or fix the citation. |
+| `invariants/duplicate-id` | error | Duplicate invariant ID | Give each model-declared invariant its own ID — a rule is declared once, on the element it guards. |
+| `invariants/malformed-id` | error | Malformed invariant ID | Rename the ID to the `INV-<MNEMONIC>-<n>` shape, e.g. `INV-ORD-1` (2-4 uppercase letters/digits, then a number). |
+| `invariants/public-command-without-invariants` | warning | Public command declares no invariants | Add an `invariant INV-<MNEMONIC>-<n> "rule"` line after the command, or declare its rules in the slice doc's Invariants section. |
 | `lineage-forward-dangling` | error | Dangling forward lineage ref | Fix the key, or remove the stale successor. |
 | `lineage-ref-cycle` | error | Lineage cycle | Break the cycle — a slice can't be its own ancestor. |
 | `lineage-ref-malformed` | error | Malformed lineage ref | Fix the value to `<slice-key>@v<N>`, or remove it. |

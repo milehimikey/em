@@ -162,6 +162,12 @@ an event directly.}}
 | {{field}} | {{Type}} | {{which event field it's copied from, or `Derived: <plain-language rule>` for a value computed from which events have landed (a status stepping through states, a computed rank, a flag two events can flip) — a field written as `Derived:` here should ALSO carry the `derived` marker (bare `derived`, or `derived from "Event A", "Event B"` naming the events the rule depends on) on the view's field in the `.em`, so `em export`/the model know the field exists too, not just this doc (docs/dsl.md#derived-fields)}} |
 
 ## Invariants / Business Rules
+<!-- IDs and rule sentences are declared in the MODEL (MIL-265): an `invariant INV-<MNEMONIC>-<n>
+     "rule"` line after the command or event it guards (docs/dsl.md#invariants). Here, cite each
+     model-declared ID as a plain mention and elaborate — `- INV-CHK-1 — why it holds, edge cases,
+     the error a violation returns` — never re-declare it with the `**INV-CHK-1:**` label
+     (`invariants/declared-in-both`). A rule not (yet) in the model may still be declared here
+     with the label below; em reads it as the fallback. -->
 <!-- What must ALWAYS hold. Give each a stable ID so tests and code can reference it:
      `INV-<MNEMONIC>-<n>`, where `<MNEMONIC>` is a short (2-4 letter/digit), slice-unique
      abbreviation of this slice's key (e.g. slice `checkout` -> `INV-CHK-1`) — see
@@ -173,9 +179,9 @@ an event directly.}}
      a wrapped sentence collapses into a wall of text. The ID must stay on the rule's own
      top-level bullet line — `em coverage` extracts INV IDs from that line only, never from a
      nested elaboration bullet underneath it. -->
-- **INV-{{MNEMONIC}}-1:** {{rule that the command enforces; violation ⇒ rejection}}
-  - {{optional: rationale, edge-case detail, or what "violation" means here — its own bullet}}
-- **INV-{{MNEMONIC}}-2:** {{...}}
+- INV-{{MNEMONIC}}-1 — {{elaboration of the model-declared rule: why it holds, what a violation looks like, the error returned}}
+  - {{optional: edge-case detail — its own bullet}}
+- **INV-{{MNEMONIC}}-2:** {{a rule not yet in the model, declared here as the fallback — move it into the model when you can}}
 
 ## Scenarios (Given / When / Then)
 <!-- The executable specification. Cover the happy path AND the key rule boundaries. Each

@@ -132,6 +132,20 @@ export interface ElementNode {
    *  (src/system/verify.ts) — compiling this model never reads the producer (MIL-194 compile
    *  isolation), so `em validate` checks the grammar and nothing else. `undefined` when absent. */
   consumes?: string[];
+  /** Standalone `invariant INV-ORD-1 "rule"` lines — command or event only (MIL-265): the
+   *  business rules guarding the decision this element records, declared in the model rather
+   *  than only in a slice doc's prose. Multiple lines accumulate in declaration order. The ID
+   *  is kept verbatim (its `INV-<MNEMONIC>-<n>` shape is `em validate`'s
+   *  `invariants/malformed-id` check, not a parse error); `rule` is `null` when the line gives
+   *  no quoted rule. `undefined` when absent. */
+  invariants?: InvariantDecl[];
+  line: number;
+}
+
+/** One model-declared invariant (MIL-265) — see `ElementNode.invariants`. */
+export interface InvariantDecl {
+  id: string;
+  rule: string | null;
   line: number;
 }
 

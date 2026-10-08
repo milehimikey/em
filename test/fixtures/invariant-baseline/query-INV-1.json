@@ -1,0 +1,30 @@
+{
+  "querySchemaVersion": "1.1",
+  "generator": {
+    "name": "@milehimikey/em",
+    "version": "1.13.1"
+  },
+  "verb": "invariant",
+  "files": [
+    "model.em"
+  ],
+  "args": {
+    "id": "INV-1",
+    "tests": "tests"
+  },
+  "results": [
+    {
+      "id": "INV-1",
+      "sliceRef": "cancel-order",
+      "sliceName": "Cancel Order",
+      "docPath": "slices/cancel-order.md",
+      "status": "implemented",
+      "citations": [
+        {
+          "file": "orders.test.ts",
+          "line": 2
+        }
+      ]
+    }
+  ]
+}

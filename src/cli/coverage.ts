@@ -29,7 +29,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { NormalizedModel } from "../model/model.js";
+import { collectModelInvariants, NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
@@ -110,17 +110,51 @@ function inScopeStatuses(includeReady: boolean): Set<string> {
 export function extractInvariantIds(body: string): string[] {
   const seen = new Set<string>();
   const ids: string[] = [];
+  for (const line of ownershipStructuralLines(body)) {
+    for (const m of line.matchAll(INV_TOKEN_RE)) {
+      if (!seen.has(m[0])) {
+        seen.add(m[0]);
+        ids.push(m[0]);
+      }
+    }
+  }
+  return ids;
+}
+
+/** The lines `extractInvariantIds` reads: structural lines inside an ownership section. */
+function ownershipStructuralLines(body: string): string[] {
+  const out: string[] = [];
   let inOwnershipSection = false;
   for (const line of body.split(/\r?\n/)) {
     if (/^#{1,2}\s/.test(line)) {
       inOwnershipSection = OWNERSHIP_HEADING_RE.test(line);
       continue;
     }
-    if (!inOwnershipSection || !STRUCTURAL_LINE_RE.test(line)) continue;
-    for (const m of line.matchAll(INV_TOKEN_RE)) {
-      if (!seen.has(m[0])) {
-        seen.add(m[0]);
-        ids.push(m[0]);
+    if (inOwnershipSection && STRUCTURAL_LINE_RE.test(line)) out.push(line);
+  }
+  return out;
+}
+
+/** A doc's rule-statement label for an id: `**INV-X:**` or `**INV-X**:` — the template's
+ *  declaring bullet shape (`- **INV-ORD-1:** rule`). */
+const DECLARATION_LABEL_RE = /\*\*(INV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?::\*\*|\*\*:)/g;
+
+/**
+ * MIL-265: the subset of `extractInvariantIds(body)` the doc *restates as a rule* — ids written
+ * with the declaring label `**INV-X:**` (or `**INV-X**:`) on a structural line of an ownership
+ * section. Used only by `invariants/declared-in-both` (catalog/invariantsValidate.ts): once an id
+ * moves into the model, the doc keeps citing it in its Invariants section (`- INV-ORD-1 — why /
+ * edge cases`), which `extractInvariantIds` still sees — only re-declaring it with the rule label
+ * is the duplication that hint points at. Never used for ownership or coverage.
+ */
+export function extractDeclaredInvariantLabels(body: string): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const line of ownershipStructuralLines(body)) {
+    for (const m of line.matchAll(DECLARATION_LABEL_RE)) {
+      if (!seen.has(m[1])) {
+        seen.add(m[1]);
+        ids.push(m[1]);
       }
     }
   }
@@ -326,15 +360,35 @@ export function buildCoverageReport(
   const scoped = resolveScopedSlices(model, refs, baseDir, includeReady, onlyKey);
   const allIds = new Set<string>();
 
+  // MIL-265: model-declared invariants are read first — each owned by the slice of the element
+  // that declares it, whatever any doc's prose says. Doc-body extraction is the fallback: it only
+  // contributes ids the model does not declare anywhere (so a model-declared id cited in another
+  // slice's doc never cross-credits that slice). A model with no `invariant` line takes exactly
+  // the 1.13 path below.
+  const modelIdsBySlice = new Map<string, string[]>();
+  const modelDeclared = new Set<string>();
+  for (const inv of collectModelInvariants(model)) {
+    modelDeclared.add(inv.id);
+    const key = refs.sliceKeys[inv.element.sliceIndex];
+    const bucket = modelIdsBySlice.get(key) ?? [];
+    if (!bucket.includes(inv.id)) bucket.push(inv.id);
+    modelIdsBySlice.set(key, bucket);
+  }
+
   const withIds = scoped.map(({ key, status, docReason, inScope, docPath }) => {
     let ids: string[] = [];
     if (inScope) {
+      ids = [...(modelIdsBySlice.get(key) ?? [])];
       // Re-derive the bound doc's key from docPath rather than assuming it's this slice's own
       // — MIL-121's ratified cross-binding can resolve the doc to a DIFFERENT slice's doc, same
       // re-derivation sliceReadyValidate.ts uses for Open Questions.
       const boundKey = docPath.replace(/^slices\//, "").replace(/\.md$/, "");
       const parsed = readSliceDoc(baseDir, boundKey);
-      if (parsed) ids = extractInvariantIds(parsed.body);
+      if (parsed) {
+        for (const id of extractInvariantIds(parsed.body)) {
+          if (!modelDeclared.has(id) && !ids.includes(id)) ids.push(id);
+        }
+      }
     }
     for (const id of ids) allIds.add(id);
     return { key, status, docReason, inScope, ids };

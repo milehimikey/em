@@ -526,6 +526,46 @@ export const RULES = {
     usageCategory: "model version stale",
     docAnchor: "model-version-stale",
   },
+  // MIL-265: model-declared invariants (`invariant INV-<MNEMONIC>-<n> "rule"` after a command or
+  // event). The two ID errors are model-only (model/validate.ts) and can only fire on a model that
+  // has an `invariant` line; the three advisories compare the model with the slice docs'
+  // Invariants sections (catalog/invariantsValidate.ts). `declared-in-both` is the "hint" the
+  // ticket names — `Diagnostic` has no severity below warning, so it is a warning.
+  "invariants/malformed-id": {
+    severity: "error",
+    title: "Malformed invariant ID",
+    fix: "Rename the ID to the `INV-<MNEMONIC>-<n>` shape, e.g. `INV-ORD-1` (2-4 uppercase letters/digits, then a number).",
+    usageCategory: "invariant id malformed",
+    docAnchor: "invariants",
+  },
+  "invariants/duplicate-id": {
+    severity: "error",
+    title: "Duplicate invariant ID",
+    fix: "Give each model-declared invariant its own ID — a rule is declared once, on the element it guards.",
+    usageCategory: "invariant id declared twice",
+    docAnchor: "invariants",
+  },
+  "invariants/public-command-without-invariants": {
+    severity: "warning",
+    title: "Public command declares no invariants",
+    fix: "Add an `invariant INV-<MNEMONIC>-<n> \"rule\"` line after the command, or declare its rules in the slice doc's Invariants section.",
+    usageCategory: "public command without invariants",
+    docAnchor: "invariants",
+  },
+  "invariants/doc-cites-undeclared": {
+    severity: "warning",
+    title: "Slice doc cites an undeclared invariant",
+    fix: "Declare the ID in the model (or in a slice doc's Invariants section), or fix the citation.",
+    usageCategory: "slice doc cites undeclared invariant",
+    docAnchor: "invariants",
+  },
+  "invariants/declared-in-both": {
+    severity: "warning",
+    title: "Invariant declared in the model and in a slice doc",
+    fix: "Keep the model's `invariant` line; in the doc, cite the ID and elaborate instead of restating it as a `**INV-…:**` rule.",
+    usageCategory: "invariant declared in model and doc",
+    docAnchor: "invariants",
+  },
   "slice-ready-unknown-slice": {
     severity: "error",
     title: "Unknown --slice-ready key",

@@ -2,7 +2,12 @@
 // Coverage for the `issue "text"` red-note warning. (No dedicated validate.test.ts
 // existed before this feature — other validate.ts rules are covered inline where
 // they were introduced, e.g. test/forwardOnly.test.ts for the timeline laws.)
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { validateInvariants } from "../src/catalog/invariantsValidate.js";
+import { CANCEL_ORDER_DOC, invariantFixtureModel, PLACE_ORDER_DOC, writeInvariantFixture } from "./helpers/invariantFixture.js";
 import { parse } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
 import { validate, publicViewsWithoutInModelReader } from "../src/model/validate.js";
@@ -2395,5 +2400,135 @@ describe("owner-not-a-handle (MIL-234)", () => {
 
   it("a model with no owner clause raises nothing", () => {
     expect(ownerDiags(`model "M"\n`)).toEqual([]);
+  });
+});
+
+// MIL-265: `invariants/*` — the two model-only ID errors (model/validate.ts) and the three
+// doc-aware advisories (catalog/invariantsValidate.ts).
+describe("invariants/* (MIL-265)", () => {
+  const codesOf = (diags: { code: string }[]) => diags.map((d) => d.code).filter((c) => c.startsWith("invariants/"));
+
+  it("is silent on a model with no invariant line", () => {
+    expect(codesOf(diagsFor(`slice "S" {\n  ui A\n  command Do\n  event Done\n}`))).toEqual([]);
+  });
+
+  it("errors on a model-declared ID that misses INV-<MNEMONIC>-<n>", () => {
+    const diags = diagsFor(`slice "S" {\n  ui A\n  command Do\n  invariant INV-1 "r"\n  invariant INV-ORD-1\n  event Done\n  invariant INV-TOOLONG-2\n}`);
+    const bad = diags.filter((d) => d.code === "invariants/malformed-id");
+    expect(bad.map((d) => [d.severity, d.message, d.line, d.refs])).toEqual([
+      [
+        "error",
+        'invariant "INV-1" on command "Do" does not match INV-<MNEMONIC>-<n> (a 2-4 character uppercase/digit mnemonic and a number, e.g. INV-ORD-1)',
+        4,
+        ["s/command.do"],
+      ],
+      [
+        "error",
+        'invariant "INV-TOOLONG-2" on event "Done" does not match INV-<MNEMONIC>-<n> (a 2-4 character uppercase/digit mnemonic and a number, e.g. INV-ORD-1)',
+        7,
+        ["s/event.done"],
+      ],
+    ]);
+  });
+
+  it("errors on the same ID declared twice anywhere in the model", () => {
+    const diags = diagsFor(
+      `slice "S" {\n  ui A\n  command Do\n  invariant INV-ORD-1 "r"\n  event Done\n}\nslice "T" {\n  ui B\n  command Redo\n  invariant INV-ORD-1 "again"\n  event Redone\n}`,
+    );
+    const dup = diags.filter((d) => d.code === "invariants/duplicate-id");
+    expect(dup.map((d) => [d.severity, d.message, d.line, d.refs])).toEqual([
+      [
+        "error",
+        'invariant "INV-ORD-1" is declared 2 times in the model: command "Do" (line 4), command "Redo" (line 10)',
+        10,
+        ["s/command.do", "t/command.redo"],
+      ],
+    ]);
+  });
+});
+
+describe("validateInvariants — doc-aware invariants/* advisories (MIL-265)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-invariants-"));
+    writeInvariantFixture(dir, true);
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const run = (src: string, mutate?: (m: ReturnType<typeof modelFrom>) => void) => {
+    const model = modelFrom(src);
+    mutate?.(model);
+    return validateInvariants(model, computeRefs(model), dir);
+  };
+
+  it("the fixture is clean: cited model IDs and a doc-only INV-1 raise nothing", () => {
+    expect(run(invariantFixtureModel(true))).toEqual([]);
+  });
+
+  it("doc-cites-undeclared: a doc mentions an ID nobody declares — no slice ref, so --slice-ready is unaffected", () => {
+    writeFileSync(join(dir, "slices", "place-order.md"), PLACE_ORDER_DOC + "\n## Open Questions\n- [x] what about INV-ZZ-9?\n");
+    expect(run(invariantFixtureModel(true))).toEqual([
+      {
+        severity: "warning",
+        code: "invariants/doc-cites-undeclared",
+        message:
+          'slices/place-order.md (slice "place-order") cites INV-ZZ-9, which neither the model nor any slice doc\'s Invariants section declares',
+      },
+    ]);
+  });
+
+  it("doc-cites-undeclared fires on 1.13-style content too (a warning, never an error)", () => {
+    // The doc-only variant: INV-ORD-2 is cited in a scenario but no Invariants section declares it.
+    const diags = run(invariantFixtureModel(false));
+    expect(diags.map((d) => [d.severity, d.code, d.message])).toEqual([
+      [
+        "warning",
+        "invariants/doc-cites-undeclared",
+        'slices/place-order.md (slice "place-order") cites INV-ORD-2, which neither the model nor any slice doc\'s Invariants section declares',
+      ],
+    ]);
+  });
+
+  it("declared-in-both: a model ID restated with the declaring label in a doc", () => {
+    writeFileSync(
+      join(dir, "slices", "place-order.md"),
+      PLACE_ORDER_DOC.replace("- INV-ORD-1 — a zero-total", "- **INV-ORD-1:** Order total must be positive — a zero-total"),
+    );
+    expect(run(invariantFixtureModel(true))).toEqual([
+      {
+        severity: "warning",
+        code: "invariants/declared-in-both",
+        message:
+          'invariant "INV-ORD-1" is declared in the model (command "Place Order") and restated as a rule in slices/place-order.md — keep the model line; in the doc, cite the ID and elaborate',
+        line: 6,
+      },
+    ]);
+  });
+
+  it("public-command-without-invariants: neither the model nor the slice doc declares one", () => {
+    // Both commands written `public` (MIL-237) — with table types, as strict public types require.
+    const src = invariantFixtureModel(true)
+      .replace(`  invariant INV-ORD-1 "Order total must be positive"\n`, "")
+      .replace("command Place Order { orderId: UUID, total: Money }", "command Place Order public { orderId: uuid, total: decimal }")
+      .replace("command Cancel Order { orderId: UUID }", "command Cancel Order public { orderId: uuid }");
+    const pcwi = (diags: { code: string }[]) => diags.filter((d) => d.code === "invariants/public-command-without-invariants");
+    const compiledSrc = modelFrom(src);
+    expect(compiledSrc.elements.filter((e) => e.kind === "command" && e.public).map((e) => e.name)).toEqual(["Place Order", "Cancel Order"]);
+    // Place Order: no model invariant left, and its doc only CITES INV-ORD-1 (now undeclared
+    // in the model, so extractInvariantIds counts the bullet as the doc's own declaration) —
+    // the doc fallback keeps it quiet.
+    expect(pcwi(run(src))).toEqual([]);
+    // Cancel Order's doc declares INV-1 — quiet too. Strip the doc's Invariants section to see it fire.
+    writeFileSync(join(dir, "slices", "cancel-order.md"), CANCEL_ORDER_DOC.split("## Invariants")[0]);
+    expect(pcwi(run(src))).toEqual([
+      {
+        severity: "warning",
+        code: "invariants/public-command-without-invariants",
+        message:
+          'public command "Cancel Order" declares no invariants in the model or in its slice doc — add an `invariant INV-<MNEMONIC>-<n> "rule"` line after it',
+        line: 16,
+        refs: ["cancel-order/command.cancel-order"],
+      },
+    ]);
   });
 });

@@ -118,7 +118,7 @@ For each slice:
 1. Hold a Socratic deep-dive to fill every section of `../event-modeling-shared/templates/slice.md`:
    intent, trigger/actor,
    command + field table (types & rules), event(s) + payload (mark immutable facts), invariants
-   (give each a stable ID), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
+   (give each a stable ID — see **Invariants live in the model** below), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
    alternate/error flows (retries, idempotency, compensations), non-functional requirements
    (security/authz, PII/compliance, performance/SLA), read models affected, open questions. Park
    anything unresolved rather than guessing. If the slice lives in an existing codebase, Grep/Read
@@ -134,6 +134,16 @@ For each slice:
    re-ratification, never as a side effect of this slice. Repeating a rule across slice docs is
    correct: each doc is a self-contained spec, and whether the code behind those rules is shared
    is the constitution's call, not this doc's.
+   **Invariants live in the model.** Write every NEW invariant into the `.em` as a standalone
+   `invariant INV-<MNEMONIC>-<n> "rule sentence"` line directly after the command (or event) it
+   guards — always with the rule sentence — then cite that ID in the doc's Invariants section as a
+   plain mention and elaborate there (`- INV-CHK-1 — why, edge cases, the error returned`); never
+   restate it as a `**INV-CHK-1:**` rule (`em validate` flags that as
+   `invariants/declared-in-both`). A `public` command needs at least one invariant
+   (`invariants/public-command-without-invariants`). A doc that already declares its own
+   invariants keeps working; migrate one only when you are editing that slice anyway — move the
+   ID and rule into the model, keep the doc's elaboration. Run `em validate` after the edit:
+   `invariants/malformed-id` and `invariants/duplicate-id` are errors.
 2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
    frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
    translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes `slices/<slice-name>.md`

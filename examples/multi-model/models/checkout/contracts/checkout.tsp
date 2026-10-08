@@ -19,4 +19,8 @@ namespace Checkout {
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
   model OrderCancelled {}
+
+  interface Commands {
+    op submitOrder(total: decimal, note?: string): void;
+  }
 }

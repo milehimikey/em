@@ -14,8 +14,12 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // edge, distinct from an ordinary `from`-derived `event->view` connection (model/queryIndex.ts).
 // `downstream`/`upstream` results crossing one carry `via: "loops-to"`. Additive-only (new enum
 // value on an existing string field, not a new key).
-// 1.2 (1.14.0 release; MIL-237): `field` results gain `optional: boolean` (the field's
-// `name?: Type` marker). Additive-only.
+// 1.2 (1.14.0 release): ONE bump for the release.
+//  - MIL-237: `field` results gain `optional: boolean` (the field's `name?: Type` marker).
+//  - MIL-265: `invariant` results gain `rule` (the model's rule sentence, null for a
+//    doc-declared id) and `declaredIn` (`"model"` | `"doc"`) — model-declared ids are found
+//    first, doc-body extraction is the fallback.
+// Additive-only.
 export const QUERY_SCHEMA_VERSION = "1.2";
 
 /** Build the `em query <verb> ... --json` document. Pretty-printed (2-space), no trailing

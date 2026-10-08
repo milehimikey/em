@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { localIsoDate } from "../src/util/localDate.js";
+import { writeInvariantFixture } from "./helpers/invariantFixture.js";
 
 // Every test in this file spawns the real CLI (`em(...)` below) at least once, several spawn
 // it more than once — each spawn is a fresh `tsx` process costing ~0.9-1.0s on a GitHub
@@ -5031,7 +5032,7 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     const r = em(["query", "consumers", "model.em", "--event", "Order Placed", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind
+    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind; MIL-265: +invariant rule/declaredIn
     expect(doc.verb).toBe("consumers");
     expect(doc.files).toEqual(["model.em"]);
     expect(doc.results.map((x: { ref: string }) => x.ref).sort()).toEqual(
@@ -5458,6 +5459,99 @@ slice "Capture Payment" {
       expect(res.stderr).toContain("mutually exclusive");
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// MIL-265: first-class invariants, end to end through the real CLI.
+describe("model-declared invariants (MIL-265)", () => {
+  const BASELINE = join(ROOT, "test", "fixtures", "invariant-baseline");
+  // The baseline was captured from em 1.13.1 (+MIL-259) before the model-first readers existed;
+  // only the generator version is release-dependent, so normalize it on both sides.
+  const normalizeVersion = (text: string) => text.replace(/("generator": \{\s*"name": "@milehimikey\/em",\s*"version": )"[^"]*"/, '$1"X"');
+  const baseline = (name: string) => readFileSync(join(BASELINE, name), "utf8");
+  let docOnly: string;
+  let withGrammar: string;
+  beforeAll(() => {
+    docOnly = mkdtempSync(join(tmpdir(), "em-inv-doc-only-"));
+    withGrammar = mkdtempSync(join(tmpdir(), "em-inv-grammar-"));
+    writeInvariantFixture(docOnly, false);
+    writeInvariantFixture(withGrammar, true);
+  });
+  afterAll(() => {
+    rmSync(docOnly, { recursive: true, force: true });
+    rmSync(withGrammar, { recursive: true, force: true });
+  });
+
+  it("1.13-style doc-only invariants: em coverage output is byte-identical to the 1.13 baseline", () => {
+    const json = em(["coverage", "model.em", "--tests", "tests", "--json"], docOnly);
+    expect(json.status).toBe(0);
+    expect(normalizeVersion(json.stdout)).toBe(normalizeVersion(baseline("coverage.json")));
+    const text = em(["coverage", "model.em", "--tests", "tests"], docOnly);
+    expect(text.stdout).toBe(baseline("coverage.txt"));
+  });
+
+  it("1.13-style doc-only invariants: em query invariant text is byte-identical; --json differs only by the additive keys", () => {
+    for (const id of ["INV-1", "INV-ORD-1"]) {
+      const text = em(["query", "invariant", "model.em", "--id", id, "--tests", "tests"], docOnly);
+      expect(text.status).toBe(0);
+      expect(text.stdout).toBe(baseline(`query-${id}.txt`));
+      const json = em(["query", "invariant", "model.em", "--id", id, "--tests", "tests", "--json"], docOnly);
+      const now = JSON.parse(json.stdout);
+      const then = JSON.parse(baseline(`query-${id}.json`));
+      // Additive only: query schema 1.1 -> 1.2 and two keys appended to the result entry.
+      expect(then.querySchemaVersion).toBe("1.1");
+      expect(now.querySchemaVersion).toBe("1.2");
+      expect(now.results.map((r: Record<string, unknown>) => [r.rule, r.declaredIn])).toEqual([[null, "doc"]]);
+      for (const r of now.results) {
+        delete r.rule;
+        delete r.declaredIn;
+      }
+      delete now.querySchemaVersion;
+      delete then.querySchemaVersion;
+      now.generator.version = then.generator.version = "X";
+      expect(JSON.stringify(now, null, 2)).toBe(JSON.stringify(then, null, 2));
+    }
+  });
+
+  it("em export --json carries invariants per element; null where none", () => {
+    const r = em(["export", "model.em"], withGrammar);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    const els = doc.model.slices.flatMap((s: { elements: unknown[] }) => s.elements);
+    const byRef = (ref: string) => els.find((e: { ref: string }) => e.ref === ref);
+    expect(byRef("place-order/command.place-order").invariants).toEqual([{ id: "INV-ORD-1", rule: "Order total must be positive" }]);
+    expect(byRef("place-order/event.order-placed").invariants).toEqual([{ id: "INV-ORD-2", rule: "An order is placed at most once" }]);
+    expect(byRef("cancel-order/command.cancel-order").invariants).toBeNull();
+    expect(byRef("place-order/ui.checkout").invariants).toBeNull();
+  });
+
+  it("em validate: the grammar fixture is clean; a malformed ID fails with the exact message", () => {
+    expect(em(["validate", "model.em"], withGrammar).stdout).toBe("ok — no issues\n");
+    const dir = mkdtempSync(join(tmpdir(), "em-inv-bad-"));
+    try {
+      writeFileSync(join(dir, "m.em"), `slice "S" {\n  ui A\n  command Do\n  invariant INV-1 "r"\n  event Done\n  view V\n}\n`);
+      const r = em(["validate", "m.em"], dir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(
+        'error:4 invariant "INV-1" on command "Do" does not match INV-<MNEMONIC>-<n> (a 2-4 character uppercase/digit mnemonic and a number, e.g. INV-ORD-1)',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("examples/multi-model: both models validate clean with a model-declared invariant on a command", () => {
+    for (const model of ["checkout", "fulfillment"]) {
+      const file = join(ROOT, "examples", "multi-model", "models", model, `${model}.em`);
+      const r = em(["validate", file], ROOT);
+      expect(r.status, model).toBe(0);
+      expect(r.stdout, model).toBe("ok — no issues\n");
+      const exported = JSON.parse(em(["export", file], ROOT).stdout);
+      const declared = exported.model.slices
+        .flatMap((s: { elements: { kind: string; invariants: unknown[] | null }[] }) => s.elements)
+        .filter((e: { kind: string; invariants: unknown[] | null }) => e.kind === "command" && e.invariants !== null);
+      expect(declared.length, model).toBeGreaterThan(0);
     }
   });
 });

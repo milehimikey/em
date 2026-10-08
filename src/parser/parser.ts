@@ -13,6 +13,7 @@
 //     event <free text> [@Context] [public] [loops-to "View"[ loops-to "View2" ...]]
 //     automation|processor|saga|translation <free text>
 //     translation <free text> [consumes <modelKey>:<event|view>.<slug>[, ...]]
+//     invariant INV-<MNEMONIC>-<n> ["rule"]   # standalone line after a command or event
 //   }
 //   arrow <From Element> -> <To Element>
 //   type "Name" { field: Type, ... }
@@ -23,6 +24,7 @@ import {
   ElementKind,
   ElementNode,
   Field,
+  InvariantDecl,
   ModelNode,
   SliceNode,
   TypeDeclNode,
@@ -143,6 +145,16 @@ export function parse(source: string): ModelNode {
           lineNo,
         );
       }
+      // MIL-265: same guard for a standalone `invariant INV-…` line written inside the block —
+      // it would otherwise parse as a junk field. Narrowed to an `INV-` token so a 1.13 field
+      // that merely starts with the word (`invariant check: Boolean`) keeps parsing as before.
+      if (/^invariant\s+INV-/.test(line)) {
+        throw new ParseError(
+          "an `invariant` line belongs after the element's closing '}', not inside its field block " +
+            "— move this line below the '}'",
+          lineNo,
+        );
+      }
       for (const f of parseInlineFields(line, lineNo, currentElement.kind))
         (currentElement.fields ??= []).push(f);
       continue;
@@ -188,6 +200,20 @@ export function parse(source: string): ModelNode {
         if (leftover) {
           throw new ParseError(`unrecognized trailing text in 'tag' clause: '${leftover}'`, lineNo);
         }
+        continue;
+      }
+      // MIL-265: a standalone `invariant INV-ORD-1 "rule"` line attaches to the most recently
+      // declared element, the same continuation-line shape as `tag` above — commands and events
+      // only, since an invariant guards the decision that records a fact.
+      if (keyword === "invariant") {
+        const target = currentSlice.elements[currentSlice.elements.length - 1];
+        if (!target || (target.kind !== "command" && target.kind !== "event")) {
+          throw new ParseError(
+            "`invariant` is only valid after a command or event — a rule guards the decision that records a fact",
+            lineNo,
+          );
+        }
+        (target.invariants ??= []).push(parseInvariantLine(remainder, lineNo));
         continue;
       }
       if (!ELEMENT_KEYWORDS.has(keyword as ElementKind)) {
@@ -1059,6 +1085,28 @@ function parseArrow(raw: string, line: number): ArrowNode {
   const to = unquote(parts[1].trim());
   if (!from || !to) throw new ParseError("arrow endpoints required", line);
   return { from, to, line };
+}
+
+const INVARIANT_LINE_SHAPE_ERROR = "`invariant` expects an ID like INV-ORD-1, optionally followed by a quoted rule";
+
+/** Parse the text after a standalone `invariant` keyword (MIL-265): a bare ID token, then
+ *  optionally ONE quoted rule string, nothing else. The ID is kept verbatim — whether it
+ *  follows the `INV-<MNEMONIC>-<n>` convention is `em validate`'s `invariants/malformed-id`
+ *  check, which can name the convention; the parser only rejects a line it cannot split into
+ *  that shape at all. An empty quoted rule (`""`) reads as no rule. */
+function parseInvariantLine(raw: string, line: number): InvariantDecl {
+  const text = raw.trim();
+  const idMatch = text.match(/^[^\s"]+/);
+  if (!idMatch) throw new ParseError(INVARIANT_LINE_SHAPE_ERROR, line);
+  const id = idMatch[0];
+  const after = text.slice(id.length).trim();
+  if (after === "") return { id, rule: null, line };
+  if (!after.startsWith('"')) throw new ParseError(INVARIANT_LINE_SHAPE_ERROR, line);
+  const close = matchQuote(after, 0);
+  if (close < 0) throw new ParseError("unterminated string literal in 'invariant' rule", line);
+  if (after.slice(close + 1).trim() !== "") throw new ParseError(INVARIANT_LINE_SHAPE_ERROR, line);
+  const rule = decodeQuoted(after.slice(1, close));
+  return { id, rule: rule === "" ? null : rule, line };
 }
 
 function splitFirstWord(line: string): string[] {

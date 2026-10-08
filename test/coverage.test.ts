@@ -10,6 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
+import { invariantFixtureModel, writeInvariantFixture } from "./helpers/invariantFixture.js";
 import { extractInvariantIds, scanTestCitations, buildCoverageReport, resolveScopedSlices } from "../src/cli/coverage.js";
 
 describe("extractInvariantIds", () => {
@@ -326,5 +327,40 @@ describe("resolveScopedSlices", () => {
     const scoped = resolveScopedSlices(model, refs, dir, true);
     expect(scoped.find((s) => s.key === "ready")!.inScope).toBe(true);
     expect(scoped.find((s) => s.key === "shipped")!.inScope).toBe(true);
+  });
+});
+
+// MIL-265: model-declared invariants are read first; doc-body extraction is the fallback for ids
+// the model does not declare.
+describe("buildCoverageReport — model-declared invariants first (MIL-265)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-coverage-inv-"));
+    writeInvariantFixture(dir, true);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const report = () => {
+    const { model, refs } = compile(invariantFixtureModel(true));
+    return buildCoverageReport(model, refs, dir, join(dir, "tests"));
+  };
+
+  it("credits a model-declared id only to the slice owning its element (MIL-155 fixture re-run)", () => {
+    const r = report();
+    const ids = (key: string) => r.slices.find((s) => s.key === key)!.invariants.map((i) => i.id);
+    // place-order: both model ids (command, then event), in declaration order.
+    expect(ids("place-order")).toEqual(["INV-ORD-1", "INV-ORD-2"]);
+    // cancel-order's own Invariants bullet mentions INV-ORD-1 — without the grammar it is
+    // cross-credited there; model-first, only the doc-only INV-1 is cancel-order's.
+    expect(ids("cancel-order")).toEqual(["INV-1"]);
+    expect(r.totalInvariants).toBe(3);
+    expect(r.uncoveredCount).toBe(1); // INV-ORD-2 has no citing test
+  });
+
+  it("without the grammar, the same docs give the 1.13 attribution (cross-credit included)", () => {
+    const { model, refs } = compile(invariantFixtureModel(false));
+    const r = buildCoverageReport(model, refs, dir, join(dir, "tests"));
+    expect(r.slices.find((s) => s.key === "place-order")!.invariants.map((i) => i.id)).toEqual(["INV-ORD-1"]);
+    expect(r.slices.find((s) => s.key === "cancel-order")!.invariants.map((i) => i.id)).toEqual(["INV-1", "INV-ORD-1"]);
   });
 });

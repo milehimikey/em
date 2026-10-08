@@ -1,0 +1,73 @@
+{
+  "coverageSchemaVersion": "1.2",
+  "generator": {
+    "name": "@milehimikey/em",
+    "version": "1.13.1"
+  },
+  "file": "model.em",
+  "testsDir": "tests",
+  "includeReady": false,
+  "slice": null,
+  "continuationOf": null,
+  "ok": true,
+  "summary": {
+    "totalInvariants": 3,
+    "cited": 3,
+    "uncovered": 0
+  },
+  "slices": [
+    {
+      "key": "place-order",
+      "status": "implemented",
+      "docReason": null,
+      "inScope": true,
+      "invariants": [
+        {
+          "id": "INV-ORD-1",
+          "cited": true,
+          "citations": [
+            {
+              "file": "orders.test.ts",
+              "line": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "orders",
+      "status": null,
+      "docReason": "no-doc-bound",
+      "inScope": false,
+      "invariants": []
+    },
+    {
+      "key": "cancel-order",
+      "status": "implemented",
+      "docReason": null,
+      "inScope": true,
+      "invariants": [
+        {
+          "id": "INV-1",
+          "cited": true,
+          "citations": [
+            {
+              "file": "orders.test.ts",
+              "line": 2
+            }
+          ]
+        },
+        {
+          "id": "INV-ORD-1",
+          "cited": true,
+          "citations": [
+            {
+              "file": "orders.test.ts",
+              "line": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

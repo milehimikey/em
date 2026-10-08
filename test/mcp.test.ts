@@ -17,6 +17,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../src/mcp/server.js";
 import { readContract } from "../src/cli/contract.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
+import { writeInvariantFixture } from "./helpers/invariantFixture.js";
 import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
 
 // Spawns the real CLI (via tsx), same helper shape as test/cli.test.ts's `em()` — used here only
@@ -1152,7 +1153,7 @@ describe("query tool", () => {
     const modelFile = join(dir, "ready.em");
     const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "consumers", event: "Thing Done" });
     expect(result.isError).toBeFalsy();
-    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind
+    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind; MIL-265: +invariant rule/declaredIn
     expect(doc.verb).toBe("consumers");
     expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["read-model/view.thing-list"]);
 
@@ -1316,5 +1317,39 @@ describe("system_codeowners tool (MIL-234)", () => {
     } finally {
       repo.cleanup();
     }
+  });
+});
+
+// MIL-265: the two read surfaces whose answers change with model-declared invariants stay
+// byte-identical across CLI and MCP.
+describe("model-declared invariants — CLI/MCP byte identity (MIL-265)", () => {
+  let invDir: string;
+  beforeAll(() => {
+    invDir = mkdtempSync(join(tmpdir(), "em-mcp-inv-"));
+    writeInvariantFixture(invDir, true);
+  });
+  afterAll(() => rmSync(invDir, { recursive: true, force: true }));
+
+  it("query invariant: byte-identical to `em query invariant --json`, rule + declaredIn: model", async () => {
+    const modelFile = join(invDir, "model.em");
+    const testsDir = join(invDir, "tests");
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "invariant", id: "INV-ORD-1", testsDir });
+    expect(result.isError).toBeFalsy();
+    expect(doc.results[0]).toMatchObject({ sliceRef: "place-order", rule: "Order total must be positive", declaredIn: "model" });
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "invariant", modelFile, "--id", "INV-ORD-1", "--tests", testsDir, "--json"], invDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("coverage: byte-identical to `em coverage --json`, model ids credited to the owning slice", async () => {
+    const modelFile = join(invDir, "model.em");
+    const testsDir = join(invDir, "tests");
+    const { result, doc } = await callJson(client, "coverage", { file: modelFile, testsDir });
+    expect(doc.slices.find((s: any) => s.key === "cancel-order").invariants.map((i: any) => i.id)).toEqual(["INV-1"]);
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["coverage", modelFile, "--tests", testsDir, "--json"], invDir);
+    expect(cli.status).toBe(0); // uncited INV-ORD-2 fails only under --strict
+    expect(cli.stdout).toBe(mcpText + "\n");
   });
 });

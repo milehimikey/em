@@ -44,6 +44,7 @@ import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "../catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
+import { validateInvariants } from "../catalog/invariantsValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
@@ -190,6 +191,7 @@ function compileWithValidation(file: string): (CompiledSource & { allDiagnostics
     ...validateDocModelConsistency(model, refs, baseDir),
     ...validateOrphanedSliceDocs(model, refs, baseDir),
     ...validateModelVersionStale(model, refs, baseDir, compiled.source),
+    ...validateInvariants(model, refs, baseDir),
   ];
   return { ...compiled, allDiagnostics };
 }

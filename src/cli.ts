@@ -32,6 +32,7 @@ import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
 import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
+import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
@@ -2953,6 +2954,7 @@ function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsR
     ...validateDocModelConsistency(model, refs, dirname(file)),
     ...validateOrphanedSliceDocs(model, refs, dirname(file)),
     ...validateModelVersionStale(model, refs, dirname(file), source),
+    ...validateInvariants(model, refs, dirname(file)),
   ];
 }
 

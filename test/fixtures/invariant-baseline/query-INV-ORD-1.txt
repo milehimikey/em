@@ -1,0 +1,4 @@
+INV-ORD-1  declared in slice "Place Order" [place-order]
+  doc: slices/place-order.md  status: implemented
+  citations:
+    orders.test.ts:1

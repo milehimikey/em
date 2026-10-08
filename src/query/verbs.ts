@@ -18,7 +18,7 @@
 // note); this is the query-engine rule MIL-191's design note assigns to MIL-168.
 
 import { Element } from "../model/model.js";
-import { IndexEdge } from "../model/queryIndex.js";
+import { IndexEdge, InvariantIndexEntry } from "../model/queryIndex.js";
 import { QuerySystem, QueryModelEntry, resolveElement, qualifyRef } from "./system.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { collectTags } from "../model/model.js";
@@ -213,6 +213,10 @@ export interface InvariantQueryEntry {
   docPath: string | null;
   status: string | null;
   citations: Citation[] | null;
+  /** MIL-265 (query schema 1.2): the model's rule sentence, null for a doc-declared id. */
+  rule: string | null;
+  /** MIL-265 (query schema 1.2): `"model"` (an `invariant` line) or `"doc"` (slice-doc body). */
+  declaredIn: "model" | "doc";
 }
 
 /** The declaring slice + doc facts for one `INV-*` id, and (with `testsDir`) every test file
@@ -221,17 +225,18 @@ export interface InvariantQueryEntry {
  *  matching more than one input model is the same "unqualified + multi-model + ambiguous" case
  *  every other verb refuses on, listing qualified candidates. */
 export function queryInvariant(system: QuerySystem, id: string, testsDir?: string): VerbResult<InvariantQueryEntry> {
-  const hits: Array<{ entry: QueryModelEntry; sliceKey: string }> = [];
+  const hits: Array<{ entry: QueryModelEntry; found: InvariantIndexEntry }> = [];
   for (const entry of system.entries) {
     const found = entry.index.invariants.get(id);
-    if (found) hits.push({ entry, sliceKey: found.sliceKey });
+    if (found) hits.push({ entry, found });
   }
   if (hits.length === 0) return err(`em query invariant: no invariant "${id}" found in ${system.entries.map((e) => e.file).join(", ")}`);
   if (hits.length > 1) {
     const candidates = hits.map((h) => qualifyRef(system, h.entry.modelKey, id)).join(", ");
     return err(`em query invariant: "${id}" is ambiguous across models — ${candidates}`);
   }
-  const { entry, sliceKey } = hits[0];
+  const { entry, found } = hits[0];
+  const { sliceKey } = found;
   const fact = entry.index.sliceFacts.get(sliceKey)!;
   const citations = testsDir !== undefined ? scanTestCitations(testsDir, [id]).get(id) ?? [] : null;
   return {
@@ -244,6 +249,8 @@ export function queryInvariant(system: QuerySystem, id: string, testsDir?: strin
         docPath: fact.doc.found ? fact.doc.path : null,
         status: fact.doc.status,
         citations,
+        rule: found.rule,
+        declaredIn: found.declaredIn,
       },
     ],
   };

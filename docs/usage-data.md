@@ -89,16 +89,19 @@ affected lines written by hand.
 | extra doc-binding note ignored |
 | implemented without link |
 | invalid or missing frontmatter |
+| invariant declared in model and doc |
 | model element missing from doc |
 | model version stale |
 | open issue |
 | orphaned slice doc left behind by a rename or removal |
 | owner not a handle |
+| public command without invariants |
 | public event not consumed by any seam |
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |
 | seam manifest outdated |
+| slice doc cites undeclared invariant |
 | slice-ready slice has no doc bound |
 | slice-ready slice has unchecked open questions |
 | slice-ready slice not ready-to-implement |
@@ -123,6 +126,8 @@ affected lines written by hand.
 | duplicate tag key |
 | event feeds earlier view instance |
 | illegal connection |
+| invariant id declared twice |
+| invariant id malformed |
 | lineage forward dangling |
 | lineage ref cycle |
 | lineage ref malformed |

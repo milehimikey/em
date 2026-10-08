@@ -1760,3 +1760,59 @@ describe("model header owner (MIL-235)", () => {
     expect(() => parse(`model "X" owner "A" extra\n`)).toThrow("line 1: unrecognized text after the `owner` clause: 'extra'");
   });
 });
+
+// MIL-265: first-class invariants — a standalone `invariant` line after a command or event.
+describe("standalone `invariant` line (MIL-265)", () => {
+  const PLACEMENT = "`invariant` is only valid after a command or event — a rule guards the decision that records a fact";
+  const SHAPE = "`invariant` expects an ID like INV-ORD-1, optionally followed by a quoted rule";
+
+  it("attaches to the preceding command or event, in declaration order, with an optional rule", () => {
+    const ast = parse(
+      `slice "S" {\n  command Place Order { total: Money }\n  invariant INV-ORD-1 "Order total must be positive"\n` +
+        `  invariant INV-ORD-2\n  event Order Placed\n  tag order external "x"\n  invariant INV-ORD-3 "Placed \\"once\\""\n}`,
+    );
+    const [command, event] = ast.slices[0].elements;
+    expect(command.invariants).toEqual([
+      { id: "INV-ORD-1", rule: "Order total must be positive", line: 3 },
+      { id: "INV-ORD-2", rule: null, line: 4 },
+    ]);
+    expect(event.invariants).toEqual([{ id: "INV-ORD-3", rule: 'Placed "once"', line: 7 }]);
+  });
+
+  it("keeps the ID verbatim — its shape is a validate check, not a parse error", () => {
+    const ast = parse(`slice "S" {\n  command Do\n  invariant inv-1 ""\n}`);
+    expect(ast.slices[0].elements[0].invariants).toEqual([{ id: "inv-1", rule: null, line: 3 }]);
+  });
+
+  it("leaves elements without an invariant line untouched", () => {
+    const ast = parse(`slice "S" {\n  command Do\n  event Done\n}`);
+    expect(ast.slices[0].elements.every((e) => e.invariants === undefined)).toBe(true);
+  });
+
+  it("refuses an invariant after a view, a ui, a reaction, or before any element", () => {
+    expect(() => parse(`slice "S" {\n  view Orders\n  invariant INV-ORD-1\n}`)).toThrow(new ParseError(PLACEMENT, 3));
+    expect(() => parse(`slice "S" {\n  ui Screen\n  invariant INV-ORD-1\n}`)).toThrow(new ParseError(PLACEMENT, 3));
+    expect(() => parse(`slice "S" {\n  automation Policy\n  invariant INV-ORD-1\n}`)).toThrow(new ParseError(PLACEMENT, 3));
+    expect(() => parse(`slice "S" {\n  invariant INV-ORD-1\n}`)).toThrow(new ParseError(PLACEMENT, 2));
+  });
+
+  it("refuses a malformed line", () => {
+    for (const bad of ["invariant", `invariant "rule only"`, `invariant INV-ORD-1 rule`, `invariant INV-ORD-1 "a" "b"`]) {
+      expect(() => parse(`slice "S" {\n  command Do\n  ${bad}\n}`)).toThrow(new ParseError(SHAPE, 3));
+    }
+    expect(() => parse(`slice "S" {\n  command Do\n  invariant INV-ORD-1 "open\n}`)).toThrow(
+      new ParseError("unterminated string literal in 'invariant' rule", 3),
+    );
+  });
+
+  it("refuses an invariant line inside a field block, but a field named `invariant …` still parses", () => {
+    expect(() => parse(`slice "S" {\n  command Do {\n    a: int\n    invariant INV-ORD-1 "x"\n  }\n}`)).toThrow(
+      new ParseError(
+        "an `invariant` line belongs after the element's closing '}', not inside its field block — move this line below the '}'",
+        4,
+      ),
+    );
+    const ast = parse(`slice "S" {\n  command Do {\n    invariant check: Boolean\n  }\n}`);
+    expect(ast.slices[0].elements[0].fields).toEqual([{ name: "invariant check", type: "Boolean" }]);
+  });
+});
