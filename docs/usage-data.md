@@ -120,6 +120,7 @@ affected lines written by hand.
 | arrow endpoint unresolved |
 | arrow points backward |
 | composite tag references unknown field |
+| consumer not adapted |
 | consumes unknown element |
 | consumes unknown model |
 | derived from names unresolved event |
