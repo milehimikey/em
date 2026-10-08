@@ -3953,7 +3953,7 @@ See [mcp.md](mcp.md) for the full tool list, input/output shapes, and client con
 Copies the bundled event-modeling Claude Code skill bundle out of the npm package into
 `.claude/skills/` in the current directory: the `event-modeling` router skill (the
 `/event-modeling` entry point), six focused phase skills (`event-modeling-discover`, `-design`,
-`-implement`, `-conform`, `-review`, MIL-157), and the shared, non-skill
+`-implement`, `-conform`, `-review`, `-engagement`, MIL-157/MIL-270), and the shared, non-skill
 `event-modeling-shared/` directory (reference/templates every skill points back to) — one
 command installs the whole bundle. Prints a reminder to run `/event-modeling` in Claude Code
 afterwards. See [ai-workflow.md](ai-workflow.md).
