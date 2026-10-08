@@ -79,6 +79,7 @@ import {
   meaningConfirmationRequiredMessage,
 } from "./ratify.js";
 import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
+import { reopenDeferred } from "./defer.js";
 
 /** The status a doc must already be in for `reratify` to apply — mirrors `RATIFIED_STATUS` in
  *  ratify.ts (the status this command flips TO), named separately since it's the precondition
@@ -216,7 +217,7 @@ export function reratifyAdvisory(
 }
 
 export type RunReratifyResult =
-  | { ok: true; path: string; newVersion: number; kind: ReratifyKind; advisory: ReratifyAdvisory | null }
+  | { ok: true; path: string; newVersion: number; kind: ReratifyKind; advisory: ReratifyAdvisory | null; reopened: number }
   | { ok: false; message: string };
 
 /**
@@ -291,6 +292,8 @@ export function runReratify(
   // certification to lack, so that path carries no advisory at all.
   const advisory =
     result.kind === "shipped" ? reratifyAdvisory(baseDir, sliceKey, doc.version, doc.conformedVersion) : null;
-  writeFileSync(absPath, result.content, "utf8");
-  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, advisory };
+  // MIL-275: questions deferred to the version this bump reaches come back as `- [ ]`.
+  const reopened = reopenDeferred(result.content, result.newVersion);
+  writeFileSync(absPath, reopened.content, "utf8");
+  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, advisory, reopened: reopened.count };
 }

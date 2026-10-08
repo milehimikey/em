@@ -2983,7 +2983,7 @@ fine). `--on <date>` is optional, `YYYY-MM-DD`; defaults to today (local date), 
 status (docs/slice-doc-schema.md) — a doc that never went through this command simply has
 neither, and every existing `em` command already tolerates an absent field.
 
-Never touches `version:` or the doc body: the write is a surgical in-place edit of just the
+Never touches `version:` or the doc body (beyond the deferred-question re-open above): the write is a surgical in-place edit of just the
 `status:`/`reviewedBy:`/`reviewedOn:` lines (inserting whichever of `reviewedBy:`/`reviewedOn:`
 the doc doesn't have yet, immediately after `status:`), same as `em slice ratify` — not a
 parse-and-re-serialize, so every other line — key order, spacing, comments, the whole body —
@@ -3288,6 +3288,12 @@ fresh review session — it lands at `status: ready-to-implement`, which
 [`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)'s review gate accepts — but leaving
 the old review in place would claim the room walked a version it has never seen.
 
+**Deferred questions come back (MIL-275).** After the bump to `v<new>`, every `- [x] … deferred to
+v<new> (…)` item under `## Open Questions` (the marker [`em slice defer`](#em-slice-defer-file-slice-key-question)
+writes) is rewritten to `- [ ] <original text>` (the text before ` — v<old>:`), and the command
+prints `re-opened N deferred question(s)` when N > 0. Items deferred to a later version are left
+alone. This is the one place reratify edits the body.
+
 Never touches `implementedIn:` (kept pointing at the prior version's PR on purpose — see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)'s
 drift-signal framing) or the doc body: the write is a surgical in-place edit of just the
@@ -3334,6 +3340,46 @@ ever ran).
 **Model-version advisory (MIL-218).** Same `warn: reratifying "<key>" moved the model past v<N>
 — run \`em model version bump\` to record it` line `em slice ratify` prints, checked after the
 write — see that command's own section above for the full contract.
+
+## `em slice defer <file> <slice-key> "<question>"`
+
+Records a question this version will not answer as **deferred to a later version** (MIL-275), so
+`em validate --slice-ready` passes without a guess and the question has a return path.
+
+```
+em slice defer <model>.em <slice-key> "<question>" --until v<n> --decision "<what this version does>" [--by <name>] [--on YYYY-MM-DD]
+```
+
+Finds the single unchecked `- [ ]` item under `## Open Questions` whose text contains
+`<question>` (case-sensitive substring) on the doc resolved from `<slice-key>` (same join as
+`ratify`/`reratify`) and rewrites that one line:
+
+```
+- [x] <original text> — v<current>: <decision>; deferred to v<n> (<date>[, <by>])
+```
+
+It then mirrors the deferral into `.event-modeling.md` beside the model, each bullet appended at
+the end of its section unless an identical one exists: `- <question> (from slice <key>, deferred
+to v<n>)` under `## Open questions / parking lot`, and `- <date>: deferred "<question>" on <key>
+to v<n> — v<current>: <decision>[ — by <by>]` under `## Decisions log` (the dated form, so `em
+changelog` sees it). The file is required and never created; both edits are computed before
+either is written. `--on` defaults to today's local date. `--until` must be `v<n>` with `<n>`
+greater than the doc's current `version:`. Prints `deferred: <doc path> (<question> → v<n>)`;
+a repeat run prints `already deferred (no-op): <doc path>`. [`em slice reratify`](#em-slice-reratify-file-slice-key)
+re-opens the item when it bumps to `v<n>`. A continuation key refuses like ratify does. No MCP
+tool (write path).
+
+| Error (`em slice defer: …`, exit 1) | Meaning |
+|---|---|
+| `no unchecked Open Question matching "<q>"` | No `- [ ]` item (or no `## Open Questions` section) contains the text |
+| `ambiguous — matches: <item1> \| <item2>` | More than one unchecked item matches; lengthen the text |
+| `already checked: <item>` | The match is `- [x]` and not deferred to this version |
+| `--until <x> must be greater than the doc's current version v<n>` | Deferral must point forward |
+| `invalid --until "<x>" — expected v<n> (for example v2)` | Malformed `--until` |
+| `invalid --on date "<x>" — expected YYYY-MM-DD` | Malformed date |
+| `deferrer name must not be empty or contain control characters` | Bad `--by` |
+| `no .event-modeling.md beside the model — defer mirrors into it and never creates it` | State file absent |
+| `.event-modeling.md has no "## Open questions / parking lot" heading` / `... "## Decisions log" heading` | State file lacks the section |
 
 ## `em slice conform <file> <slice-key> --at <rev>`
 

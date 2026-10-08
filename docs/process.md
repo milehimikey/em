@@ -33,7 +33,7 @@ three specific points:
 
 1. **Ratifying a slice** — the sign-off, after review, that flips a slice doc's `status` from
    `reviewed` to `ready-to-implement`: contracts and invariants are agreed, every open question is
-   resolved or explicitly deferred. This is the second of the two per-slice human gates (the first
+   resolved or explicitly deferred ([`em slice defer`](cli.md#em-slice-defer-file-slice-key-question)). This is the second of the two per-slice human gates (the first
    is the review session itself — the whole sequence is
    [The slice lifecycle gates](#the-slice-lifecycle-gates) below), the handoff gate between
    deciding and building, and it's

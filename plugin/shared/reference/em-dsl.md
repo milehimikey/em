@@ -13,228 +13,233 @@ Keep `.em` files focused on **structure**; put deep design in markdown linked vi
 
 <!-- GENERATED:cli:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 ```bash
-em --version                                                   # print the installed em version
-em init [file]                                                 # scaffold a starter .em model
-em init [file] -f, --force                                     # overwrite if the file exists
-em scaffold <name>                                             # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and constitution.md (the implementation constitution — skipped, with a note, in a spec-kit project, where `.specify/memory/constitution.md` IS that document) (see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, pass --under to nest it under a shared parent directory)
-em scaffold <name> -f, --force                                 # overwrite the directory's contents if it already exists
-em scaffold <name> --under <dir>                               # parent directory to scaffold into — writes <dir>/<slug>/ instead of ./<slug>/, the supported multi-model layout (docs/cli.md, "Multi-model projects"): one directory per model, so each model's slices/ never collides with a sibling model's
-em render <file>                                               # transpile a model and render it (or emit DOT)
-em render <file> -o, --out <path>                              # output path (extension picks the format)
-em render <file> -T, --format <fmt>                            # output format (svg, png, pdf, ...)
-em render <file> --slice <name>                                # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
-em render <file> --emit-dot                                    # print the generated DOT instead of rendering
-em render <file> --keep-empty-lanes                            # keep the API lane even when empty
-em export <file>                                               # export a versioned JSON snapshot of the normalized model
-em export <file> -o, --out <path>                              # write to a file instead of stdout
-em export <file> --slice <key>                                 # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
-em api generate <file>                                         # write the TypeSpec contract for the model's public commands, events and views to <model dir>/contracts/<model key>.tsp
-em api generate <file> -o, --out <path>                        # write to this path instead of <model dir>/contracts/<model key>.tsp
-em api generate <file> --stdout                                # print the contract instead of writing it
-em api check <file>                                            # is the committed contract current? With --base, annotate each public-surface change since that revision additive or breaking (annotation only — exits 1 only when stale)
-em api check <file> --base <rev>                               # git revision to diff the public surface against
-em api check <file> --json                                     # print a JSON document instead of the text report (see docs/cli.md)
-em typespec <file>                                             # DEPRECATED alias of `em api generate --stdout` (use em api generate)
-em typespec <file> -o, --out <path>                            # write to a file instead of stdout
-em diff <old> [new]                                            # compare two models structurally (two files, or one file across git revisions)
-em diff <old> [new] --from <rev>                               # diff <old> against this git revision instead of a second file
-em diff <old> [new] --to <rev>                                 # diff against this git revision instead of the current file (requires --from)
-em diff <old> [new] --exit-code                                # exit 1 if the models differ, 0 if identical (git-diff convention)
-em diff <old> [new] --json                                     # print a JSON document instead of the text report (see docs/cli.md)
-em glossary <files>                                            # cross-model glossary of terms, with consistency checks across models (see docs/cli.md)
-em glossary <files> --json                                     # print the full glossary document instead of the text report
-em glossary <files> -o, --out <path>                           # write the JSON document to a file instead of stdout (requires --json)
-em glossary <files> --list-conflicts                           # print only the conflict lines, no summary
-em glossary <files> --fail-on-conflicts                        # exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)
-em catalog <files>                                             # generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)
-em catalog <files> -o, --out <dir>                             # output directory
-em catalog <files> -T, --format <fmt>                          # diagram format embedded in the catalog (svg or png)
-em catalog <files> --title <text>                              # catalog site title
-em catalog <files> --keep-empty-lanes                          # keep the API lane even when empty
-em slice new <name>                                            # scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft`, the `# Slice:` heading and diagram-image stub, then every template section: the generated regions (command/event/view field tables, Invariants) filled from the model with --wire (template placeholders otherwise — `em slice sync` fills them), the authored sections (Intent, Scenarios, Open Questions, ...) with placeholder bullets (see .claude/skills/event-modeling-shared/reference/slice-doc-schema.md, templates/slice.md)
-em slice new <name> --pattern <pattern>                        # slice pattern: state-change | state-view | automation | translation
-em slice new <name> --swimlane <swimlane>                      # swimlane, e.g. "Persona → Context"
-em slice new <name> -f, --force                                # overwrite the file if it already exists
-em slice new <name> --wire <model-file>                        # also insert the `note "slices/<key>.md"` line onto the slice's primary element in this .em file (matched by export key), instead of just printing it to paste by hand (MIL-161)
-em slice new <name> --stub                                     # write a near-free stub instead: same 5 frontmatter keys, but a one-line placeholder body instead of the diagram-image stub and every judgment section (MIL-184) — deepen it later by re-running without --stub and -f
-em slice sync <model-file> [key]                               # regenerate the GENERATED regions (command/event/view field tables, the Invariants list) of existing slice docs in place from the model, authored sections untouched (MIL-266); docs without regions are skipped with a note. --check never writes and exits 1 when a doc is stale
-em slice sync <model-file> [key] --check                       # report ok / stale / no-regions per doc without writing; exit 1 when any is stale
-em slice sync <model-file> [key] --json                        # print the machine-readable report (sliceSyncSchemaVersion 1.0)
-em slice stub-all <file>                                       # scaffold + wire a near-free stub (`em slice new --stub`'s content, MIL-184) for every slice in <file> with no resolvable doc — the fast path to status coloring for an exploratory/backbone model without hand-running `slice new` per slice. Skips a continuation slice (MIL-208, it has no doc of its own), an already-documented slice, and a slice whose pattern can't be classified
-em slice stub-all <file> --status <status>                     # target status for every stub: draft | reviewed | ready-to-implement | implemented
-em slice stub-all <file> --by <name>                           # identity for reviewedBy/ratifiedBy — required unless --status draft
-em slice stub-all <file> --implemented-in <url>                # PR/commit URL for implementedIn — required with --status implemented
-em slice stub-all <file> --dry-run                             # list what would be stubbed/wired without writing anything
-em slice index <file>                                          # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
-em slice index <file> --check                                  # verify the table is current; exit non-zero on drift without writing (CI)
-em slice mark-implemented <file> <slice-key> <pr-url>          # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` or the doc body
-em slice review <file> <slice-key>                             # flip a slice doc's frontmatter to `status: reviewed` and record `reviewedBy:`/`reviewedOn:` — the FIRST of the two human gates (MIL-201, docs/process.md#the-slice-lifecycle-gates): the room walked this slice and every open question it raised is resolved. Ratification is a separate, later gate (`em slice ratify`). Legal from `status: draft`; idempotent on the same --by/--on pair; refuses to overwrite a different one already recorded; refuses a doc already `ready-to-implement`/`implemented`; never touches `version:` or the doc body
-em slice review <file> <slice-key> --by <name>                 # the reviewer's (or facilitator's) name
-em slice review <file> <slice-key> --on <date>                 # review date, YYYY-MM-DD (default: today, local date)
-em slice ratify <file> <slice-key>                             # flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#the-slice-lifecycle-gates) that makes who ratified, and when, a first-class recorded fact. The review gate is a check on the doc's current `status:`, not on whether `reviewedBy:`/`reviewedOn:` are populated: a doc at `reviewed` or `ready-to-implement` passes (the latter is where `em slice reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status — a `draft` that never went through `em slice review` — is refused unless --skip-review is passed. Idempotent on the same --by/--on pair; refuses to overwrite a different one already recorded; never touches `version:` or the doc body
-em slice ratify <file> <slice-key> --by <name>                 # the ratifier's name
-em slice ratify <file> <slice-key> --on <date>                 # ratification date, YYYY-MM-DD (default: today, local date)
-em slice ratify <file> <slice-key> --skip-review               # ratify without a recorded review — prints a loud notice on stderr
-em slice ratify <file> <slice-key> --meaning-unchanged         # API-first sign-off (MIL-238): this version does not change what the public contract means — records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element
-em slice ratify <file> <slice-key> --contract-change <why>     # API-first sign-off (MIL-238): a consumer must read this change differently, and why — records `contractChange: "<why>"`
-em slice reratify <file> <slice-key>                           # bump `version:` and flip a shipped slice doc's frontmatter back to `status: ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice mark-implemented`). Applies to a doc at `status: implemented`, or (MIL-258) to a `ready-to-implement` doc that is ratified but not yet shipped — there it bumps `version:` and clears the sign-off but leaves `status:` alone; a `ready-to-implement` doc with no `ratifiedBy:` refuses (awaiting `em slice ratify --by`). Clears any stale `ratifiedBy:`/`ratifiedOn:`/`reviewedBy:`/`reviewedOn:` (they describe the PRIOR version's review and sign-off) so a follow-up `em slice ratify --by` applies cleanly — and needs no fresh review; never touches `implementedIn:` or the doc body
-em slice reratify <file> <slice-key> --meaning-unchanged       # API-first sign-off (MIL-238): the new version does not change what the public contract means — records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element
-em slice reratify <file> <slice-key> --contract-change <why>   # API-first sign-off (MIL-238): a consumer must read the new version differently, and why — records `contractChange: "<why>"`
-em slice conform <file> <slice-key>                            # record per-slice-per-version conformance certification: sets `conformedVersion:`/`conformedAt:`/`conformedOn:` on a slice doc (MIL-214) — the fact `driftSignal: in-sync` now depends on. Legal only for `status: implemented` with an `implementedIn:` link. Idempotent on the same (version, --at) pair; a different --at simply overwrites (a later re-certification is normal — there's no way for em to tell 'later' from 'earlier' for an arbitrary revision string, so there's no --force to reach for). Refuses when the newest conformance/*-findings.json matching --at still has an unruled finding in scope for this slice; --skip-findings-check overrides with a loud notice.
-em slice conform <file> <slice-key> --at <rev>                 # the target-repo revision this certification sweep diffed against
-em slice conform <file> <slice-key> --on <date>                # certification date, YYYY-MM-DD (default: today, local date)
-em slice conform <file> <slice-key> --skip-findings-check      # certify even with unruled findings in scope — prints a loud notice on stderr
-em changelog <file>                                            # render a model's git history as a business-readable ledger (see docs/cli.md)
-em changelog <file> --from <rev>                               # start the walk at this revision (inclusive)
-em changelog <file> --to <rev>                                 # end the walk at this revision (inclusive; default HEAD)
-em changelog <file> -o, --out <path>                           # write to a file instead of stdout
-em state read [dir]                                            # print the state file's mechanical fields as JSON
-em state set-phase <phase> [dir]                               # rewrite Current phase: (and Last updated:); --step also rewrites Current step:
-em state set-phase <phase> [dir] --step <n>                    # also set Current step: to this value
-em state set-conformance <revision> [dir]                      # rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses. Refuses (MIL-214) while any `implemented` slice has an unruled conformance finding in the findings JSON beside --report (a `slice: null` finding blocks every slice); --partial records the marker with a ` (partial)` suffix instead, with a loud notice. Without a findings JSON beside --report: warns once and records the marker as given (migration path for a report predating `em conform-findings`)
-em state set-conformance <revision> [dir] --report <path>      # path to the conformance report just written
-em state set-conformance <revision> [dir] --partial            # record the marker as PARTIAL even though some in-scope findings are still unruled
-em state set-review <date> [dir]                               # rewrite Last stakeholder review: (and Last updated:)
-em state log-usage <file>                                      # append one Usage log line — phase(s) touched + em validate's diagnostic categories hit, deduped and canonically formatted (MIL-161, docs/usage-data.md) — the mechanical half of 'save state at the end of every session' that used to be run-validate-then-hand-format; state file resolved next to <file>, same convention as em conform-scope
-em state log-usage <file> --phases <list>                      # comma-separated phase(s) touched this session: discover, extract, model, slice, implement, conform, review, validate, watch, engagement
-em model version bump <file>                                   # bump the model's design version: write model-versions/v<N+1>.json (sibling of slices/, conformance/) and rewrite the state file's `Model version:` bullet (MIL-218). Refuses when the state file is missing (run `em scaffold` first), when --by is empty, and when nothing has changed since the current version (same model content hash AND same slice-version vector) unless --force — a no-op bump is the one case --force is right for.
-em model version bump <file> --by <name>                       # the bumper's name
-em model version bump <file> --on <date>                       # bump date, YYYY-MM-DD (default: today, local date)
-em model version bump <file> --force                           # bump even though nothing has changed since the current version
-em model version show <file>                                   # print the model's current design version and the most recently certified version, if any (model-versions/*.json — MIL-218)
-em model version show <file> --json                            # print a JSON document instead of text
-em usage-report [root]                                         # aggregate every .event-modeling.md's Usage log under [root] into phase/diagnostic-category tallies (MIL-161) — replaces docs/usage-data.md's hand-rolled grep/awk/sort pipeline; a logged line that doesn't match the canonical em state log-usage format is reported under unparseableLines rather than silently mistallied or dropped
-em usage-report [root] --json                                  # print a JSON document instead of the text report
-em conform-scope <file>                                        # mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — --seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)
-em conform-scope <file> --repo <path>                          # path to (or inside) the target codebase's git repository
-em conform-scope <file> --full                                 # ignore Last conformance:/changed paths; scope every implemented slice
-em conform-scope <file> --seed-asis                            # write <model>-asis.em as a byte copy of the canonical model and ensure it's gitignored
-em conform-supersede <file> <report-path>                      # stamp a conformance report with a "superseded as of <rev>" banner once its findings have been ruled on (MIL-164, docs/process.md#what-ratified-means) — the companion step to run at ratification time so a reader following the report's file:line citations knows they describe an ancestor of the current model. Additive-only splice, never a rewrite of the report; idempotent on the same --as-of/--findings/--on stamp; refuses if the report doesn't exist. --locus/--by (MIL-214, both required together) additionally record the ruling itself — locus/resolvedBy/resolvedOn — on the findings named by --findings in the sibling conformance/<date>-findings.json, when one exists (warns once and stamps the banner only when it doesn't — the migration path for a report predating em conform-findings)
-em conform-supersede <file> <report-path> --as-of <rev>        # the revision this ruling was made against — same value passed to `em state set-conformance`
-em conform-supersede <file> <report-path> --findings <spec>    # which finding number(s) this stamps as ruled, e.g. "1-3" or "1,2,4"
-em conform-supersede <file> <report-path> --on <date>          # ruling date, YYYY-MM-DD (default: today, local date)
-em conform-supersede <file> <report-path> --locus <locus>      # who/what the named finding(s) say is wrong: model | doc | code | none (requires --by)
-em conform-supersede <file> <report-path> --by <name>          # who ruled on the named finding(s) (requires --locus)
-em conform-findings check <path>                               # shape-validate a conformance/<date>-findings.json file (findingsSchemaVersion, required fields, enum values, ids sorted+unique, a ruled finding carries resolvedBy+resolvedOn) — exit 1 on shape errors. The conform skill writes this file directly alongside its report; this is how a headless run verifies what it just wrote.
-em conform-findings check <path> --json                        # print a JSON document instead of the text report
-em watch <file>                                                # re-render on every save
-em watch <file> -o, --out <path>                               # output path (extension picks the format)
-em watch <file> -T, --format <fmt>                             # output format (svg, png, pdf, ...)
-em watch <file> --keep-empty-lanes                             # keep the API lane even when empty
-em watch <file> --serve                                        # serve a live viewer with instant push-reload (no polling)
-em watch <file> --port <n>                                     # port for --serve (default 5173)
-em validate <file>                                             # check a model against event-modeling rules
-em validate <file> --list-issues                               # print only open `issue` diagnostics (slice, element, line, text)
-em validate <file> --list-divergences                          # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
-em validate <file> --list-public                               # print only commands, events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
-em validate <file> --fail-on-issues                            # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
-em validate <file> --slice-ready <key>                         # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions, a recorded ratifiedBy, and — for a slice touching a `public` element — a current contracts/<model key>.tsp; exits non-zero if not ready (MIL-87, MIL-259, MIL-238)
-em validate <file> --json                                      # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
-em migrate <file>                                              # rewrite the old two-slice Automation/Translation shape into the merged single-slice shape MIL-120 made canonical (see docs/cli.md)
-em migrate <file> --write                                      # apply the rewrite to the file (default: dry run — report only, write nothing)
-em ledger <file>                                               # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
-em ledger <file> --from <rev>                                  # baseline revision
-em ledger <file> --to <rev>                                    # compare revision (default: current working tree)
-em ledger <file> --waive <slice-key>                           # excuse a doc-content-without-version-bump finding for this slice key (repeatable; MIL-185, see docs/cli.md) — never waives a version regression or bump-without-content-change
-em ledger <file> --json                                        # print a JSON document instead of the text report (see docs/cli.md)
-em coverage <file>                                             # check that every INV-* invariant ID cited in an implemented slice doc is cited by a test under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI; --include-ready also counts ready-to-implement docs (forward-looking report); a continuation slice (an `again` view instance with no doc of its own, MIL-208) is excluded from the report — its invariants, if any, live in the originating slice's own doc; --slice <key> scopes the report to one slice whatever its status (MIL-255), the pre-merge definition-of-done check
-em coverage <file> --tests <dir>                               # directory to scan recursively for test files citing invariant IDs
-em coverage <file> --slice <key>                               # only this slice (export key), whether ready-to-implement or implemented — no --include-ready needed; --strict then fails on this slice's uncited invariants, or if the slice is not in scope (draft/reviewed/unbound: nothing checked) (MIL-255)
-em coverage <file> --strict                                    # exit non-zero if any invariant ID has zero citations (CI)
-em coverage <file> --include-ready                             # also count ready-to-implement docs, not just implemented (MIL-207)
-em coverage <file> --json                                      # print a JSON document instead of the text report (see docs/cli.md)
-em status <files>                                              # deterministic state-of-the-system rollup over one or more .em models: slices by lifecycle status, driftSignal breakdown, invariant coverage totals (with --tests), open issue markers + unchecked Open Questions, and last-conformance commits-behind-HEAD (MIL-163, see docs/cli.md)
-em status <files> --tests <dir>                                # directory to scan for INV-* test citations — enables invariant coverage totals
-em status <files> --repo <path>                                # git repo to compute commits-behind-HEAD in (default: each model's own directory)
-em status <files> --json                                       # print a JSON document instead of the text report (see docs/cli.md)
-em status <files> --md                                         # print a markdown block suited for README embedding
-em status <files> --badge                                      # print a generated SVG badge
-em status <files> -o, --out <path>                             # write output to a file instead of stdout
-em freshness <file>                                            # standalone freshness signal for one model's conformance record (MIL-164): "last conformed <rev> — N commits and M slice-PRs behind HEAD", computed from the same conform-scope machinery `em status`'s conformance clause uses — for when you want just this fact, no full state-of-the-system rollup (see docs/cli.md)
-em freshness <file> --repo <path>                              # git repo to compute behind-HEAD in (default: the model's own directory)
-em freshness <file> --json                                     # print a JSON document instead of the text line
-em metrics <file>                                              # the pilot metrics named in advance by the register, computed from git history alone (MIL-170): ratification turnaround (reviewed -> ratified -> implemented), conform-cycle cadence + finding counts, and status-vs-reality disagreement over time — plus a fourth, reported as not computable from history (see docs/usage-data.md). `<file>` is an anchor .em file, used only to locate slices/, conformance/, and .event-modeling.md relative to it — same convention as em ledger; never parsed or compiled
-em metrics <file> --from <rev>                                 # baseline revision
-em metrics <file> --to <rev>                                   # compare revision (default: HEAD)
-em metrics <file> --json                                       # print a JSON document instead of the text report (see docs/cli.md)
-em query consumers <files>                                     # views/reactions consuming an event, plus their slices
-em query consumers <files> --event <ref-or-name>               # the event's export ref or display name
-em query consumers <files> --json                              # print a JSON document instead of the text report
-em query producers <files>                                     # commands producing an event, plus their slices and ui triggers
-em query producers <files> --event <ref-or-name>               # the event's export ref or display name
-em query producers <files> --json                              # print a JSON document instead of the text report
-em query downstream <files>                                    # transitive closure along legal edges from an element — impact analysis
-em query downstream <files> --of <ref-or-name>                 # the starting element's export ref or display name
-em query downstream <files> --depth <n>                        # limit traversal to n hops (default: unlimited)
-em query downstream <files> --json                             # print a JSON document instead of the text report
-em query upstream <files>                                      # transitive closure against legal-edge direction from an element
-em query upstream <files> --of <ref-or-name>                   # the starting element's export ref or display name
-em query upstream <files> --depth <n>                          # limit traversal to n hops (default: unlimited)
-em query upstream <files> --json                               # print a JSON document instead of the text report
-em query slices <files>                                        # filtered slice list — pattern/status/context/persona/tag filters AND-combine
-em query slices <files> --pattern <p>                          # state-change | state-view | automation | translation | unclassified
-em query slices <files> --status <s>                           # the slice's joined doc status (draft, reviewed, ready-to-implement, implemented, ...)
-em query slices <files> --context <c>                          # match a slice with an event in this @Context
-em query slices <files> --persona <p>                          # match a slice with a ui in this @Persona
-em query slices <files> --tag <t>                              # match a slice with an event carrying this tag key
-em query slices <files> --json                                 # print a JSON document instead of the text report
-em query invariant <files>                                     # declaring slice + doc facts for one INV-* id, and (with --tests) its test citations
-em query invariant <files> --id <inv-id>                       # the INV-* id to look up
-em query invariant <files> --tests <dir>                       # directory to scan for test files citing this id
-em query invariant <files> --json                              # print a JSON document instead of the text report
-em query field <files>                                         # one field's facts on an element — type, tag/assigned markers, renamed-from chain
-em query field <files> --of <element-ref>                      # the element's export ref or display name
-em query field <files> --name <field>                          # the field's name
-em query field <files> --json                                  # print a JSON document instead of the text report
-em query path <files>                                          # shortest path between two elements through the six legal connection types
-em query path <files> --from <ref-or-name>                     # the starting element's export ref or display name
-em query path <files> --to <ref-or-name>                       # the ending element's export ref or display name
-em query path <files> --json                                   # print a JSON document instead of the text report
-em engagement new <file> <slug>                                # write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the generated Ledger table; selection by --slices, --context, or --downstream-of (exactly one)
-em engagement new <file> <slug> --slices <keys>                # comma-separated slice export keys
-em engagement new <file> <slug> --context <name>               # every slice with an event in this context
-em engagement new <file> <slug> --downstream-of <ref>          # a slice key, element ref, or display name: it and everything downstream of it (loops-to excluded)
-em engagement new <file> <slug> --parallel <n>                 # how many slices of one level may be in flight at once
-em engagement new <file> <slug> --by <name>                    # who created the engagement (createdBy)
-em engagement new <file> <slug> --force                        # overwrite an existing engagement file with this slug
-em engagement plan <file> <slug>                               # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (main or impl/<upstream>), and any hold
-em engagement plan <file> <slug> --json                        # print a JSON document instead of text (same document as the MCP engagement_plan tool)
-em engagement set <file> <slug> <key>                          # the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); idempotent; merged is terminal; --state held records a human hold
-em engagement set <file> <slug> <key> --state <state>          # one of: planned | building | validating | review | awaiting-merge | merged | held | gap
-em engagement set <file> <slug> <key> --branch <name>          # the slice's branch
-em engagement set <file> <slug> <key> --base <name>            # the branch the slice's PR targets
-em engagement set <file> <slug> <key> --pr <url>               # the slice's PR URL
-em engagement status <file> <slug>                             # the Ledger joined with each slice doc's current status, plus whether the engagement is closable
-em engagement status <file> <slug> --json                      # print a JSON document instead of text (same document as the MCP engagement_status tool)
-em engagement close <file> <slug>                              # set status: closed — refuses unless every slice is merged (recorded or inferred) or gap
-em system [target]                                             # verify a system — every model's `consumes` refs resolved against the other models' `public` events/views, the cross-model half of "both ends of a flow" (MIL-194/MIL-235, see docs/cli.md). Reads system.yaml when given (or found in the directory), else discovers every *.em in the repo
-em system [target] --json                                      # print a JSON document instead of the text report (see docs/cli.md)
-em system codeowners [target]                                  # generate (or --check) the managed CODEOWNERS block that routes review: each model's team on its design directory, and every team that `consumes` a model's public surface on that model's contract file (MIL-234, see docs/ci.md and docs/cli.md)
-em system codeowners [target] -o, --output <path>              # the CODEOWNERS file to splice into (default: the first of CODEOWNERS, .github/CODEOWNERS, docs/CODEOWNERS that exists, else CODEOWNERS at the repo root)
-em system codeowners [target] --check                          # verify the committed file already carries the generated block; never writes, exit 1 on drift (CI)
-em system codeowners [target] --json                           # print a JSON document instead of the text report (see docs/cli.md)
-em system scope [target]                                       # check a change set against the seams (MIL-240): fail only when it alters a producer's public surface (or contract file) AND a consuming model's design dir together (`seam-crossing`); warn on other multi-model change sets. Files changed only by `Em-Upgrade:` commits are exempt. There is no override - review on the contract file is the gate (see docs/cli.md, docs/ci.md)
-em system scope [target] --base <rev>                          # the change set committed since <rev> (merge-base form, <rev>...HEAD); CI passes the PR base
-em system scope [target] --staged                              # also (or only) check what is staged right now; never exempted
-em system scope [target] --json                                # print a JSON document instead of the text report (see docs/cli.md)
-em contract                                                    # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
-em mcp                                                         # start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; every tool mirrors a CLI `--json` surface byte-for-byte. docs/mcp.md isn't vendored into the skill bundle — for the handshake and the full, current tool table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187) see https://github.com/milehimikey/em/blob/main/docs/mcp.md. Equivalent to running the `em-mcp` bin directly
-em skill install                                               # copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared); across a structural bundle change (e.g. the MIL-157 split of the old single event-modeling/ directory into this six-directory bundle), `em skill sync` is the migration path — --force now performs the same reconcile (MIL-180)
-em skill install -f, --force                                   # overwrite an existing installation, reconciling added/updated/removed files within the bundle's own managed directories the same way `em skill sync` does — never touching an unrelated sibling skill (MIL-180)
-em skill install --no-agents-md                                # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
-em skill sync [path]                                           # update the vendored .claude/skills/ event-modeling skill bundle in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
-em skill sync [path] --no-agents-md                            # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
-em skill check [path]                                          # check [path]'s em skills for drift against the installed em package: the em Claude Code plugin's pin (settings + this machine's marketplace registry) when the repo declares it, and the vendored .claude/skills/ bundle when present; exits non-zero on any mismatch (CI-ready, MIL-93, MIL-231)
-em skill check [path] --json                                   # print a JSON document instead of the text report (see docs/cli.md)
-em skill check [path] --ci                                     # also fail (exit 1) when the declared plugin is not registered on this machine (implied by CI=true in the environment); without it that finding prints the install commands on stderr and exits 0
-em ci init <model>                                             # install .github/workflows/em-ci.yml (PR gates: em validate, em slice index --check, em coverage --strict, em ledger, em skill check, em glossary --fail-on-conflicts, plus a push-triggered status-badge rebuild) and em-conform.yml (scheduled, advisory-only conformance cadence) — same install discipline as `em skill install`: marker-delimited, idempotent, --check for CI self-verification (MIL-166, see docs/ci.md). Give it a system.yaml (or its directory) instead of a model to cover every model in the system: one workflow, per-model jobs, a conform matrix (MIL-233)
-em ci init <model> --tests <dir>                               # test directory the coverage/status steps scan for INV-* citations
-em ci init <model> -f, --force                                 # replace an existing workflow file that has no GENERATED markers, or a managed block generated for a different set of models
-em ci init <model> --check                                     # verify both files match the current preset; exit non-zero on drift without writing (CI)
-em upgrade <file>                                              # bring a model repo authored under an older em (1.6 forward) up to the installed version: an ordered list of mechanical steps (skill bundle, reaction shape, state-file bullets, generated CI blocks, constitution scaffold) plus a human list of things no command can safely decide by itself (MIL-219, see docs/upgrading.md). Dry-run by default; --apply makes one git commit per applicable step, refusing on a dirty working tree
-em upgrade <file> --apply                                      # apply every applicable mechanical step, one git commit each, then a final `Em version:` commit
-em upgrade <file> --check                                      # exit non-zero only on a hard incompatibility (an existing but unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs; the final line says why
-em upgrade <file> --json                                       # print a JSON document instead of text (dry-run/--check only, never with --apply)
+em --version                                                     # print the installed em version
+em init [file]                                                   # scaffold a starter .em model
+em init [file] -f, --force                                       # overwrite if the file exists
+em scaffold <name>                                               # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and constitution.md (the implementation constitution — skipped, with a note, in a spec-kit project, where `.specify/memory/constitution.md` IS that document) (see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, pass --under to nest it under a shared parent directory)
+em scaffold <name> -f, --force                                   # overwrite the directory's contents if it already exists
+em scaffold <name> --under <dir>                                 # parent directory to scaffold into — writes <dir>/<slug>/ instead of ./<slug>/, the supported multi-model layout (docs/cli.md, "Multi-model projects"): one directory per model, so each model's slices/ never collides with a sibling model's
+em render <file>                                                 # transpile a model and render it (or emit DOT)
+em render <file> -o, --out <path>                                # output path (extension picks the format)
+em render <file> -T, --format <fmt>                              # output format (svg, png, pdf, ...)
+em render <file> --slice <name>                                  # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
+em render <file> --emit-dot                                      # print the generated DOT instead of rendering
+em render <file> --keep-empty-lanes                              # keep the API lane even when empty
+em export <file>                                                 # export a versioned JSON snapshot of the normalized model
+em export <file> -o, --out <path>                                # write to a file instead of stdout
+em export <file> --slice <key>                                   # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
+em api generate <file>                                           # write the TypeSpec contract for the model's public commands, events and views to <model dir>/contracts/<model key>.tsp
+em api generate <file> -o, --out <path>                          # write to this path instead of <model dir>/contracts/<model key>.tsp
+em api generate <file> --stdout                                  # print the contract instead of writing it
+em api check <file>                                              # is the committed contract current? With --base, annotate each public-surface change since that revision additive or breaking (annotation only — exits 1 only when stale)
+em api check <file> --base <rev>                                 # git revision to diff the public surface against
+em api check <file> --json                                       # print a JSON document instead of the text report (see docs/cli.md)
+em typespec <file>                                               # DEPRECATED alias of `em api generate --stdout` (use em api generate)
+em typespec <file> -o, --out <path>                              # write to a file instead of stdout
+em diff <old> [new]                                              # compare two models structurally (two files, or one file across git revisions)
+em diff <old> [new] --from <rev>                                 # diff <old> against this git revision instead of a second file
+em diff <old> [new] --to <rev>                                   # diff against this git revision instead of the current file (requires --from)
+em diff <old> [new] --exit-code                                  # exit 1 if the models differ, 0 if identical (git-diff convention)
+em diff <old> [new] --json                                       # print a JSON document instead of the text report (see docs/cli.md)
+em glossary <files>                                              # cross-model glossary of terms, with consistency checks across models (see docs/cli.md)
+em glossary <files> --json                                       # print the full glossary document instead of the text report
+em glossary <files> -o, --out <path>                             # write the JSON document to a file instead of stdout (requires --json)
+em glossary <files> --list-conflicts                             # print only the conflict lines, no summary
+em glossary <files> --fail-on-conflicts                          # exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)
+em catalog <files>                                               # generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)
+em catalog <files> -o, --out <dir>                               # output directory
+em catalog <files> -T, --format <fmt>                            # diagram format embedded in the catalog (svg or png)
+em catalog <files> --title <text>                                # catalog site title
+em catalog <files> --keep-empty-lanes                            # keep the API lane even when empty
+em slice new <name>                                              # scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft`, the `# Slice:` heading and diagram-image stub, then every template section: the generated regions (command/event/view field tables, Invariants) filled from the model with --wire (template placeholders otherwise — `em slice sync` fills them), the authored sections (Intent, Scenarios, Open Questions, ...) with placeholder bullets (see .claude/skills/event-modeling-shared/reference/slice-doc-schema.md, templates/slice.md)
+em slice new <name> --pattern <pattern>                          # slice pattern: state-change | state-view | automation | translation
+em slice new <name> --swimlane <swimlane>                        # swimlane, e.g. "Persona → Context"
+em slice new <name> -f, --force                                  # overwrite the file if it already exists
+em slice new <name> --wire <model-file>                          # also insert the `note "slices/<key>.md"` line onto the slice's primary element in this .em file (matched by export key), instead of just printing it to paste by hand (MIL-161)
+em slice new <name> --stub                                       # write a near-free stub instead: same 5 frontmatter keys, but a one-line placeholder body instead of the diagram-image stub and every judgment section (MIL-184) — deepen it later by re-running without --stub and -f
+em slice sync <model-file> [key]                                 # regenerate the GENERATED regions (command/event/view field tables, the Invariants list) of existing slice docs in place from the model, authored sections untouched (MIL-266); docs without regions are skipped with a note. --check never writes and exits 1 when a doc is stale
+em slice sync <model-file> [key] --check                         # report ok / stale / no-regions per doc without writing; exit 1 when any is stale
+em slice sync <model-file> [key] --json                          # print the machine-readable report (sliceSyncSchemaVersion 1.0)
+em slice stub-all <file>                                         # scaffold + wire a near-free stub (`em slice new --stub`'s content, MIL-184) for every slice in <file> with no resolvable doc — the fast path to status coloring for an exploratory/backbone model without hand-running `slice new` per slice. Skips a continuation slice (MIL-208, it has no doc of its own), an already-documented slice, and a slice whose pattern can't be classified
+em slice stub-all <file> --status <status>                       # target status for every stub: draft | reviewed | ready-to-implement | implemented
+em slice stub-all <file> --by <name>                             # identity for reviewedBy/ratifiedBy — required unless --status draft
+em slice stub-all <file> --implemented-in <url>                  # PR/commit URL for implementedIn — required with --status implemented
+em slice stub-all <file> --dry-run                               # list what would be stubbed/wired without writing anything
+em slice index <file>                                            # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
+em slice index <file> --check                                    # verify the table is current; exit non-zero on drift without writing (CI)
+em slice mark-implemented <file> <slice-key> <pr-url>            # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` or the doc body
+em slice review <file> <slice-key>                               # flip a slice doc's frontmatter to `status: reviewed` and record `reviewedBy:`/`reviewedOn:` — the FIRST of the two human gates (MIL-201, docs/process.md#the-slice-lifecycle-gates): the room walked this slice and every open question it raised is resolved. Ratification is a separate, later gate (`em slice ratify`). Legal from `status: draft`; idempotent on the same --by/--on pair; refuses to overwrite a different one already recorded; refuses a doc already `ready-to-implement`/`implemented`; never touches `version:` or the doc body
+em slice review <file> <slice-key> --by <name>                   # the reviewer's (or facilitator's) name
+em slice review <file> <slice-key> --on <date>                   # review date, YYYY-MM-DD (default: today, local date)
+em slice ratify <file> <slice-key>                               # flip a slice doc's frontmatter to `status: ready-to-implement` and record `ratifiedBy:`/`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#the-slice-lifecycle-gates) that makes who ratified, and when, a first-class recorded fact. The review gate is a check on the doc's current `status:`, not on whether `reviewedBy:`/`reviewedOn:` are populated: a doc at `reviewed` or `ready-to-implement` passes (the latter is where `em slice reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status — a `draft` that never went through `em slice review` — is refused unless --skip-review is passed. Idempotent on the same --by/--on pair; refuses to overwrite a different one already recorded; never touches `version:` or the doc body
+em slice ratify <file> <slice-key> --by <name>                   # the ratifier's name
+em slice ratify <file> <slice-key> --on <date>                   # ratification date, YYYY-MM-DD (default: today, local date)
+em slice ratify <file> <slice-key> --skip-review                 # ratify without a recorded review — prints a loud notice on stderr
+em slice ratify <file> <slice-key> --meaning-unchanged           # API-first sign-off (MIL-238): this version does not change what the public contract means — records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element
+em slice ratify <file> <slice-key> --contract-change <why>       # API-first sign-off (MIL-238): a consumer must read this change differently, and why — records `contractChange: "<why>"`
+em slice reratify <file> <slice-key>                             # bump `version:` and flip a shipped slice doc's frontmatter back to `status: ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice mark-implemented`). Applies to a doc at `status: implemented`, or (MIL-258) to a `ready-to-implement` doc that is ratified but not yet shipped — there it bumps `version:` and clears the sign-off but leaves `status:` alone; a `ready-to-implement` doc with no `ratifiedBy:` refuses (awaiting `em slice ratify --by`). Clears any stale `ratifiedBy:`/`ratifiedOn:`/`reviewedBy:`/`reviewedOn:` (they describe the PRIOR version's review and sign-off) so a follow-up `em slice ratify --by` applies cleanly — and needs no fresh review; never touches `implementedIn:` or the doc body
+em slice reratify <file> <slice-key> --meaning-unchanged         # API-first sign-off (MIL-238): the new version does not change what the public contract means — records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element
+em slice reratify <file> <slice-key> --contract-change <why>     # API-first sign-off (MIL-238): a consumer must read the new version differently, and why — records `contractChange: "<why>"`
+em slice defer <file> <slice-key> <question>                     # record a question this version will not answer as deferred to a later version (MIL-275): rewrites the single unchecked `## Open Questions` item containing <question> as `- [x] <item> — v<current>: <decision>; deferred to v<n> (<date>[, <by>])` so `--slice-ready` passes without a guess, and mirrors it into `.event-modeling.md` (the parking lot and a dated Decisions-log bullet; the file must exist, it is never created). Idempotent; `em slice reratify` re-opens the item when it bumps to v<n>
+em slice defer <file> <slice-key> <question> --until <version>   # the version that must answer it, v<n> (greater than the doc's version)
+em slice defer <file> <slice-key> <question> --decision <text>   # what this version does instead
+em slice defer <file> <slice-key> <question> --by <name>         # who deferred it
+em slice defer <file> <slice-key> <question> --on <date>         # deferral date, YYYY-MM-DD (default: today, local date)
+em slice conform <file> <slice-key>                              # record per-slice-per-version conformance certification: sets `conformedVersion:`/`conformedAt:`/`conformedOn:` on a slice doc (MIL-214) — the fact `driftSignal: in-sync` now depends on. Legal only for `status: implemented` with an `implementedIn:` link. Idempotent on the same (version, --at) pair; a different --at simply overwrites (a later re-certification is normal — there's no way for em to tell 'later' from 'earlier' for an arbitrary revision string, so there's no --force to reach for). Refuses when the newest conformance/*-findings.json matching --at still has an unruled finding in scope for this slice; --skip-findings-check overrides with a loud notice.
+em slice conform <file> <slice-key> --at <rev>                   # the target-repo revision this certification sweep diffed against
+em slice conform <file> <slice-key> --on <date>                  # certification date, YYYY-MM-DD (default: today, local date)
+em slice conform <file> <slice-key> --skip-findings-check        # certify even with unruled findings in scope — prints a loud notice on stderr
+em changelog <file>                                              # render a model's git history as a business-readable ledger (see docs/cli.md)
+em changelog <file> --from <rev>                                 # start the walk at this revision (inclusive)
+em changelog <file> --to <rev>                                   # end the walk at this revision (inclusive; default HEAD)
+em changelog <file> -o, --out <path>                             # write to a file instead of stdout
+em state read [dir]                                              # print the state file's mechanical fields as JSON
+em state set-phase <phase> [dir]                                 # rewrite Current phase: (and Last updated:); --step also rewrites Current step:
+em state set-phase <phase> [dir] --step <n>                      # also set Current step: to this value
+em state set-conformance <revision> [dir]                        # rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md parses. Refuses (MIL-214) while any `implemented` slice has an unruled conformance finding in the findings JSON beside --report (a `slice: null` finding blocks every slice); --partial records the marker with a ` (partial)` suffix instead, with a loud notice. Without a findings JSON beside --report: warns once and records the marker as given (migration path for a report predating `em conform-findings`)
+em state set-conformance <revision> [dir] --report <path>        # path to the conformance report just written
+em state set-conformance <revision> [dir] --partial              # record the marker as PARTIAL even though some in-scope findings are still unruled
+em state set-review <date> [dir]                                 # rewrite Last stakeholder review: (and Last updated:)
+em state log-usage <file>                                        # append one Usage log line — phase(s) touched + em validate's diagnostic categories hit, deduped and canonically formatted (MIL-161, docs/usage-data.md) — the mechanical half of 'save state at the end of every session' that used to be run-validate-then-hand-format; state file resolved next to <file>, same convention as em conform-scope
+em state log-usage <file> --phases <list>                        # comma-separated phase(s) touched this session: discover, extract, model, slice, implement, conform, review, validate, watch, engagement
+em model version bump <file>                                     # bump the model's design version: write model-versions/v<N+1>.json (sibling of slices/, conformance/) and rewrite the state file's `Model version:` bullet (MIL-218). Refuses when the state file is missing (run `em scaffold` first), when --by is empty, and when nothing has changed since the current version (same model content hash AND same slice-version vector) unless --force — a no-op bump is the one case --force is right for.
+em model version bump <file> --by <name>                         # the bumper's name
+em model version bump <file> --on <date>                         # bump date, YYYY-MM-DD (default: today, local date)
+em model version bump <file> --force                             # bump even though nothing has changed since the current version
+em model version show <file>                                     # print the model's current design version and the most recently certified version, if any (model-versions/*.json — MIL-218)
+em model version show <file> --json                              # print a JSON document instead of text
+em usage-report [root]                                           # aggregate every .event-modeling.md's Usage log under [root] into phase/diagnostic-category tallies (MIL-161) — replaces docs/usage-data.md's hand-rolled grep/awk/sort pipeline; a logged line that doesn't match the canonical em state log-usage format is reported under unparseableLines rather than silently mistallied or dropped
+em usage-report [root] --json                                    # print a JSON document instead of the text report
+em conform-scope <file>                                          # mechanize conform phase step 1 (reference/conform.md): map the target repo's changed paths since Last conformance: to slices via each slice doc's implementedIn, JSON to stdout — --seed-asis also seeds the <model>-asis.em scratch model (see docs/cli.md)
+em conform-scope <file> --repo <path>                            # path to (or inside) the target codebase's git repository
+em conform-scope <file> --full                                   # ignore Last conformance:/changed paths; scope every implemented slice
+em conform-scope <file> --seed-asis                              # write <model>-asis.em as a byte copy of the canonical model and ensure it's gitignored
+em conform-supersede <file> <report-path>                        # stamp a conformance report with a "superseded as of <rev>" banner once its findings have been ruled on (MIL-164, docs/process.md#what-ratified-means) — the companion step to run at ratification time so a reader following the report's file:line citations knows they describe an ancestor of the current model. Additive-only splice, never a rewrite of the report; idempotent on the same --as-of/--findings/--on stamp; refuses if the report doesn't exist. --locus/--by (MIL-214, both required together) additionally record the ruling itself — locus/resolvedBy/resolvedOn — on the findings named by --findings in the sibling conformance/<date>-findings.json, when one exists (warns once and stamps the banner only when it doesn't — the migration path for a report predating em conform-findings)
+em conform-supersede <file> <report-path> --as-of <rev>          # the revision this ruling was made against — same value passed to `em state set-conformance`
+em conform-supersede <file> <report-path> --findings <spec>      # which finding number(s) this stamps as ruled, e.g. "1-3" or "1,2,4"
+em conform-supersede <file> <report-path> --on <date>            # ruling date, YYYY-MM-DD (default: today, local date)
+em conform-supersede <file> <report-path> --locus <locus>        # who/what the named finding(s) say is wrong: model | doc | code | none (requires --by)
+em conform-supersede <file> <report-path> --by <name>            # who ruled on the named finding(s) (requires --locus)
+em conform-findings check <path>                                 # shape-validate a conformance/<date>-findings.json file (findingsSchemaVersion, required fields, enum values, ids sorted+unique, a ruled finding carries resolvedBy+resolvedOn) — exit 1 on shape errors. The conform skill writes this file directly alongside its report; this is how a headless run verifies what it just wrote.
+em conform-findings check <path> --json                          # print a JSON document instead of the text report
+em watch <file>                                                  # re-render on every save
+em watch <file> -o, --out <path>                                 # output path (extension picks the format)
+em watch <file> -T, --format <fmt>                               # output format (svg, png, pdf, ...)
+em watch <file> --keep-empty-lanes                               # keep the API lane even when empty
+em watch <file> --serve                                          # serve a live viewer with instant push-reload (no polling)
+em watch <file> --port <n>                                       # port for --serve (default 5173)
+em validate <file>                                               # check a model against event-modeling rules
+em validate <file> --list-issues                                 # print only open `issue` diagnostics (slice, element, line, text)
+em validate <file> --list-divergences                            # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
+em validate <file> --list-public                                 # print only commands, events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
+em validate <file> --fail-on-issues                              # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
+em validate <file> --slice-ready <key>                           # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions, a recorded ratifiedBy, and — for a slice touching a `public` element — a current contracts/<model key>.tsp; exits non-zero if not ready (MIL-87, MIL-259, MIL-238)
+em validate <file> --json                                        # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
+em migrate <file>                                                # rewrite the old two-slice Automation/Translation shape into the merged single-slice shape MIL-120 made canonical (see docs/cli.md)
+em migrate <file> --write                                        # apply the rewrite to the file (default: dry run — report only, write nothing)
+em ledger <file>                                                 # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
+em ledger <file> --from <rev>                                    # baseline revision
+em ledger <file> --to <rev>                                      # compare revision (default: current working tree)
+em ledger <file> --waive <slice-key>                             # excuse a doc-content-without-version-bump finding for this slice key (repeatable; MIL-185, see docs/cli.md) — never waives a version regression or bump-without-content-change
+em ledger <file> --json                                          # print a JSON document instead of the text report (see docs/cli.md)
+em coverage <file>                                               # check that every INV-* invariant ID cited in an implemented slice doc is cited by a test under --tests <dir> (MIL-130/MIL-207) — mechanizes reference/implement.md's definition-of-done citation check; advisory by default, --strict for CI; --include-ready also counts ready-to-implement docs (forward-looking report); a continuation slice (an `again` view instance with no doc of its own, MIL-208) is excluded from the report — its invariants, if any, live in the originating slice's own doc; --slice <key> scopes the report to one slice whatever its status (MIL-255), the pre-merge definition-of-done check
+em coverage <file> --tests <dir>                                 # directory to scan recursively for test files citing invariant IDs
+em coverage <file> --slice <key>                                 # only this slice (export key), whether ready-to-implement or implemented — no --include-ready needed; --strict then fails on this slice's uncited invariants, or if the slice is not in scope (draft/reviewed/unbound: nothing checked) (MIL-255)
+em coverage <file> --strict                                      # exit non-zero if any invariant ID has zero citations (CI)
+em coverage <file> --include-ready                               # also count ready-to-implement docs, not just implemented (MIL-207)
+em coverage <file> --json                                        # print a JSON document instead of the text report (see docs/cli.md)
+em status <files>                                                # deterministic state-of-the-system rollup over one or more .em models: slices by lifecycle status, driftSignal breakdown, invariant coverage totals (with --tests), open issue markers + unchecked Open Questions, and last-conformance commits-behind-HEAD (MIL-163, see docs/cli.md)
+em status <files> --tests <dir>                                  # directory to scan for INV-* test citations — enables invariant coverage totals
+em status <files> --repo <path>                                  # git repo to compute commits-behind-HEAD in (default: each model's own directory)
+em status <files> --json                                         # print a JSON document instead of the text report (see docs/cli.md)
+em status <files> --md                                           # print a markdown block suited for README embedding
+em status <files> --badge                                        # print a generated SVG badge
+em status <files> -o, --out <path>                               # write output to a file instead of stdout
+em freshness <file>                                              # standalone freshness signal for one model's conformance record (MIL-164): "last conformed <rev> — N commits and M slice-PRs behind HEAD", computed from the same conform-scope machinery `em status`'s conformance clause uses — for when you want just this fact, no full state-of-the-system rollup (see docs/cli.md)
+em freshness <file> --repo <path>                                # git repo to compute behind-HEAD in (default: the model's own directory)
+em freshness <file> --json                                       # print a JSON document instead of the text line
+em metrics <file>                                                # the pilot metrics named in advance by the register, computed from git history alone (MIL-170): ratification turnaround (reviewed -> ratified -> implemented), conform-cycle cadence + finding counts, and status-vs-reality disagreement over time — plus a fourth, reported as not computable from history (see docs/usage-data.md). `<file>` is an anchor .em file, used only to locate slices/, conformance/, and .event-modeling.md relative to it — same convention as em ledger; never parsed or compiled
+em metrics <file> --from <rev>                                   # baseline revision
+em metrics <file> --to <rev>                                     # compare revision (default: HEAD)
+em metrics <file> --json                                         # print a JSON document instead of the text report (see docs/cli.md)
+em query consumers <files>                                       # views/reactions consuming an event, plus their slices
+em query consumers <files> --event <ref-or-name>                 # the event's export ref or display name
+em query consumers <files> --json                                # print a JSON document instead of the text report
+em query producers <files>                                       # commands producing an event, plus their slices and ui triggers
+em query producers <files> --event <ref-or-name>                 # the event's export ref or display name
+em query producers <files> --json                                # print a JSON document instead of the text report
+em query downstream <files>                                      # transitive closure along legal edges from an element — impact analysis
+em query downstream <files> --of <ref-or-name>                   # the starting element's export ref or display name
+em query downstream <files> --depth <n>                          # limit traversal to n hops (default: unlimited)
+em query downstream <files> --json                               # print a JSON document instead of the text report
+em query upstream <files>                                        # transitive closure against legal-edge direction from an element
+em query upstream <files> --of <ref-or-name>                     # the starting element's export ref or display name
+em query upstream <files> --depth <n>                            # limit traversal to n hops (default: unlimited)
+em query upstream <files> --json                                 # print a JSON document instead of the text report
+em query slices <files>                                          # filtered slice list — pattern/status/context/persona/tag filters AND-combine
+em query slices <files> --pattern <p>                            # state-change | state-view | automation | translation | unclassified
+em query slices <files> --status <s>                             # the slice's joined doc status (draft, reviewed, ready-to-implement, implemented, ...)
+em query slices <files> --context <c>                            # match a slice with an event in this @Context
+em query slices <files> --persona <p>                            # match a slice with a ui in this @Persona
+em query slices <files> --tag <t>                                # match a slice with an event carrying this tag key
+em query slices <files> --json                                   # print a JSON document instead of the text report
+em query invariant <files>                                       # declaring slice + doc facts for one INV-* id, and (with --tests) its test citations
+em query invariant <files> --id <inv-id>                         # the INV-* id to look up
+em query invariant <files> --tests <dir>                         # directory to scan for test files citing this id
+em query invariant <files> --json                                # print a JSON document instead of the text report
+em query field <files>                                           # one field's facts on an element — type, tag/assigned markers, renamed-from chain
+em query field <files> --of <element-ref>                        # the element's export ref or display name
+em query field <files> --name <field>                            # the field's name
+em query field <files> --json                                    # print a JSON document instead of the text report
+em query path <files>                                            # shortest path between two elements through the six legal connection types
+em query path <files> --from <ref-or-name>                       # the starting element's export ref or display name
+em query path <files> --to <ref-or-name>                         # the ending element's export ref or display name
+em query path <files> --json                                     # print a JSON document instead of the text report
+em engagement new <file> <slug>                                  # write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the generated Ledger table; selection by --slices, --context, or --downstream-of (exactly one)
+em engagement new <file> <slug> --slices <keys>                  # comma-separated slice export keys
+em engagement new <file> <slug> --context <name>                 # every slice with an event in this context
+em engagement new <file> <slug> --downstream-of <ref>            # a slice key, element ref, or display name: it and everything downstream of it (loops-to excluded)
+em engagement new <file> <slug> --parallel <n>                   # how many slices of one level may be in flight at once
+em engagement new <file> <slug> --by <name>                      # who created the engagement (createdBy)
+em engagement new <file> <slug> --force                          # overwrite an existing engagement file with this slug
+em engagement plan <file> <slug>                                 # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (main or impl/<upstream>), and any hold
+em engagement plan <file> <slug> --json                          # print a JSON document instead of text (same document as the MCP engagement_plan tool)
+em engagement set <file> <slug> <key>                            # the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); idempotent; merged is terminal; --state held records a human hold
+em engagement set <file> <slug> <key> --state <state>            # one of: planned | building | validating | review | awaiting-merge | merged | held | gap
+em engagement set <file> <slug> <key> --branch <name>            # the slice's branch
+em engagement set <file> <slug> <key> --base <name>              # the branch the slice's PR targets
+em engagement set <file> <slug> <key> --pr <url>                 # the slice's PR URL
+em engagement status <file> <slug>                               # the Ledger joined with each slice doc's current status, plus whether the engagement is closable
+em engagement status <file> <slug> --json                        # print a JSON document instead of text (same document as the MCP engagement_status tool)
+em engagement close <file> <slug>                                # set status: closed — refuses unless every slice is merged (recorded or inferred) or gap
+em system [target]                                               # verify a system — every model's `consumes` refs resolved against the other models' `public` events/views, the cross-model half of "both ends of a flow" (MIL-194/MIL-235, see docs/cli.md). Reads system.yaml when given (or found in the directory), else discovers every *.em in the repo
+em system [target] --json                                        # print a JSON document instead of the text report (see docs/cli.md)
+em system codeowners [target]                                    # generate (or --check) the managed CODEOWNERS block that routes review: each model's team on its design directory, and every team that `consumes` a model's public surface on that model's contract file (MIL-234, see docs/ci.md and docs/cli.md)
+em system codeowners [target] -o, --output <path>                # the CODEOWNERS file to splice into (default: the first of CODEOWNERS, .github/CODEOWNERS, docs/CODEOWNERS that exists, else CODEOWNERS at the repo root)
+em system codeowners [target] --check                            # verify the committed file already carries the generated block; never writes, exit 1 on drift (CI)
+em system codeowners [target] --json                             # print a JSON document instead of the text report (see docs/cli.md)
+em system scope [target]                                         # check a change set against the seams (MIL-240): fail only when it alters a producer's public surface (or contract file) AND a consuming model's design dir together (`seam-crossing`); warn on other multi-model change sets. Files changed only by `Em-Upgrade:` commits are exempt. There is no override - review on the contract file is the gate (see docs/cli.md, docs/ci.md)
+em system scope [target] --base <rev>                            # the change set committed since <rev> (merge-base form, <rev>...HEAD); CI passes the PR base
+em system scope [target] --staged                                # also (or only) check what is staged right now; never exempted
+em system scope [target] --json                                  # print a JSON document instead of the text report (see docs/cli.md)
+em contract                                                      # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
+em mcp                                                           # start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; every tool mirrors a CLI `--json` surface byte-for-byte. docs/mcp.md isn't vendored into the skill bundle — for the handshake and the full, current tool table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187) see https://github.com/milehimikey/em/blob/main/docs/mcp.md. Equivalent to running the `em-mcp` bin directly
+em skill install                                                 # copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared); across a structural bundle change (e.g. the MIL-157 split of the old single event-modeling/ directory into this six-directory bundle), `em skill sync` is the migration path — --force now performs the same reconcile (MIL-180)
+em skill install -f, --force                                     # overwrite an existing installation, reconciling added/updated/removed files within the bundle's own managed directories the same way `em skill sync` does — never touching an unrelated sibling skill (MIL-180)
+em skill install --no-agents-md                                  # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
+em skill sync [path]                                             # update the vendored .claude/skills/ event-modeling skill bundle in [path] to match the installed em package (overwrites unconditionally; local edits are never merged, MIL-93)
+em skill sync [path] --no-agents-md                              # skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)
+em skill check [path]                                            # check [path]'s em skills for drift against the installed em package: the em Claude Code plugin's pin (settings + this machine's marketplace registry) when the repo declares it, and the vendored .claude/skills/ bundle when present; exits non-zero on any mismatch (CI-ready, MIL-93, MIL-231)
+em skill check [path] --json                                     # print a JSON document instead of the text report (see docs/cli.md)
+em skill check [path] --ci                                       # also fail (exit 1) when the declared plugin is not registered on this machine (implied by CI=true in the environment); without it that finding prints the install commands on stderr and exits 0
+em ci init <model>                                               # install .github/workflows/em-ci.yml (PR gates: em validate, em slice index --check, em coverage --strict, em ledger, em skill check, em glossary --fail-on-conflicts, plus a push-triggered status-badge rebuild) and em-conform.yml (scheduled, advisory-only conformance cadence) — same install discipline as `em skill install`: marker-delimited, idempotent, --check for CI self-verification (MIL-166, see docs/ci.md). Give it a system.yaml (or its directory) instead of a model to cover every model in the system: one workflow, per-model jobs, a conform matrix (MIL-233)
+em ci init <model> --tests <dir>                                 # test directory the coverage/status steps scan for INV-* citations
+em ci init <model> -f, --force                                   # replace an existing workflow file that has no GENERATED markers, or a managed block generated for a different set of models
+em ci init <model> --check                                       # verify both files match the current preset; exit non-zero on drift without writing (CI)
+em upgrade <file>                                                # bring a model repo authored under an older em (1.6 forward) up to the installed version: an ordered list of mechanical steps (skill bundle, reaction shape, state-file bullets, generated CI blocks, constitution scaffold) plus a human list of things no command can safely decide by itself (MIL-219, see docs/upgrading.md). Dry-run by default; --apply makes one git commit per applicable step, refusing on a dirty working tree
+em upgrade <file> --apply                                        # apply every applicable mechanical step, one git commit each, then a final `Em version:` commit
+em upgrade <file> --check                                        # exit non-zero only on a hard incompatibility (an existing but unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs; the final line says why
+em upgrade <file> --json                                         # print a JSON document instead of text (dry-run/--check only, never with --apply)
 ```
 <!-- GENERATED:cli:end -->
 

@@ -346,3 +346,12 @@ The contract header records only `Source: <path to the .em>`, with no hash of th
 internal edit (a new internal element, a field on an internal element, a comment) therefore
 leaves the contract byte-identical. Only a change to the public surface changes the file, and
 only that summons the consuming teams that CODEOWNERS lists on it.
+
+## 1.14.1
+
+A question a slice version will not answer now has a verb: `em slice defer` records it as deferred
+to a later version, and `em slice reratify` re-opens it when the slice reaches that version.
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| `em slice defer <model>.em <key> "<question>" --until v<n> --decision "<text>"`: checks the matching `## Open Questions` item with a `deferred to v<n>` marker and mirrors it into the state file's parking lot and Decisions log (MIL-275, [cli.md](cli.md#em-slice-defer-file-slice-key-question)); `em slice reratify` re-opens items deferred to the new version. New verb, no migration | no action needed |

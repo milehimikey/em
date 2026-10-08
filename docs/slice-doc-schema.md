@@ -473,6 +473,14 @@ diverges from git, grows unboundedly over a long-lived slice's life, and forces 
 work out which resolutions are still relevant to the *current* version versus leftover from a
 prior one — exactly the ambiguity a live, current-version-only section avoids.
 
+**Deferral marker (MIL-275).** A question this version will not answer is not left `- [ ]` and
+not deleted: `em slice defer` checks it and rewrites it as `- [x] <original> — v<current>:
+<decision>; deferred to v<n> (<date>[, <by>])`. The `deferred to v<n>` marker is what
+`em slice reratify` reads: when a bump reaches v<n> it rewrites each such item back to
+`- [ ] <original>`, so the question must be resolved or re-deferred before `--slice-ready` passes
+again. The prune rule above does not apply to a deferred item before v<n> (it stays as the
+record); once reopened it is an ordinary open question.
+
 **Not a parsing/grammar change.** `countOpenQuestions()` (`sliceDoc.ts`) and
 `slice-ready-open-questions-unchecked` (`sliceReadyValidate.ts`,
 [validation.md#slice-readiness](validation.md#slice-readiness)) are unaffected: both already

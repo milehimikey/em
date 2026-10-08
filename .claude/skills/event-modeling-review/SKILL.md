@@ -56,7 +56,7 @@ review:` marker (mirrors `Last conformance:`).
 **Per-slice outcome.** A slice whose open questions are all resolved in the room →
 `em slice review <model>.em <key> --by <name>` (flips its doc to `status: reviewed` and records
 `reviewedBy:`/`reviewedOn:`). Anything still open stays `draft` — the walkthrough doesn't decide
-it, the next session or the open-questions list does.
+it, the next session or the open-questions list does. A question this version will not answer is deferred with `em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"` — never left `- [ ]`, never deleted, never answered by guessing.
 
 **The facilitator never ratifies, never offers to ratify, and never suggests ratification in a
 review session. Ratification is a separate human gate after review**

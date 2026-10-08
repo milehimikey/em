@@ -211,6 +211,7 @@ For each slice:
    (`em validate` flags a block missing one as `slice-doc/structured-section-malformed`, and
    `--slice-ready` refuses it). A doc written before em 1.14 has no markers; leave it as it is
    unless you are re-creating it (`em slice new … --wire --force`, carrying the prose across).
+   A question this version will not answer is deferred with `em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"` — never left `- [ ]`, never deleted, never answered by guessing.
 2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
    frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
    translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes `slices/<slice-name>.md`

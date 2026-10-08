@@ -285,6 +285,7 @@ describe("runReratify (note-binding resolution + fs orchestration)", () => {
       newVersion: 2,
       kind: "shipped",
       advisory: { neverCertified: true, unruledFindingsCount: 0 },
+      reopened: 0,
     });
     const written = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
@@ -336,6 +337,7 @@ describe("runReratify (note-binding resolution + fs orchestration)", () => {
       newVersion: 2,
       kind: "shipped",
       advisory: { neverCertified: true, unruledFindingsCount: 0 },
+      reopened: 0,
     });
     const written = readFileSync(join(dir, "slices", "covering-slice.md"), "utf8");
     expect(written).toContain("status: ready-to-implement");
@@ -514,5 +516,18 @@ describe("runReratify — public-touching slices (MIL-238)", () => {
     const result = run("place-order");
     expect(result.ok).toBe(false);
     expect(!result.ok && result.message).toMatch(/^slices\/place-order\.md: doc is `status: draft`/);
+  });
+});
+
+describe("reratify re-opens deferred questions (MIL-275)", () => {
+  it("rewrites deferred-to-new-version items to unchecked; leaves later deferrals alone", async () => {
+    const { reopenDeferred } = await import("../src/cli/defer.js");
+    const doc =
+      "## Open Questions\n\n- [x] A? — v1: fast; deferred to v2 (2026-10-08, Al)\n- [x] B? — v1: fast; deferred to v3 (2026-10-08)\n- [x] plain\n";
+    const r = reopenDeferred(doc, 2);
+    expect(r.count).toBe(1);
+    expect(r.content).toBe(
+      "## Open Questions\n\n- [ ] A?\n- [x] B? — v1: fast; deferred to v3 (2026-10-08)\n- [x] plain\n",
+    );
   });
 });
