@@ -27,6 +27,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseManifest } from "../system/manifest.js";
+import { pluginInstallCommands } from "./pluginPin.js";
 import { applyMarker, markerPair, markerRegex } from "../util/markers.js";
 
 export const CI_WORKFLOW_MARKER = "em-ci";
@@ -54,10 +55,14 @@ export function findUnsafeCiInitArg(value: string): string | null {
 // ---- em-ci.yml (PR gates + push-triggered badge rebuild) ----
 
 /** The `skill-check` job - identical in the single-model and multi-model presets (it checks the
- *  vendored skill bundle, which is repo-wide). Ends without a trailing blank line. */
-function skillCheckJob(em: string): string {
+ *  repo-wide skill install). Runs when the repo vendors the skill bundle OR pins the em plugin in
+ *  `.claude/settings.json` (MIL-231); a plugin repo first registers the pinned plugin on the runner,
+ *  because `em skill check --ci` fails when the plugin is not registered on the machine. Ends
+ *  without a trailing blank line. */
+function skillCheckJob(em: string, emVersion: string): string {
+  const [addCmd, installCmd] = pluginInstallCommands(emVersion);
   return `  skill-check:
-    name: em skill check (vendored skill drift)
+    name: em skill check (vendored skill / plugin drift)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -65,13 +70,38 @@ function skillCheckJob(em: string): string {
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Check vendored skill matches installed em
+      - name: Register the pinned em plugin
         run: |
-          if [ -d .claude/skills/event-modeling ]; then
-            ${em} skill check
+          if grep -Eq '"em-[0-9]+-[0-9]+-[0-9]+"' .claude/settings.json 2>/dev/null; then
+            npm i -g @anthropic-ai/claude-code
+            ${addCmd}
+            ${installCmd}
           else
-            echo "no vendored skill at .claude/skills/event-modeling - skipping (run em skill install to opt in)"
+            echo "no em plugin pinned in .claude/settings.json - nothing to register"
+          fi
+      - name: Check the em skills match installed em
+        run: |
+          if [ -d .claude/skills/event-modeling ] || grep -Eq '"em-[0-9]+-[0-9]+-[0-9]+"' .claude/settings.json 2>/dev/null; then
+            ${em} skill check --ci
+          else
+            echo "no vendored skill and no em plugin pin - skipping (install the em plugin to opt in, docs/ai-workflow.md)"
           fi`;
+}
+
+/** The `codeowners-check` job (MIL-234 command, MIL-231 wiring) - multi-model presets only: a
+ *  single-model repo has no seams to route review for. One job for the whole model set. */
+function codeownersCheckJob(em: string): string {
+  return `  codeowners-check:
+    name: "em system codeowners --check (review routing current)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the generated CODEOWNERS block is current
+        run: ${em} system codeowners --check .`;
 }
 
 /** The `glossary` job - identical in both presets (it already spans every tracked `*.em`). */
@@ -191,7 +221,7 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
       - name: Check slice doc version/content agreement
         run: ${em} ledger "${model}" --from "\${{ github.event.pull_request.base.sha }}"
 
-${skillCheckJob(em)}
+${skillCheckJob(em, emVersion)}
 
   upgrade-check:
     name: "em upgrade --check (advisory - hard incompatibilities only, MIL-219)"
@@ -464,7 +494,7 @@ export function ciManagedBodyMulti(models: CiModel[], testsDir: string, emVersio
   const sorted = sortedModels(models);
   const ids = ciJobIds(sorted.map((m) => m.key));
   const perModel = sorted.map((m) => modelJobs(m, ids.get(m.key)!, testsDir, em));
-  return [...perModel, skillCheckJob(em), glossaryJob(em)].join("\n\n");
+  return [...perModel, codeownersCheckJob(em), skillCheckJob(em, emVersion), glossaryJob(em)].join("\n\n");
 }
 
 export function buildCiWorkflowFileMulti(arg: string, models: CiModel[], testsDir: string, emVersion: string): string {
@@ -477,8 +507,12 @@ export function buildCiWorkflowFileMulti(arg: string, models: CiModel[], testsDi
 /** The managed block only (no header/`on:`/`permissions:`/`jobs:` scaffolding) — what gets
  *  written between the marker pair, both for a fresh file and to patch an existing marked one
  *  in place. */
-export function conformManagedBody(model: string, emVersion: string): string {
+export function conformManagedBody(model: string, emVersion: string, usePlugin = false): string {
   const modelDir = dirname(model) === "." ? "." : dirname(model);
+  // MIL-231: a repo that declares the em plugin installs it (pinned to this em's version) and runs
+  // /em:conform; any other repo keeps the vendored bundle install and /event-modeling conform.
+  const install = usePlugin ? `${pluginInstallCommands(emVersion).join(" && ")}` : "em skill install --force";
+  const invoke = usePlugin ? "/em:conform" : "/event-modeling conform";
   return `  conform:
     runs-on: ubuntu-latest
     steps:
@@ -493,8 +527,8 @@ export function conformManagedBody(model: string, emVersion: string): string {
       - name: Run conform phase
         run: |
           npm i -g @milehimikey/em@${emVersion} @anthropic-ai/claude-code
-          em skill install --force
-          claude -p "/event-modeling conform" \\
+          ${install}
+          claude -p "${invoke}" \\
             --allowedTools "Bash(em:*),Bash(git:*),Read,Grep,Glob,Write,Edit"
         env:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
@@ -538,26 +572,26 @@ jobs:
 `;
 }
 
-export function buildConformWorkflowFile(model: string, emVersion: string): string {
+export function buildConformWorkflowFile(model: string, emVersion: string, usePlugin = false): string {
   const { start, end } = markerPair(CONFORM_WORKFLOW_MARKER, "hash");
-  return `${conformWorkflowHeader(model, emVersion)}${start}\n${conformManagedBody(model, emVersion)}\n${end}\n`;
+  return `${conformWorkflowHeader(model, emVersion)}${start}\n${conformManagedBody(model, emVersion, usePlugin)}\n${end}\n`;
 }
 
 /** Conformance for a whole system: the same single `conform` job fanned out over a matrix of
  *  model directories (`MODEL_DIR: ${{ matrix.model }}`). Directories, not models: two models in
  *  one directory share a conformance folder, so the matrix lists each directory once. */
-export function conformManagedBodyMulti(models: CiModel[], emVersion: string): string {
+export function conformManagedBodyMulti(models: CiModel[], emVersion: string, usePlugin = false): string {
   const dirs = [...new Set(models.map((m) => ciModelDir(m.path)))].sort(compareKeys);
-  const single = conformManagedBody("x/x.em", emVersion);
+  const single = conformManagedBody("x/x.em", emVersion, usePlugin);
   const strategy = `    strategy:\n      fail-fast: false\n      matrix:\n        model:\n${dirs.map((d) => `          - ${JSON.stringify(d)}`).join("\n")}\n`;
   return single
     .replace("    runs-on: ubuntu-latest\n", `    runs-on: ubuntu-latest\n${strategy}`)
     .replace(/MODEL_DIR: x$/, "MODEL_DIR: ${{ matrix.model }}");
 }
 
-export function buildConformWorkflowFileMulti(arg: string, models: CiModel[], emVersion: string): string {
+export function buildConformWorkflowFileMulti(arg: string, models: CiModel[], emVersion: string, usePlugin = false): string {
   const { start, end } = markerPair(CONFORM_WORKFLOW_MARKER, "hash");
-  return `${conformWorkflowHeader(arg, emVersion)}${start}\n${conformManagedBodyMulti(models, emVersion)}\n${end}\n`;
+  return `${conformWorkflowHeader(arg, emVersion)}${start}\n${conformManagedBodyMulti(models, emVersion, usePlugin)}\n${end}\n`;
 }
 
 // ---- Install/check plumbing, one file at a time ----

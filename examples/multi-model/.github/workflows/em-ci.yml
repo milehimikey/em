@@ -288,8 +288,8 @@ jobs:
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push
 
-  skill-check:
-    name: em skill check (vendored skill drift)
+  codeowners-check:
+    name: "em system codeowners --check (review routing current)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -297,12 +297,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Check vendored skill matches installed em
+      - name: Check the generated CODEOWNERS block is current
+        run: npx @milehimikey/em@1.13.1 system codeowners --check .
+
+  skill-check:
+    name: em skill check (vendored skill / plugin drift)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Register the pinned em plugin
         run: |
-          if [ -d .claude/skills/event-modeling ]; then
-            npx @milehimikey/em@1.13.1 skill check
+          if grep -Eq '"em-[0-9]+-[0-9]+-[0-9]+"' .claude/settings.json 2>/dev/null; then
+            npm i -g @anthropic-ai/claude-code
+            claude plugin marketplace add milehimikey/em@v1.13.1 --scope project
+            claude plugin install em@em-1-13-1 --scope project
           else
-            echo "no vendored skill at .claude/skills/event-modeling - skipping (run em skill install to opt in)"
+            echo "no em plugin pinned in .claude/settings.json - nothing to register"
+          fi
+      - name: Check the em skills match installed em
+        run: |
+          if [ -d .claude/skills/event-modeling ] || grep -Eq '"em-[0-9]+-[0-9]+-[0-9]+"' .claude/settings.json 2>/dev/null; then
+            npx @milehimikey/em@1.13.1 skill check --ci
+          else
+            echo "no vendored skill and no em plugin pin - skipping (install the em plugin to opt in, docs/ai-workflow.md)"
           fi
 
   glossary:

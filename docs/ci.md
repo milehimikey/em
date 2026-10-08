@@ -17,7 +17,7 @@ reach for `em ci init` when you just want it wired.
 
 **Multi-model (MIL-233):** `em ci init <system.yaml>` covers every model in the system manifest
 with one `em-ci.yml`: a `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`, `upgrade-check-` and
-`status-badge-<key>` job per model, plus one `skill-check` and one `glossary`, and an
+`status-badge-<key>` job per model, plus one `codeowners-check`, one `skill-check` and one `glossary`, and an
 `em-conform.yml` that fans `conform` out over a matrix of model directories (see
 [cli.md](cli.md#multi-model-form-em-ci-init-systemyaml); a worked output is committed under
 `examples/multi-model/.github/workflows/`). A managed block is identified by the set of models it
@@ -374,7 +374,20 @@ version CI just installed, add `em skill check` as its own gate instead of silen
 ```
 
 `em skill check` exits non-zero on any mismatch — a stale `em-version:` stamp, or content that
-diverges from the packaged skill even with a matching stamp (e.g. a hand-edited file). See
+diverges from the packaged skill even with a matching stamp (e.g. a hand-edited file).
+
+**The em plugin (MIL-231).** The `skill-check` job in the `em ci init` preset covers both ways of
+having the skills. It runs `em skill check --ci` when the repo vendors the bundle
+(`.claude/skills/event-modeling/`) **or** pins the plugin in `.claude/settings.json` (an
+`extraKnownMarketplaces` key `em-<major>-<minor>-<patch>`); a repo with neither skips it with a
+message. For a plugin repo the job first registers the pinned plugin on the runner (installs the
+Claude Code CLI, then the two `claude plugin` commands for the generating em version), because
+`--ci` makes "the plugin is not registered on this machine" a failure — outside CI that finding is
+only a stderr hint. The check then verifies the settings pin (key version and `ref` equal `v` + the
+em that CI runs, plugin enabled) and the registration. A pin left on an older em after an upgrade
+fails the PR with `plugin-pin-mismatch`. The scheduled conform workflow follows the same signal: a
+plugin repo installs the pinned plugin and runs `/em:conform`; any other repo keeps
+`em skill install --force` and `/event-modeling conform`. See
 [cli.md](cli.md#em-skill-check-path) for the full flag/output reference and `--json` shape.
 
 `em upgrade <model>.em --check` (MIL-219, wired by default in the `em ci init` scaffold) is the
@@ -484,8 +497,9 @@ Everything outside the markers is yours and stays byte-for-byte as it was, inclu
 [cli.md](cli.md#em-system-codeowners)). Wire it in three steps:
 
 1. **Commit the generated block**, and re-run `em system codeowners` whenever an `owner` or a
-   `consumes` changes. Add `em system codeowners --check` to CI so drift fails the PR. (The
-   generated `em ci init` workflow does not carry this job yet.)
+   `consumes` changes. `em ci init <system.yaml>` generates the CI gate for you: one PR-only
+   `codeowners-check` job running `em system codeowners --check .` (MIL-231; single-model
+   workflows have no seams, so no such job), failing the PR on a missing, stale or unmarked block.
 2. **Use handles CODEOWNERS accepts**: `@user`, `@org/team`, or an email. Teams must have write
    access to the repository, or GitHub ignores the line.
 3. **Enable branch protection** on the default branch: *Require a pull request before merging*,

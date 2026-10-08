@@ -66,6 +66,7 @@ import { buildMetricsJson } from "./emit/metricsJson.js";
 import { planSkillSyncBundle, applySkillSyncBundle } from "./cli/skillSync.js";
 import { checkSkillSyncBundle } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
+import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
 import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
@@ -2609,6 +2610,14 @@ function agentsMdMessage(result: AgentsMdResult): string {
   return `${result.path} already has an up-to-date agent-contract section`;
 }
 
+/** MIL-231: `em skill install`/`sync` keep working but the vendored bundle is deprecated in favour of
+ *  the em plugin. One stderr line naming the two-command install; the exit code is untouched. */
+function warnVendoredDeprecated(): void {
+  console.error(
+    `warn: the vendored skill bundle is deprecated since em 1.14 — install the em plugin instead: ${pluginInstallCommands(PKG_VERSION).join(" && ")}`,
+  );
+}
+
 const skill = program
   .command("skill")
   .description("manage Claude Code skills bundled with em");
@@ -2633,6 +2642,7 @@ skill
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
   )
   .action(async (opts: { force?: boolean; agentsMd?: boolean }) => {
+    warnVendoredDeprecated();
     const srcRoot = packagedSkillsRoot();
     const destRoot = vendoredSkillsRoot(process.cwd());
     const anchor = join(destRoot, EM_SKILL_ANCHOR_DIR);
@@ -2693,6 +2703,7 @@ skill
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
   )
   .action(async (path: string, opts: { agentsMd?: boolean }) => {
+    warnVendoredDeprecated();
     const packagedRoot = packagedSkillsRoot();
     const vendoredRoot = vendoredSkillsRoot(path);
 
@@ -2718,22 +2729,54 @@ skill
 skill
   .command("check")
   .description(
-    "check the vendored .claude/skills/ event-modeling skill bundle in [path] for drift against " +
-      "the installed em package; exits non-zero on any mismatch (CI-ready, MIL-93)",
+    "check [path]'s em skills for drift against the installed em package: the em Claude Code plugin's " +
+      "pin (settings + this machine's marketplace registry) when the repo declares it, and the vendored " +
+      ".claude/skills/ bundle when present; exits non-zero on any mismatch (CI-ready, MIL-93, MIL-231)",
   )
   .argument("[path]", "consumer repo root", ".")
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
-  .action((path: string, opts: { json?: boolean }) => {
+  .option(
+    "--ci",
+    "also fail (exit 1) when the declared plugin is not registered on this machine (implied by CI=true in the environment); " +
+      "without it that finding prints the install commands on stderr and exits 0",
+  )
+  .action((path: string, opts: { json?: boolean; ci?: boolean }) => {
     const packagedRoot = packagedSkillsRoot();
     const vendoredRoot = vendoredSkillsRoot(path);
+    const ciMode = !!opts.ci || process.env.CI === "true";
 
-    const result = checkSkillSyncBundle(packagedRoot, vendoredRoot, PKG_VERSION, EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES);
+    // MIL-231: the plugin signal (a pinned marketplace in .claude/settings*.json) sits beside the
+    // vendored signal (the anchor directory). Plugin only -> only the plugin is checked; vendored
+    // only -> exactly the pre-1.14 behavior; both -> both; neither -> skill-check-not-installed.
+    const pluginCheck = checkPlugin(resolve(path), PKG_VERSION, claudePluginsDir());
+    const vendoredPresent = existsSync(join(vendoredRoot, EM_SKILL_ANCHOR_DIR));
+    const vendored =
+      pluginCheck && !vendoredPresent
+        ? { findings: [], ok: true }
+        : checkSkillSyncBundle(packagedRoot, vendoredRoot, PKG_VERSION, EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES);
+    const findings = [...vendored.findings, ...(pluginCheck?.findings ?? [])];
+    const failing = findings.filter((f) => f.code !== "plugin-not-installed-locally" || ciMode);
+    const ok = failing.length === 0;
+    const result = { findings, ok };
 
     if (opts.json) {
-      process.stdout.write(buildSkillCheckJson(result, vendoredRoot, PKG_VERSION) + "\n");
+      process.stdout.write(buildSkillCheckJson(result, vendoredRoot, PKG_VERSION, pluginCheck?.plugin ?? null) + "\n");
     } else {
-      for (const f of result.findings) console.log(f.message);
-      console.log(result.ok ? `ok — vendored skill matches em ${PKG_VERSION}` : `${result.findings.length} mismatch(es)`);
+      for (const f of findings) {
+        if (f.code === "plugin-not-installed-locally" && !ciMode) console.error(f.message);
+        else console.log(f.message);
+      }
+      if (!ok) console.log(`${failing.length} mismatch(es)`);
+      else {
+        if (!pluginCheck || vendoredPresent) console.log(`ok — vendored skill matches em ${PKG_VERSION}`);
+        if (pluginCheck) {
+          const unregistered = findings.some((f) => f.code === "plugin-not-installed-locally");
+          console.log(
+            `ok — em plugin ${pluginCheck.plugin.name} (${pluginCheck.plugin.ref}) matches em ${PKG_VERSION}` +
+              (unregistered ? " (not registered on this machine - see the install commands on stderr)" : ""),
+          );
+        }
+      }
     }
 
     // MIL-219 ruling A: `em skill check` also warns when [path]'s own state file records an
@@ -2751,7 +2794,7 @@ skill
 
     // Set the code rather than process.exit(): same rationale as em ledger/em diff — stdout to
     // a pipe (a --json document) shouldn't risk truncation.
-    if (!result.ok) process.exitCode = 1;
+    if (!ok) process.exitCode = 1;
   });
 
 const ci = program.command("ci").description("scaffold/check the CI enforcement preset (MIL-166, see docs/ci.md)");
@@ -2783,6 +2826,9 @@ ci.command("init")
     const repoRoot = process.cwd();
     const ciPath = ciWorkflowPath(repoRoot);
     const conformPath = conformWorkflowPath(repoRoot);
+    // MIL-231: a repo that declares the em plugin gets a conform workflow that installs the plugin
+    // and runs /em:conform; any other repo keeps the vendored install lines.
+    const usePlugin = detectPlugin(repoRoot) !== null;
 
     // MIL-233: a system manifest (a .yaml/.yml file, or a directory) covers every model in it;
     // anything else is the single-model form, unchanged.
@@ -2811,8 +2857,8 @@ ci.command("init")
           conformPath,
           planCiFile(
             conformPath,
-            buildConformWorkflowFileMulti(model, loaded.models, PKG_VERSION),
-            conformManagedBodyMulti(loaded.models, PKG_VERSION),
+            buildConformWorkflowFileMulti(model, loaded.models, PKG_VERSION, usePlugin),
+            conformManagedBodyMulti(loaded.models, PKG_VERSION, usePlugin),
             CONFORM_WORKFLOW_MARKER,
             !!opts.force,
             true,
@@ -2835,8 +2881,8 @@ ci.command("init")
           conformPath,
           planCiFile(
             conformPath,
-            buildConformWorkflowFile(model, PKG_VERSION),
-            conformManagedBody(model, PKG_VERSION),
+            buildConformWorkflowFile(model, PKG_VERSION, usePlugin),
+            conformManagedBody(model, PKG_VERSION, usePlugin),
             CONFORM_WORKFLOW_MARKER,
             !!opts.force,
           ),

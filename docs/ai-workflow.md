@@ -46,6 +46,18 @@ The skills are namespaced by the plugin: `/em:event-modeling` (the router), `/em
 em repo is generated from `.claude/skills/` by `scripts/build-plugin.ts` (`npm run docs:generate`);
 CI fails on drift. Its shared references resolve through `${CLAUDE_PLUGIN_ROOT}`.
 
+### What `em skill check` verifies for a plugin repo
+
+`em skill check` (and the `skill-check` job in the [CI preset](ci.md)) recognises a repo that
+pins the plugin and checks it two ways (MIL-231): the committed settings must pin the marketplace
+and `ref` of the em release you run, with `em@<name>` enabled (`plugin-pin-mismatch`,
+`plugin-not-enabled`), **and** this machine must have that same marketplace registered at that
+ref (`plugin-registered-at-different-ref`, `plugin-not-installed-locally`). The second half exists
+because registration is per user: settings alone cannot prove which content the agent runs. A
+missing local registration prints the two install commands above and exits 0 on a dev machine; it
+exits 1 under `--ci` / `CI=true`. The registry location follows `EM_CLAUDE_PLUGINS_DIR` (default
+`~/.claude/plugins`). Full finding table: [cli.md](cli.md#em-skill-check-path).
+
 ## Vendored skills (deprecated in 1.14, removed in a later major)
 
 The original route copies the bundle into the repo instead:

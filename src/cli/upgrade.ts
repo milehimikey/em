@@ -33,6 +33,7 @@ import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.j
 import { planMigration, verifyMigration, MigrationPlan } from "./migrateReactionShape.js";
 import { planSkillSyncBundle, applySkillSyncBundle } from "./skillSync.js";
 import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR } from "./skillDirs.js";
+import { detectPlugin } from "./pluginPin.js";
 import {
   ciWorkflowPath,
   conformWorkflowPath,
@@ -106,6 +107,8 @@ function vendoredSkillsRootOf(repoRoot: string): string {
 function detectSkillBundle(ctx: UpgradeContext): StepDetection {
   const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
   if (!existsSync(join(vendoredRoot, EM_SKILL_ANCHOR_DIR))) {
+    // MIL-231: the plugin signal beside the vendored one.
+    if (detectPlugin(ctx.repoRoot)) return { applicable: false, reason: "plugin repo — nothing to sync" };
     return { applicable: false, reason: "no vendored skill bundle installed at .claude/skills/ — run `em skill install` first if you want one" };
   }
   const bundlePlan = planSkillSyncBundle(ctx.packagedSkillsRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
@@ -255,15 +258,17 @@ function extractCiInitArgs(emCiContent: string, repoRoot: string): CiInitArgsRes
 }
 
 function ciBlockFiles(args: CiInitArgs, ctx: UpgradeContext): { ci: [string, string]; conform: [string, string] } {
+  // MIL-231: same plugin signal `em ci init` uses, so the two never disagree about the conform lines.
+  const usePlugin = detectPlugin(ctx.repoRoot) !== null;
   if (args.models) {
     return {
       ci: [buildCiWorkflowFileMulti(SYSTEM_MANIFEST_ARG, args.models, args.testsDir, ctx.installedVersion), ciManagedBodyMulti(args.models, args.testsDir, ctx.installedVersion)],
-      conform: [buildConformWorkflowFileMulti(SYSTEM_MANIFEST_ARG, args.models, ctx.installedVersion), conformManagedBodyMulti(args.models, ctx.installedVersion)],
+      conform: [buildConformWorkflowFileMulti(SYSTEM_MANIFEST_ARG, args.models, ctx.installedVersion, usePlugin), conformManagedBodyMulti(args.models, ctx.installedVersion, usePlugin)],
     };
   }
   return {
     ci: [buildCiWorkflowFile(args.model, args.testsDir, ctx.installedVersion), ciManagedBody(args.model, args.testsDir, ctx.installedVersion)],
-    conform: [buildConformWorkflowFile(args.model, ctx.installedVersion), conformManagedBody(args.model, ctx.installedVersion)],
+    conform: [buildConformWorkflowFile(args.model, ctx.installedVersion, usePlugin), conformManagedBody(args.model, ctx.installedVersion, usePlugin)],
   };
 }
 

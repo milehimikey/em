@@ -1654,7 +1654,7 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
     const r = em(["skill", "check", target, "--json"], ROOT);
     expect(r.status).toBe(1);
     const doc = JSON.parse(r.stdout);
-    expect(doc.skillCheckSchemaVersion).toBe("1.0");
+    expect(doc.skillCheckSchemaVersion).toBe("1.1");
     expect(doc.ok).toBe(false);
     expect(doc.findings.map((f: { code: string }) => f.code).sort()).toEqual([
       "skill-check-content-drift",

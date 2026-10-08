@@ -257,6 +257,9 @@ const generatedFiles: Array<[string, string]> = [
   // MIL-233: the multi-model output goes through every lint below too.
   ["em-ci.yml (multi-model)", buildCiWorkflowFileMulti("system.yaml", SYSTEM_MODELS, "test", "1.13.0")],
   ["em-conform.yml (multi-model)", buildConformWorkflowFileMulti("system.yaml", SYSTEM_MODELS, "1.13.0")],
+  // MIL-231: the plugin variants go through every lint below too.
+  ["em-conform.yml (plugin)", buildConformWorkflowFile("orders/orders.em", "1.14.0", true)],
+  ["em-conform.yml (multi-model, plugin)", buildConformWorkflowFileMulti("system.yaml", SYSTEM_MODELS, "1.14.0", true)],
 ];
 
 describe("generated workflows are lint-clean (MIL-256, #173)", () => {
@@ -460,6 +463,7 @@ describe("multi-model workflow generation (MIL-233, #174)", () => {
   it("emits per-model jobs for every model and shared glossary/skill-check once, in key order", () => {
     expect(Object.keys(doc.jobs)).toEqual([
       ...["checkout", "fulfillment"].flatMap((k) => ["validate", "api-check", "slice-index", "coverage", "ledger", "upgrade-check", "status-badge"].map((j) => `${j}-${k}`)),
+      "codeowners-check",
       "skill-check",
       "glossary",
     ]);
@@ -670,5 +674,85 @@ describe("examples/multi-model workflows (MIL-233)", () => {
   it("covers both models of the example", () => {
     const ciFile = readFileSync(join(exampleDir, ".github", "workflows", "em-ci.yml"), "utf8");
     expect(managedBlockModels(CI_WORKFLOW_MARKER, ciFile)).toEqual(["models/checkout/checkout.em", "models/fulfillment/fulfillment.em"]);
+  });
+});
+
+// ---- MIL-231: plugin-aware skill-check job, conform workflow, codeowners-check ----
+
+describe("plugin-aware presets (MIL-231)", () => {
+  const SKILL_JOB_STEP = "npx @milehimikey/em@1.14.0 skill check --ci";
+  const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+  const CLI = join(ROOT, "src", "cli.ts");
+
+  it("the skill-check job runs `skill check --ci` for a vendored bundle OR a pinned plugin, and registers the pinned plugin first", () => {
+    for (const content of [
+      buildCiWorkflowFile("orders/orders.em", "test", "1.14.0"),
+      buildCiWorkflowFileMulti("system.yaml", SYSTEM_MODELS, "test", "1.14.0"),
+    ]) {
+      const doc = parseYaml(content) as { jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }> };
+      const steps = doc.jobs["skill-check"].steps;
+      const check = steps.find((s) => s.name === "Check the em skills match installed em")!.run!;
+      expect(check).toContain("[ -d .claude/skills/event-modeling ]");
+      expect(check).toContain(".claude/settings.json");
+      expect(check).toContain(SKILL_JOB_STEP);
+      const register = steps.find((s) => s.name === "Register the pinned em plugin")!.run!;
+      expect(register).toContain("claude plugin marketplace add milehimikey/em@v1.14.0 --scope project");
+      expect(register).toContain("claude plugin install em@em-1-14-0 --scope project");
+    }
+  });
+
+  it("the conform workflow uses the plugin when declared, the vendored bundle otherwise", () => {
+    const plugin = conformManagedBody("orders/orders.em", "1.14.0", true);
+    expect(plugin).toContain(
+      "claude plugin marketplace add milehimikey/em@v1.14.0 --scope project && claude plugin install em@em-1-14-0 --scope project",
+    );
+    expect(plugin).toContain('claude -p "/em:conform"');
+    expect(plugin).not.toContain("em skill install");
+    expect(plugin).not.toContain("/event-modeling");
+    const vendored = conformManagedBody("orders/orders.em", "1.14.0");
+    expect(vendored).toContain("em skill install --force");
+    expect(vendored).toContain('claude -p "/event-modeling conform"');
+    expect(vendored).not.toContain("claude plugin");
+    expect(conformManagedBody("orders/orders.em", "1.14.0", false)).toBe(vendored);
+    // multi-model: same swap inside the matrix job
+    expect(conformManagedBodyMulti(SYSTEM_MODELS, "1.14.0", true)).toContain('claude -p "/em:conform"');
+    expect(conformManagedBodyMulti(SYSTEM_MODELS, "1.14.0")).toContain('claude -p "/event-modeling conform"');
+  });
+
+  it("the multi-model block carries one codeowners-check job; the single-model block has none", () => {
+    const multi = parseYaml(buildCiWorkflowFileMulti("system.yaml", SYSTEM_MODELS, "test", "1.14.0")) as {
+      jobs: Record<string, { if: string; steps: Array<{ run?: string }> }>;
+    };
+    expect(Object.keys(multi.jobs).filter((j) => j.startsWith("codeowners-check"))).toEqual(["codeowners-check"]);
+    expect(multi.jobs["codeowners-check"].if).toBe("github.event_name == 'pull_request'");
+    expect(multi.jobs["codeowners-check"].steps.map((s) => s.run ?? "").join("\n")).toContain(
+      "npx @milehimikey/em@1.14.0 system codeowners --check .",
+    );
+    expect(buildCiWorkflowFile("orders/orders.em", "test", "1.14.0")).not.toContain("codeowners");
+  });
+
+  it("`em ci init` generates the plugin conform workflow in a repo that pins the plugin, the vendored one otherwise", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-ci-plugin-"));
+    try {
+      writeFileSync(join(dir, "model.em"), 'model "M"\n', "utf8");
+      const vendored = spawnSync(process.execPath, [TSX, CLI, "ci", "init", "model.em"], { cwd: dir, encoding: "utf8" });
+      expect(vendored.status).toBe(0);
+      expect(readFileSync(join(dir, ".github/workflows/em-conform.yml"), "utf8")).toContain('claude -p "/event-modeling conform"');
+      rmSync(join(dir, ".github"), { recursive: true });
+
+      mkdirSync(join(dir, ".claude"), { recursive: true });
+      writeFileSync(
+        join(dir, ".claude/settings.json"),
+        JSON.stringify({ extraKnownMarketplaces: { "em-1-13-1": { source: { source: "github", repo: "milehimikey/em", ref: "v1.13.1" } } } }),
+      );
+      const plugin = spawnSync(process.execPath, [TSX, CLI, "ci", "init", "model.em"], { cwd: dir, encoding: "utf8" });
+      expect(plugin.status).toBe(0);
+      const conform = readFileSync(join(dir, ".github/workflows/em-conform.yml"), "utf8");
+      expect(conform).toContain('claude -p "/em:conform"');
+      expect(conform).toContain("claude plugin install em@em-");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

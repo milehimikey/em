@@ -4,11 +4,16 @@
 // (ledgerJson.ts, diffJson.ts, glossaryJson.ts): a schema field versioned independently of
 // both the npm package and every other command's own schema.
 
+import type { PluginDeclaration } from "../cli/pluginPin.js";
 import { SkillCheckFinding, SkillCheckResult } from "../cli/skillCheck.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0: initial shape (MIL-93).
-export const SKILL_CHECK_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-231): top-level `plugin` ({declared, name, ref, enabled}, null when the repo does not
+//     declare the em plugin); findings gain pluginName / pluginRef / installCommands (null when
+//     unused by `code`); new finding codes plugin-pin-mismatch, plugin-not-enabled,
+//     plugin-registered-at-different-ref, plugin-not-installed-locally.
+export const SKILL_CHECK_SCHEMA_VERSION = "1.1";
 
 /**
  * `SkillCheckFinding` with every optional field widened to an explicit `null`. Mapped off
@@ -28,17 +33,26 @@ function serializeFinding(f: SkillCheckFinding): SerializedFinding {
     vendoredStamp: f.vendoredStamp ?? null,
     installedVersion: f.installedVersion ?? null,
     driftedFiles: f.driftedFiles ?? null,
+    pluginName: f.pluginName ?? null,
+    pluginRef: f.pluginRef ?? null,
+    installCommands: f.installCommands ?? null,
   };
 }
 
 /** Build the `em skill check --json` document. Pretty-printed (2-space), no trailing newline —
  *  the caller adds it, same convention as buildLedgerJson/buildDiffJson/buildGlossaryJson. */
-export function buildSkillCheckJson(result: SkillCheckResult, vendoredDir: string, installedVersion: string): string {
+export function buildSkillCheckJson(
+  result: SkillCheckResult,
+  vendoredDir: string,
+  installedVersion: string,
+  plugin: PluginDeclaration | null = null,
+): string {
   const doc = {
     skillCheckSchemaVersion: SKILL_CHECK_SCHEMA_VERSION,
     generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
     vendoredDir,
     installedVersion,
+    plugin: plugin ? { declared: true, name: plugin.name, ref: plugin.ref, enabled: plugin.enabled } : null,
     findings: result.findings.map(serializeFinding),
     ok: result.ok,
   };

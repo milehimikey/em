@@ -21,7 +21,12 @@ export type SkillCheckFindingCode =
   | "skill-check-not-installed"
   | "skill-check-stamp-missing"
   | "skill-check-stamp-mismatch"
-  | "skill-check-content-drift";
+  | "skill-check-content-drift"
+  // MIL-231: the em Claude Code plugin (src/cli/pluginPin.ts).
+  | "plugin-pin-mismatch"
+  | "plugin-not-enabled"
+  | "plugin-registered-at-different-ref"
+  | "plugin-not-installed-locally";
 
 export interface SkillCheckFinding {
   code: SkillCheckFindingCode;
@@ -29,6 +34,13 @@ export interface SkillCheckFinding {
   vendoredStamp?: string | null;
   installedVersion?: string;
   driftedFiles?: string[];
+  /** Plugin findings only (MIL-231): the marketplace name the repo's settings declare. */
+  pluginName?: string;
+  /** Plugin findings only: the `source.ref` the settings (or, for `plugin-registered-at-different-ref`,
+   *  the machine registry) carry. */
+  pluginRef?: string | null;
+  /** Plugin findings only: the commands that fix it (the two-command install snippet). */
+  installCommands?: string[];
 }
 
 export interface SkillCheckResult {

@@ -29,7 +29,7 @@
 | `em mcp` | Start an MCP server over stdio, exposing structured model access as tools (also available as the `em-mcp` bin) |
 | `em skill install` | Copy the bundled Claude Code skill into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
-| `em skill check [path]` | Check a vendored skill copy for drift against the installed em package; exits non-zero on mismatch |
+| `em skill check [path]` | Check the em plugin pin (settings + this machine) and/or a vendored skill copy against the installed em package; exits non-zero on mismatch |
 | `em ci init <model>` | Install the CI enforcement preset — two GitHub Actions workflow files, marker-managed and idempotent |
 | `em upgrade <file>` | Bring a model repo authored under an older em (1.6 forward) up to the installed version: mechanical steps + a human list |
 
@@ -3744,6 +3744,11 @@ Copies the bundled event-modeling Claude Code skill bundle out of the npm packag
 command installs the whole bundle. Prints a reminder to run `/event-modeling` in Claude Code
 afterwards. See [ai-workflow.md](ai-workflow.md).
 
+**Deprecated since em 1.14 (MIL-231):** the vendored bundle is superseded by the em Claude Code
+plugin ([ai-workflow.md](ai-workflow.md#the-plugin-route)). `em skill install` and `em skill sync`
+still work exactly as before (same output, same exit code) and print one line on stderr:
+`warn: the vendored skill bundle is deprecated since em 1.14 — install the em plugin instead: claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project`.
+
 By default, also writes/updates the `AGENTS.md` agent-contract section (see "Working with an
 AI agent" below, MIL-129) — pass `--no-agents-md` to skip that. This happens even when the
 skill is already installed (checked via the `event-modeling` router directory) and `-f`/
@@ -3812,10 +3817,35 @@ an AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
 
 ## `em skill check [path]`
 
-Checks every directory in `[path]/.claude/skills/` that belongs to the em skill bundle for
-drift against the bundle shipped with the installed `em`, without changing anything — the
-CI-gate counterpart to `sync`. Two independent signals are checked and reported together (never
-short-circuited on the first), per directory:
+Checks `[path]`'s em skills against the installed `em`, without changing anything — the
+CI-gate counterpart to `sync`. What is checked depends on what the repo declares (MIL-231):
+
+| Repo has | Checked |
+|---|---|
+| the plugin only (a `.claude/settings.json` / `settings.local.json` `extraKnownMarketplaces` key matching `em-<major>-<minor>-<patch>` with `source` = github `milehimikey/em`) | the plugin pin, below |
+| a vendored `.claude/skills/event-modeling/` only | the vendored bundle, below (unchanged) |
+| both | both, findings reported together |
+| neither | `skill-check-not-installed` (exit 1), unchanged |
+
+**Plugin pin (two parts).** (a) The settings declaration: the marketplace key's version and
+`source.ref` must equal `v` + the installed em version, and `enabledPlugins["em@<name>"]` must be
+`true`. (b) The machine registration: `known_marketplaces.json` under the Claude plugins directory
+(`EM_CLAUDE_PLUGINS_DIR`, default `~/.claude/plugins`) must hold that name at the same ref — a
+marketplace registration is per user and keyed by name, so settings alone cannot prove which
+content the agent runs. Findings:
+
+| Code | Meaning | Exit |
+|---|---|---|
+| `plugin-pin-mismatch` | the settings key version or `source.ref` is not the installed em's (`v<ver>`) | 1 |
+| `plugin-not-enabled` | `enabledPlugins["em@<name>"]` is not `true` | 1 |
+| `plugin-registered-at-different-ref` | the machine holds the marketplace name at another ref (the agent would run the wrong skills) | 1 |
+| `plugin-not-installed-locally` | the machine registry has no entry for the name; prints the two install commands (`claude plugin marketplace add milehimikey/em@v<ver> --scope project`, then `claude plugin install em@em-<ver-dashed> --scope project`) | 0 with the commands on stderr; **1 with `--ci` or `CI=true`** |
+
+(b) is only checked once (a) passes: a wrong pin is reported once, not twice.
+
+**Vendored bundle.** Checks every directory in `[path]/.claude/skills/` that belongs to the em
+skill bundle for drift against the bundle shipped with the installed `em`. Two independent
+signals are checked and reported together (never short-circuited on the first), per directory:
 
 - for each of the five phase skills plus the router (each with its own `SKILL.md`): the
   vendored `SKILL.md`'s `em-version:` frontmatter stamp vs. the installed `em`'s own version
@@ -3830,6 +3860,7 @@ it concerns. `[path]` defaults to the current directory, same convention as `syn
 | Flag | Effect |
 |---|---|
 | `--json` | Print a JSON document instead of the text report |
+| `--ci` | Also exit 1 on `plugin-not-installed-locally` (implied by `CI=true` in the environment) |
 
 ```
 $ em skill check
@@ -3845,17 +3876,19 @@ advisory `em status`'s `emVersion` field carries, best-effort (a missing or unpa
 file is silently skipped, since that's `em upgrade`'s own hard-incompatibility case to report,
 not this command's).
 
-or `ok — vendored skill matches em <version>` when everything agrees. Every finding is a
+or `ok — vendored skill matches em <version>` / `ok — em plugin <name> (<ref>) matches em <version>`
+when everything agrees. Every finding is a
 defect once you've opted into running this command — `em skill check` exits 1 on any mismatch,
 same no-opt-in-flag-needed convention as `em ledger`.
 
-**`--json` shape** (`skillCheckSchemaVersion: "1.0"`, versioned independently of the npm
-package and every other command's own schema):
+**`--json` shape** (`skillCheckSchemaVersion: "1.1"`, versioned independently of the npm
+package and every other command's own schema; 1.1 added `plugin` and the plugin finding fields):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
 - `vendoredDir` — `[path]/.claude/skills`, the root the whole bundle was checked under.
 - `installedVersion` — the installed `em`'s own version (`em --version`).
-- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles }[]` across every
+- `plugin` — `{ declared: true, name, ref, enabled }` when the repo declares the plugin, else `null`.
+- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles, pluginName, pluginRef, installCommands }[]` across every
   bundle directory, `message` and `driftedFiles` prefixed with `[<directory>]`/`<directory>/`
   respectively so a finding always names which part of the bundle it's about. Every key is
   always present (explicit `null` when unused by `code`, so a consumer can destructure without
@@ -3865,8 +3898,11 @@ package and every other command's own schema):
   `SKILL.md` has no `em-version:` stamp), `skill-check-stamp-mismatch` (stamp present but
   doesn't match the installed version — `vendoredStamp`/`installedVersion` non-null), or
   `skill-check-content-drift` (one or more files in that directory differ by hash from the
-  packaged skill — `driftedFiles` non-null, sorted).
-- `ok` — `true` iff `findings` is empty.
+  packaged skill — `driftedFiles` non-null, sorted), or one of the four plugin codes above
+  (`pluginName`/`pluginRef` non-null; `installCommands` is the two-command snippet when it
+  applies, else `null`).
+- `ok` — `true` iff the command exits 0: `findings` is empty, or holds only a
+  `plugin-not-installed-locally` outside `--ci`.
 
 ## `em ci init <model>`
 
@@ -3879,7 +3915,7 @@ gets them by running one command instead of copy-pasting YAML (MIL-166):
 
 | File | Triggers | Jobs |
 |---|---|---|
-| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check`, `glossary` — all PR merge gates; `upgrade-check` — advisory, fails only on a hard incompatibility (MIL-219); `status-badge` — push-triggered, publish-only, never a gate |
+| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check` (vendored bundle or pinned plugin, MIL-231), `glossary` — all PR merge gates; `upgrade-check` — advisory, fails only on a hard incompatibility (MIL-219); `status-badge` — push-triggered, publish-only, never a gate |
 | `em-conform.yml` | `schedule` (weekly), `workflow_dispatch` | `conform` — advisory only, see [ci.md#conformance-cadence-advisory](ci.md#conformance-cadence-advisory) |
 
 `<model>` is the anchor `.em` file the `slice index`/`coverage`/`ledger`/`status-badge` steps
@@ -3935,7 +3971,7 @@ Pass the system manifest ([`em system`](#em-system-manifest)) or the directory h
 `em-ci.yml` is generated whose single `GENERATED:em-ci` block carries, **per model key**,
 `validate-<key>` (only that model directory's changed `*.em`), `api-check-<key>`, `slice-index-<key>`,
 `coverage-<key>`, `ledger-<key>`, `upgrade-check-<key>` and `status-badge-<key>` (push-only; it
-writes `<modelDir>/status-badge.svg`), and **once** `skill-check` and `glossary` (which already
+writes `<modelDir>/status-badge.svg`), and **once** `codeowners-check` (`em system codeowners --check .`, PR-only, MIL-231), `skill-check` and `glossary` (which already
 spans every tracked `*.em`). `<key>` is the manifest key; a `~2` collision key becomes `-2` in
 the job id (and gets a numeric suffix if that still collides), so every id is a valid Actions id.
 Models are emitted in key order, so reordering the manifest is not drift. `em-conform.yml`
