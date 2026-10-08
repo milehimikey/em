@@ -2553,10 +2553,14 @@ what a `note "slices/<key>.md"` binding needs to match. Writes exactly the 5 fro
 `status: draft` — `schemaVersion`, `pattern`, `swimlane`, `status`, `version` — no more: no
 `implementedIn` (only required once a slice has ever reached `implemented`), no lineage keys
 (`split-from`/`merged-from`/`superseded-by` only apply to a split/merge/rename doc), no
-commented-out guidance. Body is just the `# Slice: <name>` heading and the diagram-image stub;
-every judgment section (Intent, Command, Scenarios, Open Questions, ...) is deliberately left
-for hand-authoring, matching `templates/slice.md` — this command mechanizes only the part that
-was silently drifting when hand-typed (a placeholder left unedited, a key forgotten).
+commented-out guidance. The body (MIL-266) is the `# Slice: <name>` heading, the diagram-image
+stub, then every `templates/slice.md` section in template order (`## Delta` excepted — a
+version-1 doc has none). The **generated regions** — command/event/view field tables and the
+Invariants list, each between `<!-- GENERATED:em-slice-…:start/end -->` markers — are filled from
+the model when `--wire` names it, and carry the template's placeholders otherwise (`em slice
+sync` fills them once the doc is bound). The **authored** sections (Intent, Trigger & Actor,
+Scenarios, Open Questions, ...) carry the template's placeholder bullets and stay hand-written.
+See [slice-doc-schema.md](slice-doc-schema.md#generated-regions-and-authored-sections).
 
 `--pattern` and `--swimlane` are both required — no placeholder fallback on omission, since a
 guessed default would reintroduce the exact drift this command exists to kill. `--pattern` is
@@ -2638,6 +2642,44 @@ paste by hand.
 | `slice "<name>" has N <kind> elements — ambiguous, wire the note by hand` | More than one candidate — which one is genuine judgment |
 | `slice "<name>" is a later instance of "<view>" (again) — it has no doc of its own; the doc lives at slices/<originating-key>.md (slice "<originating-key>")` | (MIL-208) The sole `view` candidate is `again` — this slice is a **continuation** of the view's originating slice, which has the real doc; wire/ratify that slice instead |
 | `this line already has a note clause — edit it by hand instead` | The primary element is already wired (or has a conflicting `note`) |
+
+## `em slice sync <file> [<key>]`
+
+Regenerates the **generated regions** of existing slice docs in place from the model (MIL-266):
+each command's, event's and read model's field table and the slice's Invariants list (see
+[slice-doc-schema.md](slice-doc-schema.md#generated-regions-and-authored-sections)). Run it after
+any model edit. Only the text strictly between a region's two marker lines changes; every
+authored byte stays as it was, and the doc's own line ending (LF or CRLF) is kept. With `<key>`,
+only the doc that slice resolves to is synced. Docs are found through the same note binding `em
+export` uses; a doc bound to several slices (`covers:`, continuations) gets the union of their
+elements.
+
+| Doc state | Text output | `--check` |
+|---|---|---|
+| every region current | `ok: <path>` | `ok: <path>` |
+| a region differs from the model | `synced: <path> (<regions>)` | `stale: <path> (<regions>)`, exit 1 |
+| no `em-slice-*` marker at all (e.g. a pre-1.14 doc) | stderr `note: <path> has no generated regions — re-create with em slice new --force to adopt them` | `no-regions: <path>` |
+| unbalanced markers | stderr `malformed: <path> (<problem>) — nothing in it was rewritten`, exit 1 | same |
+
+A region the doc has but the model no longer needs (an element renamed or removed) is left
+untouched with a `note:`; a region the model needs but the doc lacks is not inserted (that would
+be an edit outside the markers) — add its marker pair, or re-create the doc with `em slice new
+--force`. Refuses a model with errors (`em slice sync: not syncing — fix the errors in <file>
+above`), an unknown key (`em slice sync: no slice with export key "<key>" in this model`) and an
+unbound one (`em slice sync: slice "<key>" has no doc bound via \`note "slices/<key>.md"\` —
+nothing to sync`).
+
+| Flag | Effect |
+|---|---|
+| `--check` | Never writes; exit 1 when any doc is stale (or malformed) — a CI drift check |
+| `--json` | `{ sliceSyncSchemaVersion: "1.0", generator, file, docs: [{ key, path, status, regions: [{ name, status }] }] }`; doc status `ok`/`stale`/`synced`/`no-regions`/`malformed`, region status `ok`/`stale`/`synced`/`missing`/`orphan`. The MCP `slice_sync` tool returns the `--check --json` document (it never writes) |
+
+```bash
+em slice sync model.em --check
+# -> stale: slices/checkout.md (em-slice-command)
+em slice sync model.em
+# -> synced: slices/checkout.md (em-slice-command)
+```
 
 ## `em slice stub-all <file>`
 

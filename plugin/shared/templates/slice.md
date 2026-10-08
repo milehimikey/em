@@ -37,9 +37,10 @@ to write up. Delete it otherwise; most docs never carry it. Requires a matching
 bind anything. Plain slice keys, comma-separated — not the `<slice-key>@v<N>` ref grammar above.
 
 `ratifiedBy`/`ratifiedOn` record who ratified this doc's current `status`/`version`, and when —
-don't hand-fill these; run `em slice ratify <model>.em {{this-slice-name}} --by "<name>"` at the
+don't hand-fill these; run `em slice ratify <model> <key> --by <name>` at the
 handoff gate instead (docs/process.md#what-ratified-means), which flips `status` to
 `ready-to-implement` and writes both in one edit.
+public-touching slice: add --meaning-unchanged, or --contract-change "<why>"; run em api generate first.
 
 `owner`/`tracking` are optional and, unlike `ratifiedBy`/`ratifiedOn`, hand-filled — no `em`
 command writes either. `owner` is free text naming who (a person or team) holds this slice;
@@ -122,13 +123,18 @@ state we react to). Either way, name the command this reaction triggers — reac
 an event directly.}}
 
 ## Command / Input
-<!-- For State Change, and the command half of an Automation or Translation (reactions trigger a
-     command in this same slice). Omit for pure State View slices. -->
+<!-- GENERATED region (MIL-266): the table between the markers is written from the model —
+     `em slice new` fills it, `em slice sync <model>.em` refreshes it after any model edit. Never
+     hand-edit inside the markers: change the `.em` and re-run `em slice sync`. Required = `no`
+     for a field written `name?: Type`. A slice with several commands gets one region per command
+     (`em-slice-command-<command-slug>`); a pure State View slice's region says it has none. -->
+<!-- GENERATED:em-slice-command:start — generated from the model by `em slice sync`; do not hand-edit -->
 **Command:** `{{Command Name}}`
 
 | Field | Type | Required | Rules / Validation |
 |-------|------|----------|--------------------|
 | {{field}} | {{Type}} | {{yes/no}} | {{constraints, formats, ranges}} |
+<!-- GENERATED:em-slice-command:end -->
 
 ## Trigger
 <!-- What issues this slice's command. Required: a command nothing points at is a write nobody
@@ -137,69 +143,82 @@ an event directly.}}
 **Triggered by:** {{screen `X` @Persona | processor `Y`, also in this slice}}
 
 ## Event(s) Emitted
-<!-- The immutable facts recorded. List each event and its payload. -->
+<!-- The immutable facts recorded. The marker line and payload table are a GENERATED region (one
+     per event; `em-slice-event-<event-slug>` when the slice records several): Source / Notes
+     names the command field a value is copied from, `assigned` for a system-assigned field, or
+     `{{ }}` where the model cannot tell. `**Read by:**` below the region is authored. -->
+<!-- GENERATED:em-slice-event:start — generated from the model by `em slice sync`; do not hand-edit -->
 **Event:** `{{Event Name}}` → context `{{Context}}`
+
+| Field | Type | Immutable Fact? | Source / Notes |
+|-------|------|-----------------|----------------|
+| {{field}} | {{Type}} | {{yes/no}} | {{where the value comes from}} |
+<!-- GENERATED:em-slice-event:end -->
 **Read by:** {{which read model projects this event, and in which slice}}
 <!-- Required, not optional. Every event must be read by a read model — an event nothing
      projects is a write nobody can see, and `em validate` warns on it. A reaction consuming
      it does NOT count: reactions read views, not events. If the honest answer is "nothing
      reads it", that's a question for the business, not a field to leave blank. -->
 
-| Field | Type | Immutable Fact? | Source / Notes |
-|-------|------|-----------------|----------------|
-| {{field}} | {{Type}} | {{yes/no}} | {{where the value comes from}} |
-
 ## Read Model / View
-<!-- For State View slices, and any read model this slice produces or feeds. -->
+<!-- For State View slices, and any read model this slice produces or feeds. The `- **View:**`
+     line and field table are a GENERATED region (one per read model; `em-slice-view-<view-slug>`
+     when there are several): Source / Notes names the source event a field is copied from, or
+     `Derived` for a field marked `derived` in the `.em` (docs/dsl.md#derived-fields) — say how
+     it is derived in prose below the region. `{{ }}` marks a field the model cannot trace. -->
+<!-- GENERATED:em-slice-view:start — generated from the model by `em slice sync`; do not hand-edit -->
 - **View:** `{{View Name}}` built from events: {{"Event A", "Event B"}}
+
+| Field | Type | Source / Notes |
+|-------|------|----------------|
+| {{field}} | {{Type}} | {{which event field it's copied from, or `Derived: <rule>`}} |
+<!-- GENERATED:em-slice-view:end -->
 - **Consumed by:** {{which UI screen (or API-caller persona), or reaction}}
 <!-- "Consumed by" is required, not optional. A read model nothing displays or watches is
      information projected out of the system and then dropped, and `em validate` warns. Every
      instance of a repeated view needs its own consumer, not just the last one. -->
 - **Freshness / consistency expectation:** {{real-time | eventual | on-demand}}
 
-| Field | Type | Source / Notes |
-|-------|------|-----------------|
-| {{field}} | {{Type}} | {{which event field it's copied from, or `Derived: <plain-language rule>` for a value computed from which events have landed (a status stepping through states, a computed rank, a flag two events can flip) — a field written as `Derived:` here should ALSO carry the `derived` marker (bare `derived`, or `derived from "Event A", "Event B"` naming the events the rule depends on) on the view's field in the `.em`, so `em export`/the model know the field exists too, not just this doc (docs/dsl.md#derived-fields)}} |
-
 ## Invariants / Business Rules
 <!-- IDs and rule sentences are declared in the MODEL (MIL-265): an `invariant INV-<MNEMONIC>-<n>
-     "rule"` line after the command or event it guards (docs/dsl.md#invariants). Here, cite each
-     model-declared ID as a plain mention and elaborate — `- INV-CHK-1 — why it holds, edge cases,
-     the error a violation returns` — never re-declare it with the `**INV-CHK-1:**` label
-     (`invariants/declared-in-both`). A rule not (yet) in the model may still be declared here
-     with the label below; em reads it as the fallback. -->
+     "rule"` line after the command or event it guards (docs/dsl.md#invariants). The list between
+     the markers is GENERATED from those lines (`em slice sync`); never edit it. Below it, cite
+     each ID as a plain mention and elaborate — `- INV-CHK-1 — why it holds, edge cases, the error
+     a violation returns` — never re-declare it with the `**INV-CHK-1:**` label
+     (`invariants/declared-in-both`). A rule not (yet) in the model may still be declared below
+     with that label; em reads it as the fallback. -->
 <!-- What must ALWAYS hold. Give each a stable ID so tests and code can reference it:
      `INV-<MNEMONIC>-<n>`, where `<MNEMONIC>` is a short (2-4 letter/digit), slice-unique
      abbreviation of this slice's key (e.g. slice `checkout` -> `INV-CHK-1`) — see
-     ../reference/slice-doc-schema.md. Add a letter suffix for a closely-related sub-invariant
-     (`INV-CHK-3a`). Keep the rule statement itself to one line. If it needs more — why the rule
-     exists, what "violation" looks like in practice, an edge case worth calling out — add that as
-     a nested bullet under the rule instead of one long run-on sentence: this section renders as
-     HTML (`em catalog`/`em render`/`em watch`), and a nested bullet stays visually distinct where
-     a wrapped sentence collapses into a wall of text. The ID must stay on the rule's own
-     top-level bullet line — `em coverage` extracts INV IDs from that line only, never from a
-     nested elaboration bullet underneath it. -->
+     ../reference/slice-doc-schema.md. Keep the rule statement itself to one line. If it needs
+     more — why the rule exists, what "violation" looks like in practice, an edge case worth
+     calling out — add that as a nested bullet under the elaboration line instead of one long
+     run-on sentence: this section renders as HTML (`em catalog`/`em render`/`em watch`), and a
+     nested bullet stays visually distinct where a wrapped sentence collapses into a wall of
+     text. The ID must stay on the top-level bullet line — `em coverage` extracts INV IDs from
+     that line only, never from a nested elaboration bullet underneath it. -->
+<!-- GENERATED:em-slice-invariants:start — generated from the model by `em slice sync`; do not hand-edit -->
+- **INV-{{MNEMONIC}}-1** — {{rule, as declared by `invariant INV-{{MNEMONIC}}-1 "rule"` in the model}}
+<!-- GENERATED:em-slice-invariants:end -->
+<!-- elaborate below this list; IDs are declared in the model -->
 - INV-{{MNEMONIC}}-1 — {{elaboration of the model-declared rule: why it holds, what a violation looks like, the error returned}}
   - {{optional: edge-case detail — its own bullet}}
 - **INV-{{MNEMONIC}}-2:** {{a rule not yet in the model, declared here as the fallback — move it into the model when you can}}
 
 ## Scenarios (Given / When / Then)
-<!-- The executable specification. Cover the happy path AND the key rule boundaries. Each
-     scenario is a case-label bullet with Given/When/Then as nested sub-bullets — not one run-on
-     sentence — so the case reads as distinct beats once rendered instead of a dense paragraph. -->
-- **Happy path**
-  - **Given:** {{starting state / prior events}}
-  - **When:** {{command/trigger}}
-  - **Then:** {{event(s) recorded}} and {{resulting read-model change}}.
-- **Rejected (INV-{{MNEMONIC}}-1)**
-  - **Given:** {{state}}
-  - **When:** {{command}}
-  - **Then:** rejected with reason; no event.
-- **{{Edge case}}**
-  - **Given:** {{...}}
-  - **When:** {{...}}
-  - **Then:** {{...}}
+<!-- The executable specification — authored, in a constrained shape `em` reads back (`em export
+     --json` → slice.doc.scenarios). Cover the happy path AND the key rule boundaries, one block
+     per case: a `### Scenario: <title>` heading, then exactly the three column-0 bullets
+     `- **Given:**`, `- **When:**`, `- **Then:**`, each with its beats as nested `  - ` bullets.
+     A block missing any of the three is flagged `slice-doc/structured-section-malformed`. -->
+### Scenario: Happy path
+- **Given:**
+  - {{starting state / prior events}}
+- **When:**
+  - {{command/trigger}}
+- **Then:**
+  - {{event(s) recorded}}
+  - {{resulting read-model change}}
 
 ## Alternate & Error Flows
 <!-- Failure paths, retries, compensations, timeouts, idempotency. -->

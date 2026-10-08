@@ -787,7 +787,10 @@ describe("system-manifest step", () => {
       // manifest's free-text owners as-is, so compare modulo that one substitution.
       const shipped = readFileSync(join(MULTI_MODEL_EXAMPLE_DIR, rel), "utf8")
         .replace('owner "@example/storefront"', 'owner "Storefront team"')
-        .replace('owner "@example/warehouse"', 'owner "Warehouse team"');
+        .replace('owner "@example/warehouse"', 'owner "Warehouse team"')
+        // MIL-266: the shipped translation carries its doc binding after `consumes`; the legacy
+        // fixture has none (the migration appends `consumes` at the end of the line).
+        .replace(' note "slices/receive-order.md"', "");
       expect(readFileSync(join(repo.dir, rel), "utf8")).toBe(shipped);
     }
     const manifest = readFileSync(repo.manifest, "utf8");

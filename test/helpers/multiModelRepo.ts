@@ -37,7 +37,9 @@ seams:
 
 /** The example's two models before MIL-235: no `owner` on the headers, no `consumes` (field
  *  blocks and `public` on `Accept Order` as shipped since MIL-237, and MIL-265's `invariant` lines
- *  and `public` on `Submit Order` — those are not migrated). */
+ *  and `public` on `Submit Order`, and MIL-266's `note "slices/checkout.md"` binding — those are not
+ *  migrated; the translation's `note` is left out because the migration appends `consumes` at
+ *  the end of that line). */
 export const LEGACY_CHECKOUT_EM = `model "Checkout"
 
 persona Customer
@@ -46,7 +48,7 @@ context Order
 
 slice "Checkout" {
   ui Checkout Screen @Customer
-  command Submit Order public {
+  command Submit Order public note "slices/checkout.md" {
     total: decimal
     note?: text
   }

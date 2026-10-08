@@ -31,6 +31,7 @@ import { Diagnostic } from "../model/validate.js";
 import { makeDiag, pushDiag } from "../model/rules.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
+import { findStructuredSectionProblems } from "./sliceSections.js";
 import { ContractCheckInput, contractStatus, slicePublicTouching } from "./apiFirst.js";
 
 export type { ContractCheckInput } from "./apiFirst.js";
@@ -147,6 +148,19 @@ export function validateSliceReady(
   if (parsed.openQuestionsUnchecked > 0) {
     pushDiag(diags, "slice-ready-open-questions-unchecked", {
       message: `slice "${sliceKey}" has ${parsed.openQuestionsUnchecked} of ${parsed.openQuestionsTotal} Open Question(s) unchecked`,
+      line: slice.line,
+      refs: [sliceKey],
+    });
+  }
+
+  // MIL-266: the `--slice-ready` twin of `slice-doc/structured-section-malformed` — a generated
+  // region whose markers don't balance or whose table header drifted from the template, or a
+  // `### Scenario:` block missing Given/When/Then, is not a spec an implementer can read
+  // mechanically. Diagnostic-only blocker: `gates` gains no boolean (the scoped diagnostics are
+  // what drive `ready`). Silent on a doc with no markers and no `### Scenario:` heading.
+  for (const problem of findStructuredSectionProblems(parsed.body)) {
+    pushDiag(diags, "slice-ready-structured-section-malformed", {
+      message: `slice "${sliceKey}"'s doc ${doc.path}: ${problem}`,
       line: slice.line,
       refs: [sliceKey],
     });

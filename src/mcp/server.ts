@@ -46,6 +46,7 @@ import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.j
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateInvariants } from "../catalog/invariantsValidate.js";
 import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
+import { buildSliceSyncJson, runSliceSync } from "../cli/sliceSync.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
 import { readContract, contractPath } from "../cli/contract.js";
@@ -289,6 +290,30 @@ export function createServer(): McpServer {
       return textResult(
         buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null),
       );
+    },
+  );
+
+  server.registerTool(
+    "slice_sync",
+    {
+      title: "Check slice docs' generated regions against the model",
+      description:
+        "Return the same JSON document `em slice sync <file> [<key>] --check --json` prints: for " +
+        "each bound slice doc (or only the one `sliceKey` resolves to), whether its GENERATED " +
+        "regions (command/event/view field tables, the Invariants list) match the model — `ok`, " +
+        "`stale`, `no-regions` or `malformed` per doc, and `ok`/`stale`/`missing`/`orphan` per " +
+        "region. Check-only: never writes. Run `em slice sync <file>` to regenerate stale regions.",
+      inputSchema: { file: fileParam, sliceKey: sliceKeyParam.optional() },
+    },
+    async ({ file, sliceKey }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      if (hasErrors(compiled.diagnostics)) {
+        return errorResult(`not syncing: "${file}" has errors — run \`validate\` first and fix them`);
+      }
+      const outcome = runSliceSync(compiled.model, compiled.refs, dirname(file), sliceKey, true);
+      if (!outcome.ok) return errorResult(outcome.message);
+      return textResult(buildSliceSyncJson(file, outcome.docs));
     },
   );
 

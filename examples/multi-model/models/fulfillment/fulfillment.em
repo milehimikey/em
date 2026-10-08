@@ -6,7 +6,7 @@ context Order
 
 slice "Receive Order" {
   # checkout:event.order-submitted — A submitted order is handed to the warehouse to be fulfilled.
-  translation Order Intake consumes checkout:event.order-submitted {
+  translation Order Intake consumes checkout:event.order-submitted note "slices/receive-order.md" {
     orderId: uuid
     total: decimal
   }

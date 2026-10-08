@@ -45,6 +45,9 @@ evidence"). In short:
   `em api generate <model>.em` and commit the regenerated contract with the model edit — the
   API-first gate (`em validate --slice-ready`) refuses a public-touching slice whose contract
   is missing or stale. Never hand-edit the contract.
+- **Slice docs: edit authored sections only.** Never hand-edit a generated region
+  (`<!-- GENERATED:em-slice-…:start -->` … `:end -->`: field tables, the Invariants list); after
+  any model edit run `em slice sync <model>.em` (see **Generated vs authored sections** below).
 - **Evidence rule.** The `.em` model and the slice docs are the evidence for modeling
   decisions. Never read implementation source, generated contracts or `specs/` to decide a
   modeling question — ask the user. Code is read only in `extract` and `conform`.
@@ -80,7 +83,8 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    `--wire` refuses it and names the originating slice holding `X`'s first declaration; its
    scenarios go into that doc instead. Then, for each freshly scaffolded doc, hold a first-pass
    Socratic pass and write the happy-path Given/When/Then into
-   its `## Scenarios (Given / When / Then)` section and the obvious invariants known so far into
+   its `## Scenarios (Given / When / Then)` section (as `### Scenario:` blocks — see **Generated
+   vs authored sections** in the `slice` phase below) and the obvious invariants known so far into
    its `## Invariants / Business Rules` section — **into the doc, never into the state file.**
    Keep this pass shallow (no field tables, alternate/error flows, or NFRs yet — that's the full
    deep-dive in the `slice` phase below); the docs are the home for everything collected from
@@ -162,7 +166,8 @@ For each slice:
    schema doc). Otherwise, this is first-time authoring: continue at step 1.
 1. Hold a Socratic deep-dive to fill every section of `../event-modeling-shared/templates/slice.md`:
    intent, trigger/actor,
-   command + field table (types & rules), event(s) + payload (mark immutable facts), invariants
+   command fields (types & rules), event(s) + payload (mark immutable facts) — field names and
+   types go into the `.em`, the doc's tables are generated from it — invariants
    (give each a stable ID — see **Invariants live in the model** below), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
    alternate/error flows (retries, idempotency, compensations), non-functional requirements
    (security/authz, PII/compliance, performance/SLA), read models affected, open questions. Park
@@ -192,6 +197,20 @@ For each slice:
    invariants keeps working; migrate one only when you are editing that slice anyway — move the
    ID and rule into the model, keep the doc's elaboration. Run `em validate` after the edit:
    `invariants/malformed-id` and `invariants/duplicate-id` are errors.
+   **Generated vs authored sections.** A doc `em slice new` wrote has two kinds of section. The
+   GENERATED regions — each command's, event's and read model's field table and the Invariants
+   list, between `<!-- GENERATED:em-slice-…:start -->` / `:end -->` markers — restate the model:
+   **never hand-edit a generated region.** To change a field, a type, or an invariant, edit the
+   `.em`, then **after any model edit run `em slice sync <model>.em`**, which rewrites every
+   region in place and leaves everything else byte-for-byte (`em slice sync <model>.em --check`
+   reports a stale doc without writing). **Edit authored sections only**: Intent, Trigger &
+   Actor, `Triggered by`/`Read by`/`Consumed by`, the invariant elaborations below the generated
+   list, Scenarios, Alternate & Error Flows, NFRs, Dependencies, Open Questions. Scenarios use the
+   constrained shape `em` reads back: a `### Scenario: <title>` heading, then `- **Given:**`,
+   `- **When:**`, `- **Then:**` bullets with nested `  - ` items — all three in every block
+   (`em validate` flags a block missing one as `slice-doc/structured-section-malformed`, and
+   `--slice-ready` refuses it). A doc written before em 1.14 has no markers; leave it as it is
+   unless you are re-creating it (`em slice new … --wire --force`, carrying the prose across).
 2. **First-time authoring:** scaffold the doc mechanically rather than hand-writing the
    frontmatter — `em slice new "<slice name>" --pattern <state-change|state-view|automation|
    translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes `slices/<slice-name>.md`
@@ -207,11 +226,12 @@ For each slice:
    declaration — write this slice's scenarios into that doc instead of scaffolding a new one.
    Both `--pattern` and `--swimlane` are required; an invalid `--pattern` is refused with the
    valid choices listed. Never hand-type this block, and never fall back to a placeholder
-   pattern/swimlane to dodge the flags. Then fill in every judgment section below the stub from
-   step 1 (Intent, Command, Event(s), Invariants, Scenarios, ...) — the doc's prose is still
-   entirely hand-authored, only the frontmatter/heading scaffold and the `.em` wiring are
-   mechanized. Record the originating need (ticket/conversation link) in the Intent section when
-   one exists. When this doc exists because of a split, merge, or rename, add the matching
+   pattern/swimlane to dodge the flags. It also writes every template section: the generated
+   regions already filled from the model (field tables, Invariants list), the authored sections
+   as placeholders. Then fill in the authored sections from step 1 (Intent, Trigger & Actor,
+   invariant elaborations, Scenarios, ...) — those stay hand-authored; the generated regions
+   follow the model through `em slice sync`. Record the originating need (ticket/conversation
+   link) in the Intent section when one exists. When this doc exists because of a split, merge, or rename, add the matching
    lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar
    — see `../event-modeling-shared/reference/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
    after the fact, see the `lineage-*` rules below).
@@ -255,7 +275,8 @@ For each slice:
 5. Run `em slice index <model-name>.em` to regenerate `README.md`'s Slices table — the one
    canonical slice index — from the model and the doc frontmatter you just wrote (status,
    `implementedIn` once shipped). Never hand-edit the table; it's a generated block.
-6. Re-render and `em validate`.
+6. Re-render, run `em slice sync <model-name>.em --check` (it must print `ok:` for every doc you
+   touched), and `em validate`.
 7. Before committing, stage the session's files and run the pre-commit check: `em system scope
    --staged`, then `git diff --cached --name-only`. STOP on any `seam-crossing`, any path outside
    this model's directory, any out-of-scope path (see **Write scope** above), or a changed

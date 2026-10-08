@@ -35,6 +35,7 @@
 // one) to tell "extra" from "dangling" from "unratified". It reuses `NOTE_SLICE_PATH` and
 // `resolveCrossCandidate` below rather than re-deriving the ratification predicate.
 
+import { parseScenarios, Scenario } from "./scenarios.js";
 import { NormalizedModel, Slice } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -139,6 +140,10 @@ export interface SliceDocExport {
    *  differently (`--contract-change "<why>"`); null when absent. At most one of
    *  `meaningConfirmed`/`contractChange` is set by em's own writers. */
   contractChange: string | null;
+  /** MIL-266: the doc's authored `### Scenario:` blocks (catalog/scenarios.ts), each as
+   *  `{ title, given, when, then }` string arrays, in document order. Null when the doc has no
+   *  well-formed block (every 1.13-style doc) or isn't found / usable. */
+  scenarios: Scenario[] | null;
 }
 
 export interface SliceDocJoinResult {
@@ -173,6 +178,7 @@ const EMPTY_CONTENT = {
   conformedOn: null as string | null,
   meaningConfirmed: false,
   contractChange: null as string | null,
+  scenarios: null as Scenario[] | null,
 };
 
 /**
@@ -307,5 +313,11 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     conformedOn: parsed.conformedOn,
     meaningConfirmed: parsed.meaningConfirmed,
     contractChange: parsed.contractChange,
+    scenarios: scenariosOf(parsed.body),
   };
+}
+
+function scenariosOf(body: string): Scenario[] | null {
+  const { scenarios } = parseScenarios(body);
+  return scenarios.length > 0 ? scenarios : null;
 }

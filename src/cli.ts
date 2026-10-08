@@ -92,6 +92,8 @@ import { runReview } from "./cli/review.js";
 import { runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
+import { buildSliceSyncJson, formatSliceSync, runSliceSync, sliceSyncFailed } from "./cli/sliceSync.js";
+import { buildSliceRegions, GeneratedRegion } from "./catalog/sliceSections.js";
 import { wireSliceNote } from "./cli/sliceLink.js";
 import { isStubStatus, runStubAll, STUB_STATUSES } from "./cli/sliceStubAll.js";
 import { listModelCommits } from "./cli/changelog-git.js";
@@ -639,9 +641,11 @@ const slice = program.command("slice").description("author and maintain slice do
 slice
   .command("new")
   .description(
-    "scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft` " +
-      "plus the `# Slice:` heading and diagram-image stub; judgment sections (Intent, " +
-      "Scenarios, Open Questions, ...) stay hand-authored (see " +
+    "scaffold a fresh slices/<key>.md doc — the 5 frontmatter keys required at `status: draft`, " +
+      "the `# Slice:` heading and diagram-image stub, then every template section: the generated " +
+      "regions (command/event/view field tables, Invariants) filled from the model with --wire " +
+      "(template placeholders otherwise — `em slice sync` fills them), the authored sections " +
+      "(Intent, Scenarios, Open Questions, ...) with placeholder bullets (see " +
       ".claude/skills/event-modeling-shared/reference/slice-doc-schema.md, templates/slice.md)",
   )
   .argument("<name>", "slice display name (e.g. \"Request Payment\") — kebab-cased for the filename")
@@ -679,6 +683,9 @@ slice
     // (no matching slice, ambiguous primary element, already wired) leaves nothing written at
     // all rather than a doc with no wiring and a non-zero exit.
     let wired: { content: string; sliceName: string; elementName: string } | null = null;
+    // MIL-266: with a model in hand (--wire), the doc's generated regions are filled from it;
+    // without one they carry the template's placeholders until `em slice sync` fills them.
+    let regions: GeneratedRegion[] | undefined;
     if (opts.wire) {
       const { model, refs, diagnostics, source } = compileFile(opts.wire);
       printDiagnostics(diagnostics);
@@ -692,12 +699,13 @@ slice
         process.exit(1);
       }
       wired = result;
+      regions = buildSliceRegions(model, [refs.sliceKeys.indexOf(key)]);
     }
 
     mkdirSync(dir, { recursive: true });
     const content = opts.stub
       ? buildStubDocContent(name, opts.pattern, opts.swimlane)
-      : buildSliceDocContent(name, key, opts.pattern, opts.swimlane);
+      : buildSliceDocContent(name, key, opts.pattern, opts.swimlane, regions);
     writeFileSync(path, content);
     console.log(`wrote ${path}`);
 
@@ -708,6 +716,37 @@ slice
       console.log(`add this to the slice's primary element in the .em file:`);
       console.log(`  note "${path}"`);
     }
+  });
+
+slice
+  .command("sync")
+  .description(
+    "regenerate the GENERATED regions (command/event/view field tables, the Invariants list) of " +
+      "existing slice docs in place from the model, authored sections untouched (MIL-266); docs " +
+      "without regions are skipped with a note. --check never writes and exits 1 when a doc is stale",
+  )
+  .argument("<model-file>", "the .em model whose bound slice docs to sync")
+  .argument("[key]", "only the doc this slice's export key resolves to")
+  .option("--check", "report ok / stale / no-regions per doc without writing; exit 1 when any is stale")
+  .option("--json", "print the machine-readable report (sliceSyncSchemaVersion 1.0)")
+  .action((file: string, key: string | undefined, opts: { check?: boolean; json?: boolean }) => {
+    const { model, refs, diagnostics } = compileFile(file);
+    printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
+    if (hasErrors(diagnostics)) {
+      console.error(`em slice sync: not syncing — fix the errors in ${file} above`);
+      process.exit(1);
+    }
+    const check = opts.check === true;
+    const outcome = runSliceSync(model, refs, dirname(file), key, check);
+    if (!outcome.ok) {
+      console.error(`em slice sync: ${outcome.message}`);
+      process.exit(1);
+    }
+    const { out, err } = formatSliceSync(outcome.docs, check);
+    for (const line of err) console.error(line);
+    if (opts.json) process.stdout.write(buildSliceSyncJson(file, outcome.docs) + "\n");
+    else for (const line of out) console.log(line);
+    if (sliceSyncFailed(outcome.docs, check)) process.exit(1);
   });
 
 slice

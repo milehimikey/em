@@ -353,3 +353,88 @@ describe("MIL-121 cross-covered doc, checked against the union", () => {
     );
   });
 });
+
+// MIL-266: generated regions and the authored `### Scenario:` grammar.
+describe("slice-doc/structured-section-malformed (MIL-266)", () => {
+  it("warns — with no refs, so it never blocks --slice-ready by itself — on an unbalanced region", () => {
+    writeDoc("unbalanced", {
+      body: ["# Slice", "## Command / Input", "<!-- GENERATED:em-slice-command:start -->", "**Command:** `Do It`", ""].join("\n"),
+    });
+    const diags = diagsOf(['slice "Unbalanced" {', '  command Do It note "slices/unbalanced.md"', "}"].join("\n"));
+    expect(diags.filter((d) => d.code === "slice-doc/structured-section-malformed")).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        message: 'slice doc "slices/unbalanced.md" (slice "unbalanced"): region "em-slice-command" has no end marker',
+      }),
+    ]);
+    expect(diags.find((d) => d.code === "slice-doc/structured-section-malformed")!.refs).toBeUndefined();
+  });
+
+  it("warns on a `### Scenario:` block missing a beat", () => {
+    writeDoc("half-scenario", {
+      body: ["# Slice", "## Scenarios (Given / When / Then)", "### Scenario: Pay", "- **Given:** a", "- **When:** b", ""].join("\n"),
+    });
+    const diags = diagsOf(['slice "Half Scenario" {', '  command Pay note "slices/half-scenario.md"', "}"].join("\n"));
+    expect(diags.filter((d) => d.code === "slice-doc/structured-section-malformed").map((d) => d.message)).toEqual([
+      'slice doc "slices/half-scenario.md" (slice "half-scenario"): scenario "Pay" has no **Then:** — every `### Scenario:` block needs Given, When and Then bullets',
+    ]);
+  });
+
+  it("is silent on a 1.13-style free-prose doc (no markers, no `### Scenario:`), with a hand-written view table", () => {
+    writeDoc("legacy-prose", {
+      pattern: "state-view",
+      body: [
+        "# Slice",
+        "## Read Model / View",
+        "- **View:** `Legacy List` built from events: x",
+        "",
+        "| Field | Type | Source / Notes |",
+        "|---|---|---|",
+        "| notInTheModel | string | prose |",
+        "## Scenarios (Given / When / Then)",
+        "- **Happy path**",
+        "  - **Given:** a",
+      ].join("\n"),
+    });
+    const diags = diagsOf(
+      [
+        'slice "Legacy Prose" {',
+        '  view Legacy List from "Thing Happened" note "slices/legacy-prose.md" {',
+        "    total: decimal",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    expect(diags.filter((d) => d.code === "slice-doc/structured-section-malformed" || d.code === "doc-model-field-mismatch")).toEqual([]);
+  });
+
+  it("compares a view's field table only inside a generated em-slice-view region", () => {
+    writeDoc("view-region", {
+      pattern: "state-view",
+      body: [
+        "# Slice",
+        "## Read Model / View",
+        "<!-- GENERATED:em-slice-view:start -->",
+        "- **View:** `Region List` built from events: x",
+        "",
+        "| Field | Type | Source / Notes |",
+        "|-------|------|----------------|",
+        "| stale | string | {{ }} |",
+        "<!-- GENERATED:em-slice-view:end -->",
+      ].join("\n"),
+    });
+    const diags = diagsOf(
+      [
+        'slice "View Region" {',
+        '  view Region List from "Thing Happened" note "slices/view-region.md" {',
+        "    total: decimal",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    expect(diags.filter((d) => d.code === "doc-model-field-mismatch").map((d) => d.message)).toEqual([
+      'slice doc "slices/view-region.md"\'s view `Region List` field table lists "stale", but view "Region List" (slice "View Region") has no such field',
+      'view "Region List" (slice "View Region") has field "total", but slice doc "slices/view-region.md"\'s view `Region List` field table doesn\'t list it',
+    ]);
+  });
+});

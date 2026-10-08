@@ -46,9 +46,10 @@ describe("parseSliceDoc", () => {
     const template = readFileSync(join(ROOT, ".claude/skills/event-modeling-shared/templates/slice.md"), "utf8");
     const withoutComment = template.replace(/^<!--[\s\S]*?-->\n\n/, "");
     const doc = parseSliceDoc(withoutComment);
-    // The outer "Happy path" bullet's own <li> contains a nested <ul> — visible structure,
-    // not one collapsed sentence — with Given/When/Then each as their own <li>.
-    expect(doc.html).toMatch(/<li><strong>Happy path<\/strong><ul>/);
+    // MIL-266: each case is a `### Scenario:` heading; each Given/When/Then label's own <li>
+    // contains a nested <ul> of beats — visible structure, not one collapsed sentence.
+    expect(doc.html).toMatch(/<h3[^>]*>Scenario: Happy path<\/h3>/);
+    expect(doc.html).toMatch(/<li><strong>Given:<\/strong><ul>/);
     expect(doc.html).toContain("<strong>Given:</strong>");
     expect(doc.html).toContain("<strong>When:</strong>");
     expect(doc.html).toContain("<strong>Then:</strong>");

@@ -60,6 +60,9 @@ export function buildValidateJson(file: string, diagnostics: Diagnostic[]): stri
 // 1.2 (MIL-259, 1.14.0): `gates.ratified` — the doc carries a recorded `ratifiedBy`. A
 // ready-to-implement doc without one (e.g. right after `em slice reratify`) is no longer ready:
 // the `slice-ready-not-ratified` error joins the scoped diagnostics. Additive-only.
+//  - MIL-266: `slice-ready-structured-section-malformed` (error) can join the scoped diagnostics
+//    — a doc whose generated regions or `### Scenario:` blocks don't parse. Diagnostic-only:
+//    `gates` is unchanged.
 export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.2";
 
 /** Build the `em validate <file> --slice-ready <key> --json` document — the machine verdict

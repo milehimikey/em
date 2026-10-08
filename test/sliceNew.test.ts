@@ -52,10 +52,10 @@ describe("buildSliceDocContent", () => {
     expect(content).toContain("version: 1\n");
   });
 
-  it("body is the # Slice: heading plus the diagram-image stub, nothing else", () => {
+  it("body starts with the # Slice: heading and the diagram-image stub (MIL-266: then the skeleton)", () => {
     const content = buildSliceDocContent("Request Payment", "request-payment", "automation", "System → Payment");
     const body = content.slice(content.indexOf("---\n", 4) + 4);
-    expect(body).toBe("# Slice: Request Payment\n\n![Diagram](./request-payment.svg)\n");
+    expect(body.startsWith("# Slice: Request Payment\n\n![Diagram](./request-payment.svg)\n\n## Intent\n")).toBe(true);
   });
 
   it("carries no commented-out lineage/implementedIn cruft anywhere in the file", () => {
@@ -64,9 +64,10 @@ describe("buildSliceDocContent", () => {
     expect(content).not.toContain("split-from");
     expect(content).not.toContain("merged-from");
     expect(content).not.toContain("superseded-by");
-    // Only the `# Slice: ...` heading line may start with `#` — no `#`-prefixed guidance
-    // comment lines (the frontmatter template's lineage-key comments) anywhere else.
-    const commentLines = content.split("\n").filter((line) => line.startsWith("#") && !line.startsWith("# Slice:"));
+    // Only the `# Slice: ...` heading may be a level-1 `#` line — no `#`-prefixed guidance
+    // comment lines (the frontmatter template's lineage-key comments) anywhere else; the
+    // MIL-266 skeleton's section headings are all `##`/`###`.
+    const commentLines = content.split("\n").filter((line) => /^#(?!#)/.test(line) && !line.startsWith("# Slice:"));
     expect(commentLines).toEqual([]);
   });
 });

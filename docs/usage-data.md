@@ -105,6 +105,7 @@ affected lines written by hand.
 | seam crossing greenfield |
 | seam manifest outdated |
 | slice doc cites undeclared invariant |
+| slice doc structured section malformed |
 | slice-ready slice has no doc bound |
 | slice-ready slice has unchecked open questions |
 | slice-ready slice not ready-to-implement |
@@ -152,6 +153,7 @@ affected lines written by hand.
 | slice-ready key does not exist |
 | slice-ready public slice contract not current |
 | slice-ready slice not ratified |
+| slice-ready structured section malformed |
 | type cycle |
 | view again with no earlier declaration |
 | view references unknown event |

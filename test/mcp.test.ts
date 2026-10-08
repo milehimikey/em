@@ -6,7 +6,7 @@
 // test/cli.test.ts; the stdio entry point itself (src/mcp/main.ts) is a 3-line wrapper with
 // nothing of its own to unit-test.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -20,6 +20,8 @@ import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 import { writeInvariantFixture } from "./helpers/invariantFixture.js";
 import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
 
+// CLI-spawning file (the byte-identity assertions below): a cold CI runner takes ~5–6 s per
+// spawn and vitest's default is 5 s (briefing §5, MIL-205 pattern).
 vi.setConfig({ testTimeout: 20_000 });
 
 // Spawns the real CLI (via tsx), same helper shape as test/cli.test.ts's `em()` — used here only
@@ -299,7 +301,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the twenty-one documented tools", async () => {
+  it("exposes exactly the twenty-two documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -320,6 +322,7 @@ describe("tools/list", () => {
         "model_version_show",
         "query",
         "slice_ready",
+        "slice_sync",
         "system",
         "system_codeowners",
         "system_scope",
@@ -1482,6 +1485,63 @@ describe("model-declared invariants — CLI/MCP byte identity (MIL-265)", () => 
     const mcpText = (result.content[0] as { type: "text"; text: string }).text;
     const cli = em(["coverage", modelFile, "--tests", testsDir, "--json"], invDir);
     expect(cli.status).toBe(0); // uncited INV-ORD-2 fails only under --strict
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+});
+
+describe("slice_sync tool (MIL-266)", () => {
+  const exampleDir = join(ROOT, "examples", "multi-model");
+
+  it("byte-identical to `em slice sync <file> --check --json` on a shipped example (every region current)", async () => {
+    const file = join(exampleDir, "models", "checkout", "checkout.em");
+    const { result, doc } = await callJson(client, "slice_sync", { file });
+    expect(result.isError).toBeFalsy();
+    expect(doc).toMatchObject({ sliceSyncSchemaVersion: "1.0", docs: [{ key: "checkout", path: "slices/checkout.md", status: "ok" }] });
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["slice", "sync", file, "--check", "--json"], exampleDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("check-only: reports a stale doc without writing it, byte-identical to the CLI's --check --json", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-mcp-slice-sync-"));
+    try {
+      cpSync(join(exampleDir, "models", "checkout"), dir, { recursive: true });
+      const emFile = join(dir, "checkout.em");
+      writeFileSync(emFile, readFileSync(emFile, "utf8").replace("    total: decimal\n    note?: text\n  }", "    amount: decimal\n    note?: text\n  }"));
+      const before = readFileSync(join(dir, "slices", "checkout.md"), "utf8");
+      const { result, doc } = await callJson(client, "slice_sync", { file: emFile, sliceKey: "checkout" });
+      expect(result.isError).toBeFalsy();
+      expect(doc.docs[0].status).toBe("stale");
+      expect(readFileSync(join(dir, "slices", "checkout.md"), "utf8")).toBe(before);
+      const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+      const cli = em(["slice", "sync", emFile, "checkout", "--check", "--json"], dir);
+      expect(cli.status).toBe(1);
+      expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("an unknown slice key is a tool error with the CLI's message", async () => {
+    const file = join(exampleDir, "models", "checkout", "checkout.em");
+    const { result } = await callJson(client, "slice_sync", { file, sliceKey: "nope" });
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('no slice with export key "nope" in this model');
+  });
+
+  it("export_model carries slice.doc.scenarios, byte-identical to `em export`", async () => {
+    const file = join(exampleDir, "models", "fulfillment", "fulfillment.em");
+    const { result, doc } = await callJson(client, "export_model", { file });
+    expect(result.isError).toBeFalsy();
+    expect(doc.model.slices[0].doc.scenarios.map((s: { title: string }) => s.title)).toEqual([
+      "A submitted order is accepted",
+      "A redelivered order is accepted once (INV-FUL-1)",
+    ]);
+    expect(doc.model.slices[1].doc.scenarios).toBeNull();
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["export", file], exampleDir);
+    expect(cli.status).toBe(0);
     expect(cli.stdout).toBe(mcpText + "\n");
   });
 });

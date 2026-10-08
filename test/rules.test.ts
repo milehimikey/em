@@ -30,6 +30,7 @@ const KNOWN_DOC_ANCHORS = new Set([
   "model-version-stale",
   "strict-public-types",
   "invariants",
+  "structured-sections",
 ]);
 
 const SLICE_READY_CODES = [
@@ -39,14 +40,15 @@ const SLICE_READY_CODES = [
   "slice-ready-open-questions-unchecked",
   "slice-ready-not-ratified",
   "slice-ready-contract-stale",
+  "slice-ready-structured-section-malformed",
 ].sort();
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(85); // MIL-238: +slice-ready-contract-stale; MIL-240: +seam-crossing, seam-crossing-greenfield, multi-model-change-set, code-spans-seam; MIL-239: +consumer-not-adapted; // MIL-234: +owner-not-a-handle; MIL-259: +slice-ready-not-ratified; MIL-235: +public-name-not-unique, system-manifest-outdated, consumes-unknown-model, consumes-unknown-element; MIL-237: +public-field-type-unresolved MIL-265: +5 invariants/*
+    expect(Object.keys(RULES).length).toBe(87); // MIL-266: +slice-doc/structured-section-malformed, slice-ready-structured-section-malformed; MIL-238: +slice-ready-contract-stale; MIL-240: +seam-crossing, seam-crossing-greenfield, multi-model-change-set, code-spans-seam; MIL-239: +consumer-not-adapted; // MIL-234: +owner-not-a-handle; MIL-259: +slice-ready-not-ratified; MIL-235: +public-name-not-unique, system-manifest-outdated, consumes-unknown-model, consumes-unknown-element; MIL-237: +public-field-type-unresolved MIL-265: +5 invariants/*
   });
 
-  it("marks exactly sliceReadyValidate.ts's 6 codes as optIn — nothing else", () => {
+  it("marks exactly sliceReadyValidate.ts's 7 codes as optIn — nothing else", () => {
     const optInCodes = RULE_ENTRIES
       .filter(([, r]) => r.optIn)
       .map(([code]) => code)

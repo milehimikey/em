@@ -85,6 +85,7 @@ working directory — the same working-directory convention every `em` CLI comma
 |---|---|---|
 | `validate` | `{ file }` | The `em validate --json` document — works even on a model with errors |
 | `slice_ready` | `{ file, sliceKey }` | The `em validate --slice-ready --json` machine verdict for one slice |
+| `slice_sync` | `{ file, sliceKey? }` | The `em slice sync <file> [<key>] --check --json` document (MIL-266): per bound slice doc, whether its generated regions match the model. Read-only: never writes |
 | `list_markers` | `{ file, issues?, divergences?, public? }` (booleans, default `true`) | The `--list-issues`/`--list-divergences`/`--list-public --json` marker document |
 | `export_model` | `{ file }` | The full `em export` document — refuses (tool error) if the model has errors |
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
@@ -129,6 +130,14 @@ error here — it's represented in the document itself (`gates: null`, `ready: f
 `continuationOf` (MIL-208) is non-null when `sliceKey` names a continuation slice (an
 again-view-only slice with no legacy doc of its own) — the originating slice's export key;
 `gates` themselves already resolve straight through to that slice's own doc/status.
+
+### `slice_sync`
+
+Same document as `em slice sync <file> [<sliceKey>] --check --json` (MIL-266): for each bound slice
+doc (or only the one `sliceKey` resolves to), doc status `ok`/`stale`/`no-regions`/`malformed` and
+per-region `ok`/`stale`/`missing`/`orphan`. Check-only — the tool never writes; run `em slice sync
+<file>` to regenerate stale regions. A model with errors, an unknown `sliceKey`, or a key with no
+bound doc is a tool error carrying the CLI's message.
 
 ### `list_markers`
 

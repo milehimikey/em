@@ -250,6 +250,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       conformedOn: null,
       meaningConfirmed: false,
       contractChange: null,
+      scenarios: null,
     });
     // Only the one slice's object — never the whole model's slices array.
     expect(doc.model).toBeUndefined();
@@ -1773,6 +1774,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "model_version_show",
           "query",
           "slice_ready",
+          "slice_sync",
           "status",
           "system",
           "system_codeowners",
@@ -4132,18 +4134,25 @@ describe("em slice new (CLI, MIL-97 item 3)", () => {
     expect(existsSync(join(cwd, "slices"))).toBe(true);
 
     const content = readFileSync(join(cwd, "slices", "request-payment.md"), "utf8");
-    expect(content).toBe(
-      "---\n" +
-        "schemaVersion: 1\n" +
-        "pattern: automation\n" +
-        "swimlane: System → Payment\n" +
-        "status: draft\n" +
-        "version: 1\n" +
+    expect(
+      content.startsWith(
         "---\n" +
-        "# Slice: Request Payment\n" +
-        "\n" +
-        "![Diagram](./request-payment.svg)\n",
-    );
+          "schemaVersion: 1\n" +
+          "pattern: automation\n" +
+          "swimlane: System → Payment\n" +
+          "status: draft\n" +
+          "version: 1\n" +
+          "---\n" +
+          "# Slice: Request Payment\n" +
+          "\n" +
+          "![Diagram](./request-payment.svg)\n",
+      ),
+    ).toBe(true);
+    // MIL-266: then the full skeleton — without --wire the generated regions carry the
+    // template's placeholders until `em slice sync` fills them.
+    expect(content).toContain("<!-- GENERATED:em-slice-command:start");
+    expect(content).toContain("**Command:** `{{Command Name}}`");
+    expect(content).toContain("### Scenario: Happy path");
   });
 
   it("prints the note line the user must add to the .em file", () => {

@@ -346,6 +346,7 @@ overall `ready` boolean, instead of scraping this table's codes out of stderr pr
 | `slice-ready-open-questions-unchecked` | warning | The doc's `## Open Questions` section has one or more unchecked (`- [ ]`) items |
 | `slice-ready-not-ratified` | error | The doc is `ready-to-implement` but carries no `ratifiedBy` — e.g. right after `em slice reratify` cleared it (MIL-259). Fix: `em slice ratify --by <name>` |
 | `slice-ready-contract-stale` | error | The API-first gate (MIL-238): the slice is public-touching (owns a `public` command, event or view) and the model's `<model dir>/contracts/<model key>.tsp` is missing, or its text differs from what `em api generate` would write now. Message: `slice "<key>" touches the public surface but the contract <path> is <missing\|stale> — run: em api generate <model>`. Fix: run that command and commit the contract. Slices with no `public` element never get it; an internal-only model edit never makes the contract stale (no source hash) |
+| `slice-ready-structured-section-malformed` | error | The doc's generated regions or `### Scenario:` blocks don't parse — the [structured sections](#structured-sections) warning, as a blocker (MIL-266). Diagnostic-only: `gates` has no boolean for it, the scoped diagnostic is what makes `ready` false |
 
 **Cross-slice binding (MIL-121):** since the two-slice Automation/Translation shape means a
 bare `view` slice can have nothing of its own to document, an element in it may instead
@@ -447,6 +448,29 @@ to point at (`doc-model-pattern-mismatch`, `doc-model-element-not-in-model`) anc
 `--slice-ready` folds these findings in for free, same as frontmatter coherence and note-binding
 mismatch — every diagnostic here tags `refs` with the bare slice key (or `<sliceKey>/<kind>.<name>`
 element refs), so the existing ref filter picks them up without this module re-deriving anything.
+
+### Structured sections
+
+`slice-doc/structured-section-malformed` (warning, MIL-266) fires on a bound slice doc whose
+[generated regions or scenarios](slice-doc-schema.md#generated-regions-and-authored-sections) no
+longer parse:
+
+- a region's markers are unbalanced — a `<!-- GENERATED:em-slice-…:start -->` with no matching
+  `:end -->`, an end with no start, a region opened inside another, a name used twice, or a name
+  outside `em-slice-command|event|view[-<slug>]` / `em-slice-invariants`;
+- a generated field table's header row differs from the template's
+  (`| Field | Type | Required | Rules / Validation |` for commands,
+  `| Field | Type | Immutable Fact? | Source / Notes |` for events,
+  `| Field | Type | Source / Notes |` for views);
+- a `### Scenario:` block in the Scenarios section lacks a non-empty `**Given:**`, `**When:**` or
+  `**Then:**` bullet.
+
+The message names the doc, its slice, and the problem. The warning carries no slice ref, so it
+never blocks `--slice-ready` by itself; the gate adds its own twin,
+`slice-ready-structured-section-malformed` (see [Slice readiness](#slice-readiness)). A doc with
+no region markers and no `### Scenario:` heading — every doc written before 1.14 — is never
+flagged. A stale region (the model changed, the doc didn't) is not malformed: `em slice sync
+--check` reports that.
 
 ### Orphaned slice doc
 

@@ -147,6 +147,10 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    `false` when absent) and `slice.doc.contractChange: string | null` (frontmatter
 //    `contractChange:`) — the API-first sign-off `em slice ratify`/`reratify` record on a
 //    public-touching slice; both always present.
+//  - MIL-266: `slice.doc.scenarios: { title, given: string[], when: string[], then: string[] }[]
+//    | null` — the doc's authored `### Scenario:` blocks (constrained Given/When/Then grammar,
+//    catalog/scenarios.ts), in document order; `null` when the doc has no well-formed block or
+//    no usable doc is bound.
 // Additive-only.
 export const SCHEMA_VERSION = "1.15";
 

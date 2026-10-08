@@ -324,5 +324,37 @@ describe("slice-ready-contract-stale (MIL-238)", () => {
     expect(diags.map((x) => x.code)).toEqual(["slice-ready-status-not-ready", "slice-ready-contract-stale"]);
     expect(gates.statusReady).toBe(false);
     expect(gates.contractCurrent).toBe(false);
+describe("slice-ready-structured-section-malformed (MIL-266)", () => {
+  it("blocks a ready, ratified doc whose generated region is malformed, with the exact message", () => {
+    writeDoc(
+      "ready-malformed",
+      "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n",
+      "<!-- GENERATED:em-slice-command:start -->\n**Command:** `Do Thing`\n",
+    );
+    const diags = readyDiagsOf(
+      `slice "Ready Malformed" {\n  command Do Thing note "slices/ready-malformed.md"\n}`,
+      "ready-malformed",
+    );
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        code: "slice-ready-structured-section-malformed",
+        message: 'slice "ready-malformed"\'s doc slices/ready-malformed.md: region "em-slice-command" has no end marker',
+        refs: ["ready-malformed"],
+      }),
+    ]);
+  });
+
+  it("leaves a 1.13-style free-prose ready doc ready (no markers, no `### Scenario:`)", () => {
+    writeDoc(
+      "ready-legacy",
+      "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n",
+      "## Scenarios (Given / When / Then)\n- **Happy path**\n  - **Given:** a\n  - **When:** b\n  - **Then:** c\n## Open Questions\n- [x] done\n",
+    );
+    const diags = readyDiagsOf(
+      `slice "Ready Legacy" {\n  command Do Thing note "slices/ready-legacy.md"\n}`,
+      "ready-legacy",
+    );
+    expect(diags).toEqual([]);
   });
 });

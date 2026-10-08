@@ -27,7 +27,8 @@
 //      compared against the model's `@Context` tag — out of scope for this ticket (judgment call,
 //      see this module's test file / the MIL-124 report).
 //
-//   3. fields, per matched Command/Event: a markdown field table (first column = field name)
+//   3. fields, per matched Command/Event (and, since MIL-266, per View whose marker sits inside a
+//      generated `em-slice-view*` region): a markdown field table (first column = field name)
 //      found in the marker's own section (before the next `##` heading or marker) versus the
 //      model element's `{ fields }` block. Compared only when BOTH sides declare at least one
 //      field — either side lacking fields entirely is silent, matching the roster gating above.
@@ -65,6 +66,7 @@ import { classifySlicePattern, slicePatternLabel } from "./classify.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { SliceDoc } from "./sliceDoc.js";
+import { findStructuredSectionProblems } from "./sliceSections.js";
 
 /** The three element kinds this rule's doc markers can name — the DSL has more (`ui`,
  *  `automation`/`processor`/`saga`/`translation`), but the slice.md template only gives
@@ -88,8 +90,9 @@ interface DocMarker {
    *  in this module points into the doc file itself; every diagnostic anchors at a `.em` line). */
   bodyLine: number;
   /** The field table found between this marker and the next `##` heading/marker, or null when
-   *  none was found (or the table had nothing but placeholder rows) — command/event only, always
-   *  null for view (the template gives read models no field table of their own). */
+   *  none was found (or the table had nothing but placeholder rows). For a view, only a table
+   *  inside a GENERATED `em-slice-view*` region counts (MIL-266) — a hand-written view table in a
+   *  1.13 doc was never checked and still isn't. */
   fieldsTable: DocField[] | null;
 }
 
@@ -158,6 +161,7 @@ function findFieldTable(lines: string[], start: number, end: number): DocField[]
  *  simply not recognized, never a parse error. */
 function parseDocMarkers(body: string): DocMarker[] {
   const lines = body.split(/\r?\n/);
+  const viewRegions = generatedViewRegions(lines);
   const hits: Array<{ kind: MarkerKind; name: string; idx: number }> = [];
   for (let i = 0; i < lines.length; i++) {
     const m = matchMarker(lines[i]);
@@ -171,9 +175,36 @@ function parseDocMarkers(body: string): DocMarker[] {
         break;
       }
     }
-    const fieldsTable = hit.kind === "view" ? null : findFieldTable(lines, hit.idx + 1, end);
+    let fieldsTable: DocField[] | null;
+    if (hit.kind !== "view") {
+      fieldsTable = findFieldTable(lines, hit.idx + 1, end);
+    } else {
+      // MIL-266: a view's field table is compared only inside a GENERATED `em-slice-view*` region
+      // — a hand-written 1.13 view table stays unchecked, exactly as before.
+      const region = viewRegions.find((r) => hit.idx > r.start && hit.idx < r.end);
+      fieldsTable = region ? findFieldTable(lines, hit.idx + 1, Math.min(end, region.end)) : null;
+    }
     return { kind: hit.kind, name: hit.name, bodyLine: hit.idx, fieldsTable };
   });
+}
+
+const VIEW_REGION_START = /^<!-- GENERATED:(em-slice-view(?:-[a-z0-9-]+)?):start\b/;
+
+/** Line spans (start/end marker line indices) of the balanced generated view regions. */
+function generatedViewRegions(lines: string[]): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = VIEW_REGION_START.exec(lines[i]);
+    if (!m) continue;
+    const endLine = `<!-- GENERATED:${m[1]}:end -->`;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j].startsWith("<!-- GENERATED:")) {
+        if (lines[j].startsWith(endLine)) spans.push({ start: i, end: j });
+        break;
+      }
+    }
+  }
+  return spans;
 }
 
 /** First-occurrence-wins map of a marker kind's declared names, normalized — mirrors every other
@@ -232,6 +263,17 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
 
     checkPattern(diags, parsed, ownerSlice, ownerKey, docPath);
 
+    // MIL-266: generated regions / authored `### Scenario:` blocks that no longer parse. No
+    // refs on purpose — a slice-key ref would make this warning block `--slice-ready` by
+    // itself; the gate's own twin (`slice-ready-structured-section-malformed`,
+    // sliceReadyValidate.ts) is the blocker. Silent on a doc with no markers and no
+    // `### Scenario:` heading (every 1.13-style doc).
+    for (const problem of findStructuredSectionProblems(parsed.body)) {
+      pushDiag(diags, "slice-doc/structured-section-malformed", {
+        message: `slice doc "${docPath}" (slice "${ownerKey}"): ${problem}`,
+      });
+    }
+
     const markers = parseDocMarkers(parsed.body);
     const coveredNames = sliceIndices.map((i) => model.slices[i].name);
 
@@ -250,7 +292,7 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
       }
 
       checkRosterDirections(diags, kind, docPath, docByName, modelByName, ownerSlice, ownerKey, coveredNames, model, refs);
-      if (kind !== "view") checkFields(diags, kind, docPath, docByName, modelByName, model, refs);
+      checkFields(diags, kind, docPath, docByName, modelByName, model, refs);
     }
   }
 
@@ -324,7 +366,7 @@ function markerHint(kind: MarkerKind, name: string): string {
 
 function checkFields(
   diags: Diagnostic[],
-  kind: "command" | "event",
+  kind: MarkerKind,
   docPath: string,
   docByName: Map<string, DocMarker>,
   modelByName: Map<string, Element[]>,

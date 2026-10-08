@@ -13,7 +13,7 @@
 // docs/usage-data.md's Categories tables the same way (MIL-97) — the fixed vocabulary a
 // `.event-modeling.md` Usage log line picks from, so it can't drift from RULES either.
 //
-// `optIn: true` marks the 6 codes `em validate --slice-ready <key>` adds (MIL-87) — never part
+// `optIn: true` marks the 7 codes `em validate --slice-ready <key>` adds (MIL-87) — never part
 // of a plain `em validate` run, excluded from the generated base rule reference (but still
 // included in the usage-log Categories tables — a session can hit them too).
 
@@ -33,7 +33,7 @@ export interface RuleDef {
   usageCategory: string;
   /** docs/validation.md H3 anchor this rule nests under, when one exists and covers >1 rule. */
   docAnchor?: string;
-  /** True for the 6 `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts, MIL-87). */
+  /** True for the 7 `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts, MIL-87). */
   optIn?: true;
 }
 
@@ -345,6 +345,13 @@ export const RULES = {
     usageCategory: "doc field table disagrees with model",
     docAnchor: "doc-model-consistency",
   },
+  "slice-doc/structured-section-malformed": {
+    severity: "warning",
+    title: "Malformed structured section",
+    fix: "Balance the `<!-- GENERATED:em-slice-…:start -->`/`:end -->` markers (re-create the doc with `em slice new --force` if they are lost), restore the template's table header and run `em slice sync`, and give every `### Scenario:` block a Given, When and Then bullet.",
+    usageCategory: "slice doc structured section malformed",
+    docAnchor: "structured-sections",
+  },
   "orphaned-slice-doc": {
     severity: "warning",
     title: "Orphaned slice doc",
@@ -649,6 +656,14 @@ export const RULES = {
     title: "Contract missing or stale",
     fix: "Regenerate the model's contract with `em api generate <model>` and commit it.",
     usageCategory: "slice-ready public slice contract not current",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
+  "slice-ready-structured-section-malformed": {
+    severity: "error",
+    title: "Structured section malformed",
+    fix: "Fix the generated regions / `### Scenario:` blocks `slice-doc/structured-section-malformed` names, then re-run the gate.",
+    usageCategory: "slice-ready structured section malformed",
     docAnchor: "slice-readiness",
     optIn: true,
   },

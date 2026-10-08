@@ -378,6 +378,79 @@ before: for every ID the model does not declare, the doc-body reader (`## Invari
 A doc mentioning an `INV-…` ID that neither the model nor any doc declares gets
 `invariants/doc-cites-undeclared`. See [validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md#invariants).
 
+## Generated regions and authored sections
+
+Since MIL-266 a slice doc has two kinds of section.
+
+**Generated regions** restate the model, and `em` writes them. Each is wrapped in a pair of html
+markers; `em slice new --wire` fills them from the `.em`, and `em slice sync <model>.em` refreshes
+them in place after any model edit. Never hand-edit between the markers — change the model and
+re-run `em slice sync`.
+
+| Region | Section | Body |
+|---|---|---|
+| `em-slice-command` | `## Command / Input` | `**Command:** \`Name\`` + `\| Field \| Type \| Required \| Rules / Validation \|` (Required is `no` for a `name?: Type` field) |
+| `em-slice-event` | `## Event(s) Emitted` | `**Event:** \`Name\` → context \`Ctx\`` + `\| Field \| Type \| Immutable Fact? \| Source / Notes \|` (Source: the same-slice command field it is copied from, `assigned` for a system-assigned field, else `{{ }}`) |
+| `em-slice-view` | `## Read Model / View` | `- **View:** \`Name\` built from events: …` + `\| Field \| Type \| Source / Notes \|` (Source: the source event carrying the field, `Derived` for a `derived` field, else `{{ }}`) |
+| `em-slice-invariants` | `## Invariants / Business Rules` | one `- **INV-X** — rule` line per model-declared invariant of the slice's commands and events |
+
+A slice with several elements of one kind gets one region per element, the name suffixed with
+the element's slug (`em-slice-event-order-placed`). A kind the slice lacks keeps its one region
+with a "has no …" line, so adding the first element later is a plain `em slice sync`. The
+`**Command:**`/`**Event:**`/`- **View:**` marker lines sit inside the regions, so the
+[doc-model consistency](https://github.com/milehimikey/em/blob/main/docs/validation.md#doc-model-consistency) check reads them as before (and,
+inside a generated `em-slice-view` region, now compares the view's field table too).
+
+```markdown
+## Command / Input
+<!-- GENERATED:em-slice-command:start — generated from the model by `em slice sync`; do not hand-edit -->
+**Command:** `Submit Order`
+
+| Field | Type | Required | Rules / Validation |
+|-------|------|----------|--------------------|
+| total | decimal | yes | — |
+| note | text | no | — |
+<!-- GENERATED:em-slice-command:end -->
+```
+
+The invariants list uses `**INV-X** — rule`, not the declaring label `**INV-X:**`, so a
+generated list never trips `invariants/declared-in-both`. Elaborate each ID below the region
+(after the `<!-- elaborate below this list; IDs are declared in the model -->` comment).
+
+**Authored sections** are everything else — Intent, Trigger & Actor, Trigger, `**Read by:**`,
+`Consumed by`/freshness, the invariant elaborations, Scenarios, Alternate & Error Flows, NFRs,
+Dependencies, Open Questions. `em` never writes them; `em slice sync` leaves every byte outside
+the region markers untouched (CRLF included).
+
+**Scenario grammar (authored, constrained).** Inside `## Scenarios (Given / When / Then)`, each
+case is a block:
+
+```markdown
+### Scenario: Non-positive total is rejected (INV-CHK-1)
+- **Given:**
+  - a basket whose total is 0
+- **When:**
+  - the customer submits the order
+- **Then:**
+  - the command is rejected with a validation error
+  - no event is recorded
+```
+
+A `### Scenario: <title>` heading, then the three column-0 bullets `- **Given:**`, `- **When:**`,
+`- **Then:**`, each with nested `  - ` items (text after the label on the same line counts as a
+first item). `em export --json` publishes the parsed blocks as `slice.doc.scenarios`
+(`{ title, given, when, then }[]`, `null` when the doc has none). A block missing any of the
+three is `slice-doc/structured-section-malformed`, as is a region whose markers don't balance or
+whose table header differs from the template's — a warning in `em validate`, and a blocker
+(`slice-ready-structured-section-malformed`) under `--slice-ready`. See
+[validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md#structured-sections).
+
+**Migration.** Nothing is required: a doc with no region markers and no `### Scenario:` heading
+(every doc written before 1.14) stays valid, is never flagged, and `em slice sync` skips it with a
+note. To adopt regions, re-create the doc with `em slice new "<name>" … --wire <model>.em --force`
+and carry the authored prose across, or paste the marker pairs in by hand and run
+`em slice sync`.
+
 ## Open Questions section: lifecycle
 
 `## Open Questions` (MIL-87 for the counting mechanics; MIL-156 for this lifecycle) had no

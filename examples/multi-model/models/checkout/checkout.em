@@ -6,7 +6,7 @@ context Order
 
 slice "Checkout" {
   ui Checkout Screen @Customer
-  command Submit Order public {
+  command Submit Order public note "slices/checkout.md" {
     total: decimal
     note?: text
   }
