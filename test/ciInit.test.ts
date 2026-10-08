@@ -4,7 +4,7 @@
 // shell-injection guard. CLI-level coverage (real fs, `em ci init` end to end) lives in
 // test/cli.test.ts, matching test/agentsMd.test.ts (pure) / test/cli.test.ts's AGENTS.md block
 // (CLI) split for the marker-delimited AGENTS.md section this reuses the same convention from.
-import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   buildCiWorkflowFile,
   buildConformWorkflowFile,
@@ -32,6 +32,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// MIL-205: the `em ci init <system.yaml>` CLI tests below spawn the real CLI (several spawns each,
+// ~5-6 s cold on a GitHub runner), past vitest's 5 s default. File-level timeout, as test/cli.test.ts.
+vi.setConfig({ testTimeout: 20_000 });
 
 describe("buildCiWorkflowFile", () => {
   const content = buildCiWorkflowFile("order-fulfillment/order-fulfillment.em", "test", "1.9.0");
