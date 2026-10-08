@@ -4015,10 +4015,7 @@ with the inference always stated in the output; `to` = the installed `em`.
 
 The mechanical steps, in this fixed order:
 
-1. **`skill-bundle`** — delegates to `em skill sync`'s own plan/apply: refreshes the vendored
-   `.claude/skills/` bundle. Not applicable when no bundle is vendored at all (`em upgrade` never
-   installs one that wasn't there).
-2. **`skill-plugin`** (1.14.0, MIL-232) — migrates a vendored bundle to the pinned [em
+1. **`skill-plugin`** (1.14.0, MIL-232) — migrates a vendored bundle to the pinned [em
    plugin](ai-workflow.md#the-plugin-route) in ONE commit: removes the seven bundle directories
    (`event-modeling`, `-discover`, `-design`, `-implement`, `-conform`, `-review`, `-shared`) under
    `.claude/skills/` and nothing else (a sibling skill is never touched); JSON-merges
@@ -4027,9 +4024,12 @@ The mechanical steps, in this fixed order:
    other keys kept, 2-space JSON), with `<ver>` the installed em; and refreshes the `AGENTS.md`
    managed section so it names `/em:event-modeling`, `/em:discover`, `/em:design`, `/em:implement`,
    `/em:conform`, `/em:review`. Applicable only when `.claude/skills/event-modeling` exists and no
-   plugin is declared; an unparseable `settings.json` is left alone. It sits after `skill-bundle`,
-   which is not applicable once the plugin is declared. The machine-level registration cannot be
+   plugin is declared; an unparseable `settings.json` is left alone. It runs first, so `skill-bundle`
+   (not applicable once the plugin is declared or this step is pending) never makes a throwaway sync commit. The machine-level registration cannot be
    done by `em upgrade`: see the `plugin-install-locally` human item below.
+2. **`skill-bundle`** — delegates to `em skill sync`'s own plan/apply: refreshes the vendored
+   `.claude/skills/` bundle. Not applicable when no bundle is vendored at all (`em upgrade` never
+   installs one that wasn't there).
 3. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
    pre-1.7.1 two-slice Automation/Translation shape into the merged single-slice shape.
 4. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same

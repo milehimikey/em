@@ -327,7 +327,7 @@ See [`em model version show`](cli.md#em-model-version-show-file---json) for the 
 
 Same document as `em upgrade <file> --json` (MIL-219): dry-run only — this tool NEVER applies
 anything, unlike the CLI's `--apply`. Returns the `from`/`to` em versions, every mechanical step
-(`skill-bundle`, `skill-plugin`, `reaction-shape`, `state-file`, `ci-block`, `constitution`, …) with whether it's
+(`skill-plugin`, `skill-bundle`, `reaction-shape`, `state-file`, `ci-block`, `constitution`, …) with whether it's
 applicable and why, and the human list of things no command can safely decide by itself. Requires
 `file`'s directory to be inside a git repository (tool error otherwise). Unlike most tools here,
 this one does NOT refuse when the model has validation errors — the old pre-1.7.1 two-slice
