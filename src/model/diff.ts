@@ -26,6 +26,7 @@ export type ChangeType =
   | "field-added"
   | "field-removed"
   | "field-changed"
+  | "field-optionality-changed"
   | "from-added"
   | "from-removed"
   | "note-added"
@@ -42,7 +43,8 @@ export type ChangeType =
   | "type-removed"
   | "type-field-added"
   | "type-field-removed"
-  | "type-field-changed";
+  | "type-field-changed"
+  | "type-field-optionality-changed";
 
 /**
  * One reported change. Not every field applies to every `type` — see
@@ -68,6 +70,9 @@ export interface ChangeEntry {
   toSliceKey?: string;
   field?: string;
   fieldType?: string | null;
+  /** MIL-237: the field's optionality (`name?: Type`) — on `*field-added`/`*field-removed`, that
+   *  field's own; on `*field-optionality-changed`, the NEW side's (the old side is its negation). */
+  optional?: boolean;
   oldType?: string | null;
   newType?: string | null;
   source?: string;
@@ -455,13 +460,13 @@ function pushTypeFieldChanges(
 
   for (const [key, f] of newFields) {
     if (!oldFields.has(key)) {
-      changes.push({ type: "type-field-added", name: newType.name, ref, field: f.name, fieldType: f.type ?? null });
+      changes.push({ type: "type-field-added", name: newType.name, ref, field: f.name, fieldType: f.type ?? null, optional: f.optional === true });
       counts.typeFieldChanges++;
     }
   }
   for (const [key, f] of oldFields) {
     if (!newFields.has(key)) {
-      changes.push({ type: "type-field-removed", name: newType.name, ref, field: f.name, fieldType: f.type ?? null });
+      changes.push({ type: "type-field-removed", name: newType.name, ref, field: f.name, fieldType: f.type ?? null, optional: f.optional === true });
       counts.typeFieldChanges++;
     }
   }
@@ -476,6 +481,13 @@ function pushTypeFieldChanges(
         oldType: oldF.type ?? null,
         newType: newF.type ?? null,
       });
+      counts.typeFieldChanges++;
+    }
+  }
+  for (const [key, newF] of newFields) {
+    const oldF = oldFields.get(key);
+    if (oldF && (oldF.optional === true) !== (newF.optional === true)) {
+      changes.push({ type: "type-field-optionality-changed", name: newType.name, ref, field: newF.name, optional: newF.optional === true });
       counts.typeFieldChanges++;
     }
   }
@@ -512,6 +524,7 @@ function pushElementChanges(
             sliceKey,
             field: f.name,
             fieldType: f.type ?? null,
+            optional: f.optional === true,
           },
           counts,
           div,
@@ -533,6 +546,7 @@ function pushElementChanges(
             sliceKey,
             field: f.name,
             fieldType: f.type ?? null,
+            optional: f.optional === true,
           },
           counts,
           div,
@@ -556,6 +570,28 @@ function pushElementChanges(
             field: newF.name,
             oldType: oldF.type ?? null,
             newType: newF.type ?? null,
+          },
+          counts,
+          div,
+        ),
+      );
+      counts.fieldChanges++;
+    }
+  }
+  for (const [key, newF] of newFields) {
+    const oldF = oldFields.get(key);
+    if (oldF && (oldF.optional === true) !== (newF.optional === true)) {
+      changes.push(
+        annotate(
+          {
+            type: "field-optionality-changed",
+            kind: newEl.kind,
+            name: newEl.name,
+            ref,
+            sliceName,
+            sliceKey,
+            field: newF.name,
+            optional: newF.optional === true,
           },
           counts,
           div,
@@ -717,6 +753,15 @@ function formatSummary(c: DiffCounts): string {
   return parts.length === 0 ? "no structural changes" : parts.join(", ");
 }
 
+/** `?` after a field's quoted name when it is optional (MIL-237), mirroring the DSL. */
+function opt(e: ChangeEntry): string {
+  return e.optional ? "?" : "";
+}
+
+function optionalityLabel(e: ChangeEntry): string {
+  return e.optional ? "changed required -> optional" : "changed optional -> required";
+}
+
 function typeLabel(t: string | null | undefined): string {
   return t ?? "(untyped)";
 }
@@ -762,11 +807,13 @@ function formatEntry(e: ChangeEntry): string {
     case "element-moved":
       return `moved: ${e.kind} "${e.name}" (slice "${e.fromSlice}" -> slice "${e.toSlice}")`;
     case "field-added":
-      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} added to ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
+      return `~ field "${e.field}"${opt(e)}${e.fieldType ? `: ${e.fieldType}` : ""} added to ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "field-removed":
-      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} removed from ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
+      return `~ field "${e.field}"${opt(e)}${e.fieldType ? `: ${e.fieldType}` : ""} removed from ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "field-changed":
       return `~ field "${e.field}" type changed on ${e.kind} "${e.name}" (slice "${e.sliceName}"): ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}${divergenceSuffix(e)}`;
+    case "field-optionality-changed":
+      return `~ field "${e.field}" ${optionalityLabel(e)} on ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "from-added":
       return `~ from "${e.source}" added on ${e.kind} "${e.name}" (slice "${e.sliceName}")${divergenceSuffix(e)}`;
     case "from-removed":
@@ -784,9 +831,9 @@ function formatEntry(e: ChangeEntry): string {
     case "issue-changed":
       return `issue text changed: ${e.kind} "${e.name}" (slice "${e.sliceName}"): "${e.oldText}" -> "${e.newText}"${divergenceSuffix(e)}`;
     case "event-marked-public":
-      return `event marked public: ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `${e.kind === "command" ? "command" : "event"} marked public: ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
     case "event-unmarked-public":
-      return `event unmarked public: ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
+      return `${e.kind === "command" ? "command" : "event"} unmarked public: ${e.kind} "${e.name}" (slice "${e.sliceName}")`;
     case "arrow-added":
       return `+ arrow "${e.from}" -> "${e.to}"`;
     case "arrow-removed":
@@ -796,11 +843,13 @@ function formatEntry(e: ChangeEntry): string {
     case "type-removed":
       return `- type "${e.name}"`;
     case "type-field-added":
-      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} added to type "${e.name}"`;
+      return `~ field "${e.field}"${opt(e)}${e.fieldType ? `: ${e.fieldType}` : ""} added to type "${e.name}"`;
     case "type-field-removed":
-      return `~ field "${e.field}"${e.fieldType ? `: ${e.fieldType}` : ""} removed from type "${e.name}"`;
+      return `~ field "${e.field}"${opt(e)}${e.fieldType ? `: ${e.fieldType}` : ""} removed from type "${e.name}"`;
     case "type-field-changed":
       return `~ field "${e.field}" type changed on type "${e.name}": ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}`;
+    case "type-field-optionality-changed":
+      return `~ field "${e.field}" ${optionalityLabel(e)} on type "${e.name}"`;
   }
 }
 

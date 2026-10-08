@@ -28,7 +28,13 @@ em render <file> --keep-empty-lanes                           # keep the API lan
 em export <file>                                              # export a versioned JSON snapshot of the normalized model
 em export <file> -o, --out <path>                             # write to a file instead of stdout
 em export <file> --slice <key>                                # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
-em typespec <file>                                            # EXPERIMENTAL/POC (MIL-159): generate a TypeSpec contract for a model's commands, public events, and public views (see docs/cli.md)
+em api generate <file>                                        # write the TypeSpec contract for the model's public commands, events and views to <model dir>/contracts/<model key>.tsp
+em api generate <file> -o, --out <path>                       # write to this path instead of <model dir>/contracts/<model key>.tsp
+em api generate <file> --stdout                               # print the contract instead of writing it
+em api check <file>                                           # is the committed contract current? With --base, annotate each public-surface change since that revision additive or breaking (annotation only — exits 1 only when stale)
+em api check <file> --base <rev>                              # git revision to diff the public surface against
+em api check <file> --json                                    # print a JSON document instead of the text report (see docs/cli.md)
+em typespec <file>                                            # DEPRECATED alias of `em api generate --stdout` (use em api generate)
 em typespec <file> -o, --out <path>                           # write to a file instead of stdout
 em diff <old> [new]                                           # compare two models structurally (two files, or one file across git revisions)
 em diff <old> [new] --from <rev>                              # diff <old> against this git revision instead of a second file
@@ -113,7 +119,7 @@ em watch <file> --port <n>                                    # port for --serve
 em validate <file>                                            # check a model against event-modeling rules
 em validate <file> --list-issues                              # print only open `issue` diagnostics (slice, element, line, text)
 em validate <file> --list-divergences                         # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
-em validate <file> --list-public                              # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
+em validate <file> --list-public                              # print only commands, events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
 em validate <file> --fail-on-issues                           # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
 em validate <file> --slice-ready <key>                        # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
 em validate <file> --json                                     # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
@@ -177,8 +183,8 @@ em query path <files>                                         # shortest path be
 em query path <files> --from <ref-or-name>                    # the starting element's export ref or display name
 em query path <files> --to <ref-or-name>                      # the ending element's export ref or display name
 em query path <files> --json                                  # print a JSON document instead of the text report
-em system <manifest>                                          # verify a seam manifest (system.yaml) against its models' exports — every `public` event/view bound to a reaction in another model, the cross-model half of "both ends of a flow" (MIL-194, see docs/cli.md)
-em system <manifest> --json                                   # print a JSON document instead of the text report (see docs/cli.md)
+em system [target]                                            # verify a system — every model's `consumes` refs resolved against the other models' `public` events/views, the cross-model half of "both ends of a flow" (MIL-194/MIL-235, see docs/cli.md). Reads system.yaml when given (or found in the directory), else discovers every *.em in the repo
+em system [target] --json                                     # print a JSON document instead of the text report (see docs/cli.md)
 em contract                                                   # print the packaged implementation contract (reference/implement.md) to stdout — the agent-neutral discovery path for any agent that can run a shell, not just Claude Code (MIL-129); see docs/cli.md
 em mcp                                                        # start an MCP (Model Context Protocol) server over stdio (MIL-21) — a structured, agent-facing alternative to shelling out to `em`; every tool mirrors a CLI `--json` surface byte-for-byte. docs/mcp.md isn't vendored into the skill bundle — for the handshake and the full, current tool table (the list changes as commands gain MCP parity, so it's not repeated here — MIL-187) see https://github.com/milehimikey/em/blob/main/docs/mcp.md. Equivalent to running the `em-mcp` bin directly
 em skill install                                              # copy the event-modeling skill bundle into .claude/skills/ (event-modeling, event-modeling-discover/-design/-implement/-conform/-review, event-modeling-shared); across a structural bundle change (e.g. the MIL-157 split of the old single event-modeling/ directory into this six-directory bundle), `em skill sync` is the migration path — --force now performs the same reconcile (MIL-180)
@@ -207,7 +213,7 @@ deps; only rarer formats (ps, eps, ...) need `rsvg-convert`.
 ## Grammar
 
 ```
-model "Name"                     # diagram title
+model "Name" [owner "Team"]      # diagram title; optional owning team(s), quoted free text
 
 persona Name                     # a UI swimlane row (actor)
 context Name                     # an event swimlane row (bounded context / aggregate)
@@ -219,6 +225,7 @@ slice "Name" [source "url"] {    # one vertical time step (a column); source is 
   view Free Text again from "Event C"        # later instance of an evolving read model (see Clauses)
   event Free Text @Context       # recorded fact; @Context picks its row (defaults to "Domain")
   processor Free Text from "View"   # automation; aliases: automation | saga | translation
+  translation Free Text consumes other-model:event.slug   # binds another model's public event/view
 }
 
 arrow From Element -> To Element    # explicit cross-slice edge (overrides inferred flow)
@@ -233,7 +240,7 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 | `command` | API | state-changing request | — | `note`, `issue`, `divergence`, `renamed from`, `{ fields }` |
 | `view` | API | read model / projection | — | `from "Event"…`, `note`, `issue`, `divergence`, `public`, `{ fields }` |
 | `event` | context | recorded fact (past tense) | `@Context` | `note`, `issue`, `divergence`, `public`, `tag`, `renamed from`, `loops-to`, field-level `assigned`, `{ fields }` |
-| `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }` |
+| `processor` / `automation` / `saga` / `translation` | automation | system reaction / adapter | — | `from "…"`, `note`, `issue`, `divergence`, `{ fields }`; `translation` only: `consumes` |
 
 ### Clauses
 - **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a
@@ -303,12 +310,28 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   view flip reads `view "X"`); `em validate --list-public` audits the whole public surface.
   **Exposure of a read model (MIL-215) is three cases, no dedicated keyword:** a person/client
   reads it → draw the `ui` that reads it (ships the endpoint); another model/system reads it →
-  `public` (a cross-model contract, verified by `em system <manifest>`, not `em validate`); only
+  `public` (a cross-model contract its consumer binds with `consumes`, verified by `em system`, not `em validate`); only
   an automation reads it → nothing — internal by design, the read a reaction is required to
   make, not an endpoint. `em validate --list-public` flags a `public` view with no `ui`/reaction
   reading it anywhere in this model as an audit note ("no in-model reader"), not a warning — a
   cross-model `public` view's reader legitimately lives outside this file (see "`em validate`
   rules" below).
+- **`consumes`** (translation only, MIL-235): `translation X consumes <modelKey>:<kind>.<slug>[, …]`
+  binds this boundary-crossing reaction to another model's `public` event or view. The binding is
+  declared on the consumer and has no version. `kind` is `event` or `view` (never `command`).
+  `modelKey` is the kebab-slug of the producer's `model "Name"`, and `slug` is the kebab-slug of
+  the element's name. There is no slice segment, so the producer can move the element between
+  slices without breaking consumers. Refs are unquoted and comma-separated. Write the clause before
+  or after `from "…"`, before or after a `{ … }` block, never inside the braces. On any other kind
+  it is a parse error: ``line N: `consumes` is only valid on translation — only a boundary-crossing
+  reaction binds to another model's public surface``. `em validate` checks the grammar only.
+  `em system` resolves the ref (`consumes-unknown-model` / `consumes-unknown-element`) and
+  derives `dangling-public-event` / `unbound-translation` from it. Two `public` elements of one
+  kind sharing a slug are a `public-name-not-unique` error, because a ref couldn't tell them
+  apart. Exported as `consumes: string[] | null`.
+- **`owner`** (model header, MIL-235): `model "Checkout" owner "Storefront team"[, "…"]`. Quoted
+  free text, kept as written, exported as `model.owner: string[]`. It replaces a 1.0
+  `system.yaml`'s per-model `owner:`.
 - **`tag`** (events only): declares a DCB (Dynamic Consistency Boundary) tag key. Three forms:
   a trailing `tag` on a field line inside the event's `{ … }` block (`priceId: UUID tag`, or
   typeless `priceId tag`) — an identity tag, key defaults to the field's own name; a bare field
@@ -695,6 +718,8 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
+| `consumes-unknown-element` | error | `consumes` names no public element of that model | Point the ref at an element the producer marks `public` (`em export` lists them), or ask the producer to publish it. |
+| `consumes-unknown-model` | error | `consumes` names a model the system does not have | Fix the model key (the kebab-slug of the producer's `model "Name"`), or add that model to the system. |
 | `continuation-has-own-doc` | warning | Continuation slice has its own doc | Fold this doc's scenarios into slices/<originating-key>.md and delete it; a later `view X again` instance is documented by the view's originating slice. |
 | `cross-model-slice-doc-collision` | warning | Colliding slice doc path across models | Give each model its own directory (see docs/cli.md, "Multi-model projects"). |
 | `dangling-public-event` | warning | Public event/view no seam consumes | Declare the seam that reads it, or drop `public` if nothing outside the model does. |
@@ -727,13 +752,16 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `note-binding-unusable` | warning | Cross-slice note to a doc with unusable frontmatter | Fix that doc's frontmatter, or fix/remove the note. |
 | `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
 | `orphaned-slice-doc` | warning | Orphaned slice doc | Rename it to a current slice's key, add `covers:` (plus a `note` binding) to attach it to a live slice, or delete it. |
+| `public-field-type-unresolved` | error | Public field type unresolved | Give the field a type from the public type table (string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes), `X[]` of one, or a declared `type` — or drop `public`. |
+| `public-name-not-unique` | error | Two public elements of one kind share a name | Rename one of them (or drop `public` from one): a consumer's `consumes <model>:<kind>.<slug>` must name exactly one element. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
 | `seam-consumer-not-reaction` | error | Seam consumer is not a reaction | Point `to` at a translation/automation element (or a slice containing exactly one). |
 | `seam-duplicate` | warning | Duplicate seam | Remove the repeated `from`/`to` pair. |
 | `seam-endpoint-unresolved` | error | Seam endpoint does not resolve | Fix the ref to an element the named model actually exports (`em export` lists every ref), or re-declare the seam after a rename. |
 | `seam-source-not-public` | error | Seam source is not `public` | Mark the event/view `public` in its model, or point the seam at the element that is. |
-| `system-manifest-invalid` | error | Seam manifest invalid | Fix the manifest: required keys, `systemSchemaVersion: "1.0"`, a readable `source` per model, and only declared model keys in seam refs. |
+| `system-manifest-invalid` | error | Seam manifest invalid | Fix the manifest: `systemSchemaVersion: "2.0"`, `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`). |
+| `system-manifest-outdated` | warning | Seam manifest is schema 1.0 | Run `em upgrade <model>.em --apply` once: it moves `seams:` into `consumes` clauses and `owner:` onto each model header, and rewrites the manifest to 2.0. |
 | `system-model-key-mismatch` | error | Manifest model key differs from the export's `model.key` | Rename the manifest's `models:` key to the computed key the message prints. |
 | `tag-composite-unknown-field` | error | Composite tag names an unknown field | Fix the field name, or add it to the event's fields. |
 | `tag-duplicate-key` | error | Duplicate tag key | Rename one of the tags so every key on the event is unique. |

@@ -298,3 +298,14 @@ slice "Billing" {
     );
   });
 });
+
+describe("optional fields (MIL-237)", () => {
+  it("carries `optional` on each field occurrence and never treats an optionality difference as a type conflict", () => {
+    const a = input("a.em", `slice "S" {\n  command Do { note?: text }\n}\n`);
+    const b = input("b.em", `slice "S" {\n  command Do { note: text }\n}\n`);
+    const g = buildGlossary([a, b]);
+    const note = g.fields.find((t) => t.key === "note")!;
+    expect(note.occurrences.map((o) => o.optional)).toEqual([true, false]);
+    expect(detectFieldTypeConflicts(g)).toEqual([]);
+  });
+});

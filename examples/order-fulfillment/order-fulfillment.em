@@ -7,8 +7,7 @@ context Order
 context Payment
 
 # A named type (MIL-64): declared once, referenced below as an array (`LineItem[]`) from the
-# command that accepts an order's line items. Also gives `em typespec` (MIL-159, experimental)
-# a real declared-type-to-model mapping to prove against this same file.
+# command that accepts an order's line items.
 type LineItem {
   sku: string
   quantity: int
@@ -25,23 +24,23 @@ slice "Browse Catalog" source "https://linear.app/team/issue/MIL-60" {
     items: LineItem[]
     total: Money
   }
-  # `public` (MIL-159's own generator target, see `em typespec` in cli.md): this event is part
-  # of the model's published integration surface, so it's also the one that ends up in the
-  # generated TypeSpec contract, along with `Place Order` (same slice).
+  # `public` (see `em api generate` in cli.md): this event is part of the model's published
+  # integration surface, so it ends up in the generated TypeSpec contract — and, since em 1.14,
+  # every one of its fields must carry a strict public type (docs/dsl.md "Strict public types").
   event Order Placed @Order public note "notes/order-placed.md" {
-    orderId assigned
-    customerId
-    total: Money
-    placedAt: Instant assigned
+    orderId: uuid assigned
+    customerId: uuid
+    total: decimal
+    placedAt: datetime assigned
   }
 }
 
 # --- View pattern: event -> read model -> UI ---
 slice "View Open Orders" {
   view Open Orders public from "Order Placed" note "slices/view-open-orders.md" {
-    orderId
-    total: Money
-    status
+    orderId: uuid
+    total: decimal
+    status: string
   }
   ui Order List @Customer
 }

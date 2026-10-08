@@ -21,6 +21,7 @@ import {
   queryField,
   queryPath,
 } from "../src/query/verbs.js";
+import { formatField } from "../src/query/format.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 
 const FIXTURE = `model "Query Fixture"
@@ -526,6 +527,20 @@ describe("field — type/tag/assigned/renamed-from facts", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.results[0].assigned).toBe(true);
+  });
+
+  it("reports `optional` (MIL-237): false by default, true for `name?: Type`, and `name?:` in the text form", () => {
+    const system = buildFixtureSystem(dir);
+    const required = queryField(system, "Order Placed", "total");
+    expect(required.ok && required.results[0].optional).toBe(false);
+    const src = `slice "S" {\n  command Do { note?: text }\n  event Done @D\n}\n`;
+    const compiled = compileForQuery(src, dir);
+    const opt = buildQuerySystem([{ file: "o.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+    const result = queryField(opt, "Do", "note");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.results[0]).toMatchObject({ name: "note", type: "text", optional: true });
+    expect(formatField(result.results)).toBe("s/command.do.note?: text tag=false assigned=false");
   });
 
   it("reports the owning element's own renamed-from chain alongside the field's", () => {

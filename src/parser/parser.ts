@@ -590,10 +590,10 @@ function extractClauses(
     rest = rest.slice(0, fromMatch.index).trim();
   }
 
-  // `public` clause (event or view): marks this element as part of the published
-  // integration surface — an event as an AsyncAPI-style contract, a view as the response
-  // shape of a public read API/webhook another team or service consumes — as opposed to an
-  // internal-only fact or read model. Checked here, before `@Tag`/`again`, so `public` may be
+  // `public` clause (command, event or view): marks this element as part of the published
+  // integration surface — a command as the write API (MIL-237), an event as an AsyncAPI-style
+  // contract, a view as the response shape of a public read API/webhook another team or
+  // service consumes — as opposed to an internal-only command, fact or read model. Checked here, before `@Tag`/`again`, so `public` may be
   // written either as the true last token, immediately before a trailing `@Tag` (event), or
   // immediately before a trailing `again` (view) — either way the later token ends up the
   // trailing-most once `public` is excised, which is what those blocks below require.
@@ -603,10 +603,10 @@ function extractClauses(
   // in a name (`event Account Made Public`) is never taken as the marker.
   const publicMatch = rest.match(/(?:^|\s)public(?=\s+again\s*$|\s+@\S.*$|\s*$)/);
   if (publicMatch && publicMatch.index !== undefined) {
-    if (node.kind !== "event" && node.kind !== "view")
+    if (node.kind !== "command" && node.kind !== "event" && node.kind !== "view")
       throw new ParseError(
-        "`public` is only valid on event or view — only recorded facts and read models are " +
-          "promoted to the integration surface",
+        "`public` is only valid on command, event or view — only the write API, recorded facts " +
+          "and read models are promoted to the integration surface",
         line,
       );
     node.public = true;
@@ -931,8 +931,17 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
   return { rest, clauses };
 }
 
-/** Parse one field spec: `name` or `name: Type`, plus any trailing field-level clauses
- *  (`extractFieldClauses`). Returns null for blanks. */
+/** Split a trailing optional marker (`name?`, MIL-237) off a raw, not-yet-unquoted field
+ *  name. Stripped BEFORE `unquote` so `"weird name"?` works and `name?` never survives as a
+ *  literal field name. */
+function splitOptionalMarker(rawName: string): { rawName: string; optional: boolean } {
+  const t = rawName.trim();
+  if (t.endsWith("?")) return { rawName: t.slice(0, -1).trim(), optional: true };
+  return { rawName: t, optional: false };
+}
+
+/** Parse one field spec: `name`, `name: Type`, `name?: Type` or `name?` (optional, MIL-237),
+ *  plus any trailing field-level clauses (`extractFieldClauses`). Returns null for blanks. */
 function parseFieldSpec(raw: string, line: number, context: FieldClauseContext): Field | null {
   const s = raw.trim();
   if (!s) return null;
@@ -942,14 +951,20 @@ function parseFieldSpec(raw: string, line: number, context: FieldClauseContext):
 
   const colon = spec.indexOf(":");
   let field: Field | null;
+  let optional = false;
   if (colon >= 0) {
-    const name = unquote(spec.slice(0, colon).trim());
+    const marker = splitOptionalMarker(spec.slice(0, colon));
+    optional = marker.optional;
+    const name = unquote(marker.rawName);
     const type = unquote(spec.slice(colon + 1).trim());
     field = name ? { name, ...(type ? { type } : {}) } : null;
   } else {
-    const name = unquote(spec);
+    const marker = splitOptionalMarker(spec);
+    optional = marker.optional;
+    const name = unquote(marker.rawName);
     field = name ? { name } : null;
   }
+  if (field && optional) field.optional = true;
   if (field && clauses.tag) field.tag = true;
   if (field && clauses.renamedFrom) field.renamedFrom = clauses.renamedFrom;
   if (field && clauses.assigned) field.assigned = true;

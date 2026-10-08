@@ -174,13 +174,34 @@ slice "S" {
     });
   });
 
-  it("rejects `public` on a command or ui — only event and view carry an integration surface", () => {
-    expect(() => parse(`slice "S" {\n  command Do Thing public\n}`)).toThrow(
-      /`public` is only valid on event or view/,
-    );
+  it("accepts `public` on a command (MIL-237 — the write API) and rejects it on a ui", () => {
+    const ast = parse(`slice "S" {\n  command Do Thing public\n}`);
+    expect(ast.slices[0].elements[0]).toMatchObject({ kind: "command", name: "Do Thing", public: true });
     expect(() => parse(`slice "S" {\n  ui Catalog public @Customer\n}`)).toThrow(
-      /`public` is only valid on event or view/,
+      "line 2: `public` is only valid on command, event or view — only the write API, recorded facts " +
+        "and read models are promoted to the integration surface",
     );
+  });
+
+  it("parses `public` on a command before its field block", () => {
+    const ast = parse(`slice "S" {\n  command Do Thing public { a: string }\n}`);
+    expect(ast.slices[0].elements[0]).toMatchObject({ name: "Do Thing", public: true, fields: [{ name: "a", type: "string" }] });
+  });
+
+  it("parses `name?: Type` and `name?` as optional fields — the `?` never survives in the name (MIL-237)", () => {
+    const ast = parse(`slice "S" {\n  event E @C { a: string, b?: text, c?, "d e"?: int, f: string renamed from "g" }\n}`);
+    expect(ast.slices[0].elements[0].fields).toEqual([
+      { name: "a", type: "string" },
+      { name: "b", type: "text", optional: true },
+      { name: "c", optional: true },
+      { name: "d e", type: "int", optional: true },
+      { name: "f", type: "string", renamedFrom: ["g"] },
+    ]);
+  });
+
+  it("parses `?` on a declared type's field", () => {
+    const ast = parse(`type Money { amount: decimal, note?: text }\nslice "S" {\n  command C\n}`);
+    expect(ast.types[0].fields).toEqual([{ name: "amount", type: "decimal" }, { name: "note", type: "text", optional: true }]);
   });
 
   it("parses a `public` clause on a view — a published read API/webhook with no local consumer", () => {

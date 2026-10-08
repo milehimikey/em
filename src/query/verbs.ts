@@ -255,6 +255,8 @@ export interface FieldQueryEntry {
   elementRef: string;
   name: string;
   type: string | null;
+  /** `name?: Type` (MIL-237). */
+  optional: boolean;
   tag: boolean;
   assigned: boolean;
   renamedFrom: string[] | null;
@@ -281,6 +283,7 @@ export function queryField(system: QuerySystem, ofRef: string, name: string): Ve
         elementRef: qualifyRef(system, entry.modelKey, ref),
         name: field.name,
         type: field.type ?? null,
+        optional: field.optional === true,
         tag: field.tag === true,
         assigned: field.assigned === true,
         renamedFrom: field.renamedFrom ?? null,

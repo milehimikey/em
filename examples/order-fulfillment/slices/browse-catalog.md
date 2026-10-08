@@ -42,8 +42,8 @@ A `Customer`, acting on the **Product Catalog** screen.
 |-------|------|-----------------|----------------|
 | orderId | UUID | yes | Server-generated at decision time — never supplied by the command (this is why `em validate` flags it as a field-completeness warning; it's the documented "system supplies this" case, not a gap). |
 | customerId | UUID | yes | Copied from the command. |
-| total | Money | yes | Copied from the command (already server-validated above). |
-| placedAt | Instant | yes | Server clock at decision time — same system-generated shape as `orderId`. |
+| total | decimal | yes | Copied from the command (already server-validated above). |
+| placedAt | datetime | yes | Server clock at decision time — same system-generated shape as `orderId`. |
 
 ## Invariants / Business Rules
 

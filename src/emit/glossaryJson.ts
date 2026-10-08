@@ -11,7 +11,10 @@ import { createHash } from "node:crypto";
 import { Glossary, GlossaryConflict } from "../model/glossary.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
-export const GLOSSARY_SCHEMA_VERSION = "1.0";
+// 1.0: initial shape.
+// 1.1 (1.14.0 release; MIL-237): every field occurrence gains `optional: boolean` (the field's
+// `name?: Type` marker). Additive-only.
+export const GLOSSARY_SCHEMA_VERSION = "1.1";
 
 /** One input file: what it was called on the command line, hashed source. */
 export interface GlossaryFileSide {

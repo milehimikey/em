@@ -155,7 +155,7 @@ export function collectMarkers(
   if (kinds.public) {
     const noReader = publicViewsWithoutInModelReader(model);
     for (const el of model.elements) {
-      if (el.public && (el.kind === "event" || el.kind === "view")) {
+      if (el.public && (el.kind === "command" || el.kind === "event" || el.kind === "view")) {
         const flag = el.kind === "view" ? noReader.has(el.logicalId) : null;
         markers.push(entryFor(el, "public", null, flag));
       }

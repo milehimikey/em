@@ -27,7 +27,13 @@ em render <file> --keep-empty-lanes                           # keep the API lan
 em export <file>                                              # export a versioned JSON snapshot of the normalized model
 em export <file> -o, --out <path>                             # write to a file instead of stdout
 em export <file> --slice <key>                                # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
-em typespec <file>                                            # EXPERIMENTAL/POC (MIL-159): generate a TypeSpec contract for a model's commands, public events, and public views (see docs/cli.md)
+em api generate <file>                                        # write the TypeSpec contract for the model's public commands, events and views to <model dir>/contracts/<model key>.tsp
+em api generate <file> -o, --out <path>                       # write to this path instead of <model dir>/contracts/<model key>.tsp
+em api generate <file> --stdout                               # print the contract instead of writing it
+em api check <file>                                           # is the committed contract current? With --base, annotate each public-surface change since that revision additive or breaking (annotation only — exits 1 only when stale)
+em api check <file> --base <rev>                              # git revision to diff the public surface against
+em api check <file> --json                                    # print a JSON document instead of the text report (see docs/cli.md)
+em typespec <file>                                            # DEPRECATED alias of `em api generate --stdout` (use em api generate)
 em typespec <file> -o, --out <path>                           # write to a file instead of stdout
 em diff <old> [new]                                           # compare two models structurally (two files, or one file across git revisions)
 em diff <old> [new] --from <rev>                              # diff <old> against this git revision instead of a second file
@@ -112,7 +118,7 @@ em watch <file> --port <n>                                    # port for --serve
 em validate <file>                                            # check a model against event-modeling rules
 em validate <file> --list-issues                              # print only open `issue` diagnostics (slice, element, line, text)
 em validate <file> --list-divergences                         # print only accepted-divergence annotations (slice, element, line, text) — never fails the build
-em validate <file> --list-public                              # print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
+em validate <file> --list-public                              # print only commands, events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build
 em validate <file> --fail-on-issues                           # exit non-zero if the model has any open `issue`s (opt-in — issues are warnings and don't block by default)
 em validate <file> --slice-ready <key>                        # readiness gate for one slice (export key): status ready-to-implement, doc resolvable via note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)
 em validate <file> --json                                     # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
@@ -745,6 +751,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `note-binding-unusable` | warning | Cross-slice note to a doc with unusable frontmatter | Fix that doc's frontmatter, or fix/remove the note. |
 | `open-issue` | warning | Open issue | Resolve the question, then remove the `issue` clause. |
 | `orphaned-slice-doc` | warning | Orphaned slice doc | Rename it to a current slice's key, add `covers:` (plus a `note` binding) to attach it to a live slice, or delete it. |
+| `public-field-type-unresolved` | error | Public field type unresolved | Give the field a type from the public type table (string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes), `X[]` of one, or a declared `type` — or drop `public`. |
 | `public-name-not-unique` | error | Two public elements of one kind share a name | Rename one of them (or drop `public` from one): a consumer's `consumes <model>:<kind>.<slug>` must name exactly one element. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |

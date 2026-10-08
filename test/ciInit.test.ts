@@ -30,7 +30,7 @@ describe("buildCiWorkflowFile", () => {
     expect(content).toContain("name: em ci");
     expect(content).toContain("on:\n  pull_request:");
     expect(content).toContain("push:\n    branches: [main]");
-    for (const job of ["validate:", "slice-index:", "coverage:", "ledger:", "skill-check:", "upgrade-check:", "glossary:", "status-badge:"]) {
+    for (const job of ["validate:", "api-check:", "slice-index:", "coverage:", "ledger:", "skill-check:", "upgrade-check:", "glossary:", "status-badge:"]) {
       expect(content).toContain(`\n  ${job}\n`);
     }
   });
@@ -43,8 +43,18 @@ describe("buildCiWorkflowFile", () => {
     expect(content).toContain('npx @milehimikey/em@1.9.0 upgrade "order-fulfillment/order-fulfillment.em" --check');
   });
 
+  it("wires `em api check --base` on the PR base sha right after validate (MIL-237), with full history", () => {
+    expect(content).toContain(
+      '          base="${{ github.event.pull_request.base.sha }}"\n' +
+        '          npx @milehimikey/em@1.9.0 api check "order-fulfillment/order-fulfillment.em" --base "$base"\n',
+    );
+    expect(content.indexOf("\n  api-check:\n")).toBeGreaterThan(content.indexOf("\n  validate:\n"));
+    expect(content.indexOf("\n  api-check:\n")).toBeLessThan(content.indexOf("\n  slice-index:\n"));
+    expect(content).toMatch(/\n {2}api-check:\n(?:.*\n)*? {10}fetch-depth: 0\n/);
+  });
+
   it("gates validate/slice-index/coverage/ledger/skill-check/upgrade-check/glossary on pull_request, and status-badge on push only", () => {
-    const gateJobs = ["validate", "slice-index", "coverage", "ledger", "skill-check", "upgrade-check", "glossary"];
+    const gateJobs = ["validate", "api-check", "slice-index", "coverage", "ledger", "skill-check", "upgrade-check", "glossary"];
     for (const job of gateJobs) {
       const re = new RegExp(`\\n  ${job}:\\n(?:.*\\n)*?    if: github\\.event_name == 'pull_request'`);
       expect(content).toMatch(re);

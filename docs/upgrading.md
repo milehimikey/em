@@ -96,6 +96,10 @@ detects and reports them:
 - **repo predates 1.6** — the `reaction-shape` detector recognizes an old two-slice shape
   but can't cleanly auto-migrate it: run `em migrate` by hand first, then re-run `em
   upgrade`.
+- **public field types unresolved** (`public-field-types-unresolved`) — fields of `public`
+  elements (or of declared types they reach) whose type is outside the strict public type
+  table, listed as `<element>.<field>: <type>`: pick a table type or a declared `type`, or drop
+  `public` (MIL-237, see [dsl.md](dsl.md#strict-public-types)).
 
 ## 1.7.0
 
@@ -245,3 +249,18 @@ Strict seams, API first.
 | `em system` with no argument (or a directory) reads that directory's `system.yaml`, or discovers every tracked `*.em` in the repo when there is none. The `--json` document is schema 2.0: `owner` is `string[]`, `seams[]` lists `consumes` bindings, and there are new `manifest: null` / `discovery` fields (MIL-235) | no action needed; update anything that parses `em system --json` |
 | Export schema 1.14 → 1.15: `elements[].consumes`, `model.owner` (MIL-235) | no action needed (additive) |
 | Every `em upgrade --apply` commit carries an `Em-Upgrade: <step>` trailer (MIL-235) | `em upgrade` |
+| **Behavior change:** strict public types — every field of a `public` command/event/view (and of a declared `type` it reaches) must use the fixed table (`string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes`), `X[]`, or a declared `type`; anything else, including an untyped field, is the error `public-field-type-unresolved`. Internal elements keep free text (MIL-237) | human: the `public-field-types-unresolved` item lists every offending field |
+| **Behavior change:** `em typespec` is deprecated — it prints a warning and runs `em api generate --stdout`; the POC's lenient type aliases and `unknown` fallback are gone, and commands are included only when marked `public` (MIL-237) | human: switch scripts to `em api generate` |
+| **Behavior change:** `name?: Type` marks a field optional — a field written `name?` used to parse as a field literally named `name?` (MIL-237) | no action needed unless a field name really ended in `?` — rename it |
+| **Behavior change:** `public` is valid on `command` (the write API); it used to be a parse error (MIL-237) | no action needed — opt-in |
+| `em api generate` writes the model-owned contract to `<model dir>/contracts/<model key>.tsp`; `em api check [--base <rev>]` checks it is current and annotates changes additive/breaking (MIL-237) | human: run `em api generate <model>.em` and commit `contracts/` |
+| Generated CI block gains a PR-only `api-check` job (fails only on a missing or stale contract) (MIL-237) | `ci-block` |
+| `--json` schema versions, all additive: export gains `fields[].optional`; diff 1.7 → 1.8 (`optional`, two `*-optionality-changed` change types); query 1.1 → 1.2 (`field` results gain `optional`); glossary 1.0 → 1.1 (field occurrences gain `optional`); new `apiCheckSchemaVersion` 1.0 (MIL-237) | no action needed |
+
+**Migration note — in-house slice-doc → TypeSpec generators:** switch to `em api generate`. The
+contract then comes from the model, not the slice docs, so check whether your doc field tables
+carry type detail the `.em` lacks (`Money`, `Instant`, nullability): `em validate` already
+cross-checks doc field tables against the `.em` fields, and since 1.14 a public field's type
+must also be strict. Move that detail into the model — a declared `type` for a domain shape
+(`type Money { amount: decimal, currency: string }`), `?` for an optional field — then
+regenerate the contract and update the doc tables to match.

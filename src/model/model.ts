@@ -47,7 +47,7 @@ export interface Element {
   line: number;
   /** view-only: marks a later timeline instance of an already-declared read model. */
   again?: boolean;
-  /** event or view: marks this element as part of the published integration surface. */
+  /** command, event or view: marks this element as part of the published integration surface. */
   public?: boolean;
   /** Element-level `tag` clauses (composite/external) — events only. Inline field identity
    *  tags live on `Field.tag` instead (see `collectTags` for the merged view). */
@@ -287,6 +287,55 @@ export function resolveTypeRef(
   if (!base) return null;
   const typeDecl = typesByName.get(normalizeName(base));
   return typeDecl ? { typeDecl, array } : null;
+}
+
+/**
+ * The fixed public-surface scalar table (MIL-237, briefing R7) — exactly these eleven names,
+ * matched case-insensitively, each with the one TypeSpec core scalar `em api generate` emits
+ * for it. Deliberately small and closed: this is NOT a type mapper (no aliases, no generics, no
+ * configurable entries). A field of a `public` element must name one of these, `X[]` of one of
+ * these or of a declared `type`, or a declared `type` — else `em validate` raises
+ * `public-field-type-unresolved`. Internal elements keep free-text types.
+ */
+export const PUBLIC_SCALAR_TYPES: Readonly<Record<string, string>> = Object.freeze({
+  string: "string",
+  text: "string",
+  int: "int32",
+  long: "int64",
+  decimal: "decimal",
+  boolean: "boolean",
+  uuid: "string",
+  date: "plainDate",
+  datetime: "utcDateTime",
+  duration: "duration",
+  bytes: "bytes",
+});
+
+/** The table's names in declaration order, as printed in diagnostics and docs. */
+export const PUBLIC_SCALAR_TYPE_NAMES: readonly string[] = Object.freeze(Object.keys(PUBLIC_SCALAR_TYPES));
+
+/** A public field's type resolved against the fixed table or a declared type. */
+export type PublicTypeResolution =
+  | { kind: "scalar"; scalar: string; tsType: string; array: boolean }
+  | { kind: "declared"; typeDecl: TypeDecl; array: boolean };
+
+/**
+ * Resolve a field type string under the strict public-surface rule (R7). Declared types win
+ * (same precedence `resolveTypeRef` already gives `em export`'s `typeRef`), then the fixed
+ * scalar table, bare or `[]`-suffixed. Anything else — including an absent type — is `null`.
+ */
+export function resolvePublicType(
+  typeStr: string | undefined,
+  typesByName: Map<string, TypeDecl>,
+): PublicTypeResolution | null {
+  if (!typeStr) return null;
+  const declared = resolveTypeRef(typeStr, typesByName);
+  if (declared) return { kind: "declared", typeDecl: declared.typeDecl, array: declared.array };
+  const trimmed = typeStr.trim();
+  const array = trimmed.endsWith("[]");
+  const base = (array ? trimmed.slice(0, -2) : trimmed).trim().toLowerCase();
+  const tsType = Object.prototype.hasOwnProperty.call(PUBLIC_SCALAR_TYPES, base) ? PUBLIC_SCALAR_TYPES[base] : undefined;
+  return tsType ? { kind: "scalar", scalar: base, tsType, array } : null;
 }
 
 /** Resolve an arrow endpoint (given by display name) to an element id. */

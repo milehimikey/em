@@ -3,7 +3,17 @@
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Grid } from "../layout/grid.js";
-import { collectTags, Element, NormalizedModel, TypeDecl, normalizeName, resolveTypeRef } from "./model.js";
+import {
+  collectTags,
+  Element,
+  NormalizedModel,
+  PUBLIC_SCALAR_TYPE_NAMES,
+  TypeDecl,
+  normalizeName,
+  resolvePublicType,
+  resolveTypeRef,
+} from "./model.js";
+import type { Field } from "../parser/ast.js";
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
 import { connectionKind, resolveLoopsToTarget } from "./edges.js";
@@ -705,7 +715,86 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     });
   }
 
+  for (const f of findUnresolvedPublicFieldTypes(model)) {
+    pushDiag(diags, "public-field-type-unresolved", {
+      message: formatUnresolvedPublicField(f),
+      line: f.line,
+      refs: [f.owner.kind === "type" ? refs.refByTypeId.get(f.owner.id)! : refs.refById.get(f.owner.id)!],
+    });
+  }
+
   return diags;
+}
+
+/** One field on the public surface whose type does not resolve under R7 (MIL-237). */
+export interface UnresolvedPublicField {
+  owner:
+    | { kind: "element"; id: string; elementKind: ElementKind; name: string }
+    | { kind: "type"; id: string; name: string; reachedFrom: { elementKind: ElementKind; name: string } };
+  field: string;
+  /** The raw type string, or null when the field declares no type at all. */
+  type: string | null;
+  line: number;
+}
+
+const PUBLIC_TYPE_TABLE_TEXT = PUBLIC_SCALAR_TYPE_NAMES.join(", ");
+
+/** The `public-field-type-unresolved` message, shared by `em validate` and `em upgrade`'s
+ *  human item so the two never word the same finding differently. */
+export function formatUnresolvedPublicField(f: UnresolvedPublicField): string {
+  const where =
+    f.owner.kind === "element"
+      ? `public ${f.owner.elementKind} "${f.owner.name}" field "${f.field}"`
+      : `type "${f.owner.name}" field "${f.field}" (reachable from public ${f.owner.reachedFrom.elementKind} "${f.owner.reachedFrom.name}")`;
+  const what = f.type === null ? "has no type" : `has type "${f.type}", which is not a public type`;
+  return `${where} ${what} — use ${PUBLIC_TYPE_TABLE_TEXT} (case-insensitive), X[] of one of these or of a declared type, or a declared type`;
+}
+
+/**
+ * Strict public types (MIL-237, briefing R7): every field of a `public` command/event/view —
+ * and of every declared `type` transitively reachable from one — must resolve via the fixed
+ * scalar table (`PUBLIC_SCALAR_TYPES`) or a declared `type` (bare or `[]`). Internal elements
+ * are never checked (their types stay free text). Element findings come first, in model
+ * order; then reachable types, in declaration order, each attributed to the first public
+ * element that reached it.
+ */
+export function findUnresolvedPublicFieldTypes(model: NormalizedModel): UnresolvedPublicField[] {
+  const out: UnresolvedPublicField[] = [];
+  const reachedFrom = new Map<string, { elementKind: ElementKind; name: string }>();
+  const check = (fields: Field[] | undefined, owner: UnresolvedPublicField["owner"], line: number, origin: { elementKind: ElementKind; name: string }) => {
+    for (const f of fields ?? []) {
+      const resolved = resolvePublicType(f.type, model.typesByName);
+      if (!resolved) {
+        out.push({ owner, field: f.name, type: f.type ?? null, line });
+        continue;
+      }
+      if (resolved.kind === "declared") reach(resolved.typeDecl, origin);
+    }
+  };
+  const reach = (t: TypeDecl, origin: { elementKind: ElementKind; name: string }) => {
+    if (reachedFrom.has(t.id)) return;
+    reachedFrom.set(t.id, origin);
+    // Walk the type's own references now (so transitive reach is complete); its findings are
+    // collected in a second pass below, in declaration order.
+    for (const f of t.fields) {
+      const r = resolvePublicType(f.type, model.typesByName);
+      if (r && r.kind === "declared") reach(r.typeDecl, origin);
+    }
+  };
+  for (const el of model.elements) {
+    if (!el.public) continue;
+    const origin = { elementKind: el.kind, name: el.name };
+    check(el.fields, { kind: "element", id: el.id, elementKind: el.kind, name: el.name }, el.line, origin);
+  }
+  for (const t of model.types) {
+    const origin = reachedFrom.get(t.id);
+    if (!origin) continue;
+    for (const f of t.fields) {
+      if (resolvePublicType(f.type, model.typesByName)) continue;
+      out.push({ owner: { kind: "type", id: t.id, name: t.name, reachedFrom: origin }, field: f.name, type: f.type ?? null, line: t.line });
+    }
+  }
+  return out;
 }
 
 /** Per-view-instance "does anything in this model read it" — the same signal the

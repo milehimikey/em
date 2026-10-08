@@ -73,7 +73,7 @@ export function formatField(results: FieldQueryEntry[]): string {
   const r = results[0];
   const renamed = tagList("renamedFrom", r.renamedFrom ?? []);
   const elementRenamed = tagList("elementRenamedFrom", r.elementRenamedFrom ?? []);
-  return `${r.elementRef}.${r.name}: ${r.type ?? "(untyped)"} tag=${r.tag} assigned=${r.assigned}${renamed}${elementRenamed}`;
+  return `${r.elementRef}.${r.name}${r.optional ? "?" : ""}: ${r.type ?? "(untyped)"} tag=${r.tag} assigned=${r.assigned}${renamed}${elementRenamed}`;
 }
 
 export function formatPath(results: PathQueryEntry[]): string {

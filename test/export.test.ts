@@ -431,16 +431,16 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[0].fields;
     expect(fields).toEqual([
-      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "priceId", type: "UUID", typeRef: null, tag: true, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "productId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
     ]);
   });
 
   it("exports `tag: false` on every field of a declared type (types carry no tag clause)", () => {
     const doc = docOf(`type Money { amount: int, currency: String }`);
     expect(doc.model.types[0].fields).toEqual([
-      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "amount", type: "int", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "currency", type: "String", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
     ]);
   });
 
@@ -560,7 +560,7 @@ slice "S" {
 }
 `);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "paymentId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
       {
         name: "amountCents",
         type: "long",
@@ -570,6 +570,7 @@ slice "S" {
         assigned: false,
         derived: false,
         derivedFrom: null,
+        optional: false,
       },
     ]);
   });
@@ -592,7 +593,7 @@ slice "S" {
     );
     const evt = doc.model.slices[0].elements[0];
     expect(evt.fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false, derived: false, derivedFrom: null },
+      { name: "paymentId", type: "UUID", typeRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false, derived: false, derivedFrom: null, optional: false },
     ]);
     expect(evt.tags).toEqual([
       { key: "paymentId", kind: "identity", fields: ["paymentId"], description: null },
@@ -616,9 +617,9 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[1].fields;
     expect(fields).toEqual([
-      { name: "orderId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null },
-      { name: "customerId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "placedAt", type: "Instant", typeRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null },
+      { name: "orderId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null, optional: false },
+      { name: "customerId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "placedAt", type: "Instant", typeRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null, optional: false },
     ]);
   });
 
@@ -666,8 +667,8 @@ slice "T" {
 `);
     const view = doc.model.slices[1].elements.find((e: any) => e.kind === "view");
     expect(view.fields).toEqual([
-      { name: "entryId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "position", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: true, derivedFrom: null },
+      { name: "entryId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "position", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: true, derivedFrom: null, optional: false },
     ]);
   });
 
@@ -698,7 +699,7 @@ slice "T" {
 `);
     const view = doc.model.slices[2].elements.find((e: any) => e.kind === "view");
     expect(view.fields).toEqual([
-      { name: "roomId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "roomId", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
       {
         name: "availability",
         type: "String",
@@ -708,6 +709,7 @@ slice "T" {
         assigned: false,
         derived: true,
         derivedFrom: ["Room Booked", "Room Delisted"],
+        optional: false,
       },
     ]);
   });
@@ -846,8 +848,8 @@ slice "Catalog" {
     expect(event.note).toBe("notes/stock.md");
     expect(event.issue).toBe("still open?");
     expect(event.fields).toEqual([
-      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "sku", type: null, typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "qty", type: "Int", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
     ]);
   });
 
@@ -1014,9 +1016,9 @@ slice "Accept" {
     expect(t.name).toBe("QuoteAcceptedLine");
     expect(typeof t.line).toBe("number");
     expect(t.fields).toEqual([
-      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
-      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "lineId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "unitPrice", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
+      { name: "discountIds", type: "UUID[]", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
     ]);
   });
 
@@ -1024,7 +1026,7 @@ slice "Accept" {
     const doc = docOf(SRC);
     const eventFields = doc.model.slices[0].elements[1].fields;
     expect(eventFields).toEqual([
-      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "quoteId", type: "UUID", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
       {
         name: "lines",
         type: "QuoteAcceptedLine[]",
@@ -1034,6 +1036,7 @@ slice "Accept" {
         assigned: false,
         derived: false,
         derivedFrom: null,
+        optional: false,
       },
       {
         name: "winner",
@@ -1044,6 +1047,7 @@ slice "Accept" {
         assigned: false,
         derived: false,
         derivedFrom: null,
+        optional: false,
       },
     ]);
   });
@@ -1064,6 +1068,7 @@ type Order { billing: Address }
         assigned: false,
         derived: false,
         derivedFrom: null,
+        optional: false,
       },
     ]);
   });
@@ -1072,7 +1077,7 @@ type Order { billing: Address }
     const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
     expect(doc.model.types).toEqual([]);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null },
+      { name: "a", type: "Money", typeRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, optional: false },
     ]);
   });
 
@@ -1579,5 +1584,15 @@ describe("`model.version` — the model-level design/certified version (MIL-218,
       design: 1,
       certified: { version: 1, at: "8f12ed8", on: "2026-09-08" },
     });
+  });
+});
+
+describe("`optional` round-trip (MIL-237)", () => {
+  it("exports `optional: true` for `name?: Type`, false otherwise, on element and declared-type fields; `public` on a command", () => {
+    const doc = docOf(`type T { a?: int, b: int }\nslice "S" {\n  command Do public { x?: text, y: string }\n  event Done @D\n}\n`);
+    expect(doc.model.types[0].fields.map((f: { name: string; optional: boolean }) => [f.name, f.optional])).toEqual([["a", true], ["b", false]]);
+    const cmd = doc.model.slices[0].elements[0];
+    expect(cmd.public).toBe(true);
+    expect(cmd.fields.map((f: { name: string; optional: boolean }) => [f.name, f.optional])).toEqual([["x", true], ["y", false]]);
   });
 });

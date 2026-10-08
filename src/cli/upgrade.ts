@@ -24,7 +24,8 @@
 
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { NormalizedModel } from "../model/model.js";
+import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES } from "../model/model.js";
+import { findUnresolvedPublicFieldTypes } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
@@ -471,7 +472,8 @@ export type HumanItemId =
   | "ready-to-implement-no-ratifiedby"
   | "coverage-scope-default"
   | "unratified-constitution"
-  | "predates-1.6";
+  | "predates-1.6"
+  | "public-field-types-unresolved";
 
 export interface HumanItem {
   id: HumanItemId;
@@ -568,6 +570,22 @@ function detectPredates16(ctx: UpgradeContext): HumanItem | null {
   };
 }
 
+/** MIL-237: strict public types (briefing R7). Lists every field of a `public` element (or of a
+ *  declared type reachable from one) whose type is not in the fixed public type table and names
+ *  no declared type — the same set `em validate`'s `public-field-type-unresolved` errors on.
+ *  Detect-only: choosing the right type (or dropping `public`) is a modeling decision. */
+function detectPublicFieldTypesUnresolved(ctx: UpgradeContext): HumanItem | null {
+  const found = findUnresolvedPublicFieldTypes(ctx.model);
+  if (found.length === 0) return null;
+  const items = found.map((f) => `${f.owner.name}.${f.field}: ${f.type ?? "(no type)"}`);
+  return {
+    id: "public-field-types-unresolved",
+    reason:
+      `${found.length} public field(s) without a public type: ${items.join(", ")} — give each a type from ` +
+      `${PUBLIC_SCALAR_TYPE_NAMES.join(", ")}, \`X[]\`, or a declared \`type\` (em 1.14 strict public types), or drop \`public\``,
+  };
+}
+
 const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> = [
   detectNoModelVersion,
   detectContinuationHasOwnDoc,
@@ -575,6 +593,7 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectCoverageScopeDefault,
   detectUnratifiedConstitution,
   detectPredates16,
+  detectPublicFieldTypesUnresolved,
 ];
 
 export function detectHumanItems(ctx: UpgradeContext): HumanItem[] {

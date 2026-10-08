@@ -137,6 +137,9 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    `null` on every other kind and on a translation with none. Never resolved here (compile
 //    isolation) — `em system` resolves them. `model.owner: string[]` — the header's `owner
 //    "Team"[, …]` entries as written, `[]` when none (free text; MIL-234 adds a handle shape).
+//  - MIL-237: `fields[].optional: boolean` (types' fields too) — `true` when the field is written
+//    `name?: Type` (may be absent), `false` otherwise; always present. `elements[].public` may
+//    now be `true` on a command (`public` is legal on commands).
 // Additive-only.
 export const SCHEMA_VERSION = "1.15";
 
@@ -311,6 +314,9 @@ export interface FieldExport {
    *  convention. `null` on a bare `derived` field, a non-derived field, and every field of a
    *  declared type (the clause can't parse there). */
   derivedFrom: string[] | null;
+  /** `true` when the field is written `name?: Type` (MIL-237) — it may be absent. Same
+   *  `=== true` convention as `tag`; always present, `false` on every required field. */
+  optional: boolean;
 }
 
 export interface TagExport {
@@ -345,6 +351,7 @@ function fieldExport(
     assigned: f.assigned === true,
     derived: f.derived === true,
     derivedFrom: f.derivedFrom ?? null,
+    optional: f.optional === true,
   };
 }
 

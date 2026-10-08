@@ -27,6 +27,7 @@ const KNOWN_DOC_ANCHORS = new Set([
   "orphaned-slice-doc",
   "seam-manifest",
   "model-version-stale",
+  "strict-public-types",
 ]);
 
 const SLICE_READY_CODES = [
@@ -39,7 +40,7 @@ const SLICE_READY_CODES = [
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(72); // MIL-259: +slice-ready-not-ratified; MIL-235: +public-name-not-unique, system-manifest-outdated, consumes-unknown-model, consumes-unknown-element
+    expect(Object.keys(RULES).length).toBe(73); // MIL-259: +slice-ready-not-ratified; MIL-235: +public-name-not-unique, system-manifest-outdated, consumes-unknown-model, consumes-unknown-element; MIL-237: +public-field-type-unresolved
   });
 
   it("marks exactly sliceReadyValidate.ts's 5 codes as optIn — nothing else", () => {

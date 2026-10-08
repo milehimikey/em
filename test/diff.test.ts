@@ -934,3 +934,31 @@ describe("declared `type` add/remove/field changes (MIL-64)", () => {
     expect(fieldChanged).toContain('~ field "amount" type changed on type "Money": int -> Decimal');
   });
 });
+
+describe("optional fields and public commands (MIL-237)", () => {
+  const base = (fields: string, pub = "") => `slice "S" {\n  command Do${pub} { ${fields} }\n  event Done @D\n}\n`;
+
+  it("reports a required ↔ optional flip as field-optionality-changed, both directions", () => {
+    const toOptional = diffOf(base("a: string"), base("a?: string"));
+    expect(toOptional.changes).toEqual([
+      { type: "field-optionality-changed", kind: "command", name: "Do", ref: "s/command.do", sliceName: "S", sliceKey: "s", field: "a", optional: true, acceptedDivergence: null },
+    ]);
+    expect(reportOf(base("a: string"), base("a?: string"))).toContain('~ field "a" changed required -> optional on command "Do" (slice "S")');
+    expect(reportOf(base("a?: string"), base("a: string"))).toContain('~ field "a" changed optional -> required on command "Do" (slice "S")');
+  });
+
+  it("shows `?` after an optional added/removed field's name and carries `optional` on the entry", () => {
+    const d = diffOf(base("a: string"), base("a: string, b?: text"));
+    expect(d.changes[0]).toMatchObject({ type: "field-added", field: "b", optional: true });
+    expect(reportOf(base("a: string"), base("a: string, b?: text"))).toContain('~ field "b"?: text added to command "Do" (slice "S")');
+  });
+
+  it("diffs optionality on a declared type's fields", () => {
+    const t = (f: string) => `type T { ${f} }\nslice "S" {\n  command Do\n}\n`;
+    expect(reportOf(t("x: int"), t("x?: int"))).toContain('~ field "x" changed required -> optional on type "T"');
+  });
+
+  it("words a command's public flip as `command marked public`", () => {
+    expect(reportOf(base("a: string"), base("a: string", " public"))).toContain('command marked public: command "Do" (slice "S")');
+  });
+});

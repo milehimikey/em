@@ -6,8 +6,16 @@ context Order
 
 slice "Checkout" {
   ui Checkout Screen @Customer
-  command Submit Order
-  event Order Submitted @Order public
+  command Submit Order {
+    total: decimal
+    note?: text
+  }
+  event Order Submitted @Order public {
+    orderId: uuid assigned
+    total: decimal
+    placedAt: datetime assigned
+    note?: text
+  }
 }
 
 slice "Order Confirmation" {

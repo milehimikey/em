@@ -235,6 +235,13 @@ export const RULES = {
     fix: "Break the cycle, or route the self/mutual reference through an array.",
     usageCategory: "type cycle",
   },
+  "public-field-type-unresolved": {
+    severity: "error",
+    title: "Public field type unresolved",
+    fix: "Give the field a type from the public type table (string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes), `X[]` of one, or a declared `type` — or drop `public`.",
+    usageCategory: "public field type unresolved",
+    docAnchor: "strict-public-types",
+  },
   "lineage-ref-malformed": {
     severity: "error",
     title: "Malformed lineage ref",

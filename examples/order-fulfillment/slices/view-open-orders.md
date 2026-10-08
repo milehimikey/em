@@ -33,7 +33,7 @@ command-and-event sense.
 | Field | Type | Source / Notes |
 |-------|------|----------------|
 | orderId | UUID | Copied from `Order Placed.orderId`. |
-| total | Money | Copied from `Order Placed.total`. |
+| total | decimal | Copied from `Order Placed.total`. |
 | status | — | **Not sourced from `Order Placed`** — this is the one field `em validate` flags (`view field no source`), and it's a real, still-open gap, not a false positive: nothing in the model yet records a status transition (placed → paid → fulfilled). See Open Questions. |
 
 ## Invariants / Business Rules

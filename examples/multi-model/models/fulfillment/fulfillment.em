@@ -6,9 +6,19 @@ context Order
 
 slice "Receive Order" {
   # checkout:event.order-submitted — A submitted order is handed to the warehouse to be fulfilled.
-  translation Order Intake consumes checkout:event.order-submitted
-  command Accept Order
-  event Order Accepted @Order
+  translation Order Intake consumes checkout:event.order-submitted {
+    orderId: uuid
+    total: decimal
+  }
+  command Accept Order public {
+    orderId: uuid
+    total: decimal
+  }
+  event Order Accepted @Order {
+    orderId: uuid
+    total: decimal
+    acceptedAt: datetime assigned
+  }
 }
 
 slice "Orders To Fulfil" {

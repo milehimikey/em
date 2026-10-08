@@ -34,6 +34,7 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the pending delta on the target slice first (bumping its `version:`) |
 | A view field's traced `derived from "Event A", "Event B"` naming an event that isn't among the view's actual sources (`derived-from-unresolved`) | Name one of the view's actual sources — its `from` list, or the same-slice events for a `from`-less view — or drop the traced event |
 | Two `public` elements of the same kind whose names slug alike (`Order Placed` / `Order-Placed`) — a consumer's `consumes <model>:<kind>.<slug>` names no slice, so it couldn't tell them apart (`public-name-not-unique`, MIL-235). A `view … again` instance is the same read model, not a second name | Rename one, or drop `public` from one — see [dsl.md](dsl.md#consuming-another-models-public-surface) |
+| A field of a `public` command/event/view (or of a declared `type` reachable from one) whose type is not in the public type table, not `X[]`, and not a declared `type` — including an untyped one (`public-field-type-unresolved`) | Use a table type, `X[]`, or a declared `type` — see [Strict public types](#strict-public-types) |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
@@ -498,6 +499,29 @@ version has been bumped.
 Fix: run `em model version bump --by <name>` to record the current state as a new design
 version. See [model-versions.md](model-versions.md) for the manifest shape and
 [process.md](process.md#model-versions) for when to bump.
+
+### Strict public types
+
+MIL-237: a `public` element is a contract (see [dsl.md](dsl.md#strict-public-types)), so its
+field types must be ones `em api generate` can map without guessing. Every field of a `public`
+command, event or view — and every field of a declared `type` reachable from one, transitively —
+must be one of `string`, `text`, `int`, `long`, `decimal`, `boolean`, `uuid`, `date`,
+`datetime`, `duration`, `bytes` (case-insensitive), `X[]` of one of those or of a declared
+`type`, or a declared `type` name. Internal elements are never checked.
+
+| Code | Meaning |
+|---|---|
+| `public-field-type-unresolved` | A public field has a type outside the table, or no type at all. One error per field; a reachable type's finding names the public element that first reached it. |
+
+```
+error:3 public command "Submit Order" field "total" has type "Money", which is not a public type — use string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes (case-insensitive), X[] of one of these or of a declared type, or a declared type
+error:4 public event "Order Submitted" field "orderId" has no type — use string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes (case-insensitive), X[] of one of these or of a declared type, or a declared type
+```
+
+Fix: write a table type (`total: decimal`), declare a domain type (`type Money { amount:
+decimal, currency: string }` and `total: Money`), spell a list `X[]` rather than `List<X>`, or
+drop `public` if the element is not part of the integration surface. `em upgrade` lists every
+offending field as the human item `public-field-types-unresolved`.
 
 ### Ref and key collisions
 

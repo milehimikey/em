@@ -128,6 +128,7 @@ affected lines written by hand.
 | lineage version impossible |
 | loops-to points forward |
 | loops-to target unresolved |
+| public field type unresolved |
 | public name not unique |
 | reaction reads view before it exists |
 | reaction references unknown read model |

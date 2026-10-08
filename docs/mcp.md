@@ -92,6 +92,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
 | `query` | `{ files, verb, event?, of?, depth?, pattern?, status?, context?, persona?, tag?, id?, testsDir?, name?, from?, to? }` | The `em query <verb> <files...> --json` document: deterministic graph queries (consumers/producers/downstream/upstream/slices/invariant/field/path) over the compiled model |
 | `system` | `{ manifest? }` | The `em system [<manifest>] --json` document: the 2.0 membership manifest (`system.yaml`, file or directory; omitted = discovery from the server's working directory) with every `consumes` binding resolved against the producer's export — every `public` event/view consumed by another model's translation — plus the org-level context map |
+| `api_check` | `{ file, base? }` (git when `base` is given — see below) | The `em api check <file> [--base <rev>] --json` document (MIL-237): is the committed contract current, plus each public-surface change since `base` annotated additive/breaking |
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
 | `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
@@ -223,6 +224,15 @@ refusal. A seam that fails verification is **not** a tool error: the document co
 that seam's `status: "error"` and its codes, exactly as the CLI prints it (with exit 1). See
 [`em system`](cli.md#em-system-manifest) for the manifest format, every check, and the full JSON
 shape.
+
+### `api_check`
+
+Same document as `em api check <file> [--base <rev>] --json` (MIL-237), built by the same
+`runApiCheck` + `buildApiCheckJson` (`src/cli/api.ts`, `src/emit/apiCheckJson.ts`) the CLI calls.
+A stale or missing contract is **not** a tool error: the document comes back with
+`current: false` (the CLI prints the same document and exits 1). Refuses (tool error) when the
+model has errors, the file is not in a git repository (with `base`), or the revision does not
+exist. See [`em api check`](cli.md#em-api-check) for the classification rules and JSON shape.
 
 ### `diff`
 
