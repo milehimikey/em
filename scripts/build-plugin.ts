@@ -7,7 +7,7 @@
 //
 // Layout (see findings of the MIL-229 spike):
 //   plugin/.claude-plugin/plugin.json
-//   plugin/skills/<short>/SKILL.md (+ reference/*.md)   short = discover|design|implement|conform|review|event-modeling
+//   plugin/skills/<short>/SKILL.md (+ reference/*.md)   short = discover|design|implement|conform|review|engagement|event-modeling
 //   plugin/shared/{reference,templates}/*.md
 //   plugin/agents/em-*.md                                (MIL-269: the four sub-agent definitions)
 //   .claude-plugin/marketplace.json                      name = em-<version dots -> dashes>
@@ -27,7 +27,8 @@ export const MARKETPLACE_PATH = ".claude-plugin/marketplace.json";
 
 const SHARED_SRC_DIR = "event-modeling-shared";
 const ROUTER_SRC_DIR = "event-modeling";
-const PHASES = ["discover", "design", "implement", "conform", "review"] as const;
+// MIL-270 (R33): `engagement` is the lead-session skill (event-modeling-engagement -> /em:engagement).
+const PHASES = ["discover", "design", "implement", "conform", "review", "engagement"] as const;
 const ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}";
 
 export interface RewriteRule {
@@ -47,7 +48,7 @@ export interface RewriteRule {
 export const REWRITE_RULES: readonly RewriteRule[] = [
   {
     id: "skill-file-link",
-    pattern: /(?:\.\.\/)+\.claude\/skills\/event-modeling-(discover|design|implement|conform|review)\/SKILL\.md/g,
+    pattern: /(?:\.\.\/)+\.claude\/skills\/event-modeling-(discover|design|implement|conform|review|engagement)\/SKILL\.md/g,
     replacement: `${ROOT_VAR}/skills/$1/SKILL.md`,
     scope: "skills",
     example: {
@@ -57,7 +58,7 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
   },
   {
     id: "skill-file-link-shared",
-    pattern: /(?:\.\.\/)+\.claude\/skills\/event-modeling-(discover|design|implement|conform|review)\/SKILL\.md/g,
+    pattern: /(?:\.\.\/)+\.claude\/skills\/event-modeling-(discover|design|implement|conform|review|engagement)\/SKILL\.md/g,
     replacement: "../../skills/$1/SKILL.md",
     scope: "shared",
     example: {
@@ -67,7 +68,7 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
   },
   {
     id: "sibling-skill-reference",
-    pattern: /(?:\.\.\/)+event-modeling-(discover|conform|design|implement|review)\/reference\//g,
+    pattern: /(?:\.\.\/)+event-modeling-(discover|conform|design|implement|review|engagement)\/reference\//g,
     replacement: `${ROOT_VAR}/skills/$1/reference/`,
     scope: "skills",
     example: {
@@ -104,7 +105,7 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
   },
   {
     id: "sibling-skill-reference-ref",
-    pattern: /(?:\.\.\/)+event-modeling-(discover|conform|design|implement|review)\/reference\//g,
+    pattern: /(?:\.\.\/)+event-modeling-(discover|conform|design|implement|review|engagement)\/reference\//g,
     replacement: "../../$1/reference/",
     scope: "reference",
     example: {
@@ -141,7 +142,7 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
   },
   {
     id: "phase-skill-name",
-    pattern: /event-modeling-(discover|design|implement|conform|review)\b/g,
+    pattern: /event-modeling-(discover|design|implement|conform|review|engagement)\b/g,
     replacement: "em:$1",
     scope: "all",
     example: { from: "event-modeling-design", to: "em:design" },
@@ -210,7 +211,7 @@ export function marketplaceNameFor(version: string): string {
 }
 
 const PLUGIN_DESCRIPTION =
-  "Event Modeling with em: discover, design, implement, conform and review skills over a slice-first text DSL, plus the em MCP server.";
+  "Event Modeling with em: discover, design, implement, conform, review and engagement skills over a slice-first text DSL, plus the em MCP server.";
 
 export function buildPlugin(version: string): Map<string, string> {
   const out = new Map<string, string>();

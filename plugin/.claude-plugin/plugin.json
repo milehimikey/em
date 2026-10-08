@@ -1,7 +1,7 @@
 {
   "name": "em",
   "version": "1.13.1",
-  "description": "Event Modeling with em: discover, design, implement, conform and review skills over a slice-first text DSL, plus the em MCP server.",
+  "description": "Event Modeling with em: discover, design, implement, conform, review and engagement skills over a slice-first text DSL, plus the em MCP server.",
   "author": {
     "name": "Mike Key"
   },

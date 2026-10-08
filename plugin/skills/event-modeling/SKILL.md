@@ -6,9 +6,11 @@ description: >-
   event-modeling session without specifying which part of the process applies. Reads the model's
   `.event-modeling.md` state (or the given phase name) and routes to the right focused skill —
   em:discover, em:design, em:implement, em:conform,
-  or em:review. If you already know which of those applies — starting a new model,
-  extracting from existing code, slicing/writing specs, implementing a ratified slice, checking
-  drift, or running a live/stakeholder view — invoke that skill directly instead of this one.
+  or em:review — or, for building a planned set of ready slices through scoped
+  sub-agents to a stack of PRs (an `em engagement`), em:engagement. If you already
+  know which of those applies — starting a new model, extracting from existing code,
+  slicing/writing specs, implementing a ratified slice, leading an engagement, checking drift, or
+  running a live/stakeholder view — invoke that skill directly instead of this one.
 ---
 <!-- GENERATED FILE from .claude/skills/event-modeling/SKILL.md by scripts/build-plugin.ts — do not hand-edit; run npm run docs:generate -->
 
@@ -27,6 +29,7 @@ phase lives in.
 | `implement` | `em:implement` — building one ratified slice into merged, tested code |
 | `conform`, `validate` | `em:conform` — drift-checking a model against its codebase, walking validation diagnostics |
 | `watch`, `review` | `em:review` — the live browser viewer, facilitated stakeholder walkthroughs |
+| `engagement` | `em:engagement` — build a planned set of ready slices through scoped sub-agents to a stack of PRs |
 
 ## Routing logic
 
@@ -37,7 +40,7 @@ phase lives in.
    gap proceeds normally.
 2. Parse `$ARGUMENTS` for a phase name.
    - **A recognized phase name** (`discover`, `extract`, `model`, `slice`, `implement`,
-     `conform`, `validate`, `watch`, `review`): look it up in the table above and invoke that
+     `conform`, `validate`, `watch`, `review`, `engagement`): look it up in the table above and invoke that
      skill directly (via the `Skill` tool), passing the phase name along so it knows exactly
      where to start. Don't re-derive state first — the target skill's own preconditions handle
      that.

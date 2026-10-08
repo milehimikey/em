@@ -60,7 +60,7 @@ describe("plugin build parity (MIL-230, R18)", () => {
       .filter((k) => k.endsWith("/SKILL.md"))
       .map((k) => k.split("/")[2])
       .sort();
-    expect(skills).toEqual(["conform", "design", "discover", "event-modeling", "implement", "review"]);
+    expect(skills).toEqual(["conform", "design", "discover", "engagement", "event-modeling", "implement", "review"]);
   });
 
   it("every skill's frontmatter name is its short name and the em-version stamp is kept", () => {
@@ -90,7 +90,7 @@ describe("plugin build parity (MIL-230, R18)", () => {
       } else {
         expect(body, rel).not.toMatch(/\.\.\//);
       }
-      expect(body, rel).not.toMatch(/event-modeling-(discover|design|implement|conform|review)\b/);
+      expect(body, rel).not.toMatch(/event-modeling-(discover|design|implement|conform|review|engagement)\b/);
       expect(body, rel).not.toMatch(/(?<![\w./-])\/event-modeling(?![\w-])/);
     }
   });
@@ -165,13 +165,23 @@ describe("plugin build parity (MIL-230, R18)", () => {
       // frontmatter stays first, with name + explicit tools and no model; the banner follows it
       expect(content, rel).toMatch(new RegExp(`^---\\nname: ${name}\\ndescription: [^\\n]+\\ntools: [^\\n]+\\n---\\n`));
       expect(content, rel).not.toMatch(/^model:/m);
-      expect(stripBanner(content), rel).not.toMatch(/event-modeling-(discover|design|implement|conform|review)\b/);
+      expect(stripBanner(content), rel).not.toMatch(/event-modeling-(discover|design|implement|conform|review|engagement)\b/);
     }
     expect(built.get(`${PLUGIN_DIR}/agents/em-implementer.md`)).toContain("`em:implement`");
     const plugin = JSON.parse(built.get(`${PLUGIN_DIR}/.claude-plugin/plugin.json`)!);
     expect(plugin).not.toHaveProperty("agents");
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     expect(pkg.files).toContain(".claude/agents");
+  });
+
+  it("ships the engagement skill as /em:engagement with its reference and the agents' plugin names (MIL-270, R33)", () => {
+    const skill = built.get(`${PLUGIN_DIR}/skills/engagement/SKILL.md`)!;
+    expect(skill).toMatch(/^---\nname: engagement\n/);
+    expect(built.has(`${PLUGIN_DIR}/skills/engagement/reference/engagement.md`)).toBe(true);
+    expect(skill).toContain("`em:em-implementer`");
+    expect(skill).toContain("${CLAUDE_PLUGIN_ROOT}/skills/implement/reference/implement.md");
+    expect(built.get(`${PLUGIN_DIR}/skills/event-modeling/SKILL.md`)).toContain("| `engagement` | `em:engagement` — build a planned set of ready slices");
+    expect(applyRewrites("event-modeling-engagement", "skills", "x.md")).toBe("em:engagement");
   });
 
   it("marketplace name and plugin.json version follow package.json", () => {

@@ -122,6 +122,7 @@ const BUNDLE_DIR_NAMES = [
   "event-modeling-implement",
   "event-modeling-conform",
   "event-modeling-review",
+  "event-modeling-engagement",
   "event-modeling-shared",
 ];
 

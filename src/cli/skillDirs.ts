@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The set of directories under `.claude/skills/` that together make up the em-bundled
-// event-modeling skill (MIL-157): five focused, SDLC-stage skills plus the thin `event-modeling`
+// event-modeling skill (MIL-157): five focused, SDLC-stage skills, the `event-modeling-engagement`
+// lead-session skill (MIL-270), plus the thin `event-modeling`
 // router skill that preserves `/event-modeling` as a single resumable entry point, and one
 // non-skill directory (`event-modeling-shared`, no SKILL.md) holding reference/template material
 // every skill points back to instead of duplicating. `em skill install`/`sync`/`check` treat this
@@ -19,6 +20,7 @@ export const EM_SKILL_DIR_NAMES: readonly string[] = [
   "event-modeling-implement",
   "event-modeling-conform",
   "event-modeling-review",
+  "event-modeling-engagement",
 ];
 
 /** Directories with no SKILL.md of their own — shared reference/template material every skill

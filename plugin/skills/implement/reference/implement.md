@@ -307,12 +307,26 @@ sibling slice's package to reuse it — the boundary the constitution drew is go
    handlers, no projections — contracts only.** Because: a handler or a projection belongs to
    the slice that owns the behavior behind it; folding one into the foundation PR turns a shared
    contract into a pre-empted slice.
-2. **It merges before any slice PR opens.** Every slice branch is cut from `main` *after* the
-   foundation PR has landed there — never from a commit that predates it, and never alongside an
-   open, unmerged foundation PR. A slice PR never carries foundation files. Because: a slice PR
-   opened while the foundation is still in review shows a diff dominated by files the slice
-   didn't write and can't be held accountable for, and its merge depends on someone else's
-   review timeline instead of its own.
+2. **It merges before any slice PR opens.** Every slice branch is cut *after* the foundation PR
+   has landed on `main` — never from a commit that predates it, and never alongside an open,
+   unmerged foundation PR. Within an engagement, cut the slice branch from the base the
+   engagement plan names (`em engagement plan`); outside an engagement, from `main`. A slice PR
+   never carries foundation files. Because: a slice PR opened while the foundation is still in
+   review shows a diff dominated by files the slice didn't write and can't be held accountable
+   for, and its merge depends on someone else's review timeline instead of its own. The plan's
+   base is either `main` or `impl/<upstream>` (the one unmerged upstream slice this slice builds
+   on); either way it already contains the foundation.
+
+2a. **While a dependent PR is open, the lower PR merges with a merge commit; squash is forbidden
+   in that state (it strands the dependent's history).** A PR is the *lower* one when another
+   open PR targets its branch as its base. Once no open PR depends on it, the project's usual
+   merge strategy applies. Because: a squash rewrites the lower branch's commits into one new
+   commit on `main`, so the dependent branch still carries the originals and its diff against
+   `main` shows them again — it then needs a hand rebase (`git rebase --onto main <old base
+   tip>`). A merge commit keeps the original commits: once the lower branch is merged and
+   deleted, the dependent is retargeted to `main` and its diff shrinks to its own commits with
+   no rebase.
+
 3. **A slice never creates, edits, or reaches into another slice's code.** It *imports* events —
    only events — from wherever the foundation placed them; a sibling slice's handlers, storage,
    and other internals stay off limits. Because: the boundary the constitution drew only holds if
