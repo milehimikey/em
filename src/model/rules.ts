@@ -13,7 +13,7 @@
 // docs/usage-data.md's Categories tables the same way (MIL-97) — the fixed vocabulary a
 // `.event-modeling.md` Usage log line picks from, so it can't drift from RULES either.
 //
-// `optIn: true` marks the 4 codes `em validate --slice-ready <key>` adds (MIL-87) — never part
+// `optIn: true` marks the 5 codes `em validate --slice-ready <key>` adds (MIL-87) — never part
 // of a plain `em validate` run, excluded from the generated base rule reference (but still
 // included in the usage-log Categories tables — a session can hit them too).
 
@@ -33,7 +33,7 @@ export interface RuleDef {
   usageCategory: string;
   /** docs/validation.md H3 anchor this rule nests under, when one exists and covers >1 rule. */
   docAnchor?: string;
-  /** True for the 4 `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts, MIL-87). */
+  /** True for the 5 `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts, MIL-87). */
   optIn?: true;
 }
 
@@ -505,6 +505,14 @@ export const RULES = {
     title: "Unchecked Open Questions",
     fix: "Check off the remaining Open Questions.",
     usageCategory: "slice-ready slice has unchecked open questions",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
+  "slice-ready-not-ratified": {
+    severity: "error",
+    title: "Not ratified",
+    fix: "Record the sign-off with `em slice ratify --by <name>`.",
+    usageCategory: "slice-ready slice not ratified",
     docAnchor: "slice-readiness",
     optIn: true,
   },

@@ -323,31 +323,35 @@ from) — dedupe that field yourself rather than reaching for a separate flag; t
 Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff --json`:
 `severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`.
 
-**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.1"`) — see the
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.2"`) — see the
 `--slice-ready` section below for what each gate means:
 
 ```json
 {
-  "validateSliceReadySchemaVersion": "1.1",
+  "validateSliceReadySchemaVersion": "1.2",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "sliceKey": "checkout",
-  "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false },
+  "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false, "ratified": false },
   "continuationOf": null,
   "ready": false,
   "diagnostics": [ … ]
 }
 ```
 
-`gates` names each of the 4 conditions individually, replacing both the scraped warning prose
+`gates` names each of the 5 conditions individually, replacing both the scraped warning prose
 and the two hand-parsed English sentences ("is ready-to-implement" / "is NOT ready-to-implement").
 It's `null` when `sliceKey` matches no slice in the model (the unknown-key error case — nothing
 to gate; check `diagnostics` for `slice-ready-unknown-slice` instead). A gate not reached because
 an earlier one failed (e.g. `statusReady` when the doc itself isn't bound) reports `false`, not
-`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 4
+`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 5
 named gates pass, if something else concerning this slice is broken (e.g. a plain
 `both-ends-of-a-flow` diagnostic on one of its own elements); `diagnostics` carries the full
-scoped list so a consumer sees exactly why, not just the 4 named gates.
+scoped list so a consumer sees exactly why, not just the 5 named gates.
+
+`gates.ratified` (added in schema `1.2`, MIL-259) is `true` when the doc carries a non-empty
+`ratifiedBy:`. It is informational like the other gates: the blocking verdict is the
+`slice-ready-not-ratified` error in `diagnostics`.
 
 `continuationOf` (added in schema `1.1`, MIL-208) is non-null when `sliceKey` names a
 continuation slice (an again-view-only slice with no legacy doc of its own) — the originating
@@ -391,6 +395,10 @@ unless **all** of the following hold, printing which ones don't and why
 - the slice has a doc bound via `note "slices/<key>.md"` on one of its elements (same
   note-binding gate `em export`'s doc join uses, MIL-91) and the doc's frontmatter is usable
 - the doc's `status` is `ready-to-implement`
+- the doc carries a recorded sign-off for its current version (`ratifiedBy:` — written by `em slice
+  ratify --by <name>`); `em slice reratify` clears it, so a reratified doc is not ready again until
+  it is re-signed (MIL-259). Docs ratified before sign-offs were recorded are covered by the
+  `ratified-signoff` step of `em upgrade`
 - every `## Open Questions` checkbox in the doc is checked (`- [x]`, none left `- [ ]`)
 - no version/status/link incoherence is flagged for the slice (folds in the frontmatter-
   coherence check, MIL-85, for free — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence))

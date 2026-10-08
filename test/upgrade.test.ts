@@ -24,7 +24,9 @@ import {
   applyUpgrade,
   checkUpgrade,
   UPGRADE_STEPS,
+  applyGrandfatherSignoff,
 } from "../src/cli/upgrade.js";
+import { localIsoDate } from "../src/util/localDate.js";
 import { STATE_FILE_NAME, loadStateFile, parseState } from "../src/cli/stateFile.js";
 
 const INSTALLED_VERSION = "1.13.0";
@@ -278,12 +280,12 @@ slice "Browse Orders" {
     expect(human.map((h) => h.id)).toContain("no-model-version");
   });
 
-  it("flags ready-to-implement-no-ratifiedby for a doc missing ratifiedBy", () => {
+  it("flags ready-to-implement-no-ratifiedby for a reratified (version > 1) doc missing ratifiedBy", () => {
     const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
     mkdirSync(join(dir, "slices"), { recursive: true });
     writeFileSync(
       join(dir, "slices", "place-order.md"),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 1\n---\nbody\n",
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 2\n---\nbody\n",
     );
     writeFileSync(
       join(dir, "slices", "browse-orders.md"),
@@ -294,6 +296,22 @@ slice "Browse Orders" {
     const item = human.find((h) => h.id === "ready-to-implement-no-ratifiedby");
     expect(item).toBeDefined();
     expect(item!.reason).toContain("place-order");
+    expect(item!.reason).toContain("version > 1");
+  });
+
+  it("MIL-259: a version-1 doc missing ratifiedBy is grandfathered by the ratified-signoff step, not a human item", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "place-order.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 1\n---\nbody\n",
+    );
+    const report = detectUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(report.human.map((h) => h.id)).not.toContain("ready-to-implement-no-ratifiedby");
+    const step = report.steps.find((st) => st.id === "ratified-signoff")!;
+    expect(step.applicable).toBe(true);
+    expect(step.sinceVersion).toBe("1.14.0");
+    expect(step.reason).toContain("place-order");
   });
 
   it("does not flag ready-to-implement-no-ratifiedby once ratifiedBy is set", () => {
@@ -564,5 +582,51 @@ describe("state-file step — missing file is scaffolded, broken file is explain
     const { ok, reasons } = checkUpgrade(makeCtx(dir, packagedSkillsRoot));
     expect(ok).toBe(false);
     expect(reasons.some((r) => r.startsWith("predates-1.6:"))).toBe(true);
+  });
+});
+
+describe("ratified-signoff step (MIL-259)", () => {
+  const CLEAN = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n';
+
+  it("applyGrandfatherSignoff inserts the two keys right after status, preserving CRLF and the body", () => {
+    const lf = "---\nschemaVersion: 1\nstatus: ready-to-implement\nversion: 1\n---\nbody\n";
+    expect(applyGrandfatherSignoff(lf, "2026-10-07")).toBe(
+      '---\nschemaVersion: 1\nstatus: ready-to-implement\nratifiedBy: "grandfathered (unsigned before em 1.14)"\nratifiedOn: 2026-10-07\nversion: 1\n---\nbody\n',
+    );
+    const crlf = lf.replace(/\n/g, "\r\n");
+    expect(applyGrandfatherSignoff(crlf, "2026-10-07")).toBe(
+      '---\r\nschemaVersion: 1\r\nstatus: ready-to-implement\r\nratifiedBy: "grandfathered (unsigned before em 1.14)"\r\nratifiedOn: 2026-10-07\r\nversion: 1\r\n---\r\nbody\r\n',
+    );
+    expect(applyGrandfatherSignoff("---\nstatus: ready-to-implement\nratifiedBy: Alex\n---\n", "2026-10-07")).toBeNull();
+  });
+
+  it("--apply writes one commit, the doc then passes --slice-ready's ratification check, and a second run is a no-op", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: null });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docPath = join(dir, "slices", "place-order.md");
+    writeFileSync(docPath, "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 1\n---\nbody\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "doc");
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const step = result.applied.find((a) => a.id === "ratified-signoff")!;
+    expect(step.applied).toBe(true);
+    expect(step.changedFiles).toEqual([docPath]);
+    const text = readFileSync(docPath, "utf8");
+    expect(text).toContain('ratifiedBy: "grandfathered (unsigned before em 1.14)"');
+    expect(text).toContain(`ratifiedOn: ${localIsoDate()}`);
+    const log = spawnSync("git", ["-C", dir, "log", "--format=%s"], { encoding: "utf8" }).stdout;
+    expect(log.split("\n").filter((l) => l.startsWith("em upgrade: ratified-signoff"))).toHaveLength(1);
+    const again = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((st) => st.id === "ratified-signoff")!;
+    expect(again.applicable).toBe(false);
+  });
+
+  it("leaves a version > 1 doc untouched (mid-reratify)", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: null });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "place-order.md"), "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 2\n---\nbody\n");
+    const step = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((st) => st.id === "ratified-signoff")!;
+    expect(step.applicable).toBe(false);
   });
 });

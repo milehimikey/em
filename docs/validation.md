@@ -329,8 +329,8 @@ unconditionally — it's opt-in, scoped to a single named slice, and exists to a
 question: is this slice safe to hand to an implementer? Native `em` form of the check that used
 to live only in em-sdd-bridge's `assertReadyToImplement`. See
 [cli.md#--slice-ready-key-mil-87](cli.md#--slice-ready-key-mil-87) for usage and exit-code
-semantics. Add `--json` (MIL-128) for a machine verdict naming each of the 4 gates below
-individually (`docBound`/`frontmatterUsable`/`statusReady`/`noUncheckedOpenQuestions`) plus the
+semantics. Add `--json` (MIL-128) for a machine verdict naming each of the 5 gates below
+individually (`docBound`/`frontmatterUsable`/`statusReady`/`noUncheckedOpenQuestions`/`ratified`) plus the
 overall `ready` boolean, instead of scraping this table's codes out of stderr prose — see
 [cli.md#--json-mil-128](cli.md#--json-mil-128).
 
@@ -341,6 +341,7 @@ overall `ready` boolean, instead of scraping this table's codes out of stderr pr
 | `binding-missing-file` / `frontmatter-invalid` | warning | Reused verbatim from `em export`'s doc join (see [slice-doc-schema.md](slice-doc-schema.md)) — the note names a path with no file there, or the file exists but its frontmatter isn't usable |
 | `slice-ready-status-not-ready` | warning | The doc's `status` isn't `ready-to-implement` |
 | `slice-ready-open-questions-unchecked` | warning | The doc's `## Open Questions` section has one or more unchecked (`- [ ]`) items |
+| `slice-ready-not-ratified` | error | The doc is `ready-to-implement` but carries no `ratifiedBy` — e.g. right after `em slice reratify` cleared it (MIL-259). Fix: `em slice ratify --by <name>` |
 
 **Cross-slice binding (MIL-121):** since the two-slice Automation/Translation shape means a
 bare `view` slice can have nothing of its own to document, an element in it may instead

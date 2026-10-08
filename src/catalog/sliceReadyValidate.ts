@@ -89,6 +89,19 @@ export function validateSliceReady(
     });
   }
 
+  // MIL-259: a ready-to-implement doc must carry a recorded sign-off. `em slice reratify`
+  // clears `ratifiedBy` and bumps `version`, leaving `status: ready-to-implement` in place until
+  // someone re-signs — without this check that unsigned state read as ready. Only checked when
+  // the status IS ready-to-implement: any other status already blocks via the diagnostic above,
+  // and a second "not ratified" finding there would just be noise.
+  if (doc.status === "ready-to-implement" && !doc.ratifiedBy) {
+    pushDiag(diags, "slice-ready-not-ratified", {
+      message: `slice "${sliceKey}" is ready-to-implement but carries no ratifiedBy — record the sign-off with \`em slice ratify --by <name>\``,
+      line: slice.line,
+      refs: [sliceKey],
+    });
+  }
+
   // resolveSliceDocJoin's SliceDocExport deliberately never carries Open Questions counts (same
   // hard boundary that keeps doc.html/doc.raw out of it) — re-read via readSliceDoc for the
   // full SliceDoc. Non-null: doc.reason === null already implies the file exists and parses.
@@ -125,6 +138,9 @@ export interface SliceReadyGates {
   frontmatterUsable: boolean;
   statusReady: boolean;
   noUncheckedOpenQuestions: boolean;
+  /** MIL-259: the doc carries a non-empty `ratifiedBy` (the recorded sign-off for its current
+   *  version). Only meaningful alongside `statusReady`; `false` whenever the doc is unusable. */
+  ratified: boolean;
 }
 
 /** `computeSliceReadyGates`'s full result (MIL-208): the 4 gates plus `continuationOf` — non-
@@ -153,7 +169,7 @@ export function computeSliceReadyGates(
   const docBound = doc.reason !== "no-doc-bound";
   const frontmatterUsable = doc.reason === null;
   if (!frontmatterUsable) {
-    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false }, continuationOf };
+    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false, ratified: false }, continuationOf };
   }
 
   const statusReady = doc.status === "ready-to-implement";
@@ -163,5 +179,7 @@ export function computeSliceReadyGates(
   const parsed = readSliceDoc(baseDir, boundKey)!;
   const noUncheckedOpenQuestions = parsed.openQuestionsUnchecked === 0;
 
-  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions }, continuationOf };
+  const ratified = !!doc.ratifiedBy;
+
+  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions, ratified }, continuationOf };
 }

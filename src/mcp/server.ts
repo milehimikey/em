@@ -260,8 +260,8 @@ export function createServer(): McpServer {
       title: "Check whether a slice is ready to implement",
       description:
         "Return the machine-readable readiness verdict for one slice — the same JSON document " +
-        "`em validate <file> --slice-ready <key> --json` prints: 4 named gates (doc bound, " +
-        "frontmatter usable, status ready-to-implement, no unchecked Open Questions), the " +
+        "`em validate <file> --slice-ready <key> --json` prints: 5 named gates (doc bound, " +
+        "frontmatter usable, status ready-to-implement, no unchecked Open Questions, ratified), the " +
         "overall `ready` boolean, and the scoped diagnostics behind it. Call this before " +
         "implementing a slice — never infer readiness yourself from `export_slice`'s content.",
       inputSchema: { file: fileParam, sliceKey: sliceKeyParam },

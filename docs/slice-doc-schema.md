@@ -84,7 +84,7 @@ convention, not parser-enforced.
 | `split-from`, `merged-from`, `superseded-by` | optional in every state — present only on docs created by a split/merge, or on a doc that has been retired |
 | `covers` | optional in every state — present only on a doc that deliberately also serves another slice (MIL-121, see below); most docs never carry it |
 | `reviewedBy`, `reviewedOn` | optional in every state — present once `em slice review` (MIL-201) has run at least once; a doc that never went through the review gate, or was hand-flipped to `reviewed`, simply omits both. `em slice ratify` never clears them; `em slice reratify` does (they describe the version that shipped) |
-| `ratifiedBy`, `ratifiedOn` | optional in every state — present once `em slice ratify` (MIL-165) has run at least once; a doc predating this feature, or ratified by hand, simply omits both |
+| `ratifiedBy`, `ratifiedOn` | optional in every state, but `ready-to-implement` needs `ratifiedBy` to pass `em validate --slice-ready` (`slice-ready-not-ratified`, MIL-259) — present once `em slice ratify` (MIL-165) has run; `em slice reratify` clears both. `em upgrade` (`ratified-signoff`, 1.14) grandfathers a `version: 1` `ready-to-implement` doc that never had one by writing `ratifiedBy: "grandfathered (unsigned before em 1.14)"` and `ratifiedOn:` the upgrade date |
 | `owner`, `tracking` | optional in every state — hand-filled whenever a team wants a who-holds-this / external-tracker link; most docs never carry either (MIL-171) |
 | `conformedVersion`, `conformedAt`, `conformedOn` | optional in every state — present once `em slice conform` (MIL-214) has run at least once for the CURRENT version; a doc that's never been through a conform sweep, or whose `version` has since bumped past what was certified, simply has none of the three (or a stale triple — see `driftSignal`'s `uncertified` case below) |
 
@@ -113,13 +113,13 @@ because it's the same frontmatter dialect. The doc stays the single source of tr
 `status`; a stub is just the cheapest possible way to give a slice one before anyone's ready to
 write the real spec.
 
-**A stub CAN pass `em validate --slice-ready`.** That gate checks four things (`computeSliceReadyGates`,
+**A stub CAN pass `em validate --slice-ready`.** That gate checks five things (`computeSliceReadyGates`,
 [validation.md#slice-readiness](validation.md#slice-readiness)): a doc is bound, its frontmatter
-is usable, `status` is `ready-to-implement`, and its Open Questions count has none unchecked. A
+is usable, `status` is `ready-to-implement`, it carries a `ratifiedBy` (MIL-259), and its Open Questions count has none unchecked. A
 stub with no `## Open Questions` section at all has `openQuestionsTotal: 0` (see
 [Open Questions section: lifecycle](#open-questions-section-lifecycle) below) — zero unchecked is
 vacuously true — so a stub escalated to `ready-to-implement` (`em slice stub-all --status
-ready-to-implement --by <name>`) passes cleanly. The readiness gate is frontmatter-plus-checkbox-
+ready-to-implement --by <name>`, which records the ratifier) passes cleanly. The readiness gate is frontmatter-plus-checkbox-
 count only; it has no opinion about whether Intent/Command/Scenarios/Invariants were ever
 written. Demanding that content is the `slice` phase's (and, for a live walkthrough, the review
 skill's) job, not a machine gate's — see `../.claude/skills/event-modeling-design/SKILL.md` and

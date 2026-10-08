@@ -148,7 +148,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
     mkdirSync(join(dir, "slices"), { recursive: true });
     writeFileSync(
       join(dir, "slices", "ready-slice.md"),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n## Open Questions\n- [x] resolved\n",
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n---\n## Open Questions\n- [x] resolved\n",
     );
     // Bound (the note resolves to a real file) but unusable: missing `status` from
     // REQUIRED_FRONTMATTER_KEYS, so hasUsableFrontmatter() is false — distinct from
@@ -165,7 +165,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
     expect(computeSliceReadyGates(model, refs, dir, "no-such-key")).toBeNull();
   });
 
-  it("all 4 gates false when no note binds a doc", () => {
+  it("all 5 gates false when no note binds a doc", () => {
     const { model, refs } = compile(`slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n`);
     expect(computeSliceReadyGates(model, refs, dir, "unbound")).toEqual({
       gates: {
@@ -173,12 +173,13 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
         frontmatterUsable: false,
         statusReady: false,
         noUncheckedOpenQuestions: false,
+        ratified: false,
       },
       continuationOf: null,
     });
   });
 
-  it("all 4 gates true for a bound, ready, fully-checked doc", () => {
+  it("all 5 gates true for a bound, ready, fully-checked doc", () => {
     const { model, refs } = compile(
       `slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n`,
     );
@@ -188,6 +189,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
         frontmatterUsable: true,
         statusReady: true,
         noUncheckedOpenQuestions: true,
+        ratified: true,
       },
       continuationOf: null,
     });
@@ -203,6 +205,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
         frontmatterUsable: false,
         statusReady: false,
         noUncheckedOpenQuestions: false,
+        ratified: false,
       },
       continuationOf: null,
     });

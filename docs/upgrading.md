@@ -29,6 +29,8 @@ cherry-pick each one individually:
    that block already exists.
 5. `constitution` — scaffold `constitution.md` (draft, unratified) when it's absent and the
    repo has no `.specify/` directory.
+6. `ratified-signoff` — grandfather `ready-to-implement` docs that never recorded a sign-off (see
+   [1.14.0](#1140)).
 
 Each step is detected first and applied only under `--apply`; a step that finds nothing to
 do makes no commit. `--apply` refuses to start on a dirty working tree, or with no git
@@ -36,7 +38,7 @@ identity configured (`git config user.name`/`user.email` — needed before `git 
 work at all), and stops at the first failing step with the prior steps' commits intact. Once
 every applicable step has
 run, `--apply` writes the final `Em version: <to>` bullet to the state file as its own last
-commit — that write happens every run, independent of which of the five steps applied.
+commit — that write happens every run, independent of which of the six steps applied.
 
 `from` is read from the state file's `Em version:` bullet; when that bullet is absent (a
 state file predating this feature), `em upgrade` infers `from` from other evidence and says
@@ -61,8 +63,9 @@ detects and reports them:
 - **docs on continuation slices** — slices flagged by `continuation-has-own-doc`: an
   `again`-view continuation that still carries its own doc, which should fold into its
   originating slice's doc instead (MIL-208).
-- **`ready-to-implement` docs lacking `ratifiedBy`** — should go through `em slice ratify
-  --by <name>` (MIL-165).
+- **`ready-to-implement` docs lacking `ratifiedBy`** — since 1.14 only `version > 1` docs, i.e.
+  reratified and awaiting a fresh sign-off (version-1 docs are grandfathered by the
+  `ratified-signoff` step); run `em slice ratify --by <name>` (MIL-165, MIL-259).
 - **coverage default-scope change** — the generated CI block runs `em coverage --strict`
   and the model has zero `implemented` docs: since MIL-207, `--strict` counts only
   `implemented` docs by default, so a repo with none yet gets a trivially-green gate.
@@ -214,3 +217,4 @@ Strict seams, API first.
 | What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
 | The skill bundle ships as the `em` Claude Code plugin (`/em:event-modeling`, `/em:discover`, `/em:design`, `/em:implement`, `/em:conform`, `/em:review`), pinned per release by a version-named marketplace (`em-1-14-0`) with the em MCP server bundled (MIL-230). The vendored `em skill install` route is deprecated in 1.14 and removed in a later major (the deprecation notice itself lands with MIL-231) | human: run the two install commands in [ai-workflow.md](ai-workflow.md#the-plugin-route) once per machine; the automated vendored-to-plugin migration is a later `em upgrade` step (MIL-232) |
+| **Behavior change:** `--slice-ready` requires a recorded ratification: a `ready-to-implement` doc with no `ratifiedBy` (e.g. after `em slice reratify`) is not ready (`slice-ready-not-ratified`; `--json` schema 1.1 → 1.2 adds `gates.ratified`) (MIL-259) | `ratified-signoff` — writes `ratifiedBy: "grandfathered (unsigned before em 1.14)"` and `ratifiedOn:` today on `version: 1` docs without one; a reratified (`version > 1`) doc stays a human item: `em slice ratify --by <name>` |
