@@ -6,7 +6,7 @@
 // additive/breaking classification (R8), the `check` CLI (current/stale/missing, --base against
 // a real tmp git repo, a model absent at base), and the deprecated `em typespec` alias. The
 // `@typespec/compiler` block at the bottom compiles generated text — skip-if-absent.
-import { describe, it, expect } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +18,11 @@ import { buildExportDoc } from "../src/emit/json.js";
 import { contractPathFor, diffSurfaces, generateContract, surfaceOf, sourceLabelFor } from "../src/cli/api.js";
 import { API_CHECK_SCHEMA_VERSION } from "../src/emit/apiCheckJson.js";
 import { PUBLIC_SCALAR_TYPES } from "../src/model/model.js";
+
+// The CLI blocks spawn the real `em` via tsx (~1 s each, ~6 s on a cold CI runner), which
+// exceeds vitest's 5 s default — three cases timed out on main at 4ccca56. File-level timeout,
+// same as test/cli.test.ts and test/cli-state.test.ts (MIL-205).
+vi.setConfig({ testTimeout: 20_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXAMPLE_PATH = join(ROOT, "examples/order-fulfillment/order-fulfillment.em");
