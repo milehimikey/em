@@ -60,6 +60,8 @@ exits 1 under `--ci` / `CI=true`. The registry location follows `EM_CLAUDE_PLUGI
 
 ### Sub-agents em ships
 
+The engagement phase, and who operates these agents, is described in [process.md](process.md#engagements-who-operates-the-agents); the constitution's `Agent models`, `Merge strategy` and `Test command` lines configure them.
+
 em ships four Claude Code sub-agent definitions (MIL-269) that the engagement skill dispatches; each
 states an explicit `tools:` allowlist and fixes no model (the dispatcher passes it):
 
@@ -87,7 +89,7 @@ em skill install     # copies the skill bundle into .claude/skills/
 then run `/event-modeling` (the vendored names are `event-modeling`, `event-modeling-discover`,
 `-design`, `-implement`, `-conform`, `-review`). `em skill sync` and `em skill check` keep working in
 1.14; `em skill install`/`sync` print a deprecation notice naming the plugin, and `em upgrade --apply`
-migrates a vendored repo in one commit (its `skill-plugin` step removes the seven vendored
+migrates a vendored repo in one commit (its `skill-plugin` step removes the eight vendored
 directories, pins the plugin in `.claude/settings.json`, and refreshes the `AGENTS.md` section);
 run the two install commands once per machine afterwards. The rest of this page describes the skills by their
 vendored names; under the plugin each `event-modeling-<phase>` is `em:<phase>` and `/event-modeling`
@@ -95,10 +97,10 @@ is `/em:event-modeling`.
 
 ## What the skill is
 
-`em` ships a Claude Code skill *bundle* inside the npm package — six directories under
-`.claude/skills/`, one router (`event-modeling`, the `/event-modeling` entry point) plus five
+`em` ships a Claude Code skill *bundle* inside the npm package — eight directories under
+`.claude/skills/`, one router (`event-modeling`, the `/event-modeling` entry point) plus six
 focused, SDLC-stage skills (`event-modeling-discover`, `-design`, `-implement`, `-conform`,
-`-review`), and a shared, non-skill directory (`event-modeling-shared`) holding the DSL/
+`-review`, `-engagement`), and a shared, non-skill directory (`event-modeling-shared`) holding the DSL/
 methodology reference and templates every skill points back to instead of duplicating (MIL-157;
 before that, all nine phases lived behind one skill and one broad trigger description). It turns
 a modeling session into a facilitated conversation: the AI asks focused questions one at a time —
@@ -109,8 +111,8 @@ and running `em validate` to keep the diagram honest.
 
 On the vendored route, `em skill install` copies the whole bundle into your project in one step (`--force` to overwrite
 an existing copy), so it's versioned with your repo and works for anyone who opens it in Claude
-Code. You never invoke the five phase skills by installing them separately — one `em skill
-install`/`em skill sync` keeps all six directories in sync together, the same one-command
+Code. You never invoke the six phase skills by installing them separately — one `em skill
+install`/`em skill sync` keeps all eight directories in sync together, the same one-command
 experience as before the split.
 
 **Which skill fires for a given request:** `/event-modeling` (with or without a phase name) always
@@ -144,7 +146,7 @@ one skill covering all nine phases.
 
 **Upgrading across a structural bundle change** (such as the split above, pre-1.9.0's single
 `.claude/skills/event-modeling/` — which held every phase plus all reference docs and
-templates — becoming today's six directories): **`em skill sync` is the migration path** — it's
+templates — becoming today's eight directories): **`em skill sync` is the migration path** — it's
 unconditional, so it needs no flag to remember and always leaves the vendored copy exactly
 matching the packaged bundle, orphaned files from the old layout removed. `em skill install
 --force` performs the same add/update/remove reconcile as of MIL-180 (previously it only

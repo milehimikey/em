@@ -15,10 +15,10 @@ description: >-
 
 # Event Modeling with `em` — resume / route
 
-`em` drives Event Modeling through nine phases — `discover, extract, model, slice, implement,
-conform, watch, review, validate` — split across five focused skills, one per stage of the
-process. This router skill is the single entry point for `/event-modeling`: it figures out which
-phase applies and hands off, so you never need to remember which of the five skills a given
+`em` drives Event Modeling through ten phases — `discover, extract, model, slice, implement,
+conform, watch, review, validate, engagement` — split across six focused skills, one per stage of
+the process. This router skill is the single entry point for `/event-modeling`: it figures out
+which phase applies and hands off, so you never need to remember which of the six skills a given
 phase lives in.
 
 | These phases... | ...live in this skill |

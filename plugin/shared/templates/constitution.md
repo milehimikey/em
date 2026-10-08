@@ -24,7 +24,10 @@ NAMED human and an ISO date, hand-filled at sign-off (no `em` command writes thi
 unratified, says so, and does not proceed on unilateral style or stack decisions for a first slice.
 
 `em status` reports this document as present or absent per model — existence only. em never reads
-or validates its content, and nothing here is machine-parsed.
+or validates its content, and the CLI parses nothing here. Three lines are read as plain text by
+the engagement skill and its sub-agents, so keep their exact shape: `- **Test command:**` (the
+validator), `- **Merge strategy:**` and `- **Agent models:**` (the engagement skill). In a spec-kit
+project they merge under the same headings in `.specify/memory/constitution.md`.
 -->
 
 ---
@@ -87,6 +90,10 @@ table is the only routing rule.
   with rejection scenarios asserting the doc's named rejection reason.
 - **Test naming convention:** {{the exact pattern, e.g. `INV-ORD-3: rejects a second submit`}}
 - **What "green" means:** {{the command CI runs}}
+- **Test command:** `{{the one command that runs the tests, e.g. ./gradlew test}}`
+  What the `em-validator` sub-agent runs. Keep exactly this shape: one line, the command in
+  backticks. Absent, the validator reports "no test command in the constitution" and runs only the
+  em checks.
 
 ## NFR baselines
 
@@ -114,6 +121,16 @@ it is silent, these apply.
   amend** — a `covers:` doc ships as one PR for both keys; a read model is one doc, so a later
   `again` instance is a continuation of the doc that first declared it, not a PR of its own. See
   the agent guide's §5/§10.
+- **Merge strategy:** merge-commits-when-stacked
+  {{**How do PRs merge, and what happens when one PR depends on another?** Merge commits whenever
+  a dependent PR is open; squash only a PR with no open dependent (implement contract §8 rule 2a).
+  Keep this exact line: it is the only value the engagement skill accepts, and it refuses to run
+  without it.}}
+- **Agent models:** implementer=sonnet, validator=sonnet, reviewer=sonnet, critic=opus
+  {{**Which model runs each em sub-agent?** Keep this exact line shape, with the defaults shown or
+  your own choices. The critic must run on a different model from the implementer; `critic=codex`
+  selects the Codex critic. Absent, the engagement skill states these defaults once and
+  proceeds.}}
 - **At merge:** run `em slice mark-implemented <model>.em <slice-key> <pr-url>` — the one edit an
   implementing agent makes to a ratified slice doc, run by {{the PR author | CI}}. Never bump
   `version:`; that moves only when a delta is ratified.

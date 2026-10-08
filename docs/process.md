@@ -391,6 +391,32 @@ templates and prompt overlays that make spec-kit's plan/tasks phases read a slic
 natively. Both are separate, versioned packages; their READMEs are the reference — `em`'s own
 docs deliberately don't duplicate them.
 
+### Engagements: who operates the agents
+
+When the work is a whole chunk of the model rather than one slice,
+[`em engagement`](cli.md#em-engagement) names the slices, levels them, and keeps a Ledger (the
+[schema](engagement-schema.md)), and the
+[`event-modeling-engagement`](../.claude/skills/event-modeling-engagement/SKILL.md) skill builds
+them through em's four sub-agents. The roles do not change; they are named here.
+
+- **The engagement lead is the implementing-agent operator.** The lead session dispatches
+  `em-implementer`, `em-validator`, `em-reviewer` and `em-critic`, cuts one worktree per slice
+  under `.claude/worktrees/` (that directory must be gitignored), records every step with
+  `em engagement set`, and never writes slice code itself. Its follow-up branches are named
+  `engagement/<slug>-level-<n>`.
+- **The ratifier is not the operator.** Whoever ratified a slice still did not run its build;
+  the lead never ratifies, never edits a ratified doc beyond the merge-time flip, and never
+  merges.
+- **The human merges, bottom-up, with merge commits.** The lead hands over the stack at
+  `awaiting-merge`. While a dependent PR is open its base is merged with a merge commit, never
+  squashed (the agent guide's §8 rule 2a); a squash is fine only for a PR with no open dependent.
+  The constitution's `- **Merge strategy:** merge-commits-when-stacked` line says so, and the
+  engagement skill refuses to run without it.
+- **The constitution picks the models and the test command.** Its `- **Agent models:**` line
+  assigns a model per sub-agent (the critic on a different model from the implementer) and its
+  `- **Test command:**` line is what the validator runs; both are plain-text lines the template
+  prompts for. See the [constitution template](../.claude/skills/event-modeling-shared/templates/constitution.md).
+
 ## What the tool enforces vs. what it leaves to you
 
 `em` is strict about what is unambiguously wrong (structural errors fail `em validate`;

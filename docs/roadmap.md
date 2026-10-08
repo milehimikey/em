@@ -121,6 +121,11 @@ ticket; `em` only stores and displays, it never talks to a tracker itself.
   a version that went backwards), reusing `em diff`'s git-revision plumbing rather than adding
   a new `em validate` rule — that check needs history, and `em validate` deliberately never
   touches it.
+- **Engagements** — shipped: `em engagement new|plan|set|status|close` names a chunk of the
+  model and levels it (MIL-268), four vendored sub-agents (MIL-269) and the
+  `event-modeling-engagement` skill (MIL-270) build it as a stack of PRs, and the constitution
+  template prompts for the merge strategy, per-agent models and test command (MIL-272); see
+  [process.md](process.md#engagements-who-operates-the-agents).
 - **Vendored-skill drift** — shipped: the bundled `event-modeling` skill can itself go
   stale two ways. In-repo, an `em-version:` stamp plus a doctest/generated-reference gate
   (MIL-92) keeps this repo's own skill docs honest release-over-release. Downstream, `em skill

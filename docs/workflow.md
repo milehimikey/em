@@ -154,6 +154,15 @@ project reaches a PR, a one-time foundation PR lands every model event (plus the
 interface shell the constitution names), so slice PRs only ever import contracts instead of
 inventing or duplicating them (the agent guide's §8).
 
+**Handing off many slices at once: the engagement path.** When a planned set of ratified slices
+is ready, name them with `em engagement new`, level them with `em engagement plan`, and let the
+[engagement skill](../.claude/skills/event-modeling-engagement/SKILL.md) build them through
+scoped sub-agents into a stack of PRs. Each PR is one slice; you merge the stack bottom-first
+with merge commits, so no PR needs a manual restack. The review and ratification gates above
+are unchanged, and the lead never merges. The roles are in
+[process.md](process.md#engagements-who-operates-the-agents); the commands are in
+[cli.md](cli.md#em-engagement).
+
 For anything programmatic — a generator, a dashboard, an MCP server, your own scripts —
 consume `em export` rather than parsing the DSL:
 
