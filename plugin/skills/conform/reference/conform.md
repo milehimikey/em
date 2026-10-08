@@ -35,7 +35,7 @@ difference is what you do with what you find: extract *builds* a model from the 
 ## Preconditions
 
 1. A canonical `.em` model with a state file (`.event-modeling.md`), reachable the same way the
-   shared preconditions locate it — see `${CLAUDE_PLUGIN_ROOT}/shared/reference/operating-principles.md`.
+   shared preconditions locate it — see `../../../shared/reference/operating-principles.md`.
 2. The slices you're about to check should be **implemented** — docs at `status: implemented`
    (or the status the user says corresponds to shipped code) for whichever slices are in scope.
    Checking a `draft` or `ready-to-implement` slice against code is a wasted walk — ratified or
@@ -146,7 +146,7 @@ For each slice in scope:
      divergence** (step 4) and cite the annotation text as the evidence. This is the specific,
      per-element, ratified counterpart to the idiom-level bullet above.
    - **Unpropagated deltas (MIL-85):** before treating any slice-level finding as drift, check
-     that slice's `doc.driftSignal` in `em export --json` (see `${CLAUDE_PLUGIN_ROOT}/shared/reference/slice-doc-schema.md`'s
+     that slice's `doc.driftSignal` in `em export --json` (see `../../../shared/reference/slice-doc-schema.md`'s
      "`status` under re-ratification" section for the mechanics). `"unpropagated-delta"` means
      the slice was re-ratified (a new
      `version`, `status` flipped back off `implemented`) but `implementedIn` still names the
@@ -253,7 +253,7 @@ structural findings) — a finding with no citation isn't ready to report.
 ### 5. Report + findings record + proposals
 
 Write `conformance/<YYYY-MM-DD>-report.md` in the model directory, from
-`${CLAUDE_PLUGIN_ROOT}/shared/templates/conformance-report.md`. For a real-drift or model-gap finding, propose a
+`../../../shared/templates/conformance-report.md`. For a real-drift or model-gap finding, propose a
 ready-to-apply red note — `issue "conformance: <text>"` on the right element, written out in
 the report exactly as it should be pasted into the `.em` — when a model-side marker is the
 right fix; when the fix is purely doc wording (or the finding is an internal inconsistency

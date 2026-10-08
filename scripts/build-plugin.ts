@@ -31,7 +31,7 @@ export interface RewriteRule {
   pattern: RegExp;
   replacement: string;
   /** Which generated files the rule applies to. */
-  scope: "skills" | "shared" | "all";
+  scope: "skills" | "reference" | "shared" | "all";
   example: { from: string; to: string };
 }
 
@@ -98,6 +98,36 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
     example: { from: "event-modeling-shared", to: `${ROOT_VAR}/shared` },
   },
   {
+    id: "sibling-skill-reference-ref",
+    pattern: /(?:\.\.\/)+event-modeling-(discover|conform|design|implement|review)\/reference\//g,
+    replacement: "../../$1/reference/",
+    scope: "reference",
+    example: {
+      from: "../../event-modeling-conform/reference/conform.md",
+      to: "../../conform/reference/conform.md",
+    },
+  },
+  {
+    id: "shared-relative-ref",
+    pattern: /(?:\.\.\/)+event-modeling-shared\//g,
+    replacement: "../../../shared/",
+    scope: "reference",
+    example: {
+      from: "../../event-modeling-shared/reference/em-dsl.md",
+      to: "../../../shared/reference/em-dsl.md",
+    },
+  },
+  {
+    id: "shared-repo-root-ref",
+    pattern: /\.claude\/skills\/event-modeling-shared\//g,
+    replacement: "../../../shared/",
+    scope: "reference",
+    example: {
+      from: ".claude/skills/event-modeling-shared/reference/em-dsl.md",
+      to: "../../../shared/reference/em-dsl.md",
+    },
+  },
+  {
     id: "invocation",
     pattern: /(?<![\w./-])\/event-modeling(?![\w-])/g,
     replacement: "/em:event-modeling",
@@ -131,7 +161,7 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
  * skill-name rules must not mangle them. Path-shape rules still apply to `skills` scope only. */
 const NAME_RULES_SKIP = new Set(["shared/reference/em-dsl.md"]);
 
-export function applyRewrites(content: string, scope: "skills" | "shared", outRel: string): string {
+export function applyRewrites(content: string, scope: "skills" | "reference" | "shared", outRel: string): string {
   let out = content;
   for (const rule of REWRITE_RULES) {
     if (rule.scope !== "all" && rule.scope !== scope) continue;
@@ -186,7 +216,7 @@ export function buildPlugin(version: string): Map<string, string> {
     if (!tail.endsWith(".md")) throw new Error(`build-plugin: unexpected non-markdown skill file ${srcRel}`);
 
     let outRel: string;
-    let scope: "skills" | "shared";
+    let scope: "skills" | "reference" | "shared";
     let short: string | null = null;
     if (srcDir === SHARED_SRC_DIR) {
       outRel = `shared/${tail}`;
@@ -205,6 +235,9 @@ export function buildPlugin(version: string): Map<string, string> {
 
     let content = readFileSync(abs, "utf8");
     if (short && tail === "SKILL.md") content = setFrontmatterName(content, short);
+    // ${CLAUDE_PLUGIN_ROOT} only expands in SKILL.md bodies; reference files are read later with
+    // the Read tool, so they get plain relative paths that resolve from their own location.
+    if (scope === "skills" && tail !== "SKILL.md") scope = "reference";
     content = applyRewrites(content, scope, outRel);
     content = withBanner(content, `.claude/skills/${srcRel}`);
     out.set(`${PLUGIN_DIR}/${outRel}`, content);

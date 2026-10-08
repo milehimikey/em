@@ -90,7 +90,7 @@ section — and the routing from it is mechanical, not a technical choice you ma
   — adding a route the model doesn't show is exactly the kind of silent divergence §4 exists to
   catch. An endpoint on a view the model shows no `ui` reading is a gap to surface the same way
   (MIL-215) — conform will classify it as a **model gap**, never drift to delete, once you flag
-  it (`${CLAUDE_PLUGIN_ROOT}/skills/conform/reference/conform.md`, Flow step 4).
+  it (`../../conform/reference/conform.md`, Flow step 4).
 - **`public` events and views** are the model's published integration surface: their shape is a
   contract, not an implementation detail. `em validate --list-public` lists them; `em typespec`
   is the POC generator for a downstream schema. Changing a public element's shape is a ratified
@@ -229,7 +229,7 @@ resolves the doc via the same note-binding join `--slice-ready` uses, is idempot
 with the same URL, and refuses (never silently overwrites) if the doc is already `implemented`
 with a different URL. Prefer it over hand-editing the doc's frontmatter.
 
-Then, if the project keeps a model README (from `${CLAUDE_PLUGIN_ROOT}/shared/templates/model-readme.md`), run
+Then, if the project keeps a model README (from `../../../shared/templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and
 link — never hand-edit that table. The `implementedIn` link is what the `conform` phase later
 uses to anchor drift-checking — leaving it empty blinds the loop.
@@ -241,7 +241,7 @@ or one whose `ratifiedBy` is still empty — **stop and run this short conversat
 code.** It happens once per project, not once per slice.
 
 Start from the template the skill bundle ships,
-`${CLAUDE_PLUGIN_ROOT}/shared/templates/constitution.md`. Each of its five sections opens with the
+`../../../shared/templates/constitution.md`. Each of its five sections opens with the
 question to ask; ask them **conversationally, one section at a time**, and write the answers into
 the document as you go — never fill a section by guessing, by reading the codebase and inferring
 "what they probably do", or by pasting the template's own examples. Unanswerable questions get

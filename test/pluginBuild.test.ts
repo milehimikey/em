@@ -85,7 +85,11 @@ describe("plugin build parity (MIL-230, R18)", () => {
       const body = stripBanner(content);
       expect(body, rel).not.toContain("event-modeling-shared");
       expect(body, rel).not.toContain(".claude/skills");
-      expect(body, rel).not.toMatch(/\.\.\//);
+      if (rel.includes("/reference/")) {
+        expect(body, rel).not.toContain("${CLAUDE_PLUGIN_ROOT}");
+      } else {
+        expect(body, rel).not.toMatch(/\.\.\//);
+      }
       expect(body, rel).not.toMatch(/event-modeling-(discover|design|implement|conform|review)\b/);
       expect(body, rel).not.toMatch(/(?<![\w./-])\/event-modeling(?![\w-])/);
     }
@@ -108,6 +112,26 @@ describe("plugin build parity (MIL-230, R18)", () => {
       }
     }
     expect(seen).toBeGreaterThan(20);
+  });
+
+  it("every ../ target in plugin/skills/*/reference files exists in the built tree", () => {
+    let seen = 0;
+    for (const [rel, content] of built) {
+      if (!/^plugin\/skills\/[^/]+\/reference\//.test(rel)) continue;
+      const dir = rel.slice(0, rel.lastIndexOf("/"));
+      for (const m of stripBanner(content).matchAll(/(\.\.\/[A-Za-z0-9_./-]+?\.md)/g)) {
+        const stack: string[] = [];
+        for (const p of `${dir}/${m[1]}`.split("/")) {
+          if (p === "..") stack.pop();
+          else if (p && p !== ".") stack.push(p);
+        }
+        seen++;
+        expect(built.has(stack.join("/")), `${rel}: ${m[1]}`).toBe(true);
+        // and the real path check against disk once generated
+        expect(existsSync(join(ROOT, stack.join("/"))), `${rel}: ${m[1]} on disk`).toBe(true);
+      }
+    }
+    expect(seen).toBeGreaterThan(5);
   });
 
   it("relative links inside plugin/shared resolve within the built tree", () => {
@@ -145,7 +169,7 @@ describe("plugin build parity (MIL-230, R18)", () => {
 
   it("each rewrite rule maps its documented example", () => {
     for (const rule of REWRITE_RULES) {
-      const scope = rule.scope === "shared" ? "shared" : "skills";
+      const scope = rule.scope === "all" ? "skills" : rule.scope;
       expect(applyRewrites(rule.example.from, scope, "x.md"), rule.id).toContain(rule.example.to);
     }
   });
