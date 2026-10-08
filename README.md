@@ -95,11 +95,16 @@ flowchart LR
 facilitated Event Modeling session: the AI asks the questions, you supply the domain, and the
 model renders live as it grows.
 
+Install it as the `em` Claude Code plugin, pinned to the release you run (two commands, once per
+machine; replace `1.14.0` with your `em --version`):
+
 ```bash
-em skill install          # copy the skill bundle into .claude/skills/
+claude plugin marketplace add milehimikey/em@v1.14.0 --scope project
+claude plugin install em@em-1-14-0 --scope project
 ```
 
-Then run `/event-modeling` in Claude Code. The same bundle also runs the reverse direction:
+Then run `/em:event-modeling` in Claude Code. (The vendored route, `em skill install`, copies the
+bundle into `.claude/skills/` instead; it is deprecated in 1.14.) The same bundle also runs the reverse direction:
 `extract` derives a model from a system that already exists, and `conform` checks a model
 against the code implementing it and reports where they've drifted. See
 [docs/ai-workflow.md](docs/ai-workflow.md) for the phases and what a session produces, and the

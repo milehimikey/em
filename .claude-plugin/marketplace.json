@@ -1,0 +1,14 @@
+{
+  "name": "em-1-13-1",
+  "owner": {
+    "name": "Mike Key"
+  },
+  "description": "em v1.13.1: the Event Modeling skill bundle and MCP server as a Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "em",
+      "source": "./plugin",
+      "description": "Event Modeling with em: discover, design, implement, conform and review skills over a slice-first text DSL, plus the em MCP server."
+    }
+  ]
+}

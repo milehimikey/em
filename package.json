@@ -20,7 +20,9 @@
     "dist",
     "README.md",
     "LICENSE",
-    ".claude/skills"
+    ".claude/skills",
+    "plugin",
+    ".claude-plugin"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -206,3 +206,11 @@ saying why, and a generated CI scaffold that could not pass a lint gate. Two beh
 | `em coverage --slice <key>` — the pre-merge check for one slice whatever its status; with `--strict` it fails on an uncited invariant or on a slice that is not ratified. The default form is unchanged and still counts `implemented` docs only (MIL-255) | no action needed — switch a per-slice pre-merge check to `--slice` |
 | `--json` schema versions, both additive: coverage 1.1 → 1.2 (`slice`, `continuationOf`); upgrade 1.0 → 1.1 (`stateFileError` is `null` for an absent state file) (MIL-255, MIL-257) | no action needed |
 | **Release note: run `em skill sync` in each consumer repo** (implement contract §4 and §5 changed; the design skill gained a sibling-slice invariant check; four summaries corrected) (MIL-254, MIL-255, MIL-258, #189) | `skill-bundle` |
+
+## 1.14.0
+
+Strict seams, API first.
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| The skill bundle ships as the `em` Claude Code plugin (`/em:event-modeling`, `/em:discover`, `/em:design`, `/em:implement`, `/em:conform`, `/em:review`), pinned per release by a version-named marketplace (`em-1-14-0`) with the em MCP server bundled (MIL-230). The vendored `em skill install` route is deprecated in 1.14 and removed in a later major (the deprecation notice itself lands with MIL-231) | human: run the two install commands in [ai-workflow.md](ai-workflow.md#the-plugin-route) once per machine; the automated vendored-to-plugin migration is a later `em upgrade` step (MIL-232) |

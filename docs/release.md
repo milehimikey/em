@@ -14,7 +14,10 @@ record of it and of the one-time setup it depends on.
 3. **Bump** — `version` in package.json **and** the `em-version:` stamp in every
    `.claude/skills/event-modeling*/SKILL.md` (six files — the router skill plus the
    five focused phase skills; CI's skill-version-stamp gate requires all of them to
-   agree with package.json); regenerate skill docs; run build + typecheck + tests.
+   agree with package.json); regenerate skill docs (`npm run docs:generate`, which
+   also restamps the Claude Code plugin: `plugin/.claude-plugin/plugin.json`
+   `version` and MCP pin, and the `.claude-plugin/marketplace.json` name
+   `em-<version with dots as dashes>`); run build + typecheck + tests.
 4. **Notes** — title `X.Y.Z: <short narrative theme>`; body: theme paragraph, then
    Features / Fixes / Docs bullets with PR numbers and MIL-* ids.
 5. **Upgrading doc** — add this release's row to
@@ -23,6 +26,10 @@ record of it and of the one-time setup it depends on.
    sourced from the same notes as step 4. Include it in the release commit.
 6. **Ship** — commit `release: vX.Y.Z` to main, push, then
    `gh release create vX.Y.Z` with the notes. Creating the release creates the tag.
+   The `vX.Y.Z` tag IS the plugin's marketplace pin: after the release exists, verify
+   `claude plugin marketplace add milehimikey/em@vX.Y.Z` resolves (then remove the
+   scratch registration). Never re-push a release tag; installs keep their cached
+   copy while `plugin.json` `version` is unchanged.
 7. **Publish** — the tag push triggers `.github/workflows/release.yml`, which
    verifies the tag matches package.json and runs `npm publish`. The existing
    `prepublishOnly` script (build + typecheck + test) gates the publish itself.

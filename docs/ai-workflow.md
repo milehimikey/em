@@ -1,16 +1,65 @@
 # Modeling with AI
 
-Two commands get you a guided session:
+## The plugin route
+
+`em` ships its skill bundle as a Claude Code plugin named `em`, pinned to the em release you run.
+Two commands, once per machine (the examples use 1.14.0; use your own `em --version`):
+
+```bash
+claude plugin marketplace add milehimikey/em@v1.14.0 --scope project
+claude plugin install em@em-1-14-0 --scope project
+```
+
+Both are required, in this order: `claude plugin install` alone fails with "Plugin not found in
+marketplace" even when the repo already carries the settings entries, because the marketplace has
+to be registered on the machine first. The first command also writes the settings entry below; the
+second writes `enabledPlugins`. Commit both so collaborators and CI see the same pin:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "em-1-14-0": {
+      "source": { "source": "github", "repo": "milehimikey/em", "ref": "v1.14.0" }
+    }
+  },
+  "enabledPlugins": { "em@em-1-14-0": true }
+}
+```
+
+The marketplace name carries the exact em version (`em-` plus the version with dots as dashes).
+That is deliberate: marketplace registration is per user and keyed by name, so two repos pinning
+different tags under one name would silently run the first one's content. Each tag's
+`.claude-plugin/marketplace.json` declares its own versioned name, and `plugin.json`'s `version`
+is the release version, so a re-pushed tag never moves an installed copy. Old per-version
+registrations accumulate under `~/.claude/plugins/`; remove one with `claude plugin marketplace
+remove em-1-13-1`. The plugin also bundles the em MCP server (`npx -y @milehimikey/em@<version>
+mcp`, see [mcp.md](mcp.md)); it needs Node 18+.
+
+Then, in Claude Code:
+
+```
+/em:event-modeling
+```
+
+The skills are namespaced by the plugin: `/em:event-modeling` (the router), `/em:discover`,
+`/em:design`, `/em:implement`, `/em:conform`, `/em:review`. The plugin tree under `plugin/` in the
+em repo is generated from `.claude/skills/` by `scripts/build-plugin.ts` (`npm run docs:generate`);
+CI fails on drift. Its shared references resolve through `${CLAUDE_PLUGIN_ROOT}`.
+
+## Vendored skills (deprecated in 1.14, removed in a later major)
+
+The original route copies the bundle into the repo instead:
 
 ```bash
 em skill install     # copies the skill bundle into .claude/skills/
 ```
 
-then, in Claude Code:
-
-```
-/event-modeling
-```
+then run `/event-modeling` (the vendored names are `event-modeling`, `event-modeling-discover`,
+`-design`, `-implement`, `-conform`, `-review`). `em skill sync` and `em skill check` keep working in
+1.14; a deprecation notice naming the plugin arrives with MIL-231, and `em upgrade` gains a
+vendored-to-plugin migration step in MIL-232. The rest of this page describes the skills by their
+vendored names; under the plugin each `event-modeling-<phase>` is `em:<phase>` and `/event-modeling`
+is `/em:event-modeling`.
 
 ## What the skill is
 

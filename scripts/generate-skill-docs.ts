@@ -11,8 +11,9 @@
 //   tsx scripts/generate-skill-docs.ts          # write (npm run docs:generate)
 //   tsx scripts/generate-skill-docs.ts --check   # verify only, exit 1 on drift (npm run docs:check)
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { buildPlugin, packageVersion, PLUGIN_DIR } from "./build-plugin.js";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { program } from "../src/cli.js";
@@ -190,6 +191,51 @@ export function buildVendoredSliceDocSchema(source: string): string {
   return banner + body;
 }
 
+// ---- Plugin tree (MIL-230) ----
+//
+// The `em` Claude Code plugin is generated from the skill bundle by scripts/build-plugin.ts.
+// Write mode materialises the tree and deletes stale files under plugin/; check mode reports
+// missing, extra and changed files.
+
+function listTree(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const name of readdirSync(dir).sort()) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...listTree(p));
+    else out.push(p);
+  }
+  return out;
+}
+
+/** Returns the list of drift messages (check) or writes the tree (write). */
+function syncPluginTree(check: boolean): string[] {
+  const built = buildPlugin(packageVersion());
+  const problems: string[] = [];
+  for (const [rel, content] of built) {
+    const abs = join(ROOT, rel);
+    const existing = existsSync(abs) ? readFileSync(abs, "utf8") : null;
+    if (existing === content) continue;
+    if (check) {
+      problems.push(`${rel}: ${existing === null ? "missing" : "changed"}`);
+    } else {
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, content, "utf8");
+      console.log(`wrote ${rel}`);
+    }
+  }
+  for (const abs of listTree(join(ROOT, PLUGIN_DIR))) {
+    const rel = abs.slice(ROOT.length + 1).split("\\").join("/");
+    if (built.has(rel)) continue;
+    if (check) problems.push(`${rel}: extra (not produced by the build)`);
+    else {
+      rmSync(abs);
+      console.log(`removed ${rel}`);
+    }
+  }
+  return problems;
+}
+
 // ---- Marker-delimited patching ----
 //
 // The regex-matching mechanics live in src/util/markers.ts (shared with the runtime `em slice
@@ -265,6 +311,12 @@ function main(): void {
       writeFileSync(SLICE_DOC_SCHEMA_VENDORED, vendoredSliceDocSchema, "utf8");
       console.log(`wrote ${SLICE_DOC_SCHEMA_VENDORED.replace(ROOT + "/", "")}`);
     }
+  }
+
+  const pluginProblems = syncPluginTree(check);
+  if (check && pluginProblems.length > 0) {
+    drift = true;
+    for (const p of pluginProblems) console.error(`docs:check — plugin drift in ${p}`);
   }
 
   if (check) {

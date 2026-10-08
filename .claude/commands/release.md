@@ -34,7 +34,10 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
   every one of them to agree with package.json.
 - Regenerate skill docs and verify no drift: `npm run docs:generate` then
   `git diff --stat` to see what changed; include any regenerated files in the
-  release commit.
+  release commit. This also restamps the Claude Code plugin from package.json
+  (MIL-230): `plugin/.claude-plugin/plugin.json` `version`, the `@milehimikey/em@<version>`
+  pin in its MCP server entry, and the `name` in `.claude-plugin/marketplace.json`
+  (`em-<version with dots as dashes>`, e.g. `em-1-14-0`). Confirm those three moved.
 - Run the gates: `npm run build && npm run typecheck && npm test`. Do not
   proceed past a failure.
 
@@ -65,6 +68,12 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
 - Create the GitHub release (this also creates the tag, which triggers the npm
   publish workflow):
   `gh release create vX.Y.Z --title "X.Y.Z: <theme>" --notes-file <scratch-file>`
+- The `vX.Y.Z` tag IS the plugin's marketplace pin: consumers register
+  `milehimikey/em@vX.Y.Z`. After `gh release create`, verify it resolves:
+  `claude plugin marketplace add milehimikey/em@vX.Y.Z --scope local` in a scratch
+  directory (then `claude plugin marketplace remove em-X-Y-Z`). Never move or
+  re-push a release tag: an installed plugin keeps its cached copy while
+  `plugin.json` `version` is unchanged, so a moved tag never reaches installs.
 
 ## 7. Watch the publish
 
