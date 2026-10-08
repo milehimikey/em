@@ -65,6 +65,8 @@ The engagement phase, and who operates these agents, is described in [process.md
 em ships four Claude Code sub-agent definitions (MIL-269) that the engagement skill dispatches; each
 states an explicit `tools:` allowlist and fixes no model (the dispatcher passes it):
 
+With `critic=codex` in the constitution's agent-models line, the engagement skill runs the critic through `codex exec` in a read-only review worktree instead (MIL-271), after checking that `codex` is on PATH and the project is trusted in Codex; any miss falls back to `em-critic`.
+
 | Agent | May do | Output |
 | --- | --- | --- |
 | `em-implementer` | Read, write and edit code and tests for exactly one slice in the worktree and branch it is given; loads the implement skill and the constitution's routing table. Never edits the slice doc, the `.em`, another slice or shared infra; never merges or rebases; stops on a gap | PR URL and a per-invariant test map |

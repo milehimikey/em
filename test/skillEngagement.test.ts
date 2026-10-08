@@ -87,7 +87,11 @@ describe("event-modeling-engagement skill text (MIL-270)", () => {
     expect(skill).toContain("em slice index <model>.em");
     expect(skill).toContain("em state log-usage <model>.em --phases engagement");
     expect(skillFlat).toContain("**Never show the critic the reviewer's findings.**");
-    expect(read(REFERENCE_MD)).toContain("When the constitution names `critic=codex`, see MIL-271");
+    expect(read(REFERENCE_MD)).toContain("When the constitution's agent-models line says `critic=codex`");
+    const ref = read(REFERENCE_MD);
+    for (const t of ["codex exec --cd", "--sandbox read-only", "< /dev/null", "trust_level", "fall back to `em-critic`", "never write"]) {
+      expect(ref.toLowerCase()).toContain(t.toLowerCase());
+    }
   });
 
   it("carries the Never-do rows", () => {

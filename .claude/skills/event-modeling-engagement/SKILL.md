@@ -110,8 +110,10 @@ When the implementer returns a PR URL (and a per-invariant test map):
 3. On `OVERALL: PASS`: `em engagement set <model>.em <slug> <key> --state review`. Dispatch
    `em-reviewer` (`em:em-reviewer`) with the slice key and the PR URL. Dispatch `em-critic`
    (`em:em-critic`) with the same two inputs, on the critic model, in fresh context. **Never
-   show the critic the reviewer's findings.** When the critic is `codex`, see
-   `reference/engagement.md` ("Codex critic").
+   show the critic the reviewer's findings.** When the critic is `codex`, run the
+   prerequisite checks and the `codex exec` invocation in `reference/engagement.md` ("Codex
+   critic") in a fresh `.claude/worktrees/review-<pr>`, treat its output file as the critic's findings, and
+   fall back to `em-critic` (saying so in the evidence bundle) if any prerequisite fails.
 4. Compare the two findings lists. A blocker or major finding raised by only one of the two is
    itself a finding for the human (record it in the evidence bundle).
 5. **Findings go back to the SAME implementer.** On a validator FAIL, or any `blocker`/`major`
