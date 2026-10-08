@@ -3971,7 +3971,7 @@ Pass the system manifest ([`em system`](#em-system-manifest)) or the directory h
 `em-ci.yml` is generated whose single `GENERATED:em-ci` block carries, **per model key**,
 `validate-<key>` (only that model directory's changed `*.em`), `api-check-<key>`, `slice-index-<key>`,
 `coverage-<key>`, `ledger-<key>`, `upgrade-check-<key>` and `status-badge-<key>` (push-only; it
-writes `<modelDir>/status-badge.svg`), and **once** `codeowners-check` (`em system codeowners --check .`, PR-only, MIL-231), `skill-check` and `glossary` (which already
+writes `<modelDir>/status-badge.svg`), and **once** `codeowners-check` (`em system codeowners --check .`), `system` (`em system .`, consumer adaptation) and `system-scope` (`em system scope --base`) - all PR-only, MIL-231 - plus `skill-check` and `glossary` (which already
 spans every tracked `*.em`). `<key>` is the manifest key; a `~2` collision key becomes `-2` in
 the job id (and gets a numeric suffix if that still collides), so every id is a valid Actions id.
 Models are emitted in key order, so reordering the manifest is not drift. `em-conform.yml`

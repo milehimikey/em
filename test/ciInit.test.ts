@@ -464,6 +464,8 @@ describe("multi-model workflow generation (MIL-233, #174)", () => {
     expect(Object.keys(doc.jobs)).toEqual([
       ...["checkout", "fulfillment"].flatMap((k) => ["validate", "api-check", "slice-index", "coverage", "ledger", "upgrade-check", "status-badge"].map((j) => `${j}-${k}`)),
       "codeowners-check",
+      "system",
+      "system-scope",
       "skill-check",
       "glossary",
     ]);
@@ -729,7 +731,13 @@ describe("plugin-aware presets (MIL-231)", () => {
     expect(multi.jobs["codeowners-check"].steps.map((s) => s.run ?? "").join("\n")).toContain(
       "npx @milehimikey/em@1.14.0 system codeowners --check .",
     );
-    expect(buildCiWorkflowFile("orders/orders.em", "test", "1.14.0")).not.toContain("codeowners");
+    const run = (j: string) => multi.jobs[j].steps.map((s) => s.run ?? "").join("\n");
+    expect(run("system")).toContain("npx @milehimikey/em@1.14.0 system .");
+    expect(run("system-scope")).toContain('npx @milehimikey/em@1.14.0 system scope --base "$base"');
+    expect(multi.jobs["system-scope"].if).toBe("github.event_name == 'pull_request'");
+    expect(Object.keys(multi.jobs).slice(-5, -2)).toEqual(["codeowners-check", "system", "system-scope"]);
+    const single = buildCiWorkflowFile("orders/orders.em", "test", "1.14.0");
+    for (const j of ["codeowners", "system scope", " system ."]) expect(single).not.toContain(j);
   });
 
   it("`em ci init` generates the plugin conform workflow in a repo that pins the plugin, the vendored one otherwise", () => {

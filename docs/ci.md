@@ -17,7 +17,7 @@ reach for `em ci init` when you just want it wired.
 
 **Multi-model (MIL-233):** `em ci init <system.yaml>` covers every model in the system manifest
 with one `em-ci.yml`: a `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`, `upgrade-check-` and
-`status-badge-<key>` job per model, plus one `codeowners-check`, one `skill-check` and one `glossary`, and an
+`status-badge-<key>` job per model, plus one each of `codeowners-check`, `system`, `system-scope`, `skill-check` and one `glossary`, and an
 `em-conform.yml` that fans `conform` out over a matrix of model directories (see
 [cli.md](cli.md#multi-model-form-em-ci-init-systemyaml); a worked output is committed under
 `examples/multi-model/.github/workflows/`). A managed block is identified by the set of models it
@@ -136,8 +136,8 @@ merge until the consumer's field block is updated (in the same PR or a prior one
 change that only adds fields stays green: consumers tolerate unknown fields, as the generated
 contract's doc comment says (see [`em api check`](#em-api-check-the-model-owned-contract)).
 `em status` reports the same count as `system.consumerNotAdapted` without failing. The job line
-is `npx @milehimikey/em@<version> system <manifest|.>`; `em ci init` wiring for it follows the
-MIL-233 restructure of the generator.
+is `npx @milehimikey/em@<version> system .`; `em ci init <system.yaml>` generates it (job `system`, PR-only,
+`fetch-depth: 0`, multi-model blocks only).
 
 ## `em system scope`: the seam-crossing gate
 
@@ -161,7 +161,7 @@ changed only by `Em-Upgrade:` commits (`em upgrade --apply`) are exempt. See
 cross goes through the people who consume the contract: list each producer's
 `contracts/<model>.tsp` in CODEOWNERS with the consuming teams (below). The producer's contract
 change merges with their approval, and the consumer's adaptation follows in its own change set.
-`em ci init` does not generate this job yet; add the step above by hand.
+`em ci init <system.yaml>` generates this as the PR-only `system-scope` job (multi-model blocks only).
 
 ## `em export` as the artifact step
 

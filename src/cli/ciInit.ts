@@ -88,6 +88,44 @@ function skillCheckJob(em: string, emVersion: string): string {
           fi`;
 }
 
+/** The `system` job (MIL-239 consumer adaptation, MIL-231 wiring) - multi-model only. Fetches full
+ *  history because the failure message names the producer commit. */
+function systemJob(em: string): string {
+  return `  system:
+    name: "em system (consumer adaptation, seam verification)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check seams and consumer adaptation
+        run: ${em} system .`;
+}
+
+/** The `system-scope` job (MIL-240 seam-crossing gate, MIL-231 wiring) - multi-model only; needs
+ *  the base revision. */
+function systemScopeJob(em: string): string {
+  return `  system-scope:
+    name: "em system scope (seam-crossing change set)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the change set against the seams
+        run: |
+          base="\${{ github.event.pull_request.base.sha }}"
+          ${em} system scope --base "$base"`;
+}
+
 /** The `codeowners-check` job (MIL-234 command, MIL-231 wiring) - multi-model presets only: a
  *  single-model repo has no seams to route review for. One job for the whole model set. */
 function codeownersCheckJob(em: string): string {
@@ -494,7 +532,7 @@ export function ciManagedBodyMulti(models: CiModel[], testsDir: string, emVersio
   const sorted = sortedModels(models);
   const ids = ciJobIds(sorted.map((m) => m.key));
   const perModel = sorted.map((m) => modelJobs(m, ids.get(m.key)!, testsDir, em));
-  return [...perModel, codeownersCheckJob(em), skillCheckJob(em, emVersion), glossaryJob(em)].join("\n\n");
+  return [...perModel, codeownersCheckJob(em), systemJob(em), systemScopeJob(em), skillCheckJob(em, emVersion), glossaryJob(em)].join("\n\n");
 }
 
 export function buildCiWorkflowFileMulti(arg: string, models: CiModel[], testsDir: string, emVersion: string): string {

@@ -68,7 +68,7 @@ This example was migrated from the old schema 1.0 manifest (seams and owners in 
 
 `.github/workflows/` holds the output of `em ci init system.yaml` (MIL-233): one `em-ci.yml` with
 `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`, `upgrade-check-` and `status-badge-<key>` jobs
-for each of the two models plus a shared `skill-check` and `glossary`, and an `em-conform.yml`
+for each of the two models plus shared `codeowners-check`, `system`, `system-scope`, `skill-check` and `glossary` jobs, and an `em-conform.yml`
 whose `conform` job runs over a matrix of the two model directories. Re-running `em ci init
 system.yaml` is a no-op, `--check` verifies both models' sections, and `em ci init
 models/checkout/checkout.em` refuses rather than narrow the workflow to one model.

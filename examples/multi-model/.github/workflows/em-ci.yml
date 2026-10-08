@@ -300,6 +300,36 @@ jobs:
       - name: Check the generated CODEOWNERS block is current
         run: npx @milehimikey/em@1.13.1 system codeowners --check .
 
+  system:
+    name: "em system (consumer adaptation, seam verification)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check seams and consumer adaptation
+        run: npx @milehimikey/em@1.13.1 system .
+
+  system-scope:
+    name: "em system scope (seam-crossing change set)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the change set against the seams
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          npx @milehimikey/em@1.13.1 system scope --base "$base"
+
   skill-check:
     name: em skill check (vendored skill / plugin drift)
     if: github.event_name == 'pull_request'
