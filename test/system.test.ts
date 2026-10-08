@@ -924,8 +924,8 @@ describe("discovery — no manifest (MIL-235, R4)", () => {
       if (!b.ok) return;
       expect(b.manifest).toBeNull();
       expect(b.models.map((m) => [m.key, m.source, m.owner])).toEqual([
-        ["checkout", "models/checkout/checkout.em", ["Storefront team"]],
-        ["fulfillment", "models/fulfillment/fulfillment.em", ["Warehouse team"]],
+        ["checkout", "models/checkout/checkout.em", ["@example/storefront"]],
+        ["fulfillment", "models/fulfillment/fulfillment.em", ["@example/warehouse"]],
       ]);
       const report = verifySystem(b.manifest, b.models, b.manifestPath, b.diagnostics);
       expect(report.seams.map((x) => [x.from, x.to, x.status])).toEqual([

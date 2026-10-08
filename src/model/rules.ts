@@ -410,6 +410,16 @@ export const RULES = {
     fix: "Rename one of them (or drop `public` from one): a consumer's `consumes <model>:<kind>.<slug>` must name exactly one element.",
     usageCategory: "public name not unique",
   },
+  // MIL-234: an `owner "..."` entry on the model header that is not a CODEOWNERS handle. A
+  // warning, not an error: MIL-235's manifest migration writes the 1.0 manifest's free-text
+  // owner onto the header as-is, and a 1.13 estate must keep validating clean. `em system
+  // codeowners` skips such an owner (it can only route a handle or an email).
+  "owner-not-a-handle": {
+    severity: "warning",
+    title: "Model owner is not a CODEOWNERS handle",
+    fix: "Write the owner as a GitHub user (`@alice`), a team (`@org/team`), or an email address, so `em system codeowners` can route review to it.",
+    usageCategory: "owner not a handle",
+  },
   // MIL-194: the codes `em system [<manifest>|<dir>]` raises while verifying a seam manifest
   // (docs/cli.md "em system") against each model's export document — the cross-model half of
   // "both ends of a flow": every `public` event/view needs a declared reader somewhere in the

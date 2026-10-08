@@ -172,6 +172,8 @@ import {
 } from "./query/format.js";
 import { buildQueryJson } from "./emit/queryJson.js";
 import { loadSystem, SYSTEM_MANIFEST_FILE } from "./cli/systemInputs.js";
+import { runCodeowners } from "./system/codeowners.js";
+import { buildCodeownersJson } from "./emit/codeownersJson.js";
 import { verifySystem, SystemDiagnostic } from "./system/verify.js";
 import { buildSystemJson } from "./emit/systemJson.js";
 
@@ -187,7 +189,10 @@ const PKG_VERSION: string = JSON.parse(
 program
   .name("em")
   .description("Event Modeling CLI — slice-first DSL rendered as a strict Graphviz grid")
-  .version(PKG_VERSION);
+  .version(PKG_VERSION)
+  // Program options (`--version`) only before the subcommand name: `em system codeowners --json`
+  // must reach the subcommand (MIL-234), and `em system` has its own `--json`.
+  .enablePositionalOptions();
 
 program
   .command("init")
@@ -2346,8 +2351,11 @@ query
     runQueryVerb(files, "path", { from: opts.from, to: opts.to }, opts.json, (s) => queryPath(s, opts.from, opts.to), formatPath);
   });
 
-program
+const systemCommand = program
   .command("system")
+  // `--json` exists on both `em system` and `em system codeowners`: parent options are only
+  // recognized before the subcommand name, so the subcommand owns the one that follows it.
+  .enablePositionalOptions()
   .description(
     "verify a system — every model's `consumes` refs resolved against the other models' `public` " +
       "events/views, the cross-model half of \"both ends of a flow\" (MIL-194/MIL-235, see docs/cli.md). " +
@@ -2392,6 +2400,43 @@ program
     // Set the code rather than process.exit(): same rationale as em diff/em ledger — stdout to
     // a pipe (a --json document) shouldn't risk truncation.
     if (hasErrors(report.diagnostics)) process.exitCode = 1;
+  });
+
+systemCommand
+  .command("codeowners")
+  .description(
+    "generate (or --check) the managed CODEOWNERS block that routes review: each model's team on its " +
+      "design directory, and every team that `consumes` a model's public surface on that model's " +
+      "contract file (MIL-234, see docs/ci.md and docs/cli.md)",
+  )
+  .argument("[target]", "a system.yaml path, or a directory (its system.yaml if present, else discovery); default: the working directory")
+  .allowExcessArguments(false)
+  .option("-o, --output <path>", "the CODEOWNERS file to splice into (default: the first of CODEOWNERS, .github/CODEOWNERS, docs/CODEOWNERS that exists, else CODEOWNERS at the repo root)")
+  .option("--check", "verify the committed file already carries the generated block; never writes, exit 1 on drift (CI)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((target: string | undefined, opts: { output?: string; check?: boolean; json?: boolean }) => {
+    const shown = target ?? ".";
+    const result = runCodeowners(shown, { output: opts.output, write: !opts.check });
+    if (!result.ok) {
+      console.error(`em system codeowners: ${result.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    for (const note of result.plan.notes) console.error(`note: ${note}`);
+    if (opts.json) {
+      process.stdout.write(buildCodeownersJson(result.file, result.plan.entries, result.status) + "\n");
+    } else if (opts.check) {
+      const hint = `run \`em system codeowners${target ? ` ${target}` : ""}${opts.output ? ` -o ${opts.output}` : ""}\` and commit the result`;
+      if (result.status === "ok") console.log(`ok: ${result.file} carries the generated block`);
+      else if (result.status === "missing") console.log(`missing: ${result.file} does not exist — ${hint}`);
+      else if (result.status === "no-markers") console.log(`no-markers: ${result.file} has no GENERATED:em-codeowners block — ${hint}`);
+      else console.log(`stale: ${result.file} differs from the generated block — ${hint}`);
+    } else {
+      const verb = result.status === "created" ? "installed" : result.status === "updated" ? "updated" : "already up to date:";
+      console.log(`${verb} ${result.file} (${result.plan.entries.length} entr${result.plan.entries.length === 1 ? "y" : "ies"})`);
+    }
+    // --check never writes and fails on anything but ok (same vocabulary as `em ci init --check`).
+    if (opts.check && result.status !== "ok") process.exitCode = 1;
   });
 
 // Shared by install/sync/check: the `.claude/skills/` root bundled with whatever em package is

@@ -1,4 +1,4 @@
-model "Checkout" owner "Storefront team"
+model "Checkout" owner "@example/storefront"
 
 persona Customer
 

@@ -296,7 +296,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the twenty documented tools", async () => {
+  it("exposes exactly the twenty-one documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -318,6 +318,7 @@ describe("tools/list", () => {
         "query",
         "slice_ready",
         "system",
+        "system_codeowners",
         "status",
         "upgrade",
         "validate",
@@ -1283,5 +1284,37 @@ describe("query tool", () => {
     const { result } = await callJson(client, "query", { files: [join(dir, "no-such-file.em")], verb: "slices" });
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+});
+
+describe("system_codeowners tool (MIL-234)", () => {
+  it("byte-identical to `em system codeowners --check --json`, and never writes", async () => {
+    const repo = makeMultiModelRepo();
+    rmSync(join(repo.dir, "CODEOWNERS"), { force: true }); // the example ships its generated file
+    try {
+      const { result, doc } = await callJson(client, "system_codeowners", { manifest: join(repo.dir, "system.yaml"), output: join(repo.dir, "CODEOWNERS") });
+      expect(result.isError).toBeFalsy();
+      expect(doc.codeownersSchemaVersion).toBe("1.0");
+      expect(doc.status).toBe("missing");
+      expect(existsSync(join(repo.dir, "CODEOWNERS"))).toBe(false);
+      const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+      const cli = em(["system", "codeowners", join(repo.dir, "system.yaml"), "-o", join(repo.dir, "CODEOWNERS"), "--check", "--json"], repo.dir);
+      expect(cli.status).toBe(1);
+      expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("refuses (tool error) when a model has no usable owner", async () => {
+    const repo = makeMultiModelRepo();
+    try {
+      writeFileSync(repo.checkout, readFileSync(repo.checkout, "utf8").replace('owner "@example/storefront"', 'owner "Storefront team"'));
+      const result = (await client.callTool({ name: "system_codeowners", arguments: { manifest: repo.manifest } })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect((result.content[0] as { text: string }).text).toContain('model "checkout" has no usable owner');
+    } finally {
+      repo.cleanup();
+    }
   });
 });

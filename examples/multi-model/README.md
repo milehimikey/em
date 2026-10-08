@@ -53,8 +53,12 @@ model (compile isolation). `em system` is where the ref is resolved: it fails wi
 `consumes-unknown-model`/`consumes-unknown-element` if the ref names no model or no `public`
 element, and reports the one thing left unbound on purpose — Checkout's second public event,
 `Order Cancelled`, which nothing consumes, as a `dangling-public-event` warning. Each model header
-also names its owning team (`model "Checkout" owner "Storefront team"`), which `em system` shows
-on the context map.
+also names its owning team (`model "Checkout" owner "@example/storefront"`), which `em system`
+shows on the context map. `em system codeowners` turns those owners and the `consumes` seam into
+the committed [`CODEOWNERS`](CODEOWNERS) beside this README: each model's team owns its
+directory, and the contract file `contracts/checkout.tsp` lists both `@example/storefront` and
+`@example/warehouse`, so a change to Checkout's public surface cannot merge without Fulfillment's
+review (`em system codeowners --check` fails if the file drifts).
 
 This example was migrated from the old schema 1.0 manifest (seams and owners in `system.yaml`) by
 `em upgrade <model>.em --apply`'s `system-manifest` step — see

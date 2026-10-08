@@ -2363,3 +2363,37 @@ slice "S" {
     expect(codes(`slice "S" {\n  command Do { total: Money, items: List<LineItem> }\n  event Done @D { x }\n}\n`)).toEqual([]);
   });
 });
+
+describe("owner-not-a-handle (MIL-234)", () => {
+  const ownerDiags = (src: string) => diagsFor(src).filter((d) => d.code === "owner-not-a-handle");
+
+  it("accepts GitHub users, org/teams and emails", () => {
+    for (const owner of ["@alice", "@org/team", "@my-org/team.name_2", "@a", "dev@example.com", "first.last+tag@sub.example.org"]) {
+      expect(ownerDiags(`model "M" owner "${owner}"\nslice "S" {\n  command Do\n}\n`), owner).toEqual([]);
+    }
+  });
+
+  it("warns once per free-text entry, quoting the value and showing both accepted shapes", () => {
+    const d = ownerDiags(`model "M" owner "Storefront team", "@org/ok", "org/team"\nslice "S" {\n  command Do\n}\n`);
+    expect(d.map((x) => [x.severity, x.message])).toEqual([
+      [
+        "warning",
+        'model owner "Storefront team" is not a CODEOWNERS handle — use a GitHub user or team ("@alice", "@org/team") or an email address ("name@example.com") so `em system codeowners` can route review to it',
+      ],
+      [
+        "warning",
+        'model owner "org/team" is not a CODEOWNERS handle — use a GitHub user or team ("@alice", "@org/team") or an email address ("name@example.com") so `em system codeowners` can route review to it',
+      ],
+    ]);
+  });
+
+  it("rejects handle-lookalikes", () => {
+    for (const owner of ["@", "@-bad", "@org/", "@org/team/extra", "@org team", "a@b", "@ali ce"]) {
+      expect(ownerDiags(`model "M" owner "${owner}"\n`), owner).toHaveLength(1);
+    }
+  });
+
+  it("a model with no owner clause raises nothing", () => {
+    expect(ownerDiags(`model "M"\n`)).toEqual([]);
+  });
+});

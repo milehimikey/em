@@ -113,6 +113,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | An event marked `public` that no read model reads (unconditional variant of "An event no read model reads") | Mark it `public` only if its consumer is outside this model; otherwise add the view |
 | A view marked `public` with no consumer (unconditional variant of "A read model nothing consumes") | Mark it `public` only if its consumer is outside this model; otherwise add the screen or reaction |
 | A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
+| A model `owner` that is not a CODEOWNERS handle (`owner-not-a-handle`, MIL-234): not `@user`, `@org/team` or an email, e.g. the free text `"Storefront team"` | Write `owner "@org/team"`; `em system codeowners` skips a non-handle owner |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event, and not marked `derived` | Add the field to the event, drop it from the view, or mark it `derived` if it's genuinely computed from which events have landed |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |

@@ -81,11 +81,20 @@ describe("examples/multi-model/", () => {
     const loaded = loadSystem(MANIFEST_FILE);
     if (!loaded.ok) throw new Error("manifest failed to load");
     expect(loaded.models.map((m) => [m.key, m.owner])).toEqual([
-      ["checkout", ["Storefront team"]],
-      ["fulfillment", ["Warehouse team"]],
+      ["checkout", ["@example/storefront"]],
+      ["fulfillment", ["@example/warehouse"]],
     ]);
     const intake = loaded.models[1].doc.model.slices.flatMap((s) => s.elements).find((e) => e.ref === "receive-order/translation.order-intake")!;
     expect(intake.consumes).toEqual(["checkout:event.order-submitted"]);
+  });
+
+  // MIL-234: owners are CODEOWNERS handles, and the committed CODEOWNERS is the generated one.
+  it("owners are handles (no owner-not-a-handle warning) and the contract entry names both teams", () => {
+    for (const file of [CHECKOUT_FILE, FULFILLMENT_FILE]) {
+      expect(compile(readFileSync(file, "utf8")).diagnostics.map((d) => d.code)).not.toContain("owner-not-a-handle");
+    }
+    const committed = readFileSync(join("examples", "multi-model", "CODEOWNERS"), "utf8");
+    expect(committed).toContain("/models/checkout/contracts/checkout.tsp @example/storefront @example/warehouse\n");
   });
 
   it("with the manifest deleted, discovery finds both models and reports the same seam and warning", () => {
@@ -124,6 +133,9 @@ describe("examples/multi-model/", () => {
         ...d,
         manifest: { ...d.manifest, sha256: "<sha>" },
         seams: d.seams.map((x: { description: unknown }) => ({ ...x, description: "<d>" })),
+        // the legacy example's free-text owners became @example/... handles in MIL-234
+        models: d.models.map((x: object) => ({ ...x, owner: "<o>" })),
+        contextMap: { ...d.contextMap, nodes: d.contextMap.nodes.map((x: object) => ({ ...x, owner: "<o>" })) },
         diagnostics: d.diagnostics
           .filter((x: { code: string }) => x.code !== "system-manifest-outdated")
           .map((x: { file: string }) => ({ ...x, file: x.file.replace(/^.*em-multi-model-[^/]+\//, "") })),

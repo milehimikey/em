@@ -2169,6 +2169,46 @@ only its own models is a complete, valid system for `em system`. Run it once per
 assemble one central manifest and run it once. Nothing in the document shape assumes either
 arrangement.
 
+### `em system codeowners`
+
+```bash
+em system codeowners [<system.yaml>|<dir>] [-o <path>] [--check] [--json]
+```
+
+Generates (MIL-234) the CODEOWNERS entries that turn the `consumes` seams into a review rule. It
+loads the system exactly as `em system` does (manifest or discovery), then writes one managed
+block, `# GENERATED:em-codeowners:start` ... `# GENERATED:em-codeowners:end`, into the
+CODEOWNERS file:
+
+| Entry | Owners | Why |
+|---|---|---|
+| `/<model dir>/` | the model's own `owner` handles | the design directory is the model team's |
+| `/<model dir>/contracts/<model key>.tsp` | the producer's handles, then every team whose model has a translation that `consumes` one of its refs (sorted, deduped) | a change to the public surface cannot merge without the teams that depend on it |
+| `/<model dir>/slices/**` | the model's handles, unless the repo's own CODEOWNERS already routes those slice docs, in which case that rule is restated after the directory entry (CODEOWNERS is last-match-wins) | does not fight the [ratification convention](ci.md#codeowners-routing-ratification-review) |
+
+Paths are relative to the CODEOWNERS root, `/`-anchored, forward-slash, and ordered by manifest
+or discovery order. The contract carries no source hash, so an internal edit never touches it and
+only a real change of the public surface summons the consuming teams.
+
+- **The file** is `-o <path>`, else the first of `CODEOWNERS`, `.github/CODEOWNERS`,
+  `docs/CODEOWNERS` that exists under the repository root, else `CODEOWNERS` there. Paths are
+  relative to the file's root (the repository root for the three standard locations, else the file's
+  own directory), so models must live at or below it.
+- **Unmarked content is never touched.** A file without the markers gets the block appended after
+  a blank line; with markers only the block is rewritten. Re-running is idempotent.
+- **Owners** must be handles (`@user`, `@org/team`) or emails. A free-text owner is skipped with a
+  `note:` on stderr (`em validate` warns `owner-not-a-handle`). A model with no usable owner makes the
+  command refuse: nothing is written and the exit code is `1`.
+- **`--check`** never writes. It prints one of `ok:` / `missing:` / `stale:` / `no-markers:` and
+  exits `1` for anything but `ok`, the vocabulary of `em ci init --check`.
+- **`--json`** prints `{codeownersSchemaVersion: "1.0", generator, file, entries: [{path, owners,
+  reason}], status}`, `status` being `ok`, `missing`, `stale`, `no-markers` (check) or `created`,
+  `updated`, `ok` (write). `reason` is `model-dir`, `contract`, `slices` or `slices-existing`.
+  The MCP `system_codeowners` tool returns the `--check --json` document, byte for byte, and never
+  writes.
+
+See [ci.md](ci.md#seams-consuming-teams-on-the-producers-contract) for wiring branch protection.
+
 ## `em glossary <files...>`
 
 Aggregates the terms declared across N independently-compiled `.em` models — element

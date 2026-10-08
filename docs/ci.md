@@ -408,3 +408,46 @@ Notes on the recipe:
 - **Split the glob further** if different slice groups need different ratifiers (e.g. a
   `payments/` swimlane with its own sign-off) — CODEOWNERS matches the *last* pattern that
   applies to a path, so put narrower patterns after `slices/**`, not before it.
+
+### Seams: consuming teams on the producer's contract
+
+A `consumes` ref (see [dsl.md](dsl.md#consuming-another-models-public-surface)) is a promise
+between two teams, and the contract file (`<model dir>/contracts/<model key>.tsp`, written by
+[`em api generate`](cli.md#em-api-check)) is where that promise is written down. CODEOWNERS can make
+the platform enforce it: list every consuming team on the producer's contract file and a change
+to the public surface cannot merge without them. Because the contract carries no source hash, an
+edit that leaves the public surface alone leaves the file alone, so consumers are only summoned
+by real contract changes.
+
+`em` generates the entries instead of asking you to maintain them. Give each model an owner, then
+generate:
+
+```text
+model "Checkout" owner "@example/storefront"     # in checkout.em
+em system codeowners                             # writes the managed block into CODEOWNERS
+em system codeowners --check                     # CI: exit 1 on missing / stale / no-markers
+```
+
+```text
+# GENERATED:em-codeowners:start
+/models/checkout/ @example/storefront
+/models/checkout/contracts/checkout.tsp @example/storefront @example/warehouse
+/models/fulfillment/ @example/warehouse
+# GENERATED:em-codeowners:end
+```
+
+Everything outside the markers is yours and stays byte-for-byte as it was, including an existing
+`slices/**` ratification rule (restated after the directory entry so it keeps winning; see
+[cli.md](cli.md#em-system-codeowners)). Wire it in three steps:
+
+1. **Commit the generated block**, and re-run `em system codeowners` whenever an `owner` or a
+   `consumes` changes. Add `em system codeowners --check` to CI so drift fails the PR. (The
+   generated `em ci init` workflow does not carry this job yet.)
+2. **Use handles CODEOWNERS accepts**: `@user`, `@org/team`, or an email. Teams must have write
+   access to the repository, or GitHub ignores the line.
+3. **Enable branch protection** on the default branch: *Require a pull request before merging*,
+   then *Require review from Code Owners*. Without it the file is advisory.
+
+Models can only be routed by directory. Keep one directory per model (the layout in
+[cli.md, Multi-model projects](cli.md#multi-model-projects)); a model sharing a directory with
+another cannot be separated.

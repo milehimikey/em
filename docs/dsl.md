@@ -6,7 +6,7 @@ A `.em` file is a model title, a set of row declarations, and a list of slices. 
 is one vertical time step on the diagram; the elements inside it land in swimlane rows.
 
 ```
-model "Name" [owner "Team"]      # diagram title; optional owning team(s), free text
+model "Name" [owner "@org/team"] # diagram title; optional owning team(s), as CODEOWNERS handles
 
 persona Name                     # a UI swimlane row (one per actor)
 context Name                     # an event swimlane row (one per bounded context)
@@ -690,11 +690,14 @@ Rules:
 The model header can name the team(s) that own the model:
 
 ```
-model "Checkout" owner "Storefront team"
+model "Checkout" owner "@shop/storefront"
 model "Checkout" owner "@shop/storefront", "@shop/payments"
 ```
 
-Owners are quoted free text, kept exactly as written. `em export` carries them as `model.owner`
+Each owner is a CODEOWNERS handle: a GitHub user (`@alice`), a team (`@org/team`), or an email
+address. Anything else (the free text `"Storefront team"`, which the 1.0-manifest migration
+writes as-is) still parses and exports as written, but `em validate` warns `owner-not-a-handle`
+and [`em system codeowners`](cli.md#em-system-codeowners) skips it. `em export` carries them as `model.owner`
 (`[]` when the header names none), and `em system` shows them on each model and context-map node.
 In 1.14, `owner` replaces the per-model `owner:` key of a 1.0 `system.yaml`. A model's owner now
 travels with the model, and `em upgrade` moves it there.

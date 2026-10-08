@@ -37,6 +37,15 @@ export interface Diagnostic {
   refs?: string[];
 }
 
+/** A GitHub user (`@alice`) or team (`@org/team`) — the shape CODEOWNERS accepts. */
+export const OWNER_HANDLE_RE = /^@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)?$/;
+/** An email address, the other owner shape CODEOWNERS accepts. */
+export const OWNER_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+/** Whether `owner` is usable in a CODEOWNERS line (MIL-234). */
+export function isOwnerHandle(owner: string): boolean {
+  return OWNER_HANDLE_RE.test(owner) || OWNER_EMAIL_RE.test(owner);
+}
+
 export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): Diagnostic[] {
   const diags: Diagnostic[] = [];
   const refOf = (id: string): string => refs.refById.get(id)!;
@@ -669,6 +678,19 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         `— a consumer's \`consumes <model>:${key}\` could not tell them apart; rename one or drop \`public\` from it`,
       line: els[1].line,
       refs: els.map((e) => refOf(e.id)),
+    });
+  }
+
+  // MIL-234: every `owner` entry on the header must be a CODEOWNERS handle (a GitHub user, an
+  // `@org/team`, or an email) — otherwise `em system codeowners` has nothing to route review
+  // to. A warning: the MIL-235 manifest migration writes free text here and 1.13 estates validate
+  // clean. No line: the header's line is not carried on the model.
+  for (const owner of model.owner ?? []) {
+    if (isOwnerHandle(owner)) continue;
+    pushDiag(diags, "owner-not-a-handle", {
+      message:
+        `model owner "${owner}" is not a CODEOWNERS handle — use a GitHub user or team ("@alice", "@org/team") ` +
+        `or an email address ("name@example.com") so \`em system codeowners\` can route review to it`,
     });
   }
 

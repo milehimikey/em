@@ -93,6 +93,8 @@ import { buildQueryJson } from "../emit/queryJson.js";
 import { loadSystem } from "../cli/systemInputs.js";
 import { verifySystem } from "../system/verify.js";
 import { buildSystemJson } from "../emit/systemJson.js";
+import { runCodeowners } from "../system/codeowners.js";
+import { buildCodeownersJson } from "../emit/codeownersJson.js";
 
 /** MCP server identity: name "em", version = the installed package's own version — same
  *  `GENERATOR_VERSION` `em export`'s `generator.version` field already reads from package.json,
@@ -1016,6 +1018,29 @@ export function createServer(): McpServer {
       }
       const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
       return textResult(buildSystemJson(loaded, report));
+    },
+  );
+
+  server.registerTool(
+    "system_codeowners",
+    {
+      title: "Check the generated CODEOWNERS block",
+      description:
+        "Return the same JSON document `em system codeowners [<target>] [-o <path>] --check --json` " +
+        "prints (MIL-234): the entries em generates from each model's `owner` handles and each " +
+        "translation's `consumes` refs (the model's team on its design directory, every consuming team " +
+        "on the producer's contract file), and whether the CODEOWNERS file already carries them " +
+        "(`status`: ok, missing, stale or no-markers). Read-only: this tool never writes the file. " +
+        "Refuses (tool error) when the system can't be loaded or a model has no usable owner, same as the CLI.",
+      inputSchema: {
+        manifest: z.string().optional().describe("a system.yaml path, or a directory (its system.yaml if present, else discovery); omitted = the working directory"),
+        output: z.string().optional().describe("the CODEOWNERS file to check (default: the first of CODEOWNERS, .github/CODEOWNERS, docs/CODEOWNERS that exists)"),
+      },
+    },
+    async ({ manifest, output }) => {
+      const result = runCodeowners(manifest ?? ".", { output, write: false });
+      if (!result.ok) return errorResult(`em system codeowners: ${result.message}`);
+      return textResult(buildCodeownersJson(result.file, result.plan.entries, result.status));
     },
   );
 

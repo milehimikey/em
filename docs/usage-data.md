@@ -93,6 +93,7 @@ affected lines written by hand.
 | model version stale |
 | open issue |
 | orphaned slice doc left behind by a rename or removal |
+| owner not a handle |
 | public event not consumed by any seam |
 | reaction triggers no command |
 | read model has no consumer |
