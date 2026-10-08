@@ -18,7 +18,10 @@
 // Reuses `buildExportDoc` (emit/json.ts) so `public`/`optional`/`typeRef`/tags/renamedFrom are
 // resolved once, the same way `em export` resolves them. Deterministic: no timestamps, no git
 // data, no absolute paths — the `Source:` line is whatever label the caller passes (the CLI
-// passes the model path relative to the contract file's own directory).
+// passes the model path relative to the contract file's own directory). Deliberately NO source
+// hash (R12 amended): the text depends only on the public surface, so an internal-only `.em`
+// edit leaves the contract byte-identical and neither CODEOWNERS routing nor the API-first
+// gate fires on it.
 
 import { NormalizedModel, resolvePublicType } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -226,7 +229,7 @@ export function buildApiContract(
   const namespaceName = pascalCase(doc.model.name ?? "Model");
   const header = [
     API_HEADER_LINE,
-    `// Source: ${sourceLabel} (sha256 ${doc.source.sha256})`,
+    `// Source: ${sourceLabel}`,
     "// Scope: the model's `public` commands (write API), events (async) and views (read API).",
   ];
   const body = sections.length > 0 ? indent(sections.join("\n\n").split("\n"), 1) : [];

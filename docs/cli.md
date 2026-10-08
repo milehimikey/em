@@ -722,7 +722,10 @@ em api check models/checkout/checkout.em --base origin/main --json   # machine-r
 (see "Multi-model projects" above), the model key is the kebab slug of the `model "..."` name
 (the same key `em export`/`em system` use). `em api generate` creates `contracts/` when needed.
 The header's `Source:` line names the `.em` file relative to the contract file, so the text
-never depends on the directory `em api generate` ran from.
+never depends on the directory `em api generate` ran from. The header carries **no source
+hash**: the file is a pure function of the public surface, so an internal-only `.em` edit
+(a non-public element, an internal field, a comment) leaves it byte-identical — no regenerate,
+no contract-file diff for CODEOWNERS to route, no stale contract for the API-first gate.
 
 ### `em api generate`
 
@@ -774,7 +777,7 @@ AsyncAPI in their own toolchain.
 | `--json` | Print a JSON document instead of the text report |
 
 1. **Current?** — regenerates the contract from the working-tree model and compares it, as text,
-   with the committed contract file. `missing` or `stale` → exit 1, with the regenerate command.
+   with the committed contract file (only public-surface changes can make it stale). `missing` or `stale` → exit 1, with the regenerate command.
 2. **Annotation** (with `--base`) — compiles the model at `<rev>` and at the working tree and
    diffs the public surfaces structurally. Every change is printed as `additive: …` or
    `breaking: …`. Annotation only: it informs the reviewer and **never** changes the exit code.
