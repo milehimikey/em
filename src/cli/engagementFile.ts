@@ -15,7 +15,7 @@
 // Pure string functions, plus `readOpenEngagements` (the one fs read `em status` needs).
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { locateFrontmatterInner, fieldLineRegex } from "./frontmatterSurgery.js";
 import { markerPair, markerRegex } from "../util/markers.js";
@@ -47,6 +47,8 @@ export interface EngagementSliceEntry {
 export interface EngagementFile {
   engagementSchemaVersion: string;
   slug: string;
+  /** The model file's path relative to the engagement file (`/`-separated, e.g. `../checkout.em`). */
+  model: string;
   created: string;
   createdBy: string | null;
   parallel: number;
@@ -108,6 +110,7 @@ export function renderEngagementFile(fm: EngagementFile, ledgerLines: string[]):
     "---",
     `engagementSchemaVersion: "${fm.engagementSchemaVersion}"`,
     `slug: ${fm.slug}`,
+    `model: ${q(fm.model)}`,
     `created: ${fm.created}`,
     `createdBy: ${q(fm.createdBy)}`,
     `parallel: ${fm.parallel}`,
@@ -151,6 +154,8 @@ export function parseEngagementFile(text: string): ParseResult {
   if (version !== ENGAGEMENT_SCHEMA_VERSION) {
     return { ok: false, message: `unsupported engagementSchemaVersion "${version ?? "(missing)"}" (this em reads "${ENGAGEMENT_SCHEMA_VERSION}")` };
   }
+  const model = str(d.model);
+  if (!model) return { ok: false, message: "model must name the model file (path relative to the engagement file)" };
   const status = str(d.status);
   if (status !== "open" && status !== "closed") return { ok: false, message: `status must be open or closed, got "${status ?? "(missing)"}"` };
   const parallel = Number(d.parallel);
@@ -173,6 +178,7 @@ export function parseEngagementFile(text: string): ParseResult {
     file: {
       engagementSchemaVersion: version,
       slug: str(d.slug) ?? "",
+      model,
       created: str(d.created) ?? "",
       createdBy: str(d.createdBy),
       parallel,
@@ -240,7 +246,10 @@ export function readOpenEngagements(modelFiles: string[]): { open: number; slugs
         continue;
       }
       const parsed = parseEngagementFile(text);
-      if (parsed.ok && parsed.file.status === "open") slugs.push(name.replace(/\.md$/, ""));
+      // Only engagements belonging to one of the input models (a directory may hold several).
+      if (parsed.ok && parsed.file.status === "open" && modelFiles.some((f) => belongsTo(join(dir, name), parsed.file, f))) {
+        slugs.push(name.replace(/\.md$/, ""));
+      }
     }
   }
   slugs.sort();
@@ -261,5 +270,18 @@ export function loadEngagement(modelFile: string, slug: string): LoadResult {
   }
   const parsed = parseEngagementFile(text);
   if (!parsed.ok) return { ok: false, message: `${path}: ${parsed.message}` };
+  if (!belongsTo(path, parsed.file, modelFile)) {
+    return { ok: false, message: `${path} belongs to ${parsed.file.model}, not ${modelFile}` };
+  }
   return { ok: true, path, text, file: parsed.file };
+}
+
+/** `model:` for a new engagement file: the model's path relative to the file, `/`-separated. */
+export function modelRefFor(engagementFile: string, modelFile: string): string {
+  return relative(dirname(resolve(engagementFile)), resolve(modelFile)).split(sep).join("/");
+}
+
+/** Does the engagement file at `path` belong to `modelFile` (its `model:` resolves to it)? */
+export function belongsTo(path: string, eng: EngagementFile, modelFile: string): boolean {
+  return resolve(dirname(path), eng.model) === resolve(modelFile);
 }

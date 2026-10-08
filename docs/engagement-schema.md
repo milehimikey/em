@@ -17,6 +17,7 @@ whose markers were deleted.
 ---
 engagementSchemaVersion: "1.0"
 slug: loans
+model: "../lending.em"
 created: 2026-10-08
 createdBy: "Alex Rivera"
 parallel: 3
@@ -48,6 +49,7 @@ never hand-edit the frontmatter `slices:` entries or the Ledger table (see docs/
 |---|---|---|
 | `engagementSchemaVersion` | string, `"1.0"` | This contract's version. Any other value is refused. |
 | `slug` | kebab-case string | The engagement's name; also the file name stem. |
+| `model` | string | The model file this engagement belongs to, as a `/`-separated path relative to the engagement file (`../lending.em`). `new` writes it. `plan`, `set`, `status` and `close` refuse a `<model>.em` argument that does not resolve to it (`em engagement <verb>: engagements/<slug>.md belongs to <model>, not <arg>`). `em status` counts an engagement only for its own model, so several models can share one directory. |
 | `created` | `YYYY-MM-DD` | The local date `new` ran. This is the only date in the file. |
 | `createdBy` | string or `null` | `new --by <name>`; `null` when not given. |
 | `parallel` | positive integer | The per-level ceiling: how many slices of one level may be in flight at once (default 3). `plan` reports every level's width against it. |

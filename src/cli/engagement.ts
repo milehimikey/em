@@ -36,6 +36,8 @@ import {
   formatSliceEntryLine,
   isLedgerState,
   loadEngagement,
+  modelRefFor,
+  engagementPath,
   renderEngagementFile,
   spliceLedger,
   spliceSliceEntry,
@@ -502,6 +504,7 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
   const fm: EngagementFile = {
     engagementSchemaVersion: ENGAGEMENT_SCHEMA_VERSION,
     slug: opts.slug,
+    model: modelRefFor(engagementPath(input.file, opts.slug), input.file),
     created: opts.created,
     createdBy: opts.createdBy,
     parallel: opts.parallel,

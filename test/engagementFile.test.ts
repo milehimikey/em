@@ -22,6 +22,7 @@ import { ENGAGEMENT_SCHEMA_VERSION } from "../src/emit/engagementJson.js";
 const FM: EngagementFile = {
   engagementSchemaVersion: ENGAGEMENT_SCHEMA_VERSION,
   slug: "loans",
+  model: "../a.em",
   created: "2026-10-08",
   createdBy: "Alex Rivera",
   parallel: 3,
@@ -45,6 +46,7 @@ describe("renderEngagementFile", () => {
         "---",
         'engagementSchemaVersion: "1.0"',
         "slug: loans",
+        'model: "../a.em"',
         "created: 2026-10-08",
         'createdBy: "Alex Rivera"',
         "parallel: 3",
@@ -80,9 +82,10 @@ describe("renderEngagementFile", () => {
 describe("parseEngagementFile refusals", () => {
   it.each([
     ["no fence", "# nothing\n", "no frontmatter (expected a leading --- fence)"],
+    ["no model", '---\nengagementSchemaVersion: "1.0"\nstatus: open\n---\n', "model must name the model file (path relative to the engagement file)"],
     ["wrong version", '---\nengagementSchemaVersion: "9.9"\n---\n', 'unsupported engagementSchemaVersion "9.9" (this em reads "1.0")'],
-    ["bad status", '---\nengagementSchemaVersion: "1.0"\nstatus: done\n---\n', 'status must be open or closed, got "done"'],
-    ["bad state", '---\nengagementSchemaVersion: "1.0"\nstatus: open\nparallel: 2\nslices:\n  - {key: a, state: nope}\n---\n', 'slice "a" has an unknown state "nope"'],
+    ["bad status", '---\nengagementSchemaVersion: "1.0"\nmodel: "../a.em"\nstatus: done\n---\n', 'status must be open or closed, got "done"'],
+    ["bad state", '---\nengagementSchemaVersion: "1.0"\nmodel: "../a.em"\nstatus: open\nparallel: 2\nslices:\n  - {key: a, state: nope}\n---\n', 'slice "a" has an unknown state "nope"'],
   ])("%s", (_name, text, message) => {
     expect(parseEngagementFile(text)).toEqual({ ok: false, message });
   });
@@ -138,10 +141,11 @@ describe("readOpenEngagements", () => {
     writeFileSync(join(dir, "engagements", "alpha.md"), render());
     writeFileSync(join(dir, "engagements", "done.md"), render().replace("status: open", "status: closed"));
     writeFileSync(join(dir, "engagements", "broken.md"), "not an engagement\n");
+    writeFileSync(join(dir, "engagements", "other-model.md"), render().replace('model: "../a.em"', 'model: "../other.em"'));
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it("counts open engagements beside the model, sorted, skipping closed and unparseable files; one scan per directory", () => {
+  it("counts open engagements beside the model, sorted, skipping closed and unparseable files; one scan per directory; only the input models' own", () => {
     expect(readOpenEngagements([join(dir, "a.em"), join(dir, "b.em")])).toEqual({ open: 2, slugs: ["alpha", "zeta"] });
     expect(readOpenEngagements([join(dir, "nowhere", "x.em")])).toEqual({ open: 0, slugs: [] });
   });

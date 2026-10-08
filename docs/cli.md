@@ -1719,7 +1719,8 @@ clear one, re-run `em slice ratify` with the same `--by`/`--on` plus `--meaning-
 
 `engagements` (added under schema `1.8`, MIL-268) is `{ open, slugs }`: the engagement files
 beside the input models (`<model dir>/engagements/<slug>.md`, see
-[`em engagement`](#em-engagement)) whose frontmatter says `status: open`, slugs sorted. One scan
+[`em engagement`](#em-engagement)) whose frontmatter says `status: open` and whose `model:` is
+one of the input files, slugs sorted. One scan
 per distinct model directory; an unparseable file is skipped (`em engagement status` names the
 problem). The text report always prints `open engagements: N`, followed by ` (<slugs>)` when N
 is not zero.
@@ -1948,7 +1949,10 @@ upstream whose doc is already `implemented` imposes nothing.
 
 ### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --downstream-of <ref>) [--parallel N] [--by <name>] [--force]`
 
-Writes `engagements/<slug>.md` with every selected slice at state `planned`. Exactly one
+Writes `engagements/<slug>.md` with every selected slice at state `planned`, and records the
+model it belongs to (`model:`, relative to the file). Every other subcommand refuses a model
+argument that does not resolve to that file: `em engagement <verb>: engagements/<slug>.md
+belongs to <model>, not <arg>`. Exactly one
 selector:
 
 - `--slices`: export keys. Unknown keys are refused: `em engagement new: unknown slice key(s): <keys>`.

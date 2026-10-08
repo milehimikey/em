@@ -334,6 +334,7 @@ describe("em engagement (CLI)", () => {
     expect(first.stderr).toContain("warn: em engagement new: the selection has 3 unconnected components");
     expect(first.stdout).toBe("wrote engagements/three.md (3 slices: account-list, order-list, shipment-list)\n");
     expect(readFileSync(engagementPath(file, "three"), "utf8")).toContain('createdBy: "Alex Rivera"');
+    expect(readFileSync(engagementPath(file, "three"), "utf8")).toContain('\nmodel: "../lifecycles.em"\n');
 
     const again = em(["engagement", "new", rel, "three", "--slices", "order-list"], dir);
     expect(again.status).toBe(1);
@@ -369,6 +370,18 @@ describe("em engagement (CLI)", () => {
 
     const statusText = em(["engagement", "status", rel, "three"], dir);
     expect(statusText.stdout).toContain("  order-list [state-view] doc: ready-to-implement · state: building · branch impl/order-list\nclosable: no — 1 slice(s) not merged or gap\n");
+
+    // The engagement belongs to its model: any other .em is refused by every verb but `new`.
+    writeFileSync(join(dir, "other.em"), readFileSync(file, "utf8"));
+    for (const verb of ["plan", "status", "close"]) {
+      const wrong = em(["engagement", verb, "other.em", "three"], dir);
+      expect(wrong.status).toBe(1);
+      expect(wrong.stderr).toBe(`em engagement ${verb}: engagements/three.md belongs to ../lifecycles.em, not other.em\n`);
+    }
+    expect(em(["engagement", "set", "other.em", "three", "order-list", "--state", "gap"], dir).stderr).toBe(
+      "em engagement set: engagements/three.md belongs to ../lifecycles.em, not other.em\n",
+    );
+    expect(em(["status", "other.em"], dir).stdout).toContain("\nopen engagements: 0\n");
 
     const overall = em(["status", rel], dir);
     expect(overall.stdout).toContain("\nopen engagements: 1 (three)\n");
