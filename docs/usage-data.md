@@ -150,6 +150,7 @@ affected lines written by hand.
 | seam manifest model key mismatch |
 | seam source not public |
 | slice-ready key does not exist |
+| slice-ready public slice contract not current |
 | slice-ready slice not ratified |
 | type cycle |
 | view again with no earlier declaration |

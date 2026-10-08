@@ -248,6 +248,8 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       conformedVersion: null,
       conformedAt: null,
       conformedOn: null,
+      meaningConfirmed: false,
+      contractChange: null,
     });
     // Only the one slice's object — never the whole model's slices array.
     expect(doc.model).toBeUndefined();
@@ -738,6 +740,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       statusReady: true,
       noUncheckedOpenQuestions: true,
       ratified: true,
+      contractCurrent: true,
     });
     expect(doc.continuationOf).toBeNull();
     expect(doc.ready).toBe(true);
@@ -754,6 +757,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       statusReady: false,
       noUncheckedOpenQuestions: false,
       ratified: false,
+      contractCurrent: true,
     });
     expect(doc.ready).toBe(false);
     expect(doc.diagnostics).toEqual(
@@ -774,6 +778,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       statusReady: false,
       noUncheckedOpenQuestions: false,
       ratified: false,
+      contractCurrent: true,
     });
     expect(doc.ready).toBe(false);
   });
@@ -804,6 +809,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       statusReady: true,
       noUncheckedOpenQuestions: true,
       ratified: true,
+      contractCurrent: true,
     });
     expect(doc.ready).toBe(false);
     expect(doc.diagnostics).toEqual(
@@ -822,6 +828,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       statusReady: true,
       noUncheckedOpenQuestions: true,
       ratified: true,
+      contractCurrent: true,
     });
   });
 });
@@ -3760,6 +3767,7 @@ describe("em slice reratify (CLI, MIL-161)", () => {
       statusReady: true,
       noUncheckedOpenQuestions: true,
       ratified: false,
+      contractCurrent: true,
     });
     expect(doc.diagnostics.map((d: { code: string; message: string }) => [d.code, d.message])).toEqual([
       [
@@ -5554,5 +5562,76 @@ describe("model-declared invariants (MIL-265)", () => {
         .filter((e: { kind: string; invariants: unknown[] | null }) => e.kind === "command" && e.invariants !== null);
       expect(declared.length, model).toBeGreaterThan(0);
     }
+  });
+});
+
+// MIL-238 — the API-first design exit gate, end to end through the real commander wiring.
+describe("API-first gate (CLI, MIL-238)", () => {
+  let dir: string;
+  const MODEL =
+    'model "Shop"\n' +
+    'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order public { orderId: uuid } note "slices/place-order.md"\n  invariant INV-ORD-1 "An order id is placed at most once"\n  event Order Placed\n}\n' +
+    'slice "Orders" {\n  view Order List from "Order Placed"\n  ui Orders Screen @Customer\n}\n';
+  const REVIEWED = "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n---\nbody\n";
+  const PUBLIC_REFUSAL =
+    'slice "place-order" touches the public surface — pass --meaning-unchanged, or --contract-change "<why>" if a consumer must read this change differently';
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-api-first-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "shop.em"), MODEL);
+    writeFileSync(join(dir, "slices", "place-order.md"), REVIEWED);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("ratify refuses both flags at once and an unconfirmed public-touching slice — exact messages, nothing written", () => {
+    const both = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--meaning-unchanged", "--contract-change", "x"], dir);
+    expect(both.status).toBe(1);
+    expect(both.stderr).toBe('em slice ratify: pass one of --meaning-unchanged or --contract-change "<why>", not both\n');
+    const none = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera"], dir);
+    expect(none.status).toBe(1);
+    expect(none.stderr).toContain(`em slice ratify: ${PUBLIC_REFUSAL}\n`);
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toBe(REVIEWED);
+  });
+
+  it("status counts the slice once ratified without a confirmation would be (hand-edited), and not after a confirmed ratify", () => {
+    writeFileSync(join(dir, "slices", "place-order.md"), REVIEWED.replace("status: reviewed", "status: ready-to-implement\nratifiedBy: Alex Rivera"));
+    const before = em(["status", "shop.em"], dir);
+    expect(before.stdout).toContain("public-touching slices without a meaning confirmation: 1\n");
+    writeFileSync(join(dir, "slices", "place-order.md"), REVIEWED);
+    const r = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ratified: slices/place-order.md (ratifiedBy: Alex Rivera, ratifiedOn: 2026-10-07, meaningConfirmed: true)");
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toContain("ratifiedOn: 2026-10-07\nmeaningConfirmed: true\n");
+    const again = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
+    expect(again.stdout).toContain("already ratified (no-op): slices/place-order.md");
+    const after = em(["status", "shop.em", "--json"], dir);
+    expect(JSON.parse(after.stdout).publicSlicesUnconfirmed).toBe(0);
+    const exported = JSON.parse(em(["export", "shop.em"], dir).stdout);
+    expect(exported.model.slices[0].doc).toMatchObject({ meaningConfirmed: true, contractChange: null });
+  });
+
+  it("--slice-ready blocks on a missing contract (exact message), passes after em api generate", () => {
+    const before = em(["validate", "shop.em", "--slice-ready", "place-order"], dir);
+    expect(before.status).toBe(1);
+    expect(before.stderr).toContain(
+      'slice "place-order" touches the public surface but the contract contracts/shop.tsp is missing — run: em api generate shop.em',
+    );
+    expect(before.stdout).toBe('slice "place-order" is NOT ready-to-implement\n');
+    expect(em(["api", "generate", "shop.em"], dir).status).toBe(0);
+    const after = em(["validate", "shop.em", "--slice-ready", "place-order", "--json"], dir);
+    expect(after.status).toBe(0);
+    expect(JSON.parse(after.stdout).gates.contractCurrent).toBe(true);
+  });
+
+  it("reratify refuses without a confirmation, accepts --contract-change and clears the prior one", () => {
+    const refused = em(["slice", "reratify", "shop.em", "place-order"], dir);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`em slice reratify: ${PUBLIC_REFUSAL}\n`);
+    const r = em(["slice", "reratify", "shop.em", "place-order", "--contract-change", "orderId is now the public order number"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('contractChange: "orderId is now the public order number"');
+    const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
+    expect(content).toContain('version: 2\ncontractChange: "orderId is now the public order number"\n');
+    expect(content).not.toContain("meaningConfirmed");
   });
 });

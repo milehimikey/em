@@ -41,6 +41,13 @@
 // hops (`view X again`) are never edges in `ModelIndex.out`/`.in` (queryIndex.ts's own design
 // note), so they never surface here either — nothing extra to filter.
 
+// MIL-238 — the API-first meaning confirmation: on a public-touching slice (one owning a `public`
+// command/event/view, catalog/apiFirst.ts) ratification also asserts the contract is current and
+// says whether this version changes what it MEANS to a consumer. `--meaning-unchanged` records
+// `meaningConfirmed: true`; `--contract-change "<why>"` records `contractChange: "<why>"`; exactly
+// one is required there, and either is accepted (and recorded, harmlessly) on any other slice.
+// The line goes directly after `ratifiedOn:`, replacing any earlier confirmation line.
+
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -48,9 +55,78 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { buildModelIndex } from "../model/queryIndex.js";
-import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
+import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { REVIEWED_STATUS } from "./review.js";
 import { isValidDateString } from "./stateFile.js";
+import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
+
+/** MIL-238: the ratifier's API-first statement about this version of a public-touching slice. */
+export type MeaningConfirmation = { kind: "meaning-unchanged" } | { kind: "contract-change"; why: string };
+
+/** The two frontmatter keys a `MeaningConfirmation` is written to — cleared together on rewrite. */
+export const MEANING_CONFIRMATION_KEYS = ["meaningConfirmed", "contractChange"] as const;
+
+/** Turn the `--meaning-unchanged` / `--contract-change "<why>"` flags into a confirmation (or
+ *  null when neither was passed). Refuses both at once, an empty reason, and a reason that can't
+ *  be written as one quoted frontmatter value (control characters, double quotes). */
+export function parseMeaningFlags(
+  meaningUnchanged: boolean | undefined,
+  contractChange: string | undefined,
+): { ok: true; confirmation: MeaningConfirmation | null } | { ok: false; message: string } {
+  if (meaningUnchanged && contractChange !== undefined) {
+    return { ok: false, message: 'pass one of --meaning-unchanged or --contract-change "<why>", not both' };
+  }
+  if (meaningUnchanged) return { ok: true, confirmation: { kind: "meaning-unchanged" } };
+  if (contractChange === undefined) return { ok: true, confirmation: null };
+  const why = contractChange.trim();
+  if (!why) return { ok: false, message: 'a contract-change reason is required (--contract-change "<why>")' };
+  if (/[\x00-\x1f\x7f]/.test(why)) {
+    return { ok: false, message: "contract-change reason must not contain control characters" };
+  }
+  if (why.includes('"')) {
+    return {
+      ok: false,
+      message: "contract-change reason must not contain double quotes — it is written as one quoted frontmatter value",
+    };
+  }
+  return { ok: true, confirmation: { kind: "contract-change", why } };
+}
+
+/** The frontmatter line a confirmation is recorded as. */
+export function meaningConfirmationLine(c: MeaningConfirmation): string {
+  return c.kind === "meaning-unchanged" ? "meaningConfirmed: true" : `contractChange: "${c.why}"`;
+}
+
+/** The refusal for a public-touching slice ratified/reratified without a confirmation. */
+export function meaningConfirmationRequiredMessage(sliceKey: string): string {
+  return (
+    `slice "${sliceKey}" touches the public surface — pass --meaning-unchanged, or ` +
+    `--contract-change "<why>" if a consumer must read this change differently`
+  );
+}
+
+/** Remove every `meaningConfirmed:`/`contractChange:` line (whole line, EOL included). */
+export function stripMeaningConfirmation(inner: string): string {
+  let out = inner;
+  for (const key of MEANING_CONFIRMATION_KEYS) {
+    const re = fieldLineWithEolRegex(key);
+    while (re.test(out)) out = out.replace(re, "");
+  }
+  return out;
+}
+
+/** The confirmation currently recorded in a frontmatter `inner` block, or null. */
+function recordedConfirmation(inner: string): MeaningConfirmation | null {
+  const mc = fieldLineRegex("meaningConfirmed").exec(inner);
+  if (mc && normalizeFieldValue(mc[2])?.toLowerCase() === "true") return { kind: "meaning-unchanged" };
+  const cc = fieldLineRegex("contractChange").exec(inner);
+  const why = cc ? normalizeFieldValue(cc[2]) : null;
+  return why !== null ? { kind: "contract-change", why } : null;
+}
+
+function sameConfirmation(a: MeaningConfirmation, b: MeaningConfirmation): boolean {
+  return a.kind === b.kind && (a.kind === "meaning-unchanged" || a.why === (b as { why: string }).why);
+}
 
 /** The status this command flips a slice doc to — the handoff gate
  *  (docs/process.md#the-slice-lifecycle-gates): contracts/invariants agreed, open questions
@@ -151,6 +227,7 @@ export function applyRatifyFrontmatter(
   ratifiedBy: string,
   ratifiedOn: string,
   skipReview = false,
+  confirmation: MeaningConfirmation | null = null,
 ): ApplyRatifyResult {
   const trimmedBy = ratifiedBy.trim();
   if (!trimmedBy) return { ok: false, message: "a ratifier name is required (--by)" };
@@ -166,7 +243,11 @@ export function applyRatifyFrontmatter(
 
   const range = locateFrontmatterInner(raw);
   if (!range) return { ok: false, message: "no frontmatter block found" };
-  const inner = raw.slice(range.innerStart, range.innerEnd);
+  const originalInner = raw.slice(range.innerStart, range.innerEnd);
+  const recorded = recordedConfirmation(originalInner);
+  // MIL-238: a new confirmation replaces any earlier one — strip it before locating the lines
+  // below, so the fresh line can be spliced in right after `ratifiedOn:`.
+  const inner = confirmation ? stripMeaningConfirmation(originalInner) : originalInner;
 
   const statusMatch = fieldLineRegex("status").exec(inner);
   if (!statusMatch) return { ok: false, message: "no `status:` field found in frontmatter" };
@@ -179,14 +260,28 @@ export function applyRatifyFrontmatter(
 
   if (currentStatus === RATIFIED_STATUS && currentBy !== null && currentOn !== null) {
     if (currentBy === trimmedBy && currentOn === ratifiedOn) {
-      return { ok: true, content: raw, changed: false, skippedReviewFrom: null }; // idempotent no-op
+      // MIL-238: same identity — a no-op unless this run adds a confirmation the doc lacks. A
+      // DIFFERENT recorded confirmation is provenance, refused like a different ratifier.
+      if (confirmation === null || (recorded !== null && sameConfirmation(recorded, confirmation))) {
+        return { ok: true, content: raw, changed: false, skippedReviewFrom: null }; // idempotent no-op
+      }
+      if (recorded !== null) {
+        return {
+          ok: false,
+          message:
+            `already ratified by ${currentBy} on ${currentOn} with ${meaningConfirmationLine(recorded)} — ` +
+            `refusing to overwrite with ${meaningConfirmationLine(confirmation)}`,
+        };
+      }
+      // else: fall through and record the confirmation alongside the unchanged sign-off.
+    } else {
+      return {
+        ok: false,
+        message:
+          `already ratified by ${currentBy} on ${currentOn} — refusing to overwrite with ` +
+          `${trimmedBy} on ${ratifiedOn}`,
+      };
     }
-    return {
-      ok: false,
-      message:
-        `already ratified by ${currentBy} on ${currentOn} — refusing to overwrite with ` +
-        `${trimmedBy} on ${ratifiedOn}`,
-    };
   }
 
   // The review gate (MIL-201, D1). A doc that never passed through `status: reviewed` has not
@@ -220,6 +315,10 @@ export function applyRatifyFrontmatter(
   const missingLines: string[] = [];
   if (!byMatch) missingLines.push(`ratifiedBy: ${trimmedBy}`);
   if (!onMatch) missingLines.push(`ratifiedOn: ${ratifiedOn}`);
+  // MIL-238: the confirmation line goes directly after `ratifiedOn:` — at the end of the
+  // inserted block when `ratifiedOn:` is new, else appended to the existing line's edit below.
+  const confirmationText = confirmation ? meaningConfirmationLine(confirmation) : null;
+  if (confirmationText && !onMatch) missingLines.push(confirmationText);
   const newStatusText = `${statusMatch[1]}${RATIFIED_STATUS}`;
   const statusNext = missingLines.length > 0 ? `${newStatusText}${eol}${missingLines.join(eol)}` : newStatusText;
 
@@ -231,7 +330,14 @@ export function applyRatifyFrontmatter(
     { index: statusMatch.index, oldLen: statusMatch[0].length, next: statusNext },
   ];
   if (byMatch) edits.push({ index: byMatch.index, oldLen: byMatch[0].length, next: `${byMatch[1]}${trimmedBy}` });
-  if (onMatch) edits.push({ index: onMatch.index, oldLen: onMatch[0].length, next: `${onMatch[1]}${ratifiedOn}` });
+  if (onMatch) {
+    const onNext = `${onMatch[1]}${ratifiedOn}`;
+    edits.push({
+      index: onMatch.index,
+      oldLen: onMatch[0].length,
+      next: confirmationText ? `${onNext}${eol}${confirmationText}` : onNext,
+    });
+  }
   edits.sort((a, b) => b.index - a.index);
 
   let updatedInner = inner;
@@ -269,6 +375,7 @@ export function runRatify(
   ratifiedBy: string,
   ratifiedOn: string,
   skipReview = false,
+  confirmation: MeaningConfirmation | null = null,
 ): RunRatifyResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -319,9 +426,14 @@ export function runRatify(
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview);
+  const result = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation);
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
+  }
+  // MIL-238: the API-first gate — after the doc's own preconditions, before any write: a
+  // public-touching slice needs a meaning confirmation.
+  if (confirmation === null && isPublicTouchingSlice(model, refs, sliceKey)) {
+    return { ok: false, message: meaningConfirmationRequiredMessage(sliceKey) };
   }
   // MIL-198: computed once the gate above has passed, before the write — advisory only, so it
   // runs the same whether the gate passed on its own merits or via --skip-review.

@@ -54,6 +54,13 @@ three specific points:
    answered mid-build): it bumps `version:` and clears the sign-off but leaves `status:` at
    `ready-to-implement`. Either way the doc is not ratified until `em slice ratify --by <name>`
    records the new sign-off.
+   **API first (MIL-238):** ratifying a *public-touching* slice — one that owns a `public`
+   command, event or view — also asserts that the model's generated contract
+   (`contracts/<model key>.tsp`, written by `em api generate`) is current, and says whether this
+   version changes what that contract means to a consumer: `--meaning-unchanged`, or
+   `--contract-change "<why>"`, recorded as `meaningConfirmed:`/`contractChange:` frontmatter.
+   `em slice ratify` and `reratify` refuse such a slice without one, and `--slice-ready` is not
+   ready until the committed contract matches the model.
 2. **Ratifying model changes** — every edit to a committed `.em` or slice doc is a ratified
    decision, made in (or reviewed out of) a facilitated session. The PR review of a model
    change is part of this: the diff *is* the decision record.

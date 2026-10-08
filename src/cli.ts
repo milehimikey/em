@@ -86,7 +86,7 @@ import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
 import { runMarkImplemented } from "./cli/markImplemented.js";
-import { runRatify } from "./cli/ratify.js";
+import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
 import { runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
@@ -888,6 +888,11 @@ slice
     );
   });
 
+/** MIL-238: `, meaningConfirmed: true` / `, contractChange: "<why>"` for a success line, or "". */
+function confirmationSuffix(c: MeaningConfirmation | null): string {
+  return c ? `, ${meaningConfirmationLine(c)}` : "";
+}
+
 slice
   .command("ratify")
   .description(
@@ -907,55 +912,85 @@ slice
   .requiredOption("--by <name>", "the ratifier's name")
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-review", "ratify without a recorded review — prints a loud notice on stderr")
-  .action((file: string, sliceKey: string, opts: { by: string; on?: string; skipReview?: boolean }) => {
-    const { model, refs, diagnostics, source } = compileFile(file);
-    printDiagnostics(diagnostics);
+  .option(
+    "--meaning-unchanged",
+    "API-first sign-off (MIL-238): this version does not change what the public contract means — " +
+      "records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element",
+  )
+  .option(
+    "--contract-change <why>",
+    "API-first sign-off (MIL-238): a consumer must read this change differently, and why — records " +
+      "`contractChange: \"<why>\"`",
+  )
+  .action(
+    (
+      file: string,
+      sliceKey: string,
+      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string },
+    ) => {
+      const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
+      if (!flags.ok) {
+        console.error(`em slice ratify: ${flags.message}`);
+        process.exit(1);
+      }
+      const { model, refs, diagnostics, source } = compileFile(file);
+      printDiagnostics(diagnostics);
 
-    // Scoped the same way `em slice mark-implemented`/`em export --slice`/`em validate
-    // --slice-ready` are: only an error concerning THIS slice refuses.
-    const scopedErrors = diagnostics.filter(
-      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
-    );
-    if (scopedErrors.length > 0) {
-      console.error(`em slice ratify: slice "${sliceKey}" has errors — fix them first`);
-      process.exit(1);
-    }
-
-    const today = localIsoDate();
-    const ratifiedOn = opts.on ?? today;
-    if (opts.on !== undefined && !isValidDateString(opts.on)) {
-      console.error(`em slice ratify: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
-      process.exit(1);
-    }
-
-    const result = runRatify(model, refs, dirname(file), sliceKey, opts.by, ratifiedOn, opts.skipReview === true);
-    if (!result.ok) {
-      console.error(`em slice ratify: ${result.message}`);
-      process.exit(1);
-    }
-    // Loud, on stderr, exactly when --skip-review is what let this through — the skip is a
-    // visible act in the terminal and in CI logs, and deliberately leaves no trace in the doc.
-    if (result.skippedReviewFrom !== null) {
-      console.error(
-        `notice: --skip-review — ratifying "${sliceKey}" without a recorded review ` +
-          `(status was ${result.skippedReviewFrom})`,
+      // Scoped the same way `em slice mark-implemented`/`em export --slice`/`em validate
+      // --slice-ready` are: only an error concerning THIS slice refuses.
+      const scopedErrors = diagnostics.filter(
+        (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
       );
-    }
-    // MIL-198: advisory only, never refuses — ratifying ahead of an upstream slice the model's
-    // own timeline puts before this one (query index `in` adjacency, one hop, other slices only)
-    // is sometimes deliberate; this just makes it visible in the terminal and CI logs.
-    for (const upstream of result.upstreamWarnings) {
-      console.error(
-        `warn: ratifying "${sliceKey}" ahead of upstream slice "${upstream.sliceKey}" (status: ${upstream.status})`,
+      if (scopedErrors.length > 0) {
+        console.error(`em slice ratify: slice "${sliceKey}" has errors — fix them first`);
+        process.exit(1);
+      }
+
+      const today = localIsoDate();
+      const ratifiedOn = opts.on ?? today;
+      if (opts.on !== undefined && !isValidDateString(opts.on)) {
+        console.error(`em slice ratify: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+        process.exit(1);
+      }
+
+      const result = runRatify(
+        model,
+        refs,
+        dirname(file),
+        sliceKey,
+        opts.by,
+        ratifiedOn,
+        opts.skipReview === true,
+        flags.confirmation,
       );
-    }
-    console.log(
-      result.changed
-        ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn})`
-        : `already ratified (no-op): ${result.path}`,
-    );
-    warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);
-  });
+      if (!result.ok) {
+        console.error(`em slice ratify: ${result.message}`);
+        process.exit(1);
+      }
+      // Loud, on stderr, exactly when --skip-review is what let this through — the skip is a
+      // visible act in the terminal and in CI logs, and deliberately leaves no trace in the doc.
+      if (result.skippedReviewFrom !== null) {
+        console.error(
+          `notice: --skip-review — ratifying "${sliceKey}" without a recorded review ` +
+            `(status was ${result.skippedReviewFrom})`,
+        );
+      }
+      // MIL-198: advisory only, never refuses — ratifying ahead of an upstream slice the model's
+      // own timeline puts before this one (query index `in` adjacency, one hop, other slices only)
+      // is sometimes deliberate; this just makes it visible in the terminal and CI logs.
+      for (const upstream of result.upstreamWarnings) {
+        console.error(
+          `warn: ratifying "${sliceKey}" ahead of upstream slice "${upstream.sliceKey}" (status: ${upstream.status})`,
+        );
+      }
+      console.log(
+        result.changed
+          ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn}${confirmationSuffix(flags.confirmation)})`
+          : `already ratified (no-op): ${result.path}`,
+      );
+      warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);
+    },
+  );
 
 slice
   .command("reratify")
@@ -972,7 +1007,22 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
-  .action((file: string, sliceKey: string) => {
+  .option(
+    "--meaning-unchanged",
+    "API-first sign-off (MIL-238): the new version does not change what the public contract means — " +
+      "records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element",
+  )
+  .option(
+    "--contract-change <why>",
+    "API-first sign-off (MIL-238): a consumer must read the new version differently, and why — records " +
+      "`contractChange: \"<why>\"`",
+  )
+  .action((file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string }) => {
+    const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
+    if (!flags.ok) {
+      console.error(`em slice reratify: ${flags.message}`);
+      process.exit(1);
+    }
     const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
 
@@ -986,7 +1036,7 @@ slice
       process.exit(1);
     }
 
-    const result = runReratify(model, refs, dirname(file), sliceKey);
+    const result = runReratify(model, refs, dirname(file), sliceKey, flags.confirmation);
     if (!result.ok) {
       console.error(`em slice reratify: ${result.message}`);
       process.exit(1);
@@ -1003,10 +1053,13 @@ slice
       // MIL-258: nothing was flipped — say what DID happen, and that the new version is unsigned.
       console.log(
         `reratified: ${result.path} (version: ${result.newVersion - 1} -> ${result.newVersion}, sign-off cleared, ` +
-          `status unchanged: ready-to-implement) — not ratified until \`em slice ratify --by <name>\` records the new sign-off`,
+          `status unchanged: ready-to-implement${confirmationSuffix(flags.confirmation)}) — not ratified until ` +
+          `\`em slice ratify --by <name>\` records the new sign-off`,
       );
     } else {
-      console.log(`reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement)`);
+      console.log(
+        `reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement${confirmationSuffix(flags.confirmation)})`,
+      );
     }
     warnModelVersionDrift(dirname(file), model, refs, source, `reratifying "${sliceKey}"`);
   });
@@ -1682,7 +1735,9 @@ program
   .option(
     "--slice-ready <key>",
     "readiness gate for one slice (export key): status ready-to-implement, doc resolvable via " +
-      "note binding, zero unchecked Open Questions — exits non-zero if not ready (MIL-87)",
+      "note binding, zero unchecked Open Questions, a recorded ratifiedBy, and — for a slice " +
+      "touching a `public` element — a current contracts/<model key>.tsp; exits non-zero if not " +
+      "ready (MIL-87, MIL-259, MIL-238)",
   )
   .option(
     "--json",
@@ -1718,17 +1773,20 @@ program
         // diagnostics printed — on an unrelated slice's breakage; scoping to this slice alone
         // matches the ticket's own scenario (check one slice while the rest of a large model is
         // still WIP) and this module's own "single-slice" framing.
-        const readyDiagnostics = validateSliceReady(model, refs, dirname(file), opts.sliceReady);
+        // MIL-238: the API-first gate needs the model path as given (the contract path is built
+        // from it, as `em api generate` does), its source, and the compile diagnostics.
+        const contractInput = { file, source, diagnostics };
+        const readyDiagnostics = validateSliceReady(model, refs, dirname(file), opts.sliceReady, contractInput);
         const combined = [...allDiagnostics, ...readyDiagnostics];
         const key = opts.sliceReady;
         const scoped = combined.filter((d) => d.refs?.some((r) => r === key || r.startsWith(`${key}/`)));
         printDiagnostics(scoped);
         const ready = scoped.length === 0;
         if (opts.json) {
-          // MIL-128: the 4 named gates (see computeSliceReadyGates) plus the same `scoped`
+          // MIL-128: the named gates (see computeSliceReadyGates) plus the same `scoped`
           // diagnostics and `ready` verdict driving the exit code below — replaces both the
           // scraped warning prose and the two hand-parsed English sentences.
-          const result = computeSliceReadyGates(model, refs, dirname(file), key);
+          const result = computeSliceReadyGates(model, refs, dirname(file), key, contractInput);
           process.stdout.write(
             buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null) + "\n",
           );

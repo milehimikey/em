@@ -131,6 +131,14 @@ export interface SliceDocExport {
   /** MIL-214: the local date that certification was recorded (frontmatter `conformedOn:`),
    *  written only by `em slice conform` — null when never certified. */
   conformedOn: string | null;
+  /** MIL-238: frontmatter `meaningConfirmed: true` — the ratifier asserted, via `em slice
+   *  ratify`/`reratify --meaning-unchanged`, that this version does not change what the public
+   *  contract means. `false` when absent (and whenever no doc was found). */
+  meaningConfirmed: boolean;
+  /** MIL-238: frontmatter `contractChange:` — why a consumer must read this version's contract
+   *  differently (`--contract-change "<why>"`); null when absent. At most one of
+   *  `meaningConfirmed`/`contractChange` is set by em's own writers. */
+  contractChange: string | null;
 }
 
 export interface SliceDocJoinResult {
@@ -163,6 +171,8 @@ const EMPTY_CONTENT = {
   conformedVersion: null as number | null,
   conformedAt: null as string | null,
   conformedOn: null as string | null,
+  meaningConfirmed: false,
+  contractChange: null as string | null,
 };
 
 /**
@@ -295,5 +305,7 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     conformedVersion: parsed.conformedVersion,
     conformedAt: parsed.conformedAt,
     conformedOn: parsed.conformedOn,
+    meaningConfirmed: parsed.meaningConfirmed,
+    contractChange: parsed.contractChange,
   };
 }

@@ -348,26 +348,32 @@ Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "sliceKey": "checkout",
-  "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false, "ratified": false },
+  "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false, "ratified": false, "contractCurrent": true },
   "continuationOf": null,
   "ready": false,
   "diagnostics": [ … ]
 }
 ```
 
-`gates` names each of the 5 conditions individually, replacing both the scraped warning prose
+`gates` names each of the 6 conditions individually, replacing both the scraped warning prose
 and the two hand-parsed English sentences ("is ready-to-implement" / "is NOT ready-to-implement").
 It's `null` when `sliceKey` matches no slice in the model (the unknown-key error case — nothing
 to gate; check `diagnostics` for `slice-ready-unknown-slice` instead). A gate not reached because
 an earlier one failed (e.g. `statusReady` when the doc itself isn't bound) reports `false`, not
-`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 5
+`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 6
 named gates pass, if something else concerning this slice is broken (e.g. a plain
 `both-ends-of-a-flow` diagnostic on one of its own elements); `diagnostics` carries the full
-scoped list so a consumer sees exactly why, not just the 5 named gates.
+scoped list so a consumer sees exactly why, not just the 6 named gates.
 
 `gates.ratified` (added in schema `1.2`, MIL-259) is `true` when the doc carries a non-empty
 `ratifiedBy:`. It is informational like the other gates: the blocking verdict is the
 `slice-ready-not-ratified` error in `diagnostics`.
+
+`gates.contractCurrent` (MIL-238, under the same schema `1.2` — added in the same release) is
+`true` when the slice touches no `public` element, or when the model's
+`contracts/<model key>.tsp` exists and equals what `em api generate` would write now. It is
+computed from the model, not the doc, so it is reported truthfully even when the doc is unusable.
+The blocking verdict is the `slice-ready-contract-stale` error in `diagnostics`.
 
 `continuationOf` (added in schema `1.1`, MIL-208) is non-null when `sliceKey` names a
 continuation slice (an again-view-only slice with no legacy doc of its own) — the originating
@@ -416,6 +422,15 @@ unless **all** of the following hold, printing which ones don't and why
   it is re-signed (MIL-259). Docs ratified before sign-offs were recorded are covered by the
   `ratified-signoff` step of `em upgrade`
 - every `## Open Questions` checkbox in the doc is checked (`- [x]`, none left `- [ ]`)
+- **API-first (MIL-238):** when the slice is *public-touching* — it owns at least one `public`
+  command, event or view — the model's contract `<model dir>/contracts/<model key>.tsp` exists
+  and its text equals what `em api generate` would write from the current model (a plain text
+  comparison; the contract header carries no source hash, so an internal-only edit never makes
+  it stale). Otherwise `slice-ready-contract-stale` (error) names the contract and the command
+  to run:
+  `slice "<key>" touches the public surface but the contract <path> is <missing|stale> — run: em api generate <model>`
+  (`<path>` and `<model>` are built from the model path as you passed it). Slices with no
+  `public` element are unaffected
 - no version/status/link incoherence is flagged for the slice (folds in the frontmatter-
   coherence check, MIL-85, for free — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence))
 
@@ -522,8 +537,12 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       when `found` is `true` and the frontmatter parsed cleanly, at which point `status`,
       `version`, `implementedIn`, `splitFrom`, `mergedFrom`, `supersededBy`, `driftSignal`,
       `reviewedBy`, `reviewedOn`, `ratifiedBy`, `ratifiedOn`, `owner`, `tracking`,
-      `conformedVersion`, `conformedAt`, and `conformedOn` are
-      populated from it (each `null`/`[]` otherwise).
+      `conformedVersion`, `conformedAt`, `conformedOn`, `meaningConfirmed`, and
+      `contractChange` are populated from it (each `null`/`[]`/`false` otherwise).
+      `meaningConfirmed` (boolean) / `contractChange` (string or `null`) (added in schema
+      `1.15`, MIL-238) are the API-first sign-off `em slice ratify`/`reratify` record on a
+      public-touching slice: `meaningConfirmed: true` frontmatter, and the quoted
+      `contractChange:` reason with its quotes stripped. Both always present.
       `driftSignal` (added in schema `1.5`,
       MIL-85; gained `"uncertified"` in schema `1.13`, MIL-214) is `"in-sync"` |
       `"never-implemented"` | `"unpropagated-delta"` | `"implemented-without-link"` |
@@ -1493,6 +1512,7 @@ slices: 8 total — 8 implemented, 0 ready-to-implement, 0 reviewed, 0 draft, 0 
 driftSignal: 8 in-sync, 0 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 uncertified, 0 n/a (no doc), 0 n/a (frontmatter invalid)
 invariants: 20/20 covered (0 uncovered) — test/
 issues: 0 open issues, 0/0 open question(s) unchecked
+public-touching slices without a meaning confirmation: 0
 conformance: last conformed abc123f — 0 commits and 0 slice-PRs behind HEAD
 constitution: present
 model version: v2 — certified v1 @ 8f12ed8
@@ -1573,6 +1593,7 @@ see [mcp.md](mcp.md)):
     { "file": "model.em", "key": "billing", "owner": null }
   ],
   "system": { "manifest": "../../system.yaml", "consumerNotAdapted": 0 },
+  "publicSlicesUnconfirmed": 0,
   "diagnostics": []
 }
 ```
@@ -1651,6 +1672,14 @@ that raised [`consumer-not-adapted`](#em-system-manifest). The text report adds
 `system: null` plus a `warn:` line on stderr; `em system` is the command that reports why. `em
 status` itself still exits 0: the count is a fact, and the gate is `em system` (see
 [ci.md](ci.md#em-system-consumer-adaptation-the-release-blocker)).
+
+`publicSlicesUnconfirmed` (added in schema `1.8`, MIL-238) counts public-touching slices — owning
+at least one `public` command, event or view — whose doc is `ready-to-implement` or
+`implemented` but records neither `meaningConfirmed: true` nor a `contractChange:` (ratified
+before the API-first gate, or edited by hand). Continuation slices are skipped. The text report
+prints `public-touching slices without a meaning confirmation: N` after the `issues:` line. To
+clear one, re-run `em slice ratify` with the same `--by`/`--on` plus `--meaning-unchanged` or
+`--contract-change "<why>"`; a shipped slice is confirmed at its next `em slice reratify`.
 
 `diagnostics` (added for the PR #116 review pass) carries every doc-join warning
 (`binding-missing-file`/`frontmatter-invalid`) raised while resolving each slice's doc, across
@@ -2850,6 +2879,30 @@ that *was* reviewed is silent.
 `em slice ratify` never clears `reviewedBy:`/`reviewedOn:`: the review record is provenance for
 the version being ratified, not something ratification consumes.
 
+**API-first sign-off (MIL-238).** On a *public-touching* slice — one owning at least one
+`public` command, event or view — ratification also asserts that the model's contract is current
+and says whether this version changes what the contract *means* to a consumer. Exactly one of two
+flags is required there:
+
+- `--meaning-unchanged` records `meaningConfirmed: true`
+- `--contract-change "<why>"` records `contractChange: "<why>"` — the reason a consumer must read
+  this change differently (free text, quoted; control characters and double quotes are refused)
+
+Without either, the command refuses (exit 1, file untouched):
+
+```
+slice "<key>" touches the public surface — pass --meaning-unchanged, or --contract-change "<why>" if a consumer must read this change differently
+```
+
+Passing both refuses with `pass one of --meaning-unchanged or --contract-change "<why>", not both`.
+On a slice with no `public` element neither flag is required; either is still accepted and
+recorded (harmless — it states the obvious). The line is written directly after `ratifiedOn:`
+and replaces any earlier `meaningConfirmed:`/`contractChange:` line. A same-identity re-run with
+the same flag is a no-op; a same-identity re-run that adds a flag to a doc ratified without one
+records it; a same-identity re-run with a *different* recorded confirmation refuses
+(`already ratified by <by> on <on> with <recorded> — refusing to overwrite with <requested>`).
+The contract itself is checked by `em validate --slice-ready` (`slice-ready-contract-stale`).
+
 Scoped the same way `em export --slice`/`em validate --slice-ready`/`mark-implemented` are: only
 a model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
 refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't block it.
@@ -2859,6 +2912,8 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | `--by <name>` | **Required.** The ratifier's name |
 | `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr |
+| `--meaning-unchanged` | (MIL-238) API-first sign-off: records `meaningConfirmed: true`. Required, or `--contract-change`, on a public-touching slice |
+| `--contract-change <why>` | (MIL-238) API-first sign-off: records `contractChange: "<why>"` — a consumer must read this change differently |
 
 | Error | Meaning |
 |---|---|
@@ -2869,9 +2924,14 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
 | `already ratified by ... — refusing to overwrite` | The idempotent/refusal guard — see above |
 | ``slice "<key>" is `status: <s>` — the review gate comes first`` | The doc never passed through `em slice review`; review it, or pass `--skip-review` |
+| `slice "<key>" touches the public surface — pass --meaning-unchanged, ...` | (MIL-238) A public-touching slice needs an API-first sign-off flag |
+| `pass one of --meaning-unchanged or --contract-change "<why>", not both` | (MIL-238) Both flags were passed |
+| `a contract-change reason is required ...` / `contract-change reason must not contain ...` | (MIL-238) `--contract-change` was empty, or carries a control character or a double quote |
 | `invalid --on date "..."` | `--on` didn't match `YYYY-MM-DD` |
 
 ```bash
+em slice ratify model.em place-order --by "Alex Rivera" --meaning-unchanged          # public-touching slice
+em slice ratify model.em place-order --by "Alex Rivera" --contract-change "total now includes tax"
 em slice ratify model.em request-payment --by "Alex Rivera"
 em slice ratify model.em request-payment --by "Alex Rivera" --on 2026-08-28
 em slice ratify model.em request-payment --by "Alex Rivera" --skip-review   # no review recorded
@@ -2999,7 +3059,17 @@ apply cleanly afterward: without this, `ratify`'s own idempotent-refusal guard w
 leftover prior `ratifiedBy`/`ratifiedOn` as "already ratified by someone else" and refuse.
 
 `reviewedBy:`/`reviewedOn:` are cleared in the same sweep (MIL-201), for the same reason: the
-review record describes the version that shipped, not the new one. The re-ratified doc needs no
+review record describes the version that shipped, not the new one. So are `meaningConfirmed:`/
+`contractChange:` (MIL-238): they describe the prior version's API-first sign-off.
+
+**API-first sign-off (MIL-238).** On a public-touching slice (one owning a `public` command, event
+or view) the bump requires `--meaning-unchanged` or `--contract-change "<why>"`, exactly as
+[`em slice ratify`](#em-slice-ratify-file-slice-key---by-name) does, with the same refusal
+messages; the new `meaningConfirmed: true` / `contractChange: "<why>"` line is written directly
+after the bumped `version:` line. The doc's own preconditions (status, version) are checked first.
+On a slice with no `public` element neither flag is required; either is accepted and recorded.
+The follow-up `em slice ratify --by` on a public-touching slice needs the flag again (its
+confirmation then replaces the one recorded here). The re-ratified doc needs no
 fresh review session — it lands at `status: ready-to-implement`, which
 [`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)'s review gate accepts — but leaving
 the old review in place would claim the room walked a version it has never seen.
@@ -3008,7 +3078,7 @@ Never touches `implementedIn:` (kept pointing at the prior version's PR on purpo
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)'s
 drift-signal framing) or the doc body: the write is a surgical in-place edit of just the
 `version:`/`status:` lines (and, when present, removing the `ratifiedBy:`/`ratifiedOn:`/
-`reviewedBy:`/`reviewedOn:` lines entirely), not a parse-and-re-serialize, so every other line — key order, spacing, comments, the
+`reviewedBy:`/`reviewedOn:`/`meaningConfirmed:`/`contractChange:` lines entirely), not a parse-and-re-serialize, so every other line — key order, spacing, comments, the
 whole body — survives byte-for-byte.
 
 Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
@@ -3026,6 +3096,8 @@ still-WIP model doesn't block it.
 | `doc is status: <x> — reratify only applies to ...` | (`draft`/`reviewed`/empty) not ratified, so there is nothing to re-ratify — edit the doc |
 | `doc is status: ready-to-implement with no ratifiedBy: — it is awaiting ratification ...` | (MIL-258) the double-bump guard — record the sign-off with `em slice ratify --by <name>` |
 | `doc's version: "<x>" isn't a positive integer` | Refuses rather than guess a bump when `version:` isn't parseable |
+| `slice "<key>" touches the public surface — pass --meaning-unchanged, ...` | (MIL-238) A public-touching slice needs an API-first sign-off flag (`--meaning-unchanged` / `--contract-change "<why>"`) |
+| `pass one of --meaning-unchanged or --contract-change "<why>", not both` | (MIL-238) Both flags were passed |
 
 ```bash
 em slice reratify model.em request-payment

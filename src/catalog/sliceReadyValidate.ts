@@ -31,6 +31,32 @@ import { Diagnostic } from "../model/validate.js";
 import { makeDiag, pushDiag } from "../model/rules.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
+import { ContractCheckInput, contractStatus, slicePublicTouching } from "./apiFirst.js";
+
+export type { ContractCheckInput } from "./apiFirst.js";
+
+/** MIL-238 (briefing R10): the API-first gate's diagnostic for one slice, or null when the slice
+ *  touches no public element or its model's contract is current. Independent of the slice doc —
+ *  the contract belongs to the model — so it is appended on every path past the unknown-key check. */
+function contractStaleDiagnostic(
+  model: NormalizedModel,
+  refs: RefsResult,
+  sliceIndex: number,
+  sliceKey: string,
+  contract: ContractCheckInput,
+): Diagnostic | null {
+  const slice = model.slices[sliceIndex];
+  if (!slicePublicTouching(slice)) return null;
+  const { state, contractPath } = contractStatus(model, refs, contract);
+  if (state === "current") return null;
+  return makeDiag("slice-ready-contract-stale", {
+    message:
+      `slice "${sliceKey}" touches the public surface but the contract ${contractPath} is ${state} — ` +
+      `run: em api generate ${contract.file}`,
+    line: slice.line,
+    refs: [sliceKey],
+  });
+}
 
 /**
  * Readiness gate for one slice, named by its export key (`refs.sliceKeys`). `baseDir` is the
@@ -38,12 +64,17 @@ import { readSliceDoc } from "./readSliceDoc.js";
  * severity (fits validate's existing warning-producer shape) except for a bad `sliceKey` itself,
  * which is an error — a CLI-argument mistake, not a model-quality finding. The `--slice-ready`
  * flag in src/cli.ts is what decides whether these warnings gate the exit code.
+ *
+ * MIL-238: `contract` (the `.em` path as given, its source and compile diagnostics) feeds the
+ * API-first gate — a public-touching slice whose model contract is missing or stale gets a
+ * `slice-ready-contract-stale` error on every path past the unknown-key check.
  */
 export function validateSliceReady(
   model: NormalizedModel,
   refs: RefsResult,
   baseDir: string,
   sliceKey: string,
+  contract: ContractCheckInput,
 ): Diagnostic[] {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -55,6 +86,8 @@ export function validateSliceReady(
     ];
   }
   const slice = model.slices[sliceIndex];
+  const contractDiag = contractStaleDiagnostic(model, refs, sliceIndex, sliceKey, contract);
+  const withContract = (diags: Diagnostic[]): Diagnostic[] => (contractDiag ? [...diags, contractDiag] : diags);
   const { doc, diagnostics: joinDiagnostics } = resolveSliceDocJoin(
     model,
     refs,
@@ -65,18 +98,18 @@ export function validateSliceReady(
   );
 
   if (doc.reason === "no-doc-bound") {
-    return [
+    return withContract([
       makeDiag("slice-ready-no-doc-bound", {
         message: `slice "${sliceKey}" has no doc bound via \`note "slices/${sliceKey}.md"\` — bind a slice doc before it can be ready-to-implement`,
         line: slice.line,
         refs: [sliceKey],
       }),
-    ];
+    ]);
   }
   if (doc.reason === "binding-missing-file" || doc.reason === "frontmatter-invalid") {
     // Reuse docJoin's own diagnostics verbatim — don't re-code binding-missing-file/
     // frontmatter-invalid a second time under a slice-ready-specific code.
-    return joinDiagnostics;
+    return withContract(joinDiagnostics);
   }
 
   // doc.reason === null: found, usable frontmatter.
@@ -119,11 +152,11 @@ export function validateSliceReady(
     });
   }
 
-  return diags;
+  return withContract(diags);
 }
 
-/** The 4 named gate conditions `em validate --slice-ready <key> --json` reports individually
- *  (MIL-128): doc bound, frontmatter usable, status ready-to-implement, no unchecked Open
+/** The named gate conditions `em validate --slice-ready <key> --json` reports individually
+ *  (MIL-128; 4 originally, `ratified` MIL-259, `contractCurrent` MIL-238): doc bound, frontmatter usable, status ready-to-implement, no unchecked Open
  *  Questions — the exact facts `validateSliceReady` above already derives from the same doc
  *  join and parse, exposed as independent pass/fail booleans instead of collapsed into
  *  short-circuited diagnostics, so a JSON consumer sees exactly which gate(s) failed without
@@ -141,6 +174,10 @@ export interface SliceReadyGates {
   /** MIL-259: the doc carries a non-empty `ratifiedBy` (the recorded sign-off for its current
    *  version). Only meaningful alongside `statusReady`; `false` whenever the doc is unusable. */
   ratified: boolean;
+  /** MIL-238: the API-first gate — `true` when the slice touches no public element, or when its
+   *  model's `contracts/<modelKey>.tsp` exists and equals the freshly generated text. Computed
+   *  from the model, not the doc, so it is reported truthfully even when the doc is unusable. */
+  contractCurrent: boolean;
 }
 
 /** `computeSliceReadyGates`'s full result (MIL-208): the 4 gates plus `continuationOf` — non-
@@ -160,16 +197,18 @@ export function computeSliceReadyGates(
   refs: RefsResult,
   baseDir: string,
   sliceKey: string,
+  contract: ContractCheckInput,
 ): SliceReadyResult | null {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) return null;
   const slice = model.slices[sliceIndex];
+  const contractCurrent = !slicePublicTouching(slice) || contractStatus(model, refs, contract).state === "current";
   const { doc, continuationOf } = resolveSliceDocJoin(model, refs, slice, sliceKey, baseDir, (id) => refs.refById.get(id)!);
 
   const docBound = doc.reason !== "no-doc-bound";
   const frontmatterUsable = doc.reason === null;
   if (!frontmatterUsable) {
-    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false, ratified: false }, continuationOf };
+    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false, ratified: false, contractCurrent }, continuationOf };
   }
 
   const statusReady = doc.status === "ready-to-implement";
@@ -181,5 +220,5 @@ export function computeSliceReadyGates(
 
   const ratified = !!doc.ratifiedBy;
 
-  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions, ratified }, continuationOf };
+  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions, ratified, contractCurrent }, continuationOf };
 }

@@ -143,6 +143,10 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //  - MIL-265: `elements[].invariants: { id, rule }[] | null` — the element's model-declared
 //    `invariant INV-<MNEMONIC>-<n> "rule"` lines (command/event only), in declaration order;
 //    `rule` is null when the line gives none. `null` on every element without one.
+//  - MIL-238: `slice.doc.meaningConfirmed: boolean` (frontmatter `meaningConfirmed: true`,
+//    `false` when absent) and `slice.doc.contractChange: string | null` (frontmatter
+//    `contractChange:`) — the API-first sign-off `em slice ratify`/`reratify` record on a
+//    public-touching slice; both always present.
 // Additive-only.
 export const SCHEMA_VERSION = "1.15";
 

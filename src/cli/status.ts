@@ -37,6 +37,7 @@ import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformSc
 import { lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
 import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, ModelVersionSliceChange } from "./modelVersion.js";
 import { isOlder } from "../util/semver.js";
+import { slicePublicTouching } from "../catalog/apiFirst.js";
 
 /** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
  *  `em catalog`'s header coloring and `em render`'s status legend already recognize. */
@@ -93,6 +94,11 @@ export interface SliceStatusFact {
    *  fact already counts that status/drift once) and tallies it in `StatusReport.continuations`
    *  instead. */
   continuationOf: string | null;
+  /** MIL-238: the slice owns at least one `public` command/event/view (catalog/apiFirst.ts). */
+  publicTouching: boolean;
+  /** MIL-238: the bound doc records an API-first meaning confirmation — `meaningConfirmed: true`
+   *  or a `contractChange:` reason. False when neither (or no doc). */
+  meaningConfirmationRecorded: boolean;
 }
 
 export interface SliceStatusFactsResult {
@@ -153,6 +159,8 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       openQuestionsTotal,
       openQuestionsUnchecked,
       continuationOf: continuationOfKey,
+      publicTouching: slicePublicTouching(slice),
+      meaningConfirmationRecorded: doc.meaningConfirmed || doc.contractChange !== null,
     };
   });
   return { facts, diagnostics };
@@ -588,6 +596,11 @@ export interface StatusReport {
    *  `consumes` bindings failed the consumer-adaptation check; `null` when no manifest was found
    *  (or it could not be loaded). `manifest` is the path as reached from the first input. */
   system: { manifest: string; consumerNotAdapted: number } | null;
+  /** MIL-238: count of public-touching slices (owning a `public` command/event/view) at
+   *  `ready-to-implement` or `implemented` whose doc records neither `meaningConfirmed: true` nor
+   *  a `contractChange:` — ratified before the API-first gate, or hand-edited. Continuations are
+   *  skipped (the originating slice's own fact counts its doc once). */
+  publicSlicesUnconfirmed: number;
 }
 
 /** Aggregate everything `em status` reports into one `StatusReport` — pure, no I/O. Callers
@@ -623,6 +636,7 @@ export function buildStatusReport(
   // relative path string without actually being the same file).
   const countedDocPaths = new Set<string>();
   let continuations = 0;
+  let publicSlicesUnconfirmed = 0;
 
   for (const f of sliceFacts) {
     // MIL-208: a continuation slice has no status/drift of its own — the originating slice's
@@ -677,6 +691,13 @@ export function buildStatusReport(
         else drift.notApplicable++;
         break;
     }
+    if (
+      f.publicTouching &&
+      (f.bucket === "ready-to-implement" || f.bucket === "implemented") &&
+      !f.meaningConfirmationRecorded
+    ) {
+      publicSlicesUnconfirmed++;
+    }
     const alreadyCounted = f.docPath !== null && countedDocPaths.has(f.docPath);
     if (f.docPath !== null) countedDocPaths.add(f.docPath);
     if (!alreadyCounted) {
@@ -698,6 +719,7 @@ export function buildStatusReport(
     diagnostics,
     owners: sliceFacts.map((f) => ({ file: f.file, key: f.key, owner: f.owner })),
     system,
+    publicSlicesUnconfirmed,
   };
 }
 
@@ -839,6 +861,9 @@ export function formatStatusDetail(report: StatusReport): string {
     `issues: ${pluralize(report.issues.openIssues, "open issue")}, ` +
       `${report.issues.openQuestionsUnchecked}/${report.issues.openQuestionsTotal} open question(s) unchecked`,
   );
+  // MIL-238: the API-first gate's backlog — ratified/shipped public-touching slices with no
+  // recorded meaning confirmation.
+  lines.push(`public-touching slices without a meaning confirmation: ${report.publicSlicesUnconfirmed}`);
   const multi = report.conformance.length > 1;
   for (const entry of report.conformance) {
     const label = multi ? `conformance (${entry.file}): ` : "conformance: ";

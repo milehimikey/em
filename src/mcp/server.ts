@@ -268,8 +268,9 @@ export function createServer(): McpServer {
       title: "Check whether a slice is ready to implement",
       description:
         "Return the machine-readable readiness verdict for one slice — the same JSON document " +
-        "`em validate <file> --slice-ready <key> --json` prints: 5 named gates (doc bound, " +
-        "frontmatter usable, status ready-to-implement, no unchecked Open Questions, ratified), the " +
+        "`em validate <file> --slice-ready <key> --json` prints: 6 named gates (doc bound, " +
+        "frontmatter usable, status ready-to-implement, no unchecked Open Questions, ratified, " +
+        "contract current for a public-touching slice), the " +
         "overall `ready` boolean, and the scoped diagnostics behind it. Call this before " +
         "implementing a slice — never infer readiness yourself from `export_slice`'s content.",
       inputSchema: { file: fileParam, sliceKey: sliceKeyParam },
@@ -277,13 +278,14 @@ export function createServer(): McpServer {
     async ({ file, sliceKey }) => {
       const compiled = compileWithValidation(file);
       if ("error" in compiled) return errorResult(compiled.error);
-      const { model, refs, allDiagnostics } = compiled;
+      const { model, refs, allDiagnostics, source, diagnostics } = compiled;
       const baseDir = dirname(file);
-      const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey);
+      const contractInput = { file, source, diagnostics };
+      const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey, contractInput);
       const combined = [...allDiagnostics, ...readyDiagnostics];
       const scoped = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
       const ready = scoped.length === 0;
-      const result = computeSliceReadyGates(model, refs, baseDir, sliceKey);
+      const result = computeSliceReadyGates(model, refs, baseDir, sliceKey, contractInput);
       return textResult(
         buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null),
       );

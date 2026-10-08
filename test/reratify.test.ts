@@ -442,3 +442,77 @@ describe("reratifyAdvisory / runReratify's MIL-214 certification advisory", () =
     expect(readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8")).toContain("version: 2");
   });
 });
+
+// MIL-238 — the API-first meaning confirmation on a re-ratification.
+describe("applyReratifyFrontmatter — meaning confirmation (MIL-238)", () => {
+  it("clears the prior version's meaningConfirmed/contractChange with the sign-off keys", () => {
+    const doc = IMPLEMENTED_DOC.replace("ratifiedOn: 2026-08-01\n", 'ratifiedOn: 2026-08-01\ncontractChange: "old reason"\nmeaningConfirmed: true\n');
+    const result = applyReratifyFrontmatter(doc);
+    expect(result.ok && result.content).toBe(
+      IMPLEMENTED_DOC.replace("status: implemented", "status: ready-to-implement")
+        .replace("version: 1", "version: 2")
+        .replace("ratifiedBy: Alex Rivera\nratifiedOn: 2026-08-01\n", ""),
+    );
+  });
+
+  it("writes the new confirmation directly after the bumped version line", () => {
+    const doc = IMPLEMENTED_DOC.replace("ratifiedOn: 2026-08-01\n", "ratifiedOn: 2026-08-01\nmeaningConfirmed: true\n");
+    const result = applyReratifyFrontmatter(doc, { kind: "contract-change", why: "status values renamed" });
+    expect(result.ok && result.content).toBe(
+      IMPLEMENTED_DOC.replace("status: implemented", "status: ready-to-implement")
+        .replace("version: 1\n", 'version: 2\ncontractChange: "status values renamed"\n')
+        .replace("ratifiedBy: Alex Rivera\nratifiedOn: 2026-08-01\n", ""),
+    );
+  });
+
+  it("keeps CRLF line endings for the inserted line", () => {
+    const crlf = IMPLEMENTED_DOC.replace(/\n/g, "\r\n");
+    const result = applyReratifyFrontmatter(crlf, { kind: "meaning-unchanged" });
+    expect(result.ok && result.content).toContain("version: 2\r\nmeaningConfirmed: true\r\n");
+  });
+});
+
+describe("runReratify — public-touching slices (MIL-238)", () => {
+  let dir: string;
+  const MODEL =
+    'slice "Place Order" {\n  command Place Order note "slices/place-order.md"\n  event Order Placed public { orderId: uuid }\n}\n' +
+    'slice "Audit" {\n  command Record Audit note "slices/audit.md"\n  event Audit Recorded\n}\n';
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-reratify-public-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "place-order.md"), IMPLEMENTED_DOC);
+    writeFileSync(join(dir, "slices", "audit.md"), IMPLEMENTED_DOC);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(key: string, confirmation: Parameters<typeof runReratify>[4] = null) {
+    const { model, refs } = compile(MODEL);
+    return runReratify(model, refs, dir, key, confirmation);
+  }
+
+  it("refuses a public-touching slice without a confirmation — exact message, nothing written", () => {
+    expect(run("place-order")).toEqual({
+      ok: false,
+      message:
+        'slice "place-order" touches the public surface — pass --meaning-unchanged, or --contract-change "<why>" if a consumer must read this change differently',
+    });
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toBe(IMPLEMENTED_DOC);
+  });
+
+  it("accepts --meaning-unchanged and records it on the new version", () => {
+    expect(run("place-order", { kind: "meaning-unchanged" })).toMatchObject({ ok: true, newVersion: 2, kind: "shipped" });
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toContain("version: 2\nmeaningConfirmed: true\n");
+  });
+
+  it("reratifies a non-public slice without a flag", () => {
+    expect(run("audit")).toMatchObject({ ok: true, newVersion: 2 });
+    expect(readFileSync(join(dir, "slices", "audit.md"), "utf8")).not.toContain("meaningConfirmed");
+  });
+
+  it("reports the doc's own precondition before the confirmation requirement", () => {
+    writeFileSync(join(dir, "slices", "place-order.md"), IMPLEMENTED_DOC.replace("status: implemented", "status: draft"));
+    const result = run("place-order");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.message).toMatch(/^slices\/place-order\.md: doc is `status: draft`/);
+  });
+});

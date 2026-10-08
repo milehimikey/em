@@ -141,6 +141,12 @@ describe("collectMarkers / buildValidateListJson", () => {
   });
 });
 
+// MIL-238: the contract-currency input every gate computation takes — a model path inside `dir`
+// (the contract path is built from it) plus the source the contract would be generated from.
+function contractIn(dir: string, source: string) {
+  return { file: join(dir, "model.em"), source, diagnostics: [] };
+}
+
 describe("computeSliceReadyGates / buildSliceReadyJson", () => {
   let dir: string;
   beforeAll(() => {
@@ -162,34 +168,36 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
 
   it("returns null when the key names no slice", () => {
     const { model, refs } = compile(`slice "Place" {\n  command Do Thing\n}\n`);
-    expect(computeSliceReadyGates(model, refs, dir, "no-such-key")).toBeNull();
+    expect(computeSliceReadyGates(model, refs, dir, "no-such-key", contractIn(dir, ""))).toBeNull();
   });
 
-  it("all 5 gates false when no note binds a doc", () => {
+  it("doc gates false when no note binds a doc (contractCurrent true: no public element)", () => {
     const { model, refs } = compile(`slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n`);
-    expect(computeSliceReadyGates(model, refs, dir, "unbound")).toEqual({
+    expect(computeSliceReadyGates(model, refs, dir, "unbound", contractIn(dir, ""))).toEqual({
       gates: {
         docBound: false,
         frontmatterUsable: false,
         statusReady: false,
         noUncheckedOpenQuestions: false,
         ratified: false,
+        contractCurrent: true,
       },
       continuationOf: null,
     });
   });
 
-  it("all 5 gates true for a bound, ready, fully-checked doc", () => {
+  it("all 6 gates true for a bound, ready, fully-checked doc", () => {
     const { model, refs } = compile(
       `slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n`,
     );
-    expect(computeSliceReadyGates(model, refs, dir, "ready-slice")).toEqual({
+    expect(computeSliceReadyGates(model, refs, dir, "ready-slice", contractIn(dir, ""))).toEqual({
       gates: {
         docBound: true,
         frontmatterUsable: true,
         statusReady: true,
         noUncheckedOpenQuestions: true,
         ratified: true,
+        contractCurrent: true,
       },
       continuationOf: null,
     });
@@ -199,13 +207,14 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
     const { model, refs } = compile(
       `slice "Invalid Slice" {\n  command Do Thing note "slices/invalid-slice.md"\n  event Thing Done\n}\n`,
     );
-    expect(computeSliceReadyGates(model, refs, dir, "invalid-slice")).toEqual({
+    expect(computeSliceReadyGates(model, refs, dir, "invalid-slice", contractIn(dir, ""))).toEqual({
       gates: {
         docBound: true,
         frontmatterUsable: false,
         statusReady: false,
         noUncheckedOpenQuestions: false,
         ratified: false,
+        contractCurrent: true,
       },
       continuationOf: null,
     });

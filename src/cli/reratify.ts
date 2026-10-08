@@ -58,6 +58,12 @@
 // bump itself. MIL-258: the advisory is about superseding a SHIPPED version, so the unshipped
 // path skips it entirely (`advisory: null`) — an unshipped version has no certification to lack.
 
+//
+// MIL-238: `meaningConfirmed:`/`contractChange:` describe the PRIOR version too, so they are
+// cleared in the same sweep as the sign-off keys. On a public-touching slice the bump itself
+// requires a fresh confirmation (`--meaning-unchanged` or `--contract-change "<why>"`), written
+// directly after the new `version:` line; on any other slice either flag is accepted and recorded.
+
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -66,6 +72,13 @@ import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { listAllFindingsFiles, unruledFindingsInScope } from "./findings.js";
+import {
+  MeaningConfirmation,
+  MEANING_CONFIRMATION_KEYS,
+  meaningConfirmationLine,
+  meaningConfirmationRequiredMessage,
+} from "./ratify.js";
+import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
 
 /** The status a doc must already be in for `reratify` to apply — mirrors `RATIFIED_STATUS` in
  *  ratify.ts (the status this command flips TO), named separately since it's the precondition
@@ -89,7 +102,7 @@ export type ReratifyKind = "shipped" | "unshipped";
  * see module header for why this precondition (not idempotent-no-op) is the right refusal
  * shape here. No fs access — the caller reads/writes; see `runReratify` below.
  */
-export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
+export function applyReratifyFrontmatter(raw: string, confirmation: MeaningConfirmation | null = null): ApplyReratifyResult {
   const range = locateFrontmatterInner(raw);
   if (!range) return { ok: false, message: "no frontmatter block found" };
   const inner = raw.slice(range.innerStart, range.innerEnd);
@@ -135,27 +148,37 @@ export function applyReratifyFrontmatter(raw: string): ApplyReratifyResult {
   }
   const newVersion = currentVersion + 1;
 
+  // Clear stale ratifiedBy:/ratifiedOn:/reviewedBy:/reviewedOn: — see module header — and
+  // (MIL-238) the prior version's meaningConfirmed:/contractChange:. Done FIRST, on the original
+  // text, so the fresh confirmation line spliced in after `version:` below is never swept away.
+  // These keys are disjoint from `status:`/`version:` by construction (fieldLineRegex matches one
+  // key at a time), so the two lines are re-located on the cleared text unchanged.
+  let cleared = inner;
+  for (const key of ["ratifiedBy", "ratifiedOn", "reviewedBy", "reviewedOn", ...MEANING_CONFIRMATION_KEYS]) {
+    cleared = cleared.replace(fieldLineWithEolRegex(key), "");
+  }
+  const clearedStatus = fieldLineRegex("status").exec(cleared)!;
+  const clearedVersion = fieldLineRegex("version").exec(cleared)!;
+  const afterVersion = cleared.slice(clearedVersion.index + clearedVersion[0].length);
+  const eol = afterVersion.startsWith("\r\n") ? "\r\n" : "\n";
+  const versionNext = `${clearedVersion[1]}${newVersion}`;
+
   // Apply from the highest index first so an earlier edit's index stays valid — same convention
   // markImplemented.ts/ratify.ts use.
   const edits = [
     // MIL-258: the unshipped path is already at the target status — nothing to flip.
     ...(kind === "shipped"
-      ? [{ index: statusMatch.index, oldLen: statusMatch[0].length, next: `${statusMatch[1]}${TARGET_STATUS}` }]
+      ? [{ index: clearedStatus.index, oldLen: clearedStatus[0].length, next: `${clearedStatus[1]}${TARGET_STATUS}` }]
       : []),
-    { index: versionMatch.index, oldLen: versionMatch[0].length, next: `${versionMatch[1]}${newVersion}` },
+    {
+      index: clearedVersion.index,
+      oldLen: clearedVersion[0].length,
+      next: confirmation ? `${versionNext}${eol}${meaningConfirmationLine(confirmation)}` : versionNext,
+    },
   ].sort((a, b) => b.index - a.index);
-  let updatedInner = inner;
+  let updatedInner = cleared;
   for (const edit of edits) {
     updatedInner = updatedInner.slice(0, edit.index) + edit.next + updatedInner.slice(edit.index + edit.oldLen);
-  }
-
-  // Clear stale ratifiedBy:/ratifiedOn:/reviewedBy:/reviewedOn: — see module header. A plain
-  // `.replace()` (not index-spliced alongside the edits above) is safe here: these four keys are
-  // disjoint from `status:`/`version:` and from each other by construction (fieldLineRegex matches
-  // one key at a time), so removing them from the ALREADY-updated text can't disturb the edits
-  // just applied.
-  for (const key of ["ratifiedBy", "ratifiedOn", "reviewedBy", "reviewedOn"]) {
-    updatedInner = updatedInner.replace(fieldLineWithEolRegex(key), "");
   }
 
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
@@ -207,6 +230,7 @@ export function runReratify(
   refs: RefsResult,
   baseDir: string,
   sliceKey: string,
+  confirmation: MeaningConfirmation | null = null,
 ): RunReratifyResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -252,9 +276,14 @@ export function runReratify(
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyReratifyFrontmatter(raw);
+  const result = applyReratifyFrontmatter(raw, confirmation);
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
+  }
+  // MIL-238: the API-first gate — after the doc's own preconditions, before any write: a
+  // public-touching slice's new version needs a meaning confirmation.
+  if (confirmation === null && isPublicTouchingSlice(model, refs, sliceKey)) {
+    return { ok: false, message: meaningConfirmationRequiredMessage(sliceKey) };
   }
   // MIL-214: computed from the doc's PRE-BUMP version/certification (`doc` was resolved before
   // the write below changes `version`) — "was the version we're about to supersede ever fully

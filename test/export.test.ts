@@ -88,6 +88,8 @@ slice "Submit Order" {
       conformedVersion: null,
       conformedAt: null,
       conformedOn: null,
+      meaningConfirmed: false,
+      contractChange: null,
     });
     expect(slice.elements[0]).toMatchObject({
       ref: "submit-order/command.submit-order",
@@ -1138,6 +1140,7 @@ describe("slice-doc join (MIL-91)", () => {
         "conformedVersion: 2",
         "conformedAt: 8f12ed8",
         "conformedOn: 2026-08-15",
+        'contractChange: "total now includes tax"',
         "---",
         "# Slice: Checkout",
         "",
@@ -1291,6 +1294,9 @@ describe("slice-doc join (MIL-91)", () => {
       conformedVersion: 2,
       conformedAt: "8f12ed8",
       conformedOn: "2026-08-15",
+      // MIL-238: the API-first sign-off, quotes stripped; meaningConfirmed false when absent.
+      meaningConfirmed: false,
+      contractChange: "total now includes tax",
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
   });
@@ -1389,6 +1395,8 @@ describe("slice-doc join: cross-binding (MIL-121)", () => {
       conformedVersion: null,
       conformedAt: null,
       conformedOn: null,
+      meaningConfirmed: false,
+      contractChange: null,
     });
     expect(docCodes(doc.diagnostics)).toEqual([]);
   });

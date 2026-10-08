@@ -20,7 +20,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { applyRatifyFrontmatter, runRatify, upstreamUnratifiedSlices } from "../src/cli/ratify.js";
+import { applyRatifyFrontmatter, parseMeaningFlags, runRatify, upstreamUnratifiedSlices } from "../src/cli/ratify.js";
 
 const DRAFT_DOC =
   "---\n" +
@@ -649,5 +649,154 @@ describe("runRatify carries upstreamWarnings on success (MIL-198)", () => {
       skippedReviewFrom: null,
       upstreamWarnings: [{ sliceKey: "producer", status: "draft" }],
     });
+  });
+});
+
+// MIL-238 — the API-first meaning confirmation.
+describe("parseMeaningFlags (MIL-238)", () => {
+  it("maps each flag to its confirmation, and neither to null", () => {
+    expect(parseMeaningFlags(undefined, undefined)).toEqual({ ok: true, confirmation: null });
+    expect(parseMeaningFlags(true, undefined)).toEqual({ ok: true, confirmation: { kind: "meaning-unchanged" } });
+    expect(parseMeaningFlags(undefined, "  total now includes tax  ")).toEqual({
+      ok: true,
+      confirmation: { kind: "contract-change", why: "total now includes tax" },
+    });
+  });
+
+  it("refuses both flags at once, an empty reason, control characters and double quotes — exact messages", () => {
+    expect(parseMeaningFlags(true, "why")).toEqual({
+      ok: false,
+      message: 'pass one of --meaning-unchanged or --contract-change "<why>", not both',
+    });
+    expect(parseMeaningFlags(undefined, "   ")).toEqual({
+      ok: false,
+      message: 'a contract-change reason is required (--contract-change "<why>")',
+    });
+    expect(parseMeaningFlags(undefined, "line one\nline two")).toEqual({
+      ok: false,
+      message: "contract-change reason must not contain control characters",
+    });
+    expect(parseMeaningFlags(undefined, 'the "total" field')).toEqual({
+      ok: false,
+      message: "contract-change reason must not contain double quotes — it is written as one quoted frontmatter value",
+    });
+  });
+});
+
+describe("applyRatifyFrontmatter — meaning confirmation (MIL-238)", () => {
+  it("writes meaningConfirmed: true directly after the freshly inserted ratifiedOn", () => {
+    const result = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+      kind: "meaning-unchanged",
+    });
+    expect(result.ok && result.content).toBe(
+      REVIEWED_DOC.replace(
+        "status: reviewed\n",
+        "status: ready-to-implement\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-28\nmeaningConfirmed: true\n",
+      ),
+    );
+  });
+
+  it("writes a quoted contractChange directly after an existing ratifiedOn line, replacing an older confirmation", () => {
+    const doc = REVIEWED_DOC.replace(
+      "version: 1\n",
+      'version: 1\nratifiedBy: Old Name\nratifiedOn: 2026-01-01\nowner: team\nmeaningConfirmed: true\n',
+    );
+    const result = applyRatifyFrontmatter(doc, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+      kind: "contract-change",
+      why: "total now includes tax",
+    });
+    expect(result.ok && result.content).toBe(
+      REVIEWED_DOC.replace("status: reviewed", "status: ready-to-implement").replace(
+        "version: 1\n",
+        'version: 1\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-28\ncontractChange: "total now includes tax"\nowner: team\n',
+      ),
+    );
+  });
+
+  it("keeps CRLF line endings for the inserted confirmation line", () => {
+    const crlf = REVIEWED_DOC.replace(/\n/g, "\r\n");
+    const result = applyRatifyFrontmatter(crlf, "draft-slice", "Alex Rivera", "2026-08-28", false, { kind: "meaning-unchanged" });
+    expect(result.ok && result.content).toContain("ratifiedOn: 2026-08-28\r\nmeaningConfirmed: true\r\nversion: 1\r\n");
+  });
+
+  it("is a no-op re-run with the same identity and the same flag", () => {
+    const first = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+      kind: "contract-change",
+      why: "total now includes tax",
+    });
+    if (!first.ok) throw new Error("expected ok");
+    const again = applyRatifyFrontmatter(first.content, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+      kind: "contract-change",
+      why: "total now includes tax",
+    });
+    expect(again).toEqual({ ok: true, content: first.content, changed: false, skippedReviewFrom: null });
+  });
+
+  it("adds a confirmation to an already-ratified doc on a same-identity re-run that lacked one", () => {
+    const first = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28");
+    if (!first.ok) throw new Error("expected ok");
+    const again = applyRatifyFrontmatter(first.content, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+      kind: "meaning-unchanged",
+    });
+    expect(again.ok && again.changed).toBe(true);
+    expect(again.ok && again.content).toBe(first.content.replace("ratifiedOn: 2026-08-28\n", "ratifiedOn: 2026-08-28\nmeaningConfirmed: true\n"));
+  });
+
+  it("refuses to overwrite a different recorded confirmation on a same-identity re-run — exact message", () => {
+    const first = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+      kind: "meaning-unchanged",
+    });
+    if (!first.ok) throw new Error("expected ok");
+    expect(
+      applyRatifyFrontmatter(first.content, "draft-slice", "Alex Rivera", "2026-08-28", false, {
+        kind: "contract-change",
+        why: "renamed total",
+      }),
+    ).toEqual({
+      ok: false,
+      message:
+        'already ratified by Alex Rivera on 2026-08-28 with meaningConfirmed: true — refusing to overwrite with contractChange: "renamed total"',
+    });
+  });
+});
+
+describe("runRatify — public-touching slices (MIL-238)", () => {
+  let dir: string;
+  const MODEL =
+    'slice "Place Order" {\n  command Place Order public { orderId: uuid } note "slices/place-order.md"\n  event Order Placed\n}\n' +
+    'slice "Audit" {\n  command Record Audit note "slices/audit.md"\n  event Audit Recorded\n}\n';
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-ratify-public-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "place-order.md"), REVIEWED_DOC);
+    writeFileSync(join(dir, "slices", "audit.md"), REVIEWED_DOC);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(key: string, confirmation: Parameters<typeof runRatify>[7] = null) {
+    const { model, refs } = compile(MODEL);
+    return runRatify(model, refs, dir, key, "Alex Rivera", "2026-08-28", false, confirmation);
+  }
+
+  it("refuses a public-touching slice without a confirmation — exact message, nothing written", () => {
+    expect(run("place-order")).toEqual({
+      ok: false,
+      message:
+        'slice "place-order" touches the public surface — pass --meaning-unchanged, or --contract-change "<why>" if a consumer must read this change differently',
+    });
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toBe(REVIEWED_DOC);
+  });
+
+  it("accepts --meaning-unchanged on it and records meaningConfirmed: true", () => {
+    expect(run("place-order", { kind: "meaning-unchanged" })).toMatchObject({ ok: true, changed: true });
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toContain("ratifiedOn: 2026-08-28\nmeaningConfirmed: true\n");
+  });
+
+  it("ratifies a non-public slice without a flag, and still records one when given (harmless)", () => {
+    expect(run("audit")).toMatchObject({ ok: true, changed: true });
+    expect(readFileSync(join(dir, "slices", "audit.md"), "utf8")).not.toContain("meaningConfirmed");
+    writeFileSync(join(dir, "slices", "audit.md"), REVIEWED_DOC);
+    expect(run("audit", { kind: "contract-change", why: "internal only" })).toMatchObject({ ok: true, changed: true });
+    expect(readFileSync(join(dir, "slices", "audit.md"), "utf8")).toContain('contractChange: "internal only"\n');
   });
 });

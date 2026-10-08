@@ -10,7 +10,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { validateSliceReady } from "../src/catalog/sliceReadyValidate.js";
+import { validateSliceReady, computeSliceReadyGates } from "../src/catalog/sliceReadyValidate.js";
+import { generateContract } from "../src/cli/api.js";
 
 let dir: string;
 beforeAll(() => {
@@ -27,8 +28,8 @@ function writeDoc(sliceKey: string, extraFrontmatter: string, body = "body\n"): 
 }
 
 function readyDiagsOf(src: string, sliceKey: string) {
-  const { model, refs } = compile(src);
-  return validateSliceReady(model, refs, dir, sliceKey);
+  const { model, refs, diagnostics } = compile(src);
+  return validateSliceReady(model, refs, dir, sliceKey, { file: join(dir, "model.em"), source: src, diagnostics });
 }
 
 describe("slice-ready-unknown-slice", () => {
@@ -235,5 +236,93 @@ describe("slice-ready-not-ratified (MIL-259)", () => {
       "draft-unsigned",
     );
     expect(diags.map((d) => d.code)).toEqual(["slice-ready-status-not-ready"]);
+  });
+});
+
+// MIL-238 — the API-first gate. Each case gets its own model directory so one case's contract
+// file never satisfies another's.
+describe("slice-ready-contract-stale (MIL-238)", () => {
+  const PUBLIC_SRC =
+    `model "Shop"\n` +
+    `slice "Place Order" {\n  command Place Order public { orderId: uuid } note "slices/place-order.md"\n  event Order Placed public { orderId: uuid, total: decimal }\n}\n` +
+    `slice "Audit" {\n  command Record Audit { note: free text } note "slices/audit.md"\n  event Audit Recorded\n}\n`;
+  const READY = "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n";
+
+  function modelDir(name: string): string {
+    const d = join(dir, name);
+    mkdirSync(join(d, "slices"), { recursive: true });
+    for (const key of ["place-order", "audit"]) {
+      writeFileSync(join(d, "slices", `${key}.md`), `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\n${READY}---\nbody\n`);
+    }
+    return d;
+  }
+
+  function check(d: string, src: string, key: string) {
+    const compiled = compile(src);
+    const input = { file: join(d, "shop.em"), source: src, diagnostics: compiled.diagnostics };
+    return {
+      diags: validateSliceReady(compiled.model, compiled.refs, d, key, input),
+      gates: computeSliceReadyGates(compiled.model, compiled.refs, d, key, input)!.gates,
+    };
+  }
+
+  function writeContract(d: string, src: string): string {
+    const compiled = compile(src);
+    const generated = generateContract(join(d, "shop.em"), src, compiled);
+    mkdirSync(join(d, "contracts"), { recursive: true });
+    writeFileSync(generated.contractPath, generated.text);
+    return generated.contractPath;
+  }
+
+  it("errors with the exact message when a public-touching slice's contract is missing", () => {
+    const d = modelDir("contract-missing");
+    const { diags, gates } = check(d, PUBLIC_SRC, "place-order");
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        code: "slice-ready-contract-stale",
+        message: `slice "place-order" touches the public surface but the contract ${join(d, "contracts", "shop.tsp")} is missing — run: em api generate ${join(d, "shop.em")}`,
+        refs: ["place-order"],
+      }),
+    ]);
+    expect(gates.contractCurrent).toBe(false);
+  });
+
+  it("passes once the contract is generated, and reports stale (exact message) after a public-surface edit", () => {
+    const d = modelDir("contract-stale");
+    writeContract(d, PUBLIC_SRC);
+    expect(check(d, PUBLIC_SRC, "place-order")).toEqual({
+      diags: [],
+      gates: { docBound: true, frontmatterUsable: true, statusReady: true, noUncheckedOpenQuestions: true, ratified: true, contractCurrent: true },
+    });
+    const edited = PUBLIC_SRC.replace("total: decimal", "total: decimal, currency: string");
+    const { diags, gates } = check(d, edited, "place-order");
+    expect(diags.map((x) => x.message)).toEqual([
+      `slice "place-order" touches the public surface but the contract ${join(d, "contracts", "shop.tsp")} is stale — run: em api generate ${join(d, "shop.em")}`,
+    ]);
+    expect(gates.contractCurrent).toBe(false);
+  });
+
+  it("an internal-only edit keeps the contract current (no source hash, R12)", () => {
+    const d = modelDir("contract-internal-edit");
+    writeContract(d, PUBLIC_SRC);
+    const edited = PUBLIC_SRC.replace("note: free text", "note: free text, actor: who did it");
+    expect(check(d, edited, "place-order").diags).toEqual([]);
+  });
+
+  it("leaves a slice with no public element alone, even with no contract at all", () => {
+    const d = modelDir("contract-non-public");
+    const { diags, gates } = check(d, PUBLIC_SRC, "audit");
+    expect(diags).toEqual([]);
+    expect(gates.contractCurrent).toBe(true);
+  });
+
+  it("is reported alongside the doc findings, even when the doc is not ready", () => {
+    const d = modelDir("contract-with-doc-findings");
+    writeFileSync(join(d, "slices", "place-order.md"), "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n");
+    const { diags, gates } = check(d, PUBLIC_SRC, "place-order");
+    expect(diags.map((x) => x.code)).toEqual(["slice-ready-status-not-ready", "slice-ready-contract-stale"]);
+    expect(gates.statusReady).toBe(false);
+    expect(gates.contractCurrent).toBe(false);
   });
 });

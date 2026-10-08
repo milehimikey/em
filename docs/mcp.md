@@ -120,8 +120,9 @@ that still returns a useful document when the model has errors.
 
 ### `slice_ready`
 
-Same document as `em validate <file> --slice-ready <sliceKey> --json`: the 5 named gates (doc
-bound, frontmatter usable, status `ready-to-implement`, recorded `ratifiedBy`, no unchecked Open Questions), the
+Same document as `em validate <file> --slice-ready <sliceKey> --json`: the 6 named gates (doc
+bound, frontmatter usable, status `ready-to-implement`, recorded `ratifiedBy`, no unchecked Open Questions,
+current contract for a public-touching slice — MIL-238), the
 overall `ready` boolean, and the diagnostics behind it. An unknown `sliceKey` is **not** a tool
 error here — it's represented in the document itself (`gates: null`, `ready: false`, a
 `slice-ready-unknown-slice` diagnostic), exactly like the CLI's own `--json` output.

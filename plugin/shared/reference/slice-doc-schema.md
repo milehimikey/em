@@ -68,6 +68,8 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `reviewedOn` | string | `YYYY-MM-DD` | written only by `em slice review` (MIL-201); joined into `em export`'s `slice.doc.reviewedOn` (schema `1.11`) |
 | `ratifiedBy` | string | free text (typically a person's name) | written only by `em slice ratify` (MIL-165 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name)); joined into `em export`'s `slice.doc.ratifiedBy` (schema `1.8`) and `em slice index`'s Ratified by column |
 | `ratifiedOn` | string | `YYYY-MM-DD` | written only by `em slice ratify` (MIL-165); joined into `em export`'s `slice.doc.ratifiedOn` (schema `1.8`) |
+| `meaningConfirmed` | boolean | `true` | written only by `em slice ratify`/`reratify --meaning-unchanged` (MIL-238 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name)): the API-first sign-off on a public-touching slice — this version does not change what the public contract means. Joined into `em export`'s `slice.doc.meaningConfirmed` (schema `1.15`; `false` when absent) |
+| `contractChange` | string | quoted free text (`contractChange: "<why>"`) | written only by `em slice ratify`/`reratify --contract-change "<why>"` (MIL-238): the API-first sign-off on a public-touching slice — why a consumer must read this change differently. Joined into `em export`'s `slice.doc.contractChange` (schema `1.15`, quotes stripped; `null` when absent) |
 | `owner` | string | free text (typically a person or team name) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.owner` (schema `1.9`, MIL-171), `em slice index`'s Owner column, and `em status`'s per-slice `owners[]` |
 | `tracking` | string | free text (typically an external ticket/issue URL) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.tracking` (schema `1.9`, MIL-171) and `em slice index`'s Tracking column. This is the exact field `em-tracker-bridge` reads to find the ticket mirroring this slice — `em` only stores and displays it, it never talks to a tracker itself |
 | `conformedVersion` | integer | positive integer | written only by `em slice conform` (MIL-214 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-conform-file-slice-key---at-rev)): this slice's `version:` at the time a conform sweep last certified it. Joined into `em export`'s `slice.doc.conformedVersion` (schema `1.13`); paired with `version` to compute `slice.doc.driftSignal`'s `"uncertified"` case |
@@ -92,6 +94,7 @@ convention, not parser-enforced.
 | `covers` | optional in every state — present only on a doc that deliberately also serves another slice (MIL-121, see below); most docs never carry it |
 | `reviewedBy`, `reviewedOn` | optional in every state — present once `em slice review` (MIL-201) has run at least once; a doc that never went through the review gate, or was hand-flipped to `reviewed`, simply omits both. `em slice ratify` never clears them; `em slice reratify` does (they describe the version that shipped) |
 | `ratifiedBy`, `ratifiedOn` | optional in every state, but `ready-to-implement` needs `ratifiedBy` to pass `em validate --slice-ready` (`slice-ready-not-ratified`, MIL-259) — present once `em slice ratify` (MIL-165) has run; `em slice reratify` clears both. `em upgrade` (`ratified-signoff`, 1.14) grandfathers a `version: 1` `ready-to-implement` doc that never had one by writing `ratifiedBy: "grandfathered (unsigned before em 1.14)"` and `ratifiedOn:` the upgrade date |
+| `meaningConfirmed`, `contractChange` | optional in every state, at most one present — written right after `ratifiedOn:` by `em slice ratify` and right after `version:` by `em slice reratify` (MIL-238). On a **public-touching** slice (one owning a `public` command, event or view) both commands refuse without `--meaning-unchanged` or `--contract-change "<why>"`, so a doc ratified on 1.14+ carries one; elsewhere either is optional. `em slice reratify` clears both before writing its own (they describe the prior version, same as `reviewedBy`/`ratifiedBy`). `em status` counts public-touching `ready-to-implement`/`implemented` docs with neither (`publicSlicesUnconfirmed`) |
 | `owner`, `tracking` | optional in every state — hand-filled whenever a team wants a who-holds-this / external-tracker link; most docs never carry either (MIL-171) |
 | `conformedVersion`, `conformedAt`, `conformedOn` | optional in every state — present once `em slice conform` (MIL-214) has run at least once for the CURRENT version; a doc that's never been through a conform sweep, or whose `version` has since bumped past what was certified, simply has none of the three (or a stale triple — see `driftSignal`'s `uncertified` case below) |
 
@@ -120,9 +123,9 @@ because it's the same frontmatter dialect. The doc stays the single source of tr
 `status`; a stub is just the cheapest possible way to give a slice one before anyone's ready to
 write the real spec.
 
-**A stub CAN pass `em validate --slice-ready`.** That gate checks five things (`computeSliceReadyGates`,
+**A stub CAN pass `em validate --slice-ready`.** That gate checks six things (`computeSliceReadyGates`,
 [validation.md#slice-readiness](https://github.com/milehimikey/em/blob/main/docs/validation.md#slice-readiness)): a doc is bound, its frontmatter
-is usable, `status` is `ready-to-implement`, it carries a `ratifiedBy` (MIL-259), and its Open Questions count has none unchecked. A
+is usable, `status` is `ready-to-implement`, it carries a `ratifiedBy` (MIL-259), its Open Questions count has none unchecked, and — for a slice owning a `public` element — the model's contract is current (MIL-238; nothing in the doc). A
 stub with no `## Open Questions` section at all has `openQuestionsTotal: 0` (see
 [Open Questions section: lifecycle](#open-questions-section-lifecycle) below) — zero unchecked is
 vacuously true — so a stub escalated to `ready-to-implement` (`em slice stub-all --status
@@ -428,7 +431,7 @@ frontmatter-coherence check (MIL-85) deliberately never flags this combination �
 
 **An unshipped version has nothing to flip back** (MIL-258). A ratified doc that has not shipped
 yet (`status: ready-to-implement` with `ratifiedBy:` set) changes the same way: `em slice
-reratify` bumps `version:` and clears `ratifiedBy`/`ratifiedOn`/`reviewedBy`/`reviewedOn`, but
+reratify` bumps `version:` and clears `ratifiedBy`/`ratifiedOn`/`reviewedBy`/`reviewedOn` (and `meaningConfirmed`/`contractChange`, MIL-238), but
 leaves `status` at `ready-to-implement` (and any `implementedIn` as it was — an absent one stays
 absent). This is the path for an answered gap mid-build. In both cases the new version is not
 ratified until `em slice ratify --by <name>` records the sign-off. A `ready-to-implement` doc with

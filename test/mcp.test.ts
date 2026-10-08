@@ -389,6 +389,7 @@ describe("slice_ready tool", () => {
       statusReady: true,
       noUncheckedOpenQuestions: true,
       ratified: true,
+      contractCurrent: true,
     });
     expect(doc.ready).toBe(true);
     expect(doc.diagnostics).toEqual([]);
@@ -401,6 +402,52 @@ describe("slice_ready tool", () => {
     expect(doc.ready).toBe(false);
     expect(doc.diagnostics.length).toBeGreaterThan(0);
     expect(doc.diagnostics[0].code).toBe("slice-ready-unknown-slice");
+  });
+});
+
+// MIL-238: the API-first gate rides the same validateSliceReady/computeSliceReadyGates calls in
+// both surfaces — byte-identical `--slice-ready --json` before and after `em api generate`, and
+// `em status --json` with `publicSlicesUnconfirmed`.
+describe("API-first gate parity (MIL-238)", () => {
+  let apiDir: string;
+  const MODEL =
+    'model "Shop"\nslice "Place Order" {\n  ui Checkout @Customer\n  command Place Order public { orderId: uuid } note "slices/place-order.md"\n  event Order Placed\n}\n';
+  beforeAll(() => {
+    apiDir = mkdtempSync(join(tmpdir(), "em-mcp-api-first-"));
+    mkdirSync(join(apiDir, "slices"), { recursive: true });
+    writeFileSync(join(apiDir, "shop.em"), MODEL);
+    writeFileSync(
+      join(apiDir, "slices", "place-order.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n---\nbody\n",
+    );
+  });
+  afterAll(() => rmSync(apiDir, { recursive: true, force: true }));
+
+  it("slice_ready is byte-identical to the CLI with the contract missing, then current", async () => {
+    const file = join(apiDir, "shop.em");
+    const before = await callJson(client, "slice_ready", { file, sliceKey: "place-order" });
+    expect(before.doc.ready).toBe(false);
+    expect(before.doc.gates.contractCurrent).toBe(false);
+    expect(before.doc.diagnostics.map((d: { code: string }) => d.code)).toContain("slice-ready-contract-stale");
+    const cliBefore = em(["validate", file, "--slice-ready", "place-order", "--json"], apiDir);
+    expect(cliBefore.status).toBe(1);
+    expect(cliBefore.stdout).toBe((before.result.content[0] as { text: string }).text + "\n");
+
+    expect(em(["api", "generate", file], apiDir).status).toBe(0);
+    const after = await callJson(client, "slice_ready", { file, sliceKey: "place-order" });
+    expect(after.doc.gates.contractCurrent).toBe(true);
+    expect(after.doc.diagnostics.map((d: { code: string }) => d.code)).not.toContain("slice-ready-contract-stale");
+    const cliAfter = em(["validate", file, "--slice-ready", "place-order", "--json"], apiDir);
+    expect(cliAfter.stdout).toBe((after.result.content[0] as { text: string }).text + "\n");
+  });
+
+  it("status counts the unconfirmed public-touching slice, byte-identical to the CLI", async () => {
+    const file = join(apiDir, "shop.em");
+    const { result, doc } = await callJson(client, "status", { files: [file] });
+    expect(doc.publicSlicesUnconfirmed).toBe(1);
+    const cli = em(["status", file, "--json"], apiDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe((result.content[0] as { text: string }).text + "\n");
   });
 });
 

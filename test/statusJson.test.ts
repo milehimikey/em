@@ -42,6 +42,7 @@ function sampleReport(): StatusReport {
     diagnostics: [{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3 }],
     owners: [{ file: "model.em", key: "checkout", owner: "Alex Rivera" }, { file: "model.em", key: "billing", owner: null }],
     system: { manifest: "system.yaml", consumerNotAdapted: 2 },
+    publicSlicesUnconfirmed: 2,
   };
 }
 
@@ -69,6 +70,10 @@ describe("buildStatusJson", () => {
     // MIL-239: the system block carried verbatim (null when no manifest was found).
     expect(doc.system).toEqual({ manifest: "system.yaml", consumerNotAdapted: 2 });
     expect(JSON.parse(buildStatusJson({ ...report, system: null })).system).toBeNull();
+    // MIL-238: publicSlicesUnconfirmed carried verbatim, placed after owners, before diagnostics.
+    expect(doc.publicSlicesUnconfirmed).toBe(2);
+    const keys = Object.keys(doc);
+    expect(keys.indexOf("publicSlicesUnconfirmed")).toBe(keys.indexOf("diagnostics") - 1);
     expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
   });
 

@@ -59,6 +59,13 @@
 // certification was recorded. All three additive, tolerate-unknown-fields: absent on every doc
 // predating this feature, or one never yet conformed. See catalog/driftSignal.ts's `uncertified`
 // classification, which compares `conformedVersion` against `version`.
+//
+// `meaningConfirmed`/`contractChange` (MIL-238) are a twelfth and thirteenth optional
+// frontmatter-only field: the API-first sign-off on a public-touching slice, written only by
+// `em slice ratify`/`em slice reratify` (`--meaning-unchanged` -> `meaningConfirmed: true`,
+// `--contract-change "<why>"` -> `contractChange: "<why>"`). Additive, tolerate-unknown-fields:
+// absent on every doc predating this feature, and on every non-public slice ratified without
+// either flag.
 
 import { marked } from "marked";
 
@@ -159,6 +166,14 @@ export interface SliceDoc {
    *  `em slice conform`; validated by the CLI layer, not re-validated here (this parser stays as
    *  lenient about value shape as every other frontmatter field). */
   conformedOn: string | null;
+  /** MIL-238: `meaningConfirmed: true` — the ratifier asserted the public contract's meaning is
+   *  unchanged for this version (`--meaning-unchanged`). False when absent or any other value.
+   *  Written only by `em slice ratify`/`reratify`. */
+  meaningConfirmed: boolean;
+  /** MIL-238: `contractChange:` — the ratifier's reason a consumer must read this version's
+   *  contract differently (`--contract-change "<why>"`), surrounding quotes stripped; null when
+   *  absent. Written only by `em slice ratify`/`reratify`. */
+  contractChange: string | null;
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -344,6 +359,8 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     conformedVersion: parseVersion(fields.get("conformedversion")),
     conformedAt: fields.get("conformedat") ?? null,
     conformedOn: fields.get("conformedon") ?? null,
+    meaningConfirmed: fields.get("meaningconfirmed")?.toLowerCase() === "true",
+    contractChange: fields.get("contractchange") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,
