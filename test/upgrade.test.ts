@@ -8,7 +8,7 @@
 // test/cli.test.ts; this file exercises the orchestration functions directly. Neutral domain
 // throughout (orders/catalog), per the engagement's non-negotiables.
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -824,5 +824,154 @@ describe("system-manifest step", () => {
     expect(step(ctx).apply(ctx)).toMatchObject({ ok: true });
     expect(readFileSync(repo.fulfillment, "utf8")).toContain("translation Order Intake consumes checkout:event.order-submitted");
     expect(readFileSync(repo.checkout, "utf8").split("\n")[0]).toBe('model "Checkout" owner "@shop/storefront"');
+  });
+});
+
+// MIL-232 (R14): vendored bundle -> pinned em plugin, one commit.
+describe("skill-plugin step", () => {
+  const SETTINGS_BEFORE = `{\n  "permissions": { "allow": ["Bash(git status)"] },\n  "model": "opus"\n}\n`;
+  const SETTINGS_AFTER = `{
+  "permissions": {
+    "allow": [
+      "Bash(git status)"
+    ]
+  },
+  "model": "opus",
+  "extraKnownMarketplaces": {
+    "em-1-13-0": {
+      "source": {
+        "source": "github",
+        "repo": "milehimikey/em",
+        "ref": "v1.13.0"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "em@em-1-13-0": true
+  }
+}
+`;
+
+  function vendoredRepo(withSettings = true): { dir: string; packagedSkillsRoot: string } {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ vendoredSkillStamp: INSTALLED_VERSION });
+    for (const d of BUNDLE_DIR_NAMES) {
+      mkdirSync(join(dir, ".claude", "skills", d), { recursive: true });
+      writeFileSync(join(dir, ".claude", "skills", d, "x.md"), "vendored\n");
+    }
+    mkdirSync(join(dir, ".claude", "skills", "my-own-skill"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "skills", "my-own-skill", "SKILL.md"), "mine\n");
+    if (withSettings) writeFileSync(join(dir, ".claude", "settings.json"), SETTINGS_BEFORE);
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "vendor bundle");
+    return { dir, packagedSkillsRoot };
+  }
+
+  const step = UPGRADE_STEPS.find((s) => s.id === "skill-plugin")!;
+
+  it("sits after skill-bundle and before reaction-shape", () => {
+    const ids = UPGRADE_STEPS.map((s) => s.id);
+    expect(ids.indexOf("skill-plugin")).toBe(ids.indexOf("skill-bundle") + 1);
+    expect(ids.indexOf("skill-plugin")).toBeLessThan(ids.indexOf("reaction-shape"));
+    expect(step.sinceVersion).toBe("1.14.0");
+  });
+
+  it("dry-run lists the directories, the settings entries, the AGENTS.md refresh, and the human install item", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    const report = detectUpgrade(makeCtx(dir, packagedSkillsRoot));
+    const s = report.steps.find((x) => x.id === "skill-plugin")!;
+    expect(s.applicable).toBe(true);
+    for (const d of BUNDLE_DIR_NAMES) expect(s.reason).toContain(`.claude/skills/${d}`);
+    expect(s.reason).toContain('extraKnownMarketplaces["em-1-13-0"]');
+    expect(s.reason).toContain('enabledPlugins["em@em-1-13-0"]');
+    expect(s.reason).toContain("AGENTS.md");
+    const h = report.human.find((x) => x.id === "plugin-install-locally")!;
+    expect(h.reason).toContain("claude plugin marketplace add milehimikey/em@v1.13.0 --scope project");
+    expect(h.reason).toContain("claude plugin install em@em-1-13-0 --scope project");
+    // dry-run wrote nothing
+    expect(spawnSync("git", ["-C", dir, "status", "--porcelain"], { encoding: "utf8" }).stdout).toBe("");
+  });
+
+  it("--apply makes exactly one skill-plugin commit with the trailer, merges settings, spares siblings, refreshes AGENTS.md", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    const out = spawnSync("git", ["-C", dir, "log", "--format=%s%x1f%(trailers:key=Em-Upgrade,valueonly)%x1e"], { encoding: "utf8" }).stdout;
+    const rows = out.split("\x1e").map((r) => r.trim()).filter(Boolean).map((r) => r.split("\x1f").map((x) => x.trim()));
+    expect(rows.filter((r) => r[1] === "skill-plugin")).toHaveLength(1);
+    for (const d of BUNDLE_DIR_NAMES) expect(existsSync(join(dir, ".claude", "skills", d))).toBe(false);
+    expect(readFileSync(join(dir, ".claude", "skills", "my-own-skill", "SKILL.md"), "utf8")).toBe("mine\n");
+    expect(readFileSync(join(dir, ".claude", "settings.json"), "utf8")).toBe(SETTINGS_AFTER);
+    const agents = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    for (const n of ["/em:event-modeling", "/em:discover", "/em:design", "/em:implement", "/em:conform", "/em:review"]) expect(agents).toContain(n);
+    expect(agents).toContain("claude plugin marketplace add milehimikey/em@v<version> --scope project");
+    expect(isWorkingTreeClean(dir)).toBe(true);
+    const applied = result.ok ? result.applied : [];
+    expect(applied.find((a) => a.id === "skill-plugin")!.changedFiles).toContain(join(".claude", "settings.json"));
+  });
+
+  it("creates settings.json when absent", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo(false);
+    expect(applyUpgrade(makeCtx(dir, packagedSkillsRoot)).ok).toBe(true);
+    const parsed = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
+    expect(parsed.enabledPlugins).toEqual({ "em@em-1-13-0": true });
+  });
+
+  it("a second run is not applicable and makes no commit", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    const before = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout;
+    const again = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(again.ok).toBe(true);
+    expect(spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout).toBe(before);
+    const rep = detectUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(rep.steps.find((x) => x.id === "skill-plugin")!.applicable).toBe(false);
+    expect(rep.steps.find((x) => x.id === "skill-bundle")!.reason).toBe("plugin repo — the vendored bundle is gone; nothing to sync");
+  });
+
+  it("is not applicable when the plugin is already declared, or no bundle is vendored", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    writeFileSync(
+      join(dir, ".claude", "settings.json"),
+      JSON.stringify({ extraKnownMarketplaces: { "em-1-12-0": { source: { source: "github", repo: "milehimikey/em", ref: "v1.12.0" } } } }),
+    );
+    expect(step.detect(makeCtx(dir, packagedSkillsRoot)).applicable).toBe(false);
+    const bare = makeFixtureRepo();
+    expect(step.detect(makeCtx(bare.dir, bare.packagedSkillsRoot)).applicable).toBe(false);
+  });
+
+  it("refuses to touch an unparseable settings.json (nothing deleted)", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    writeFileSync(join(dir, ".claude", "settings.json"), "{ not json");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "broken settings");
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    expect(step.detect(ctx).applicable).toBe(false);
+    expect(step.apply(ctx).ok).toBe(false);
+    expect(existsSync(join(dir, ".claude", "skills", "event-modeling"))).toBe(true);
+  });
+
+  it("refuses a dirty tree", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    writeFileSync(join(dir, "stray.txt"), "x");
+    const r = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(r.ok).toBe(false);
+    expect(existsSync(join(dir, ".claude", "skills", "event-modeling"))).toBe(true);
+  });
+
+  it("plugin-install-locally fires for a declared plugin missing from the machine registry, and clears when registered", () => {
+    const { dir, packagedSkillsRoot } = vendoredRepo();
+    applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    const plugins = mkdtempSync(join(tmpdir(), "em-upgrade-plugins-"));
+    tmpDirs.push(plugins);
+    const prev = process.env.EM_CLAUDE_PLUGINS_DIR;
+    process.env.EM_CLAUDE_PLUGINS_DIR = plugins;
+    try {
+      expect(detectUpgrade(makeCtx(dir, packagedSkillsRoot)).human.some((h) => h.id === "plugin-install-locally")).toBe(true);
+      writeFileSync(join(plugins, "known_marketplaces.json"), JSON.stringify({ "em-1-13-0": { source: { source: "github", repo: "milehimikey/em", ref: "v1.13.0" } } }));
+      expect(detectUpgrade(makeCtx(dir, packagedSkillsRoot)).human.some((h) => h.id === "plugin-install-locally")).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.EM_CLAUDE_PLUGINS_DIR;
+      else process.env.EM_CLAUDE_PLUGINS_DIR = prev;
+    }
   });
 });

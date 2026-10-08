@@ -394,7 +394,7 @@ describe("em upgrade skill-bundle step on a plugin repo (MIL-231)", () => {
       const step = UPGRADE_STEPS.find((x) => x.id === "skill-bundle")!;
       expect(step.detect({ repoRoot, packagedSkillsRoot: repoRoot } as UpgradeContext)).toEqual({
         applicable: false,
-        reason: "plugin repo — nothing to sync",
+        reason: "plugin repo — the vendored bundle is gone; nothing to sync",
       });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });

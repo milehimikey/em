@@ -4013,14 +4013,26 @@ from whatever evidence is on disk (an old two-slice reaction shape, the vendored
 own `em-version:` stamp, or the presence of MIL-218's `Model version:`/`Certified:` bullets),
 with the inference always stated in the output; `to` = the installed `em`.
 
-The five mechanical steps, in this fixed order:
+The mechanical steps, in this fixed order:
 
 1. **`skill-bundle`** — delegates to `em skill sync`'s own plan/apply: refreshes the vendored
    `.claude/skills/` bundle. Not applicable when no bundle is vendored at all (`em upgrade` never
    installs one that wasn't there).
-2. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
+2. **`skill-plugin`** (1.14.0, MIL-232) — migrates a vendored bundle to the pinned [em
+   plugin](ai-workflow.md#the-plugin-route) in ONE commit: removes the seven bundle directories
+   (`event-modeling`, `-discover`, `-design`, `-implement`, `-conform`, `-review`, `-shared`) under
+   `.claude/skills/` and nothing else (a sibling skill is never touched); JSON-merges
+   `extraKnownMarketplaces["em-<ver-dashed>"].source = {source: "github", repo: "milehimikey/em", ref: "v<ver>"}`
+   and `enabledPlugins["em@em-<ver-dashed>"] = true` into `.claude/settings.json` (created if absent,
+   other keys kept, 2-space JSON), with `<ver>` the installed em; and refreshes the `AGENTS.md`
+   managed section so it names `/em:event-modeling`, `/em:discover`, `/em:design`, `/em:implement`,
+   `/em:conform`, `/em:review`. Applicable only when `.claude/skills/event-modeling` exists and no
+   plugin is declared; an unparseable `settings.json` is left alone. It sits after `skill-bundle`,
+   which is not applicable once the plugin is declared. The machine-level registration cannot be
+   done by `em upgrade`: see the `plugin-install-locally` human item below.
+3. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
    pre-1.7.1 two-slice Automation/Translation shape into the merged single-slice shape.
-3. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same
+4. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same
    generator `em scaffold` uses, so it parses and carries `Em version:` = the installed em,
    `Model version: none`, `Certified: never`; honest initial values: `Current phase: discover`,
    `Current step: 1`, `Last conformance: never`, `Last stakeholder review: never` — edit them with
@@ -4031,11 +4043,11 @@ The five mechanical steps, in this fixed order:
    (em can't guess `Current step:` etc.): it is a hard incompatibility, and this step's checklist
    line shows the specific reason. `Em version:` itself is NOT this step's job for an existing
    file — see below.
-4. **`ci-block`** — refreshes the `GENERATED:em-ci`/`GENERATED:em-conform` blocks via `em ci
+5. **`ci-block`** — refreshes the `GENERATED:em-ci`/`GENERATED:em-conform` blocks via `em ci
    init`'s own plan/apply, reusing whatever `<model>`/`--tests` arguments the existing
    `em-ci.yml` was generated with. Only touches a file that already carries the markers — never
    creates a workflow the repo didn't ask for.
-5. **`constitution`** — scaffolds `constitution.md` (MIL-202, draft, unratified) when it's absent
+6. **`constitution`** — scaffolds `constitution.md` (MIL-202, draft, unratified) when it's absent
    and the repo has no `.specify/` directory. When `.specify/` exists instead, that's a human
    item, not mechanical (spec-kit owns the slot).
 
@@ -4063,6 +4075,7 @@ The human list — detect-only, never applied, printed by every mode:
 | `coverage-scope-default` | `em-ci.yml` runs `em coverage --strict` and no doc is `implemented` yet (MIL-207 scopes `--strict` to `implemented` docs only — the gate is trivially green until then) |
 | `unratified-constitution` | `constitution.md` (or `.specify/memory/constitution.md`) exists with an empty `ratifiedBy:` |
 | `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
+| `plugin-install-locally` | The `skill-plugin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
 
 `--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a
 hard incompatibility — a state file that exists but is unparseable (e.g. missing required

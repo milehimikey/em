@@ -29,6 +29,8 @@ describe("syncAgentsMd", () => {
       expect(content).toContain("em export <model>.em --slice <slice-key>");
       expect(content).toContain("em export <model>.em | jq -r '.model.slices[].key'");
       expect(content).toContain("em-mcp");
+      for (const n of ["/em:event-modeling", "/em:discover", "/em:design", "/em:implement", "/em:conform", "/em:review"]) expect(content).toContain(n);
+      expect(content).toContain("claude plugin install em@em-");
       expect(content).toContain("https://github.com/milehimikey/em/blob/main/docs/mcp.md");
     } finally {
       rmSync(dir, { recursive: true, force: true });

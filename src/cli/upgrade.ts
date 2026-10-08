@@ -22,7 +22,7 @@
 // repository — same requirement `em conform-scope` holds, for the same reason (there is no
 // "changed since when" or "commit per step" without one).
 
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES } from "../model/model.js";
 import { findUnresolvedPublicFieldTypes } from "../model/validate.js";
@@ -33,7 +33,8 @@ import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.j
 import { planMigration, verifyMigration, MigrationPlan } from "./migrateReactionShape.js";
 import { planSkillSyncBundle, applySkillSyncBundle } from "./skillSync.js";
 import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR } from "./skillDirs.js";
-import { detectPlugin } from "./pluginPin.js";
+import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, pluginInstallCommands, pluginSettingsEntries } from "./pluginPin.js";
+import { syncAgentsMd } from "./agentsMd.js";
 import {
   ciWorkflowPath,
   conformWorkflowPath,
@@ -86,7 +87,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -106,9 +107,10 @@ function vendoredSkillsRootOf(repoRoot: string): string {
 
 function detectSkillBundle(ctx: UpgradeContext): StepDetection {
   const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
+  // MIL-231/232: a repo that declares the plugin has no bundle to sync (any stray vendored copy is
+  // the `skill-plugin` step's business, not this one's).
+  if (detectPlugin(ctx.repoRoot)) return { applicable: false, reason: "plugin repo — the vendored bundle is gone; nothing to sync" };
   if (!existsSync(join(vendoredRoot, EM_SKILL_ANCHOR_DIR))) {
-    // MIL-231: the plugin signal beside the vendored one.
-    if (detectPlugin(ctx.repoRoot)) return { applicable: false, reason: "plugin repo — nothing to sync" };
     return { applicable: false, reason: "no vendored skill bundle installed at .claude/skills/ — run `em skill install` first if you want one" };
   }
   const bundlePlan = planSkillSyncBundle(ctx.packagedSkillsRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
@@ -124,6 +126,51 @@ function applySkillBundle(ctx: UpgradeContext): StepApplyOutcome {
   if (totalChanges === 0) return { ok: false, message: "nothing to sync" };
   applySkillSyncBundle(bundlePlan, ctx.packagedSkillsRoot, vendoredRoot);
   const changedFiles = bundlePlan.flatMap(({ dirName, plan }) => plan.changes.map((c) => join(".claude", "skills", dirName, c.relPath)));
+  return { ok: true, changedFiles };
+}
+
+// ---- Step 1b: skill-plugin (MIL-232, R14) — vendored bundle -> pinned em plugin, one commit. ----
+
+function detectSkillPlugin(ctx: UpgradeContext): StepDetection {
+  const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
+  if (!existsSync(join(vendoredRoot, EM_SKILL_ANCHOR_DIR))) {
+    return { applicable: false, reason: "no vendored skill bundle installed at .claude/skills/ — nothing to migrate to the plugin" };
+  }
+  if (detectPlugin(ctx.repoRoot)) return { applicable: false, reason: "plugin already declared in .claude/settings.json" };
+  const settingsPath = join(ctx.repoRoot, ".claude", "settings.json");
+  if (existsSync(settingsPath) && mergePluginSettings(readFileSync(settingsPath, "utf8"), ctx.installedVersion) === null) {
+    return { applicable: false, reason: ".claude/settings.json is not a JSON object — fix it by hand, then re-run em upgrade" };
+  }
+  const e = pluginSettingsEntries(ctx.installedVersion);
+  return {
+    applicable: true,
+    reason:
+      `vendored skill bundle → em plugin: remove ${EM_ALL_SKILL_BUNDLE_DIRS.map((d) => `.claude/skills/${d}`).join(", ")}; ` +
+      `add extraKnownMarketplaces["${e.name}"] (github ${e.marketplace.source.repo}@${e.marketplace.source.ref}) and enabledPlugins["${e.enabledKey}"] to .claude/settings.json; ` +
+      `refresh the AGENTS.md managed section with the /em:* skill names`,
+  };
+}
+
+function applySkillPlugin(ctx: UpgradeContext): StepApplyOutcome {
+  const settingsPath = join(ctx.repoRoot, ".claude", "settings.json");
+  const existing = existsSync(settingsPath) ? readFileSync(settingsPath, "utf8") : null;
+  // Verify before any write: an unparseable settings.json must not cost the user their skills.
+  const merged = mergePluginSettings(existing, ctx.installedVersion);
+  if (merged === null) return { ok: false, message: ".claude/settings.json is not a JSON object — nothing changed" };
+  const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
+  const changedFiles: string[] = [];
+  // Only the bundle's own directories; a sibling skill under .claude/skills/ is never touched.
+  for (const d of EM_ALL_SKILL_BUNDLE_DIRS) {
+    const target = join(vendoredRoot, d);
+    if (!existsSync(target)) continue;
+    rmSync(target, { recursive: true, force: true });
+    changedFiles.push(join(".claude", "skills", d));
+  }
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, merged);
+  changedFiles.push(join(".claude", "settings.json"));
+  const agents = syncAgentsMd(ctx.repoRoot);
+  if (agents.wrote) changedFiles.push("AGENTS.md");
   return { ok: true, changedFiles };
 }
 
@@ -511,6 +558,7 @@ function applySystemManifest(ctx: UpgradeContext): StepApplyOutcome {
 
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
+  { id: "skill-plugin", sinceVersion: "1.14.0", detect: detectSkillPlugin, apply: applySkillPlugin },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },
@@ -528,7 +576,8 @@ export type HumanItemId =
   | "coverage-scope-default"
   | "unratified-constitution"
   | "predates-1.6"
-  | "public-field-types-unresolved";
+  | "public-field-types-unresolved"
+  | "plugin-install-locally";
 
 export interface HumanItem {
   id: HumanItemId;
@@ -641,6 +690,22 @@ function detectPublicFieldTypesUnresolved(ctx: UpgradeContext): HumanItem | null
   };
 }
 
+/** MIL-232: the machine-level plugin registration is per user and cannot be done by `em upgrade`.
+ *  Fires when the `skill-plugin` step is pending (it will declare the plugin), or when the repo
+ *  declares the plugin at the installed version but the machine registry lacks it. */
+function detectPluginInstallLocally(ctx: UpgradeContext): HumanItem | null {
+  const commands = pluginInstallCommands(ctx.installedVersion);
+  const snippet = `run \`${commands.join(" && ")}\` on each developer machine and in CI (the generated em-ci.yml does it)`;
+  if (detectSkillPlugin(ctx).applicable) {
+    return { id: "plugin-install-locally", reason: `the em plugin will be declared in .claude/settings.json but is registered per machine — after --apply, ${snippet}` };
+  }
+  const check = checkPlugin(ctx.repoRoot, ctx.installedVersion, claudePluginsDir());
+  if (check && check.findings.some((f) => f.code === "plugin-not-installed-locally")) {
+    return { id: "plugin-install-locally", reason: `the em plugin is declared but not registered on this machine — ${snippet}` };
+  }
+  return null;
+}
+
 const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> = [
   detectNoModelVersion,
   detectContinuationHasOwnDoc,
@@ -649,6 +714,7 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectUnratifiedConstitution,
   detectPredates16,
   detectPublicFieldTypesUnresolved,
+  detectPluginInstallLocally,
 ];
 
 export function detectHumanItems(ctx: UpgradeContext): HumanItem[] {

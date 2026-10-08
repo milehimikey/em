@@ -34,6 +34,43 @@ export function pluginInstallCommands(version: string): string[] {
   ];
 }
 
+/** The `.claude/settings.json` entries that pin the plugin to `version` (MIL-232, R14). Pure. */
+export function pluginSettingsEntries(version: string): {
+  name: string;
+  marketplace: { source: { source: "github"; repo: string; ref: string } };
+  enabledKey: string;
+} {
+  const name = pluginMarketplaceName(version);
+  return {
+    name,
+    marketplace: { source: { source: "github", repo: PLUGIN_REPO, ref: `v${version}` } },
+    enabledKey: `${PLUGIN_NAME}@${name}`,
+  };
+}
+
+/**
+ * Merge the plugin pin for `version` into the text of a `.claude/settings.json` (`null` = file
+ * absent). Unknown keys and key order are preserved; output is 2-space JSON with a trailing newline.
+ * Returns `null` when the existing text is not a JSON object (the caller must not clobber it).
+ */
+export function mergePluginSettings(existing: string | null, version: string): string | null {
+  let settings: Record<string, unknown> = {};
+  if (existing !== null) {
+    try {
+      const v: unknown = JSON.parse(existing);
+      if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+      settings = v as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+  const e = pluginSettingsEntries(version);
+  const markets = { ...(obj(settings.extraKnownMarketplaces) ?? {}), [e.name]: e.marketplace };
+  const enabled = { ...(obj(settings.enabledPlugins) ?? {}), [e.enabledKey]: true };
+  const out: Record<string, unknown> = { ...settings, extraKnownMarketplaces: markets, enabledPlugins: enabled };
+  return JSON.stringify(out, null, 2) + "\n";
+}
+
 export interface PluginDeclaration {
   declared: true;
   /** The marketplace key, e.g. `em-1-14-0`. */

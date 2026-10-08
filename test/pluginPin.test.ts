@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands, pluginMarketplaceName } from "../src/cli/pluginPin.js";
+import { mergePluginSettings, pluginSettingsEntries, checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands, pluginMarketplaceName } from "../src/cli/pluginPin.js";
 
 const made: string[] = [];
 afterEach(() => {
@@ -139,5 +139,28 @@ describe("checkPlugin", () => {
   it("a wrong pin does not also report the registry (one root cause)", () => {
     const f = checkPlugin(repo(settings("em-1-13-1", "v1.13.1", false)), V, registry({}))!.findings;
     expect(f.map((x) => x.code)).toEqual(["plugin-pin-mismatch", "plugin-not-enabled"]);
+  });
+});
+
+describe("pluginSettingsEntries / mergePluginSettings (MIL-232)", () => {
+  it("pins the marketplace name and ref to the version", () => {
+    expect(pluginSettingsEntries("1.14.0")).toEqual({
+      name: "em-1-14-0",
+      marketplace: { source: { source: "github", repo: "milehimikey/em", ref: "v1.14.0" } },
+      enabledKey: "em@em-1-14-0",
+    });
+  });
+
+  it("creates, merges (keeping unknown keys, order and other plugins), is idempotent, and refuses non-objects", () => {
+    const fresh = mergePluginSettings(null, "1.14.0")!;
+    expect(fresh.endsWith("}\n")).toBe(true);
+    expect(JSON.parse(fresh).enabledPlugins).toEqual({ "em@em-1-14-0": true });
+    const existing = JSON.stringify({ z: 1, enabledPlugins: { "other@x": true }, a: 2 });
+    const merged = mergePluginSettings(existing, "1.14.0")!;
+    expect(Object.keys(JSON.parse(merged))).toEqual(["z", "enabledPlugins", "a", "extraKnownMarketplaces"]);
+    expect(JSON.parse(merged).enabledPlugins).toEqual({ "other@x": true, "em@em-1-14-0": true });
+    expect(mergePluginSettings(merged, "1.14.0")).toBe(merged);
+    expect(mergePluginSettings("[1]", "1.14.0")).toBeNull();
+    expect(mergePluginSettings("{nope", "1.14.0")).toBeNull();
   });
 });

@@ -68,8 +68,10 @@ em skill install     # copies the skill bundle into .claude/skills/
 
 then run `/event-modeling` (the vendored names are `event-modeling`, `event-modeling-discover`,
 `-design`, `-implement`, `-conform`, `-review`). `em skill sync` and `em skill check` keep working in
-1.14; a deprecation notice naming the plugin arrives with MIL-231, and `em upgrade` gains a
-vendored-to-plugin migration step in MIL-232. The rest of this page describes the skills by their
+1.14; `em skill install`/`sync` print a deprecation notice naming the plugin, and `em upgrade --apply`
+migrates a vendored repo in one commit (its `skill-plugin` step removes the seven vendored
+directories, pins the plugin in `.claude/settings.json`, and refreshes the `AGENTS.md` section);
+run the two install commands once per machine afterwards. The rest of this page describes the skills by their
 vendored names; under the plugin each `event-modeling-<phase>` is `em:<phase>` and `/event-modeling`
 is `/em:event-modeling`.
 

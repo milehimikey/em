@@ -20,18 +20,23 @@ Dry-run is the default: `em upgrade` reports what it would do and stops. `--appl
 cherry-pick each one individually:
 
 1. `skill-bundle` — refresh the vendored `.claude/skills/` bundle (same logic as `em skill
-   sync`).
-2. `reaction-shape` — rewrite a pre-1.7.1 two-slice Automation/Translation into the merged
+   sync`). Not applicable once the plugin is declared.
+2. `skill-plugin` — migrate a vendored bundle to the pinned em plugin in one commit (see
+   [1.14.0](#1140)): removes the seven bundle directories, writes the pinned
+   `extraKnownMarketplaces`/`enabledPlugins` entries into `.claude/settings.json`, and refreshes the
+   `AGENTS.md` managed section with the `/em:*` skill names. The per-machine registration is a
+   human item (`plugin-install-locally`).
+3. `reaction-shape` — rewrite a pre-1.7.1 two-slice Automation/Translation into the merged
    single-slice shape (same logic as `em migrate`).
-3. `state-file` — add any missing state-file bullets with their defaults, byte-for-byte
+4. `state-file` — add any missing state-file bullets with their defaults, byte-for-byte
    otherwise.
-4. `ci-block` — refresh the generated block in `.github/workflows/em-ci.yml`, only when
+5. `ci-block` — refresh the generated block in `.github/workflows/em-ci.yml`, only when
    that block already exists.
-5. `constitution` — scaffold `constitution.md` (draft, unratified) when it's absent and the
+6. `constitution` — scaffold `constitution.md` (draft, unratified) when it's absent and the
    repo has no `.specify/` directory.
-6. `ratified-signoff` — grandfather `ready-to-implement` docs that never recorded a sign-off (see
+7. `ratified-signoff` — grandfather `ready-to-implement` docs that never recorded a sign-off (see
    [1.14.0](#1140)).
-7. `system-manifest` — migrate the nearest `system.yaml` (found by walking up from the model to
+8. `system-manifest` — migrate the nearest `system.yaml` (found by walking up from the model to
    the repository root) from schema 1.0 to 2.0. Each 1.0 seam becomes a
    `consumes <model>:<kind>.<slug>` clause on the consuming translation, and each model's
    `owner:` becomes `owner "…"` on that model's header. The seam's `description` is kept as a
@@ -47,7 +52,7 @@ identity configured (`git config user.name`/`user.email` — needed before `git 
 work at all), and stops at the first failing step with the prior steps' commits intact. Once
 every applicable step has
 run, `--apply` writes the final `Em version: <to>` bullet to the state file as its own last
-commit — that write happens every run, independent of which of the seven steps applied.
+commit — that write happens every run, independent of which of the eight steps applied.
 
 Every `--apply` commit carries an `Em-Upgrade:` trailer naming its step, in a paragraph of its
 own after the subject. The final stamp commit uses `Em-Upgrade: em-version`:
@@ -96,6 +101,11 @@ detects and reports them:
 - **repo predates 1.6** — the `reaction-shape` detector recognizes an old two-slice shape
   but can't cleanly auto-migrate it: run `em migrate` by hand first, then re-run `em
   upgrade`.
+- **plugin install locally** (`plugin-install-locally`) — the em plugin is (or is about to be)
+  declared in `.claude/settings.json` but not registered on this machine. `em upgrade` cannot do the
+  per-user registration; run `claude plugin marketplace add milehimikey/em@v<ver> --scope project`
+  then `claude plugin install em@em-<ver-dashed> --scope project`, on each developer machine and in
+  CI (the generated workflow does it).
 - **public field types unresolved** (`public-field-types-unresolved`) — fields of `public`
   elements (or of declared types they reach) whose type is outside the strict public type
   table, listed as `<element>.<field>: <type>`: pick a table type or a declared `type`, or drop
@@ -242,7 +252,7 @@ Strict seams, API first.
 
 | What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
-| The skill bundle ships as the `em` Claude Code plugin (`/em:event-modeling`, `/em:discover`, `/em:design`, `/em:implement`, `/em:conform`, `/em:review`), pinned per release by a version-named marketplace (`em-1-14-0`) with the em MCP server bundled (MIL-230). The vendored `em skill install` route is deprecated in 1.14 and removed in a later major (the deprecation notice itself lands with MIL-231) | human: run the two install commands in [ai-workflow.md](ai-workflow.md#the-plugin-route) once per machine; the automated vendored-to-plugin migration is a later `em upgrade` step (MIL-232) |
+| The skill bundle ships as the `em` Claude Code plugin (`/em:event-modeling`, `/em:discover`, `/em:design`, `/em:implement`, `/em:conform`, `/em:review`), pinned per release by a version-named marketplace (`em-1-14-0`) with the em MCP server bundled (MIL-230). The vendored `em skill install` route is deprecated in 1.14 and removed in a later major (the deprecation notice itself lands with MIL-231) | `skill-plugin` (MIL-232) — vendored bundle → plugin: removes the seven bundle directories, pins the plugin in `.claude/settings.json`, refreshes the `AGENTS.md` section, one commit. human (`plugin-install-locally`): run the two install commands in [ai-workflow.md](ai-workflow.md#the-plugin-route) once per machine and in CI |
 | **Behavior change:** `--slice-ready` requires a recorded ratification: a `ready-to-implement` doc with no `ratifiedBy` (e.g. after `em slice reratify`) is not ready (`slice-ready-not-ratified`; `--json` schema 1.1 → 1.2 adds `gates.ratified`) (MIL-259) | `ratified-signoff` — writes `ratifiedBy: "grandfathered (unsigned before em 1.14)"` and `ratifiedOn:` today on `version: 1` docs without one; a reratified (`version > 1`) doc stays a human item: `em slice ratify --by <name>` |
 | **Behavior change:** `system.yaml` schema 2.0 holds `name` + `models: {key: {source}}` only. Seams are declared consumer-side as `translation … consumes <model>:<kind>.<slug>` and owners on the model header as `model "Name" owner "Team"`. `seams:`/`owner:` in a 2.0 manifest are errors. A 1.0 manifest still verifies, with a `system-manifest-outdated` warning, and gives the same result after migration (MIL-235) | `system-manifest` |
 | **Behavior change:** `em validate` errors with `public-name-not-unique` when two `public` elements of one kind in a model share a slug, because a `consumes` ref couldn't tell them apart (MIL-235) | human: rename one, or drop `public` from one |
