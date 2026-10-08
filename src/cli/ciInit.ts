@@ -93,6 +93,24 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
           done
           exit $status
 
+  api-check:
+    name: "em api check (contract current; additive/breaking annotation)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the generated contract is current
+        # Fails only when contracts/<model key>.tsp is missing or stale (run em api generate).
+        # The additive/breaking lines are annotation for the reviewer, never a gate (MIL-237).
+        run: |
+          base="\${{ github.event.pull_request.base.sha }}"
+          ${em} api check "${model}" --base "$base"
+
   slice-index:
     name: "em slice index --check (README table drift)"
     if: github.event_name == 'pull_request'

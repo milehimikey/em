@@ -30,6 +30,8 @@ interface FieldOccurrence extends Occurrence {
   elementKind: ElementKind;
   elementName: string;
   type: string | null;
+  /** `name?: Type` (MIL-237) — informational; never part of the field-type-conflict check. */
+  optional: boolean;
   line: number;
   sliceName: string;
 }
@@ -102,6 +104,7 @@ export function buildGlossary(inputs: GlossaryModelInput[]): Glossary {
             elementKind: el.kind,
             elementName: el.name,
             type: f.type ?? null,
+            optional: f.optional === true,
             line: el.line,
             sliceName,
           },

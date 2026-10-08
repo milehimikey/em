@@ -19,7 +19,8 @@ import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader } from "./model/validate.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
-import { buildTypeSpec } from "./emit/typespec.js";
+import { generateContract, runApiCheck, formatApiCheckText } from "./cli/api.js";
+import { buildApiCheckJson } from "./emit/apiCheckJson.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
@@ -385,33 +386,71 @@ program
     }
   });
 
+/** `em api generate` (and its deprecated `em typespec` alias): compile, refuse on errors,
+ *  write `<modelDir>/contracts/<modelKey>.tsp` (R6) — or `-o`, or stdout. */
+function runApiGenerate(file: string, opts: { out?: string; stdout?: boolean }): void {
+  const compiled = compileFile(file);
+  const { source } = compiled;
+  printDiagnostics(compiled.diagnostics);
+  if (hasErrors(compiled.diagnostics)) {
+    console.error("not generating: fix the errors above");
+    process.exit(1);
+  }
+  const generated = generateContract(file, source, compiled, opts.out);
+  printDiagnostics(newDiagnostics(generated.diagnostics, compiled.diagnostics));
+  if (opts.stdout) {
+    process.stdout.write(generated.text);
+    return;
+  }
+  mkdirSync(dirname(generated.contractPath), { recursive: true });
+  writeFileSync(generated.contractPath, generated.text);
+  console.log(`wrote ${generated.contractPath}`);
+}
+
+const api = program
+  .command("api")
+  .description("the model-owned TypeSpec contract for its `public` surface (MIL-237, see docs/cli.md)");
+
+api
+  .command("generate")
+  .description(
+    "write the TypeSpec contract for the model's public commands, events and views to " +
+      "<model dir>/contracts/<model key>.tsp",
+  )
+  .argument("<file>", "input .em file")
+  .option("-o, --out <path>", "write to this path instead of <model dir>/contracts/<model key>.tsp")
+  .option("--stdout", "print the contract instead of writing it")
+  .action((file: string, opts: { out?: string; stdout?: boolean }) => runApiGenerate(file, opts));
+
+api
+  .command("check")
+  .description(
+    "is the committed contract current? With --base, annotate each public-surface change since " +
+      "that revision additive or breaking (annotation only — exits 1 only when stale)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--base <rev>", "git revision to diff the public surface against")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { base?: string; json?: boolean }) => {
+    const outcome = runApiCheck(file, opts.base);
+    printDiagnostics(outcome.diagnostics);
+    if (!outcome.ok) {
+      console.error(outcome.message);
+      process.exit(1);
+    }
+    if (opts.json) process.stdout.write(buildApiCheckJson(outcome.report) + "\n");
+    else for (const line of formatApiCheckText(outcome.report)) console.log(line);
+    if (!outcome.report.current) process.exitCode = 1;
+  });
+
 program
   .command("typespec")
-  .description(
-    "EXPERIMENTAL/POC (MIL-159): generate a TypeSpec contract for a model's commands, public " +
-      "events, and public views (see docs/cli.md)",
-  )
+  .description("DEPRECATED alias of `em api generate --stdout` (use em api generate)")
   .argument("<file>", "input .em file")
   .option("-o, --out <path>", "write to a file instead of stdout")
   .action((file: string, opts: { out?: string }) => {
-    const { model, refs, diagnostics, source } = compileFile(file);
-    printDiagnostics(diagnostics);
-
-    if (hasErrors(diagnostics)) {
-      console.error("not generating: fix the errors above");
-      process.exit(1);
-    }
-
-    const generated = buildTypeSpec(model, refs, diagnostics, source, file);
-    printDiagnostics(newDiagnostics(generated.diagnostics, diagnostics));
-    for (const note of generated.unmappedTypes) console.error(`note: ${note}`);
-
-    if (opts.out) {
-      writeFileSync(opts.out, generated.text + "\n");
-      console.log(`wrote ${opts.out}`);
-    } else {
-      process.stdout.write(generated.text + "\n");
-    }
+    console.error("warn: em typespec is deprecated — use em api generate");
+    runApiGenerate(file, opts.out ? { out: opts.out } : { stdout: true });
   });
 
 program
@@ -1618,7 +1657,7 @@ program
   )
   .option(
     "--list-public",
-    "print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build",
+    "print only commands, events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never fails the build",
   )
   .option(
     "--fail-on-issues",
@@ -2936,7 +2975,7 @@ function printDivergences(model: NormalizedModel): void {
  *  cross-model `public` view's reader legitimately lives outside this file (see
  *  `publicViewsWithoutInModelReader`'s own header for why this stays advisory). */
 function printPublicElements(model: NormalizedModel): void {
-  const pub = model.elements.filter((el) => el.public && (el.kind === "event" || el.kind === "view"));
+  const pub = model.elements.filter((el) => el.public && (el.kind === "command" || el.kind === "event" || el.kind === "view"));
   if (pub.length === 0) {
     console.log("no public elements");
     return;

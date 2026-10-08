@@ -36,6 +36,8 @@ import { diffModels, LineageResolvers } from "../model/diff.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "../emit/json.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "../emit/validateJson.js";
 import { buildDiffJson } from "../emit/diffJson.js";
+import { runApiCheck } from "../cli/api.js";
+import { buildApiCheckJson } from "../emit/apiCheckJson.js";
 import { validateLineage } from "../catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
@@ -289,7 +291,7 @@ export function createServer(): McpServer {
       description:
         "Return the structured marker enumeration `em validate <file> --list-issues " +
         "--list-divergences --list-public --json` prints: every open `issue` annotation, " +
-        "accepted `divergence` annotation, and `public`-marked event/view in the model, each " +
+        "accepted `divergence` annotation, and `public`-marked command/event/view in the model, each " +
         "with its slice/element ref and line. All three kinds default to included — pass " +
         "`issues`/`divergences`/`public: false` to narrow. Never fails the model on its own; " +
         "genuine errors still appear in the `diagnostics` field.",
@@ -297,7 +299,7 @@ export function createServer(): McpServer {
         file: fileParam,
         issues: z.boolean().default(true).describe("include open `issue` markers"),
         divergences: z.boolean().default(true).describe("include accepted `divergence` markers"),
-        public: z.boolean().default(true).describe("include `public`-marked events/views"),
+        public: z.boolean().default(true).describe("include `public`-marked commands/events/views"),
       },
     },
     async ({ file, issues, divergences, public: pub }) => {
@@ -1014,6 +1016,29 @@ export function createServer(): McpServer {
       }
       const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
       return textResult(buildSystemJson(loaded, report));
+    },
+  );
+
+  server.registerTool(
+    "api_check",
+    {
+      title: "Check the model-owned API contract",
+      description:
+        "Return the same JSON document `em api check <file> [--base <rev>] --json` prints " +
+        "(MIL-237): whether the committed contract (<model dir>/contracts/<model key>.tsp) equals " +
+        "a fresh `em api generate`, and — with `base` — every public-surface change since that " +
+        "git revision annotated `additive` or `breaking` from structural facts only. A stale " +
+        "contract is reported in the document (`current: false`), not as a tool error. Refuses " +
+        "(tool error) when the model has errors or the revision cannot be read, same as the CLI.",
+      inputSchema: {
+        file: fileParam,
+        base: z.string().optional().describe("git revision to diff the public surface against"),
+      },
+    },
+    async ({ file, base }) => {
+      const outcome = runApiCheck(file, base);
+      if (!outcome.ok) return errorResult(outcome.message);
+      return textResult(buildApiCheckJson(outcome.report));
     },
   );
 

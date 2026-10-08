@@ -2306,3 +2306,60 @@ slice "In" {
     expect(d.map((x) => x.code)).not.toContain("consumes-unknown-model");
   });
 });
+
+describe("public-field-type-unresolved (MIL-237, strict public types)", () => {
+  const TABLE = "string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes";
+  const codes = (src: string) => diagsFor(src).filter((d) => d.code === "public-field-type-unresolved");
+
+  it("errors on a public field whose type is outside the table, naming element, field, type and the table", () => {
+    const d = codes(`slice "S" {\n  command Do public { total: Money }\n  event Done @D\n}\n`);
+    expect(d).toEqual([
+      {
+        severity: "error",
+        code: "public-field-type-unresolved",
+        message: `public command "Do" field "total" has type "Money", which is not a public type — use ${TABLE} (case-insensitive), X[] of one of these or of a declared type, or a declared type`,
+        line: 2,
+        refs: ["s/command.do"],
+      },
+    ]);
+  });
+
+  it("errors on an untyped public field", () => {
+    const d = codes(`slice "S" {\n  command Do\n  event Done @D public { orderId }\n}\n`);
+    expect(d.map((x) => x.message)).toEqual([
+      `public event "Done" field "orderId" has no type — use ${TABLE} (case-insensitive), X[] of one of these or of a declared type, or a declared type`,
+    ]);
+  });
+
+  it("accepts every table entry case-insensitively, X[] of an entry or a declared type, and a declared type", () => {
+    const src = `type Line { sku: string, qty: int }
+slice "S" {
+  command Do
+  event Done @D public {
+    a: STRING, b: Text, c: int, d: long, e: decimal, f: boolean, g: UUID, h: date, i: DateTime, j: duration, k: bytes
+    l: uuid[], m: Line, n: Line[], o?: text
+  }
+}
+`;
+    expect(codes(src)).toEqual([]);
+  });
+
+  it("checks declared types reachable from a public element (transitively), attributing the first reacher", () => {
+    const src = `type Inner { x: Weird }
+type Outer { inner: Inner, bad: List<string> }
+type Unreached { y: Whatever }
+slice "S" {
+  command Do
+  event Done @D public { o: Outer }
+}
+`;
+    expect(codes(src).map((d) => [d.message.split(" — ")[0], d.refs])).toEqual([
+      ['type "Inner" field "x" (reachable from public event "Done") has type "Weird", which is not a public type', ["types/inner"]],
+      ['type "Outer" field "bad" (reachable from public event "Done") has type "List<string>", which is not a public type', ["types/outer"]],
+    ]);
+  });
+
+  it("leaves internal elements' free-text types alone", () => {
+    expect(codes(`slice "S" {\n  command Do { total: Money, items: List<LineItem> }\n  event Done @D { x }\n}\n`)).toEqual([]);
+  });
+});

@@ -281,6 +281,32 @@ slice "Browse Orders" {
     expect(human.map((h) => h.id)).toContain("no-model-version");
   });
 
+  it("flags public-field-types-unresolved, listing every offending public field (MIL-237, detect-only)", () => {
+    const source = `type Line { sku: Sku, qty: int }
+slice "Place Order" {
+  command Place Order public { total: Money, lines: Line[] }
+  event Order Placed @Orders public { orderId, total: decimal }
+  event Internal Thing @Orders { anything: Whatever }
+}
+`;
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source });
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    const item = detectUpgrade(ctx).human.find((h) => h.id === "public-field-types-unresolved");
+    expect(item).toEqual({
+      id: "public-field-types-unresolved",
+      reason:
+        "3 public field(s) without a public type: Place Order.total: Money, Order Placed.orderId: (no type), Line.sku: Sku — " +
+        "give each a type from string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes, `X[]`, " +
+        "or a declared `type` (em 1.14 strict public types), or drop `public`",
+    });
+  });
+
+  it("does not flag public-field-types-unresolved when every public field resolves", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    expect(detectUpgrade(ctx).human.map((h) => h.id)).not.toContain("public-field-types-unresolved");
+  });
+
   it("flags ready-to-implement-no-ratifiedby for a reratified (version > 1) doc missing ratifiedBy", () => {
     const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
     mkdirSync(join(dir, "slices"), { recursive: true });

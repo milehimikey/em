@@ -90,10 +90,10 @@ section — and the routing from it is mechanical, not a technical choice you ma
   catch. An endpoint on a view the model shows no `ui` reading is a gap to surface the same way
   (MIL-215) — conform will classify it as a **model gap**, never drift to delete, once you flag
   it (`../../event-modeling-conform/reference/conform.md`, Flow step 4).
-- **`public` events and views** are the model's published integration surface: their shape is a
-  contract, not an implementation detail. `em validate --list-public` lists them; `em typespec`
-  is the POC generator for a downstream schema. Changing a public element's shape is a ratified
-  delta, never an implementation-time choice.
+- **`public` commands, events and views** are the model's published integration surface: their
+  shape is a contract, not an implementation detail. `em validate --list-public` lists them;
+  `em api generate` writes the model-owned contract (`<model dir>/contracts/<model key>.tsp`).
+  Changing a public element's shape is a ratified delta, never an implementation-time choice.
 
 For timeline context, read the slice's surroundings in the `.em` (what triggers it, what
 consumes its output) — the slice's own diagram (`slices/<slice-key>.svg`) shows its canonical

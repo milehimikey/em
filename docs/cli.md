@@ -8,7 +8,9 @@
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
-| `em typespec <file>` | **Experimental/POC** (MIL-159) — generate a TypeSpec contract for a model's commands, public events, and public views |
+| `em api generate <file>` | Write the model-owned TypeSpec contract for its `public` commands, events and views to `<model dir>/contracts/<model key>.tsp` |
+| `em api check <file>` | Is the committed contract current? With `--base <rev>`, annotate each public-surface change additive or breaking |
+| `em typespec <file>` | **Deprecated** alias of `em api generate --stdout` |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement; `--slice <key>` scopes to one slice for the pre-merge check) |
@@ -143,6 +145,12 @@ Back this with `em scaffold <name> --under models` for each model (writes `model
 directly, rather than requiring a `cd models && em scaffold <name>` two-step) — see above. The
 event-modeling skill's discovery step looks for a model in the working directory *or* a
 `models/` subfolder, one level down, for exactly this layout (see `SKILL.md`).
+
+**Contracts live in the model directory.** A model with a `public` surface owns its generated
+contract at `<model dir>/contracts/<model key>.tsp` (`em api generate`, see below) — e.g.
+`models/checkout/contracts/checkout.tsp`. Everything under the model directory (`slices/`,
+`model-versions/`, `conformance/`, `contracts/`, `.event-modeling.md`, `README.md`) belongs to
+that model.
 
 **No key-namespacing needed.** Slice export keys and doc filenames stay exactly `kebabSlug(slice
 name)` — unqualified, no `<model>/<slice>` prefix — regardless of how many models a project has.
@@ -556,8 +564,8 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     `tags`, `renamedFrom`, `logicalRef`, and `loopsTo`. `divergence` (added in schema `1.1`) carries a `divergence "text"`
     annotation — a reasoned, ratified deviation between this element and its implementation;
     `null` when the element carries none. `public` (added in schema `1.2`) is `true` when the
-    event carries the `public` clause — part of the model's published integration surface —
-    and `false` for every other element (including non-public events); see
+    element (a command, event or view — commands since MIL-237) carries the `public` clause —
+    part of the model's published integration surface — and `false` for every other element; see
     [dsl.md](dsl.md#integration-surface). `tags` (added in schema `1.6`, MIL-66) is
     `[{ key, kind, fields, description }] | null` — the event's DCB tag metadata, `null` when
     the element has none (events only in practice; `tag` clauses are a parse error on any other
@@ -599,6 +607,8 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     the field from `em validate`'s event ← command fields-completeness check (and, since the
     diagnostic never fires, from `--slice-ready` as well); does not narrow view ← event
     tracing. See [validation.md#fields-completeness](validation.md#fields-completeness).
+    `optional` (added in schema `1.15`, MIL-237): `true` when the field is written `name?: Type`
+    (may be absent), `false` otherwise — always present, same convention as `tag`.
   - Each **arrow** carries its endpoint names plus resolved `fromRef`/`toRef`.
   - `edges` (added in schema `1.10`, MIL-191) is **the canonical graph**: the complete, deduped
     list of every connection in the model, `[{ from, to, source }]`, both endpoints export-stable
@@ -691,114 +701,140 @@ through intact. `computeModelKeys(entries)` is the multi-model form (dedupe + di
 See [ci.md](ci.md) for using `em export` as a downstream-tooling artifact step alongside
 `em validate` as a merge gate.
 
-## `em typespec <file>`
+## `em api generate <file>` / `em api check <file>`
 
-> **Experimental / POC (MIL-159).** This is a proof of concept, not a stable surface: the scoping rule, the
-> type-mapping table, and the "metadata becomes a doc comment" decisions below are all
-> POC-stage choices, expected to change (or be reconsidered entirely) if this graduates past
-> POC. No schema-versioning/deprecation guarantee applies to it yet, unlike `em export`.
+The model-owned contract (MIL-237): a [TypeSpec](https://typespec.io) file generated from the
+model's `public` surface, committed beside the model, so the model is the single source of the
+integration contract and a code-review tool (CODEOWNERS) can route changes to it.
 
-Generates a [TypeSpec](https://typespec.io) contract — `model`/`interface`/`op` declarations,
-core scalars only, no imports — for the commands, public events, and public views a model
-declares. Event modeling is a design process, and wire contracts are part of design: this
-turns the model itself into the source of the contract artifact, instead of that being
-redone by hand downstream. Same refuse-on-error posture as `em export`: refuses (exits
-non-zero, prints the diagnostics) when the model has errors. Writes plain TypeSpec source text
-to stdout by default; `-o` writes a file.
+```bash
+em api generate models/checkout/checkout.em             # writes models/checkout/contracts/checkout.tsp
+em api generate models/checkout/checkout.em --stdout    # print instead of writing
+em api generate models/checkout/checkout.em -o out.tsp  # write somewhere else
+em api check models/checkout/checkout.em                # is the committed contract current?
+em api check models/checkout/checkout.em --base origin/main          # + additive/breaking annotation
+em api check models/checkout/checkout.em --base origin/main --json   # machine-readable
+```
+
+### Contract path
+
+**`<model dir>/contracts/<model key>.tsp`** — the model directory is `dirname(<model>.em)`
+(see "Multi-model projects" above), the model key is the kebab slug of the `model "..."` name
+(the same key `em export`/`em system` use). `em api generate` creates `contracts/` when needed.
+The header's `Source:` line names the `.em` file relative to the contract file, so the text
+never depends on the directory `em api generate` ran from. The header carries **no source
+hash**: the file is a pure function of the public surface, so an internal-only `.em` edit
+(a non-public element, an internal field, a comment) leaves it byte-identical — no regenerate,
+no contract-file diff for CODEOWNERS to route, no stale contract for the API-first gate.
+
+### `em api generate`
 
 | Flag | Effect |
 |---|---|
-| `-o, --out <path>` | Write to a file instead of stdout |
+| `-o, --out <path>` | Write to this path instead of the contract path |
+| `--stdout` | Print the contract instead of writing it |
 
-```bash
-em typespec model.em                    # TypeSpec source on stdout
-em typespec model.em -o model.tsp       # write to a file
+Refuses (exits 1, prints the diagnostics, writes nothing) when the model has errors — including
+`public-field-type-unresolved` (see "Strict public types" in [dsl.md](dsl.md#strict-public-types)).
+
+What it emits — one `namespace <ModelName>`, no imports, no decorators, no `@versioned` (one
+release train; versioning is not modeled):
+
+- **`public` commands** → `interface Commands { op <command>(<fields>): void; }` — the write API.
+  An optional field (`name?: Type`) becomes an optional parameter (`name?: T`).
+- **`public` events** → one `model` each — the async payloads (schema only, no channel semantics).
+- **`public` views** → one `model` each plus `interface Views { op get<View>(): <View>; }` — the
+  read API. A repeated view (`view X again`) contributes its first public instance only.
+- **Declared `type`s** reachable from any of the above → one `model` each.
+
+Every `model` carries the doc comment `Consumers tolerate unknown fields; additive changes do not
+break them.` `tag`, `renamed from` and `assigned` become `/** ... */` doc comments, never
+decorators. Field types map through the fixed public type table only:
+
+| em type | TypeSpec |
+|---|---|
+| `string`, `text`, `uuid` | `string` |
+| `int` | `int32` |
+| `long` | `int64` |
+| `decimal` | `decimal` |
+| `boolean` | `boolean` |
+| `date` | `plainDate` |
+| `datetime` | `utcDateTime` |
+| `duration` | `duration` |
+| `bytes` | `bytes` |
+| `X[]` | `<mapped X>[]` |
+| a declared `type` name | that type's `model` |
+
+There is no alias table, no generic-wrapper handling, and no `unknown` fallback — `em validate`
+guarantees every public field resolves. Teams compile the TypeSpec to OpenAPI / JSON Schema /
+AsyncAPI in their own toolchain.
+
+### `em api check`
+
+| Flag | Effect |
+|---|---|
+| `--base <rev>` | Also diff the public surface against the model at this git revision |
+| `--json` | Print a JSON document instead of the text report |
+
+1. **Current?** — regenerates the contract from the working-tree model and compares it, as text,
+   with the committed contract file (only public-surface changes can make it stale). `missing` or `stale` → exit 1, with the regenerate command.
+2. **Annotation** (with `--base`) — compiles the model at `<rev>` and at the working tree and
+   diffs the public surfaces structurally. Every change is printed as `additive: …` or
+   `breaking: …`. Annotation only: it informs the reviewer and **never** changes the exit code.
+   A model that did not exist at `<rev>` reports every public element `additive`. A base-side
+   validation error (e.g. a pre-1.14 free-text public type) does not block the diff.
+
+Elements are identified by kind and name (`event.order-submitted`, `type.line-item`), not by
+slice, so moving an element between slices is not a contract change.
+
+| Change | Annotation |
+|---|---|
+| element added, or marked `public` | additive |
+| element removed, renamed (`renamed from`), or `public` dropped | breaking |
+| field removed, or renamed (`renamed from`) | breaking |
+| field type changed | breaking |
+| field optional → required | breaking |
+| field required → optional — on an event, view, or a type an event/view reaches | breaking |
+| field required → optional — on a command (input) | additive |
+| field added — on an event, view, or a type an event/view reaches | additive |
+| required field added — on a command (input) | breaking |
+| optional field added — on a command (input) | additive |
+
+A declared type reached from both a command and an event/view takes the stricter rule.
+
+```
+contract models/checkout/contracts/checkout.tsp is current
+breaking: event.order-submitted field "total" removed
+additive: event.order-submitted field "currency" added (required)
 ```
 
-### Scoping
+`--json` (`apiCheckSchemaVersion` `"1.0"`; MCP tool `api_check` returns the same document):
 
-An `event` or `view` is included only when it carries `public` (see
-[dsl.md](dsl.md#integration-surface)) — the flag `em export`'s own docs already describe as
-"the field a downstream contract generator ... filters on." Commands have no `public` flag of
-their own, so this POC's decision is: a **command is included when its own slice declares at
-least one public event or view** — the request contract for a slice that's already promoted
-its outcome (or its read model) to the integration surface belongs on the same contract. A
-slice with no public event/view — including every element in it — contributes nothing. A model
-with no `public` elements at all still generates valid (if empty) TypeSpec: a bare
-`namespace <Model> {}`.
+```json
+{
+  "apiCheckSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "models/checkout/checkout.em",
+  "contractPath": "models/checkout/contracts/checkout.tsp",
+  "current": true,
+  "base": "origin/main",
+  "changes": [
+    { "kind": "breaking", "element": "event.order-submitted", "field": "total", "what": "removed" }
+  ]
+}
+```
 
-A repeated view instance (`view X again`) is folded into its first declaration — only one
-`model` is emitted per logical view name, since TypeSpec would reject a duplicate declaration.
-Later instances' additional fields are not merged in — left out of this POC (see below).
+`base` is `null` and `changes` is `[]` without `--base`; `field` is `null` for an element-level
+change. Refuses (exit 1, no document) when the working-tree model has errors, the file is not in
+a git repository, or the revision does not exist. `em ci init` wires `em api check --base` as a
+PR job (see [ci.md](ci.md)).
 
-### Type mapping
+## `em typespec <file>` (deprecated)
 
-em field types are free text with no semantic checking (see [dsl.md](dsl.md#fields)). TypeSpec
-needs real scalar/model references, so this POC applies one explicit, documented strategy:
-
-1. A field whose type names a declared `type` block (already resolved by `em export`'s own
-   `typeRef`, bare or `[]`-suffixed — see [dsl.md](dsl.md#named-types)) references that type's
-   generated `model` by name. Only types reachable from an included element's fields are
-   emitted — never every declared type in the model.
-2. Otherwise the bare type name — after stripping a `[]` suffix or a `List<...>`/`Array<...>`/
-   `Set<...>` generic wrapper — is looked up case-insensitively against a small built-in table
-   of common scalars (`string`, `int`/`long`, `boolean`, `float`/`double`, `decimal`/`Money`,
-   `UUID`/`guid` → `string`, `Instant`/`DateTime` → `utcDateTime`, `Date`, `duration`, `url`,
-   `bytes`, …). A hit maps to that TypeSpec core scalar.
-3. A field with no declared type at all maps to `unknown` — not a mapping failure, just an
-   honest "this field's shape isn't declared here."
-4. Anything else — a declared type that's neither a known scalar nor a resolvable `type`
-   reference (a typo, an undocumented domain string like a bespoke `Money` without a `type`
-   block behind it) — also becomes `unknown`, but is reported back to the CLI as a `note:`
-   line on stderr so the gap is visible instead of silently swallowed. A `List<X>`/`X[]`
-   wrapper around an unmapped `X` still becomes `unknown[]`, keeping the arity even when the
-   element type doesn't map.
-
-This table is intentionally small and unopinionated — a promoted, non-POC version would likely
-want it user-configurable (a mapping file) instead of hardcoded.
-
-### Shape
-
-- **Named types** → a `model` per declared type, PascalCased, deduplicated (`_2`, `_3`, … on a
-  name collision once PascalCased).
-- **Public events** → a `model` per event (the message payload). Schema only — no protocol/
-  channel semantics (see "async representation," below).
-- **Public views** → a `model` per view, plus a no-arg accessor `op` inside `interface Views`
-  (`op get<View>(): <View>;`) — deliberately no `@get`/`@route` (that's `@typespec/http`
-  territory, a dependency this POC doesn't need to prove the field-mapping question).
-- **Commands** (scoped per above) → an `op` per command inside `interface Commands`, one
-  parameter per field, `void` return.
-
-### em-specific metadata: doc comments, never decorators
-
-`tag` (DCB identity/composite/external — [dsl.md](dsl.md#event-tags)), `renamed from`
-([dsl.md](dsl.md#renames)), and `assigned` ([dsl.md](dsl.md#assigned-fields)) are modeling/
-event-store concerns, not wire-contract shape. This POC carries them forward as plain
-`/** ... */` doc comments on the affected model/field — visible in the generated contract, but
-never as a decorator: a real `@tag`/`@renamedFrom`/`@assigned` decorator would need its own
-TypeSpec extension library (`extern dec` plus a JS implementation) to be more than cosmetic,
-out of scope for a dependency-free POC.
-
-### Async event representation
-
-Core TypeSpec is HTTP/OpenAPI-shaped; async messaging isn't a first-class primitive. This POC's
-answer: a public event becomes a plain `model` — schema only, no protocol semantics attached.
-A promoted version could layer `@typespec/events` or an AsyncAPI emitter on top of these same
-models for channel/binding semantics; deliberately not attempted here.
-
-### What's left out of this POC
-
-- No `--slice` scoping (unlike `em export`) — always the whole model's public surface.
-- No merging of a later `view X again public` instance's added fields into the first.
-- No user-configurable type-mapping file — the scalar table is fixed in code.
-- No decorators for `tag`/`renamed from`/`assigned` — doc comments only.
-- No AsyncAPI/HTTP emitter layering (`@typespec/http`, `@typespec/events`) — bare core
-  TypeSpec only, and no new runtime dependency.
-
-**Determinism.** Same discipline as `em export`: the same source text always generates
-byte-identical TypeSpec — no timestamps, no git data, no absolute paths, no environment-derived
-values. The header comment's `Source: <path> (sha256 <hash>)` line is a hash of the source
-text, same convention as `em export`'s own `source.sha256`.
+Deprecated alias of `em api generate --stdout`: prints `warn: em typespec is deprecated — use em
+api generate` to stderr, then the contract to stdout (`-o <path>` still writes a file). The
+MIL-159 proof of concept's lenient alias table (`Money`, `Instant`, `List<…>`, `unknown`
+fallback) is gone — see "Strict public types" in [dsl.md](dsl.md#strict-public-types).
 
 ## `em diff <old> <new>`
 
@@ -862,7 +898,14 @@ added in schema `1.2`). When an event's or view's `public` clause (see
 reports it as `event marked public` / `event unmarked public` — its own change type, not
 lumped in with a generic field change, since a contract consumer needs to know exactly when
 an element enters or leaves the published surface. (The change-type names predate the marker
-widening to views; the entry's `kind` says which it was.)
+widening to views and commands; the entry's `kind` says which it was, and a command's line reads
+`command marked public` / `command unmarked public`.)
+
+**Optionality** (`field-optionality-changed`/`type-field-optionality-changed`, schema `1.8`,
+MIL-237). A field flipping between `name: Type` and `name?: Type` is reported as
+`~ field "x" changed required -> optional on …` (or the reverse); the entry's `optional` is the
+new side's value. Added/removed field lines show an optional field as `"x"?`, and their
+entries carry that field's `optional`. `optional` is `null` on every other entry.
 
 **Declared types** (`type-added`/`type-removed`/`type-field-added`/`type-field-removed`/
 `type-field-changed`, added in schema `1.3`). Types are matched by their `em export` `ref`,
@@ -887,7 +930,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.7"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.8"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -1895,14 +1938,14 @@ $ echo $?
 0
 ```
 
-**`--json` shape** (`querySchemaVersion: "1.1"`, versioned independently of the npm package and
+**`--json` shape** (`querySchemaVersion: "1.2"`, versioned independently of the npm package and
 every other command's own schema — also the exact document the MCP `query` tool returns, see
 [mcp.md](mcp.md)): one envelope for every verb, with a `verb` discriminator and a `results` array
 whose entries are verb-shaped:
 
 ```json
 {
-  "querySchemaVersion": "1.1",
+  "querySchemaVersion": "1.2",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "verb": "consumers",
   "files": ["model.em"],
@@ -1925,8 +1968,9 @@ whose entries are verb-shaped:
   Lookup is status-agnostic: an id declared in a `draft` doc is found like any other, with that
   status reported (`em coverage`'s in-scope rule decides which invariants *must* be cited, not
   which ones exist).
-- `field` results carry `{ elementRef, name, type, tag, assigned, renamedFrom, elementRenamedFrom }`
-  — the same field facts `em export`'s `FieldExport` carries, scoped to one field, plus the
+- `field` results carry `{ elementRef, name, type, optional, tag, assigned, renamedFrom, elementRenamedFrom }`
+  (`optional` since query schema `1.2`, MIL-237; the text form prints `name?:` for an optional
+  field) — the same field facts `em export`'s `FieldExport` carries, scoped to one field, plus the
   owning element's own `renamed from` chain (`elementRenamedFrom`, event/command only; `null`
   when the element was never renamed) — provenance has two axes, the field's prior names and
   the prior names of the element it lives on.
@@ -2184,7 +2228,7 @@ kind-conflict "Order Confirmed": event in checkout.em:5 (slice "Submit Order"), 
 field-type-conflict "total": Money on event "Order Confirmed" in checkout.em:5, number on view "Order Confirmed" in billing.em:4
 ```
 
-**`--json` shape** (`glossarySchemaVersion: "1.0"`, versioned independently of both `em
+**`--json` shape** (`glossarySchemaVersion: "1.1"` — `1.1`, MIL-237: field occurrences gain `optional`; versioned independently of both `em
 export`'s `schemaVersion` and `em diff`'s `diffSchemaVersion` — a glossary is a
 different-shaped artifact, an N-model aggregate rather than a single model's snapshot or a
 two-model comparison, and `em glossary` never reads or requires an existing `em export`
@@ -2195,8 +2239,9 @@ document, so the schemas evolve independently):
 - `elements` — one entry per normalized element name: `{ key, name, occurrences }`, where
   each occurrence is `{ model, kind, line, sliceName }`.
 - `fields` — one entry per normalized field name: `{ key, name, occurrences }`, where each
-  occurrence is `{ model, elementKind, elementName, type, line, sliceName }` (`type` is
-  `null` when the field is untyped).
+  occurrence is `{ model, elementKind, elementName, type, optional, line, sliceName }` (`type`
+  is `null` when the field is untyped; `optional` is the field's `name?:` marker and never part
+  of the field-type conflict check).
 - `personas` / `contexts` — one entry per normalized name: `{ key, name, occurrences }`,
   where each occurrence is just `{ model }` (collected for completeness; never
   conflict-checked in v1).

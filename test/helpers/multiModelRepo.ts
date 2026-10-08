@@ -35,7 +35,8 @@ seams:
     description: A submitted order is handed to the warehouse to be fulfilled.
 `;
 
-/** The example's two models before MIL-235: no `owner` on the headers, no `consumes`. */
+/** The example's two models before MIL-235: no `owner` on the headers, no `consumes` (field
+ *  blocks and `public` on `Accept Order` as shipped since MIL-237 — those are not migrated). */
 export const LEGACY_CHECKOUT_EM = `model "Checkout"
 
 persona Customer
@@ -44,8 +45,16 @@ context Order
 
 slice "Checkout" {
   ui Checkout Screen @Customer
-  command Submit Order
-  event Order Submitted @Order public
+  command Submit Order {
+    total: decimal
+    note?: text
+  }
+  event Order Submitted @Order public {
+    orderId: uuid assigned
+    total: decimal
+    placedAt: datetime assigned
+    note?: text
+  }
 }
 
 slice "Order Confirmation" {
@@ -67,9 +76,19 @@ persona Warehouse
 context Order
 
 slice "Receive Order" {
-  translation Order Intake
-  command Accept Order
-  event Order Accepted @Order
+  translation Order Intake {
+    orderId: uuid
+    total: decimal
+  }
+  command Accept Order public {
+    orderId: uuid
+    total: decimal
+  }
+  event Order Accepted @Order {
+    orderId: uuid
+    total: decimal
+    acceptedAt: datetime assigned
+  }
 }
 
 slice "Orders To Fulfil" {

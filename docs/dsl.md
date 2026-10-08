@@ -190,8 +190,9 @@ cycle-safely.
 
 Any element can declare data fields in a `{ … }` block: the data a command accepts, an event
 records, a read model projects, or a UI shows. Each field is a `name` with an optional
-`: Type`. Types are free text with no semantic checking. Write fields one per line or inline,
-comma-separated:
+`: Type`. On internal elements types are free text with no semantic checking; on `public`
+elements they are strict (see [Strict public types](#strict-public-types)). Write fields one
+per line or inline, comma-separated:
 
 ```
 command Place Order {            # one per line
@@ -202,6 +203,21 @@ command Place Order {            # one per line
 
 event Payment Requested @Payment { orderId, amount: Money }   # inline
 ```
+
+**Optional fields.** A trailing `?` on the name marks the field optional — it may be absent
+(MIL-237). Fields are required by default. `note?` (no type) and `"display name"?: text`
+(quoted) both work; the `?` is never part of the name.
+
+```
+event Order Submitted @Order public {
+  orderId: uuid
+  note?: text                    # optional
+}
+```
+
+`em export` carries `optional: true|false` on every field, `em api generate` emits `name?: T`,
+`em diff` reports a required↔optional flip (`changed required -> optional`), and `em api check`
+classifies it (see [cli.md](cli.md#em-api-generate-file--em-api-check-file)).
 
 Fields render inside the box, UML-style: the name, a divider rule, then the field rows. The
 box grows vertically to fit (width stays fixed, so columns stay aligned) and arrows re-anchor
@@ -524,14 +540,16 @@ Don't confuse this with an element's `note "path.md"`, which links a markdown fi
 
 ## Integration surface
 
-An `event` or `view` can carry a `public` clause, marking it as part of the model's published
-integration surface — for an event, a recorded fact meant for consumers (AsyncAPI contract
-style); for a view, a published read API or webhook response shape another service consumes —
-as opposed to internal-only facts and read models local to this context.
+A `command`, `event` or `view` can carry a `public` clause, marking it as part of the model's
+published integration surface — for a command, the write API another team or service calls;
+for an event, a recorded fact meant for consumers (AsyncAPI contract style); for a view, a
+published read API or webhook response shape another service consumes — as opposed to
+internal-only commands, facts and read models local to this context.
 It carries no free text and no diagram marker (unlike `note`/`issue`): it's a plain structural
 flag, the same posture as `again`, not an annotation.
 
 ```
+command Submit Order public { total: decimal }   # the write API (MIL-237)
 event Order Placed public @Order          # event public before the tag
 event Order Placed @Order public          # event public after the tag — also valid
 event Internal Retry Scheduled @Order      # no `public` — internal-only fact
@@ -541,8 +559,9 @@ view Order History public from "Order Placed"  # public before from — required
 view Public Orders public again           # both public and again allowed
 ```
 
-`public` is valid on `event` or `view` only; writing it on other element kinds is a parse
-error. For an event, it's written flexibly: before or after any trailing `@Context` tag, or
+`public` is valid on `command`, `event` or `view` only; writing it on other element kinds is a
+parse error (`` `public` is only valid on command, event or view — only the write API, recorded
+facts and read models are promoted to the integration surface ``). For an event, it's written flexibly: before or after any trailing `@Context` tag, or
 as the line's final token. For a view, `public` must come before `from` (writing `public`
 after a quoted list causes it to be swallowed into the tail and mangled — use
 `view Name public from "Event"`, not `view Name from "Event" public`). With `again`, both
@@ -550,11 +569,11 @@ orders work: `view Name public again` and `view Name again public` are equivalen
 anywhere else on the line, a bare `public` isn't recognized as the clause and folds into the
 free-text name instead, the same as any other unrecognized trailing word.
 
-`em export` carries the flag forward as `public: true`/`false` on every event and view — the
-field a downstream contract generator (e.g. an AsyncAPI generator) filters on to promote only
-the events and views actually meant for consumers, instead of every fact and read model by
-default. `em typespec` (MIL-159, **experimental**/POC) is exactly such a generator, built into
-`em` itself — it emits a TypeSpec contract scoped to this flag. `em diff` tracks a flagged
+`em export` carries the flag forward as `public: true`/`false` on every element — the field a
+downstream contract generator filters on to promote only the commands, events and views
+actually meant for consumers. `em api generate` is that generator, built into `em`: it writes
+the model's TypeSpec contract, scoped to this flag, to `<model dir>/contracts/<model key>.tsp`
+(see [cli.md](cli.md#em-api-generate-file--em-api-check-file)). `em diff` tracks a flagged
 element flipping public↔private as its own change (`event marked public` / `view marked
 public` / etc.), so a promotion or demotion to the integration surface is a visible, diffable
 event. `em validate` exempts public elements from warnings about unread events and unconsumed
@@ -566,6 +585,42 @@ or a `ui` consumer on a view, means that slice ships an endpoint; no `ui` means 
 `public` means the shape is a ratified contract. The
 [implementation agent guide](../.claude/skills/event-modeling-implement/reference/implement.md)'s
 "Interface obligations" paragraph (§2) spells out what each case requires from the code.
+
+### Strict public types
+
+Every field of a `public` element — and every field of a declared `type` reachable from one —
+must have a type from the fixed **public type table**, `X[]` of a table entry or of a declared
+`type`, or a declared `type` name. Matching is case-insensitive. Anything else (including a
+field with no type) is an `em validate` error, `public-field-type-unresolved`
+([validation.md](validation.md#strict-public-types)). Internal elements keep free-text types.
+
+| Type | Meaning | TypeSpec (`em api generate`) |
+|---|---|---|
+| `string` | short text | `string` |
+| `text` | long text | `string` |
+| `int` | 32-bit integer | `int32` |
+| `long` | 64-bit integer | `int64` |
+| `decimal` | exact decimal (money, quantities) | `decimal` |
+| `boolean` | true/false | `boolean` |
+| `uuid` | identifier | `string` |
+| `date` | calendar date | `plainDate` |
+| `datetime` | instant in time (UTC) | `utcDateTime` |
+| `duration` | length of time | `duration` |
+| `bytes` | binary | `bytes` |
+
+The table is closed on purpose: em is not a type mapper. A domain type (`Money`, `Address`)
+is a declared `type` block whose fields use the table; `List<X>` is written `X[]`.
+
+```
+type Money { amount: decimal, currency: string }
+
+event Order Submitted @Order public {
+  orderId: uuid
+  total: Money
+  lines: OrderLine[]
+  note?: text
+}
+```
 
 ### Exposure of a read model (MIL-215)
 

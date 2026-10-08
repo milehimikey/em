@@ -7,7 +7,8 @@ linter would. This is a copy-paste GitHub Actions workflow that does that, plus 
 
 **Installed, not just copy-pasted:** `em ci init <model>` (MIL-166, see
 [cli.md](cli.md#em-ci-initmodel)) scaffolds most of this page's recipe as two ready-to-commit
-GitHub Actions files — `em validate` below, `em slice index --check`, `em coverage --strict`,
+GitHub Actions files — `em validate` below, `em api check --base` (MIL-237, see
+[below](#em-api-check-the-model-owned-contract)), `em slice index --check`, `em coverage --strict`,
 `em ledger`, `em skill check`, `em upgrade --check` (advisory, MIL-219 — see
 [upgrading.md](upgrading.md)), `em glossary --fail-on-conflicts`, a status-badge rebuild, and
 the conformance cadence — in one command, marker-delimited and idempotent the same way `em
@@ -88,6 +89,36 @@ Notes on the recipe:
   first `em validate` call — opt-in, since issues are meant to be visible, not necessarily
   blocking.
 - No local install needed — `npx @milehimikey/em` fetches the package for the run.
+
+## `em api check`: the model-owned contract
+
+`em ci init` adds a PR-only job, `api-check`, right after `validate`:
+
+```yaml
+  api-check:
+    name: "em api check (contract current; additive/breaking annotation)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the generated contract is current
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          npx @milehimikey/em@<version> api check "<model>" --base "$base"
+```
+
+It **fails only when the committed contract** (`<model dir>/contracts/<model key>.tsp`) is
+missing or differs from a fresh `em api generate` — commit the regenerated file with the model
+change. The `additive: …` / `breaking: …` lines it prints for every public-surface change since
+the PR base are annotation for the reviewer, never a gate (see
+[cli.md](cli.md#em-api-check) for the classification table). Route the contract file to the
+teams that consume it with CODEOWNERS (below) so a `breaking:` line reaches the right reviewer.
+`fetch-depth: 0` is needed so the base revision can be read.
 
 ## `em export` as the artifact step
 

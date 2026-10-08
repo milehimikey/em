@@ -21,7 +21,11 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // the 1.4->1.5 bump.
 // 1.5 (MIL-91): diagnostics gain `code`/`refs`, same structured-diagnostics retrofit as
 // `em export`'s SCHEMA_VERSION 1.4 — an independent cadence/field, bumped on its own.
-export const DIFF_SCHEMA_VERSION = "1.7";
+// 1.8 (1.14.0 release; MIL-237): entries gain `optional` (a field's `name?: Type` marker — that
+// field's own on `*field-added`/`*field-removed`, the new side's on the two new ChangeTypes
+// `field-optionality-changed`/`type-field-optionality-changed`; null elsewhere). Additive-only.
+// `event-marked-public`/`event-unmarked-public` may now carry `kind: "command"`.
+export const DIFF_SCHEMA_VERSION = "1.8";
 
 /**
  * The `## Delta` section's own vocabulary (MIL-88): four Title Case operations, matching the
@@ -51,6 +55,7 @@ const CHANGE_TYPE_TO_OP: Record<ChangeType, DeltaOp> = {
   "field-added": "Added",
   "field-removed": "Removed",
   "field-changed": "Modified",
+  "field-optionality-changed": "Modified",
   "from-added": "Added",
   "from-removed": "Removed",
   "note-added": "Added",
@@ -68,6 +73,7 @@ const CHANGE_TYPE_TO_OP: Record<ChangeType, DeltaOp> = {
   "type-field-added": "Added",
   "type-field-removed": "Removed",
   "type-field-changed": "Modified",
+  "type-field-optionality-changed": "Modified",
 };
 
 /** One side of the diff: what it was called, its source text, and its warnings. */
@@ -105,6 +111,7 @@ function serializeEntry(e: ChangeEntry): SerializedEntry {
     toSliceKey: e.toSliceKey ?? null,
     field: e.field ?? null,
     fieldType: e.fieldType ?? null,
+    optional: e.optional ?? null,
     oldType: e.oldType ?? null,
     newType: e.newType ?? null,
     source: e.source ?? null,

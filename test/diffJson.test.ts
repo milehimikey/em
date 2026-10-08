@@ -68,6 +68,7 @@ const OPTIONAL_FIELDS = [
   "toSliceKey",
   "field",
   "fieldType",
+  "optional",
   "oldType",
   "newType",
   "source",
@@ -618,6 +619,46 @@ describe("one correctly-serialized entry per ChangeType", () => {
       entry: { type: "type-removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" },
       expected: expectedEntry({ type: "type-removed", op: "Removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" }),
     },
+    "field-optionality-changed": {
+      entry: {
+        type: "field-optionality-changed",
+        kind: "event",
+        name: "Thing Done",
+        ref: "s/event.thing-done",
+        sliceName: "S",
+        sliceKey: "s",
+        field: "note",
+        optional: true,
+      },
+      expected: expectedEntry({
+        type: "field-optionality-changed",
+        op: "Modified",
+        kind: "event",
+        name: "Thing Done",
+        ref: "s/event.thing-done",
+        sliceName: "S",
+        sliceKey: "s",
+        field: "note",
+        optional: true,
+      }),
+    },
+    "type-field-optionality-changed": {
+      entry: {
+        type: "type-field-optionality-changed",
+        name: "QuoteAcceptedLine",
+        ref: "types/quoteacceptedline",
+        field: "memo",
+        optional: false,
+      },
+      expected: expectedEntry({
+        type: "type-field-optionality-changed",
+        op: "Modified",
+        name: "QuoteAcceptedLine",
+        ref: "types/quoteacceptedline",
+        field: "memo",
+        optional: false,
+      }),
+    },
     "type-field-added": {
       entry: {
         type: "type-field-added",
@@ -678,13 +719,13 @@ describe("one correctly-serialized entry per ChangeType", () => {
   // missing a key, and a stale one makes it an excess key. Both are errors.
   // This runtime assertion just pins the count for anyone reading the suite.
   it("covers every declared ChangeType exactly once", () => {
-    expect(Object.keys(cases)).toHaveLength(28);
+    expect(Object.keys(cases)).toHaveLength(30);
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 
   // `op` (MIL-131) never reads "Renamed": em diff has no rename detection (deliberate — a
   // rename reads as remove+add, see the ChangeType comment in src/model/diff.ts), so none of
-  // the 28 ChangeTypes map onto it. `DeltaOp` keeps "Renamed" in its union only for vocabulary
+  // the 30 ChangeTypes map onto it. `DeltaOp` keeps "Renamed" in its union only for vocabulary
   // parity with the `## Delta` section's own grammar (docs/slice-doc-schema.md).
   it("never emits op: \"Renamed\" — em diff doesn't detect renames", () => {
     const ops = new Set(Object.values(cases).map((c) => c.expected.op));
@@ -757,8 +798,8 @@ describe("lineage annotations (MIL-84)", () => {
     ]);
   });
 
-  it("bumps DIFF_SCHEMA_VERSION to 1.7", () => {
-    expect(DIFF_SCHEMA_VERSION).toBe("1.7");
+  it("bumps DIFF_SCHEMA_VERSION to 1.8 (MIL-237: `optional`)", () => {
+    expect(DIFF_SCHEMA_VERSION).toBe("1.8");
   });
 });
 

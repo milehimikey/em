@@ -296,11 +296,12 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the nineteen documented tools", async () => {
+  it("exposes exactly the twenty documented tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        "api_check",
         "changelog",
         "conform_findings_check",
         "conform_scope",
@@ -899,7 +900,7 @@ describe("glossary tool", () => {
     const a = join(dir, "glossary-a.em");
     const b = join(dir, "glossary-b.em");
     const { result, doc } = await callJson(client, "glossary", { files: [a, b] });
-    expect(doc.glossarySchemaVersion).toBe("1.0");
+    expect(doc.glossarySchemaVersion).toBe("1.1");
     expect(doc.conflicts).toContainEqual(expect.objectContaining({ type: "field-type-conflict", term: "total" }));
 
     const mcpText = (result.content[0] as { type: "text"; text: string }).text;
@@ -1041,6 +1042,43 @@ describe("conform_scope tool", () => {
   });
 });
 
+describe("api_check tool (MIL-237)", () => {
+  const exampleDir = join(ROOT, "examples", "multi-model");
+
+  it("byte-identical to `em api check <file> --json` for a shipped multi-model model (current contract)", async () => {
+    const file = join(exampleDir, "models", "checkout", "checkout.em");
+    const { result, doc } = await callJson(client, "api_check", { file });
+    expect(result.isError).toBeFalsy();
+    expect(doc).toMatchObject({ apiCheckSchemaVersion: "1.0", current: true, base: null, changes: [] });
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["api", "check", file, "--json"], exampleDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("with `base`: byte-identical to `em api check --base <rev> --json`, a stale contract stays inside the document", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-mcp-api-"));
+    try {
+      writeFileSync(join(dir, "shop.em"), `model "Shop"\nslice "S" {\n  command Buy public { sku: string }\n  event Bought @D\n}\n`);
+      git(["init", "-q"], dir);
+      git(["add", "-A"], dir);
+      git(["commit", "-q", "-m", "seed"], dir);
+      writeFileSync(join(dir, "shop.em"), `model "Shop"\nslice "S" {\n  command Buy public { sku: string, qty: int }\n  event Bought @D\n}\n`);
+      const file = join(dir, "shop.em");
+      const { result, doc } = await callJson(client, "api_check", { file, base: "HEAD" });
+      expect(result.isError).toBeFalsy();
+      expect(doc.current).toBe(false);
+      expect(doc.changes).toEqual([{ kind: "breaking", element: "command.buy", field: "qty", what: "added (required)" }]);
+      const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+      const cli = em(["api", "check", file, "--base", "HEAD", "--json"], dir);
+      expect(cli.status).toBe(1);
+      expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("system tool (MIL-194, MIL-235)", () => {
   const exampleDir = join(ROOT, "examples", "multi-model");
 
@@ -1113,7 +1151,7 @@ describe("query tool", () => {
     const modelFile = join(dir, "ready.em");
     const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "consumers", event: "Thing Done" });
     expect(result.isError).toBeFalsy();
-    expect(doc.querySchemaVersion).toBe("1.1"); // MIL-199: +loops-to QueryEdgeKind
+    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind
     expect(doc.verb).toBe("consumers");
     expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["read-model/view.thing-list"]);
 

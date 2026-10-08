@@ -830,7 +830,7 @@ describe("em diff --json (CLI)", () => {
     const r = em(["diff", "clean.em", "warn.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning/report text leaked into stdout
-    expect(doc.diffSchemaVersion).toBe("1.7");
+    expect(doc.diffSchemaVersion).toBe("1.8");
     expect(doc.identical).toBe(false);
     expect(r.stderr).toContain("produces no event");
   });
@@ -1749,6 +1749,7 @@ describe("em mcp (CLI, MIL-21)", () => {
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
+          "api_check",
           "changelog",
           "conform_findings_check",
           "conform_scope",
@@ -3056,7 +3057,7 @@ describe("em glossary (CLI)", () => {
     const r = em(["glossary", "glossary-a.em", "glossary-b-conflict.em", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.glossarySchemaVersion).toBe("1.0");
+    expect(doc.glossarySchemaVersion).toBe("1.1");
     expect(doc.conflicts).toHaveLength(2);
     expect(r.stderr).toContain("not read by any read model");
   });
@@ -3075,7 +3076,7 @@ describe("em glossary (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote glossary-out.json");
     const doc = JSON.parse(readFileSync(join(dir, "glossary-out.json"), "utf8"));
-    expect(doc.glossarySchemaVersion).toBe("1.0");
+    expect(doc.glossarySchemaVersion).toBe("1.1");
   });
 
   it("--fail-on-conflicts exits 1 only when conflicts exist", () => {
@@ -5029,7 +5030,7 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     const r = em(["query", "consumers", "model.em", "--event", "Order Placed", "--json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.querySchemaVersion).toBe("1.1"); // MIL-199: +loops-to QueryEdgeKind
+    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind
     expect(doc.verb).toBe("consumers");
     expect(doc.files).toEqual(["model.em"]);
     expect(doc.results.map((x: { ref: string }) => x.ref).sort()).toEqual(

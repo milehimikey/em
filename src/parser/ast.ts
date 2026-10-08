@@ -24,6 +24,10 @@ export interface Field {
   name: string;
   /** Optional type annotation after a `:`. */
   type?: string;
+  /** Trailing `?` on the field name (`name?: Type`, MIL-237): the field may be absent. Fields
+   *  are required by default; `undefined` when not marked. Drives `em api generate`'s
+   *  `name?: T` and `em api check`'s required↔optional breaking rules. */
+  optional?: boolean;
   /** Trailing `tag` clause on the field line (event fields only): marks this field as an
    *  identity tag — the tag key defaults to the field's own name. Merged with any
    *  element-level `tag` clauses (`ElementNode.tags`) at export time via `model/model.ts`'s
@@ -100,9 +104,9 @@ export interface ElementNode {
   fields?: Field[];
   /** view-only: a later timeline instance of an already-declared read model. */
   again?: boolean;
-  /** `public` — event or view: marks this element as part of the published integration
-   *  surface (an event as a contract, a view as a public read API's response shape), as
-   *  opposed to an internal-only fact or read model. */
+  /** `public` — command, event or view: marks this element as part of the published
+   *  integration surface (a command as the write API — MIL-237 — an event as a contract, a
+   *  view as a public read API's response shape), as opposed to an internal-only element. */
   public?: boolean;
   /** Element-level `tag` clauses (composite/external) — events only. `undefined`/absent when
    *  none are declared; inline field identity tags live on `Field.tag` instead, not here. */
