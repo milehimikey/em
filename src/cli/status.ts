@@ -584,6 +584,10 @@ export interface StatusReport {
   /** MIL-171: per-slice owner facts, one entry per slice across every input file — see
    *  `StatusOwnerEntry`. */
   owners: StatusOwnerEntry[];
+  /** MIL-239 (R11): the nearest `system.yaml` above the first input file and how many of its
+   *  `consumes` bindings failed the consumer-adaptation check; `null` when no manifest was found
+   *  (or it could not be loaded). `manifest` is the path as reached from the first input. */
+  system: { manifest: string; consumerNotAdapted: number } | null;
 }
 
 /** Aggregate everything `em status` reports into one `StatusReport` — pure, no I/O. Callers
@@ -598,6 +602,7 @@ export function buildStatusReport(
   diagnostics: StatusDiagnostic[],
   modelVersion: ModelVersionStatusEntry[] = [],
   emVersion: EmVersionStatusEntry[] = [],
+  system: StatusReport["system"] = null,
 ): StatusReport {
   const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
   const drift: StatusDriftCounts = {
@@ -692,6 +697,7 @@ export function buildStatusReport(
     emVersion,
     diagnostics,
     owners: sliceFacts.map((f) => ({ file: f.file, key: f.key, owner: f.owner })),
+    system,
   };
 }
 
@@ -858,6 +864,7 @@ export function formatStatusDetail(report: StatusReport): string {
     const label = multiEmVersion ? `em version (${entry.file}): ` : "em version: ";
     lines.push(`${label}${formatEmVersionPart(entry)}`);
   }
+  if (report.system) lines.push(`consumer adaptation: ${report.system.consumerNotAdapted} not adapted (${report.system.manifest})`);
   if (report.diagnostics.length > 0) {
     lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);
   }

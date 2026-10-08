@@ -1511,13 +1511,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.7"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.8"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.7",
+  "statusSchemaVersion": "1.8",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1564,6 +1564,7 @@ see [mcp.md](mcp.md)):
     { "file": "model.em", "key": "checkout", "owner": "Team Checkout" },
     { "file": "model.em", "key": "billing", "owner": null }
   ],
+  "system": { "manifest": "../../system.yaml", "consumerNotAdapted": 0 },
   "diagnostics": []
 }
 ```
@@ -1631,6 +1632,17 @@ line, independently, for its own `[path]` argument's state file. See [upgrading.
 file — `owner` is the slice's bound doc's `owner:` frontmatter verbatim, `null` when absent or
 when no doc was found at all. Never deduped: two slices sharing one doc via MIL-121 `covers:`
 legitimately share the same owner, and each still gets its own entry.
+
+`system` (added in schema `1.8`, MIL-239) is `null` unless a `system.yaml` sits above the first
+input file. `em status` walks up from that file's directory, stopping at the repository root (the
+first directory holding `.git`), and no flag is needed. When one is found it runs the full
+[`em system`](#em-system-manifest) verification and reports the manifest path (as reached from
+the first input, never absolutized) and `consumerNotAdapted`, the number of `consumes` bindings
+that raised [`consumer-not-adapted`](#em-system-manifest). The text report adds
+`consumer adaptation: N not adapted (<manifest>)`. A manifest that can't be loaded gives
+`system: null` plus a `warn:` line on stderr; `em system` is the command that reports why. `em
+status` itself still exits 0: the count is a fact, and the gate is `em system` (see
+[ci.md](ci.md#em-system-consumer-adaptation-the-release-blocker)).
 
 `diagnostics` (added for the PR #116 review pass) carries every doc-join warning
 (`binding-missing-file`/`frontmatter-invalid`) raised while resolving each slice's doc, across
@@ -2081,6 +2093,7 @@ point at that model's source. The codes are stable and safe to match in CI
 |---|---|---|
 | `consumes-unknown-model` | error | A `consumes` ref names a model key the system doesn't have. `refs` = [the consuming translation, the ref as written] |
 | `consumes-unknown-element` | error | The model exists but has no `public` event/view of that kind and slug. The message says when the element exists but isn't `public`. Same `refs` |
+| `consumer-not-adapted` | error | A consuming translation still declares a field its producer's `public` element no longer has (removed, or renamed: the message names the new name via `renamed from`), or declares a shared field with a different type. One finding per binding, listing every field. `refs` = [the consuming translation, the producer element], both qualified. The message ends `producer last changed in <sha>` (`git log -n1` over the producer's `.em`, 12 characters), or `(commit unknown)` when there is no git history or the producer is an export document. A producer change that only adds a field, required or optional, never raises it: consumers tolerate unknown fields (the generated contract says so, see `em api generate`) |
 | `system-manifest-invalid` | error | Shape problems: missing/unknown keys, an unsupported `systemSchemaVersion`, `seams:`/`owner:` in a 2.0 manifest, an unreadable/unparseable source, or (discovery) no models found |
 | `system-manifest-outdated` | warning | The manifest is schema 1.0. It still verifies; run `em upgrade` |
 | `system-model-key-mismatch` | error | A `models:` key ≠ that export's `model.key` (the message names the computed key) |
@@ -2089,6 +2102,14 @@ point at that model's source. The codes are stable and safe to match in CI
 | `unbound-translation` | warning | An **externally fed** reaction (no incoming edge inside its own model) that nothing binds: a translation with no `consumes`, or another reaction kind, which can only be fed by a `from` |
 | `undeclared-seam-candidate` | warning | A `public` event/view in model A whose normalized name equals a reaction's or an event's name in model B ≠ A, with no binding between them. This is the old name-matching join, demoted to a lint |
 | `seam-endpoint-unresolved`, `seam-source-not-public`, `seam-consumer-not-reaction` | error | 1.0 manifests only: a legacy `seams:` entry whose `from`/`to` doesn't resolve, whose `from` isn't a `public` event/view, or whose `to` isn't a reaction |
+
+**Consumer adaptation (MIL-239).** For every resolved `consumes` binding, `em system` compares the
+consuming translation's declared fields against the producer's public element as of HEAD. The type
+comparison is `em api check`'s (declared type name and array arity, or the raw type text without
+whitespace or case). A translation with no field block has nothing to compare and is not counted.
+The `--json` document gains `consumerAdaptation: { checked, notAdapted }` (after `discovery`);
+`checked` counts bindings whose consumer declares fields, `notAdapted` those that raised the
+finding. The `systemSchemaVersion` stays `2.0` (additive).
 
 "Externally fed" is read straight off the export's `model.edges` (schema 1.10), never
 re-derived. A reaction with a `from "View"` (or an explicit `arrow` into it) has an in-model

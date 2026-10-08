@@ -25,6 +25,7 @@ import { normalizeName } from "../model/model.js";
 import { formatContractRef, formatQualifiedRef, parseContractRef, parseQualifiedRef } from "../model/qualifiedRef.js";
 import { pushDiag, RuleCode } from "../model/rules.js";
 import type { Diagnostic } from "../model/validate.js";
+import { AdaptationField, adaptationMessage, compareConsumerFields } from "./adaptation.js";
 import { LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION, SYSTEM_MANIFEST_SCHEMA_VERSION, SystemManifest } from "./manifest.js";
 
 /** The subset of one `em export --json` document `verifySystem` reads. */
@@ -37,6 +38,9 @@ export interface SystemExportElement {
   /** Export schema >= 1.15 (MIL-235): a translation's contract refs. Absent on older exports —
    *  read as none. */
   consumes?: string[] | null;
+  /** The element's declared fields (MIL-239 reads them for the consumer-adaptation check).
+   *  Absent on an export that carries none; read as no fields. */
+  fields?: AdaptationField[] | null;
 }
 export interface SystemExportSlice {
   key: string;
@@ -122,7 +126,17 @@ export interface SystemReport {
   models: SystemModelReport[];
   seams: SystemSeamReport[];
   contextMap: ContextMap;
+  /** MIL-239: `checked` = resolved `consumes` bindings whose consumer declares fields (so there
+   *  was something to compare); `notAdapted` = how many of them raised `consumer-not-adapted`. */
+  consumerAdaptation: { checked: number; notAdapted: number };
   diagnostics: SystemDiagnostic[];
+}
+
+/** Caller-supplied, impure inputs `verifySystem` cannot compute itself. */
+export interface VerifySystemOptions {
+  /** The short sha of the last commit that changed the producer model's source, or `null` when
+   *  unknown (no git, no history, export-document source). Named in `consumer-not-adapted`. */
+  producerCommit?: (model: SystemModelInput) => string | null;
 }
 
 interface ResolvedEndpoint {
@@ -139,6 +153,7 @@ const SEAM_ERROR_CODES: ReadonlySet<string> = new Set([
   "seam-consumer-not-reaction",
   "consumes-unknown-model",
   "consumes-unknown-element",
+  "consumer-not-adapted",
 ]);
 
 /** The `<kind>.<slug>` tail of an export element ref (`<sliceKey>/<kind>.<slug>`). */
@@ -157,6 +172,7 @@ export function verifySystem(
   models: SystemModelInput[],
   manifestFile: string | null,
   preDiagnostics: SystemDiagnostic[] = [],
+  options: VerifySystemOptions = {},
 ): SystemReport {
   const diagnostics: SystemDiagnostic[] = [...preDiagnostics];
   const raise = (file: string, code: RuleCode, extra: { message: string; line?: number; refs?: string[] }) => {
@@ -213,6 +229,7 @@ export function verifySystem(
   const seenPairs = new Map<string, "consumes" | "manifest">();
   const seamsByModelPair = new Map<string, number>();
   const seams: SystemSeamReport[] = [];
+  const adaptation = { checked: 0, notAdapted: 0 };
 
   const record = (
     origin: "consumes" | "manifest",
@@ -256,9 +273,9 @@ export function verifySystem(
         for (const raw of refs) {
           const codes: string[] = [];
           const consumer = `${el.kind} "${el.name}" (${toQualified})`;
-          const bindRaise = (code: RuleCode, message: string) => {
+          const bindRaise = (code: RuleCode, message: string, refs: string[] = [toQualified, raw]) => {
             codes.push(code);
-            raise(m.file, code, { message, line: el.line, refs: [toQualified, raw] });
+            raise(m.file, code, { message, line: el.line, refs });
           };
           let from: ResolvedEndpoint | undefined;
           const parsed = parseContractRef(raw);
@@ -308,6 +325,25 @@ export function verifySystem(
               refs: [toQualified, raw],
             });
           });
+          // MIL-239: the consumer's declared fields against the producer's public element now.
+          const consumerFields = el.fields ?? [];
+          if (from && consumerFields.length > 0) {
+            adaptation.checked++;
+            const problems = compareConsumerFields(consumerFields, from.element.fields ?? []);
+            if (problems.length > 0) {
+              adaptation.notAdapted++;
+              bindRaise(
+                "consumer-not-adapted",
+                adaptationMessage(
+                  consumer,
+                  `${from.element.kind} "${from.element.name}" (${fromQualified})`,
+                  problems,
+                  options.producerCommit?.(from.model) ?? null,
+                ),
+                [toQualified, fromQualified],
+              );
+            }
+          }
           seams.push({
             from: fromQualified,
             to: toQualified,
@@ -515,5 +551,5 @@ export function verifySystem(
       .sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to)),
   };
 
-  return { name: manifest?.name ?? null, models: modelReports, seams, contextMap, diagnostics };
+  return { name: manifest?.name ?? null, models: modelReports, seams, contextMap, consumerAdaptation: adaptation, diagnostics };
 }

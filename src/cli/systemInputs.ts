@@ -18,7 +18,7 @@
 // Model keys are `computeModelKeys`'s (first file wins the bare key, later ones get `~2` …).
 
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { compile } from "../pipeline.js";
 import { ParseError } from "../parser/parser.js";
 import { hasErrors } from "../model/validate.js";
@@ -29,7 +29,7 @@ import type { NormalizedModel } from "../model/model.js";
 import { walkDir } from "../util/walkDir.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { parseManifest, SystemManifest } from "../system/manifest.js";
-import { SystemDiagnostic, SystemDiscovery, SystemExportDoc, SystemModelInput } from "../system/verify.js";
+import { SystemDiagnostic, SystemDiscovery, SystemExportDoc, SystemModelInput, verifySystem } from "../system/verify.js";
 
 export type { SystemDiscovery };
 
@@ -262,4 +262,62 @@ export function readExportDoc(text: string, file: string): LoadedSource {
   if (!Array.isArray(model.slices)) return { error: `${file}: export document has no \`model.slices\`` };
   if (!Array.isArray(model.edges)) return { error: `${file}: export document has no \`model.edges\` — regenerate it with a current \`em export --json\`` };
   return { sourceKind: "export", doc: raw as SystemExportDoc };
+}
+
+/** The `producerCommit` resolver `verifySystem` takes (MIL-239): the short sha of the last
+ *  commit touching the model's `.em` source, via `git log -n1`. `null` — never an error — for an
+ *  export-document source, a path outside git, or a file with no history. */
+export function gitProducerCommit(runGit: GitRunner = realGit): (model: SystemModelInput) => string | null {
+  return (model) => {
+    if (model.sourceKind !== "em") return null;
+    const log = runGit(["-C", dirname(model.file), "log", "-n1", "--format=%H", "--", basename(model.file)]);
+    const sha = log.status === 0 ? log.stdout.trim() : "";
+    return sha === "" ? null : sha.slice(0, 12);
+  };
+}
+
+/** R11: the nearest `system.yaml` walking up from the directory of `file` (the first input of
+ *  `em status`), stopping after the repo root (the first directory holding `.git`) or at the
+ *  filesystem root. The path is joined from `file`'s own directory ("as given", never absolutized)
+ *  and normalized to `/` separators. `null` when none is found. */
+export function findSystemManifestAbove(file: string): string | null {
+  let dir = dirname(file);
+  let abs = realpathOrResolve(dir);
+  for (;;) {
+    const candidate = join(dir, SYSTEM_MANIFEST_FILE);
+    if (existsSync(candidate)) return normalize(candidate).split(sep).join("/");
+    if (existsSync(join(abs, ".git"))) return null;
+    const parent = dirname(abs);
+    if (parent === abs) return null;
+    abs = parent;
+    dir = join(dir, "..");
+  }
+}
+
+function realpathOrResolve(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/** `em status`'s `system` block (R11), shared with the MCP `status` tool: auto-discover the
+ *  manifest above `firstFile`, run the full system verification, count `consumer-not-adapted`.
+ *  `null` when there is no manifest above, or when it cannot be loaded (an invalid manifest is
+ *  `em system`'s to report; `warn` receives the reason for the CLI to print). */
+export function statusSystemBlock(
+  firstFile: string,
+  runGit: GitRunner = realGit,
+  warn: (message: string) => void = () => {},
+): { manifest: string; consumerNotAdapted: number } | null {
+  const manifest = findSystemManifestAbove(firstFile);
+  if (manifest === null) return null;
+  const loaded = loadSystem(manifest, runGit);
+  if (!loaded.ok) {
+    warn(`system ${manifest} not checked — ${loaded.diagnostics[0]?.message ?? "cannot be loaded"}`);
+    return null;
+  }
+  const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics, { producerCommit: gitProducerCommit(runGit) });
+  return { manifest, consumerNotAdapted: report.consumerAdaptation.notAdapted };
 }

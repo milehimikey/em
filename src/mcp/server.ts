@@ -91,7 +91,7 @@ import {
   queryPath,
 } from "../query/verbs.js";
 import { buildQueryJson } from "../emit/queryJson.js";
-import { loadSystem } from "../cli/systemInputs.js";
+import { gitProducerCommit, loadSystem, statusSystemBlock } from "../cli/systemInputs.js";
 import { verifySystem } from "../system/verify.js";
 import { buildSystemJson } from "../emit/systemJson.js";
 import { runCodeowners } from "../system/codeowners.js";
@@ -539,7 +539,7 @@ export function createServer(): McpServer {
         .map(({ file }) => resolveEmVersionStatusEntry(file, GENERATOR_VERSION))
         .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]));
       return textResult(buildStatusJson(report));
     },
   );
@@ -1018,7 +1018,7 @@ export function createServer(): McpServer {
           `not verifying: ${target} could not be loaded — ${loaded.diagnostics.map((d) => `${d.file}${d.line ? `:${d.line}` : ""}: ${d.message}`).join("; ")}`,
         );
       }
-      const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
+      const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics, { producerCommit: gitProducerCommit() });
       return textResult(buildSystemJson(loaded, report));
     },
   );

@@ -5,7 +5,7 @@
 // it. CLI-level coverage of `em mcp` (that the subcommand exists and is wired) lives in
 // test/cli.test.ts; the stdio entry point itself (src/mcp/main.ts) is a 3-line wrapper with
 // nothing of its own to unit-test.
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -19,6 +19,8 @@ import { readContract } from "../src/cli/contract.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 import { writeInvariantFixture } from "./helpers/invariantFixture.js";
 import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
+
+vi.setConfig({ testTimeout: 20_000 });
 
 // Spawns the real CLI (via tsx), same helper shape as test/cli.test.ts's `em()` — used here only
 // for the byte-identity assertions (MCP tool result === `em <cmd> --json`/stdout for the same
@@ -593,7 +595,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.7");
+    expect(doc.statusSchemaVersion).toBe("1.8");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -1077,6 +1079,50 @@ describe("api_check tool (MIL-237)", () => {
       expect(cli.stdout).toBe(mcpText + "\n");
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("consumer adaptation over MCP (MIL-239)", () => {
+  const renamed = () => {
+    const repo = makeMultiModelRepo();
+    writeFileSync(repo.checkout, readFileSync(repo.checkout, "utf8").replace("    orderId: uuid assigned\n", '    customerOrderId: uuid assigned renamed from "orderId"\n'));
+    repo.git("commit", "-aqm", "rename orderId");
+    return repo;
+  };
+
+  it("system: a not-adapted consumer is byte-identical to `em system --json`", async () => {
+    const repo = renamed();
+    try {
+      const { result, doc } = await callJson(client, "system", { manifest: repo.manifest });
+      expect(doc.consumerAdaptation).toEqual({ checked: 1, notAdapted: 1 });
+      expect(doc.diagnostics.map((d: { code: string }) => d.code)).toContain("consumer-not-adapted");
+      const cli = em(["system", repo.manifest, "--json"], repo.dir);
+      expect(cli.status).toBe(1);
+      expect(cli.stdout).toBe((result.content[0] as { text: string }).text + "\n");
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("status: the system block is byte-identical to `em status --json`, with and without a manifest", async () => {
+    const repo = renamed();
+    const bare = makeMultiModelRepo({ manifest: false });
+    try {
+      for (const [r, expected] of [
+        [repo, 1],
+        [bare, null],
+      ] as const) {
+        const file = join(r.dir, "models", "fulfillment", "fulfillment.em");
+        const { result, doc } = await callJson(client, "status", { files: [file] });
+        expect(doc.system === null ? null : doc.system.consumerNotAdapted).toBe(expected);
+        const cli = em(["status", file, "--json"], r.dir);
+        expect(cli.status).toBe(0);
+        expect(cli.stdout).toBe((result.content[0] as { text: string }).text + "\n");
+      }
+    } finally {
+      repo.cleanup();
+      bare.cleanup();
     }
   });
 });

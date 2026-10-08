@@ -41,6 +41,7 @@ function sampleReport(): StatusReport {
     emVersion: [{ file: "model.em", recorded: "1.12.0", installed: PKG_VERSION, behind: true }],
     diagnostics: [{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3 }],
     owners: [{ file: "model.em", key: "checkout", owner: "Alex Rivera" }, { file: "model.em", key: "billing", owner: null }],
+    system: { manifest: "system.yaml", consumerNotAdapted: 2 },
   };
 }
 
@@ -49,7 +50,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.7");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.8");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);
@@ -65,6 +66,9 @@ describe("buildStatusJson", () => {
     // MIL-219: emVersion carried verbatim.
     expect(doc.emVersion).toEqual(report.emVersion);
     expect(doc.owners).toEqual(report.owners);
+    // MIL-239: the system block carried verbatim (null when no manifest was found).
+    expect(doc.system).toEqual({ manifest: "system.yaml", consumerNotAdapted: 2 });
+    expect(JSON.parse(buildStatusJson({ ...report, system: null })).system).toBeNull();
     expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
   });
 

@@ -69,6 +69,13 @@ describe("examples/multi-model/", () => {
     expect(report.contextMap.edges).toEqual([{ from: "checkout", to: "fulfillment", seams: 1 }]);
   });
 
+  it("the shipped example is adapted: the consumer's fields match the producer's event (MIL-239)", () => {
+    const loaded = loadSystem(MANIFEST_FILE);
+    if (!loaded.ok) throw new Error("manifest failed to load");
+    const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
+    expect(report.consumerAdaptation).toEqual({ checked: 1, notAdapted: 0 });
+  });
+
   it("the translation is externally fed (no in-model edge into it) — the shape the seam binds", () => {
     const loaded = loadSystem(MANIFEST_FILE);
     if (!loaded.ok) throw new Error("manifest failed to load");
@@ -128,10 +135,12 @@ describe("examples/multi-model/", () => {
       const before = docOf(legacy.dir);
       const after = docOf(current.dir);
       // Only these differ: the manifest bytes, the seam's free-text description (now a `#` comment
-      // above the translation), the per-model `file` paths (two tmp dirs), and the outdated warning.
+      // above the translation), the per-model `file` paths (two tmp dirs), the adaptation summary, and the outdated warning.
       const strip = (d: ReturnType<typeof docOf>) => ({
         ...d,
         manifest: { ...d.manifest, sha256: "<sha>" },
+        // MIL-239: a legacy manifest seam carries no `consumes`, so the adaptation check sees nothing to compare.
+        consumerAdaptation: "<c>",
         seams: d.seams.map((x: { description: unknown }) => ({ ...x, description: "<d>" })),
         // the legacy example's free-text owners became @example/... handles in MIL-234
         models: d.models.map((x: object) => ({ ...x, owner: "<o>" })),

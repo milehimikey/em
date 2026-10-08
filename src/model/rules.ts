@@ -465,6 +465,15 @@ export const RULES = {
     usageCategory: "consumes unknown element",
     docAnchor: "seam-manifest",
   },
+  // MIL-239: the consumer-adaptation check — a `consumes` binding whose consuming translation
+  // still declares a field the producer's public element no longer has (or types differently).
+  "consumer-not-adapted": {
+    severity: "error",
+    title: "Consuming translation no longer matches the producer's public element",
+    fix: "Update the translation's field block to the producer's current fields (a renamed field names its new name in the message). Additive producer changes never raise this — consumers tolerate unknown fields.",
+    usageCategory: "consumer not adapted",
+    docAnchor: "seam-manifest",
+  },
   "seam-endpoint-unresolved": {
     severity: "error",
     title: "Seam endpoint does not resolve",

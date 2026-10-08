@@ -24,7 +24,7 @@ import { buildApiCheckJson } from "./emit/apiCheckJson.js";
 import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
-import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
+import { planDiffArgs, realGit, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
@@ -180,7 +180,7 @@ import {
   formatPath,
 } from "./query/format.js";
 import { buildQueryJson } from "./emit/queryJson.js";
-import { loadSystem, SYSTEM_MANIFEST_FILE } from "./cli/systemInputs.js";
+import { gitProducerCommit, loadSystem, statusSystemBlock, SYSTEM_MANIFEST_FILE } from "./cli/systemInputs.js";
 import { runCodeowners } from "./system/codeowners.js";
 import { buildCodeownersJson } from "./emit/codeownersJson.js";
 import { verifySystem, SystemDiagnostic } from "./system/verify.js";
@@ -2107,7 +2107,9 @@ program
         .map(({ file }) => resolveEmVersionStatusEntry(file, PKG_VERSION))
         .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion);
+      // MIL-239 (R11): the nearest system.yaml above the first input file, consumer-adaptation counted.
+      const system = statusSystemBlock(files[0], realGit, (m) => console.error(`warn: em status: ${m}`));
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, system);
 
       let output: string;
       if (opts.json) output = buildStatusJson(report);
@@ -2388,7 +2390,7 @@ const systemCommand = program
       console.error(`em system: not verifying — ${shown} could not be loaded; fix the above first`);
       process.exit(1);
     }
-    const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
+    const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics, { producerCommit: gitProducerCommit() });
     if (opts.json) {
       // `em validate --json`'s convention: diagnostics still go to stderr in the human format,
       // the document (which carries the same diagnostics) to stdout; exit code unchanged.

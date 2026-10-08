@@ -745,9 +745,17 @@ describe("text/markdown/badge formatting", () => {
       emVersion: [{ file: "model.em", recorded: "1.13.0", installed: "1.13.0", behind: false }],
       diagnostics: [],
       owners: [],
+      system: null,
       ...overrides,
     };
   }
+
+  it("formatStatusDetail prints the consumer-adaptation line only when a system.yaml was found (MIL-239)", () => {
+    expect(formatStatusDetail(makeReport())).not.toContain("consumer adaptation");
+    expect(formatStatusDetail(makeReport({ system: { manifest: "../system.yaml", consumerNotAdapted: 2 } }))).toContain(
+      "consumer adaptation: 2 not adapted (../system.yaml)",
+    );
+  });
 
   it("formatStatusSummary renders MIL-163's acceptance line for the fully-healthy case", () => {
     const summary = formatStatusSummary(makeReport());

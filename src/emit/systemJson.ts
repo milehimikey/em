@@ -20,6 +20,9 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // `string[]` (the model header's `owner` entries) instead of `string | null`. `manifest` is
 // `null` when the system was discovered (no system.yaml), and the new `discovery: {root,
 // files} | null` (before `diagnostics`) says what was found. Major bump: `owner`'s type changed.
+//   - MIL-239 (additive, stays 2.0): `consumer-not-adapted` errors join `diagnostics` (same
+//     array), and a new `consumerAdaptation: {checked, notAdapted}` summary sits after
+//     `discovery`, before `diagnostics`. Seams carrying the finding have `status: "error"`.
 export const SYSTEM_SCHEMA_VERSION = "2.0";
 
 /** Where the system came from — exactly one of the two is non-null. */
@@ -51,6 +54,7 @@ export function buildSystemJson(source: SystemJsonSource, report: SystemReport):
     seams: report.seams,
     contextMap: report.contextMap,
     discovery: source.discovery,
+    consumerAdaptation: report.consumerAdaptation,
     // Same serialized diagnostic shape em export/em diff use (severity, code, message, line,
     // refs), plus `file` since this is a multi-model surface (`em status --json`'s convention):
     // manifest-level findings point at the manifest, per-element ones at the model's source.

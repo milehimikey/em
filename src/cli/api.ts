@@ -140,11 +140,11 @@ export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeEx
 
 /** A field's type as the contract sees it: a declared type's name or the raw string,
  *  normalized, with its array arity. */
-function typeLabel(f: FieldExport): string {
+export function typeLabel(f: Pick<FieldExport, "type" | "typeRef">): string {
   if (f.typeRef) return `${f.typeRef.name}${f.typeRef.array ? "[]" : ""}`;
   return f.type ?? "(none)";
 }
-function typeIdentity(f: FieldExport): string {
+export function typeIdentity(f: Pick<FieldExport, "type" | "typeRef">): string {
   if (f.typeRef) return `ref:${f.typeRef.ref}:${f.typeRef.array}`;
   return `raw:${(f.type ?? "").replace(/\s+/g, "").toLowerCase()}`;
 }

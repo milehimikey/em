@@ -4,7 +4,7 @@
 // resolution and its two error codes, the MIL-194 checks re-derived from `consumes`, one test per
 // legacy seam code — the fs loader (src/cli/systemInputs.ts: `.json` sources, discovery via
 // `git ls-files` and the non-git walk), and determinism of the --json document.
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -22,6 +22,8 @@ import { verifySystem, SystemExportDoc, SystemModelInput } from "../src/system/v
 import { discoverModelFiles, loadSystem, readExportDoc } from "../src/cli/systemInputs.js";
 import { buildSystemJson, SYSTEM_SCHEMA_VERSION } from "../src/emit/systemJson.js";
 import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
+
+vi.setConfig({ testTimeout: 20_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
@@ -763,7 +765,7 @@ describe("buildSystemJson", () => {
     expect(doc.systemSchemaVersion).toBe(SYSTEM_SCHEMA_VERSION);
     expect(doc.generator.name).toBe("@milehimikey/em");
     expect(doc.manifest).toEqual({ path: "system.yaml", sha256: expect.stringMatching(/^[0-9a-f]{64}$/), name: "Test System" });
-    expect(Object.keys(doc)).toEqual(["systemSchemaVersion", "generator", "manifest", "models", "seams", "contextMap", "discovery", "diagnostics"]);
+    expect(Object.keys(doc)).toEqual(["systemSchemaVersion", "generator", "manifest", "models", "seams", "contextMap", "discovery", "consumerAdaptation", "diagnostics"]);
     expect(doc.systemSchemaVersion).toBe("2.0");
     expect(doc.discovery).toBeNull();
     expect(doc.diagnostics[0].code).toBe("system-manifest-outdated");

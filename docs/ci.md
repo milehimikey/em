@@ -124,6 +124,21 @@ the PR base are annotation for the reviewer, never a gate (see
 teams that consume it with CODEOWNERS (below) so a `breaking:` line reaches the right reviewer.
 `fetch-depth: 0` is needed so the base revision can be read.
 
+## `em system`: consumer adaptation, the release blocker
+
+In a repository that holds several models, the system job runs `em system` (a `system.yaml`, or
+discovery when there is none) on pull requests. Besides the both-ends-of-a-flow checks it runs the
+consumer-adaptation check (MIL-239): every `consumes` binding's consuming translation is compared
+with the producer's public element at HEAD, and a field the consumer declares that the producer
+removed, renamed or retyped fails the job with `consumer-not-adapted`. The message names the
+consumer, the producer element, the fields and the producer commit, so the producer's PR cannot
+merge until the consumer's field block is updated (in the same PR or a prior one). A producer
+change that only adds fields stays green: consumers tolerate unknown fields, as the generated
+contract's doc comment says (see [`em api check`](#em-api-check-the-model-owned-contract)).
+`em status` reports the same count as `system.consumerNotAdapted` without failing. The job line
+is `npx @milehimikey/em@<version> system <manifest|.>`; `em ci init` wiring for it follows the
+MIL-233 restructure of the generator.
+
 ## `em export` as the artifact step
 
 Once validation passes, `em export <file.em> -o <file.json>` produces a versioned JSON
