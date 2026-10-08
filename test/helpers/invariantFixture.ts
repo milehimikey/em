@@ -14,8 +14,10 @@
 // byte-for-byte by test/fixtures/invariant-baseline/ (captured from em 1.13.1 + MIL-259, before
 // the model-first readers existed).
 //
-// `public` on commands lands with MIL-237; until then the fixture marks the EVENT public and the
-// command carries the model-declared invariant.
+// The commands stay internal here (the baseline must be valid 1.13 input); test/validate.test.ts
+// writes them `public` (MIL-237) for `public-command-without-invariants`. Field types use the
+// MIL-237 public table (`decimal`) since the events are public; the 1.13 CLI gives the same
+// baseline output for this text (re-verified at the post-MIL-237 rebase).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -25,9 +27,9 @@ export function invariantFixtureModel(withGrammar: boolean): string {
     `model "Invariant Shop"\n\n` +
     `slice "Place Order" {\n` +
     `  ui Checkout\n` +
-    `  command Place Order { orderId: UUID, total: Money } note "slices/place-order.md"\n` +
+    `  command Place Order { orderId: UUID, total: decimal } note "slices/place-order.md"\n` +
     inv(`invariant INV-ORD-1 "Order total must be positive"`) +
-    `  event Order Placed { orderId: UUID, total: Money } public\n` +
+    `  event Order Placed { orderId: UUID, total: decimal } public\n` +
     inv(`invariant INV-ORD-2 "An order is placed at most once"`) +
     `}\n\n` +
     `slice "Orders" {\n` +

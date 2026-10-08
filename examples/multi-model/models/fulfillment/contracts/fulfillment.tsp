@@ -4,6 +4,7 @@
 
 namespace Fulfillment {
   interface Commands {
+    /** INV-FUL-1: An order is accepted at most once per checkout order id */
     op acceptOrder(orderId: string, total: decimal): void;
   }
 }

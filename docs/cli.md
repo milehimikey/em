@@ -749,7 +749,9 @@ release train; versioning is not modeled):
 
 Every `model` carries the doc comment `Consumers tolerate unknown fields; additive changes do not
 break them.` `tag`, `renamed from` and `assigned` become `/** ... */` doc comments, never
-decorators. Field types map through the fixed public type table only:
+decorators. A public element's model-declared invariants (MIL-265) become one `/** INV-X: rule */`
+line each, in declaration order — inside the event's `model`, or above the command's `op` — so
+tightening a rule changes the committed contract; an internal element's invariants never appear. Field types map through the fixed public type table only:
 
 | em type | TypeSpec |
 |---|---|
@@ -799,6 +801,8 @@ slice, so moving an element between slices is not a contract change.
 | field added — on an event, view, or a type an event/view reaches | additive |
 | required field added — on a command (input) | breaking |
 | optional field added — on a command (input) | additive |
+| invariant added, or its rule text changed — on a public command or event (MIL-265) | breaking (the contract got tighter) |
+| invariant removed — on a public command or event (MIL-265) | additive (looser) |
 
 A declared type reached from both a command and an event/view takes the stricter rule.
 
@@ -806,6 +810,7 @@ A declared type reached from both a command and an event/view takes the stricter
 contract models/checkout/contracts/checkout.tsp is current
 breaking: event.order-submitted field "total" removed
 additive: event.order-submitted field "currency" added (required)
+breaking: command.submit-order invariant INV-CHK-2 added
 ```
 
 `--json` (`apiCheckSchemaVersion` `"1.0"`; MCP tool `api_check` returns the same document):

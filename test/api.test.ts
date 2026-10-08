@@ -409,6 +409,41 @@ describe("diffSurfaces", () => {
   });
 });
 
+// MIL-265: invariants on public elements are part of the contract.
+describe("invariants on the public surface (MIL-265)", () => {
+  const withInv = (cmdInv: string, evInv = "", internalInv = "") =>
+    `slice "S" {\n  command Do public { x: string }\n${cmdInv}  event Done @D public { x: string }\n${evInv}}\n` +
+    `slice "T" {\n  ui U\n  command Internal { y: string }\n${internalInv}  event Internal Done @D\n}\n`;
+
+  it("added or rule text changed = breaking; removed = additive", () => {
+    expect(changes(withInv(""), withInv(`  invariant INV-DO-1 "x is set"\n`))).toEqual([
+      { kind: "breaking", element: "command.do", field: null, what: "invariant INV-DO-1 added" },
+    ]);
+    expect(changes(withInv(`  invariant INV-DO-1 "x is set"\n`), withInv(`  invariant INV-DO-1 "x is set and short"\n`))).toEqual([
+      { kind: "breaking", element: "command.do", field: null, what: "invariant INV-DO-1 rule changed" },
+    ]);
+    expect(changes(withInv("", `  invariant INV-DO-2 "once"\n`), withInv(""))).toEqual([
+      { kind: "additive", element: "event.done", field: null, what: "invariant INV-DO-2 removed" },
+    ]);
+    expect(changes(withInv(`  invariant INV-DO-1\n`), withInv(`  invariant INV-DO-1 "now with a rule"\n`))).toEqual([
+      { kind: "breaking", element: "command.do", field: null, what: "invariant INV-DO-1 rule changed" },
+    ]);
+  });
+
+  it("an internal element's invariants never reach the surface or the contract", () => {
+    expect(changes(withInv(""), withInv("", "", `  invariant INV-IN-1 "y is set"\n`))).toEqual([]);
+    expect(generate(withInv("", "", `  invariant INV-IN-1 "y is set"\n`)).text).toBe(generate(withInv("")).text);
+  });
+
+  it("the contract carries each public element's invariants as doc-comment lines, in declaration order", () => {
+    const { text } = generate(
+      withInv(`  invariant INV-DO-1 "x is set"\n  invariant INV-DO-2\n`, `  invariant INV-DO-3 "never */ closes early"\n`),
+    );
+    expect(text).toContain("  model Done {\n    /** INV-DO-3: never *\\/ closes early */\n    x: string;\n  }");
+    expect(text).toContain("  interface Commands {\n    /** INV-DO-1: x is set */\n    /** INV-DO-2 */\n    op do(x: string): void;\n  }");
+  });
+});
+
 // ---- CLI: generate / check / typespec alias --------------------------------------------
 
 function tmpMultiModelRepo(): string {
@@ -506,12 +541,47 @@ describe("em api generate / check (CLI)", () => {
       const p = join(dir, file);
       const contract = join(dir, "models/checkout/contracts/checkout.tsp");
       const before = readFileSync(contract, "utf8");
-      writeFileSync(p, readFileSync(p, "utf8").replace("  command Submit Order {\n", "  command Submit Order {\n    couponCode?: Coupon\n"));
+      // Cancel Order is internal (MIL-265 made Submit Order public): a new field and a tightened
+      // invariant on it change nothing in the contract.
+      const edited = readFileSync(p, "utf8")
+        .replace("  command Cancel Order\n", "  command Cancel Order { reason?: Coupon }\n")
+        .replace('"Only an order that has not shipped can be cancelled"', '"Only an unshipped, unpaid order can be cancelled"');
+      writeFileSync(p, edited);
       const r = em(["api", "check", file, "--base", "HEAD"], dir);
       expect(r.status).toBe(0);
       expect(r.stdout).toBe(`contract ${join("models/checkout", "contracts", "checkout.tsp")} is current\nno public-surface changes since HEAD\n`);
       expect(em(["api", "generate", file], dir).status).toBe(0);
       expect(readFileSync(contract, "utf8")).toBe(before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("check --base on a seeded invariant addition on Order Submitted's command reports breaking (MIL-265)", () => {
+    const dir = tmpMultiModelRepo();
+    try {
+      const file = "models/checkout/checkout.em";
+      const p = join(dir, file);
+      const before = readFileSync(p, "utf8");
+      const seeded = before.replace(
+        '  invariant INV-CHK-1 "An order is submitted with a positive total"\n',
+        '  invariant INV-CHK-1 "An order is submitted with a positive total"\n  invariant INV-CHK-2 "An order note is at most 500 characters"\n',
+      );
+      expect(seeded).not.toBe(before);
+      writeFileSync(p, seeded);
+      const stale = em(["api", "check", file, "--base", "HEAD"], dir);
+      expect(stale.status).toBe(1); // the contract carries invariants, so it is stale until regenerated
+      expect(em(["api", "generate", file], dir).status).toBe(0);
+      expect(readFileSync(join(dir, "models/checkout/contracts/checkout.tsp"), "utf8")).toContain(
+        "/** INV-CHK-2: An order note is at most 500 characters */",
+      );
+      const r = em(["api", "check", file, "--base", "HEAD", "--json"], dir);
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout).changes).toEqual([
+        { kind: "breaking", element: "command.submit-order", field: null, what: "invariant INV-CHK-2 added" },
+      ]);
+      const text = em(["api", "check", file, "--base", "HEAD"], dir);
+      expect(text.stdout).toContain("breaking: command.submit-order invariant INV-CHK-2 added\n");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

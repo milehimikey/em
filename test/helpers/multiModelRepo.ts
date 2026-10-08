@@ -36,7 +36,8 @@ seams:
 `;
 
 /** The example's two models before MIL-235: no `owner` on the headers, no `consumes` (field
- *  blocks and `public` on `Accept Order` as shipped since MIL-237 — those are not migrated). */
+ *  blocks and `public` on `Accept Order` as shipped since MIL-237, and MIL-265's `invariant` lines
+ *  and `public` on `Submit Order` — those are not migrated). */
 export const LEGACY_CHECKOUT_EM = `model "Checkout"
 
 persona Customer
@@ -45,10 +46,11 @@ context Order
 
 slice "Checkout" {
   ui Checkout Screen @Customer
-  command Submit Order {
+  command Submit Order public {
     total: decimal
     note?: text
   }
+  invariant INV-CHK-1 "An order is submitted with a positive total"
   event Order Submitted @Order public {
     orderId: uuid assigned
     total: decimal
@@ -65,6 +67,7 @@ slice "Order Confirmation" {
 slice "Cancel Order" {
   ui Order Details @Customer
   command Cancel Order
+  invariant INV-CXL-1 "Only an order that has not shipped can be cancelled"
   event Order Cancelled @Order public
 }
 `;
@@ -84,6 +87,7 @@ slice "Receive Order" {
     orderId: uuid
     total: decimal
   }
+  invariant INV-FUL-1 "An order is accepted at most once per checkout order id"
   event Order Accepted @Order {
     orderId: uuid
     total: decimal

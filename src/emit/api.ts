@@ -83,6 +83,16 @@ function elementNotes(el: ElementExport): string[] {
   return notes;
 }
 
+/** MIL-265: a public element's model-declared invariants, one `/** INV-X: rule *\/` line each in
+ *  declaration order — part of the contract, so tightening a rule changes the committed file
+ *  (and `em api check` annotates it). A `*\/` inside the rule text is escaped so the comment
+ *  cannot close early. */
+function invariantLines(el: ElementExport): string[] {
+  return (el.invariants ?? []).map((inv) =>
+    inv.rule === null ? `/** ${inv.id} */` : `/** ${inv.id}: ${inv.rule.replace(/\*\//g, "*\\/")} */`,
+  );
+}
+
 function indent(lines: string[], depth: number): string[] {
   const pad = "  ".repeat(depth);
   return lines.map((l) => (l.length > 0 ? pad + l : l));
@@ -170,9 +180,15 @@ export function buildApiContract(
 
   const docBlock = (notes: string[]): string[] => ["/**", ...notes.map((n) => ` * ${n}`), " */"];
 
-  const renderModel = (name: string, fields: FieldExport[] | null, owner: string, notes: string[]): string => {
+  const renderModel = (
+    name: string,
+    fields: FieldExport[] | null,
+    owner: string,
+    notes: string[],
+    invariants: string[] = [],
+  ): string => {
     const lines = docBlock([CONSUMER_TOLERANCE_SENTENCE, ...notes]);
-    const body: string[] = [];
+    const body: string[] = [...invariants];
     for (const f of fields ?? []) {
       const n = fieldNotes(f);
       if (n) body.push(`/** ${n} */`);
@@ -195,7 +211,7 @@ export function buildApiContract(
   const eventBlocks: string[] = [];
   for (const el of surface.events) {
     const name = dedupe(pascalCase(el.name), usedNames, "_");
-    eventBlocks.push(renderModel(name, el.fields, `event "${el.name}"`, elementNotes(el)));
+    eventBlocks.push(renderModel(name, el.fields, `event "${el.name}"`, elementNotes(el), invariantLines(el)));
   }
   if (eventBlocks.length > 0) sections.push(eventBlocks.join("\n\n"));
 
@@ -203,7 +219,7 @@ export function buildApiContract(
   const viewOps: string[] = [];
   for (const el of surface.views) {
     const name = dedupe(pascalCase(el.name), usedNames, "_");
-    viewBlocks.push(renderModel(name, el.fields, `view "${el.name}"`, elementNotes(el)));
+    viewBlocks.push(renderModel(name, el.fields, `view "${el.name}"`, elementNotes(el), invariantLines(el)));
     viewOps.push(`op get${name}(): ${name};`);
   }
   if (viewBlocks.length > 0) {
@@ -217,6 +233,7 @@ export function buildApiContract(
     const opName = dedupe(camelCase(pascalCase(el.name)), opNames, "_");
     const notes = elementNotes(el);
     if (notes.length > 0) commandOps.push(`/** ${notes.join("; ")} */`);
+    commandOps.push(...invariantLines(el));
     const params = (el.fields ?? []).map((f) => {
       const n = fieldNotes(f);
       const line = member(f, `command "${el.name}"`);

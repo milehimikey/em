@@ -2506,11 +2506,11 @@ describe("validateInvariants — doc-aware invariants/* advisories (MIL-265)", (
   });
 
   it("public-command-without-invariants: neither the model nor the slice doc declares one", () => {
-    // Both commands written `public` (MIL-237) — with table types, as strict public types require.
+    // Both commands written `public` (MIL-237).
     const src = invariantFixtureModel(true)
       .replace(`  invariant INV-ORD-1 "Order total must be positive"\n`, "")
-      .replace("command Place Order { orderId: UUID, total: Money }", "command Place Order public { orderId: uuid, total: decimal }")
-      .replace("command Cancel Order { orderId: UUID }", "command Cancel Order public { orderId: uuid }");
+      .replace("command Place Order { orderId: UUID, total: decimal }", "command Place Order public { orderId: UUID, total: decimal }")
+      .replace("command Cancel Order { orderId: UUID }", "command Cancel Order public { orderId: UUID }");
     const pcwi = (diags: { code: string }[]) => diags.filter((d) => d.code === "invariants/public-command-without-invariants");
     const compiledSrc = modelFrom(src);
     expect(compiledSrc.elements.filter((e) => e.kind === "command" && e.public).map((e) => e.name)).toEqual(["Place Order", "Cancel Order"]);

@@ -580,6 +580,12 @@ slice "Place Order" {
 `em export` carries them as `invariants: [{ id, rule }]` on each element (`null` when it has
 none; `rule` is `null` when the line gives none).
 
+On a `public` command or event the invariants are part of the contract: `em api generate` writes
+each as a `/** INV-X: rule */` line in the element's TypeSpec declaration, and `em api check
+--base` annotates an invariant added or its rule changed as **breaking** (tighter) and one
+removed as **additive** (looser) — see [cli.md](cli.md#em-api-check). An internal element's
+invariants never touch the contract.
+
 **Migrating a doc-declared invariant.** Move the ID and its rule sentence into the model as an
 `invariant` line after the command or event it guards; in the doc, keep the elaboration and turn
 the declaring bullet into a citation — `- **INV-ORD-1:** Order total must be positive` becomes

@@ -81,6 +81,8 @@ interface SurfaceEntry {
   fields: FieldExport[];
   renamedFrom: string[];
   roles: Set<Role>;
+  /** Model-declared invariants (MIL-265), declaration order; `[]` for a type. */
+  invariants: { id: string; rule: string | null }[];
 }
 
 interface Surface {
@@ -118,6 +120,7 @@ export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeEx
       fields: el.fields ?? [],
       renamedFrom: el.renamedFrom ?? [],
       roles: new Set([role]),
+      invariants: el.invariants ?? [],
     });
     reach(el.fields, role);
   };
@@ -127,7 +130,7 @@ export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeEx
   for (const t of types) {
     const roles = typeRoles.get(t.ref);
     if (!roles) continue;
-    entries.push({ kind: "type", name: t.name, key: keyOf("type", t.name), fields: t.fields, renamedFrom: [], roles });
+    entries.push({ kind: "type", name: t.name, key: keyOf("type", t.name), fields: t.fields, renamedFrom: [], roles, invariants: [] });
   }
   const allElements = new Set<string>();
   for (const slice of slices) for (const el of slice.elements) allElements.add(keyOf(el.kind, el.name));
@@ -206,6 +209,22 @@ function diffFields(base: SurfaceEntry, head: SurfaceEntry, element: string, out
   }
 }
 
+/** MIL-265: a public element's invariants, base vs HEAD, matched by ID. Added or rule text
+ *  changed = breaking (the contract got tighter); removed = additive (looser). HEAD order for
+ *  additions/changes, then base order for removals. */
+function diffInvariants(base: SurfaceEntry, head: SurfaceEntry, element: string, out: ApiCheckChange[]): void {
+  const baseById = new Map(base.invariants.map((i) => [i.id, i]));
+  const headIds = new Set(head.invariants.map((i) => i.id));
+  for (const h of head.invariants) {
+    const b = baseById.get(h.id);
+    if (!b) out.push({ kind: "breaking", element, field: null, what: `invariant ${h.id} added` });
+    else if (b.rule !== h.rule) out.push({ kind: "breaking", element, field: null, what: `invariant ${h.id} rule changed` });
+  }
+  for (const b of base.invariants) {
+    if (!headIds.has(b.id)) out.push({ kind: "additive", element, field: null, what: `invariant ${b.id} removed` });
+  }
+}
+
 /** Diff two public surfaces. `base === null` means the model did not exist at the base
  *  revision: every HEAD element is an additive addition. */
 export function diffSurfaces(base: Surface | null, head: Surface): ApiCheckChange[] {
@@ -223,6 +242,7 @@ export function diffSurfaces(base: Surface | null, head: Surface): ApiCheckChang
     if (same) {
       matchedBase.add(same.key);
       diffFields(same, h, element, out);
+      diffInvariants(same, h, element, out);
       continue;
     }
     const renamedFrom = h.renamedFrom
@@ -232,6 +252,7 @@ export function diffSurfaces(base: Surface | null, head: Surface): ApiCheckChang
       matchedBase.add(renamedFrom.key);
       out.push({ kind: "breaking", element, field: null, what: `renamed from "${renamedFrom.name}"` });
       diffFields(renamedFrom, h, element, out);
+      diffInvariants(renamedFrom, h, element, out);
       continue;
     }
     if (h.kind !== "type" && base.allElements.has(h.key)) {
