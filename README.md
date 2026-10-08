@@ -33,6 +33,23 @@ Pair it with the Claude Code plugin pin (below) and the CLI, the skills and the 
 on one version. See [docs/ai-workflow.md](docs/ai-workflow.md#pinning-the-cli-to-the-same-version)
 for the full motion, including the `npx` route for repos without mise.
 
+### Pinning a version per project
+
+A global install means every contributor (and every agent) runs whatever version happens to be
+installed on their machine, which drifts over time. To pin an exact version for one project — no
+`package.json` required, works in any repo regardless of language — drop a `.em-version` file next
+to the model (or anywhere above it):
+
+```bash
+echo "1.14.0" > .em-version
+```
+
+From then on, running the globally-installed `em` transparently re-execs the pinned version via
+`npx` whenever it differs from what's installed — same command, same output, nothing else to
+remember. This is the same pattern Node's Corepack uses for npm/yarn/pnpm's `packageManager`
+field. A repo without `.em-version` sees no change in behavior. Set `EM_SKIP_VERSION_PIN=1` to
+bypass pinning outright (e.g. while developing em itself from a local checkout).
+
 ## Quickstart
 
 ```bash
