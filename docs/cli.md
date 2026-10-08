@@ -3640,6 +3640,9 @@ package and every other command's own schema):
 
 ## `em ci init <model>`
 
+`em ci init <model.em>` covers one model; `em ci init <system.yaml>` (or a directory holding
+one) covers every model in the system (MIL-233, see [Multi-model form](#multi-model-form-em-ci-init-systemyaml)).
+
 Installs the CI enforcement preset [docs/ci.md](ci.md) describes as a cookbook — two plain
 GitHub Actions workflow files under `.github/workflows/`, wiring `em`'s own checks so a repo
 gets them by running one command instead of copy-pasting YAML (MIL-166):
@@ -3657,7 +3660,7 @@ file-scoped command uses). `--tests <dir>` (default `test`) is the directory the
 | Flag | Effect |
 |---|---|
 | `--tests <dir>` | Test directory for the `coverage`/`status-badge` steps (default `test`) |
-| `-f, --force` | Replace an existing workflow file that has no `GENERATED` markers, or a managed block generated for a different model |
+| `-f, --force` | Replace an existing workflow file that has no `GENERATED` markers, or a managed block generated for a different set of models |
 | `--check` | Verify both files match the current preset; exit non-zero on drift without writing (CI) |
 
 ```bash
@@ -3682,16 +3685,41 @@ em ci init order-fulfillment/order-fulfillment.em
   pin the vanilla preset and gate on drift, the same opt-in posture `em skill check` already
   has in the cookbook above ("if you'd rather pin ... add `em skill check` as its own gate").
 
-**The managed block is single-model until 1.14.0** (multi-model support is tracked as MIL-233).
-If a file's block was generated for a different model than `<model>` (read from the block's own
-content, so blocks written by older `em` versions are recognized too; a version-pin or wording
-difference alone is still `stale`, never a different model), `em ci init` **refuses**: exit 1,
-neither file written, and the message names the model it was generated for. `--check` reports
-the same condition as `different model` (exit 1), distinct from `stale`. `--force` replaces the
-managed block and retargets the generated header comment (`em ci init <model>` wording above
-the start marker) at the new model; jobs you added outside the markers are kept, and a header
-you reworded is left as is. For `em-conform.yml`, which only records the model's directory, the
-message names that directory.
+**Block identity is the set of models.** A managed block is identified by the models it names,
+read from the block's own content (so blocks written by older `em` versions are recognized too;
+a version-pin or wording difference alone is still `stale`). `em ci init` **refuses** (exit 1,
+neither file written, nothing partially updated) only when the existing block's model set and
+the requested one are **disjoint**, naming both sets, or when a single `<model.em>` is run
+against a block that covers several models (it would silently narrow the workflow):
+`.github/workflows/em-ci.yml covers 2 models (a.em, b.em) - re-run with the system manifest, or
+--force to narrow it to a.em`. `--check` reports the same conditions as `different models`
+(exit 1), distinct from `stale`. `--force` replaces the managed block and retargets the
+generated header comment (`em ci init <model>` wording above the start marker); jobs you added
+outside the markers are kept, and a header you reworded is left as is. For `em-conform.yml`,
+which only records model directories, the messages name the directories. A block whose model
+cannot be recognized (hand-edited past recognition) is treated as covering the requested models.
+
+### Multi-model form: `em ci init <system.yaml>`
+
+Pass the system manifest ([`em system`](#em-system-manifest)) or the directory holding it. One
+`em-ci.yml` is generated whose single `GENERATED:em-ci` block carries, **per model key**,
+`validate-<key>` (only that model directory's changed `*.em`), `api-check-<key>`, `slice-index-<key>`,
+`coverage-<key>`, `ledger-<key>`, `upgrade-check-<key>` and `status-badge-<key>` (push-only; it
+writes `<modelDir>/status-badge.svg`), and **once** `skill-check` and `glossary` (which already
+spans every tracked `*.em`). `<key>` is the manifest key; a `~2` collision key becomes `-2` in
+the job id (and gets a numeric suffix if that still collides), so every id is a valid Actions id.
+Models are emitted in key order, so reordering the manifest is not drift. `em-conform.yml`
+becomes a matrix, `strategy.matrix.model: [<modelDir>, ...]` with `MODEL_DIR: ${{ matrix.model }}`,
+one `conform` run per model directory. Sources resolve relative to the manifest and are written
+relative to the working directory (the repo root); a source that is not a `.em` file, sits outside
+the repo, or carries an unsafe character is refused. `--tests` applies to every model.
+
+The manifest is authoritative: re-running after a model is added or removed regenerates the block
+for the manifest's set (a superset, subset or overlap is never a refusal), and `--check` reports
+it as `stale`, naming the models with no section and the sections no longer in the manifest.
+`em upgrade`'s `ci-block` step does the same: when the block names two or more models it
+re-derives the set from the `system.yaml` at the repo root, and when none is readable it leaves
+the block alone and says why.
 
 Both generated files are ASCII-only and pass `shellcheck` (tested in CI) and are written to satisfy `actionlint`, as generated
 (MIL-256), so a repo that lints its workflows needs no edits inside the markers.

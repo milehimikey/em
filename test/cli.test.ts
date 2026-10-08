@@ -4862,7 +4862,7 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
 
     const check = em(["ci", "init", "billing/billing.em", "--check"], dir);
     expect(check.status).toBe(1);
-    expect(check.stdout).toContain("different model:");
+    expect(check.stdout).toContain("different models:");
     expect(check.stdout).not.toContain("stale:");
 
     const forced = em(["ci", "init", "billing/billing.em", "--force"], dir);

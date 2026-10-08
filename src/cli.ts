@@ -125,8 +125,16 @@ import {
   conformWorkflowPath,
   buildCiWorkflowFile,
   buildConformWorkflowFile,
+  buildCiWorkflowFileMulti,
+  buildConformWorkflowFileMulti,
   ciManagedBody,
+  ciManagedBodyMulti,
   conformManagedBody,
+  conformManagedBodyMulti,
+  ciModelsFromManifest,
+  describeOtherModels,
+  describeSetChange,
+  fileBlockModels,
   planCiFile,
   applyCiFile,
   findUnsafeCiInitArg,
@@ -2598,11 +2606,13 @@ ci.command("init")
       "coverage --strict, em ledger, em skill check, em glossary --fail-on-conflicts, plus a " +
       "push-triggered status-badge rebuild) and em-conform.yml (scheduled, advisory-only " +
       "conformance cadence) — same install discipline as `em skill install`: marker-delimited, " +
-      "idempotent, --check for CI self-verification (MIL-166, see docs/ci.md)",
+      "idempotent, --check for CI self-verification (MIL-166, see docs/ci.md). Give it a " +
+      "system.yaml (or its directory) instead of a model to cover every model in the system: one " +
+      "workflow, per-model jobs, a conform matrix (MIL-233)",
   )
-  .argument("<model>", "anchor .em file the coverage/ledger/slice-index/status steps point at")
+  .argument("<model>", "anchor .em file the coverage/ledger/slice-index/status steps point at, or a system.yaml (or a directory holding one) to cover every model in it")
   .option("--tests <dir>", "test directory the coverage/status steps scan for INV-* citations", "test")
-  .option("-f, --force", "replace an existing workflow file that has no GENERATED markers, or a managed block generated for a different model")
+  .option("-f, --force", "replace an existing workflow file that has no GENERATED markers, or a managed block generated for a different set of models")
   .option("--check", "verify both files match the current preset; exit non-zero on drift without writing (CI)")
   .action((model: string, opts: { tests: string; force?: boolean; check?: boolean }) => {
     const unsafe = findUnsafeCiInitArg(model) ?? findUnsafeCiInitArg(opts.tests);
@@ -2618,39 +2628,77 @@ ci.command("init")
     const ciPath = ciWorkflowPath(repoRoot);
     const conformPath = conformWorkflowPath(repoRoot);
 
-    const files: Array<[string, CiFileStatus]> = [
-      [
-        ciPath,
-        planCiFile(
+    // MIL-233: a system manifest (a .yaml/.yml file, or a directory) covers every model in it;
+    // anything else is the single-model form, unchanged.
+    const isDir = existsSync(model) && statSync(model).isDirectory();
+    const manifestForm = isDir || /\.ya?ml$/i.test(model);
+    let files: Array<[string, CiFileStatus]>;
+    if (manifestForm) {
+      const loaded = ciModelsFromManifest(model, repoRoot);
+      if (!loaded.ok) {
+        console.error(`em ci init: ${loaded.message}`);
+        process.exit(1);
+      }
+      files = [
+        [
           ciPath,
-          buildCiWorkflowFile(model, opts.tests, PKG_VERSION),
-          ciManagedBody(model, opts.tests, PKG_VERSION),
-          CI_WORKFLOW_MARKER,
-          !!opts.force,
-        ),
-      ],
-      [
-        conformPath,
-        planCiFile(
+          planCiFile(
+            ciPath,
+            buildCiWorkflowFileMulti(model, loaded.models, opts.tests, PKG_VERSION),
+            ciManagedBodyMulti(loaded.models, opts.tests, PKG_VERSION),
+            CI_WORKFLOW_MARKER,
+            !!opts.force,
+            true,
+          ),
+        ],
+        [
           conformPath,
-          buildConformWorkflowFile(model, PKG_VERSION),
-          conformManagedBody(model, PKG_VERSION),
-          CONFORM_WORKFLOW_MARKER,
-          !!opts.force,
-        ),
-      ],
-    ];
+          planCiFile(
+            conformPath,
+            buildConformWorkflowFileMulti(model, loaded.models, PKG_VERSION),
+            conformManagedBodyMulti(loaded.models, PKG_VERSION),
+            CONFORM_WORKFLOW_MARKER,
+            !!opts.force,
+            true,
+          ),
+        ],
+      ];
+    } else {
+      files = [
+        [
+          ciPath,
+          planCiFile(
+            ciPath,
+            buildCiWorkflowFile(model, opts.tests, PKG_VERSION),
+            ciManagedBody(model, opts.tests, PKG_VERSION),
+            CI_WORKFLOW_MARKER,
+            !!opts.force,
+          ),
+        ],
+        [
+          conformPath,
+          planCiFile(
+            conformPath,
+            buildConformWorkflowFile(model, PKG_VERSION),
+            conformManagedBody(model, PKG_VERSION),
+            CONFORM_WORKFLOW_MARKER,
+            !!opts.force,
+          ),
+        ],
+      ];
+    }
 
-    // MIL-256 (#174): the managed block is single-model (multi-model: MIL-233). Another model's
-    // block is its own condition - never `stale`, never silently replaced.
-    const otherModel = (previous: string, path: string): string =>
-      `${path} was generated for ${previous}, not ${model} - the managed block is single-model until multi-model support lands (MIL-233)`;
+    // MIL-256 (#174) / MIL-233: a managed block is identified by the SET of models it names. A
+    // disjoint set - or a single-model argument against a multi-model block - is its own
+    // condition: never `stale`, never silently replaced.
+    const otherModels = (status: { previous: string[]; requested: string[]; narrowing: boolean }, path: string): string =>
+      describeOtherModels(path, status);
 
     if (opts.check) {
       let drift = false;
       for (const [path, status] of files) {
-        if (status.kind === "other-model" || status.kind === "replace-model") {
-          console.log(`different model: ${otherModel(status.previous, path)} (re-run \`em ci init ${model} --force\` to replace it)`);
+        if (status.kind === "other-models" || status.kind === "replace-models") {
+          console.log(`different models: ${otherModels(status, path)}`);
           drift = true;
         } else if (status.kind === "create") {
           console.log(`missing: ${path} — run \`em ci init ${model}\` to create it`);
@@ -2659,7 +2707,14 @@ ci.command("init")
           console.log(`can't verify: ${path} exists without GENERATED markers (re-run with --force to replace it)`);
           drift = true;
         } else if (status.kind === "stale") {
-          console.log(`stale: ${path} — run \`em ci init ${model}\` and commit the result`);
+          const marker = path === ciPath ? CI_WORKFLOW_MARKER : CONFORM_WORKFLOW_MARKER;
+          const change = manifestForm
+            ? describeSetChange(
+                fileBlockModels(status.current, marker),
+                fileBlockModels(status.content, marker),
+              )
+            : null;
+          console.log(`stale: ${path} — run \`em ci init ${model}\` and commit the result${change ? ` (${change})` : ""}`);
           drift = true;
         } else {
           console.log(`ok: ${path}`);
@@ -2671,10 +2726,10 @@ ci.command("init")
     }
 
     // Refuse before writing anything, so a refusal on one file never leaves the other updated.
-    const refused = files.filter(([, s]) => s.kind === "other-model");
+    const refused = files.filter(([, s]) => s.kind === "other-models");
     if (refused.length > 0) {
       for (const [path, status] of refused) {
-        if (status.kind === "other-model") console.error(`em ci init: ${otherModel(status.previous, path)}; re-run with --force to replace it`);
+        if (status.kind === "other-models") console.error(`em ci init: ${otherModels(status, path)}`);
       }
       process.exitCode = 1;
       return;
@@ -2683,7 +2738,7 @@ ci.command("init")
     mkdirSync(dirname(ciPath), { recursive: true });
     for (const [path, status] of files) {
       applyCiFile(path, status);
-      if (status.kind === "replace-model") console.log(`replaced ${path} (--force; was generated for ${status.previous})`);
+      if (status.kind === "replace-models") console.log(`replaced ${path} (--force; was generated for ${status.previous.join(", ")})`);
       else if (status.kind === "create") console.log(`installed ${path}`);
       else if (status.kind === "stale") console.log(`updated ${path}`);
       else if (status.kind === "would-replace") console.log(`replaced ${path} (--force)`);

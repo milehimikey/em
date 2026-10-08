@@ -15,12 +15,16 @@ the conformance cadence — in one command, marker-delimited and idempotent the 
 skill install` is. The rest of this page stays the reference for what each check does and why;
 reach for `em ci init` when you just want it wired.
 
-**Single-model until 1.14.0 (MIL-256):** the managed block names one anchor model, so a repo
-with several models cannot yet get one block per model (that is MIL-233, planned for 1.14.0).
-Running `em ci init <other-model>` against a file whose block was generated for a different
-model therefore **refuses** (non-zero exit, nothing written, both files) and names the model
-the block was generated for, instead of silently replacing it; `--check` reports it as
-`different model` (also non-zero), distinct from `stale`. Pass `--force` to replace the block
+**Multi-model (MIL-233):** `em ci init <system.yaml>` covers every model in the system manifest
+with one `em-ci.yml`: a `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`, `upgrade-check-` and
+`status-badge-<key>` job per model, plus one `skill-check` and one `glossary`, and an
+`em-conform.yml` that fans `conform` out over a matrix of model directories (see
+[cli.md](cli.md#multi-model-form-em-ci-init-systemyaml); a worked output is committed under
+`examples/multi-model/.github/workflows/`). A managed block is identified by the set of models it
+names: `em ci init <other-model>` against a block generated for a disjoint set, or a single
+model against a multi-model block, **refuses** (non-zero exit, nothing written, both files) and
+names both sets, instead of silently replacing or narrowing it; `--check` reports it as
+`different models` (also non-zero), distinct from `stale`. Pass `--force` to replace the block
 deliberately. The generated workflows are plain ASCII and pass `shellcheck` as generated
 (tested in CI; written to satisfy `actionlint` too), so a repo that lints its workflows needs
 no edits inside the markers.

@@ -1,0 +1,61 @@
+# Generated once by `em ci init system.yaml` (em 1.13.1) - docs/ci.md#conformance-cadence-advisory
+#
+# This file is yours from here: edit it freely. It is advisory-only by construction - the job
+# never fails the build on drift (findings become a GitHub issue for a human to ratify), and
+# the state file's `Last conformance:` marker only advances when a human ratifies the run's
+# outcome locally and commits that update. Resist wiring this to every push; cadence, not
+# trigger, is the intended shape (docs/ci.md).
+name: model-conformance
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"     # weekly, Monday 06:00 UTC
+  workflow_dispatch: {}     # and on demand
+
+permissions:
+  contents: read
+  issues: write             # the Post report step opens an issue
+
+jobs:
+# GENERATED:em-conform:start
+  conform:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - "models/checkout"
+          - "models/fulfillment"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Note reports already present
+        run: find "$MODEL_DIR/conformance" -maxdepth 1 -name '*-report.md' 2>/dev/null | sort > /tmp/reports-before
+
+      - name: Run conform phase
+        run: |
+          npm i -g @milehimikey/em@1.13.1 @anthropic-ai/claude-code
+          em skill install --force
+          claude -p "/event-modeling conform" \
+            --allowedTools "Bash(em:*),Bash(git:*),Read,Grep,Glob,Write,Edit"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post report
+        run: |
+          find "$MODEL_DIR/conformance" -maxdepth 1 -name '*-report.md' 2>/dev/null | sort > /tmp/reports-after
+          report=$(comm -13 /tmp/reports-before /tmp/reports-after | tail -1)
+          if [ -z "$report" ]; then
+            echo "the run produced no new report - nothing to post"
+            exit 0
+          fi
+          gh issue create --title "Model conformance report $(date +%F)" \
+            --body-file "$report"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      MODEL_DIR: ${{ matrix.model }}
+# GENERATED:em-conform:end

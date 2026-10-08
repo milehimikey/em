@@ -1,0 +1,321 @@
+# Generated once by `em ci init system.yaml` (em 1.13.1) - docs/ci.md
+#
+# This file is yours from here: edit it, add jobs, remove ones you don't want. The content
+# between the GENERATED:em-ci markers below is what a future `em ci init`
+# (e.g. after upgrading em) refreshes in place - add your own jobs above or below the markers,
+# at the same indent under `jobs:`, and they survive a re-run untouched. Every gate here fails
+# the PR the same way any other required check does; the status-badge job only ever publishes.
+# `em ci init system.yaml --check` reports drift in the managed block - advisory unless you wire
+# it into a gate yourself (docs/ci.md).
+name: em ci
+
+on:
+  pull_request:
+    paths:
+      - "**/*.em"
+      - "**/slices/**"
+      - "**/README.md"
+  push:
+    branches: [main]
+
+jobs:
+# GENERATED:em-ci:start
+  validate-checkout:
+    name: "em validate (changed .em files) [checkout]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate changed models
+        run: |
+          set -e
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base" "$head" -- "models/checkout/*.em")
+          if [ -z "$changed" ]; then
+            echo "no .em files changed"
+            exit 0
+          fi
+          status=0
+          for f in $changed; do
+            echo "::group::em validate $f"
+            npx @milehimikey/em@1.13.1 validate "$f" || status=1
+            npx @milehimikey/em@1.13.1 validate "$f" --list-issues
+            echo "::endgroup::"
+          done
+          exit $status
+
+  api-check-checkout:
+    name: "em api check (contract current; additive/breaking annotation) [checkout]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the generated contract is current
+        # Fails only when contracts/<model key>.tsp is missing or stale (run em api generate).
+        # The additive/breaking lines are annotation for the reviewer, never a gate (MIL-237).
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          npx @milehimikey/em@1.13.1 api check "models/checkout/checkout.em" --base "$base"
+
+  slice-index-checkout:
+    name: "em slice index --check (README table drift) [checkout]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check README Slices table is current
+        run: npx @milehimikey/em@1.13.1 slice index "models/checkout/checkout.em" --check
+
+  coverage-checkout:
+    name: "em coverage --strict (invariant citations) [checkout]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check invariant test coverage
+        # Counts INV-* IDs in `implemented` slice docs only (MIL-207) - a ready-to-implement
+        # doc has nothing yet to cite it, so this job is green on a fresh scaffold and on a
+        # doc-only ratification PR. Pass --include-ready for the older, forward-looking report.
+        run: npx @milehimikey/em@1.13.1 coverage "models/checkout/checkout.em" --tests "test" --strict
+
+  ledger-checkout:
+    name: "em ledger (slice doc version/content agreement) [checkout]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check slice doc version/content agreement
+        run: npx @milehimikey/em@1.13.1 ledger "models/checkout/checkout.em" --from "${{ github.event.pull_request.base.sha }}"
+
+  upgrade-check-checkout:
+    name: "em upgrade --check (advisory - hard incompatibilities only, MIL-219) [checkout]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check for hard upgrade incompatibilities
+        # Advisory: exits non-zero ONLY on a hard incompatibility (an unparseable state file, an
+        # old .em shape em migrate itself refuses) - never on the ordinary "some mechanical
+        # steps are applicable" case. See docs/upgrading.md.
+        run: npx @milehimikey/em@1.13.1 upgrade "models/checkout/checkout.em" --check
+
+  status-badge-checkout:
+    name: "rebuild status badge (advisory - publish only, never a gate) [checkout]"
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Rebuild status badge
+        run: npx @milehimikey/em@1.13.1 status "models/checkout/checkout.em" --tests "test" --badge -o "models/checkout/status-badge.svg"
+      - name: Commit badge if changed
+        # Every model has its own badge job and they run in parallel on a push, so rebase onto
+        # whatever a sibling job pushed first.
+        run: |
+          git add -- "models/checkout/status-badge.svg"
+          if git diff --cached --quiet -- "models/checkout/status-badge.svg"; then
+            echo "models/checkout/status-badge.svg unchanged"
+            exit 0
+          fi
+          git config user.name "em-ci"
+          git config user.email "em-ci@users.noreply.github.com"
+          git commit -m "em ci: rebuild status badge [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push
+
+  validate-fulfillment:
+    name: "em validate (changed .em files) [fulfillment]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate changed models
+        run: |
+          set -e
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base" "$head" -- "models/fulfillment/*.em")
+          if [ -z "$changed" ]; then
+            echo "no .em files changed"
+            exit 0
+          fi
+          status=0
+          for f in $changed; do
+            echo "::group::em validate $f"
+            npx @milehimikey/em@1.13.1 validate "$f" || status=1
+            npx @milehimikey/em@1.13.1 validate "$f" --list-issues
+            echo "::endgroup::"
+          done
+          exit $status
+
+  api-check-fulfillment:
+    name: "em api check (contract current; additive/breaking annotation) [fulfillment]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the generated contract is current
+        # Fails only when contracts/<model key>.tsp is missing or stale (run em api generate).
+        # The additive/breaking lines are annotation for the reviewer, never a gate (MIL-237).
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          npx @milehimikey/em@1.13.1 api check "models/fulfillment/fulfillment.em" --base "$base"
+
+  slice-index-fulfillment:
+    name: "em slice index --check (README table drift) [fulfillment]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check README Slices table is current
+        run: npx @milehimikey/em@1.13.1 slice index "models/fulfillment/fulfillment.em" --check
+
+  coverage-fulfillment:
+    name: "em coverage --strict (invariant citations) [fulfillment]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check invariant test coverage
+        # Counts INV-* IDs in `implemented` slice docs only (MIL-207) - a ready-to-implement
+        # doc has nothing yet to cite it, so this job is green on a fresh scaffold and on a
+        # doc-only ratification PR. Pass --include-ready for the older, forward-looking report.
+        run: npx @milehimikey/em@1.13.1 coverage "models/fulfillment/fulfillment.em" --tests "test" --strict
+
+  ledger-fulfillment:
+    name: "em ledger (slice doc version/content agreement) [fulfillment]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check slice doc version/content agreement
+        run: npx @milehimikey/em@1.13.1 ledger "models/fulfillment/fulfillment.em" --from "${{ github.event.pull_request.base.sha }}"
+
+  upgrade-check-fulfillment:
+    name: "em upgrade --check (advisory - hard incompatibilities only, MIL-219) [fulfillment]"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check for hard upgrade incompatibilities
+        # Advisory: exits non-zero ONLY on a hard incompatibility (an unparseable state file, an
+        # old .em shape em migrate itself refuses) - never on the ordinary "some mechanical
+        # steps are applicable" case. See docs/upgrading.md.
+        run: npx @milehimikey/em@1.13.1 upgrade "models/fulfillment/fulfillment.em" --check
+
+  status-badge-fulfillment:
+    name: "rebuild status badge (advisory - publish only, never a gate) [fulfillment]"
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Rebuild status badge
+        run: npx @milehimikey/em@1.13.1 status "models/fulfillment/fulfillment.em" --tests "test" --badge -o "models/fulfillment/status-badge.svg"
+      - name: Commit badge if changed
+        # Every model has its own badge job and they run in parallel on a push, so rebase onto
+        # whatever a sibling job pushed first.
+        run: |
+          git add -- "models/fulfillment/status-badge.svg"
+          if git diff --cached --quiet -- "models/fulfillment/status-badge.svg"; then
+            echo "models/fulfillment/status-badge.svg unchanged"
+            exit 0
+          fi
+          git config user.name "em-ci"
+          git config user.email "em-ci@users.noreply.github.com"
+          git commit -m "em ci: rebuild status badge [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push
+
+  skill-check:
+    name: em skill check (vendored skill drift)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check vendored skill matches installed em
+        run: |
+          if [ -d .claude/skills/event-modeling ]; then
+            npx @milehimikey/em@1.13.1 skill check
+          else
+            echo "no vendored skill at .claude/skills/event-modeling - skipping (run em skill install to opt in)"
+          fi
+
+  glossary:
+    name: "em glossary --fail-on-conflicts (cross-model vocabulary)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check glossary consistency across models
+        run: |
+          mapfile -t models < <(git ls-files '*.em')
+          npx @milehimikey/em@1.13.1 glossary "${models[@]}" --fail-on-conflicts
+# GENERATED:em-ci:end

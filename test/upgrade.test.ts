@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { makeMultiModelRepo, MULTI_MODEL_EXAMPLE_DIR } from "./helpers/multiModelRepo.js";
-import { buildCiWorkflowFile, ciWorkflowPath } from "../src/cli/ciInit.js";
+import { buildCiWorkflowFile, buildCiWorkflowFileMulti, buildConformWorkflowFileMulti, conformWorkflowPath, ciWorkflowPath, type CiModel } from "../src/cli/ciInit.js";
 import {
   UpgradeContext,
   resolveFromVersion,
@@ -422,6 +422,60 @@ describe("ci-block step — real generated workflow content", () => {
     expect(applied?.applied).toBe(true);
     const updated = readFileSync(ciWorkflowPath(dir), "utf8");
     expect(updated).toContain(`npx @milehimikey/em@${INSTALLED_VERSION} coverage "checkout.em" --tests "test" --strict`);
+  });
+});
+
+describe("ci-block step — multi-model blocks (MIL-233)", () => {
+  const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
+  const MANIFEST = 'systemSchemaVersion: "2.0"\nname: S\nmodels:\n  checkout:\n    source: checkout.em\n  billing:\n    source: billing/billing.em\n';
+  const MODELS: CiModel[] = [
+    { key: "checkout", path: "checkout.em" },
+    { key: "billing", path: "billing/billing.em" },
+  ];
+
+  function repoWith(opts: { manifest: boolean; version: string }): { dir: string; packagedSkillsRoot: string } {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), buildCiWorkflowFileMulti("system.yaml", MODELS, "test", opts.version));
+    writeFileSync(conformWorkflowPath(dir), buildConformWorkflowFileMulti("system.yaml", MODELS, opts.version));
+    if (opts.manifest) writeFileSync(join(dir, "system.yaml"), MANIFEST);
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add multi-model ci");
+    return { dir, packagedSkillsRoot };
+  }
+
+  it("is not applicable when the multi-model block already matches the installed em", () => {
+    const { dir, packagedSkillsRoot } = repoWith({ manifest: true, version: INSTALLED_VERSION });
+    const step = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((s) => s.id === "ci-block")!;
+    expect(step.applicable).toBe(false);
+  });
+
+  it("refreshes every model's section from the manifest beside the repo root, in both files", () => {
+    const { dir, packagedSkillsRoot } = repoWith({ manifest: true, version: "1.9.0" });
+    // The manifest gained a model since the block was generated: the manifest is authoritative.
+    writeFileSync(join(dir, "system.yaml"), MANIFEST + "  shipping:\n    source: shipping/shipping.em\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add a model");
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    expect(detectUpgrade(ctx).steps.find((s) => s.id === "ci-block")!.applicable).toBe(true);
+    const result = applyUpgrade(ctx);
+    expect(result.ok).toBe(true);
+    const all: CiModel[] = [...MODELS, { key: "shipping", path: "shipping/shipping.em" }];
+    // Only the managed block refreshes (the generated header comment is the repo's from then on).
+    const body = (text: string) => text.slice(text.indexOf("# GENERATED:"));
+    expect(body(readFileSync(ciWorkflowPath(dir), "utf8"))).toBe(body(buildCiWorkflowFileMulti("system.yaml", all, "test", INSTALLED_VERSION)));
+    expect(body(readFileSync(conformWorkflowPath(dir), "utf8"))).toBe(body(buildConformWorkflowFileMulti("system.yaml", all, INSTALLED_VERSION)));
+  });
+
+  it("never narrows a multi-model block to one model when there is no manifest: not applicable, with the reason", () => {
+    const { dir, packagedSkillsRoot } = repoWith({ manifest: false, version: "1.9.0" });
+    const before = readFileSync(ciWorkflowPath(dir), "utf8");
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    const step = detectUpgrade(ctx).steps.find((s) => s.id === "ci-block")!;
+    expect(step.applicable).toBe(false);
+    expect(step.reason).toContain("em-ci.yml covers 2 models (billing/billing.em, checkout.em) but no readable system.yaml sits at the repo root");
+    applyUpgrade(ctx);
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(before);
   });
 });
 

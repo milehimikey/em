@@ -38,8 +38,14 @@ import {
   conformWorkflowPath,
   buildCiWorkflowFile,
   buildConformWorkflowFile,
+  buildCiWorkflowFileMulti,
+  buildConformWorkflowFileMulti,
   ciManagedBody,
+  ciManagedBodyMulti,
   conformManagedBody,
+  conformManagedBodyMulti,
+  ciModelsFromManifest,
+  CiModel,
   planCiFile,
   applyCiFile,
   CI_WORKFLOW_MARKER,
@@ -218,34 +224,78 @@ function applyStateFile(ctx: UpgradeContext): StepApplyOutcome {
 // Not anchored on a literal "em coverage" — the generated line pins an exact version
 // (`npx @milehimikey/em@1.9.0 coverage "..."`, ciInit.ts's own `em` template variable), so
 // "em" and "coverage" are never adjacent in the real file.
-const CI_INIT_ARGS_RE = /\bcoverage "([^"]*)" --tests "([^"]*)" --strict\b/;
+const CI_INIT_ARGS_RE = /\bcoverage "([^"]*)" --tests "([^"]*)" --strict\b/g;
 
-function extractCiInitArgs(emCiContent: string): { model: string; testsDir: string } | null {
-  const m = CI_INIT_ARGS_RE.exec(emCiContent);
-  return m ? { model: m[1], testsDir: m[2] } : null;
+interface CiInitArgs {
+  model: string;
+  testsDir: string;
+  /** MIL-233: set when the existing block names two or more models - the models re-derived from
+   *  the system manifest beside the repo root (the manifest, not the old block, is authoritative
+   *  for the set). */
+  models: CiModel[] | null;
 }
 
-function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; conformPath: string; conformStale: boolean; args: { model: string; testsDir: string } | null } {
+type CiInitArgsResult = { args: CiInitArgs } | { args: null; blocked?: string };
+
+function extractCiInitArgs(emCiContent: string, repoRoot: string): CiInitArgsResult {
+  const all = [...emCiContent.matchAll(CI_INIT_ARGS_RE)];
+  if (all.length === 0) return { args: null };
+  const named = [...new Set(all.map((m) => m[1]))];
+  const base = { model: all[0][1], testsDir: all[0][2] };
+  if (named.length < 2) return { args: { ...base, models: null } };
+  // A multi-model block: regenerate it from the manifest, never from a single model.
+  const loaded = ciModelsFromManifest(repoRoot, repoRoot);
+  if (!loaded.ok) {
+    return {
+      args: null,
+      blocked: `em-ci.yml covers ${named.length} models (${named.join(", ")}) but no readable system.yaml sits at the repo root (${loaded.message}) - run \`em ci init <system.yaml>\` by hand if it needs refreshing`,
+    };
+  }
+  return { args: { ...base, models: loaded.models } };
+}
+
+function ciBlockFiles(args: CiInitArgs, ctx: UpgradeContext): { ci: [string, string]; conform: [string, string] } {
+  if (args.models) {
+    return {
+      ci: [buildCiWorkflowFileMulti(SYSTEM_MANIFEST_ARG, args.models, args.testsDir, ctx.installedVersion), ciManagedBodyMulti(args.models, args.testsDir, ctx.installedVersion)],
+      conform: [buildConformWorkflowFileMulti(SYSTEM_MANIFEST_ARG, args.models, ctx.installedVersion), conformManagedBodyMulti(args.models, ctx.installedVersion)],
+    };
+  }
+  return {
+    ci: [buildCiWorkflowFile(args.model, args.testsDir, ctx.installedVersion), ciManagedBody(args.model, args.testsDir, ctx.installedVersion)],
+    conform: [buildConformWorkflowFile(args.model, ctx.installedVersion), conformManagedBody(args.model, ctx.installedVersion)],
+  };
+}
+
+/** Only used for the generated header's wording on a from-scratch file; `ci-block` only ever
+ *  patches the managed block of a file that already exists, so this never reaches disk there. */
+const SYSTEM_MANIFEST_ARG = "system.yaml";
+
+function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; conformPath: string; conformStale: boolean; args: CiInitArgs | null; blocked?: string } {
   const ciPath = ciWorkflowPath(ctx.repoRoot);
   const conformPath = conformWorkflowPath(ctx.repoRoot);
   if (!existsSync(ciPath)) return { ciPath, ciStale: false, conformPath, conformStale: false, args: null };
-  const args = extractCiInitArgs(readFileSync(ciPath, "utf8"));
-  if (!args) return { ciPath, ciStale: false, conformPath, conformStale: false, args: null };
+  const extracted = extractCiInitArgs(readFileSync(ciPath, "utf8"), ctx.repoRoot);
+  if (!extracted.args) return { ciPath, ciStale: false, conformPath, conformStale: false, args: null, blocked: "blocked" in extracted ? extracted.blocked : undefined };
+  const args = extracted.args;
+  const multi = args.models !== null;
+  const files = ciBlockFiles(args, ctx);
 
-  const ciStatus = planCiFile(ciPath, buildCiWorkflowFile(args.model, args.testsDir, ctx.installedVersion), ciManagedBody(args.model, args.testsDir, ctx.installedVersion), CI_WORKFLOW_MARKER, false);
+  const ciStatus = planCiFile(ciPath, files.ci[0], files.ci[1], CI_WORKFLOW_MARKER, false, multi);
   const ciStale = ciStatus.kind === "stale";
 
   let conformStale = false;
   if (existsSync(conformPath)) {
-    const conformStatus = planCiFile(conformPath, buildConformWorkflowFile(args.model, ctx.installedVersion), conformManagedBody(args.model, ctx.installedVersion), CONFORM_WORKFLOW_MARKER, false);
+    const conformStatus = planCiFile(conformPath, files.conform[0], files.conform[1], CONFORM_WORKFLOW_MARKER, false, multi);
     conformStale = conformStatus.kind === "stale";
   }
   return { ciPath, ciStale, conformPath, conformStale, args };
 }
 
 function detectCiBlock(ctx: UpgradeContext): StepDetection {
-  const { ciPath, ciStale, conformStale, args } = ciBlockPlans(ctx);
+  const { ciPath, ciStale, conformStale, args, blocked } = ciBlockPlans(ctx);
   if (!existsSync(ciPath)) return { applicable: false, reason: "no .github/workflows/em-ci.yml — em upgrade never creates one" };
+  if (!args && blocked) return { applicable: false, reason: blocked };
   if (!args) return { applicable: false, reason: "can't determine the <model>/--tests arguments em-ci.yml was generated with — run `em ci init <model>` by hand if it needs refreshing" };
   if (!ciStale && !conformStale) return { applicable: false, reason: "generated CI block(s) already match the installed em" };
   return { applicable: true, reason: "generated CI block(s) are stale" };
@@ -254,15 +304,15 @@ function detectCiBlock(ctx: UpgradeContext): StepDetection {
 function applyCiBlock(ctx: UpgradeContext): StepApplyOutcome {
   const { ciPath, ciStale, conformPath, conformStale, args } = ciBlockPlans(ctx);
   if (!args || (!ciStale && !conformStale)) return { ok: false, message: "nothing to refresh" };
+  const multi = args.models !== null;
+  const files = ciBlockFiles(args, ctx);
   const changedFiles: string[] = [];
   if (ciStale) {
-    const status = planCiFile(ciPath, buildCiWorkflowFile(args.model, args.testsDir, ctx.installedVersion), ciManagedBody(args.model, args.testsDir, ctx.installedVersion), CI_WORKFLOW_MARKER, false);
-    applyCiFile(ciPath, status);
+    applyCiFile(ciPath, planCiFile(ciPath, files.ci[0], files.ci[1], CI_WORKFLOW_MARKER, false, multi));
     changedFiles.push(ciPath);
   }
   if (conformStale) {
-    const status = planCiFile(conformPath, buildConformWorkflowFile(args.model, ctx.installedVersion), conformManagedBody(args.model, ctx.installedVersion), CONFORM_WORKFLOW_MARKER, false);
-    applyCiFile(conformPath, status);
+    applyCiFile(conformPath, planCiFile(conformPath, files.conform[0], files.conform[1], CONFORM_WORKFLOW_MARKER, false, multi));
     changedFiles.push(conformPath);
   }
   return { ok: true, changedFiles };
