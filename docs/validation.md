@@ -33,6 +33,7 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | `superseded-by` naming a slice absent from the current model (`lineage-forward-dangling`) | Fix the key, or remove the stale successor |
 | A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the pending delta on the target slice first (bumping its `version:`) |
 | A view field's traced `derived from "Event A", "Event B"` naming an event that isn't among the view's actual sources (`derived-from-unresolved`) | Name one of the view's actual sources — its `from` list, or the same-slice events for a `from`-less view — or drop the traced event |
+| Two `public` elements of the same kind whose names slug alike (`Order Placed` / `Order-Placed`) — a consumer's `consumes <model>:<kind>.<slug>` names no slice, so it couldn't tell them apart (`public-name-not-unique`, MIL-235). A `view … again` instance is the same read model, not a second name | Rename one, or drop `public` from one — see [dsl.md](dsl.md#consuming-another-models-public-surface) |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
 [timeline.md](timeline.md) explains them with examples.
@@ -517,26 +518,31 @@ The fix is always to rename: for `duplicate-model-key`, give each model a unique
 
 ### Seam manifest
 
-Raised by [`em system <manifest>`](cli.md#em-system-manifest) (MIL-194), never by `em validate`:
-the cross-model half of [Both ends of a flow](#both-ends-of-a-flow), checked over the models'
-export documents against a declared seam manifest (which model's `public` event/view feeds
-which other model's reaction).
+Raised by [`em system`](cli.md#em-system-manifest) (MIL-194, MIL-235), never by `em validate`.
+This is the cross-model half of [Both ends of a flow](#both-ends-of-a-flow), checked over the
+models' export documents. The bindings are the consuming translations' `consumes` refs, and the
+models come from `system.yaml` or from discovery. A legacy 1.0 manifest's `seams:` are still
+verified as well.
 
 | Code | Severity | Rule | Fix |
 |---|---|---|---|
-| `system-manifest-invalid` | error | The manifest's shape is wrong — missing/unknown keys, unsupported `systemSchemaVersion`, a seam ref that isn't `<modelKey>:`-qualified or names an undeclared model, an unreadable/unparseable `source` | Fix the manifest; `source` must be a `.em` file or an `em export --json` document (schema ≥ 1.10) |
+| `consumes-unknown-model` | error | A translation's `consumes <modelKey>:<kind>.<slug>` names a model key the system doesn't have | Fix the key (the kebab-slug of the producer's `model "Name"`), or add that model to the system |
+| `consumes-unknown-element` | error | The model exists but has no `public` element of that kind and slug. The message says when the element exists but isn't `public` | Point the ref at a public element (`em export` lists them), or ask the producer to publish it |
+| `system-manifest-invalid` | error | The manifest's shape is wrong: missing/unknown keys, an unsupported `systemSchemaVersion`, `seams:`/`owner:` in a 2.0 manifest (the message points at `em upgrade`), an unreadable/unparseable `source`, or (discovery) no models found | Fix the manifest. `source` must be a `.em` file or an `em export --json` document (schema ≥ 1.10) |
+| `system-manifest-outdated` | warning | The manifest is schema 1.0 (seams and owners in `system.yaml`). It still verifies | Run `em upgrade <model>.em --apply` once ([upgrading.md](upgrading.md#1140)) |
 | `system-model-key-mismatch` | error | A `models:` key differs from that export's `model.key` | Rename the manifest entry to the computed key the message prints |
-| `seam-endpoint-unresolved` | error | A seam's `from`/`to` doesn't resolve in the named model | Fix the ref (`em export` lists every ref), or re-declare the seam after a rename |
-| `seam-source-not-public` | error | The `from` element exists but isn't a `public` event/view | Mark it `public` in its model, or point the seam at the element that is |
-| `seam-consumer-not-reaction` | error | The `to` element isn't a `translation`/`automation`/`processor`/`saga` — or a bare slice ref holds zero or several | Point `to` at the reaction element (or a slice containing exactly one) |
-| `seam-duplicate` | warning | The same resolved `(from, to)` pair is declared twice | Remove the repeat |
-| `dangling-public-event` | warning | A `public` event/view no seam names as `from` — a published surface nobody consumes | Declare the seam that reads it, or drop `public` if nothing outside the model does |
-| `unbound-translation` | warning | An externally fed reaction (no incoming edge inside its own model) that no seam names as `to` | Declare the seam whose `to` is this reaction, or give it an in-model `from` |
-| `undeclared-seam-candidate` | warning | A `public` event/view in one model shares its name with a reaction or event in another, with no seam between them — the old name-matching heuristic, demoted to a lint | Declare the seam, or rename one side so the match stops looking like a link |
+| `seam-duplicate` | warning | The same `(from, to)` binding is declared twice: a ref repeated in `consumes`, or a 1.0 seam that a `consumes` clause already declares | Remove the repeat |
+| `dangling-public-event` | warning | A `public` event/view that nothing in the system consumes | Add `consumes <model>:<kind>.<slug>` to the translation that reads it, or drop `public` if nothing outside the model does |
+| `unbound-translation` | warning | An externally fed reaction (no incoming edge inside its own model) that nothing binds | Add `consumes` to the translation, or give the reaction an in-model `from` |
+| `undeclared-seam-candidate` | warning | A `public` event/view in one model shares its name with a reaction or event in another, with no binding between them. This is the old name-matching heuristic, demoted to a lint | Add the `consumes` ref, or rename one side so the match stops looking like a link |
+| `seam-endpoint-unresolved` | error | 1.0 manifests only: a seam's `from`/`to` doesn't resolve in the named model | Fix the ref, or migrate with `em upgrade` |
+| `seam-source-not-public` | error | 1.0 manifests only: the `from` element exists but isn't a `public` event/view | Mark it `public`, or point the seam at the element that is |
+| `seam-consumer-not-reaction` | error | 1.0 manifests only: the `to` element isn't a reaction, or a bare slice ref holds zero or several | Point `to` at the reaction element (or a slice containing exactly one) |
 
-`em validate` itself deliberately stays quiet on both halves of a seam: a `public` event with no
+`em validate` deliberately says nothing about either half of a seam. A `public` event with no
 reader in its own model, and a reaction with no `from`, are each a legitimate single-model shape
-(the reader/producer is outside the model). `em system` is where the system-level claim is
+(the reader or producer is outside the model). `em validate` checks only the `consumes` grammar,
+and never opens the producer (compile isolation). `em system` is where the system-level claim is
 checked.
 
 ## What the validator can't catch

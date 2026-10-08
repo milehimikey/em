@@ -10,6 +10,13 @@
 //   <modelKey>:<sliceKey>/<kind>.<slug>   element
 //   <modelKey>:<sliceKey>                 slice
 //   <modelKey>:types/<slug>               type
+//   <modelKey>:<kind>.<slug>              contract ref (MIL-235, `consumes`; kind event|view)
+//
+// A contract ref deliberately drops the slice segment: it names a producer's PUBLIC element by
+// kind + slug only, so a producer can move an element between slices without breaking its
+// consumers. That is only unambiguous because public element names are unique per kind within
+// a model (`public-name-not-unique`, model/validate.ts). Never parse one with
+// `parseQualifiedRef` — it would read `event.x` as an (invalid) element ref with no slice.
 //
 // `modelKey` is the kebab-slug of the DECLARED model name (`model "Name"`) — the same
 // `kebabSlug()` every other export identity derives from — never a path: it survives file
@@ -83,6 +90,35 @@ export function computeModelKeys(entries: Array<{ model: NormalizedModel; file: 
     return key;
   });
   return { keys, diagnostics };
+}
+
+/** The kinds a contract ref (`consumes`) may name — a producer's published facts and read
+ *  models. Commands are not consumable (MIL-235). */
+export const CONTRACT_REF_KINDS = ["event", "view"] as const;
+export type ContractRefKind = (typeof CONTRACT_REF_KINDS)[number];
+
+/** Anchored contract-ref shape: `<modelKey>:<event|view>.<slug>` — model key per
+ *  `MODEL_KEY_RE` (so a `~2` collision key is admitted), slug per `kebabSlug()`'s output. */
+export const CONTRACT_REF_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*(?:~\d+)?):(event|view)\.([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+
+export interface ParsedContractRef {
+  modelKey: string;
+  kind: ContractRefKind;
+  slug: string;
+}
+
+/** Parse `<modelKey>:<kind>.<slug>`; `null` when `input` is not exactly that shape (wrong
+ *  kind, a slice segment, uppercase, surrounding text …). Shape-only — whether the model and
+ *  element exist is `em system`'s question. */
+export function parseContractRef(input: string): ParsedContractRef | null {
+  const m = CONTRACT_REF_RE.exec(input);
+  if (!m) return null;
+  return { modelKey: m[1], kind: m[2] as ContractRefKind, slug: m[3] };
+}
+
+/** `<modelKey>:<kind>.<slug>` — the one place a contract ref is spelled. */
+export function formatContractRef(modelKey: string, kind: ContractRefKind, slug: string): string {
+  return `${modelKey}:${kind}.${slug}`;
 }
 
 /** `<modelKey>:<ref>` — the one place the qualifier separator is spelled. `ref` is an

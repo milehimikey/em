@@ -11,8 +11,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { compile } from "../src/pipeline.js";
+import { makeMultiModelRepo, MULTI_MODEL_EXAMPLE_DIR } from "./helpers/multiModelRepo.js";
 import { buildCiWorkflowFile, ciWorkflowPath } from "../src/cli/ciInit.js";
 import {
   UpgradeContext,
@@ -628,5 +629,115 @@ describe("ratified-signoff step (MIL-259)", () => {
     writeFileSync(join(dir, "slices", "place-order.md"), "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 2\n---\nbody\n");
     const step = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((st) => st.id === "ratified-signoff")!;
     expect(step.applicable).toBe(false);
+  });
+});
+
+// MIL-235 (R2): every --apply commit carries an `Em-Upgrade: <step-id>` trailer.
+describe("applyUpgrade — Em-Upgrade trailer", () => {
+  it("every step commit and the final em-version commit carry `Em-Upgrade: <id>` (read back via %(trailers))", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo();
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    const out = spawnSync("git", ["-C", dir, "log", "--format=%s%x1f%(trailers:key=Em-Upgrade,valueonly)%x1e"], { encoding: "utf8" }).stdout;
+    const rows = out
+      .split("\x1e")
+      .map((r) => r.trim())
+      .filter(Boolean)
+      .map((r) => r.split("\x1f").map((x) => x.trim()));
+    expect(rows).toEqual([
+      [`em upgrade: em-version (1.6.0 → ${INSTALLED_VERSION})`, "em-version"],
+      [`em upgrade: constitution (1.6.0 → ${INSTALLED_VERSION})`, "constitution"],
+      [`em upgrade: state-file (1.6.0 → ${INSTALLED_VERSION})`, "state-file"],
+      [`em upgrade: reaction-shape (1.6.0 → ${INSTALLED_VERSION})`, "reaction-shape"],
+      ["init", ""],
+    ]);
+  });
+});
+
+// MIL-235 (R3): system.yaml 1.0 -> 2.0, seams -> consumes, owner -> model header, one commit.
+describe("system-manifest step", () => {
+  const ctxFor = (modelFile: string): UpgradeContext => {
+    const { model, refs } = compile(readFileSync(modelFile, "utf8"));
+    const root = resolveRepoRoot(dirname(modelFile));
+    if (!root.ok) throw new Error(root.message);
+    return { modelFile, baseDir: dirname(modelFile), repoRoot: root.repoRoot, installedVersion: INSTALLED_VERSION, packagedSkillsRoot: tmpdir(), model, refs };
+  };
+  const step = (_ctx: UpgradeContext) => UPGRADE_STEPS.find((s) => s.id === "system-manifest")!;
+
+  it("is registered last, since 1.14.0", () => {
+    expect(UPGRADE_STEPS.map((s) => s.id).at(-1)).toBe("system-manifest");
+    expect(UPGRADE_STEPS.find((s) => s.id === "system-manifest")!.sinceVersion).toBe("1.14.0");
+  });
+
+  it("detects a 1.0 manifest found by walking up from the model, and is not applicable without one or on 2.0", () => {
+    const legacy = makeMultiModelRepo({ legacy: true });
+    const current = makeMultiModelRepo();
+    const none = makeMultiModelRepo({ manifest: false });
+    tmpDirs.push(legacy.dir, current.dir, none.dir);
+    const d = step(ctxFor(legacy.fulfillment)).detect(ctxFor(legacy.fulfillment));
+    expect(d.applicable).toBe(true);
+    expect(d.reason).toMatch(/system\.yaml is systemSchemaVersion "1\.0" — em upgrade will move its 1 seam\(s\) into `consumes` clauses, its owner\(s\) onto the 2 model header\(s\), and rewrite it to "2\.0"$/);
+    const c = step(ctxFor(current.checkout)).detect(ctxFor(current.checkout));
+    expect(c.applicable).toBe(false);
+    expect(c.reason).toMatch(/system\.yaml is already systemSchemaVersion "2\.0"$/);
+    const n = step(ctxFor(none.checkout)).detect(ctxFor(none.checkout));
+    expect(n).toEqual({ applicable: false, reason: "no system.yaml between the model and the repository root" });
+  });
+
+  it("--apply migrates the example in ONE commit with the trailer — identical to the shipped example — and a second run (from the other member) is a no-op", () => {
+    const repo = makeMultiModelRepo({ legacy: true });
+    tmpDirs.push(repo.dir);
+    const before = repo.git("rev-parse", "HEAD").trim();
+    const result = applyUpgrade(ctxFor(repo.fulfillment));
+    expect(result.ok).toBe(true);
+    const applied = result.ok ? result.applied.find((s) => s.id === "system-manifest")! : undefined;
+    expect(applied?.applied).toBe(true);
+
+    // Exactly one commit touched the three files, and it carries `Em-Upgrade: system-manifest`.
+    const touching = repo.git("log", "--format=%H%x1f%(trailers:key=Em-Upgrade,valueonly)", `${before}..HEAD`, "--", "system.yaml", "models/checkout/checkout.em", "models/fulfillment/fulfillment.em").trim().split("\n");
+    expect(touching).toHaveLength(1);
+    expect(touching[0].split("\x1f")[1].trim()).toBe("system-manifest");
+    const files = repo.git("show", "--name-only", "--format=", touching[0].split("\x1f")[0]).trim().split("\n").sort();
+    expect(files).toEqual(["models/checkout/checkout.em", "models/fulfillment/fulfillment.em", "system.yaml"]);
+
+    // The migrated models are byte-identical to the shipped (migrated) example.
+    for (const rel of ["models/checkout/checkout.em", "models/fulfillment/fulfillment.em"]) {
+      expect(readFileSync(join(repo.dir, rel), "utf8")).toBe(readFileSync(join(MULTI_MODEL_EXAMPLE_DIR, rel), "utf8"));
+    }
+    const manifest = readFileSync(repo.manifest, "utf8");
+    expect(manifest).toContain('systemSchemaVersion: "2.0"');
+    expect(manifest).not.toMatch(/^\s*(seams|owner):/m);
+
+    // Second run from the OTHER member: nothing to do.
+    expect(step(ctxFor(repo.checkout)).detect(ctxFor(repo.checkout)).applicable).toBe(false);
+  });
+
+  it("refuses (writes nothing) when a seam's consumer is not a translation — `consumes` is translation-only", () => {
+    const repo = makeMultiModelRepo({ legacy: true });
+    tmpDirs.push(repo.dir);
+    writeFileSync(repo.fulfillment, readFileSync(repo.fulfillment, "utf8").replace("translation Order Intake", "automation Order Intake"));
+    writeFileSync(repo.manifest, readFileSync(repo.manifest, "utf8").replace("translation.order-intake", "automation.order-intake"));
+    repo.git("commit", "-q", "-am", "automation consumer");
+    const ctx = ctxFor(repo.fulfillment);
+    const outcome = step(ctx).apply(ctx);
+    expect(outcome).toEqual({
+      ok: false,
+      message:
+        "seams[0] (checkout:checkout/event.order-submitted -> fulfillment:receive-order/automation.order-intake): the consumer is automation " +
+        '"Order Intake", but `consumes` is only valid on translation — make it a translation (it crosses a model boundary) or drop the seam, then re-run',
+    });
+    expect(repo.git("status", "--porcelain").trim()).toBe("");
+  });
+
+  it("a bare-slice `to` resolves to the slice's single reaction; an existing header owner wins", () => {
+    const repo = makeMultiModelRepo({ legacy: true });
+    tmpDirs.push(repo.dir);
+    writeFileSync(repo.manifest, readFileSync(repo.manifest, "utf8").replace("fulfillment:receive-order/translation.order-intake", "fulfillment:receive-order"));
+    writeFileSync(repo.checkout, readFileSync(repo.checkout, "utf8").replace('model "Checkout"', 'model "Checkout" owner "@shop/storefront"'));
+    repo.git("commit", "-q", "-am", "bare slice + owned header");
+    const ctx = ctxFor(repo.checkout);
+    expect(step(ctx).apply(ctx)).toMatchObject({ ok: true });
+    expect(readFileSync(repo.fulfillment, "utf8")).toContain("translation Order Intake consumes checkout:event.order-submitted");
+    expect(readFileSync(repo.checkout, "utf8").split("\n")[0]).toBe('model "Checkout" owner "@shop/storefront"');
   });
 });

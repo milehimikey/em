@@ -1642,3 +1642,100 @@ slice "S" {
     });
   });
 });
+// MIL-235: `consumes <modelKey>:<kind>.<slug>[, …]` on translation; `owner "…"` on the header.
+describe("consumes clause (MIL-235)", () => {
+  const el = (line: string) => parse(`slice "S" {\n  ${line}\n}`).slices[0].elements[0];
+  const KIND_ERROR =
+    "line 2: `consumes` is only valid on translation — only a boundary-crossing reaction binds to another model's public surface";
+
+  it("parses one ref and a comma list on a translation, leaving the name clean", () => {
+    expect(el("translation Order Intake consumes checkout:event.order-submitted")).toMatchObject({
+      kind: "translation",
+      name: "Order Intake",
+      consumes: ["checkout:event.order-submitted"],
+    });
+    expect(el("translation Intake consumes checkout:event.order-submitted, billing:view.open-invoices").consumes).toEqual([
+      "checkout:event.order-submitted",
+      "billing:view.open-invoices",
+    ]);
+    expect(el("translation Intake").consumes).toBeUndefined();
+  });
+
+  it("is extracted before `from` (greedy to EOL) and works on either side of it, and before a field block", () => {
+    expect(el('translation Intake from "Feed" consumes checkout:event.order-submitted')).toMatchObject({
+      name: "Intake",
+      from: ["Feed"],
+      consumes: ["checkout:event.order-submitted"],
+    });
+    expect(el('translation Intake consumes checkout:event.order-submitted from "Feed"')).toMatchObject({
+      name: "Intake",
+      from: ["Feed"],
+      consumes: ["checkout:event.order-submitted"],
+    });
+    expect(el("translation Intake consumes checkout:event.order-submitted { orderId: uuid }")).toMatchObject({
+      name: "Intake",
+      consumes: ["checkout:event.order-submitted"],
+      fields: [{ name: "orderId", type: "uuid" }],
+    });
+    // Also legal trailing the closing brace, like every other element clause.
+    expect(el("translation Intake { orderId: uuid } consumes checkout:event.order-submitted").consumes).toEqual([
+      "checkout:event.order-submitted",
+    ]);
+  });
+
+  it("admits a `~n` collision-suffixed model key and accumulates repeated clauses", () => {
+    expect(el("translation Intake consumes checkout~2:event.order-submitted").consumes).toEqual(["checkout~2:event.order-submitted"]);
+    expect(el("translation Intake consumes a:event.x consumes b:view.y").consumes).toEqual(["a:event.x", "b:view.y"]);
+  });
+
+  it.each([
+    ["automation", "automation Sweep consumes checkout:event.order-submitted"],
+    ["processor", "processor Charge consumes checkout:event.order-submitted"],
+    ["saga", "saga Flow consumes checkout:event.order-submitted"],
+    ["view", "view Orders consumes checkout:event.order-submitted"],
+    ["event", "event Thing Done consumes checkout:event.order-submitted"],
+    ["command", "command Do consumes checkout:event.order-submitted"],
+    ["ui", "ui Screen consumes checkout:event.order-submitted"],
+  ])("refuses `consumes` on %s with the exact ParseError", (_kind, line) => {
+    expect(() => el(line)).toThrow(KIND_ERROR);
+  });
+
+  it("refuses a malformed ref (command kind, slice segment, missing kind) with an exact message", () => {
+    const malformed = (ref: string) =>
+      `line 2: malformed \`consumes\` ref '${ref}' — expected <modelKey>:<kind>.<slug> with kind event or view, ` +
+      "comma-separated (e.g. `consumes checkout:event.order-submitted`)";
+    expect(() => el("translation Intake consumes checkout:command.submit-order")).toThrow(malformed("checkout:command.submit-order"));
+    expect(() => el("translation Intake consumes checkout:checkout/event.order-submitted")).toThrow(
+      malformed("checkout:checkout/event.order-submitted"),
+    );
+    expect(() => el("translation Intake consumes checkout:order-submitted")).toThrow(malformed("checkout:order-submitted"));
+    // A malformed ref on another kind still reports the kind error first.
+    expect(() => el("automation Sweep consumes checkout:command.x")).toThrow(KIND_ERROR);
+  });
+
+  it("leaves a plain word `consumes` in a free-text name alone (no colon = not a clause) — additive", () => {
+    expect(el("automation Billing consumes credits")).toMatchObject({ name: "Billing consumes credits" });
+    expect(el("automation Billing consumes credits").consumes).toBeUndefined();
+  });
+});
+
+describe("model header owner (MIL-235)", () => {
+  it("parses one or more quoted owners after a quoted name, as written", () => {
+    const ast = parse(`model "Checkout" owner "Storefront team", "@org/payments"\n`);
+    expect(ast.name).toBe("Checkout");
+    expect(ast.owner).toEqual(["Storefront team", "@org/payments"]);
+    expect(parse(`model Checkout owner "Storefront team"\n`)).toMatchObject({ name: "Checkout", owner: ["Storefront team"] });
+  });
+
+  it("is [] with no clause, and a quoted name containing the word is never split", () => {
+    expect(parse(`model "Checkout"\n`).owner).toEqual([]);
+    expect(parse(`slice "S" {\n  command Do\n}\n`).owner).toEqual([]);
+    expect(parse(`model "Owner Portal"\n`)).toMatchObject({ name: "Owner Portal", owner: [] });
+    expect(parse(`model "Big owner "\n`)).toMatchObject({ name: "Big owner ", owner: [] });
+  });
+
+  it("refuses an empty owner and trailing junk with exact messages", () => {
+    expect(() => parse(`model "X" owner ""\n`)).toThrow("line 1: `owner` needs a non-empty team name in every quoted entry");
+    expect(() => parse(`model "X" owner "A" extra\n`)).toThrow("line 1: unrecognized text after the `owner` clause: 'extra'");
+  });
+});

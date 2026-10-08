@@ -17,6 +17,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../src/mcp/server.js";
 import { readContract } from "../src/cli/contract.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
+import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
 
 // Spawns the real CLI (via tsx), same helper shape as test/cli.test.ts's `em()` — used here only
 // for the byte-identity assertions (MCP tool result === `em <cmd> --json`/stdout for the same
@@ -432,7 +433,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.14");
+    expect(doc.schemaVersion).toBe("1.15");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -1040,14 +1041,15 @@ describe("conform_scope tool", () => {
   });
 });
 
-describe("system tool (MIL-194)", () => {
+describe("system tool (MIL-194, MIL-235)", () => {
   const exampleDir = join(ROOT, "examples", "multi-model");
 
   it("byte-identical to `em system <manifest> --json` for the shipped multi-model example", async () => {
     const manifest = join(exampleDir, "system.yaml");
     const { result, doc } = await callJson(client, "system", { manifest });
     expect(result.isError).toBeFalsy();
-    expect(doc.systemSchemaVersion).toBe("1.0");
+    expect(doc.systemSchemaVersion).toBe("2.0");
+    expect(doc.discovery).toBeNull();
     expect(doc.seams.map((s: { status: string }) => s.status)).toEqual(["verified"]);
     expect(doc.contextMap.edges).toEqual([{ from: "checkout", to: "fulfillment", seams: 1 }]);
 
@@ -1055,6 +1057,24 @@ describe("system tool (MIL-194)", () => {
     const cli = em(["system", manifest, "--json"], exampleDir);
     expect(cli.status).toBe(0);
     expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("discovery (no manifest): byte-identical to `em system <dir> --json`, manifest null, both models found", async () => {
+    const repo = makeMultiModelRepo({ manifest: false });
+    try {
+      const { result, doc } = await callJson(client, "system", { manifest: repo.dir });
+      expect(result.isError).toBeFalsy();
+      expect(doc.manifest).toBeNull();
+      expect(doc.discovery).toEqual({ root: repo.dir, files: ["models/checkout/checkout.em", "models/fulfillment/fulfillment.em"] });
+      expect(doc.seams.map((s: { from: string; status: string }) => [s.from, s.status])).toEqual([["checkout:checkout/event.order-submitted", "verified"]]);
+
+      const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+      const cli = em(["system", repo.dir, "--json"], dir);
+      expect(cli.status).toBe(0);
+      expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      repo.cleanup();
+    }
   });
 
   it("a seam error is reported INSIDE the document (not a tool error), byte-identical to the CLI's exit-1 document", async () => {

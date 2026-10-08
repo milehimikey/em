@@ -6,7 +6,7 @@ A `.em` file is a model title, a set of row declarations, and a list of slices. 
 is one vertical time step on the diagram; the elements inside it land in swimlane rows.
 
 ```
-model "Name"                     # diagram title
+model "Name" [owner "Team"]      # diagram title; optional owning team(s), free text
 
 persona Name                     # a UI swimlane row (one per actor)
 context Name                     # an event swimlane row (one per bounded context)
@@ -18,6 +18,7 @@ slice "Name" [source "url"] {    # one column; time runs left -> right; source i
   event Free Text @Context       # recorded fact; @Context picks its row
   event Free Text @Context public   # marks it part of the public integration surface
   processor Free Text from "View"             # automation reacting to a read model
+  translation Free Text consumes other-model:event.slug   # binds another model's public event/view
 }
 
 arrow From Element -> To Element    # explicit extra edge
@@ -574,14 +575,74 @@ model, not from a dedicated keyword; the DSL already has the two signals it need
 1. **A person or client reads it** — draw the `ui` that reads it. That `ui` consumer is the
    obligation to ship the query endpoint (see above).
 2. **Another model or system reads it** — mark it `public`. Its reader is outside this model
-   (possibly outside this system entirely); `em system <manifest>` verifies the cross-model
-   claim against a declared seam, not `em validate`.
+   (possibly outside this system entirely) and declares itself with
+   [`consumes`](#consuming-another-models-public-surface); `em system` verifies the
+   cross-model claim, not `em validate`.
 3. **Only an automation reads it** — nothing. No `ui`, no `public`: this is the read operation
    an Automation/Translation reaction is required to make, drawn to say "the automation must
    read this," not "this is an endpoint." Internal by design.
 
 A third `internal`/`published` marker would give a view three overlapping exposure controls and
 a precedence table for no gain — the owner ruled against adding one (2026-09-08).
+
+### Consuming another model's public surface
+
+A `translation` — the boundary-crossing reaction — names the other models' `public` events or
+views it reacts to with a `consumes` clause (MIL-235). The binding is declared on the
+**consumer**, and it is **versionless**: the producer never lists its consumers, and nothing
+pins a contract version.
+
+```
+translation Order Intake consumes checkout:event.order-submitted
+translation Billing Feed consumes checkout:event.order-submitted, checkout:view.open-orders
+translation Intake consumes checkout:event.order-submitted { orderId: uuid }   # before a field block
+```
+
+Each ref is a **contract ref**, `<modelKey>:<kind>.<slug>`:
+
+- `modelKey` — the producer's model key, the kebab-slug of its `model "Name"` (`checkout`); a
+  `~2`-suffixed key from a key collision is accepted.
+- `kind` — `event` or `view`. Commands are not consumable.
+- `slug` — the kebab-slug of the producer element's name (`Order Submitted` → `order-submitted`).
+
+There is no slice segment, so the producer can move the element between slices without
+breaking its consumers. For that to be unambiguous, two `public` elements of the same kind in one
+model may not share a slug — `public-name-not-unique` (an `em validate` error, see
+[validation.md](validation.md#errors)).
+
+Rules:
+
+- `consumes` is valid **only on `translation`**. On any other element it is a parse error:
+  ``line N: `consumes` is only valid on translation — only a boundary-crossing reaction binds to
+  another model's public surface``. An automation that reads another model's data should be a
+  translation.
+- Refs are unquoted and comma-separated. Repeating the clause adds to the list. `consumes` can go
+  before or after a `from "…"` clause, and before or after a `{ … }` field block, but never inside
+  the braces.
+- A word `consumes` with no `:` after it stays part of the name
+  (`automation Billing consumes credits` is just a name), so models that parsed before 1.14
+  parse the same way now.
+- `em validate` checks the **grammar only**. It never opens the other model: compiling one model
+  never reads another (compile isolation, MIL-194). [`em system`](cli.md#em-system-manifest)
+  resolves every ref against the models it loads. It reports `consumes-unknown-model` when no
+  model has that key, and `consumes-unknown-element` when the model has no `public` element of
+  that kind and slug.
+
+`em export` carries the refs as written on the translation (`consumes: string[] | null`).
+
+### Model owner
+
+The model header can name the team(s) that own the model:
+
+```
+model "Checkout" owner "Storefront team"
+model "Checkout" owner "@shop/storefront", "@shop/payments"
+```
+
+Owners are quoted free text, kept exactly as written. `em export` carries them as `model.owner`
+(`[]` when the header names none), and `em system` shows them on each model and context-map node.
+In 1.14, `owner` replaces the per-model `owner:` key of a 1.0 `system.yaml`. A model's owner now
+travels with the model, and `em upgrade` moves it there.
 
 ## Colors
 

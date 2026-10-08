@@ -121,6 +121,13 @@ export interface ElementNode {
    *  absent. See `model/validate.ts` for the "target must be strictly earlier" rule and
    *  `model/edges.ts`'s `resolveLoopsToTarget`. */
   loopsTo?: string[];
+  /** `consumes <modelKey>:<kind>.<slug>[, …]` — translation only (MIL-235): the other models'
+   *  `public` event/view this boundary-crossing reaction binds to, as unquoted contract refs
+   *  (`model/qualifiedRef.ts`'s `parseContractRef` grammar), in declaration order. Versionless
+   *  and consumer-side: the producer never names its consumers. Resolved ONLY by `em system`
+   *  (src/system/verify.ts) — compiling this model never reads the producer (MIL-194 compile
+   *  isolation), so `em validate` checks the grammar and nothing else. `undefined` when absent. */
+  consumes?: string[];
   line: number;
 }
 
@@ -154,6 +161,10 @@ export interface ModelNode {
    *  title. The distinction matters to `model/qualifiedRef.ts` (MIL-193), whose model key is the
    *  slugged declared name — an undeclared name must not become a key. */
   nameDeclared: boolean;
+  /** `model "Name" owner "Team"[, "Team 2"]` (MIL-235): the owning team(s), quoted free text as
+   *  written, in declaration order — `[]` when the header names none. No handle-shape check
+   *  here (MIL-234 defines one); `em system` reads it from the export as each model's owner. */
+  owner: string[];
   /** Declared persona lanes, in order. */
   personas: string[];
   /** Declared context/concept lanes, in order. */

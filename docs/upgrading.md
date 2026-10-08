@@ -31,6 +31,15 @@ cherry-pick each one individually:
    repo has no `.specify/` directory.
 6. `ratified-signoff` — grandfather `ready-to-implement` docs that never recorded a sign-off (see
    [1.14.0](#1140)).
+7. `system-manifest` — migrate the nearest `system.yaml` (found by walking up from the model to
+   the repository root) from schema 1.0 to 2.0. Each 1.0 seam becomes a
+   `consumes <model>:<kind>.<slug>` clause on the consuming translation, and each model's
+   `owner:` becomes `owner "…"` on that model's header. The seam's `description` is kept as a
+   `#` comment above the translation. The manifest keeps `name` and `models: {key: {source}}`
+   only. This is the one step that edits *other* models' files, and it does it all in one
+   commit. A second run, from any member model, finds the manifest already at 2.0 and does
+   nothing. It refuses, and writes nothing, when a seam's consumer isn't a `translation`
+   (`consumes` is translation-only) or a member is an export `.json` rather than a `.em` file.
 
 Each step is detected first and applied only under `--apply`; a step that finds nothing to
 do makes no commit. `--apply` refuses to start on a dirty working tree, or with no git
@@ -38,7 +47,20 @@ identity configured (`git config user.name`/`user.email` — needed before `git 
 work at all), and stops at the first failing step with the prior steps' commits intact. Once
 every applicable step has
 run, `--apply` writes the final `Em version: <to>` bullet to the state file as its own last
-commit — that write happens every run, independent of which of the six steps applied.
+commit — that write happens every run, independent of which of the seven steps applied.
+
+Every `--apply` commit carries an `Em-Upgrade:` trailer naming its step, in a paragraph of its
+own after the subject. The final stamp commit uses `Em-Upgrade: em-version`:
+
+```
+em upgrade: system-manifest (1.13.1 → 1.14.0)
+
+Em-Upgrade: system-manifest
+```
+
+Read the trailer with `git log --format='%(trailers:key=Em-Upgrade,valueonly)'`. CI gates use it
+to recognize a mechanical migration commit, for example to exempt one from a cross-model
+change-set check.
 
 `from` is read from the state file's `Em version:` bullet; when that bullet is absent (a
 state file predating this feature), `em upgrade` infers `from` from other evidence and says
@@ -217,3 +239,8 @@ Strict seams, API first.
 | What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
 | **Behavior change:** `--slice-ready` requires a recorded ratification: a `ready-to-implement` doc with no `ratifiedBy` (e.g. after `em slice reratify`) is not ready (`slice-ready-not-ratified`; `--json` schema 1.1 → 1.2 adds `gates.ratified`) (MIL-259) | `ratified-signoff` — writes `ratifiedBy: "grandfathered (unsigned before em 1.14)"` and `ratifiedOn:` today on `version: 1` docs without one; a reratified (`version > 1`) doc stays a human item: `em slice ratify --by <name>` |
+| **Behavior change:** `system.yaml` schema 2.0 holds `name` + `models: {key: {source}}` only. Seams are declared consumer-side as `translation … consumes <model>:<kind>.<slug>` and owners on the model header as `model "Name" owner "Team"`. `seams:`/`owner:` in a 2.0 manifest are errors. A 1.0 manifest still verifies, with a `system-manifest-outdated` warning, and gives the same result after migration (MIL-235) | `system-manifest` |
+| **Behavior change:** `em validate` errors with `public-name-not-unique` when two `public` elements of one kind in a model share a slug, because a `consumes` ref couldn't tell them apart (MIL-235) | human: rename one, or drop `public` from one |
+| `em system` with no argument (or a directory) reads that directory's `system.yaml`, or discovers every tracked `*.em` in the repo when there is none. The `--json` document is schema 2.0: `owner` is `string[]`, `seams[]` lists `consumes` bindings, and there are new `manifest: null` / `discovery` fields (MIL-235) | no action needed; update anything that parses `em system --json` |
+| Export schema 1.14 → 1.15: `elements[].consumes`, `model.owner` (MIL-235) | no action needed (additive) |
+| Every `em upgrade --apply` commit carries an `Em-Upgrade: <step>` trailer (MIL-235) | `em upgrade` |

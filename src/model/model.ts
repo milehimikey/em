@@ -60,6 +60,10 @@ export interface Element {
    *  this event re-feeds. `undefined` when absent. See `model/edges.ts`'s
    *  `resolveLoopsToTarget` for resolution and `model/validate.ts` for the earlier-only rule. */
   loopsTo?: string[];
+  /** `consumes <modelKey>:<kind>.<slug>[, …]` — translation only (MIL-235): contract refs to
+   *  other models' public surface, as written. Never resolved here (compile isolation); `em
+   *  system` resolves them. `undefined` when absent. */
+  consumes?: string[];
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -120,6 +124,10 @@ export interface NormalizedModel {
   name: string;
   /** Whether `name` came from a `model "Name"` declaration (see `ModelNode.nameDeclared`). */
   nameDeclared: boolean;
+  /** `model "Name" owner "Team"[, …]` (MIL-235) — owning team(s) as written; `[]`/absent when
+   *  none. Optional so hand-built models (e.g. render/sliceDiagram.ts's extraction) need not
+   *  carry it; readers treat absent as `[]`. */
+  owner?: string[];
   personas: string[];
   contexts: string[];
   hasAutomation: boolean;
@@ -197,6 +205,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         tags: el.tags,
         renamedFrom: el.renamedFrom,
         loopsTo: el.loopsTo,
+        consumes: el.consumes,
       };
 
       if (el.kind === "ui") {
@@ -245,6 +254,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
   return {
     name: ast.name,
     nameDeclared: ast.nameDeclared,
+    owner: [...ast.owner],
     personas,
     contexts,
     hasAutomation,

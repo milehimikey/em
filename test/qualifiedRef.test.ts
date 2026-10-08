@@ -11,6 +11,9 @@ import {
   formatQualifiedRef,
   isQualifiedRef,
   parseQualifiedRef,
+  parseContractRef,
+  formatContractRef,
+  CONTRACT_REF_KINDS,
 } from "../src/model/qualifiedRef.js";
 import { RULES } from "../src/model/rules.js";
 
@@ -123,5 +126,40 @@ describe("formatQualifiedRef / parseQualifiedRef", () => {
     for (const bad of ["", "Orders", "order_fulfilment", "-orders", "orders-", "orders~", "orders~2~3", "or ders", "a--b"]) {
       expect(bad).not.toMatch(MODEL_KEY_RE);
     }
+  });
+});
+
+// MIL-235: contract refs — `consumes`'s `<modelKey>:<kind>.<slug>` (no slice segment).
+describe("parseContractRef / formatContractRef", () => {
+  it("parses event and view refs, including a `~n` collision key", () => {
+    expect(parseContractRef("checkout:event.order-submitted")).toEqual({ modelKey: "checkout", kind: "event", slug: "order-submitted" });
+    expect(parseContractRef("billing-core:view.open-invoices")).toEqual({ modelKey: "billing-core", kind: "view", slug: "open-invoices" });
+    expect(parseContractRef("checkout~2:event.x")).toEqual({ modelKey: "checkout~2", kind: "event", slug: "x" });
+    expect(MODEL_KEY_RE.test("checkout~2")).toBe(true);
+  });
+
+  it.each([
+    "checkout:command.submit-order",
+    "checkout:checkout/event.order-submitted",
+    "checkout:event.Order",
+    "Checkout:event.x",
+    "event.x",
+    "checkout:event.",
+    " checkout:event.x",
+  ])("returns null for %j", (input) => {
+    expect(parseContractRef(input)).toBeNull();
+  });
+
+  it("formats round-trip, and CONTRACT_REF_KINDS is exactly event + view", () => {
+    expect(formatContractRef("checkout", "event", "order-submitted")).toBe("checkout:event.order-submitted");
+    const p = parseContractRef("a:view.b")!;
+    expect(formatContractRef(p.modelKey, p.kind, p.slug)).toBe("a:view.b");
+    expect([...CONTRACT_REF_KINDS]).toEqual(["event", "view"]);
+  });
+
+  it("is exported from the package's ./refs subpath (the module itself)", async () => {
+    const mod = await import("../src/model/qualifiedRef.js");
+    expect(typeof mod.parseContractRef).toBe("function");
+    expect(typeof mod.formatContractRef).toBe("function");
   });
 });

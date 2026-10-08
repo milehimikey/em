@@ -32,7 +32,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.14"); // MIL-218: model.version bump
+    expect(doc.schemaVersion).toBe("1.15"); // MIL-235: 1.14.0 release bump (consumes, owner)
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -240,7 +240,7 @@ slice "Orders Again" {
   it("lists `edges` after `arrows` on `model`, and exports `[]` for a model with no connections", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc.model)).toEqual([
-      "name", "key", "personas", "contexts", "hasAutomation", "version", "types", "slices", "arrows", "edges",
+      "name", "key", "owner", "personas", "contexts", "hasAutomation", "version", "types", "slices", "arrows", "edges",
     ]);
     expect(docOf(`slice "Lonely" {
   event Nothing Happened
@@ -370,6 +370,9 @@ describe("nullable fields are explicit null, not omitted", () => {
     expect("tags" in el).toBe(true);
     expect("renamedFrom" in el).toBe(true);
     expect("loopsTo" in el).toBe(true);
+    expect(el.consumes).toBeNull(); // MIL-235
+    expect("consumes" in el).toBe(true);
+    expect(doc.model.owner).toEqual([]); // MIL-235
   });
 
   it("emits null for a slice's source when absent", () => {
@@ -1074,7 +1077,7 @@ type Order { billing: Address }
   });
 
   it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.14");
+    expect(docOf(SRC).schemaVersion).toBe("1.15");
   });
 });
 

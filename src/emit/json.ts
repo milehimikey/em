@@ -130,7 +130,15 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // written by a full, non-`--partial` `em state set-conformance`) — which need not equal
 // `design` itself, since a later bump can outrun certification. See src/cli/modelVersion.ts.
 // Additive-only.
-export const SCHEMA_VERSION = "1.14";
+// 1.15 (1.14.0 release): ONE bump for the whole release — later 1.14.0 tickets append their
+// additions to this paragraph instead of bumping again.
+//  - MIL-235: `slice.elements[].consumes: string[] | null` — a translation's `consumes` contract
+//    refs (`<modelKey>:<kind>.<slug>`, kind event|view), as written, in declaration order;
+//    `null` on every other kind and on a translation with none. Never resolved here (compile
+//    isolation) — `em system` resolves them. `model.owner: string[]` — the header's `owner
+//    "Team"[, …]` entries as written, `[]` when none (free text; MIL-234 adds a handle shape).
+// Additive-only.
+export const SCHEMA_VERSION = "1.15";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -178,6 +186,10 @@ export interface ElementExport {
    *  export built from an error-free model; the null case exists for the same robustness/
    *  parity reason `from`'s does. */
   loopsTo: { name: string; ref: string | null }[] | null;
+  /** `consumes` contract refs (MIL-235, schema 1.15) — translation only, `null` on every other
+   *  kind and on a translation with none. As written: never resolved against another model at
+   *  export time (`em system` does that, src/system/verify.ts). */
+  consumes: string[] | null;
 }
 
 /** One semantic edge's exported shape (`model.edges[]`, schema 1.10 / MIL-191): both endpoints
@@ -243,6 +255,8 @@ export interface ExportDoc {
     name: string | null;
     /** The model's own cross-model key (MIL-193, `computeModelKey()`). */
     key: string;
+    /** MIL-235, schema 1.15: the header's `owner "Team"[, …]` entries as written; `[]` when none. */
+    owner: string[];
     personas: string[];
     contexts: string[];
     hasAutomation: boolean;
@@ -539,6 +553,7 @@ export function buildExportDoc(
         logicalRef:
           el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
         loopsTo: loopsToOf(el),
+        consumes: el.consumes && el.consumes.length > 0 ? [...el.consumes] : null,
       })),
     };
   });
@@ -558,6 +573,8 @@ export function buildExportDoc(
     model: {
       name: model.name,
       key: computeModelKey(model, path),
+      // MIL-235, schema 1.15 — see SCHEMA_VERSION's own doc comment.
+      owner: [...(model.owner ?? [])],
       personas: model.personas,
       contexts: model.contexts,
       hasAutomation: model.hasAutomation,

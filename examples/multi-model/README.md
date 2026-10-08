@@ -7,7 +7,7 @@ for the full rationale.
 
 ```
 multi-model/
-  system.yaml              # seam manifest (MIL-194): which public event feeds which reaction
+  system.yaml              # system manifest (schema 2.0): which models make up the system
   models/
     checkout/
       checkout.em          # model "Checkout" — a slice literally named "Checkout"
@@ -30,30 +30,35 @@ em status models/checkout/checkout.em models/fulfillment/fulfillment.em --json  
 em catalog models/checkout/checkout.em models/fulfillment/fulfillment.em -o site # 2 models, 7 slices, no warnings
 em system system.yaml                                                            # 1 seam verified + 1 dangling-public-event warning
 em system system.yaml --json                                                     # the same, plus the context map (2 nodes, 1 edge)
+em system                                                                        # same check; reads ./system.yaml (without one, discovers every tracked *.em)
 ```
 
 ## The seam
 
-The two models also form one real integration seam (MIL-194). Checkout publishes
-`event Order Submitted @Order public`; Fulfillment receives it in an externally-fed Translation
-slice — `translation Order Intake` with no `from` (nothing inside Fulfillment feeds it), issuing
-`Accept Order` → `Order Accepted` in the same slice, per
-[patterns.md](https://github.com/milehimikey/em/blob/main/docs/patterns.md#translation). Both
-models validate cleanly on their own: `em validate` exempts a public event from "nobody reads it"
-and a reaction without `from` from any source check, because each one's other end is outside the
-model by design. `system.yaml` is where that other end is declared:
+The two models also form one real integration seam (MIL-194, consumer-side since MIL-235).
+Checkout publishes `event Order Submitted @Order public`; Fulfillment receives it in an
+externally-fed Translation slice — `translation Order Intake` with no `from` (nothing inside
+Fulfillment feeds it), issuing `Accept Order` → `Order Accepted` in the same slice, per
+[patterns.md](https://github.com/milehimikey/em/blob/main/docs/patterns.md#translation). The
+consumer declares the binding on the translation itself:
 
-```yaml
-seams:
-  - from: checkout:checkout/event.order-submitted
-    to: fulfillment:receive-order/translation.order-intake
+```
+translation Order Intake consumes checkout:event.order-submitted
 ```
 
-`em system system.yaml` verifies it (both endpoints resolve, the source is `public`, the consumer
-is a reaction) and reports the one thing left unbound on purpose — Checkout's second public event,
-`Order Cancelled`, which no seam names, as a `dangling-public-event` warning. Rename either endpoint
-without touching the manifest and the seam fails as an error, instead of a heuristic link quietly
-disappearing.
+`checkout:event.order-submitted` is a contract ref — `<modelKey>:<kind>.<slug>`, no slice and no
+version — so Checkout can move the event between slices without breaking Fulfillment. Both models
+still validate cleanly on their own: `em validate` checks only the ref's grammar, never the other
+model (compile isolation). `em system` is where the ref is resolved: it fails with
+`consumes-unknown-model`/`consumes-unknown-element` if the ref names no model or no `public`
+element, and reports the one thing left unbound on purpose — Checkout's second public event,
+`Order Cancelled`, which nothing consumes, as a `dangling-public-event` warning. Each model header
+also names its owning team (`model "Checkout" owner "Storefront team"`), which `em system` shows
+on the context map.
+
+This example was migrated from the old schema 1.0 manifest (seams and owners in `system.yaml`) by
+`em upgrade <model>.em --apply`'s `system-manifest` step — see
+[docs/upgrading.md](https://github.com/milehimikey/em/blob/main/docs/upgrading.md#1140).
 
 This layout is what `em scaffold <name> --under models` produces for each model — run it once
 per model to add a third:

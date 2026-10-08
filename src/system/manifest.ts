@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Parses a seam manifest (`system.yaml`, MIL-194) into a plain, validated shape — the declared
-// list of models in a system plus the seams binding one model's `public` event/view to another
-// model's reaction. This is the one place the manifest's own schema is enforced; everything
-// downstream (src/system/verify.ts) trusts the returned `SystemManifest`.
+// Parses a system manifest (`system.yaml`, MIL-194 / MIL-235) into a plain, validated shape —
+// the declared list of models in a system. This is the one place the manifest's own schema is
+// enforced; everything downstream (src/system/verify.ts) trusts the returned `SystemManifest`.
+//
+// Schema 2.0 (MIL-235) is membership ONLY: `systemSchemaVersion`, `name`, `models: {key:
+// {source}}`. Seams moved to the consuming translation (`consumes <model>:<kind>.<slug>`) and
+// owners to the model header (`model "Name" owner "Team"`), so a 2.0 manifest carrying
+// `seams:`/`owner:` is invalid and the message points at `em upgrade`. Schema 1.0 (seams +
+// owners in the manifest) is still READ — so `em system` on an unmigrated estate keeps
+// verifying — and `verifySystem` warns `system-manifest-outdated`; nothing writes 1.0 any more.
 //
 // YAML because the manifest is human-authored (and JSON is a YAML subset, so a `.json` manifest
 // parses here unchanged). Pure: text in, manifest + diagnostics out — the caller (src/cli/
@@ -14,9 +20,13 @@ import { LineCounter, parseDocument, isMap, isSeq, isScalar, Node, Pair } from "
 import type { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
 
-/** The only manifest schema version accepted (`systemSchemaVersion`). Bumped, with a range
- *  check here, the day the manifest's shape changes incompatibly. */
-export const SYSTEM_MANIFEST_SCHEMA_VERSION = "1.0";
+// 1.0 (MIL-194): models {source, owner?} + seams [{from, to, description?}].
+// 2.0 (MIL-235): models {source} only — seams are `consumes` clauses, owners are model headers.
+/** The manifest schema version em writes and expects (`systemSchemaVersion`). */
+export const SYSTEM_MANIFEST_SCHEMA_VERSION = "2.0";
+/** The previous version, still accepted for reading (with a `system-manifest-outdated`
+ *  warning) until a repo runs `em upgrade`'s `system-manifest` step. */
+export const LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION = "1.0";
 
 export interface ManifestModel {
   /** The manifest's own key for this model — by MIL-193's rule the kebab-slug of the declared
@@ -24,6 +34,7 @@ export interface ManifestModel {
   key: string;
   /** A `.em` file or an `em export --json` document, as written (relative to the manifest). */
   source: string;
+  /** 1.0 manifests only — always `null` on a 2.0 manifest (owners live on the model header). */
   owner: string | null;
   /** 1-based line of the model's entry in the manifest, for diagnostics. */
   line: number;
@@ -40,12 +51,14 @@ export interface ManifestSeam {
 }
 
 export interface SystemManifest {
+  /** `"2.0"`, or `"1.0"` for a legacy manifest read for compatibility. */
   systemSchemaVersion: string;
+  /** 1-based line of the `systemSchemaVersion` entry, for the `system-manifest-outdated` warning. */
+  versionLine: number;
   name: string | null;
   /** Manifest order — the order `em system` lists models and context-map nodes. */
   models: ManifestModel[];
-  /** Manifest order; empty when the manifest declares none (valid — every `public` element then
-   *  reports `dangling-public-event`). */
+  /** 1.0 manifests only (always `[]` on 2.0): the legacy declared seams, manifest order. */
   seams: ManifestSeam[];
 }
 
@@ -53,9 +66,14 @@ export type ParseManifestResult =
   | { ok: true; manifest: SystemManifest; diagnostics: Diagnostic[] }
   | { ok: false; diagnostics: Diagnostic[] };
 
-const TOP_KEYS = new Set(["systemSchemaVersion", "name", "models", "seams"]);
-const MODEL_KEYS = new Set(["source", "owner"]);
+const TOP_KEYS_V2 = new Set(["systemSchemaVersion", "name", "models"]);
+const MODEL_KEYS_V2 = new Set(["source"]);
+const TOP_KEYS_V1 = new Set(["systemSchemaVersion", "name", "models", "seams"]);
+const MODEL_KEYS_V1 = new Set(["source", "owner"]);
 const SEAM_KEYS = new Set(["from", "to", "description"]);
+
+/** Shared tail of every "this moved out of the manifest" message. */
+const RUN_UPGRADE = "run `em upgrade <model>.em --apply` to migrate";
 
 /** Parse and shape-check manifest text. Every problem is a `system-manifest-invalid` error
  *  diagnostic (never a throw), and `ok: false` means the manifest can't be used at all — the
@@ -81,24 +99,38 @@ export function parseManifest(text: string): ParseManifestResult {
   }
   const root = doc.contents;
   if (!isMap(root)) {
-    invalid("manifest must be a YAML mapping with `systemSchemaVersion`, `models`, and optionally `name`/`seams`");
+    invalid("manifest must be a YAML mapping with `systemSchemaVersion`, `models`, and optionally `name`");
     return { ok: false, diagnostics };
   }
 
-  for (const pair of root.items) {
-    const key = scalarString(pair.key);
-    if (key === undefined || !TOP_KEYS.has(key)) {
-      invalid(`unknown top-level key ${describeKey(pair.key)} — expected one of: ${[...TOP_KEYS].join(", ")}`, lineOf(pair));
-    }
-  }
-
-  // systemSchemaVersion — required, and exactly the one version this em understands.
+  // systemSchemaVersion — required: "2.0", or the legacy "1.0" (read-only compatibility).
   const versionNode = root.get("systemSchemaVersion", true) as Node | undefined;
   const version = scalarString(versionNode);
   if (version === undefined) {
     invalid(`missing or non-string \`systemSchemaVersion\` — set \`systemSchemaVersion: "${SYSTEM_MANIFEST_SCHEMA_VERSION}"\``, lineOf(versionNode));
-  } else if (version !== SYSTEM_MANIFEST_SCHEMA_VERSION) {
-    invalid(`unsupported systemSchemaVersion "${version}" — this em accepts "${SYSTEM_MANIFEST_SCHEMA_VERSION}"`, lineOf(versionNode));
+  } else if (version !== SYSTEM_MANIFEST_SCHEMA_VERSION && version !== LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION) {
+    invalid(
+      `unsupported systemSchemaVersion "${version}" — this em accepts "${SYSTEM_MANIFEST_SCHEMA_VERSION}" ` +
+        `(and reads "${LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION}" for compatibility)`,
+      lineOf(versionNode),
+    );
+  }
+  // An unknown/missing version is checked against 2.0's key set — the shape em writes today.
+  const legacy = version === LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION;
+  const topKeys = legacy ? TOP_KEYS_V1 : TOP_KEYS_V2;
+  const modelKeys = legacy ? MODEL_KEYS_V1 : MODEL_KEYS_V2;
+
+  for (const pair of root.items) {
+    const key = scalarString(pair.key);
+    if (!legacy && key === "seams") {
+      invalid(
+        `\`seams:\` is not part of systemSchemaVersion "${SYSTEM_MANIFEST_SCHEMA_VERSION}" — a seam is declared on the consuming ` +
+          `translation (\`consumes <modelKey>:<kind>.<slug>\`); ${RUN_UPGRADE}`,
+        lineOf(pair),
+      );
+    } else if (key === undefined || !topKeys.has(key)) {
+      invalid(`unknown top-level key ${describeKey(pair.key)} — expected one of: ${[...topKeys].join(", ")}`, lineOf(pair));
+    }
   }
 
   // name — optional string.
@@ -114,7 +146,7 @@ export function parseManifest(text: string): ParseManifestResult {
   const models: ManifestModel[] = [];
   const modelsNode = root.get("models", true) as Node | undefined;
   if (!isMap(modelsNode)) {
-    invalid("`models` must be a mapping of model key -> { source, owner? } with at least one entry", lineOf(modelsNode ?? root));
+    invalid("`models` must be a mapping of model key -> { source } with at least one entry", lineOf(modelsNode ?? root));
   } else if (modelsNode.items.length === 0) {
     invalid("`models` must declare at least one model", lineOf(modelsNode));
   } else {
@@ -132,14 +164,22 @@ export function parseManifest(text: string): ParseManifestResult {
       }
       for (const p of entry.items) {
         const k = scalarString(p.key);
-        if (k === undefined || !MODEL_KEYS.has(k)) invalid(`model "${key}": unknown key ${describeKey(p.key)} — expected source, owner`, lineOf(p));
+        if (!legacy && k === "owner") {
+          invalid(
+            `model "${key}": \`owner:\` is not part of systemSchemaVersion "${SYSTEM_MANIFEST_SCHEMA_VERSION}" — owners live on the ` +
+              `model header (\`model "Name" owner "Team"\`); ${RUN_UPGRADE}`,
+            lineOf(p),
+          );
+        } else if (k === undefined || !modelKeys.has(k)) {
+          invalid(`model "${key}": unknown key ${describeKey(p.key)} — expected ${[...modelKeys].join(", ")}`, lineOf(p));
+        }
       }
       const source = scalarString(entry.get("source", true) as Node | undefined);
       if (source === undefined || source.trim() === "") {
         invalid(`model "${key}": \`source\` must be a non-empty path string`, line);
         continue;
       }
-      const ownerNode = entry.get("owner", true) as Node | undefined;
+      const ownerNode = legacy ? (entry.get("owner", true) as Node | undefined) : undefined;
       let owner: string | null = null;
       if (ownerNode !== undefined) {
         const o = scalarString(ownerNode);
@@ -150,9 +190,9 @@ export function parseManifest(text: string): ParseManifestResult {
     }
   }
 
-  // seams — optional sequence of `{ from, to, description? }`.
+  // seams — 1.0 only: optional sequence of `{ from, to, description? }`.
   const seams: ManifestSeam[] = [];
-  const seamsNode = root.get("seams", true) as Node | undefined;
+  const seamsNode = legacy ? (root.get("seams", true) as Node | undefined) : undefined;
   if (seamsNode !== undefined && !(isScalar(seamsNode) && seamsNode.value === null)) {
     if (!isSeq(seamsNode)) {
       invalid("`seams` must be a list of { from, to, description? } entries", lineOf(seamsNode));
@@ -188,7 +228,7 @@ export function parseManifest(text: string): ParseManifestResult {
   if (diagnostics.length > 0) return { ok: false, diagnostics };
   return {
     ok: true,
-    manifest: { systemSchemaVersion: version!, name, models, seams },
+    manifest: { systemSchemaVersion: version!, versionLine: lineOf(versionNode) ?? 1, name, models, seams },
     diagnostics,
   };
 }

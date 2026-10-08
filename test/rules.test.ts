@@ -39,7 +39,7 @@ const SLICE_READY_CODES = [
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(68); // MIL-259: +slice-ready-not-ratified
+    expect(Object.keys(RULES).length).toBe(72); // MIL-259: +slice-ready-not-ratified; MIL-235: +public-name-not-unique, system-manifest-outdated, consumes-unknown-model, consumes-unknown-element
   });
 
   it("marks exactly sliceReadyValidate.ts's 5 codes as optIn — nothing else", () => {

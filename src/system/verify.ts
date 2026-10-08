@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Verifies a seam manifest against the models' export documents (MIL-194) — the cross-model
-// half of the bedrock "both ends of a flow" rule. A seam is a `public` event/view on one side
-// bound to a reaction (translation/automation-kind element) on the other; `em` already has both
-// ends of every seam, it just never had them as data. This module makes the binding explicit and
-// checks it: both endpoints resolve, the source really is `public`, the consumer really is a
-// reaction, nothing published goes unread, nothing externally fed goes unclaimed, and the old
-// portal name-matching heuristic is demoted to a lint (`undeclared-seam-candidate`).
+// Verifies a system — a set of models' export documents (MIL-194) — the cross-model half of the
+// bedrock "both ends of a flow" rule. A seam is a `public` event/view on one side bound to a
+// reaction on the other. Since MIL-235 the binding is declared consumer-side, versionless, on
+// the consuming translation itself (`consumes <modelKey>:<kind>.<slug>`, carried in the export
+// as `elements[].consumes`), so it travels with the model; this module resolves every such ref
+// against the other models' public surface (`consumes-unknown-model`/`-element`), then runs the
+// MIL-194 checks off those bindings: nothing published goes unread, nothing externally fed goes
+// unclaimed, and the old portal name-matching heuristic stays a lint (`undeclared-seam-
+// candidate`). A legacy 1.0 manifest's `seams:` are still verified (same codes as before) with a
+// `system-manifest-outdated` warning, so an unmigrated estate keeps working until `em upgrade`.
 //
 // It reads EXPORT DOCUMENTS ONLY — the `SystemExportDoc` shape below is the slice of `em
 // export --json` (schema >= 1.10: `model.key`, `model.edges`) this check needs, and nothing here
@@ -13,14 +16,16 @@
 // independently — no compile-time coupling"): a `.em` source is compiled into the same export
 // document by the caller (src/cli/systemInputs.ts), so this verifier can't tell a co-located
 // repo from a CI job aggregating exports from ten repos. Pure: no fs, no clock; output order
-// is manifest order for models/seams and stable derivation order for everything else.
+// is model order (manifest or discovery) for models and bindings — every `consumes` binding in
+// model/slice/element/ref order, then any legacy manifest seams — and stable derivation order
+// for everything else.
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { normalizeName } from "../model/model.js";
-import { formatQualifiedRef, parseQualifiedRef } from "../model/qualifiedRef.js";
+import { formatContractRef, formatQualifiedRef, parseContractRef, parseQualifiedRef } from "../model/qualifiedRef.js";
 import { pushDiag, RuleCode } from "../model/rules.js";
 import type { Diagnostic } from "../model/validate.js";
-import type { SystemManifest } from "./manifest.js";
+import { LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION, SYSTEM_MANIFEST_SCHEMA_VERSION, SystemManifest } from "./manifest.js";
 
 /** The subset of one `em export --json` document `verifySystem` reads. */
 export interface SystemExportElement {
@@ -29,6 +34,9 @@ export interface SystemExportElement {
   name: string;
   line: number;
   public: boolean;
+  /** Export schema >= 1.15 (MIL-235): a translation's contract refs. Absent on older exports —
+   *  read as none. */
+  consumes?: string[] | null;
 }
 export interface SystemExportSlice {
   key: string;
@@ -40,6 +48,8 @@ export interface SystemExportDoc {
   model: {
     key: string;
     name: string | null;
+    /** Export schema >= 1.15 (MIL-235): the header's `owner` entries. Absent on older exports. */
+    owner?: string[];
     slices: SystemExportSlice[];
     edges: { from: string; to: string }[];
   };
@@ -47,16 +57,27 @@ export interface SystemExportDoc {
 
 export type SystemSourceKind = "em" | "export";
 
-/** One model, loaded by the caller: the manifest's entry plus its export document and the
- *  path diagnostics about it should point at (the `.em` file, or the export `.json`). */
+/** One model, loaded by the caller: its key (the manifest's, or the computed one in discovery
+ *  mode), its export document, and the path diagnostics about it should point at (the `.em`
+ *  file, or the export `.json`). */
 export interface SystemModelInput {
   key: string;
   source: string;
   sourceKind: SystemSourceKind;
-  owner: string | null;
+  /** The model header's `owner` entries (export `model.owner`); a legacy 1.0 manifest's
+   *  `owner:` fills in when the header names none. `[]` when neither does. */
+  owner: string[];
   /** Path diagnostics about this model's elements point at — resolved, as the CLI prints it. */
   file: string;
   doc: SystemExportDoc;
+}
+
+/** How a discovered system (no manifest, MIL-235 R4) was found: the repo root (or start
+ *  directory) as reached from the path the caller gave — never absolutized, same "as given"
+ *  posture as a manifest path — and every discovered `.em` file relative to it, sorted. */
+export interface SystemDiscovery {
+  root: string;
+  files: string[];
 }
 
 /** A diagnostic plus the file it concerns — `em status --json`'s multi-model convention. */
@@ -69,27 +90,30 @@ export interface SystemModelReport {
   name: string | null;
   source: string;
   sourceKind: SystemSourceKind;
-  owner: string | null;
+  owner: string[];
   /** Unqualified (`<sliceKey>/<kind>.<slug>`) refs of every `public` element, export order. */
   publicSurface: string[];
 }
 
 export interface SystemSeamReport {
-  /** Resolved, element-level qualified ref when the endpoint resolved; else the ref as written. */
+  /** Resolved, element-level qualified ref of the producing element when it resolved; else the
+   *  ref as written (a `consumes` contract ref, or a legacy manifest `from`). */
   from: string;
+  /** Qualified ref of the consuming reaction (resolved), else the legacy manifest `to` as written. */
   to: string;
   fromSlice: string | null;
   toSlice: string | null;
+  /** Legacy 1.0 manifest seams only — `null` for a `consumes` binding. */
   description: string | null;
   status: "verified" | "error";
-  /** Codes of every diagnostic raised on this seam (errors and warnings), in raise order. */
+  /** Codes of every diagnostic raised on this binding (errors and warnings), in raise order. */
   diagnostics: string[];
 }
 
 export interface ContextMap {
-  nodes: { key: string; name: string | null; owner: string | null }[];
-  /** One edge per ordered model pair with at least one declared seam (verified or not), sorted
-   *  by (from, to); `seams` counts the declarations. */
+  nodes: { key: string; name: string | null; owner: string[] }[];
+  /** One edge per ordered (producer, consumer) model pair with at least one binding (verified or
+   *  not), sorted by (from, to); `seams` counts the bindings. */
   edges: { from: string; to: string; seams: number }[];
 }
 
@@ -113,29 +137,57 @@ const SEAM_ERROR_CODES: ReadonlySet<string> = new Set([
   "seam-endpoint-unresolved",
   "seam-source-not-public",
   "seam-consumer-not-reaction",
+  "consumes-unknown-model",
+  "consumes-unknown-element",
 ]);
 
-/** Verify `manifest` against the loaded `models` (one per manifest entry, same order).
- *  `manifestFile` is the path manifest-level diagnostics point at. */
-export function verifySystem(manifest: SystemManifest, models: SystemModelInput[], manifestFile: string): SystemReport {
-  const diagnostics: SystemDiagnostic[] = [];
+/** The `<kind>.<slug>` tail of an export element ref (`<sliceKey>/<kind>.<slug>`). */
+function elementTail(ref: string): string {
+  const slash = ref.indexOf("/");
+  return slash < 0 ? ref : ref.slice(slash + 1);
+}
+
+/** Verify a system: `models` (manifest order, or discovery order) plus, when the system came
+ *  from a manifest, that `manifest` and the path manifest-level diagnostics point at. `manifest`
+ *  is `null` in discovery mode (R4: no manifest found/given) — there is then no name, no
+ *  manifest-key check, and no legacy seams. `preDiagnostics` (e.g. discovery's own
+ *  `duplicate-model-key` warnings) lead the report's diagnostics unchanged. */
+export function verifySystem(
+  manifest: SystemManifest | null,
+  models: SystemModelInput[],
+  manifestFile: string | null,
+  preDiagnostics: SystemDiagnostic[] = [],
+): SystemReport {
+  const diagnostics: SystemDiagnostic[] = [...preDiagnostics];
   const raise = (file: string, code: RuleCode, extra: { message: string; line?: number; refs?: string[] }) => {
     const bucket: Diagnostic[] = [];
     pushDiag(bucket, code, extra);
     diagnostics.push({ ...bucket[0], file });
   };
   const qualify = formatQualifiedRef;
+  const manifestPath = manifestFile ?? "system.yaml";
 
-  // Models are addressed by their MANIFEST key throughout — even on a mismatch, so a seam
+  if (manifest && manifest.systemSchemaVersion === LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION) {
+    raise(manifestPath, "system-manifest-outdated", {
+      message:
+        `systemSchemaVersion "${LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION}" is outdated — seams now live on the consuming translation ` +
+        `(\`consumes <modelKey>:<kind>.<slug>\`) and owners on the model header (\`model "Name" owner "Team"\`); ` +
+        `run \`em upgrade <model>.em --apply\` once to migrate this manifest to "${SYSTEM_MANIFEST_SCHEMA_VERSION}"`,
+      line: manifest.versionLine,
+    });
+  }
+
+  // Models are addressed by their MANIFEST key throughout — even on a mismatch, so a binding
   // written against the manifest's own vocabulary still verifies and the one error tells the
-  // author exactly which key to change.
+  // author exactly which key to change. In discovery mode the key IS the computed one (possibly
+  // `~n`-deduped), so there is nothing to mismatch.
   const byKey = new Map<string, SystemModelInput>();
   for (const m of models) {
     byKey.set(m.key, m);
-    if (m.doc.model.key !== m.key) {
+    if (manifest && m.doc.model.key !== m.key) {
       const entry = manifest.models.find((e) => e.key === m.key);
       const modelLabel = m.doc.model.name === null ? "(unnamed model)" : `model "${m.doc.model.name}"`;
-      raise(manifestFile, "system-model-key-mismatch", {
+      raise(manifestPath, "system-model-key-mismatch", {
         message:
           `manifest key "${m.key}" does not match the computed key "${m.doc.model.key}" of ${modelLabel} ` +
           `(${m.source}) — rename the manifest entry to "${m.doc.model.key}"`,
@@ -143,6 +195,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
       });
     }
   }
+  const modelKeyList = () => models.map((m) => m.key).join(", ");
 
   const isReaction = (el: SystemExportElement) => AUTOMATION_KINDS.has(el.kind);
   const isSurface = (el: SystemExportElement) => el.public === true && (el.kind === "event" || el.kind === "view");
@@ -154,18 +207,127 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
     return undefined;
   };
 
-  // ---- Seams: resolve both endpoints, then check what each one is. ----
-  const consumedSurface = new Set<string>(); // qualified refs named as a resolved `from`
-  const boundReactions = new Set<string>(); // qualified refs named as a resolved `to`
+  const consumedSurface = new Set<string>(); // qualified refs of resolved producers
+  const boundReactions = new Set<string>(); // qualified refs of claimed consumers
   const declaredPairs = new Map<string, Set<string>>(); // fromQualified -> set of toQualified
-  const seenPairs = new Set<string>();
+  const seenPairs = new Map<string, "consumes" | "manifest">();
   const seamsByModelPair = new Map<string, number>();
+  const seams: SystemSeamReport[] = [];
 
-  const seams: SystemSeamReport[] = manifest.seams.map((seam, i) => {
+  const record = (
+    origin: "consumes" | "manifest",
+    from: ResolvedEndpoint | undefined,
+    to: ResolvedEndpoint | undefined,
+    fromQualified: string,
+    toQualified: string,
+    fromModelKey: string | undefined,
+    toModelKey: string | undefined,
+    duplicate: (previous: "consumes" | "manifest") => void,
+  ) => {
+    // Duplicate: same resolved (from, to) pair bound twice (a legacy bare-slice `to` and its
+    // element-level spelling, a ref repeated in `consumes`, or a 1.0 seam a `consumes` clause
+    // already declares). Warned on the second occurrence.
+    const pairKey = `${fromQualified} -> ${toQualified}`;
+    const previous = seenPairs.get(pairKey);
+    if (previous) duplicate(previous);
+    else seenPairs.set(pairKey, origin);
+    // A half-resolved binding still claims the endpoint it did resolve, so a typo on one side
+    // doesn't ALSO report the other side as dangling/unbound on top of the resolution error.
+    if (from) consumedSurface.add(fromQualified);
+    if (to) boundReactions.add(toQualified);
+    if (from && to) {
+      if (!declaredPairs.has(fromQualified)) declaredPairs.set(fromQualified, new Set());
+      declaredPairs.get(fromQualified)!.add(toQualified);
+    }
+    if (fromModelKey && toModelKey) {
+      const k = `${fromModelKey} ${toModelKey}`;
+      seamsByModelPair.set(k, (seamsByModelPair.get(k) ?? 0) + 1);
+    }
+  };
+
+  // ---- `consumes` bindings (MIL-235): every ref on every translation, model order. ----
+  for (const m of models) {
+    for (const slice of m.doc.model.slices) {
+      for (const el of slice.elements) {
+        const refs = el.consumes ?? [];
+        if (refs.length === 0) continue;
+        const toQualified = qualify(m.key, el.ref);
+        const to: ResolvedEndpoint = { modelKey: m.key, model: m, slice, element: el };
+        for (const raw of refs) {
+          const codes: string[] = [];
+          const consumer = `${el.kind} "${el.name}" (${toQualified})`;
+          const bindRaise = (code: RuleCode, message: string) => {
+            codes.push(code);
+            raise(m.file, code, { message, line: el.line, refs: [toQualified, raw] });
+          };
+          let from: ResolvedEndpoint | undefined;
+          const parsed = parseContractRef(raw);
+          const producer = parsed ? byKey.get(parsed.modelKey) : undefined;
+          if (!parsed) {
+            bindRaise(
+              "consumes-unknown-element",
+              `${consumer} consumes "${raw}", which is not a <modelKey>:<kind>.<slug> contract ref (kind event or view)`,
+            );
+          } else if (!producer) {
+            bindRaise(
+              "consumes-unknown-model",
+              `${consumer} consumes "${raw}", but this system has no model "${parsed.modelKey}" — models are: ${modelKeyList()}`,
+            );
+          } else {
+            const tail = `${parsed.kind}.${parsed.slug}`;
+            let hit: { slice: SystemExportSlice; element: SystemExportElement } | undefined;
+            let unpublished: { slice: SystemExportSlice; element: SystemExportElement } | undefined;
+            for (const ps of producer.doc.model.slices) {
+              for (const pe of ps.elements) {
+                if (pe.kind !== parsed.kind || elementTail(pe.ref) !== tail) continue;
+                if (pe.public === true) hit ??= { slice: ps, element: pe };
+                else unpublished ??= { slice: ps, element: pe };
+              }
+            }
+            if (hit) {
+              from = { modelKey: producer.key, model: producer, ...hit };
+            } else if (unpublished) {
+              bindRaise(
+                "consumes-unknown-element",
+                `${consumer} consumes "${raw}", but ${parsed.kind} "${unpublished.element.name}" ` +
+                  `(${qualify(producer.key, unpublished.element.ref)}) is not marked \`public\` in model "${producer.key}"`,
+              );
+            } else {
+              bindRaise(
+                "consumes-unknown-element",
+                `${consumer} consumes "${raw}", but model "${producer.key}" has no public ${parsed.kind} "${parsed.slug}"`,
+              );
+            }
+          }
+          const fromQualified = from ? qualify(from.modelKey, from.element.ref) : raw;
+          record("consumes", from, to, fromQualified, toQualified, producer?.key, m.key, () => {
+            codes.push("seam-duplicate");
+            raise(m.file, "seam-duplicate", {
+              message: `${consumer} binds "${raw}" more than once — remove the repeated \`consumes\` ref`,
+              line: el.line,
+              refs: [toQualified, raw],
+            });
+          });
+          seams.push({
+            from: fromQualified,
+            to: toQualified,
+            fromSlice: from ? qualify(from.modelKey, from.slice.key) : null,
+            toSlice: qualify(m.key, slice.key),
+            description: null,
+            status: codes.some((c) => SEAM_ERROR_CODES.has(c)) ? "error" : "verified",
+            diagnostics: codes,
+          });
+        }
+      }
+    }
+  }
+
+  // ---- Legacy 1.0 manifest seams: resolve both endpoints, then check what each one is. ----
+  (manifest?.seams ?? []).forEach((seam, i) => {
     const codes: string[] = [];
     const seamRaise = (code: RuleCode, message: string, refs?: string[]) => {
       codes.push(code);
-      raise(manifestFile, code, { message: `seams[${i}] (${seam.from} -> ${seam.to}): ${message}`, line: seam.line, refs });
+      raise(manifestPath, code, { message: `seams[${i}] (${seam.from} -> ${seam.to}): ${message}`, line: seam.line, refs });
     };
 
     const resolveModel = (raw: string, side: "from" | "to"): { modelKey: string; ref: string; model: SystemModelInput } | undefined => {
@@ -176,10 +338,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
       }
       const model = byKey.get(parsed.modelKey);
       if (!model) {
-        seamRaise(
-          "system-manifest-invalid",
-          `\`${side}\` names unknown model key "${parsed.modelKey}" — declared models are: ${manifest.models.map((m) => m.key).join(", ")}`,
-        );
+        seamRaise("system-manifest-invalid", `\`${side}\` names unknown model key "${parsed.modelKey}" — declared models are: ${modelKeyList()}`);
         return undefined;
       }
       return { modelKey: parsed.modelKey, ref: parsed.ref, model };
@@ -229,7 +388,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
           }
         }
       } else {
-        const slice = toModel.model.doc.model.slices.find((s) => s.key === toModel.ref);
+        const slice = toModel.model.doc.model.slices.find((sl) => sl.key === toModel.ref);
         if (!slice) {
           seamRaise("seam-endpoint-unresolved", `no slice "${toModel.ref}" in model "${toModel.modelKey}"`);
         } else {
@@ -251,41 +410,21 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
 
     const fromQualified = from ? qualify(from.modelKey, from.element.ref) : seam.from;
     const toQualified = to ? qualify(to.modelKey, to.element.ref) : seam.to;
-
-    // Duplicate: same resolved (from, to) pair declared twice (a bare-slice `to` and its
-    // element-level spelling are the same seam). Warned on the second occurrence.
-    const pairKey = `${fromQualified} -> ${toQualified}`;
-    if (seenPairs.has(pairKey)) {
-      seamRaise("seam-duplicate", "already declared earlier in the manifest");
-    }
-    seenPairs.add(pairKey);
-
-    // A half-resolved seam still claims the endpoint it did resolve, so a typo on one side
-    // doesn't ALSO report the other side as dangling/unbound on top of the resolution error.
-    if (from) consumedSurface.add(fromQualified);
-    if (to) boundReactions.add(toQualified);
-    if (from && to) {
-      if (!declaredPairs.has(fromQualified)) declaredPairs.set(fromQualified, new Set());
-      declaredPairs.get(fromQualified)!.add(toQualified);
-    }
-    if (fromModel && toModel) {
-      const k = `${fromModel.modelKey} ${toModel.modelKey}`;
-      seamsByModelPair.set(k, (seamsByModelPair.get(k) ?? 0) + 1);
-    }
-
-    const hasError = codes.some((c) => SEAM_ERROR_CODES.has(c));
-    return {
+    record("manifest", from, to, fromQualified, toQualified, fromModel?.modelKey, toModel?.modelKey, (previous) =>
+      seamRaise("seam-duplicate", previous === "manifest" ? "already declared earlier in the manifest" : "already declared by a `consumes` clause"),
+    );
+    seams.push({
       from: fromQualified,
       to: toQualified,
       fromSlice: from ? qualify(from.modelKey, from.slice.key) : null,
       toSlice: to ? qualify(to.modelKey, to.slice.key) : null,
       description: seam.description,
-      status: hasError ? "error" : "verified",
+      status: codes.some((c) => SEAM_ERROR_CODES.has(c)) ? "error" : "verified",
       diagnostics: codes,
-    };
+    });
   });
 
-  // ---- Per-model surface + the two "other end missing" checks, manifest order. ----
+  // ---- Per-model surface + the two "other end missing" checks, model order. ----
   const modelReports: SystemModelReport[] = models.map((m) => {
     const publicSurface: string[] = [];
     for (const slice of m.doc.model.slices) {
@@ -295,7 +434,10 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
         const q = qualify(m.key, el.ref);
         if (!consumedSurface.has(q)) {
           raise(m.file, "dangling-public-event", {
-            message: `public ${el.kind} "${el.name}" (${q}) is consumed by no declared seam — declare its reader, or drop \`public\``,
+            message:
+              `public ${el.kind} "${el.name}" (${q}) is consumed by nothing in this system — add ` +
+              `\`consumes ${formatContractRef(m.key, el.kind as "event" | "view", elementTail(el.ref).slice(el.kind.length + 1))}\` ` +
+              "to the translation that reads it, or drop `public`",
             line: el.line,
             refs: [q],
           });
@@ -307,7 +449,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
 
   // "Externally fed" is computed from the export's own edge list, never re-derived: a reaction
   // with no incoming edge in `model.edges` (no `from` view feeds it — pattern, `from`, or arrow)
-  // is fed from outside its model by construction. With no seam claiming it, nobody in the
+  // is fed from outside its model by construction. With no binding claiming it, nobody in the
   // system says what feeds it.
   for (const m of models) {
     const fedInside = new Set(m.doc.model.edges.map((e) => e.to));
@@ -317,7 +459,10 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
         const q = qualify(m.key, el.ref);
         if (boundReactions.has(q)) continue;
         raise(m.file, "unbound-translation", {
-          message: `${el.kind} "${el.name}" (${q}) has no in-model source and no seam feeds it — declare the seam whose \`to\` is this reaction, or add a \`from\``,
+          message:
+            el.kind === "translation"
+              ? `translation "${el.name}" (${q}) has no in-model source and consumes nothing — add \`consumes <modelKey>:<kind>.<slug>\` naming the public event/view that feeds it, or add a \`from\``
+              : `${el.kind} "${el.name}" (${q}) has no in-model source and nothing binds it — add a \`from\` (only a translation can \`consumes\` another model's public surface)`,
           line: el.line,
           refs: [q],
         });
@@ -326,7 +471,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
   }
 
   // The old portal heuristic, demoted: a public element in model A sharing its normalized
-  // name with a reaction or event in model B (B != A), with no seam between them.
+  // name with a reaction or event in model B (B != A), with no binding between them.
   for (const a of models) {
     for (const aSlice of a.doc.model.slices) {
       for (const el of aSlice.elements) {
@@ -349,7 +494,7 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
               raise(a.file, "undeclared-seam-candidate", {
                 message:
                   `public ${el.kind} "${el.name}" (${aq}) and ${other.kind} "${other.name}" (${bq}) look connected by name, ` +
-                  "but no seam declares it — declare the seam or rename",
+                  "but no `consumes` binds them — add the `consumes` ref to the consuming translation, or rename",
                 line: el.line,
                 refs: [aq, bq],
               });
@@ -370,5 +515,5 @@ export function verifySystem(manifest: SystemManifest, models: SystemModelInput[
       .sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to)),
   };
 
-  return { name: manifest.name, models: modelReports, seams, contextMap, diagnostics };
+  return { name: manifest?.name ?? null, models: modelReports, seams, contextMap, diagnostics };
 }

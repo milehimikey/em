@@ -2228,3 +2228,81 @@ slice "S" {
     expect(diagsFor(LOOP_FIXTURE)).toHaveLength(0);
   });
 });
+
+// MIL-235: a `consumes` contract ref names a public element by kind + slug only, so public
+// names must be unique per kind within one model.
+describe("public-name-not-unique (MIL-235)", () => {
+  const TWO_PUBLIC = `model "Shop"
+slice "Place" {
+  ui Screen @Customer
+  command Place Order
+  event Order Placed @Order public
+}
+slice "Replace" {
+  ui Other @Customer
+  command Replace Order
+  event Order-Placed @Order public
+}
+`;
+
+  it("errors when two public events slug alike, with an exact message and both refs", () => {
+    const d = diagsFor(TWO_PUBLIC).filter((x) => x.code === "public-name-not-unique");
+    expect(d).toEqual([
+      {
+        severity: "error",
+        code: "public-name-not-unique",
+        message:
+          '2 public events share the contract name "event.order-placed" ("Order Placed" line 5, "Order-Placed" line 10) ' +
+          "— a consumer's `consumes <model>:event.order-placed` could not tell them apart; rename one or drop `public` from it",
+        line: 10,
+        refs: ["place/event.order-placed", "replace/event.order-placed"],
+      },
+    ]);
+  });
+
+  it("is silent when only one of them is public, when the kinds differ, and for a view's `again` instance", () => {
+    expect(diagsFor(TWO_PUBLIC.replace("event Order-Placed @Order public", "event Order-Placed @Order")).map((x) => x.code)).not.toContain(
+      "public-name-not-unique",
+    );
+    const KINDS = `slice "A" {
+  ui Screen @Customer
+  command Place Order
+  event Orders @Order public
+}
+slice "B" {
+  view Orders public from "Orders"
+}
+`;
+    expect(diagsFor(KINDS).map((x) => x.code)).not.toContain("public-name-not-unique");
+    const AGAIN = `slice "A" {
+  ui Screen @Customer
+  command Place Order
+  event Order Placed @Order
+}
+slice "B" {
+  view Orders public from "Order Placed"
+}
+slice "C" {
+  ui Edit @Customer
+  command Edit Order
+  event Order Edited @Order
+}
+slice "D" {
+  view Orders again public from "Order Edited"
+}
+`;
+    expect(diagsFor(AGAIN).map((x) => x.code)).not.toContain("public-name-not-unique");
+  });
+
+  it("never resolves `consumes` during validate: an unknown model/element ref is clean here (compile isolation)", () => {
+    const d = diagsFor(`model "F"
+slice "In" {
+  translation Intake consumes nowhere:event.nothing
+  command Accept
+  event Accepted
+}
+`);
+    expect(d.filter((x) => x.severity === "error")).toEqual([]);
+    expect(d.map((x) => x.code)).not.toContain("consumes-unknown-model");
+  });
+});

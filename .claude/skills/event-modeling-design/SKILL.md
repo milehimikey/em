@@ -71,6 +71,15 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    that reads it; another model/system reads it → mark it `public`; only an automation reads
    it → nothing, it's internal by design. No new keyword — reachability is already what `ui` and
    `public` mean.
+   **Per translation fed from another model, declare what it consumes (MIL-235):** write
+   `translation Order Intake consumes checkout:event.order-submitted`. The ref is
+   `<modelKey>:<kind>.<slug>`, where kind is `event` or `view` and the target is marked `public`
+   in its own model. The consumer declares the seam; the producer never lists its consumers, and
+   the ref carries no version and no slice. Only a `translation` may carry `consumes`. If a
+   reaction reads another model, it is a translation. `em validate` checks only the ref's
+   grammar. Run `em system` from the repository (or on its `system.yaml`) to resolve it, and fix
+   any `consumes-unknown-model`/`consumes-unknown-element` error. Never edit the other model to
+   make a ref resolve. Ask its owner to publish the element instead.
 
 End of phase: render, update state (`em state set-phase slice` — the mechanical marker the state
 machine expects), and stop. Every slice already has a draft doc ready to receive the deep spec,

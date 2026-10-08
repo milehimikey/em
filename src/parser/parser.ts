@@ -3,7 +3,7 @@
 //
 // Grammar (whitespace-tolerant, `#` starts a comment):
 //
-//   model "Name"
+//   model "Name" [owner "Team"[, "Team 2" ...]]
 //   persona Name
 //   context Name
 //   slice "Name" [source "url"] {
@@ -12,6 +12,7 @@
 //     view  <free text> [from "Event"[, "Event2" ...]]
 //     event <free text> [@Context] [public] [loops-to "View"[ loops-to "View2" ...]]
 //     automation|processor|saga|translation <free text>
+//     translation <free text> [consumes <modelKey>:<event|view>.<slug>[, ...]]
 //   }
 //   arrow <From Element> -> <To Element>
 //   type "Name" { field: Type, ... }
@@ -68,6 +69,7 @@ export function parse(source: string): ModelNode {
     slices: [],
     arrows: [],
     types: [],
+    owner: [],
   };
 
   const rawLines = source.split(/\r?\n/);
@@ -234,10 +236,13 @@ export function parse(source: string): ModelNode {
 
     // Top level.
     switch (keyword) {
-      case "model":
-        model.name = unquote(remainder);
+      case "model": {
+        const header = parseModelHeader(remainder, lineNo);
+        model.name = header.name;
+        model.owner = header.owner;
         model.nameDeclared = true;
         break;
+      }
       case "persona":
         pushUnique(model.personas, unquote(remainder));
         break;
@@ -326,6 +331,51 @@ export function parse(source: string): ModelNode {
 
   return model;
 }
+
+/**
+ * `model "Name" [owner "Team"[, "Team 2" …]]` (MIL-235). The `owner` clause is only recognized
+ * AFTER the name — immediately after a quoted name's closing quote, or anywhere in an unquoted
+ * one (`model Checkout owner "Storefront team"`) — so a quoted name that merely contains the
+ * word (`model "Owner Portal"`) is never split. Owners are free quoted text, kept as written:
+ * the handle shape (`@org/team`) is MIL-234's to define, not the parser's. Anything after a
+ * quoted name that is NOT an `owner` clause keeps the pre-1.14 behaviour (the whole remainder
+ * is the name) so no model that parsed before parses differently now.
+ */
+function parseModelHeader(remainder: string, line: number): { name: string; owner: string[] } {
+  let nameEnd = 0;
+  if (remainder.startsWith('"')) {
+    const close = matchQuote(remainder, 0);
+    if (close < 0) return { name: unquote(remainder), owner: [] };
+    nameEnd = close + 1;
+  }
+  const tail = remainder.slice(nameEnd);
+  if (nameEnd > 0 && !/^\s+owner\s+"/.test(tail)) return { name: unquote(remainder), owner: [] };
+  const clause = extractQuotedListClause(tail, "owner", "owner", line);
+  if (!clause) return { name: unquote(remainder), owner: [] };
+  if (nameEnd > 0 && clause.rest.length > 0) {
+    throw new ParseError(`unrecognized text after the \`owner\` clause: '${clause.rest}'`, line);
+  }
+  const owner = clause.values.map((v) => v.trim());
+  if (owner.some((o) => o.length === 0)) {
+    throw new ParseError("`owner` needs a non-empty team name in every quoted entry", line);
+  }
+  const name = unquote(nameEnd > 0 ? remainder.slice(0, nameEnd) : clause.rest);
+  return { name, owner };
+}
+
+/** One `consumes` ref: `<modelKey>:<event|view>.<slug>` — the same shape
+ *  `model/qualifiedRef.ts`'s `CONTRACT_REF_RE` anchors (kept as a source fragment here so the
+ *  clause regex can embed it unanchored). */
+const CONSUMES_REF = "[a-z0-9]+(?:-[a-z0-9]+)*(?:~\\d+)?:(?:event|view)\\.[a-z0-9]+(?:-[a-z0-9]+)*";
+
+/** `consumes ref[, ref …]` — the whole well-formed clause, bounded on the right by whitespace
+ *  or end of text so a ref can never run into a following word. */
+const CONSUMES_RE = new RegExp(`(?:^|\\s)consumes\\s+(${CONSUMES_REF}(?:\\s*,\\s*${CONSUMES_REF})*)(?=\\s|$)`);
+
+/** What is left when a `consumes` clause was attempted but is not well-formed: the keyword
+ *  followed by something carrying a `:` (the ref separator). A plain word `consumes` in a free-
+ *  text name (`automation Billing consumes credits`) has no colon and stays part of the name. */
+const CONSUMES_LEFTOVER_RE = /(?:^|\s)consumes\s+([^\s"]*:[^\s"]*)/;
 
 function parseElement(
   kind: ElementKind,
@@ -499,6 +549,29 @@ function extractClauses(
     rest = loopsToClause.rest;
   }
 
+  // `consumes <modelKey>:<kind>.<slug>[, …]` clause(s) (translation only, MIL-235): the other
+  // models' `public` event/view this boundary-crossing reaction binds to. Unquoted refs, so it
+  // is extracted here — BEFORE the greedy-to-EOL `from "…"` below (which would swallow it) and
+  // BEFORE `public` (whose lookahead needs `again`/`@`/EOL after it). Repeatable like
+  // `loops-to`; values accumulate in declaration order. Grammar only: whether the ref names a
+  // real public element is `em system`'s question (compile isolation, MIL-194).
+  for (;;) {
+    const m = rest.match(CONSUMES_RE);
+    if (!m || m.index === undefined) break;
+    if (node.kind !== "translation") throw consumesKindError(line);
+    node.consumes = [...(node.consumes ?? []), ...m[1].split(",").map((r) => r.trim())];
+    rest = (rest.slice(0, m.index) + rest.slice(m.index + m[0].length)).trim();
+  }
+  const badConsumes = rest.match(CONSUMES_LEFTOVER_RE);
+  if (badConsumes) {
+    if (node.kind !== "translation") throw consumesKindError(line);
+    throw new ParseError(
+      `malformed \`consumes\` ref '${badConsumes[1]}' — expected <modelKey>:<kind>.<slug> with kind event or view, ` +
+        "comma-separated (e.g. `consumes checkout:event.order-submitted`)",
+      line,
+    );
+  }
+
   // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive
   // and its operand must open with a quote, so a capitalized `From` — or a bare
   // lowercase `from` — inside an element name (`event Widget Removed From
@@ -576,6 +649,13 @@ function extractClauses(
   }
 
   return rest;
+}
+
+function consumesKindError(line: number): ParseError {
+  return new ParseError(
+    "`consumes` is only valid on translation — only a boundary-crossing reaction binds to another model's public surface",
+    line,
+  );
 }
 
 /** Bare-identifier grammar shared by every element-level `tag` clause: the composite/external

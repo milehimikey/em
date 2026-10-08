@@ -170,7 +170,7 @@ import {
   formatPath,
 } from "./query/format.js";
 import { buildQueryJson } from "./emit/queryJson.js";
-import { loadSystem } from "./cli/systemInputs.js";
+import { loadSystem, SYSTEM_MANIFEST_FILE } from "./cli/systemInputs.js";
 import { verifySystem, SystemDiagnostic } from "./system/verify.js";
 import { buildSystemJson } from "./emit/systemJson.js";
 
@@ -2310,36 +2310,42 @@ query
 program
   .command("system")
   .description(
-    "verify a seam manifest (system.yaml) against its models' exports — every `public` event/view " +
-      "bound to a reaction in another model, the cross-model half of \"both ends of a flow\" (MIL-194, see docs/cli.md)",
+    "verify a system — every model's `consumes` refs resolved against the other models' `public` " +
+      "events/views, the cross-model half of \"both ends of a flow\" (MIL-194/MIL-235, see docs/cli.md). " +
+      "Reads system.yaml when given (or found in the directory), else discovers every *.em in the repo",
   )
-  .argument("<manifest>", "seam manifest path (YAML, or JSON); each model's `source` resolves relative to it")
+  .argument(
+    "[target]",
+    "a system.yaml path, or a directory (its system.yaml if present, else discovery); default: the working directory",
+  )
   // Same reasoning as `em validate`'s allowExcessArguments(false) (MIL-123): a second positional
-  // would be silently dropped, and "one manifest per run" is the whole contract here.
+  // would be silently dropped, and "one system per run" is the whole contract here.
   .allowExcessArguments(false)
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
-  .action((manifest: string, opts: { json?: boolean }) => {
-    const loaded = loadSystem(manifest);
+  .action((target: string | undefined, opts: { json?: boolean }) => {
+    const shown = target ?? ".";
+    const loaded = loadSystem(shown);
     if (!loaded.ok) {
       // Same refusal posture as `em export`/`em status`: a manifest that can't be parsed, or a
       // source that can't be read/compiled, is not a system to verify — no document, exit 1.
       printSystemDiagnostics(loaded.diagnostics);
-      console.error(`em system: not verifying — ${manifest} could not be loaded; fix the above first`);
+      console.error(`em system: not verifying — ${shown} could not be loaded; fix the above first`);
       process.exit(1);
     }
-    const report = verifySystem(loaded.manifest, loaded.models, manifest);
+    const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
     if (opts.json) {
       // `em validate --json`'s convention: diagnostics still go to stderr in the human format,
       // the document (which carries the same diagnostics) to stdout; exit code unchanged.
       printSystemDiagnostics(report.diagnostics);
-      process.stdout.write(buildSystemJson(manifest, loaded.manifestText, report) + "\n");
+      process.stdout.write(buildSystemJson(loaded, report) + "\n");
     } else {
       const verified = report.seams.filter((s) => s.status === "verified").length;
       const failing = report.seams.length - verified;
       const label = report.name === null ? "system" : `system "${report.name}"`;
+      const via = loaded.discovery ? ` (discovered under ${loaded.discovery.root} — no ${SYSTEM_MANIFEST_FILE})` : "";
       console.log(
         `${label}: ${report.models.length} model${report.models.length === 1 ? "" : "s"}, ` +
-          `${report.seams.length} seam${report.seams.length === 1 ? "" : "s"} (${verified} verified, ${failing} failing)`,
+          `${report.seams.length} seam${report.seams.length === 1 ? "" : "s"} (${verified} verified, ${failing} failing)${via}`,
       );
       printSystemDiagnostics(report.diagnostics);
       if (report.diagnostics.length === 0) console.log("ok — no issues");

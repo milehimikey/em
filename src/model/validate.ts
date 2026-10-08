@@ -7,6 +7,7 @@ import { collectTags, Element, NormalizedModel, TypeDecl, normalizeName, resolve
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
 import { connectionKind, resolveLoopsToTarget } from "./edges.js";
+import { kebabSlug } from "../util/slug.js";
 
 export type Severity = "error" | "warning";
 
@@ -635,6 +636,30 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         refs: nonInstances.map((e) => refOf(e.id)),
       });
     }
+  }
+
+  // MIL-235: public element names unique per kind. A consumer's contract ref
+  // (`consumes <modelKey>:<kind>.<slug>`) carries no slice segment, so it is only unambiguous
+  // when no two public elements of one kind slug alike. Compared by `kebabSlug` — the exact
+  // slug the ref spells — which also catches names that differ only in case/punctuation. A
+  // `view … again` instance is the same logical read model as its origin, never a second name.
+  const publicBySlug = new Map<string, Element[]>();
+  for (const el of model.elements) {
+    if (el.public !== true || el.logicalId !== el.id) continue;
+    const key = `${el.kind}.${kebabSlug(el.name)}`;
+    const bucket = publicBySlug.get(key);
+    if (bucket) bucket.push(el);
+    else publicBySlug.set(key, [el]);
+  }
+  for (const [key, els] of publicBySlug) {
+    if (els.length < 2) continue;
+    pushDiag(diags, "public-name-not-unique", {
+      message:
+        `${els.length} public ${els[0].kind}s share the contract name "${key}" (${els.map((e) => `"${e.name}" line ${e.line}`).join(", ")}) ` +
+        `— a consumer's \`consumes <model>:${key}\` could not tell them apart; rename one or drop \`public\` from it`,
+      line: els[1].line,
+      refs: els.map((e) => refOf(e.id)),
+    });
   }
 
   // Duplicate `type` names always warn, unconditionally — unlike the element check above,

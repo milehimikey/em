@@ -97,6 +97,7 @@ affected lines written by hand.
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |
+| seam manifest outdated |
 | slice-ready slice has no doc bound |
 | slice-ready slice has unchecked open questions |
 | slice-ready slice not ready-to-implement |
@@ -115,6 +116,8 @@ affected lines written by hand.
 | arrow endpoint unresolved |
 | arrow points backward |
 | composite tag references unknown field |
+| consumes unknown element |
+| consumes unknown model |
 | derived from names unresolved event |
 | duplicate tag key |
 | event feeds earlier view instance |
@@ -125,6 +128,7 @@ affected lines written by hand.
 | lineage version impossible |
 | loops-to points forward |
 | loops-to target unresolved |
+| public name not unique |
 | reaction reads view before it exists |
 | reaction references unknown read model |
 | same-band collision |

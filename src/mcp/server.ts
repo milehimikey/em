@@ -978,37 +978,42 @@ export function createServer(): McpServer {
   server.registerTool(
     "system",
     {
-      title: "Verify a seam manifest across models (context map)",
+      title: "Verify a system of models (consumes bindings, context map)",
       description:
-        "Return the same JSON document `em system <manifest> --json` prints (MIL-194): the seam " +
-        "manifest (system.yaml — which model's `public` event/view feeds which other model's " +
-        "translation/automation slice) verified against each model's export document — both " +
-        "endpoints resolve, the source is `public`, the consumer is a reaction — plus the " +
+        "Return the same JSON document `em system [<target>] --json` prints (MIL-194/MIL-235): every " +
+        "translation's `consumes <modelKey>:<kind>.<slug>` ref resolved against the other models' " +
+        "`public` events/views (`consumes-unknown-model`, `consumes-unknown-element`), plus the " +
         "cross-model lints (`dangling-public-event`, `unbound-translation`, " +
-        "`undeclared-seam-candidate`) and the org-level context map (models as nodes, seams as " +
-        "edges). Verification reads export JSON only: a `.em` source is compiled to the same " +
-        "document `export_model` returns, a `.json` source is read as one (schema >= 1.10). " +
-        "Refuses (tool error) when the manifest is unreadable/invalid or any source can't be " +
-        "loaded or has errors, same as the CLI; seam-level errors are reported INSIDE the " +
-        "document (`diagnostics`, `seams[].status`), not as a tool error.",
+        "`undeclared-seam-candidate`) and the org-level context map (models as nodes, bindings as " +
+        "edges). The system is a system.yaml (schema 2.0: name + models only; a legacy 1.0 " +
+        "manifest still verifies with a `system-manifest-outdated` warning) or, with no manifest, " +
+        "every *.em the repository tracks (discovery; `manifest: null`, `discovery: {root, files}`). " +
+        "Verification reads export JSON only: a `.em` source is compiled to the same document " +
+        "`export_model` returns, a `.json` source is read as one (schema >= 1.10). Refuses (tool " +
+        "error) when the manifest is unreadable/invalid or any source can't be loaded or has " +
+        "errors, same as the CLI; binding-level errors are reported INSIDE the document " +
+        "(`diagnostics`, `seams[].status`), not as a tool error.",
       inputSchema: {
         manifest: z
           .string()
+          .optional()
           .describe(
-            "path to the seam manifest (system.yaml; YAML or JSON), resolved relative to the server's " +
-              "working directory — each model's `source` resolves relative to the manifest itself",
+            "a system.yaml path (YAML or JSON), or a directory (its system.yaml if present, else " +
+              "discovery from it), resolved relative to the server's working directory; omitted = the " +
+              "working directory. Each model's `source` resolves relative to the manifest itself",
           ),
       },
     },
     async ({ manifest }) => {
-      const loaded = loadSystem(manifest);
+      const target = manifest ?? ".";
+      const loaded = loadSystem(target);
       if (!loaded.ok) {
         return errorResult(
-          `not verifying: ${manifest} could not be loaded — ${loaded.diagnostics.map((d) => `${d.file}${d.line ? `:${d.line}` : ""}: ${d.message}`).join("; ")}`,
+          `not verifying: ${target} could not be loaded — ${loaded.diagnostics.map((d) => `${d.file}${d.line ? `:${d.line}` : ""}: ${d.message}`).join("; ")}`,
         );
       }
-      const report = verifySystem(loaded.manifest, loaded.models, manifest);
-      return textResult(buildSystemJson(manifest, loaded.manifestText, report));
+      const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
+      return textResult(buildSystemJson(loaded, report));
     },
   );
 

@@ -10,30 +10,74 @@
 // Shared by the CLI action (src/cli.ts) and the MCP `system` tool (src/mcp/server.ts) so the two
 // surfaces load a system identically — the parity requirement. Every failure is a returned
 // diagnostic, never a throw or a process exit: the CLI prints and exits, MCP returns a tool error.
+//
+// Discovery (MIL-235, ruling R4): with no manifest, the system is every `*.em` file in the
+// repository — `git ls-files -z -- '*.em'` from the repo root (honours `.gitignore` and matches
+// what the generated CI lints), or, outside git, a walk of the start directory pruning
+// `node_modules`/`.git`. `*-asis.em` (em conform-scope's seeded as-is models) is always skipped.
+// Model keys are `computeModelKeys`'s (first file wins the bare key, later ones get `~2` …).
 
-import { readFileSync } from "node:fs";
-import { dirname, extname, isAbsolute, join } from "node:path";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { compile } from "../pipeline.js";
 import { ParseError } from "../parser/parser.js";
 import { hasErrors } from "../model/validate.js";
 import { buildExportDoc } from "../emit/json.js";
 import { makeDiag } from "../model/rules.js";
+import { computeModelKeys } from "../model/qualifiedRef.js";
+import type { NormalizedModel } from "../model/model.js";
+import { walkDir } from "../util/walkDir.js";
+import { GitRunner, realGit } from "./diff-inputs.js";
 import { parseManifest, SystemManifest } from "../system/manifest.js";
-import { SystemDiagnostic, SystemExportDoc, SystemModelInput } from "../system/verify.js";
+import { SystemDiagnostic, SystemDiscovery, SystemExportDoc, SystemModelInput } from "../system/verify.js";
+
+export type { SystemDiscovery };
+
+/** The manifest file name `em system` looks for in a directory before falling back to discovery. */
+export const SYSTEM_MANIFEST_FILE = "system.yaml";
 
 /** The oldest `em export` schema whose document carries what the verifier reads (`model.key`
  *  from MIL-193, `model.edges` from MIL-191 — both schema 1.10). */
 export const MIN_EXPORT_SCHEMA = { major: 1, minor: 10 };
 
 export type LoadSystemResult =
-  | { ok: true; manifest: SystemManifest; manifestText: string; models: SystemModelInput[] }
+  | {
+      ok: true;
+      /** `null` in discovery mode. */
+      manifest: SystemManifest | null;
+      /** The manifest path as given (or found in the given directory); `null` in discovery mode. */
+      manifestPath: string | null;
+      manifestText: string | null;
+      /** Non-null exactly when `manifest` is null. */
+      discovery: SystemDiscovery | null;
+      models: SystemModelInput[];
+      /** Load-time findings that are not refusals (discovery's `duplicate-model-key` warnings);
+       *  hand them to `verifySystem` as `preDiagnostics`. */
+      diagnostics: SystemDiagnostic[];
+    }
   | { ok: false; diagnostics: SystemDiagnostic[] };
 
-/** Read + parse the manifest at `manifestPath` and load every model it declares. `ok: false`
- *  means the system can't be verified at all (unreadable/invalid manifest, or a source that
- *  can't be read, parsed, or has compile errors) — the caller refuses, the same way `em export`
- *  refuses a model with errors, rather than verifying a partial system. */
-export function loadSystem(manifestPath: string): LoadSystemResult {
+/** `em system [<target>]`'s loader. `target` is a manifest file (loaded as before), a directory
+ *  (its `system.yaml` if it has one, else discovery from it), or omitted (= `"."`, the working
+ *  directory). `ok: false` means the system can't be verified at all (unreadable/invalid
+ *  manifest, or a source that can't be read, parsed, or has compile errors) — the caller
+ *  refuses, the same way `em export` refuses a model with errors, rather than verifying a
+ *  partial system. */
+export function loadSystem(target: string = ".", runGit: GitRunner = realGit): LoadSystemResult {
+  let isDir = false;
+  try {
+    isDir = statSync(target).isDirectory();
+  } catch {
+    // missing path: fall through to the manifest reader, which reports "cannot read"
+  }
+  if (!isDir) return loadManifestSystem(target);
+  const candidate = target === "." ? SYSTEM_MANIFEST_FILE : join(target, SYSTEM_MANIFEST_FILE);
+  if (existsSync(candidate)) return loadManifestSystem(candidate);
+  return loadDiscoveredSystem(target, runGit);
+}
+
+/** Read + parse the manifest at `manifestPath` and load every model it declares. */
+function loadManifestSystem(manifestPath: string): LoadSystemResult {
   let manifestText: string;
   try {
     manifestText = readFileSync(manifestPath, "utf8");
@@ -61,18 +105,107 @@ export function loadSystem(manifestPath: string): LoadSystemResult {
       });
       continue;
     }
-    models.push({ key: entry.key, source: entry.source, sourceKind: loaded.sourceKind, owner: entry.owner, file, doc: loaded.doc });
+    models.push({
+      key: entry.key,
+      source: entry.source,
+      sourceKind: loaded.sourceKind,
+      owner: ownerOf(loaded.doc, entry.owner),
+      file,
+      doc: loaded.doc,
+    });
   }
   if (diagnostics.length > 0) return { ok: false, diagnostics };
-  return { ok: true, manifest: parsed.manifest, manifestText, models };
+  return { ok: true, manifest: parsed.manifest, manifestPath, manifestText, discovery: null, models, diagnostics: [] };
 }
 
-type LoadedSource = { sourceKind: "em" | "export"; doc: SystemExportDoc } | { error: string };
+/** The header's owners (export schema >= 1.15); a legacy 1.0 manifest's `owner:` only fills in
+ *  when the header names none — so a half-migrated estate still shows who owns what. */
+function ownerOf(doc: SystemExportDoc, manifestOwner: string | null): string[] {
+  const header = Array.isArray(doc.model.owner) ? doc.model.owner : [];
+  if (header.length > 0) return [...header];
+  return manifestOwner === null ? [] : [manifestOwner];
+}
+
+/** Discovery (R4): find every model, compile each, key them with `computeModelKeys`. */
+function loadDiscoveredSystem(startDir: string, runGit: GitRunner): LoadSystemResult {
+  const found = discoverModelFiles(startDir, runGit);
+  const diagnostics: SystemDiagnostic[] = [];
+  const loaded: Array<{ source: string; file: string; model: NormalizedModel; doc: SystemExportDoc }> = [];
+  for (const source of found.files) {
+    const file = join(found.root, source);
+    const result = loadSource(file);
+    if ("error" in result) {
+      diagnostics.push({ file, ...makeDiag("system-manifest-invalid", { message: `discovered model ${source}: ${result.error}` }) });
+      continue;
+    }
+    loaded.push({ source, file, model: result.model!, doc: result.doc });
+  }
+  if (diagnostics.length > 0) return { ok: false, diagnostics };
+  if (loaded.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [
+        {
+          file: found.root,
+          ...makeDiag("system-manifest-invalid", {
+            message: `no ${SYSTEM_MANIFEST_FILE} and no .em models found under ${found.root} — pass a manifest, or run from the repository that holds the models`,
+          }),
+        },
+      ],
+    };
+  }
+  const keyed = computeModelKeys(loaded.map((l) => ({ model: l.model, file: l.source })));
+  const pre: SystemDiagnostic[] = keyed.diagnostics.map((d) => ({ file: found.root, ...d }));
+  const models: SystemModelInput[] = loaded.map((l, i) => ({
+    key: keyed.keys[i],
+    source: l.source,
+    sourceKind: "em",
+    owner: ownerOf(l.doc, null),
+    file: l.file,
+    doc: l.doc,
+  }));
+  return { ok: true, manifest: null, manifestPath: null, manifestText: null, discovery: found, models, diagnostics: pre };
+}
+
+/** The discovery file list (R4). Inside a git work tree: `git ls-files -z -- '*.em'` run at the
+ *  repo root (tracked files only — what CI sees), skipping any listed file missing from the
+ *  working tree. Outside git: a sorted walk of `startDir` pruning `node_modules` and `.git`.
+ *  Either way `*-asis.em` is dropped. `root` is the repo root as reached from `startDir`
+ *  (`startDir` itself, or e.g. `../..` joined onto it), never an absolute path the caller
+ *  didn't give. Exported for tests. */
+export function discoverModelFiles(startDir: string, runGit: GitRunner = realGit): SystemDiscovery {
+  const keep = (f: string) => f.endsWith(".em") && !f.endsWith("-asis.em");
+  const top = runGit(["-C", startDir, "rev-parse", "--show-toplevel"]);
+  if (top.status === 0 && top.stdout.trim() !== "") {
+    const topDir = top.stdout.trim();
+    let up = "";
+    try {
+      up = relative(realpathSync(startDir), realpathSync(topDir));
+    } catch {
+      up = "";
+    }
+    const root = up === "" ? startDir : join(startDir, up);
+    const listed = runGit(["-C", topDir, "ls-files", "-z", "--", "*.em"]);
+    if (listed.status === 0) {
+      const files = listed.stdout
+        .split("\0")
+        .filter((f) => f !== "" && keep(f) && existsSync(join(topDir, f)))
+        .sort();
+      return { root, files };
+    }
+  }
+  const files = walkDir(startDir, { skipDir: (name) => name === "node_modules" || name === ".git" })
+    .filter(keep)
+    .map((f) => f.split(sep).join("/"));
+  return { root: startDir, files };
+}
+
+export type LoadedSource = { sourceKind: "em" | "export"; doc: SystemExportDoc; model?: NormalizedModel } | { error: string };
 
 /** One source path to an export document. `.em` compiles (refusing on parse/validation
  *  errors, same gate as `em export`); anything else is read as an `em export --json` document
  *  and shape-checked for the fields the verifier needs. */
-function loadSource(file: string): LoadedSource {
+export function loadSource(file: string): LoadedSource {
   let text: string;
   try {
     text = readFileSync(file, "utf8");
@@ -88,7 +221,7 @@ function loadSource(file: string): LoadedSource {
       // The document's own `model.key` (MIL-193, schema 1.10) is the key the manifest must match —
       // never recomputed here, so `em system` and `em export` can't disagree about it.
       const { doc } = buildExportDoc(model, refs, diagnostics, text, file);
-      return { sourceKind: "em", doc };
+      return { sourceKind: "em", doc, model };
     } catch (e) {
       if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
       throw e;

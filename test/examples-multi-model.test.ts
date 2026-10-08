@@ -8,6 +8,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildSystemJson } from "../src/emit/systemJson.js";
+import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
 import { compile } from "../src/pipeline.js";
 import { hasErrors } from "../src/model/validate.js";
 import { detectSliceDocCollisions } from "../src/catalog/modelCollisionValidate.js";
@@ -51,6 +53,7 @@ describe("examples/multi-model/", () => {
     const loaded = loadSystem(MANIFEST_FILE);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
+    expect(loaded.manifest?.systemSchemaVersion).toBe("2.0");
     const report = verifySystem(loaded.manifest, loaded.models, MANIFEST_FILE);
     expect(report.seams).toEqual([
       expect.objectContaining({
@@ -71,5 +74,65 @@ describe("examples/multi-model/", () => {
     if (!loaded.ok) throw new Error("manifest failed to load");
     const fulfillment = loaded.models.find((m) => m.key === "fulfillment")!;
     expect(fulfillment.doc.model.edges.some((e) => e.to === "receive-order/translation.order-intake")).toBe(false);
+  });
+
+  // MIL-235: the example is in the 2.0 shape — owners on the headers, the seam as `consumes`.
+  it("declares owners on the model headers and the seam as a consumes clause on the translation", () => {
+    const loaded = loadSystem(MANIFEST_FILE);
+    if (!loaded.ok) throw new Error("manifest failed to load");
+    expect(loaded.models.map((m) => [m.key, m.owner])).toEqual([
+      ["checkout", ["Storefront team"]],
+      ["fulfillment", ["Warehouse team"]],
+    ]);
+    const intake = loaded.models[1].doc.model.slices.flatMap((s) => s.elements).find((e) => e.ref === "receive-order/translation.order-intake")!;
+    expect(intake.consumes).toEqual(["checkout:event.order-submitted"]);
+  });
+
+  it("with the manifest deleted, discovery finds both models and reports the same seam and warning", () => {
+    const repo = makeMultiModelRepo({ manifest: false });
+    try {
+      const loaded = loadSystem(repo.dir);
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) return;
+      expect(loaded.discovery?.files).toEqual(["models/checkout/checkout.em", "models/fulfillment/fulfillment.em"]);
+      const report = verifySystem(loaded.manifest, loaded.models, loaded.manifestPath, loaded.diagnostics);
+      expect(report.seams.map((s) => [s.from, s.to, s.status])).toEqual([
+        ["checkout:checkout/event.order-submitted", "fulfillment:receive-order/translation.order-intake", "verified"],
+      ]);
+      expect(report.diagnostics.map((d) => d.code)).toEqual(["dangling-public-event"]);
+      expect(report.contextMap.edges).toEqual([{ from: "checkout", to: "fulfillment", seams: 1 }]);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("the pre-migration (1.0) example and the migrated one give equivalent `em system` documents", () => {
+    const docOf = (dir: string) => {
+      const loaded = loadSystem(join(dir, "system.yaml"));
+      if (!loaded.ok) throw new Error("manifest failed to load");
+      const report = verifySystem(loaded.manifest, loaded.models, "system.yaml", loaded.diagnostics);
+      return JSON.parse(buildSystemJson({ ...loaded, manifestPath: "system.yaml" }, report));
+    };
+    const legacy = makeMultiModelRepo({ legacy: true });
+    const current = makeMultiModelRepo();
+    try {
+      const before = docOf(legacy.dir);
+      const after = docOf(current.dir);
+      // Only these differ: the manifest bytes, the seam's free-text description (now a `#` comment
+      // above the translation), the per-model `file` paths (two tmp dirs), and the outdated warning.
+      const strip = (d: ReturnType<typeof docOf>) => ({
+        ...d,
+        manifest: { ...d.manifest, sha256: "<sha>" },
+        seams: d.seams.map((x: { description: unknown }) => ({ ...x, description: "<d>" })),
+        diagnostics: d.diagnostics
+          .filter((x: { code: string }) => x.code !== "system-manifest-outdated")
+          .map((x: { file: string }) => ({ ...x, file: x.file.replace(/^.*em-multi-model-[^/]+\//, "") })),
+      });
+      expect(strip(after)).toEqual(strip(before));
+      expect(before.diagnostics.map((x: { code: string }) => x.code)).toEqual(["system-manifest-outdated", "dangling-public-event"]);
+    } finally {
+      legacy.cleanup();
+      current.cleanup();
+    }
   });
 });

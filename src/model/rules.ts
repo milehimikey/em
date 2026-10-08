@@ -393,7 +393,17 @@ export const RULES = {
     fix: "Give each model its own directory (see docs/cli.md, \"Multi-model projects\").",
     usageCategory: "colliding slice doc path across models",
   },
-  // MIL-194: the nine codes `em system <manifest>` raises while verifying a seam manifest
+  // MIL-235: the model-local half of `consumes` — a contract ref (`<modelKey>:<kind>.<slug>`)
+  // names a public element by kind + slug with no slice segment, so two public elements of one
+  // kind whose names slug alike would make every consumer's ref ambiguous. Raised by `em
+  // validate` (model/validate.ts) — it needs nothing outside this model.
+  "public-name-not-unique": {
+    severity: "error",
+    title: "Two public elements of one kind share a name",
+    fix: "Rename one of them (or drop `public` from one): a consumer's `consumes <model>:<kind>.<slug>` must name exactly one element.",
+    usageCategory: "public name not unique",
+  },
+  // MIL-194: the codes `em system [<manifest>|<dir>]` raises while verifying a seam manifest
   // (docs/cli.md "em system") against each model's export document — the cross-model half of
   // "both ends of a flow": every `public` event/view needs a declared reader somewhere in the
   // system, every externally-fed reaction needs a declared producer. Raised by
@@ -404,7 +414,7 @@ export const RULES = {
   "system-manifest-invalid": {
     severity: "error",
     title: "Seam manifest invalid",
-    fix: "Fix the manifest: required keys, `systemSchemaVersion: \"1.0\"`, a readable `source` per model, and only declared model keys in seam refs.",
+    fix: "Fix the manifest: `systemSchemaVersion: \"2.0\"`, `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`).",
     usageCategory: "seam manifest invalid",
     docAnchor: "seam-manifest",
   },
@@ -413,6 +423,29 @@ export const RULES = {
     title: "Manifest model key differs from the export's `model.key`",
     fix: "Rename the manifest's `models:` key to the computed key the message prints.",
     usageCategory: "seam manifest model key mismatch",
+    docAnchor: "seam-manifest",
+  },
+  // MIL-235: a 1.0 manifest (seams + owners in system.yaml) still verifies, with this warning.
+  "system-manifest-outdated": {
+    severity: "warning",
+    title: "Seam manifest is schema 1.0",
+    fix: "Run `em upgrade <model>.em --apply` once: it moves `seams:` into `consumes` clauses and `owner:` onto each model header, and rewrites the manifest to 2.0.",
+    usageCategory: "seam manifest outdated",
+    docAnchor: "seam-manifest",
+  },
+  // MIL-235: a translation's `consumes` ref, resolved against the loaded models' exports.
+  "consumes-unknown-model": {
+    severity: "error",
+    title: "`consumes` names a model the system does not have",
+    fix: "Fix the model key (the kebab-slug of the producer's `model \"Name\"`), or add that model to the system.",
+    usageCategory: "consumes unknown model",
+    docAnchor: "seam-manifest",
+  },
+  "consumes-unknown-element": {
+    severity: "error",
+    title: "`consumes` names no public element of that model",
+    fix: "Point the ref at an element the producer marks `public` (`em export` lists them), or ask the producer to publish it.",
+    usageCategory: "consumes unknown element",
     docAnchor: "seam-manifest",
   },
   "seam-endpoint-unresolved": {

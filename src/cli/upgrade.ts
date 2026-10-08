@@ -22,8 +22,8 @@
 // repository — same requirement `em conform-scope` holds, for the same reason (there is no
 // "changed since when" or "commit per step" without one).
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
@@ -49,6 +49,11 @@ import { scaffoldConstitution, scaffoldStateFile } from "../templates.js";
 import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolveStateFilePath } from "./stateFile.js";
 import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner } from "./frontmatterSurgery.js";
 import { localIsoDate } from "../util/localDate.js";
+import { compile } from "../pipeline.js";
+import { hasErrors } from "../model/validate.js";
+import { LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION, parseManifest, SystemManifest } from "../system/manifest.js";
+import { MigrationMember, planManifestMigration } from "../system/migrateManifest.js";
+import { loadSource, SYSTEM_MANIFEST_FILE } from "./systemInputs.js";
 
 export const UPGRADE_MIN_SUPPORTED_VERSION = "1.6.0";
 
@@ -73,7 +78,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff";
+export type UpgradeStepId = "skill-bundle" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -362,6 +367,92 @@ function applyRatifiedSignoff(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: writes.map((w) => w.file) };
 }
 
+// ---- Step 7: system-manifest (MIL-235, R3) — system.yaml 1.0 -> 2.0. ----
+// The one mechanical step that writes OTHER models' files: the legacy manifest's seams become
+// `consumes` clauses on each consuming translation and its owners become `owner "…"` on each
+// member model's header, in the same single commit as the manifest rewrite (its `Em-Upgrade:`
+// trailer is what lets MIL-240's scope gate exempt that cross-model change set). Planned by
+// src/system/migrateManifest.ts over export documents; this half finds the manifest, loads the
+// members, verifies every rewritten model still compiles clean, and only then writes anything.
+
+/** The nearest `system.yaml` from `baseDir` upward, stopping at (and including) `repoRoot`. */
+function findSystemManifest(ctx: UpgradeContext): string | null {
+  // Real paths on both sides: git reports the repo root symlink-resolved (macOS /var -> /private/var).
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  };
+  const root = real(ctx.repoRoot);
+  let dir = real(ctx.baseDir);
+  for (;;) {
+    const candidate = join(dir, SYSTEM_MANIFEST_FILE);
+    if (existsSync(candidate)) return candidate;
+    if (dir === root) return null;
+    const parent = dirname(dir);
+    const rel = relative(root, parent);
+    if (parent === dir || rel.startsWith("..") || isAbsolute(rel)) return null;
+    dir = parent;
+  }
+}
+
+type LoadedLegacyManifest = { path: string; text: string; manifest: SystemManifest } | { path: string | null; reason: string };
+
+function loadLegacyManifest(ctx: UpgradeContext): LoadedLegacyManifest {
+  const path = findSystemManifest(ctx);
+  if (path === null) return { path: null, reason: `no ${SYSTEM_MANIFEST_FILE} between the model and the repository root` };
+  const text = readFileSync(path, "utf8");
+  const parsed = parseManifest(text);
+  if (!parsed.ok) return { path, reason: `${path} does not parse — run \`em system ${path}\` to see why` };
+  if (parsed.manifest.systemSchemaVersion !== LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION) {
+    return { path, reason: `${path} is already systemSchemaVersion "${parsed.manifest.systemSchemaVersion}"` };
+  }
+  return { path, text, manifest: parsed.manifest };
+}
+
+function detectSystemManifest(ctx: UpgradeContext): StepDetection {
+  const loaded = loadLegacyManifest(ctx);
+  if (!("manifest" in loaded)) return { applicable: false, reason: loaded.reason };
+  const m = loaded.manifest;
+  return {
+    applicable: true,
+    reason:
+      `${loaded.path} is systemSchemaVersion "1.0" — em upgrade will move its ${m.seams.length} seam(s) into \`consumes\` clauses, ` +
+      `its owner(s) onto the ${m.models.length} model header(s), and rewrite it to "2.0"`,
+  };
+}
+
+function applySystemManifest(ctx: UpgradeContext): StepApplyOutcome {
+  const loaded = loadLegacyManifest(ctx);
+  if (!("manifest" in loaded)) return { ok: false, message: loaded.reason };
+  const baseDir = dirname(loaded.path);
+  const members: MigrationMember[] = [];
+  for (const entry of loaded.manifest.models) {
+    const file = isAbsolute(entry.source) ? entry.source : join(baseDir, entry.source);
+    const source = loadSource(file);
+    if ("error" in source) return { ok: false, message: `model "${entry.key}": ${source.error}` };
+    members.push({ key: entry.key, file, text: source.sourceKind === "em" ? readFileSync(file, "utf8") : null, doc: source.doc });
+  }
+  const plan = planManifestMigration(loaded.text, loaded.manifest, members);
+  if (!plan.ok) return { ok: false, message: plan.message };
+  // Verify before write: every rewritten model must still compile with no errors.
+  for (const f of plan.files) {
+    try {
+      const { diagnostics } = compile(f.text);
+      if (hasErrors(diagnostics)) return { ok: false, message: `the rewrite of ${f.file} would introduce validation errors — aborting, nothing written` };
+    } catch (e) {
+      return { ok: false, message: `the rewrite of ${f.file} does not parse (${(e as Error).message}) — aborting, nothing written` };
+    }
+  }
+  const reparsed = parseManifest(plan.manifestText);
+  if (!reparsed.ok) return { ok: false, message: `the rewritten ${loaded.path} does not parse as 2.0 — aborting, nothing written` };
+  for (const f of plan.files) writeFileSync(f.file, f.text);
+  writeFileSync(loaded.path, plan.manifestText);
+  return { ok: true, changedFiles: [...plan.files.map((f) => f.file), loaded.path] };
+}
+
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
@@ -369,6 +460,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
+  { id: "system-manifest", sinceVersion: "1.14.0", detect: detectSystemManifest, apply: applySystemManifest },
 ];
 
 // ---- Human list — detect-only, never applied. ----
@@ -551,10 +643,17 @@ export function hasGitIdentity(repoRoot: string, runGit: GitRunner = realGit): b
   return name.status === 0 && name.stdout.trim().length > 0 && email.status === 0 && email.stdout.trim().length > 0;
 }
 
-function gitCommitAll(repoRoot: string, message: string, runGit: GitRunner): { ok: true } | { ok: false; message: string } {
+/** The commit trailer key every `em upgrade --apply` commit carries (MIL-235, R2):
+ *  `Em-Upgrade: <step-id>` (or `em-version` for the final stamp commit). Readers use
+ *  `git log --format=%(trailers:key=Em-Upgrade,valueonly)` — MIL-240's scope gate exempts files
+ *  changed only by such commits, since a mechanical migration may legitimately span models. */
+export const EM_UPGRADE_TRAILER = "Em-Upgrade";
+
+function gitCommitAll(repoRoot: string, message: string, trailerValue: string, runGit: GitRunner): { ok: true } | { ok: false; message: string } {
   const add = runGit(["-C", repoRoot, "add", "-A"]);
   if (add.status !== 0) return { ok: false, message: `git add failed: ${(add.stderr || "").trim() || "unknown error"}` };
-  const commit = runGit(["-C", repoRoot, "commit", "-m", message]);
+  // Second `-m` = its own paragraph, which git reads as the trailer block.
+  const commit = runGit(["-C", repoRoot, "commit", "-m", message, "-m", `${EM_UPGRADE_TRAILER}: ${trailerValue}`]);
   if (commit.status !== 0) return { ok: false, message: `git commit failed: ${(commit.stderr || "").trim() || "unknown error"}` };
   return { ok: true };
 }
@@ -625,7 +724,7 @@ export type ApplyUpgradeResult =
 
 /**
  * `--apply`: detect, then apply every applicable mechanical step in fixed order, one commit
- * each (`em upgrade: <step-id> (<from> → <to>)`), stopping at the first failure with every
+ * each (`em upgrade: <step-id> (<from> → <to>)`, trailer `Em-Upgrade: <step-id>`), stopping at the first failure with every
  * prior commit intact and the failed step's own partial writes discarded. On full success,
  * writes `Em version: <to>` as one final commit — always, even when every step above was a
  * no-op, UNLESS the bullet already reads `<to>` (idempotent second run makes zero commits).
@@ -663,7 +762,7 @@ export function applyUpgrade(ctx: UpgradeContext, runGit: GitRunner = realGit): 
       return { ok: false, message: `em upgrade: step "${step.id}" failed — ${result.message}`, report, applied };
     }
     const message = `em upgrade: ${step.id} (${report.from.version} → ${report.to})`;
-    const commitResult = gitCommitAll(ctx.repoRoot, message, runGit);
+    const commitResult = gitCommitAll(ctx.repoRoot, message, step.id, runGit);
     if (!commitResult.ok) {
       return { ok: false, message: `em upgrade: step "${step.id}" applied but failed to commit — ${commitResult.message}`, report, applied };
     }
@@ -678,7 +777,7 @@ export function applyUpgrade(ctx: UpgradeContext, runGit: GitRunner = realGit): 
     if (stamped.ok && stamped.text !== loaded.text) {
       writeFileSync(loaded.path, stamped.text);
       const message = `em upgrade: em-version (${report.from.version} → ${report.to})`;
-      const commitResult = gitCommitAll(ctx.repoRoot, message, runGit);
+      const commitResult = gitCommitAll(ctx.repoRoot, message, "em-version", runGit);
       if (!commitResult.ok) {
         return { ok: false, message: `em upgrade: writing Em version: failed to commit — ${commitResult.message}`, report, applied };
       }
