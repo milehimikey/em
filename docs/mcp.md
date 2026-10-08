@@ -91,7 +91,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `coverage` | `{ file, testsDir, includeReady?, slice? }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models |
 | `query` | `{ files, verb, event?, of?, depth?, pattern?, status?, context?, persona?, tag?, id?, testsDir?, name?, from?, to? }` | The `em query <verb> <files...> --json` document: deterministic graph queries (consumers/producers/downstream/upstream/slices/invariant/field/path) over the compiled model |
-| `system` | `{ manifest }` | The `em system <manifest> --json` document: a seam manifest (`system.yaml`) verified against each model's export — every `public` event/view bound to another model's reaction — plus the org-level context map |
+| `system` | `{ manifest? }` | The `em system [<manifest>] --json` document: the 2.0 membership manifest (`system.yaml`, file or directory; omitted = discovery from the server's working directory) with every `consumes` binding resolved against the producer's export — every `public` event/view consumed by another model's translation — plus the org-level context map |
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
 | `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
@@ -206,9 +206,10 @@ legal-connection graph traversal runs over.
 
 ### `system`
 
-Same document as `em system <manifest> --json` (MIL-194): the seam manifest at `manifest`
-(`system.yaml` — YAML or JSON; resolved relative to the server's working directory, with each
-model's `source` resolving relative to the manifest itself) verified against every model it
+Same document as `em system [<manifest>] --json` (MIL-194, 2.0 in MIL-235): the membership manifest at `manifest`
+(`system.yaml` — YAML or JSON, a file or a directory holding one; resolved relative to the server's working
+directory, with each model's `source` resolving relative to the manifest itself; omitted = `*.em` discovery
+from the working directory, 1.0 manifests still read with a `system-manifest-outdated` warning) verified against every model it
 declares — both endpoints resolve, the `from` is a `public` event/view, the `to` is a
 translation/automation-kind element (or a slice holding exactly one) — plus the cross-model lints
 (`dangling-public-event`, `unbound-translation`, `undeclared-seam-candidate`) and the
