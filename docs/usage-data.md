@@ -20,7 +20,7 @@ current phase, decisions made, and open questions. It now also gets a **Usage lo
 One line per session. Two things per line:
 
 - **Phase(s) touched** — `discover`, `extract`, `model`, `slice`, `implement`, `conform`,
-  `review`, `validate`, `watch`.
+  `review`, `validate`, `watch`, `engagement`.
 - **Validate diagnostic categories hit** — one of the fixed strings in
   [Categories](#categories) below, not the full instance message. `none` if `em validate` came
   back clean.

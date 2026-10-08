@@ -236,3 +236,32 @@ export function computeSliceReadyGates(
 
   return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions, ratified, contractCurrent }, continuationOf };
 }
+
+/** R34 (MIL-268): the full `--slice-ready` verdict for one slice — the ONE computation `em
+ *  validate --slice-ready`, the MCP `slice_ready` tool, and `em engagement plan` all call, so
+ *  "ready" can never mean three slightly different things. `allDiagnostics` is the caller's
+ *  unconditional `em validate` diagnostic set (compile + fs-aware checks); this adds the opt-in
+ *  readiness diagnostics, keeps only those concerning THIS slice (a ref that is the bare key or
+ *  starts with `<key>/` — an unrelated slice's breakage never blocks it), and derives `ready` as
+ *  "no scoped diagnostics". `result` is `computeSliceReadyGates`' named gates (null for an
+ *  unknown key). */
+export interface SliceReadiness {
+  scoped: Diagnostic[];
+  ready: boolean;
+  result: SliceReadyResult | null;
+}
+
+export function computeSliceReadiness(
+  model: NormalizedModel,
+  refs: RefsResult,
+  baseDir: string,
+  sliceKey: string,
+  contract: ContractCheckInput,
+  allDiagnostics: Diagnostic[],
+): SliceReadiness {
+  const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey, contract);
+  const combined = [...allDiagnostics, ...readyDiagnostics];
+  const scoped = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
+  const result = computeSliceReadyGates(model, refs, baseDir, sliceKey, contract);
+  return { scoped, ready: scoped.length === 0, result };
+}

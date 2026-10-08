@@ -33,7 +33,20 @@ import { validateDocModelConsistency } from "./catalog/docModelConsistencyValida
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
 import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
-import { validateSliceReady, computeSliceReadyGates } from "./catalog/sliceReadyValidate.js";
+import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
+import {
+  EngagementModelInput,
+  Selector,
+  applyEngagementClose,
+  applyEngagementSet,
+  buildNewEngagement,
+  engagementPlanFor,
+  engagementStatusFor,
+  formatEngagementPlanText,
+  formatEngagementStatusText,
+} from "./cli/engagement.js";
+import { LEDGER_STATES, engagementPath, loadEngagement, readOpenEngagements } from "./cli/engagementFile.js";
+import { buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
@@ -1815,18 +1828,16 @@ program
         // still WIP) and this module's own "single-slice" framing.
         // MIL-238: the API-first gate needs the model path as given (the contract path is built
         // from it, as `em api generate` does), its source, and the compile diagnostics.
+        // R34 (MIL-268): one shared verdict helper for this flag, the MCP `slice_ready` tool, and
+        // `em engagement plan`.
         const contractInput = { file, source, diagnostics };
-        const readyDiagnostics = validateSliceReady(model, refs, dirname(file), opts.sliceReady, contractInput);
-        const combined = [...allDiagnostics, ...readyDiagnostics];
         const key = opts.sliceReady;
-        const scoped = combined.filter((d) => d.refs?.some((r) => r === key || r.startsWith(`${key}/`)));
+        const { scoped, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics);
         printDiagnostics(scoped);
-        const ready = scoped.length === 0;
         if (opts.json) {
           // MIL-128: the named gates (see computeSliceReadyGates) plus the same `scoped`
           // diagnostics and `ready` verdict driving the exit code below — replaces both the
           // scraped warning prose and the two hand-parsed English sentences.
-          const result = computeSliceReadyGates(model, refs, dirname(file), key, contractInput);
           process.stdout.write(
             buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null) + "\n",
           );
@@ -2209,7 +2220,7 @@ program
 
       // MIL-239 (R11): the nearest system.yaml above the first input file, consumer-adaptation counted.
       const system = statusSystemBlock(files[0], realGit, (m) => console.error(`warn: em status: ${m}`));
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, system);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, system, readOpenEngagements(files));
 
       let output: string;
       if (opts.json) output = buildStatusJson(report);
@@ -2460,6 +2471,159 @@ query
   .option("--json", "print a JSON document instead of the text report")
   .action((files: string[], opts: { from: string; to: string; json?: boolean }) => {
     runQueryVerb(files, "path", { from: opts.from, to: opts.to }, opts.json, (s) => queryPath(s, opts.from, opts.to), formatPath);
+  });
+
+const engagement = program
+  .command("engagement")
+  .description(
+    "a named chunk of the model built as one stack of slice PRs: its levelled build plan and its " +
+      "in-flight Ledger (MIL-268, see docs/cli.md and docs/engagement-schema.md)",
+  );
+
+engagement
+  .command("new")
+  .description(
+    "write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the " +
+      "generated Ledger table; selection by --slices, --context, or --downstream-of (exactly one)",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug (kebab-case; the file name)")
+  .option("--slices <keys>", "comma-separated slice export keys")
+  .option("--context <name>", "every slice with an event in this context")
+  .option("--downstream-of <ref>", "a slice key, element ref, or display name: it and everything downstream of it (loops-to excluded)")
+  .option("--parallel <n>", "how many slices of one level may be in flight at once", "3")
+  .option("--by <name>", "who created the engagement (createdBy)")
+  .option("--force", "overwrite an existing engagement file with this slug")
+  .action(
+    (
+      file: string,
+      slug: string,
+      opts: { slices?: string; context?: string; downstreamOf?: string; parallel: string; by?: string; force?: boolean },
+    ) => {
+      const fail = (m: string): never => {
+        console.error(`em engagement new: ${m}`);
+        process.exit(1);
+      };
+      const given = [opts.slices, opts.context, opts.downstreamOf].filter((v) => v !== undefined).length;
+      if (given !== 1) fail("pass exactly one of --slices, --context, --downstream-of");
+      const selector: Selector =
+        opts.slices !== undefined
+          ? { kind: "slices", keys: opts.slices.split(",").map((k) => k.trim()).filter((k) => k !== "") }
+          : opts.context !== undefined
+            ? { kind: "context", context: opts.context }
+            : { kind: "downstream-of", ref: opts.downstreamOf! };
+      const parallel = /^\d+$/.test(opts.parallel) ? Number(opts.parallel) : NaN;
+      const { model, refs } = compileFile(file);
+      const path = engagementPath(file, slug);
+      const result = buildNewEngagement(
+        { file, model, refs, baseDir: dirname(file) },
+        { slug, selector, parallel, createdBy: opts.by ?? null, created: localIsoDate() },
+      );
+      if (!result.ok) return fail(result.message);
+      if (existsSync(path) && !opts.force) fail(`engagement "${slug}" already exists (${path}) — pass --force to overwrite`);
+      if (result.warning) console.error(result.warning);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, result.text);
+      console.log(`wrote ${path} (${result.units.length} slice${result.units.length === 1 ? "" : "s"}: ${result.units.join(", ")})`);
+    },
+  );
+
+/** Compile `file` with the full `em validate` diagnostic set — what `engagement plan` needs for
+ *  each slice's `--slice-ready` verdict (R34). */
+function engagementModelInput(file: string): EngagementModelInput {
+  const { model, refs, diagnostics, source } = compileFile(file);
+  const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
+  return { file, model, refs, baseDir: dirname(file), contract: { file, source, diagnostics }, allDiagnostics };
+}
+
+engagement
+  .command("plan")
+  .description(
+    "the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per " +
+      "slice its readiness, branch impl/<key>, base (main or impl/<upstream>), and any hold",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug")
+  .option("--json", "print a JSON document instead of text (same document as the MCP engagement_plan tool)")
+  .action((file: string, slug: string, opts: { json?: boolean }) => {
+    const result = engagementPlanFor(engagementModelInput(file), slug);
+    if (!result.ok) {
+      console.error(`em engagement plan: ${result.message}`);
+      process.exit(1);
+    }
+    process.stdout.write((opts.json ? buildEngagementPlanJson(result.plan) : formatEngagementPlanText(result.plan)) + "\n");
+  });
+
+engagement
+  .command("set")
+  .description(
+    "the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); " +
+      "idempotent; merged is terminal; --state held records a human hold",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug")
+  .argument("<key>", "slice export key")
+  .requiredOption("--state <state>", `one of: ${LEDGER_STATES.join(" | ")}`)
+  .option("--branch <name>", "the slice's branch")
+  .option("--base <name>", "the branch the slice's PR targets")
+  .option("--pr <url>", "the slice's PR URL")
+  .action((file: string, slug: string, key: string, opts: { state: string; branch?: string; base?: string; pr?: string }) => {
+    const fail = (m: string): never => {
+      console.error(`em engagement set: ${m}`);
+      process.exit(1);
+    };
+    const loaded = loadEngagement(file, slug);
+    if (!loaded.ok) return fail(loaded.message);
+    const { model, refs } = compileFile(file);
+    const result = applyEngagementSet({ file, model, refs, baseDir: dirname(file) }, slug, loaded.text, loaded.file, { key, ...opts });
+    if (!result.ok) return fail(result.message);
+    if (!result.changed) {
+      console.log(`no change: ${key} is already ${result.entry.state} (${loaded.path})`);
+      return;
+    }
+    writeFileSync(loaded.path, result.text);
+    console.log(`set ${key}: ${result.entry.state} (${loaded.path})`);
+  });
+
+engagement
+  .command("status")
+  .description("the Ledger joined with each slice doc's current status, plus whether the engagement is closable")
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug")
+  .option("--json", "print a JSON document instead of text (same document as the MCP engagement_status tool)")
+  .action((file: string, slug: string, opts: { json?: boolean }) => {
+    const { model, refs } = compileFile(file);
+    const result = engagementStatusFor({ file, model, refs, baseDir: dirname(file) }, slug);
+    if (!result.ok) {
+      console.error(`em engagement status: ${result.message}`);
+      process.exit(1);
+    }
+    process.stdout.write((opts.json ? buildEngagementStatusJson(result.status) : formatEngagementStatusText(result.status)) + "\n");
+  });
+
+engagement
+  .command("close")
+  .description("set status: closed — refuses unless every slice is merged (recorded or inferred) or gap")
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug")
+  .action((file: string, slug: string) => {
+    const fail = (m: string): never => {
+      console.error(`em engagement close: ${m}`);
+      process.exit(1);
+    };
+    const { model, refs } = compileFile(file);
+    const status = engagementStatusFor({ file, model, refs, baseDir: dirname(file) }, slug);
+    if (!status.ok) return fail(status.message);
+    const loaded = loadEngagement(file, slug);
+    if (!loaded.ok) return fail(loaded.message);
+    const result = applyEngagementClose(slug, loaded.text, status.status);
+    if (!result.ok) return fail(result.message);
+    if (!result.changed) {
+      console.log(`no change: engagement "${slug}" is already closed (${loaded.path})`);
+      return;
+    }
+    writeFileSync(loaded.path, result.text);
+    console.log(`closed engagement "${slug}" (${loaded.path})`);
   });
 
 const systemCommand = program

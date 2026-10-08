@@ -45,7 +45,10 @@ import { validateDocModelConsistency } from "../catalog/docModelConsistencyValid
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateInvariants } from "../catalog/invariantsValidate.js";
-import { validateSliceReady, computeSliceReadyGates } from "../catalog/sliceReadyValidate.js";
+import { computeSliceReadiness } from "../catalog/sliceReadyValidate.js";
+import { engagementPlanFor, engagementStatusFor } from "../cli/engagement.js";
+import { readOpenEngagements } from "../cli/engagementFile.js";
+import { buildEngagementPlanJson, buildEngagementStatusJson } from "../emit/engagementJson.js";
 import { buildSliceSyncJson, runSliceSync } from "../cli/sliceSync.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
@@ -234,7 +237,7 @@ const sliceKeyParam = z
   .string()
   .describe('the slice\'s export key (its stable JSON identity, e.g. "place-order" — see `em export`\'s slice.key)');
 
-/** Registers all eighteen MCP tools on a fresh McpServer instance and returns it, unconnected — the
+/** Registers all MCP tools on a fresh McpServer instance and returns it, unconnected — the
  *  caller (src/mcp/main.ts's stdio entry, or a test harness using an in-memory transport)
  *  decides how to connect it. Building the server is a pure, side-effect-free function so tests
  *  can exercise it directly with the SDK's in-memory transport, no child process required. */
@@ -282,11 +285,7 @@ export function createServer(): McpServer {
       const { model, refs, allDiagnostics, source, diagnostics } = compiled;
       const baseDir = dirname(file);
       const contractInput = { file, source, diagnostics };
-      const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey, contractInput);
-      const combined = [...allDiagnostics, ...readyDiagnostics];
-      const scoped = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
-      const ready = scoped.length === 0;
-      const result = computeSliceReadyGates(model, refs, baseDir, sliceKey, contractInput);
+      const { scoped, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics);
       return textResult(
         buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null),
       );
@@ -568,7 +567,7 @@ export function createServer(): McpServer {
         .map(({ file }) => resolveEmVersionStatusEntry(file, GENERATOR_VERSION))
         .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]));
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]), readOpenEngagements(files));
       return textResult(buildStatusJson(report));
     },
   );
@@ -1125,6 +1124,55 @@ export function createServer(): McpServer {
       const outcome = runApiCheck(file, base);
       if (!outcome.ok) return errorResult(outcome.message);
       return textResult(buildApiCheckJson(outcome.report));
+    },
+  );
+
+  const slugParam = z.string().describe("engagement slug — the file <model dir>/engagements/<slug>.md");
+
+  server.registerTool(
+    "engagement_plan",
+    {
+      title: "Build plan for an engagement",
+      description:
+        "Return the same JSON document `em engagement plan <file> <slug> --json` prints (MIL-268): " +
+        "the engagement's slices in dependency levels over model.edges (loops-to excluded), each " +
+        "with its --slice-ready verdict, branch impl/<key>, base (main, or impl/<upstream> when " +
+        "exactly one in-engagement upstream is unmerged), and any computed hold (not-ready, " +
+        "upstream-outside-engagement-unmerged, multiple-unmerged-upstreams); level widths vs the " +
+        "parallel ceiling. Read-only. Tool error when the engagement is missing or has a cycle.",
+      inputSchema: { file: fileParam, slug: slugParam },
+    },
+    async ({ file, slug }) => {
+      const compiled = compileWithValidation(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const { model, refs, source, diagnostics, allDiagnostics } = compiled;
+      const result = engagementPlanFor(
+        { file, model, refs, baseDir: dirname(file), contract: { file, source, diagnostics }, allDiagnostics },
+        slug,
+      );
+      if (!result.ok) return errorResult(`em engagement plan: ${result.message}`);
+      return textResult(buildEngagementPlanJson(result.plan));
+    },
+  );
+
+  server.registerTool(
+    "engagement_status",
+    {
+      title: "Ledger status of an engagement",
+      description:
+        "Return the same JSON document `em engagement status <file> <slug> --json` prints " +
+        "(MIL-268): each slice's Ledger state (merged inferred when its doc is implemented), " +
+        "branch/base/pr, current doc status, per-state counts, and whether the engagement is " +
+        "closable (every slice merged or gap). Read-only — the Ledger is written only by " +
+        "`em engagement set`.",
+      inputSchema: { file: fileParam, slug: slugParam },
+    },
+    async ({ file, slug }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const result = engagementStatusFor({ file, model: compiled.model, refs: compiled.refs, baseDir: dirname(file) }, slug);
+      if (!result.ok) return errorResult(`em engagement status: ${result.message}`);
+      return textResult(buildEngagementStatusJson(result.status));
     },
   );
 

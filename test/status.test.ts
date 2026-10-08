@@ -763,6 +763,7 @@ describe("text/markdown/badge formatting", () => {
       owners: [],
       system: null,
       publicSlicesUnconfirmed: 0,
+      engagements: { open: 0, slugs: [] },
       ...overrides,
     };
   }
@@ -772,6 +773,18 @@ describe("text/markdown/badge formatting", () => {
     expect(formatStatusDetail(makeReport({ system: { manifest: "../system.yaml", consumerNotAdapted: 2 } }))).toContain(
       "consumer adaptation: 2 not adapted (../system.yaml)",
     );
+  });
+
+  it("formatStatusDetail always prints the open-engagements line, slugs only when any (MIL-268)", () => {
+    expect(formatStatusDetail(makeReport()).split("\n")).toContain("open engagements: 0");
+    expect(formatStatusDetail(makeReport({ engagements: { open: 2, slugs: ["account-views", "loans"] } }))).toContain(
+      "open engagements: 2 (account-views, loans)",
+    );
+  });
+
+  it("buildStatusReport defaults engagements to none and carries a given block verbatim (MIL-268)", () => {
+    expect(buildStatusReport(["a.em"], [], 0, null, [], []).engagements).toEqual({ open: 0, slugs: [] });
+    expect(buildStatusReport(["a.em"], [], 0, null, [], [], [], [], null, { open: 1, slugs: ["x"] }).engagements).toEqual({ open: 1, slugs: ["x"] });
   });
 
   it("formatStatusSummary renders MIL-163's acceptance line for the fully-healthy case", () => {

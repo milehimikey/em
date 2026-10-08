@@ -10,7 +10,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { validateSliceReady, computeSliceReadyGates } from "../src/catalog/sliceReadyValidate.js";
+import { validateSliceReady, computeSliceReadyGates, computeSliceReadiness } from "../src/catalog/sliceReadyValidate.js";
+import type { Diagnostic } from "../src/model/validate.js";
 import { generateContract } from "../src/cli/api.js";
 
 let dir: string;
@@ -359,5 +360,37 @@ describe("slice-ready-structured-section-malformed (MIL-266)", () => {
       "ready-legacy",
     );
     expect(diags).toEqual([]);
+  });
+});
+
+describe("computeSliceReadiness (R34, MIL-268: the one verdict CLI, MCP and engagement plan share)", () => {
+  const src = `slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n}\nslice "Other" {\n  command Other Thing\n}`;
+  const run = (key: string, extra: Diagnostic[] = []) => {
+    writeDoc("ready-slice", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const { model, refs, diagnostics } = compile(src);
+    return computeSliceReadiness(model, refs, dir, key, { file: join(dir, "model.em"), source: src, diagnostics }, extra);
+  };
+
+  it("ready with no scoped diagnostics, gates attached", () => {
+    const r = run("ready-slice");
+    expect(r.ready).toBe(true);
+    expect(r.scoped).toEqual([]);
+    expect(r.result?.gates.statusReady).toBe(true);
+  });
+
+  it("scopes the caller's diagnostics to this slice: another slice's finding does not block it", () => {
+    const other: Diagnostic = { severity: "warning", code: "frontmatter-invalid", message: "x", refs: ["other"] };
+    const mine: Diagnostic = { severity: "warning", code: "frontmatter-invalid", message: "y", refs: ["ready-slice/command.do-thing"] };
+    expect(run("ready-slice", [other]).ready).toBe(true);
+    const r = run("ready-slice", [other, mine]);
+    expect(r.ready).toBe(false);
+    expect(r.scoped).toEqual([mine]);
+  });
+
+  it("an unknown key is not ready and has no gates", () => {
+    const r = run("nope");
+    expect(r.ready).toBe(false);
+    expect(r.result).toBeNull();
+    expect(r.scoped.map((d) => d.code)).toEqual(["slice-ready-unknown-slice"]);
   });
 });

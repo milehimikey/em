@@ -46,6 +46,9 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 //    (owning a `public` command/event/view) at ready-to-implement/implemented whose doc records
 //    neither `meaningConfirmed: true` nor a `contractChange:` (the API-first sign-off `em slice
 //    ratify`/`reratify` write). See ../cli/status.ts's StatusReport.publicSlicesUnconfirmed.
+//  - MIL-268: a new top-level `engagements` — `{ open, slugs }`: the engagement files
+//    (`<modelDir>/engagements/<slug>.md`) whose frontmatter says `status: open`, beside every
+//    input model, slugs sorted. See ../cli/status.ts's StatusReport.engagements.
 export const STATUS_SCHEMA_VERSION = "1.8";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
@@ -68,6 +71,7 @@ export function buildStatusJson(report: StatusReport): string {
     owners: report.owners,
     system: report.system,
     publicSlicesUnconfirmed: report.publicSlicesUnconfirmed,
+    engagements: report.engagements,
     // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
     // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,
     // message, line, refs), plus `file` since this is a multi-model surface.

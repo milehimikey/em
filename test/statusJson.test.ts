@@ -43,6 +43,7 @@ function sampleReport(): StatusReport {
     owners: [{ file: "model.em", key: "checkout", owner: "Alex Rivera" }, { file: "model.em", key: "billing", owner: null }],
     system: { manifest: "system.yaml", consumerNotAdapted: 2 },
     publicSlicesUnconfirmed: 2,
+    engagements: { open: 2, slugs: ["account-views", "loans"] },
   };
 }
 
@@ -73,7 +74,10 @@ describe("buildStatusJson", () => {
     // MIL-238: publicSlicesUnconfirmed carried verbatim, placed after owners, before diagnostics.
     expect(doc.publicSlicesUnconfirmed).toBe(2);
     const keys = Object.keys(doc);
-    expect(keys.indexOf("publicSlicesUnconfirmed")).toBe(keys.indexOf("diagnostics") - 1);
+    // MIL-268: engagements appended after publicSlicesUnconfirmed (under 1.8, R21), before diagnostics.
+    expect(doc.engagements).toEqual({ open: 2, slugs: ["account-views", "loans"] });
+    expect(keys.indexOf("publicSlicesUnconfirmed")).toBe(keys.indexOf("diagnostics") - 2);
+    expect(keys.indexOf("engagements")).toBe(keys.indexOf("diagnostics") - 1);
     expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
   });
 

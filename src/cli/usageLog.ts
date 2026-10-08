@@ -35,10 +35,12 @@ import { walkDir } from "../util/walkDir.js";
 /** The Usage log's phase vocabulary (docs/usage-data.md#what-s-captured-and-where): the state
  *  file's own `Current phase:` enum (`stateFile.ts`'s `PHASES`) plus `watch` — a live-viewing
  *  activity a session can touch without ever being a `Current phase:` value itself (see
- *  `stateFile.ts`'s own comment on why `watch` is deliberately excluded there). Order here is
+ *  `stateFile.ts`'s own comment on why `watch` is deliberately excluded there) — and, since
+ *  MIL-268 (R26), `engagement`: a lead session building an engagement's slices through
+ *  sub-agents, likewise never a phase the model is parked at. Order here is
  *  the canonical sort order `log-usage` writes phases in, matching docs/usage-data.md's own
  *  listing order. */
-export const USAGE_PHASES = [...PHASES, "watch"] as const;
+export const USAGE_PHASES = [...PHASES, "watch", "engagement"] as const;
 export type UsagePhase = (typeof USAGE_PHASES)[number];
 
 export function isUsagePhase(value: string): value is UsagePhase {

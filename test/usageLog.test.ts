@@ -40,7 +40,7 @@ const STATE_TEMPLATE_SNIPPET =
 
 describe("USAGE_PHASES / isUsagePhase", () => {
   it("is the state phase enum plus watch, in that order", () => {
-    expect(USAGE_PHASES).toEqual(["discover", "extract", "model", "slice", "implement", "conform", "review", "validate", "watch"]);
+    expect(USAGE_PHASES).toEqual(["discover", "extract", "model", "slice", "implement", "conform", "review", "validate", "watch", "engagement"]);
   });
 
   it("accepts every phase, including watch", () => {

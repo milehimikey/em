@@ -19,6 +19,7 @@ import { readContract } from "../src/cli/contract.js";
 import { LOOP_FIXTURE } from "./helpers/loopFixture.js";
 import { writeInvariantFixture } from "./helpers/invariantFixture.js";
 import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
+import { LENDING_ENGAGEMENT_KEYS, writeLendingFixture } from "./helpers/engagementFixture.js";
 
 // CLI-spawning file (the byte-identity assertions below): a cold CI runner takes ~5–6 s per
 // spawn and vitest's default is 5 s (briefing §5, MIL-205 pattern).
@@ -313,6 +314,8 @@ describe("tools/list", () => {
         "contract",
         "coverage",
         "diff",
+        "engagement_plan",
+        "engagement_status",
         "export_model",
         "export_slice",
         "freshness",
@@ -1543,5 +1546,56 @@ describe("slice_sync tool (MIL-266)", () => {
     const cli = em(["export", file], exampleDir);
     expect(cli.status).toBe(0);
     expect(cli.stdout).toBe(mcpText + "\n");
+  });
+});
+
+// MIL-268: `engagement_plan`/`engagement_status` are byte-identical to `em engagement plan|status
+// --json` (same builders), and `em status --json` carries the open-engagements block on both
+// surfaces. Own directory: the engagement and the lending model must not leak into other fixtures.
+describe("engagement_plan / engagement_status tools (MIL-268)", () => {
+  let lendDir: string;
+  beforeAll(() => {
+    lendDir = mkdtempSync(join(tmpdir(), "em-mcp-engagement-"));
+    writeLendingFixture(lendDir);
+    const r = em(["engagement", "new", "lending.em", "loans", "--slices", LENDING_ENGAGEMENT_KEYS.join(","), "--by", "Alex Rivera"], lendDir);
+    expect(r.status).toBe(0);
+    expect(em(["engagement", "set", "lending.em", "loans", "reserve-tool", "--state", "merged", "--pr", "https://example.test/pr/1"], lendDir).status).toBe(0);
+  });
+  afterAll(() => rmSync(lendDir, { recursive: true, force: true }));
+
+  const mcpText = (result: CallToolResult) => (result.content?.[0] as { type: "text"; text: string }).text;
+
+  it("engagement_plan is byte-identical to `em engagement plan --json`", async () => {
+    const file = join(lendDir, "lending.em");
+    const { result, doc } = await callJson(client, "engagement_plan", { file, slug: "loans" });
+    expect(result.isError).toBeFalsy();
+    expect(doc.engagementPlanSchemaVersion).toBe("1.0");
+    expect(doc.slices.find((s: { key: string }) => s.key === "reservations").base).toBe("impl/cancel-reservation");
+    const cli = em(["engagement", "plan", file, "loans", "--json"], lendDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText(result) + "\n");
+  });
+
+  it("engagement_status is byte-identical to `em engagement status --json`", async () => {
+    const file = join(lendDir, "lending.em");
+    const { result, doc } = await callJson(client, "engagement_status", { file, slug: "loans" });
+    expect(result.isError).toBeFalsy();
+    expect(doc.engagementStatusSchemaVersion).toBe("1.0");
+    expect(doc.closable).toBe(false);
+    const cli = em(["engagement", "status", file, "loans", "--json"], lendDir);
+    expect(cli.stdout).toBe(mcpText(result) + "\n");
+  });
+
+  it("status carries engagements on both surfaces, byte-identical", async () => {
+    const file = join(lendDir, "lending.em");
+    const { result, doc } = await callJson(client, "status", { files: [file] });
+    expect(doc.engagements).toEqual({ open: 1, slugs: ["loans"] });
+    expect(em(["status", file, "--json"], lendDir).stdout).toBe(mcpText(result) + "\n");
+  });
+
+  it("a missing engagement is a tool error with the CLI's message", async () => {
+    const { result } = await callJson(client, "engagement_plan", { file: join(lendDir, "lending.em"), slug: "ghost" });
+    expect(result.isError).toBe(true);
+    expect(mcpText(result)).toContain('em engagement plan: no engagement "ghost"');
   });
 });
