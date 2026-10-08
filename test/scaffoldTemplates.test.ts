@@ -71,7 +71,11 @@ describe("scaffoldStateFile", () => {
     expect(state).toContain(
       "## Decisions log\n" +
         "<!-- Resolved choices, with the reasoning, so they aren't re-litigated. In a live workshop,\n" +
-        "     attribute each entry to the participant who made the call (see Participants above). -->\n\n" +
+        "     attribute each entry to the participant who made the call (see Participants above).\n" +
+        '     Every entry is a dated bullet ("- YYYY-MM-DD: ..."); em changelog skips any other line.\n' +
+        "     Seam change request (a needed change to another model's public element; never edit that\n" +
+        "     model, keep the open question blocked on its owners):\n" +
+        "     - YYYY-MM-DD: seam change request → <producerKey>:<kind>.<slug> — <what> — <why> -->\n\n" +
         "## Usage log",
     );
     // Open questions: guidance comment survives, no {{question}} bullet after it.

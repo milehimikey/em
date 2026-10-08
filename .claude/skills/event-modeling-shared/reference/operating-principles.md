@@ -73,6 +73,67 @@ right here as `reference/slice-doc-schema.md` (kept in sync with the em repo's
   hand-run `em validate --json` and format the line yourself. This is the team's only usage
   signal today (`docs/usage-data.md`) — keep it cheap and habitual, not a task to skip.
 
+## Write scope and evidence (MIL-236)
+
+These bind every design session — `discover`, `model`, `slice` — whichever skill runs it,
+including sessions started from bare `/event-modeling`.
+
+- **Write scope: one model directory.** The session is bound to the model directory it started
+  in: `dirname(<model>.em)`, which holds `slices/`, `model-versions/`, `conformance/`,
+  `contracts/`, `.event-modeling.md` and `README.md`. Never write under another model's
+  directory or to another model's contract file (`<model dir>/contracts/<model key>.tsp`). When
+  you need a neighbour, read only its public surface, read-only: the elements with
+  `public: true` in `em export <neighbour>.em`, or its committed contract file. Never open the
+  neighbour's slice docs or state file.
+- **Seam change request instead of a cross-model edit.** When resolving an open question needs
+  another model's `public` element changed (a field added, renamed, retyped; an element made
+  `public`), record it in THIS model's `.event-modeling.md` `## Decisions log` as one dated
+  bullet, exactly this shape (`em changelog` reads only dated bullets):
+
+  ```
+  - YYYY-MM-DD: seam change request → <producerKey>:<kind>.<slug> — <what> — <why>
+  ```
+
+  `<producerKey>:<kind>.<slug>` is the same ref a `consumes` clause uses (`kind` is `event` or
+  `view`; write `command` for a public command). Leave the open question open with
+  `blocked on: <producerKey> owners (seam change request YYYY-MM-DD)`, and tell the user to take
+  the request to the producer's owners. Never edit the other side.
+- **Out of scope during design — never write these:**
+  - generated contract artifacts: `contracts/*.tsp`, any OpenAPI or JSON-schema output;
+  - SDD/spec artifacts: `specs/`, `.specify/` (read `.specify/memory/constitution.md` when a
+    slice needs the house rules; never write it);
+  - implementation source: `src/`, and any path under the model's `Code roots:` bullet;
+  - `plugin/` (the generated skill plugin);
+  - a draft slice doc's `version:` (see the version rule below).
+
+  One exception, and only this one: when the session marks an element `public` (or changes a
+  field of a `public` element), run `em api generate <model>.em` before handing slices to
+  ratification. The API-first gate (`em validate --slice-ready`) refuses a public-touching
+  slice whose contract is missing or stale, so the regenerated `contracts/<model key>.tsp` is
+  committed with the model edit. Never hand-edit it.
+- **Evidence rule.** The `.em` model and the slice docs are the evidence for every modeling
+  decision. Never open implementation source, generated contracts, or `specs/` to settle a
+  modeling question; ask the user. Code is consulted only in `extract`
+  (`event-modeling-discover`) and `conform` (`event-modeling-conform`), where reading it is the
+  point.
+- **Version rule: never bump a draft's `version:` on edit.** A `draft`/`reviewed` doc is edited
+  in place. Check the release state with `em status <model>.em --json`: the model is
+  **pre-release** when its `modelVersion` entry has `design: null` and
+  `slices.byStatus.implemented === 0`. Pre-release: never run `em slice reratify`; edit
+  `draft`/`reviewed` docs in place and leave `version:` as it is. A pre-release doc that is
+  already ratified (`ready-to-implement` with `ratifiedBy`) carries a human sign-off: STOP,
+  record the needed change as an open question, and let the ratifier decide. Released (either
+  condition false): changing an `implemented` or ratified doc goes through `em slice reratify`
+  (see `event-modeling-design`).
+- **Pre-commit check (STOP on any finding).** Stage the session's files, then run both:
+  1. `em system scope --staged` from the repository root. Any `seam-crossing` error → STOP:
+     unstage the other model's files and record a seam change request instead.
+  2. `git diff --cached --name-only`. Any path outside the bound model directory, or any
+     out-of-scope path above (`contracts/*.tsp` except the regenerated exception, OpenAPI /
+     JSON-schema output, `specs/`, `.specify/`, `src/`, code roots, `plugin/`), or a draft
+     doc whose `version:` line changed (`git diff --cached -- <doc>`) → STOP: unstage it and
+     tell the user what was touched and why it is out of scope.
+
 ## Preconditions (run first)
 
 1. Check the tool: `em --version`. If missing, tell the user to run `npm i -g @milehimikey/em`

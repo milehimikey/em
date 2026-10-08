@@ -102,6 +102,26 @@ drift"), Claude Code can trigger the matching `event-modeling-*` skill directly,
 through the router at all — that's the payoff of narrower per-skill `description:` triggers over
 one skill covering all nine phases.
 
+> **What a design session will not touch (MIL-236).** A `discover`/`model`/`slice` session —
+> started from `/em:design` or from bare `/em:event-modeling` — is bound to the model directory
+> it started in and never writes:
+>
+> - another model's directory or contract file (a needed change becomes a dated
+>   `seam change request` bullet in this model's `.event-modeling.md` Decisions log);
+> - generated contract artifacts (`contracts/*.tsp`, OpenAPI or JSON-schema output) — except by
+>   running `em api generate` after marking an element `public`, because the API-first gate
+>   needs a current contract;
+> - SDD/spec artifacts (`specs/`, `.specify/`; the constitution is read, never written);
+> - implementation source (`src/`, the model's `Code roots:`) or `plugin/`;
+> - a draft slice doc's `version:` — on a pre-release model (`em status --json`: no model
+>   version yet, nothing `implemented`) drafts are edited in place and never re-ratified.
+>
+> The model and slice docs are the only evidence for a modeling decision; code is read only in
+> `extract` and `conform`. Before committing, the skill runs `em system scope --staged` and
+> `git diff --cached --name-only` and stops on any out-of-scope path. Late in slicing (no draft
+> left, or open questions remaining) the router steers to `/em:review` instead of doing broad
+> consistency work itself.
+
 **Upgrading across a structural bundle change** (such as the split above, pre-1.9.0's single
 `.claude/skills/event-modeling/` — which held every phase plus all reference docs and
 templates — becoming today's six directories): **`em skill sync` is the migration path** — it's

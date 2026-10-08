@@ -48,7 +48,11 @@ Keep it current at the end of every working session.
 
 ## Decisions log
 <!-- Resolved choices, with the reasoning, so they aren't re-litigated. In a live workshop,
-     attribute each entry to the participant who made the call (see Participants above). -->
+     attribute each entry to the participant who made the call (see Participants above).
+     Every entry is a dated bullet ("- YYYY-MM-DD: ..."); em changelog skips any other line.
+     Seam change request (a needed change to another model's public element; never edit that
+     model, keep the open question blocked on its owners):
+     - YYYY-MM-DD: seam change request → <producerKey>:<kind>.<slug> — <what> — <why> -->
 - {{YYYY-MM-DD}}: {{decision}} — {{why}} — by {{participant, if a live workshop}}
 
 ## Usage log

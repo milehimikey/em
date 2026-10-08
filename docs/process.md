@@ -220,6 +220,18 @@ mechanical gate with no judgment call in it.
   when they disagree — that's a business judgment, and the conform phase is deliberately
   advisory because a false accusation of drift destroys trust in the loop faster than real
   drift justifies it.
+- **Changing another model's public surface.** A design session is bound to the model directory
+  it started in and never writes under another model's directory or its contract file
+  (MIL-236). When a question can only be resolved by a producer changing a `public` element,
+  the agent records a **seam change request** in its own model's `.event-modeling.md` Decisions
+  log — `- YYYY-MM-DD: seam change request → <producerKey>:<kind>.<slug> — <what> — <why>`, a
+  dated bullet so `em changelog` reports it — and leaves the question open, blocked on the
+  producer's owners. Taking the request to those owners, and their decision, is human work.
+  Before committing, the design skill runs `em system scope --staged` and
+  `git diff --cached --name-only` and stops on a seam crossing, a path outside the model
+  directory, or a derived artifact (generated contracts other than an `em api generate` run
+  after marking an element `public`, `specs/`, `.specify/`, implementation source, `plugin/`,
+  a draft's `version:`).
 
 ## Where agents do the work, with human review
 
@@ -267,6 +279,10 @@ for the human doing the handing:
 3. Review the PR like any other — plus two model-side checks: the slice doc's only edits are
    the merge-time `status`/`implementedIn` flip, and no new spec-shaped artifacts got
    committed as sources of truth.
+4. The implementing agent stays on its side of the seam: it never edits another model's
+   directory, slice docs or contract file. A change it needs from a producer goes back to the
+   design session as a seam change request (see
+   [Where humans are required](#where-humans-are-required-and-why)).
 
 If the project uses spec-kit, the agent allocates through
 [em-sdd-bridge](https://github.com/milehimikey/em-sdd-bridge) instead of running

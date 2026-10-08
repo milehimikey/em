@@ -161,7 +161,9 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   `ratifiedBy` set): once the human has answered, the doc changes by `em slice reratify
   <model>.em <slice-key>` (bumps `version:`, clears the old sign-off, leaves `status` alone),
   the answer is written into the doc, and the human re-signs with `em slice ratify <model>.em
-  <slice-key> --by <name>`. That is the human's step, not yours — you never run `ratify`, and
+  <slice-key> --by <name>` — on a slice owning a `public` element both commands also need
+  `--meaning-unchanged` or `--contract-change "<why>"` (MIL-238). That is the human's step, not
+  yours — you never run `ratify`, and
   the doc is not ratified again until they do; resume the build after that.
 - **Never edit the ratified doc to record your own answer**, and never quietly pick a behavior
   a business person could have an opinion on. Silent divergence is the failure mode the whole
@@ -400,6 +402,17 @@ everything a spec holds. Don't introduce an intermediate spec document of your o
 | Never commit an authored intermediate spec | The slice is the spec; anything between it and the code is a rendering |
 | Never open a slice PR before the foundation PR has merged | The foundation is what makes an event a stable shared contract — a slice built ahead of it is building on a moving target (§8) |
 | Never implement more than one slice doc in a PR | The PR is the durable record of one spec's implementation; `mark-implemented`, coverage, and conformance all key on one doc ↔ one `implementedIn` |
+| Stay on your side of the seam: never edit another model's directory, slice docs or contract file | Another model's `public` element is its owners' decision; a needed change goes to them as a seam change request, not into your PR |
+| Never hand-edit a generated contract (`contracts/*.tsp`) | It is derived from the model by `em api generate`; a hand edit is a contract change nobody ratified |
+
+**Mirror image of the design write scope (MIL-236).** The design session never writes generated
+contracts, SDD/spec artifacts (`specs/`, `.specify/`), implementation source, or a draft's
+`version:`, and never reads code as evidence for a modeling decision (see
+`../../event-modeling-shared/reference/operating-principles.md`, "Write scope and evidence").
+Implementation is the other side: implement reads them; design never writes them. You read the
+contract and the constitution as inputs, work in code and (on spec-kit projects) the `specs/`
+container per §9, and never write the model or its slice docs (except the two §6 fields at
+merge).
 
 ## 11. Afterward: the loop closes
 

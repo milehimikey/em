@@ -51,9 +51,43 @@ phase lives in.
      extract from (`em:discover`, `extract`), then invoke that skill.
    - **An unrecognized argument:** treat it as free-text intent and pick the best-matching skill
      from the table's description, same as you would if the user had asked in plain language.
-3. Once you've handed off, this skill's job is done for the session — the target skill owns the
+3. **Steer late work to `em:review` (MIL-236).** When the phase resolves to `slice`
+   (recorded or requested), run `em status <model>.em --json` before handing off. Recommend
+   `em:review` to the user instead of `em:design` when either holds:
+   - no slice doc is left to write or deepen: `slices.byStatus.draft === 0`,
+     `slices.byStatus.noDoc === 0`, and `slices.byStatus.reviewed +
+     slices.byStatus.readyToImplement > 0`;
+   - the state file's `## Open questions / parking lot` section has an unchecked `- [ ]` item.
+   Say why: closing open questions and walking slices to the review gate is the review skill's
+   job, not broad consistency work. Invoke `em:review` when the user agrees;
+   otherwise hand off to `em:design` as the table says.
+4. **Never do the phase work here.** Recommend the focused skill by name and hand off. Never run
+   a cross-cutting "make everything consistent" pass from this skill: no sweeping edits across
+   slice docs, no regenerating or hand-editing derived artifacts, no reading implementation code
+   to settle a modeling question. The design-session write scope below applies to anything
+   started from here.
+5. Once you've handed off, this skill's job is done for the session — the target skill owns the
    conversation from there, including re-invoking `em:event-modeling` (this skill) itself at the end
    if the user wants to stop and resume later.
+
+## Design-session write scope (MIL-236)
+
+These rules bind every `discover`/`model`/`slice` session, whichever skill runs it. The full
+text is in `${CLAUDE_PLUGIN_ROOT}/shared/reference/operating-principles.md` ("Write scope and
+evidence").
+
+- **Bound to one model directory.** The session is bound to the model directory it started in
+  (`dirname(<model>.em)`). Never write under another model's directory or to its contract file.
+  A question that needs another model's `public` element changed becomes a **seam change
+  request**: a dated Decisions-log bullet in THIS model's `.event-modeling.md`, and the question
+  stays open as blocked-on-upstream.
+- **Out of scope during design — never write:** generated contract artifacts
+  (`contracts/*.tsp`, any OpenAPI or JSON-schema output); SDD/spec artifacts (`specs/`,
+  `.specify/` — the constitution may be read, never written); implementation source (`src/`,
+  the model's `Code roots:`); `plugin/`; a draft slice doc's `version:`.
+- **Evidence rule.** The `.em` model and the slice docs are the evidence for modeling
+  decisions. Code is consulted only in `extract` (`em:discover`) and `conform`
+  (`em:conform`).
 
 ## Shared reference material
 
@@ -90,4 +124,6 @@ em watch <name>.em -o <name>.svg --serve   # + the live browser viewer: instant 
 Always finish a working session by: re-rendering, running `em validate`, and updating
 `.event-modeling.md` — `em state set-phase <phase> [--step <n>]` for the current phase/step,
 decisions and open questions by hand, and `em state log-usage <model>.em --phases <phases>` for
-the Usage log entry.
+the Usage log entry. Before committing a design session, stage the files and run the pre-commit
+check in `${CLAUDE_PLUGIN_ROOT}/shared/reference/operating-principles.md` ("Write scope and
+evidence"): `em system scope --staged` plus `git diff --cached --name-only`; STOP on any finding.

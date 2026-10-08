@@ -24,6 +24,41 @@ layout, the Socratic/validation discipline every phase follows) and
 work — they are the source of truth. Run the preconditions there first: this phase expects a
 draft model already exists (from `em:discover`'s `discover` or `extract` phase).
 
+## Write scope, evidence, versions (MIL-236) — read before any edit
+
+Full rules: `${CLAUDE_PLUGIN_ROOT}/shared/reference/operating-principles.md` ("Write scope and
+evidence"). In short:
+
+- **Bound to this model's directory.** The session is bound to the model directory it started
+  in (`dirname(<model>.em)`). Never write under another model's directory or to its contract
+  file. Read a neighbour only through its public surface (`public: true` elements in
+  `em export <neighbour>.em`, or its committed contract), read-only.
+- **Seam change request, never a cross-model edit.** When an open question needs another
+  model's `public` element changed, add one dated bullet to THIS model's `.event-modeling.md`
+  `## Decisions log`:
+  `- YYYY-MM-DD: seam change request → <producerKey>:<kind>.<slug> — <what> — <why>`.
+  Keep the question open, `blocked on:` the producer's owners. Never edit the other side.
+- **Out of scope during design — never write:** generated contract artifacts
+  (`contracts/*.tsp`, any OpenAPI or JSON-schema output), SDD/spec artifacts (`specs/`,
+  `.specify/` — read the constitution, never write it), implementation source (`src/`, the
+  model's `Code roots:`), `plugin/`, and a draft slice doc's `version:`. Exception: after
+  marking an element `public` or changing a field of a `public` element, run
+  `em api generate <model>.em` and commit the regenerated contract with the model edit — the
+  API-first gate (`em validate --slice-ready`) refuses a public-touching slice whose contract
+  is missing or stale. Never hand-edit the contract.
+- **Evidence rule.** The `.em` model and the slice docs are the evidence for modeling
+  decisions. Never read implementation source, generated contracts or `specs/` to decide a
+  modeling question — ask the user. Code is read only in `extract` and `conform`.
+- **Version rule.** Never bump a draft's `version:` on edit. Before any `em slice reratify`,
+  run `em status <model>.em --json`: pre-release = the model's `modelVersion` entry has
+  `design: null` **and** `slices.byStatus.implemented === 0`. Pre-release → never run
+  `reratify`; edit `draft`/`reviewed` docs in place. Released → the re-ratification path in
+  the `slice` phase below.
+- **Pre-commit check.** Stage the session's files, run `em system scope --staged` (STOP on any
+  `seam-crossing`), then `git diff --cached --name-only` (STOP on any path outside this model's
+  directory, any out-of-scope path above, or a changed `version:` line on a draft doc).
+  Unstage the offending path and tell the user why.
+
 ## Phase: `model` — steps 5-7
 
 Goal: a structurally complete, **validated** model with correct patterns and swimlanes.
@@ -80,7 +115,11 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    reaction reads another model, it is a translation. `em validate` checks only the ref's
    grammar. Run `em system` from the repository (or on its `system.yaml`) to resolve it, and fix
    any `consumes-unknown-model`/`consumes-unknown-element` error. Never edit the other model to
-   make a ref resolve. Ask its owner to publish the element instead.
+   make a ref resolve. Ask its owner to publish the element instead, and record that ask as a
+   seam change request (see **Write scope** above).
+   **When you mark an element `public` here**, run `em api generate <model>.em` in the same
+   session and stage `contracts/<model key>.tsp` with the model edit — the one derived artifact
+   a design session produces, always by the command, never by hand.
 
 End of phase: render, update state (`em state set-phase slice` — the mechanical marker the state
 machine expects), and stop. Every slice already has a draft doc ready to receive the deep spec,
@@ -105,8 +144,14 @@ phases is the starting point, not the finished event set. **Every new event need
 real (someone has to see that the request was declined).
 
 For each slice:
-0. **Check for re-ratification first.** If `slices/<slice-name>.md` already exists with
-   `status: implemented`, this is a re-ratification, not fresh authoring: hold a Socratic
+0. **Check for re-ratification first.** A `draft` or `reviewed` doc is never re-ratified: edit
+   it in place and leave its `version:` alone. If `slices/<slice-name>.md` already exists with
+   `status: implemented` (or is ratified and needs a change), run `em status <model>.em --json`
+   first. **Pre-release** (the model's `modelVersion` entry has `design: null` and
+   `slices.byStatus.implemented === 0`): never run `em slice reratify`; a ratified doc holds a
+   human sign-off, so STOP, park the change as an open question, and let the ratifier decide.
+   **Released** (either condition false): a doc with `status: implemented` is a
+   re-ratification, not fresh authoring: hold a Socratic
    deep-dive on what changed (same rigor as step 1, scoped to the delta), update whichever
    sections actually changed, then express the change as the `## Delta` section — fixed heading,
    `### Added`/`Modified`/`Removed`/`Renamed` Requirement blocks each carrying its own scenarios
@@ -122,10 +167,13 @@ For each slice:
    (give each a stable ID — see **Invariants live in the model** below), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
    alternate/error flows (retries, idempotency, compensations), non-functional requirements
    (security/authz, PII/compliance, performance/SLA), read models affected, open questions. Park
-   anything unresolved rather than guessing. If the slice lives in an existing codebase, Grep/Read
-   adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling
-   contexts) before finalizing field names/types or invariants — don't guess a shape that's
-   already defined elsewhere. Before finalizing an invariant, also compare it with the slices in
+   anything unresolved rather than guessing. Before finalizing field names/types or invariants,
+   check whether the shape is already defined in **this model** (`.em` and its slice docs) or in
+   a neighbour's public surface (read-only) — don't guess a shape that's already defined there.
+   Never Grep or Read implementation source, OpenAPI files, DB migrations or `specs/` to settle
+   it (evidence rule): if the user says the existing code is the source of truth, ask them for
+   the shape, or park the question for an `extract` or `conform` session. Before finalizing an
+   invariant, also compare it with the slices in
    **this same model** — never another `.em` model — that make the same kind of change (other
    `Archive*` or `Create*` state changes on different entities, say). If one of them already
    states an analogous rule, either state the same rule here — written out in this doc under
@@ -168,7 +216,10 @@ For each slice:
    lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar
    — see `${CLAUDE_PLUGIN_ROOT}/shared/reference/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
    after the fact, see the `lineage-*` rules below).
-   **Re-ratification (step 0):** the doc already exists, so `em slice new` doesn't apply here
+   **Re-ratification (step 0) — released models only.** Confirm the model is released first
+   (`em status <model>.em --json`: the `modelVersion` entry's `design` is not `null`, or
+   `slices.byStatus.implemented > 0`); on a pre-release model never run `reratify`. The doc
+   already exists, so `em slice new` doesn't apply here
    (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
    doc's authored body) — run `em slice reratify <model>.em <slice-key>` instead: it bumps
    `version` and flips `status` back to `ready-to-implement` in the existing frontmatter,
@@ -178,7 +229,20 @@ For each slice:
    gap answered mid-build, MIL-258): it bumps `version` and clears the sign-off but leaves
    `status` alone. Either way the doc is not ratified until `em slice ratify --by <name>` records
    the new sign-off. A `ready-to-implement` doc with no `ratifiedBy` is already awaiting that
-   sign-off and refuses a second `reratify`; a `draft`/`reviewed` doc is simply edited.
+   sign-off and refuses a second `reratify`; a `draft`/`reviewed` doc is simply edited, and its
+   `version:` never moves.
+   **Public-touching slices (MIL-238).** On a slice that owns a `public` command, event or view,
+   `em slice ratify --by <name>` and `em slice reratify` refuse without one of two flags: pass
+   `--meaning-unchanged` when this version does not change what the public contract means, or
+   `--contract-change "<why>"` when a consumer must read the change differently. Without
+   either, both refuse with `slice "<key>" touches the public surface — pass
+   --meaning-unchanged, or --contract-change "<why>" if a consumer must read this change
+   differently`; passing both refuses too. Run
+   `em api generate <model>.em` first, so `em validate --slice-ready` sees a current contract
+   (otherwise it blocks with `slice-ready-contract-stale`).
+   Which flag applies is the ratifier's call, not yours: ask, never pick one to make the
+   command pass. Ratification itself stays a human gate outside this session; a review session
+   never ratifies (see `em:review`).
 3. Render the slice's own diagram: `em render <model>.em --slice "<slice name>" -o
    slices/<slice-name>.svg` (kebab-case, matching the doc's filename and the `![Diagram]` stub
    `em slice new` already wrote) — redraws just this slice in its own canonical pattern shape.
@@ -193,6 +257,10 @@ For each slice:
    canonical slice index — from the model and the doc frontmatter you just wrote (status,
    `implementedIn` once shipped). Never hand-edit the table; it's a generated block.
 6. Re-render and `em validate`.
+7. Before committing, stage the session's files and run the pre-commit check: `em system scope
+   --staged`, then `git diff --cached --name-only`. STOP on any `seam-crossing`, any path outside
+   this model's directory, any out-of-scope path (see **Write scope** above), or a changed
+   `version:` line on a draft doc.
 
 A finished draft doesn't become implementable here: it goes through the review gate and then the
 ratification gate, both human, both outside this phase — see
