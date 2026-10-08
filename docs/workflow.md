@@ -18,6 +18,9 @@ to make staying true cheap.
 | 6. Check | Ask whether the code still matches the model | `/event-modeling conform` | `conformance/<date>-report.md` |
 | 7. Rule | Decide what the drift means, and record it | you, with the report | An updated model + decisions log |
 
+The phase commands are written the vendored way, `/event-modeling <phase>`; with the `em` plugin
+installed the same router is `/em:event-modeling <phase>` ([ai-workflow.md](ai-workflow.md#the-plugin-route)).
+
 ```mermaid
 flowchart LR
     S1["1. Build<br/>discover / extract"] --> S2["2. Specify<br/>slice"]
@@ -278,6 +281,39 @@ notice) and you're back at stage 1 with a model you have fresh evidence to trust
 bump <model>.em --by <name>`) if this is the first-ever run or the model changed since the
 last bump.
 
+## Several models: seams and contracts
+
+The seven stages run per model. When a system has several models (one per team or bounded
+context), each model still runs its own loop, and the places where one model reads another's
+`public` surface (its seams) get a lifecycle of their own.
+
+**Layout.** Keep one directory per model and one code module per model. Each model directory
+holds `<key>.em`, `slices/`, `contracts/`, `model-versions/`, `conformance/` and
+`.event-modeling.md`. The model's code module is declared in its state file with a
+`- **Code roots:**` bullet. A `system.yaml` (schema 2.0) at the repository root lists the
+models; without one, `em system` discovers every tracked `.em`. The root also holds the
+generated `CODEOWNERS` block and the workflows from `em ci init <system.yaml>`. The full layout
+is in [cli.md, Multi-model projects](cli.md#multi-model-projects).
+
+**The seam lifecycle**, in order:
+
+1. The producer marks an element `public`; its fields must use the strict public types.
+2. `em api generate` writes the model's contract, `<model dir>/contracts/<model key>.tsp`.
+3. The consumer declares `consumes <model>:<kind>.<slug>` on the translation that reads it.
+4. `em system codeowners` routes every consuming team onto the producer's contract file.
+5. The API-first gate: `--slice-ready` on a public-touching slice needs a current contract, and
+   ratifying it needs `--meaning-unchanged` or `--contract-change "<why>"`.
+6. `em system` checks that every consumer is adapted to the producer's current public surface
+   (`consumer-not-adapted` blocks the release).
+7. `em system scope --base <rev>` fails a PR that changes a contract and its consumer together.
+   Review is the only override.
+
+[process.md](process.md#seams-between-models-who-does-what) walks each step with who does it
+and where a human is required. [ci.md](ci.md#multi-model-gates) covers the generated CI jobs. A
+team that already generates TypeSpec from slice docs with its own tooling can switch to
+`em api generate` with
+[the migration guide](upgrading.md#migrating-an-in-house-slice-doc--typespec-generator).
+
 ## Adopting this incrementally
 
 Nothing here is all-or-nothing, and most teams should not start at stage 6.
@@ -306,7 +342,13 @@ and treat a finding as the start of a conversation.
 | Ratifying a slice that was never reviewed | `em slice ratify` exits non-zero (`--skip-review` bypasses, with a notice on stderr) | — |
 | Model changed at all | only with `em diff --exit-code` | — |
 | Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
-| Vendored skill drift | `em skill check` exits non-zero (opt-in) | — |
+| Strict types on `public` fields | `em validate` exits non-zero (`public-field-type-unresolved`) | — |
+| Contract current for a public-touching slice | `em validate --slice-ready <key>` and `em api check` exit non-zero on a stale or missing contract | `em api check --base` additive/breaking annotation |
+| Meaning question on a public-touching ratification | `em slice ratify`/`reratify` refuse without `--meaning-unchanged` or `--contract-change` | — |
+| Consumers adapted to the producer's public surface | `em system` exits non-zero (`consumer-not-adapted`) | `em status` count |
+| A contract and its consumer changed in one PR | `em system scope --base` exits non-zero (`seam-crossing`; review is the only override) | other multi-model change sets warn |
+| Consuming teams on the contract file | `em system codeowners --check` exits non-zero on drift; the review itself is your git host's branch protection | — |
+| Skill drift (plugin pin or vendored copy) | `em skill check` exits non-zero (opt-in) | — |
 | Conformance findings | never | always — you rule (stage 7) |
 
 The pattern is deliberate: `em` is strict about things that are unambiguously wrong, and
@@ -318,4 +360,5 @@ business, and no tool gets to overrule you about your own business.
 - [tutorial.md](tutorial.md) — build a model from an empty file, if you haven't yet
 - [ai-workflow.md](ai-workflow.md) — the skill's phases in detail
 - [cli.md](cli.md) — every command and flag referenced above
-- [ci.md](ci.md) — the validate gate and the conformance cadence recipe
+- [ci.md](ci.md) — the validate gate, the multi-model gates and the conformance cadence recipe
+- [process.md](process.md#seams-between-models-who-does-what) — the seam lifecycle, step by step

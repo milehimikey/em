@@ -89,7 +89,7 @@ your answers. It never invents domain facts; anything unresolved is parked as an
 instead of guessed. Behind the scenes it drives the `em` CLI, re-rendering after each increment
 and running `em validate` to keep the diagram honest.
 
-`em skill install` copies the whole bundle into your project in one step (`--force` to overwrite
+On the vendored route, `em skill install` copies the whole bundle into your project in one step (`--force` to overwrite
 an existing copy), so it's versioned with your repo and works for anyone who opens it in Claude
 Code. You never invoke the five phase skills by installing them separately — one `em skill
 install`/`em skill sync` keeps all six directories in sync together, the same one-command
@@ -211,6 +211,8 @@ remember, exactly as before the split.
   .event-modeling.md            # session state — this is what makes sessions resumable
   constitution.md               # the implementation constitution — the project's house rules
   slices/<slice-name>.md        # one implementation spec per slice
+  contracts/<model-key>.tsp     # em api generate, once the model has public elements
+  model-versions/v<N>.json      # em model version bump
   conformance/<date>-report.md  # conform-phase drift reports (advisory)
 ```
 
@@ -234,7 +236,9 @@ days later.
 More than one model in the same project? Give each one its own directory (this same layout,
 repeated), nested under a shared `models/` parent — see
 [cli.md, "Multi-model projects"](cli.md#multi-model-projects) and
-[examples/multi-model/](../examples/multi-model/).
+[examples/multi-model/](../examples/multi-model/). A design session stays inside its own model's
+directory; how models depend on each other (`consumes`, contracts, CODEOWNERS, the gates) is in
+[process.md](process.md#seams-between-models-who-does-what).
 
 ## A complete worked example
 

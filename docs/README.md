@@ -13,6 +13,10 @@ agent can carry with human review.
 | See a complete, worked project — not just a bare model file | [examples/order-fulfillment/](../examples/order-fulfillment/) |
 | See a multi-model project laid out correctly (one directory per model) | [examples/multi-model/](../examples/multi-model/), and [cli.md#multi-model-projects](cli.md#multi-model-projects) |
 | See how the pieces fit together over the life of a model | [workflow.md](workflow.md) |
+| Run several models with seams between them (`consumes`, contracts, CODEOWNERS, the gates) | [process.md](process.md#seams-between-models-who-does-what), then [workflow.md](workflow.md#several-models-seams-and-contracts) |
+| Lay out a multi-model repository (one directory per model, one code module per model, contracts) | [cli.md#recommended-layout](cli.md#recommended-layout) |
+| Gate a multi-model repository in CI (contract, CODEOWNERS, consumer adaptation, scope) | [ci.md#multi-model-gates](ci.md#multi-model-gates) |
+| Switch an in-house slice-doc → TypeSpec generator to `em api generate` | [upgrading.md](upgrading.md#migrating-an-in-house-slice-doc--typespec-generator) |
 | Know which steps need humans, and which an agent can do | [process.md](process.md) |
 | Hand a ratified slice to an agent to implement | [process.md](process.md#handing-a-slice-to-an-agent), and the [agent guide](../.claude/skills/event-modeling-implement/reference/implement.md) it points to |
 | Understand the four Event Modeling patterns | [patterns.md](patterns.md) |
@@ -21,7 +25,7 @@ agent can carry with human review.
 | Look up a command or flag | [cli.md](cli.md) |
 | Understand a validation error or warning | [validation.md](validation.md) |
 | Understand why arrows can't point backward | [timeline.md](timeline.md) |
-| Run a guided modeling session with Claude | [ai-workflow.md](ai-workflow.md) |
+| Run a guided modeling session with Claude (install the `em` plugin) | [ai-workflow.md](ai-workflow.md#the-plugin-route) |
 | Check whether the code still matches the model | [workflow.md](workflow.md#6-check-the-model-against-the-code) |
 | Feed a model to other tooling (JSON export, structural diff) | [cli.md](cli.md#em-export-file) |
 | Give an MCP client (Claude Code, Cursor, ...) structured tool access to a model | [mcp.md](mcp.md) |

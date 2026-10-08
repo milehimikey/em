@@ -6,7 +6,7 @@ linter would. This is a copy-paste GitHub Actions workflow that does that, plus 
 `em export` artifact step for downstream tooling.
 
 **Installed, not just copy-pasted:** `em ci init <model>` (MIL-166, see
-[cli.md](cli.md#em-ci-initmodel)) scaffolds most of this page's recipe as two ready-to-commit
+[cli.md](cli.md#em-ci-init-model)) scaffolds most of this page's recipe as two ready-to-commit
 GitHub Actions files — `em validate` below, `em api check --base` (MIL-237, see
 [below](#em-api-check-the-model-owned-contract)), `em slice index --check`, `em coverage --strict`,
 `em ledger`, `em skill check`, `em upgrade --check` (advisory, MIL-219 — see
@@ -15,19 +15,9 @@ the conformance cadence — in one command, marker-delimited and idempotent the 
 skill install` is. The rest of this page stays the reference for what each check does and why;
 reach for `em ci init` when you just want it wired.
 
-**Multi-model (MIL-233):** `em ci init <system.yaml>` covers every model in the system manifest
-with one `em-ci.yml`: a `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`, `upgrade-check-` and
-`status-badge-<key>` job per model, plus one each of `codeowners-check`, `system`, `system-scope`, `skill-check` and one `glossary`, and an
-`em-conform.yml` that fans `conform` out over a matrix of model directories (see
-[cli.md](cli.md#multi-model-form-em-ci-init-systemyaml); a worked output is committed under
-`examples/multi-model/.github/workflows/`). A managed block is identified by the set of models it
-names: `em ci init <other-model>` against a block generated for a disjoint set, or a single
-model against a multi-model block, **refuses** (non-zero exit, nothing written, both files) and
-names both sets, instead of silently replacing or narrowing it; `--check` reports it as
-`different models` (also non-zero), distinct from `stale`. Pass `--force` to replace the block
-deliberately. The generated workflows are plain ASCII and pass `shellcheck` as generated
-(tested in CI; written to satisfy `actionlint` too), so a repo that lints its workflows needs
-no edits inside the markers.
+**Several models:** `em ci init <system.yaml>` (MIL-233) covers every model in the system manifest
+with one workflow, adding the contract, CODEOWNERS, consumer-adaptation and scope gates; see
+[Multi-model gates](#multi-model-gates).
 
 ## Where this fits
 
@@ -94,9 +84,44 @@ Notes on the recipe:
   blocking.
 - No local install needed — `npx @milehimikey/em` fetches the package for the run.
 
-## `em api check`: the model-owned contract
+## Multi-model gates
 
-`em ci init` adds a PR-only job, `api-check`, right after `validate`:
+A repository holding several models (one directory per model, see
+[cli.md, Multi-model projects](cli.md#multi-model-projects)) gets four more PR gates on top of the
+per-model checks. Together they enforce the seam lifecycle described in
+[process.md](process.md#seams-between-models-who-does-what):
+
+| Gate | Job | Fails the PR when | Section |
+|---|---|---|---|
+| Contract current | `api-check-<key>` (per model) | a model's committed contract is missing or stale | [`em api check`](#em-api-check-the-model-owned-contract) |
+| Consumers routed | `codeowners-check` | the committed CODEOWNERS block is missing, stale or unmarked | [Seams](#seams-consuming-teams-on-the-producers-contract) |
+| Consumers adapted | `system` | a consumer still reads a field its producer removed, renamed or retyped | [`em system`](#em-system-consumer-adaptation-the-release-blocker) |
+| No contract crossing | `system-scope` | one change set alters a contract and a model that consumes it | [`em system scope`](#em-system-scope-the-seam-crossing-gate) |
+
+All four run on pull requests only; all but `codeowners-check` read history and check out with
+`fetch-depth: 0`. The API-first readiness gate (`em validate --slice-ready`, MIL-238) is per slice and runs at
+handoff, not here; it uses the same "contract current" test as `api-check`.
+
+**Generated, not hand-assembled (MIL-233).** `em ci init <system.yaml>` writes all of it as one
+`em-ci.yml`: a `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`,
+`upgrade-check-` and `status-badge-<key>` job per model, then one each of `codeowners-check`,
+`system`, `system-scope`, `skill-check` and `glossary`. It also writes an `em-conform.yml` that
+fans `conform` out over a matrix of model directories (see
+[cli.md](cli.md#multi-model-form-em-ci-init-systemyaml); a worked output is committed under
+`examples/multi-model/.github/workflows/`). The multi-model form needs a `system.yaml`; it does
+not discover models. A managed block is identified by the set of models it names.
+`em ci init <other-model>` against a block generated for a disjoint set, or a single model
+against a multi-model block, **refuses** (non-zero exit, nothing written to either file) and
+names both sets instead of silently replacing or narrowing the block. `--check` reports that
+case as `different models` (also non-zero), distinct from `stale`. Pass `--force` to replace
+the block deliberately. The generated workflows are plain ASCII and pass `shellcheck` as
+generated (written to satisfy `actionlint` too), so a repo that lints its workflows needs no
+edits inside the markers.
+
+### `em api check`: the model-owned contract
+
+`em ci init` adds a PR-only job, `api-check`, right after `validate`. It is generated for a
+single model too; a multi-model block has one per model (`api-check-<key>`):
 
 ```yaml
   api-check:
@@ -117,31 +142,72 @@ Notes on the recipe:
 ```
 
 It **fails only when the committed contract** (`<model dir>/contracts/<model key>.tsp`) is
-missing or differs from a fresh `em api generate` — commit the regenerated file with the model
+missing or differs from a fresh `em api generate`: commit the regenerated file with the model
 change. The `additive: …` / `breaking: …` lines it prints for every public-surface change since
 the PR base are annotation for the reviewer, never a gate (see
-[cli.md](cli.md#em-api-check) for the classification table). Route the contract file to the
-teams that consume it with CODEOWNERS (below) so a `breaking:` line reaches the right reviewer.
-`fetch-depth: 0` is needed so the base revision can be read.
+[cli.md](cli.md#em-api-check) for the classification table). The next section routes the
+contract file to the teams that consume it, so a `breaking:` line reaches the right reviewer.
 
-## `em system`: consumer adaptation, the release blocker
+### Seams: consuming teams on the producer's contract
 
-In a repository that holds several models, the system job runs `em system` (a `system.yaml`, or
-discovery when there is none) on pull requests. Besides the both-ends-of-a-flow checks it runs the
-consumer-adaptation check (MIL-239): every `consumes` binding's consuming translation is compared
-with the producer's public element at HEAD, and a field the consumer declares that the producer
-removed, renamed or retyped fails the job with `consumer-not-adapted`. The message names the
-consumer, the producer element, the fields and the producer commit, so the producer's PR cannot
-merge until the consumer's field block is updated (in the same PR or a prior one). A producer
-change that only adds fields stays green: consumers tolerate unknown fields, as the generated
-contract's doc comment says (see [`em api check`](#em-api-check-the-model-owned-contract)).
-`em status` reports the same count as `system.consumerNotAdapted` without failing. The job line
-is `npx @milehimikey/em@<version> system .`; `em ci init <system.yaml>` generates it (job `system`, PR-only,
-`fetch-depth: 0`, multi-model blocks only).
+A `consumes` ref (see [dsl.md](dsl.md#consuming-another-models-public-surface)) is a promise
+between two teams, and the contract file is where that promise is written down. CODEOWNERS can
+make the platform enforce it: list every consuming team on the producer's contract file and a
+change to the public surface cannot merge without them. Because the contract carries no source
+hash, an edit that leaves the public surface alone leaves the file alone, so consumers are only
+summoned by real contract changes.
 
-## `em system scope`: the seam-crossing gate
+`em` generates the entries instead of asking you to maintain them. Give each model an owner, then
+generate:
 
-For a repository with more than one model, run the scope gate on pull requests:
+```text
+model "Checkout" owner "@example/storefront"     # in checkout.em
+em system codeowners                             # writes the managed block into CODEOWNERS
+em system codeowners --check                     # CI: exit 1 on missing / stale / no-markers
+```
+
+```text
+# GENERATED:em-codeowners:start
+/models/checkout/ @example/storefront
+/models/checkout/contracts/checkout.tsp @example/storefront @example/warehouse
+/models/fulfillment/ @example/warehouse
+# GENERATED:em-codeowners:end
+```
+
+Everything outside the markers is yours and stays byte-for-byte as it was, including an existing
+`slices/**` ratification rule ([below](#codeowners-routing-ratification-review); restated after
+the directory entry so it keeps winning, see [cli.md](cli.md#em-system-codeowners)). Wire it in
+three steps:
+
+1. **Commit the generated block**, and re-run `em system codeowners` whenever an `owner` or a
+   `consumes` changes. The generated `codeowners-check` job runs `em system codeowners --check .`
+   (MIL-231; single-model workflows have no seams, so no such job) and fails the PR on a missing,
+   stale or unmarked block.
+2. **Use handles CODEOWNERS accepts**: `@user`, `@org/team`, or an email. Teams must have write
+   access to the repository, or GitHub ignores the line.
+3. **Enable branch protection** on the default branch: *Require a pull request before merging*,
+   then *Require review from Code Owners*. Without it the file is advisory, and so is every
+   gate on this page that says "review is the override".
+
+Models can only be routed by directory. Keep one directory per model; a model sharing a
+directory with another cannot be separated.
+
+### `em system`: consumer adaptation, the release blocker
+
+The `system` job runs `em system .` (the root `system.yaml`, or discovery when there is none).
+Besides the both-ends-of-a-flow checks (every `consumes` ref resolves to a `public` element) it
+runs the consumer-adaptation check (MIL-239): every `consumes` binding's consuming translation is
+compared with the producer's public element at HEAD, and a field the consumer declares that the
+producer removed, renamed or retyped fails the job with `consumer-not-adapted`. The message names
+the consumer, the producer element, the fields and the producer commit, so the producer's PR
+cannot merge until the consumer's field block is updated (in the same PR or a prior one). A
+producer change that only adds fields stays green: consumers tolerate unknown fields, as the
+generated contract's doc comment says. `em status` reports the same count as
+`system.consumerNotAdapted` without failing.
+
+### `em system scope`: the seam-crossing gate
+
+The `system-scope` job runs the scope gate:
 
 ```yaml
       - name: Check the change set against the seams
@@ -150,18 +216,16 @@ For a repository with more than one model, run the scope gate on pull requests:
           npx @milehimikey/em@<version> system scope --base "$base"
 ```
 
-It needs `fetch-depth: 0` (it reads the base revision) and only runs on pull requests. It exits
-1 on a **contract crossing** and nothing else: the PR changes a producer's public surface or
-contract file and, in the same change set, a model that consumes it. Other multi-model change
-sets, new public surface with no consumer yet, and code spanning a seam are warnings. Files
-changed only by `Em-Upgrade:` commits (`em upgrade --apply`) are exempt. See
-[cli.md](cli.md#em-system-scope) for the rules.
+It exits 1 on a **contract crossing** and nothing else: the PR changes a producer's public
+surface or contract file and, in the same change set, the design directory of a model that
+consumes it. Other multi-model change sets, new public surface with no consumer yet, and code
+spanning a seam are warnings. Files changed only by `Em-Upgrade:` commits (`em upgrade --apply`)
+are exempt. See [cli.md](cli.md#em-system-scope) for the rules.
 
 **Review is the override.** There is no flag or trailer to skip the gate. A change that must
-cross goes through the people who consume the contract: list each producer's
-`contracts/<model>.tsp` in CODEOWNERS with the consuming teams (below). The producer's contract
-change merges with their approval, and the consumer's adaptation follows in its own change set.
-`em ci init <system.yaml>` generates this as the PR-only `system-scope` job (multi-model blocks only).
+cross goes through the people who consume the contract, whom the generated CODEOWNERS block
+lists on the producer's contract file. The producer's contract change merges with their
+approval, and the consumer's adaptation follows in its own change set.
 
 ## `em export` as the artifact step
 
@@ -465,46 +529,6 @@ Notes on the recipe:
   `payments/` swimlane with its own sign-off) — CODEOWNERS matches the *last* pattern that
   applies to a path, so put narrower patterns after `slices/**`, not before it.
 
-### Seams: consuming teams on the producer's contract
-
-A `consumes` ref (see [dsl.md](dsl.md#consuming-another-models-public-surface)) is a promise
-between two teams, and the contract file (`<model dir>/contracts/<model key>.tsp`, written by
-[`em api generate`](cli.md#em-api-check)) is where that promise is written down. CODEOWNERS can make
-the platform enforce it: list every consuming team on the producer's contract file and a change
-to the public surface cannot merge without them. Because the contract carries no source hash, an
-edit that leaves the public surface alone leaves the file alone, so consumers are only summoned
-by real contract changes.
-
-`em` generates the entries instead of asking you to maintain them. Give each model an owner, then
-generate:
-
-```text
-model "Checkout" owner "@example/storefront"     # in checkout.em
-em system codeowners                             # writes the managed block into CODEOWNERS
-em system codeowners --check                     # CI: exit 1 on missing / stale / no-markers
-```
-
-```text
-# GENERATED:em-codeowners:start
-/models/checkout/ @example/storefront
-/models/checkout/contracts/checkout.tsp @example/storefront @example/warehouse
-/models/fulfillment/ @example/warehouse
-# GENERATED:em-codeowners:end
-```
-
-Everything outside the markers is yours and stays byte-for-byte as it was, including an existing
-`slices/**` ratification rule (restated after the directory entry so it keeps winning; see
-[cli.md](cli.md#em-system-codeowners)). Wire it in three steps:
-
-1. **Commit the generated block**, and re-run `em system codeowners` whenever an `owner` or a
-   `consumes` changes. `em ci init <system.yaml>` generates the CI gate for you: one PR-only
-   `codeowners-check` job running `em system codeowners --check .` (MIL-231; single-model
-   workflows have no seams, so no such job), failing the PR on a missing, stale or unmarked block.
-2. **Use handles CODEOWNERS accepts**: `@user`, `@org/team`, or an email. Teams must have write
-   access to the repository, or GitHub ignores the line.
-3. **Enable branch protection** on the default branch: *Require a pull request before merging*,
-   then *Require review from Code Owners*. Without it the file is advisory.
-
-Models can only be routed by directory. Keep one directory per model (the layout in
-[cli.md, Multi-model projects](cli.md#multi-model-projects)); a model sharing a directory with
-another cannot be separated.
+For seams between models, the same mechanism routes contract review: `em system codeowners`
+generates the entries that put every consuming team on a producer's contract file (see
+[Seams: consuming teams on the producer's contract](#seams-consuming-teams-on-the-producers-contract)).

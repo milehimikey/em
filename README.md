@@ -38,12 +38,19 @@ em diff model.em --from HEAD~1   # what this change did to the model
 em changelog model.em     # the model's git history as a business ledger
 ```
 
-A system of several models — one per team or sub-department, each in its own directory — gets
-the same treatment across model boundaries: a seam manifest (`system.yaml`) declares which
-model's `public` event feeds which other model's Translation slice, and `em system system.yaml`
-verifies every binding against the models' exports and emits the org-level context map
-([docs/cli.md](docs/cli.md#em-system-manifest); worked example in
-[examples/multi-model/](examples/multi-model/)).
+A system of several models — one per team or bounded context, each in its own directory —
+gets the same treatment across model boundaries. A producer marks the commands, events and
+views other teams depend on `public`, and `em api generate` writes them as the model's own
+TypeSpec contract (`contracts/<model>.tsp`). A consumer declares what it reads on its own side,
+`translation Order Intake consumes checkout:event.order-submitted`. `em system` finds the
+models (a `system.yaml` listing them, or discovery of every `.em` in the repo), resolves every
+`consumes` against the producers' public surface, fails when a consumer still reads a field its
+producer dropped, and emits the org-level context map. `em system codeowners` puts every
+consuming team on the producer's contract file in CODEOWNERS, so a contract change cannot merge
+without them, and two gates hold the line: `--slice-ready` will not hand off a slice whose
+contract is stale, and `em system scope` fails a PR that changes a contract and its consumer
+together ([docs/process.md](docs/process.md#seams-between-models-who-does-what); worked example
+in [examples/multi-model/](examples/multi-model/)).
 
 A model is a list of slices — vertical time steps, read left to right — whose elements land
 in swimlane rows:
@@ -103,8 +110,10 @@ claude plugin marketplace add milehimikey/em@v1.14.0 --scope project
 claude plugin install em@em-1-14-0 --scope project
 ```
 
-Then run `/em:event-modeling` in Claude Code. (The vendored route, `em skill install`, copies the
-bundle into `.claude/skills/` instead; it is deprecated in 1.14.) The same bundle also runs the reverse direction:
+Then run `/em:event-modeling` in Claude Code. The older vendored route (`em skill install`,
+which copies the bundle into `.claude/skills/`) still works but is deprecated since 1.14;
+`em upgrade --apply` moves a vendored repo to the pinned plugin in one commit. The same bundle
+also runs the reverse direction:
 `extract` derives a model from a system that already exists, and `conform` checks a model
 against the code implementing it and reports where they've drifted. See
 [docs/ai-workflow.md](docs/ai-workflow.md) for the phases and what a session produces, and the
@@ -117,12 +126,12 @@ built this way.
 |---|---|
 | [docs/tutorial.md](docs/tutorial.md) | Learn the tool by building a model from scratch |
 | [docs/workflow.md](docs/workflow.md) | The model lifecycle: specify, gate, hand off, track change, detect drift |
-| [docs/process.md](docs/process.md) | Who does what: where humans are required, where agents work with review |
+| [docs/process.md](docs/process.md) | Who does what: where humans are required, where agents work with review, and the seam lifecycle between models |
 | [docs/patterns.md](docs/patterns.md) | The four Event Modeling patterns and their DSL shapes |
 | [docs/dsl.md](docs/dsl.md) | Full DSL reference: keywords, `from`, `again`, fields, notes |
 | [docs/cli.md](docs/cli.md) | Every command and flag |
 | [docs/validation.md](docs/validation.md) | Every rule `em validate` checks, and the fixes |
-| [docs/ci.md](docs/ci.md) | Copy-paste CI recipes: validate `.em` changes, run conformance on a schedule |
+| [docs/ci.md](docs/ci.md) | Copy-paste CI recipes: validate `.em` changes, the multi-model gates, run conformance on a schedule |
 | [docs/upgrading.md](docs/upgrading.md) | Bring a model repo forward across em releases: `em upgrade`, release by release |
 | [docs/timeline.md](docs/timeline.md) | The Two Laws of the Timeline |
 | [docs/ai-workflow.md](docs/ai-workflow.md) | The Claude Code skill: install, phases, artifacts |

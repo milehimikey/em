@@ -118,47 +118,82 @@ section formalizes the matching convention for the **source** layout `em catalog
 other doc-aware command) reads from.
 
 For more than a couple of models, nest their directories under a shared parent — conventionally
-`models/` — so the project root stays uncluttered:
+`models/` — so the project root stays uncluttered.
+
+### Recommended layout
+
+One directory per model for its design artifacts, one code module per model, contracts under the
+model directory, and the system-level files at the repository root:
 
 ```
 my-project/
+  system.yaml                  # optional: systemSchemaVersion "2.0", name + models (else discovery)
+  CODEOWNERS                   # managed block from `em system codeowners`
+  .claude/settings.json        # the pinned em plugin (see ai-workflow.md)
+  .github/workflows/
+    em-ci.yml                  # `em ci init system.yaml`: per-model jobs + the multi-model gates
+    em-conform.yml             # conform matrix over the model directories
   models/
     checkout/
-      checkout.em
+      checkout.em              # model "Checkout" owner "@example/storefront"
       checkout.svg
       README.md
-      .event-modeling.md
+      .event-modeling.md       # state file; `- **Code roots:** services/checkout`
       slices/
         add-item.md
-        checkout.md          # <- this model's own "Checkout" slice
+        checkout.md            # <- this model's own "Checkout" slice
+      contracts/
+        checkout.tsp           # `em api generate`; never hand-edited
+      model-versions/          # `em model version bump`
+      conformance/             # conform reports + findings
     fulfillment/
-      fulfillment.em
-      fulfillment.svg
+      fulfillment.em           # translation Order Intake consumes checkout:event.order-submitted
       README.md
       .event-modeling.md
       slices/
-        ship-order.md
-        checkout.md          # <- a DIFFERENT model's own "Checkout" slice — no collision
+        receive-order.md
+        checkout.md            # <- a DIFFERENT model's own "Checkout" slice — no collision
+      contracts/
+        fulfillment.tsp
+  services/
+    checkout/                  # Checkout's code module
+    fulfillment/               # Fulfillment's code module
 ```
+
+- **The model directory is `dirname(<model>.em)`, and everything under it belongs to that
+  model:** `slices/`, `contracts/`, `model-versions/`, `conformance/`, `.event-modeling.md`,
+  `README.md`. This is the unit CODEOWNERS routes (`em system codeowners` puts the model's
+  `owner` on the directory) and the unit `em system scope` maps paths to. A changed path belongs
+  to the model with the longest matching directory prefix; paths outside every model directory
+  are ignored.
+- **Contracts live in the model directory.** A model with a `public` surface owns its generated
+  contract at `<model dir>/contracts/<model key>.tsp` (`em api generate`, see below), e.g.
+  `models/checkout/contracts/checkout.tsp`. Consumers read it; only the producer's model
+  regenerates it, and `em system codeowners` lists every consuming team on that file.
+- **One code module per model.** Keep each model's implementation in a module of its own and
+  declare it in the model's state file with a `- **Code roots:** <path>[, <path>]` bullet
+  (repository-root-relative). That is what lets [`em system scope`](#em-system-scope)'s advisory
+  code-side check warn (`code-spans-seam`) when one change set reaches into the code of two
+  models joined by a seam. `em state` does not write the bullet; add it by hand.
+- **`system.yaml` at the root, or none.** Schema 2.0 lists `name` and `models: {key: {source}}`;
+  seams live in the models as `consumes`, owners on the model header. Without a manifest,
+  `em system`, `em system codeowners` and `em system scope` discover every `*.em` tracked in the
+  repository (see [`em system`](#em-system-manifest)). `em ci init` needs a manifest for its
+  multi-model form.
+- **Generated, not hand-maintained:** the `CODEOWNERS` managed block (`em system codeowners`,
+  `--check` in CI), the workflows (`em ci init <system.yaml>`, refreshed by `em upgrade`'s
+  `ci-block` step) and each contract (`em api generate`). Everything outside their markers
+  stays yours.
 
 Back this with `em scaffold <name> --under models` for each model (writes `models/<slug>/`
 directly, rather than requiring a `cd models && em scaffold <name>` two-step) — see above. The
 event-modeling skill's discovery step looks for a model in the working directory *or* a
-`models/` subfolder, one level down, for exactly this layout (see `SKILL.md`).
+`models/` subfolder, one level down, for exactly this layout (see `SKILL.md`). A worked version,
+with the generated contracts, CODEOWNERS and workflows committed, is
+[examples/multi-model/](../examples/multi-model/). The seam lifecycle this layout supports is
+in [process.md](process.md#seams-between-models-who-does-what).
 
-**Contracts live in the model directory.** A model with a `public` surface owns its generated
-contract at `<model dir>/contracts/<model key>.tsp` (`em api generate`, see below) — e.g.
-`models/checkout/contracts/checkout.tsp`. Everything under the model directory (`slices/`,
-`model-versions/`, `conformance/`, `contracts/`, `.event-modeling.md`, `README.md`) belongs to
-that model.
-
-**Recommended layout: one directory per model, one code module per model, contracts under the
-model directory.** `em system scope` (below) maps a changed path to a model by this convention:
-the model directory is `dirname(<model>.em)`, and a path belongs to the model with the longest
-matching directory prefix. Paths outside every model directory are ignored. Keeping each model's
-code in one module of its own (declared with a `Code roots:` bullet, see
-[`em system scope`](#em-system-scope)) is what lets the advisory code-side check tell you when a
-change reaches across a seam.
+### Slice keys across models
 
 **No key-namespacing needed.** Slice export keys and doc filenames stay exactly `kebabSlug(slice
 name)` — unqualified, no `<model>/<slice>` prefix — regardless of how many models a project has.

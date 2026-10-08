@@ -741,6 +741,8 @@ Rules:
   that kind and slug.
 
 `em export` carries the refs as written on the translation (`consumes: string[] | null`).
+What a `consumes` ref sets in motion (the contract, CODEOWNERS routing and the gates) is the
+seam lifecycle in [process.md](process.md#seams-between-models-who-does-what).
 
 ### Model owner
 
