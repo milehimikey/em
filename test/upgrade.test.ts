@@ -728,7 +728,12 @@ describe("system-manifest step", () => {
 
     // The migrated models are byte-identical to the shipped (migrated) example.
     for (const rel of ["models/checkout/checkout.em", "models/fulfillment/fulfillment.em"]) {
-      expect(readFileSync(join(repo.dir, rel), "utf8")).toBe(readFileSync(join(MULTI_MODEL_EXAMPLE_DIR, rel), "utf8"));
+      // MIL-234: the shipped example's headers carry handles; the migration writes the legacy
+      // manifest's free-text owners as-is, so compare modulo that one substitution.
+      const shipped = readFileSync(join(MULTI_MODEL_EXAMPLE_DIR, rel), "utf8")
+        .replace('owner "@example/storefront"', 'owner "Storefront team"')
+        .replace('owner "@example/warehouse"', 'owner "Warehouse team"');
+      expect(readFileSync(join(repo.dir, rel), "utf8")).toBe(shipped);
     }
     const manifest = readFileSync(repo.manifest, "utf8");
     expect(manifest).toContain('systemSchemaVersion: "2.0"');

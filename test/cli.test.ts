@@ -1767,6 +1767,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "slice_ready",
           "status",
           "system",
+          "system_codeowners",
           "upgrade",
           "validate",
         ].sort(),
