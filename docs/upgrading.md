@@ -355,3 +355,4 @@ to a later version, and `em slice reratify` re-opens it when the slice reaches t
 | What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
 | `em slice defer <model>.em <key> "<question>" --until v<n> --decision "<text>"`: checks the matching `## Open Questions` item with a `deferred to v<n>` marker and mirrors it into the state file's parking lot and Decisions log (MIL-275, [cli.md](cli.md#em-slice-defer-file-slice-key-question)); `em slice reratify` re-opens items deferred to the new version. New verb, no migration | no action needed |
+| Examples only: `examples/order-fulfillment` and `examples/headless-api` ship their committed contracts, the ready example slices carry a recorded sign-off, and a regression test runs `--slice-ready` and `em api check` over every example (MIL-276). No consumer action | no action needed |

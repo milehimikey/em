@@ -40,7 +40,7 @@ slice "View Open Orders" {
   view Open Orders public from "Order Placed" note "slices/view-open-orders.md" {
     orderId: uuid
     total: decimal
-    status: string
+    status: string derived
   }
   ui Order List @Customer
 }

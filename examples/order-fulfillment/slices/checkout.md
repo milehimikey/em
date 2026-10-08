@@ -3,6 +3,9 @@ schemaVersion: 1
 pattern: state-change
 swimlane: Customer → Payment
 status: ready-to-implement
+ratifiedBy: em examples
+ratifiedOn: 2026-10-08
+meaningConfirmed: true
 version: 1
 ---
 # Slice: Checkout
