@@ -58,6 +58,24 @@ missing local registration prints the two install commands above and exits 0 on 
 exits 1 under `--ci` / `CI=true`. The registry location follows `EM_CLAUDE_PLUGINS_DIR` (default
 `~/.claude/plugins`). Full finding table: [cli.md](cli.md#em-skill-check-path).
 
+### Sub-agents em ships
+
+em ships four Claude Code sub-agent definitions (MIL-269) that the engagement skill dispatches; each
+states an explicit `tools:` allowlist and fixes no model (the dispatcher passes it):
+
+| Agent | May do | Output |
+| --- | --- | --- |
+| `em-implementer` | Read, write and edit code and tests for exactly one slice in the worktree and branch it is given; loads the implement skill and the constitution's routing table. Never edits the slice doc, the `.em`, another slice or shared infra; never merges or rebases; stops on a gap | PR URL and a per-invariant test map |
+| `em-validator` | Read-only plus `Bash` to run `--slice-ready`, `em coverage --slice --strict`, the constitution's `- **Test command:**` line, and the footprint and no-diff checks | pass or fail per check |
+| `em-reviewer` | Read-only: spec fidelity, slice isolation, constitution conformance; every finding cites a doc line or constitution rule | findings list, `- [<severity>] <file:line or doc §> — <finding>` |
+| `em-critic` | Same as the reviewer, in fresh context on a different model, never shown the reviewer's findings | same findings list |
+
+The validator, reviewer and critic carry no `Write`, `Edit` or `NotebookEdit`. `Bash` cannot be
+partially allowed in an agent definition, so their read-only behavior beyond that rests on their
+instructions. Under the plugin they are `em:em-implementer`, `em:em-validator`, `em:em-reviewer` and
+`em:em-critic` (built into `plugin/agents/`); in a vendored repo they live in `.claude/agents/`,
+reconciled by `em skill install|sync|check` and `em upgrade` without touching your own agents there.
+
 ## Vendored skills (deprecated in 1.14, removed in a later major)
 
 The original route copies the bundle into the repo instead:

@@ -438,7 +438,10 @@ version CI just installed, add `em skill check` as its own gate instead of silen
 ```
 
 `em skill check` exits non-zero on any mismatch — a stale `em-version:` stamp, or content that
-diverges from the packaged skill even with a matching stamp (e.g. a hand-edited file).
+diverges from the packaged skill even with a matching stamp (e.g. a hand-edited file). It also
+covers the four vendored sub-agent files `.claude/agents/em-{implementer,validator,reviewer,critic}.md`
+(`agent-not-installed`, `agent-content-drift`, MIL-269) and never looks at any other agent in that
+directory.
 
 **The em plugin (MIL-231).** The `skill-check` job in the `em ci init` preset covers both ways of
 having the skills. It runs `em skill check --ci` when the repo vendors the bundle

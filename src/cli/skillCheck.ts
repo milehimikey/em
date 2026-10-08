@@ -15,13 +15,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractEmVersionStamp } from "./skillVersionCheck.js";
-import { planSkillSync } from "./skillSync.js";
+import { planAgentSync, planSkillSync } from "./skillSync.js";
 
 export type SkillCheckFindingCode =
   | "skill-check-not-installed"
   | "skill-check-stamp-missing"
   | "skill-check-stamp-mismatch"
   | "skill-check-content-drift"
+  // MIL-269: the four vendored sub-agent definitions under .claude/agents/.
+  | "agent-not-installed"
+  | "agent-content-drift"
   // MIL-231: the em Claude Code plugin (src/cli/pluginPin.ts).
   | "plugin-pin-mismatch"
   | "plugin-not-enabled"
@@ -156,5 +159,29 @@ export function checkSkillSyncBundle(
     }
   }
 
+  return { findings, ok: findings.length === 0 };
+}
+
+/**
+ * Pure (MIL-269, R32): checks exactly the listed agent files under `.claude/agents/` and nothing
+ * else in that shared directory. A missing file is `agent-not-installed`, an edited/stale one
+ * `agent-content-drift`; messages carry the `[agents]` prefix and the file name. No stamp (the
+ * files have no `em-version:` line - the frontmatter is Claude Code's).
+ */
+export function checkAgentFiles(packagedDir: string, vendoredDir: string, fileNames: readonly string[]): SkillCheckResult {
+  const plan = planAgentSync(packagedDir, vendoredDir, fileNames);
+  const findings: SkillCheckFinding[] = plan.changes.map((c) =>
+    c.kind === "added"
+      ? {
+          code: "agent-not-installed" as const,
+          message: `[agents] ${c.relPath}: not installed at ${join(vendoredDir, c.relPath)} - run \`em skill sync\` (or \`em upgrade\`)`,
+          driftedFiles: [`agents/${c.relPath}`],
+        }
+      : {
+          code: "agent-content-drift" as const,
+          message: `[agents] ${c.relPath}: content drift - differs from the packaged agent definition - run \`em skill sync\` (or \`em upgrade\`)`,
+          driftedFiles: [`agents/${c.relPath}`],
+        },
+  );
   return { findings, ok: findings.length === 0 };
 }

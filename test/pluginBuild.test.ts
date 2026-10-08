@@ -154,6 +154,26 @@ describe("plugin build parity (MIL-230, R18)", () => {
     }
   });
 
+  it("ships the four agents under plugin/agents/ with the skill-name rewrite and no manifest agents key (MIL-269, R33)", () => {
+    const agents = [...built.keys()].filter((k) => k.startsWith(`${PLUGIN_DIR}/agents/`)).sort();
+    expect(agents).toEqual(
+      ["em-critic", "em-implementer", "em-reviewer", "em-validator"].map((n) => `${PLUGIN_DIR}/agents/${n}.md`),
+    );
+    for (const rel of agents) {
+      const content = built.get(rel)!;
+      const name = rel.split("/").pop()!.replace(/\.md$/, "");
+      // frontmatter stays first, with name + explicit tools and no model; the banner follows it
+      expect(content, rel).toMatch(new RegExp(`^---\\nname: ${name}\\ndescription: [^\\n]+\\ntools: [^\\n]+\\n---\\n`));
+      expect(content, rel).not.toMatch(/^model:/m);
+      expect(stripBanner(content), rel).not.toMatch(/event-modeling-(discover|design|implement|conform|review)\b/);
+    }
+    expect(built.get(`${PLUGIN_DIR}/agents/em-implementer.md`)).toContain("`em:implement`");
+    const plugin = JSON.parse(built.get(`${PLUGIN_DIR}/.claude-plugin/plugin.json`)!);
+    expect(plugin).not.toHaveProperty("agents");
+    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+    expect(pkg.files).toContain(".claude/agents");
+  });
+
   it("marketplace name and plugin.json version follow package.json", () => {
     const plugin = JSON.parse(built.get(`${PLUGIN_DIR}/.claude-plugin/plugin.json`)!);
     const market = JSON.parse(built.get(MARKETPLACE_PATH)!);

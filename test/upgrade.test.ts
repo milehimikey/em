@@ -983,3 +983,67 @@ describe("skill-plugin step", () => {
     }
   });
 });
+
+// MIL-269 (R32): the four .claude/agents/em-*.md files ride inside the existing skill steps; the
+// directory is shared with the consumer's own agents, so only the fixed list is ever touched.
+describe("agent files in skill-bundle / skill-plugin (MIL-269)", () => {
+  const AGENT_FILES = ["em-implementer.md", "em-validator.md", "em-reviewer.md", "em-critic.md"];
+
+  function agentRepo(): { dir: string; packagedSkillsRoot: string; packagedAgentsRoot: string } {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ vendoredSkillStamp: INSTALLED_VERSION });
+    for (const d of BUNDLE_DIR_NAMES) {
+      mkdirSync(join(dir, ".claude", "skills", d), { recursive: true });
+      writeFileSync(join(packagedSkillsRoot, d, "x.md"), "vendored\n");
+      writeFileSync(join(dir, ".claude", "skills", d, "x.md"), "vendored\n");
+    }
+    writeFileSync(join(dir, ".claude", "skills", "event-modeling", "SKILL.md"), readFileSync(join(packagedSkillsRoot, "event-modeling", "SKILL.md")));
+    const packagedAgentsRoot = mkdtempSync(join(tmpdir(), "em-upgrade-packaged-agents-"));
+    tmpDirs.push(packagedAgentsRoot);
+    for (const f of AGENT_FILES) writeFileSync(join(packagedAgentsRoot, f), `packaged ${f}\n`);
+    mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
+    for (const f of AGENT_FILES) writeFileSync(join(dir, ".claude", "agents", f), `packaged ${f}\n`);
+    writeFileSync(join(dir, ".claude", "agents", "my-agent.md"), "mine\n");
+    // an unparseable settings.json keeps skill-plugin out of the way so skill-bundle is the live step
+    writeFileSync(join(dir, ".claude", "settings.json"), "[]");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "vendor bundle + agents");
+    return { dir, packagedSkillsRoot, packagedAgentsRoot };
+  }
+  const ctxOf = (r: { dir: string; packagedSkillsRoot: string; packagedAgentsRoot: string }): UpgradeContext => ({
+    ...makeCtx(r.dir, r.packagedSkillsRoot),
+    packagedAgentsRoot: r.packagedAgentsRoot,
+  });
+  const bundle = UPGRADE_STEPS.find((s) => s.id === "skill-bundle")!;
+  const plugin = UPGRADE_STEPS.find((s) => s.id === "skill-plugin")!;
+
+  it("skill-bundle: in sync -> not applicable; a stale or missing agent -> applicable, apply restores, siblings untouched", () => {
+    const r = agentRepo();
+    expect(bundle.detect(ctxOf(r)).applicable).toBe(false);
+    writeFileSync(join(r.dir, ".claude", "agents", "em-validator.md"), "edited\n");
+    rmSync(join(r.dir, ".claude", "agents", "em-critic.md"));
+    const d = bundle.detect(ctxOf(r));
+    expect(d.applicable).toBe(true);
+    expect(d.reason).toContain("2 file(s)");
+    const out = bundle.apply(ctxOf(r));
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.changedFiles.sort()).toEqual([join(".claude", "agents", "em-critic.md"), join(".claude", "agents", "em-validator.md")]);
+    expect(readFileSync(join(r.dir, ".claude", "agents", "em-validator.md"), "utf8")).toBe("packaged em-validator.md\n");
+    expect(readFileSync(join(r.dir, ".claude", "agents", "my-agent.md"), "utf8")).toBe("mine\n");
+    expect(bundle.detect(ctxOf(r)).applicable).toBe(false);
+  });
+
+  it("skill-plugin removes exactly the four em agent files and nothing else in .claude/agents/", () => {
+    const r = agentRepo();
+    writeFileSync(join(r.dir, ".claude", "settings.json"), "{}\n");
+    git(r.dir, "add", "-A");
+    git(r.dir, "commit", "-q", "-m", "settings");
+    const d = plugin.detect(ctxOf(r));
+    expect(d.applicable).toBe(true);
+    for (const f of AGENT_FILES) expect(d.reason).toContain(`.claude/agents/${f}`);
+    const out = plugin.apply(ctxOf(r));
+    expect(out.ok).toBe(true);
+    if (out.ok) for (const f of AGENT_FILES) expect(out.changedFiles).toContain(join(".claude", "agents", f));
+    for (const f of AGENT_FILES) expect(existsSync(join(r.dir, ".claude", "agents", f))).toBe(false);
+    expect(readFileSync(join(r.dir, ".claude", "agents", "my-agent.md"), "utf8")).toBe("mine\n");
+  });
+});

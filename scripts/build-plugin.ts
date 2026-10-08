@@ -9,6 +9,7 @@
 //   plugin/.claude-plugin/plugin.json
 //   plugin/skills/<short>/SKILL.md (+ reference/*.md)   short = discover|design|implement|conform|review|event-modeling
 //   plugin/shared/{reference,templates}/*.md
+//   plugin/agents/em-*.md                                (MIL-269: the four sub-agent definitions)
 //   .claude-plugin/marketplace.json                      name = em-<version dots -> dashes>
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -17,6 +18,10 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SKILLS_SRC = join(ROOT, ".claude/skills");
+/** MIL-269: the vendored sub-agent definitions. Only the fixed `em-*.md` list is copied - the
+ *  directory is shared with a consumer's own agents in their repos, never in this one's build. */
+export const AGENTS_SRC = join(ROOT, ".claude/agents");
+export const AGENT_FILES: readonly string[] = ["em-implementer.md", "em-validator.md", "em-reviewer.md", "em-critic.md"];
 export const PLUGIN_DIR = "plugin";
 export const MARKETPLACE_PATH = ".claude-plugin/marketplace.json";
 
@@ -161,9 +166,10 @@ export const REWRITE_RULES: readonly RewriteRule[] = [
  * skill-name rules must not mangle them. Path-shape rules still apply to `skills` scope only. */
 const NAME_RULES_SKIP = new Set(["shared/reference/em-dsl.md"]);
 
-export function applyRewrites(content: string, scope: "skills" | "reference" | "shared", outRel: string): string {
+export function applyRewrites(content: string, scope: "skills" | "reference" | "shared" | "agents", outRel: string): string {
   let out = content;
   for (const rule of REWRITE_RULES) {
+    // "agents" (MIL-269, R33) takes only the name rules (scope "all"): skill names, never path rules.
     if (rule.scope !== "all" && rule.scope !== scope) continue;
     if ((rule.id === "invocation" || rule.id === "phase-skill-name" || rule.id === "all-skills-glob") && NAME_RULES_SKIP.has(outRel)) {
       continue;
@@ -241,6 +247,14 @@ export function buildPlugin(version: string): Map<string, string> {
     content = applyRewrites(content, scope, outRel);
     content = withBanner(content, `.claude/skills/${srcRel}`);
     out.set(`${PLUGIN_DIR}/${outRel}`, content);
+  }
+
+  // MIL-269 (R33): plugin/agents/em-*.md - same skill-name rewrite as the skills. No `agents` key in
+  // plugin.json is needed (or wanted): Claude Code scans the default `agents/` directory, and a
+  // manifest `agents` value would REPLACE that scan and accepts files only.
+  for (const file of AGENT_FILES) {
+    const content = applyRewrites(readFileSync(join(AGENTS_SRC, file), "utf8"), "agents", `agents/${file}`);
+    out.set(`${PLUGIN_DIR}/agents/${file}`, withBanner(content, `.claude/agents/${file}`));
   }
 
   const pluginJson = {

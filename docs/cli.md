@@ -27,7 +27,7 @@
 | `em state set-review <date> [dir]` | Rewrite `Last stakeholder review:` |
 | `em contract` | Print the packaged implementation contract (`reference/implement.md`) to stdout |
 | `em mcp` | Start an MCP server over stdio, exposing structured model access as tools (also available as the `em-mcp` bin) |
-| `em skill install` | Copy the bundled Claude Code skill into the current project |
+| `em skill install` | Copy the bundled Claude Code skill (and the four `em-*` sub-agent definitions) into the current project |
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check the em plugin pin (settings + this machine) and/or a vendored skill copy against the installed em package; exits non-zero on mismatch |
 | `em ci init <model>` | Install the CI enforcement preset — two GitHub Actions workflow files, marker-managed and idempotent |
@@ -3825,6 +3825,16 @@ afterwards. See [ai-workflow.md](ai-workflow.md).
 plugin ([ai-workflow.md](ai-workflow.md#the-plugin-route)). `em skill install` and `em skill sync`
 still work exactly as before (same output, same exit code) and print one line on stderr:
 `warn: the vendored skill bundle is deprecated since em 1.14 — install the em plugin instead: claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project`.
+
+**Sub-agent definitions (MIL-269).** Install, `sync`, `check` and `--force` also cover four Claude
+Code sub-agent files, `.claude/agents/em-{implementer,validator,reviewer,critic}.md` (creating
+`.claude/agents/` if absent; see [ai-workflow.md](ai-workflow.md#sub-agents-em-ships)). They are
+handled by that fixed list of four names only: `.claude/agents/` is shared with your own agents, and
+nothing else in it is ever listed, rewritten or deleted. `sync` restores them byte-exact (output
+lines read `added: agents/em-critic.md`). `em skill check` reports a missing file as
+`agent-not-installed` and an edited or stale one as `agent-content-drift`, with messages shaped like
+`[agents] em-validator.md: content drift ...` (appended under `--json` 1.1, `driftedFiles` entries
+`agents/<file>`); they are checked whenever the vendored skill bundle is present.
 
 By default, also writes/updates the `AGENTS.md` agent-contract section (see "Working with an
 AI agent" below, MIL-129) — pass `--no-agents-md` to skip that. This happens even when the

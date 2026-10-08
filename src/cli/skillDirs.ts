@@ -35,3 +35,14 @@ export const EM_ALL_SKILL_BUNDLE_DIRS: readonly string[] = [...EM_SKILL_DIR_NAME
  *  since it's the fixed entry point every consumer's `/event-modeling` resolves to regardless of
  *  which other skills in the bundle they've actually used. */
 export const EM_SKILL_ANCHOR_DIR = "event-modeling";
+
+/** MIL-269 (R32): the four Claude Code sub-agent definitions em ships under `.claude/agents/`.
+ *  Unlike the skill bundle this is a FIXED FILE list, not a directory: `.claude/agents/` is
+ *  shared with the consumer's own agents, so install/sync/check and the upgrade steps only ever
+ *  read, write or delete exactly these names and never walk the directory. */
+export const EM_AGENT_FILES: readonly string[] = [
+  "em-implementer.md",
+  "em-validator.md",
+  "em-reviewer.md",
+  "em-critic.md",
+];

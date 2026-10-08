@@ -115,3 +115,24 @@ export function applySkillSyncBundle(bundlePlan: SkillSyncBundleDirPlan[], packa
     applySkillSync(plan, join(packagedRoot, dirName), join(vendoredRoot, dirName));
   }
 }
+
+// ---- Agent files (MIL-269, R32) — `.claude/agents/` is shared with the consumer's own agents, so
+// unlike planSkillSync these walk a FIXED list of file names and never report anything as
+// `removed`: a file that is not on the list is not em's to list, touch or delete.
+
+/** Pure: per listed file, `added` (absent in vendoredDir), `modified` (hash differs) or unchanged.
+ *  A listed file missing from packagedDir is skipped. Never lists, reads or removes anything else
+ *  in vendoredDir. Apply with `applySkillSync(plan, packagedDir, vendoredDir)`. */
+export function planAgentSync(packagedDir: string, vendoredDir: string, fileNames: readonly string[]): SkillSyncPlan {
+  const changes: SkillSyncFileChange[] = [];
+  let unchangedCount = 0;
+  for (const relPath of [...fileNames].sort()) {
+    const src = join(packagedDir, relPath);
+    if (!existsSync(src)) continue;
+    const dest = join(vendoredDir, relPath);
+    if (!existsSync(dest)) changes.push({ relPath, kind: "added" });
+    else if (sha256(src) !== sha256(dest)) changes.push({ relPath, kind: "modified" });
+    else unchangedCount++;
+  }
+  return { changes, unchangedCount };
+}

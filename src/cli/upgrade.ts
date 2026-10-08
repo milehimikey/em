@@ -31,8 +31,8 @@ import { GitRunner, realGit } from "./diff-inputs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { planMigration, verifyMigration, MigrationPlan } from "./migrateReactionShape.js";
-import { planSkillSyncBundle, applySkillSyncBundle } from "./skillSync.js";
-import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR } from "./skillDirs.js";
+import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./skillSync.js";
+import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES } from "./skillDirs.js";
 import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, pluginInstallCommands, pluginSettingsEntries } from "./pluginPin.js";
 import { syncAgentsMd } from "./agentsMd.js";
 import {
@@ -72,6 +72,9 @@ export interface UpgradeContext {
   repoRoot: string;
   installedVersion: string;
   packagedSkillsRoot: string;
+  /** MIL-269: the packaged `.claude/agents/` root (only the fixed EM_AGENT_FILES are ever read from
+   *  it). Defaults to the sibling of `packagedSkillsRoot` (both live under the package's `.claude/`). */
+  packagedAgentsRoot?: string;
   model: NormalizedModel;
   refs: RefsResult;
 }
@@ -105,6 +108,14 @@ function vendoredSkillsRootOf(repoRoot: string): string {
   return join(repoRoot, ".claude", "skills");
 }
 
+function vendoredAgentsRootOf(repoRoot: string): string {
+  return join(repoRoot, ".claude", "agents");
+}
+
+function packagedAgentsRootOf(ctx: UpgradeContext): string {
+  return ctx.packagedAgentsRoot ?? join(ctx.packagedSkillsRoot, "..", "agents");
+}
+
 function detectSkillBundle(ctx: UpgradeContext): StepDetection {
   const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
   // MIL-231/232: a repo that declares the plugin has no bundle to sync (any stray vendored copy is
@@ -116,7 +127,8 @@ function detectSkillBundle(ctx: UpgradeContext): StepDetection {
     return { applicable: false, reason: "no vendored skill bundle installed at .claude/skills/ — run `em skill install` first if you want one" };
   }
   const bundlePlan = planSkillSyncBundle(ctx.packagedSkillsRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
-  const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
+  const agentPlan = planAgentSync(packagedAgentsRootOf(ctx), vendoredAgentsRootOf(ctx.repoRoot), EM_AGENT_FILES);
+  const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0) + agentPlan.changes.length;
   if (totalChanges === 0) return { applicable: false, reason: "vendored skill bundle already matches the installed em" };
   return { applicable: true, reason: `vendored skill bundle differs from the installed em in ${totalChanges} file(s)` };
 }
@@ -124,10 +136,16 @@ function detectSkillBundle(ctx: UpgradeContext): StepDetection {
 function applySkillBundle(ctx: UpgradeContext): StepApplyOutcome {
   const vendoredRoot = vendoredSkillsRootOf(ctx.repoRoot);
   const bundlePlan = planSkillSyncBundle(ctx.packagedSkillsRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
-  const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
+  const vendoredAgents = vendoredAgentsRootOf(ctx.repoRoot);
+  const agentPlan = planAgentSync(packagedAgentsRootOf(ctx), vendoredAgents, EM_AGENT_FILES);
+  const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0) + agentPlan.changes.length;
   if (totalChanges === 0) return { ok: false, message: "nothing to sync" };
   applySkillSyncBundle(bundlePlan, ctx.packagedSkillsRoot, vendoredRoot);
-  const changedFiles = bundlePlan.flatMap(({ dirName, plan }) => plan.changes.map((c) => join(".claude", "skills", dirName, c.relPath)));
+  applySkillSync(agentPlan, packagedAgentsRootOf(ctx), vendoredAgents);
+  const changedFiles = [
+    ...bundlePlan.flatMap(({ dirName, plan }) => plan.changes.map((c) => join(".claude", "skills", dirName, c.relPath))),
+    ...agentPlan.changes.map((c) => join(".claude", "agents", c.relPath)),
+  ];
   return { ok: true, changedFiles };
 }
 
@@ -147,7 +165,7 @@ function detectSkillPlugin(ctx: UpgradeContext): StepDetection {
   return {
     applicable: true,
     reason:
-      `vendored skill bundle → em plugin: remove ${EM_ALL_SKILL_BUNDLE_DIRS.map((d) => `.claude/skills/${d}`).join(", ")}; ` +
+      `vendored skill bundle → em plugin: remove ${EM_ALL_SKILL_BUNDLE_DIRS.map((d) => `.claude/skills/${d}`).join(", ")} and any of ${EM_AGENT_FILES.map((f) => `.claude/agents/${f}`).join(", ")}; ` +
       `add extraKnownMarketplaces["${e.name}"] (github ${e.marketplace.source.repo}@${e.marketplace.source.ref}) and enabledPlugins["${e.enabledKey}"] to .claude/settings.json; ` +
       `refresh the AGENTS.md managed section with the /em:* skill names`,
   };
@@ -167,6 +185,14 @@ function applySkillPlugin(ctx: UpgradeContext): StepApplyOutcome {
     if (!existsSync(target)) continue;
     rmSync(target, { recursive: true, force: true });
     changedFiles.push(join(".claude", "skills", d));
+  }
+  // MIL-269 (R32): exactly the four em agent files (the plugin ships them as em:em-*); any other
+  // agent in the shared directory is never listed or touched.
+  for (const f of EM_AGENT_FILES) {
+    const target = join(vendoredAgentsRootOf(ctx.repoRoot), f);
+    if (!existsSync(target)) continue;
+    rmSync(target, { force: true });
+    changedFiles.push(join(".claude", "agents", f));
   }
   mkdirSync(dirname(settingsPath), { recursive: true });
   writeFileSync(settingsPath, merged);

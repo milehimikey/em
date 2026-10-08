@@ -21,6 +21,7 @@
     "README.md",
     "LICENSE",
     ".claude/skills",
+    ".claude/agents",
     "plugin",
     ".claude-plugin"
   ],

@@ -63,12 +63,12 @@ import { computeMetrics, formatMetricsText } from "./cli/metrics.js";
 import { runSystemScope } from "./cli/scopeInputs.js";
 import { buildScopeJson } from "./emit/scopeJson.js";
 import { buildMetricsJson } from "./emit/metricsJson.js";
-import { planSkillSyncBundle, applySkillSyncBundle } from "./cli/skillSync.js";
-import { checkSkillSyncBundle } from "./cli/skillCheck.js";
+import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./cli/skillSync.js";
+import { checkSkillSyncBundle, checkAgentFiles } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
-import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR } from "./cli/skillDirs.js";
+import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { syncAgentsMd, AgentsMdResult } from "./cli/agentsMd.js";
@@ -2612,6 +2612,14 @@ function packagedSkillsRoot(): string {
 function vendoredSkillsRoot(repoRoot: string): string {
   return join(resolve(repoRoot), ".claude", "skills");
 }
+// MIL-269 (R32): the four em sub-agent definitions live in `.claude/agents/`, a directory shared
+// with the consumer's own agents - install/sync/check only ever handle the fixed EM_AGENT_FILES.
+function packagedAgentsRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", ".claude", "agents");
+}
+function vendoredAgentsRoot(repoRoot: string): string {
+  return join(resolve(repoRoot), ".claude", "agents");
+}
 
 program
   .command("contract")
@@ -2660,6 +2668,18 @@ function warnVendoredDeprecated(): void {
 const skill = program
   .command("skill")
   .description("manage Claude Code skills bundled with em");
+
+// MIL-269: reconcile the four `.claude/agents/em-*.md` files (create the directory if absent);
+// byte-exact restore, never touches any other file there.
+function installAgentFiles(repoRoot: string): void {
+  const packaged = packagedAgentsRoot();
+  const vendored = vendoredAgentsRoot(repoRoot);
+  const plan = planAgentSync(packaged, vendored, EM_AGENT_FILES);
+  if (plan.changes.length === 0) return;
+  applySkillSync(plan, packaged, vendored);
+  for (const c of plan.changes) console.log(`${c.kind}: agents/${c.relPath}`);
+  console.log(`installed em sub-agent definitions → ${vendored} (${plan.changes.length} file(s))`);
+}
 
 skill
   .command("install")
@@ -2716,6 +2736,7 @@ skill
         );
       }
       console.log("in Claude Code, run /event-modeling to start a guided session");
+      installAgentFiles(process.cwd());
     } else {
       await mkdir(destRoot, { recursive: true });
       for (const name of EM_ALL_SKILL_BUNDLE_DIRS) {
@@ -2723,6 +2744,7 @@ skill
       }
       console.log(`installed event-modeling skill bundle → ${destRoot}`);
       console.log("in Claude Code, run /event-modeling to start a guided session");
+      installAgentFiles(process.cwd());
     }
 
     if (opts.agentsMd !== false) {
@@ -2747,16 +2769,23 @@ skill
     const vendoredRoot = vendoredSkillsRoot(path);
 
     const bundlePlan = planSkillSyncBundle(packagedRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
-    const totalChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
-    const totalUnchanged = bundlePlan.reduce((n, { plan }) => n + plan.unchangedCount, 0);
+    const skillChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
+    // MIL-269 (R32): the fixed agent-file list, never the shared .claude/agents/ directory as a whole.
+    const packagedAgents = packagedAgentsRoot();
+    const vendoredAgents = vendoredAgentsRoot(path);
+    const agentPlan = planAgentSync(packagedAgents, vendoredAgents, EM_AGENT_FILES);
+    const totalChanges = skillChanges + agentPlan.changes.length;
+    const totalUnchanged = bundlePlan.reduce((n, { plan }) => n + plan.unchangedCount, 0) + agentPlan.unchangedCount;
 
     if (totalChanges === 0) {
       console.log(`up to date — ${vendoredRoot} already matches the installed skill bundle (${totalUnchanged} file(s))`);
     } else {
       applySkillSyncBundle(bundlePlan, packagedRoot, vendoredRoot);
+      applySkillSync(agentPlan, packagedAgents, vendoredAgents);
       for (const { dirName, plan } of bundlePlan) {
         for (const c of plan.changes) console.log(`${c.kind}: ${dirName}/${c.relPath}`);
       }
+      for (const c of agentPlan.changes) console.log(`${c.kind}: agents/${c.relPath}`);
       console.log(`synced ${vendoredRoot} — ${totalChanges} file(s) changed, ${totalUnchanged} unchanged`);
     }
 
@@ -2793,7 +2822,12 @@ skill
       pluginCheck && !vendoredPresent
         ? { findings: [], ok: true }
         : checkSkillSyncBundle(packagedRoot, vendoredRoot, PKG_VERSION, EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES);
-    const findings = [...vendored.findings, ...(pluginCheck?.findings ?? [])];
+    // MIL-269 (R32): the four agent files, only when the vendored bundle is present (a plugin-only
+    // repo ships them via the plugin); checked by fixed name, never the shared directory.
+    const agents = vendoredPresent
+      ? checkAgentFiles(packagedAgentsRoot(), vendoredAgentsRoot(path), EM_AGENT_FILES)
+      : { findings: [], ok: true };
+    const findings = [...vendored.findings, ...agents.findings, ...(pluginCheck?.findings ?? [])];
     const failing = findings.filter((f) => f.code !== "plugin-not-installed-locally" || ciMode);
     const ok = failing.length === 0;
     const result = { findings, ok };
@@ -3034,6 +3068,7 @@ program
       repoRoot: repoRootResult.repoRoot,
       installedVersion: PKG_VERSION,
       packagedSkillsRoot: packagedSkillsRoot(),
+      packagedAgentsRoot: packagedAgentsRoot(),
       model,
       refs,
     };
