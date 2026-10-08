@@ -73,7 +73,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "reaction-shape" | "state-file" | "ci-block" | "constitution";
+export type UpgradeStepId = "skill-bundle" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -286,12 +286,89 @@ function applyConstitution(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: [path] };
 }
 
+// ---- Step 6: ratified-signoff (MIL-259) — `--slice-ready` now requires a recorded `ratifiedBy`,
+// so a doc that reached `ready-to-implement` before sign-offs were recorded (pre-1.8) would
+// suddenly read not-ready. Grandfather exactly those: `version: 1` (never reratified — a
+// reratified doc has `version > 1` and is mid-sign-off, which only a human can resolve; see the
+// `ready-to-implement-no-ratifiedby` human item) with no `ratifiedBy`. A doc with no `version:`
+// at all is treated as version 1 (the schema's default). ----
+
+export const GRANDFATHERED_RATIFIER = "grandfathered (unsigned before em 1.14)";
+
+/** Pure text transform: inserts the grandfather sign-off after the `status:` line, using only
+ *  the key lines that are missing (a stray `ratifiedOn:` is kept as-is), in the file's own EOL.
+ *  `null` when the doc isn't a candidate (no frontmatter/status, or `ratifiedBy` already set). */
+export function applyGrandfatherSignoff(raw: string, ratifiedOn: string): string | null {
+  const range = locateFrontmatterInner(raw);
+  if (!range) return null;
+  const inner = raw.slice(range.innerStart, range.innerEnd);
+  const statusMatch = fieldLineRegex("status").exec(inner);
+  if (!statusMatch) return null;
+  const byMatch = fieldLineRegex("ratifiedBy").exec(inner);
+  if (byMatch && normalizeFieldValue(byMatch[2]) !== null) return null;
+  const onMatch = fieldLineRegex("ratifiedOn").exec(inner);
+  const statusEnd = statusMatch.index + statusMatch[0].length;
+  const eol = inner.slice(statusEnd).startsWith("\r\n") ? "\r\n" : "\n";
+  const value = `"${GRANDFATHERED_RATIFIER}"`;
+
+  // Edits against `inner`, applied highest index first so earlier offsets stay valid. A blank
+  // `ratifiedBy:` line is filled in place; missing lines are inserted right after `status:`.
+  const missing: string[] = [];
+  if (!byMatch) missing.push(`ratifiedBy: ${value}`);
+  if (!onMatch) missing.push(`ratifiedOn: ${ratifiedOn}`);
+  const edits: { index: number; oldLen: number; next: string }[] = [];
+  if (missing.length > 0) edits.push({ index: statusEnd, oldLen: 0, next: eol + missing.join(eol) });
+  if (byMatch) edits.push({ index: byMatch.index, oldLen: byMatch[0].length, next: `${byMatch[1]}${value}` });
+  edits.sort((a, b) => b.index - a.index);
+  let updated = inner;
+  for (const e of edits) updated = updated.slice(0, e.index) + e.next + updated.slice(e.index + e.oldLen);
+  return raw.slice(0, range.innerStart) + updated + raw.slice(range.innerEnd);
+}
+
+function grandfatherCandidates(ctx: UpgradeContext): Array<{ key: string; path: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ key: string; path: string }> = [];
+  for (const d of nonContinuationDocs(ctx)) {
+    if (d.status !== "ready-to-implement" || d.ratifiedBy) continue;
+    if ((d.version ?? 1) !== 1) continue;
+    if (seen.has(d.path)) continue;
+    seen.add(d.path);
+    out.push({ key: d.key, path: d.path });
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function detectRatifiedSignoff(ctx: UpgradeContext): StepDetection {
+  const keys = grandfatherCandidates(ctx).map((c) => c.key);
+  if (keys.length === 0) return { applicable: false, reason: "no version-1 ready-to-implement doc is missing a ratifiedBy" };
+  return {
+    applicable: true,
+    reason: `${keys.length} ready-to-implement doc(s) with no recorded sign-off (--slice-ready now requires one): ${keys.join(", ")} — em upgrade will record ratifiedBy: "${GRANDFATHERED_RATIFIER}"`,
+  };
+}
+
+function applyRatifiedSignoff(ctx: UpgradeContext): StepApplyOutcome {
+  const candidates = grandfatherCandidates(ctx);
+  if (candidates.length === 0) return { ok: false, message: "nothing to grandfather" };
+  const today = localIsoDate();
+  const writes: Array<{ file: string; text: string }> = [];
+  for (const c of candidates) {
+    const file = join(ctx.baseDir, c.path);
+    const next = applyGrandfatherSignoff(readFileSync(file, "utf8"), today);
+    if (next === null) return { ok: false, message: `${c.path}: could not locate status: in the frontmatter` };
+    writes.push({ file, text: next });
+  }
+  for (const w of writes) writeFileSync(w.file, w.text);
+  return { ok: true, changedFiles: writes.map((w) => w.file) };
+}
+
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
+  { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
 ];
 
 // ---- Human list — detect-only, never applied. ----
@@ -318,12 +395,12 @@ function elementRefOf(ctx: UpgradeContext): (id: string) => string {
  *  exclusion of continuation slices, MIL-208: a continuation's own join already resolves to its
  *  originating slice's doc, so counting it again here would double-count). */
 function nonContinuationDocs(ctx: UpgradeContext) {
-  const results: Array<{ key: string; status: string | null; ratifiedBy: string | null }> = [];
+  const results: Array<{ key: string; status: string | null; ratifiedBy: string | null; version: number | null; path: string }> = [];
   ctx.model.slices.forEach((slice, i) => {
     const key = ctx.refs.sliceKeys[i];
     const { doc, continuationOf } = resolveSliceDocJoin(ctx.model, ctx.refs, slice, key, ctx.baseDir, elementRefOf(ctx));
     if (continuationOf !== null) return;
-    results.push({ key, status: doc.status, ratifiedBy: doc.ratifiedBy });
+    results.push({ key, status: doc.status, ratifiedBy: doc.ratifiedBy, version: doc.version, path: doc.path });
   });
   return results;
 }
@@ -353,13 +430,13 @@ function detectContinuationHasOwnDoc(ctx: UpgradeContext): HumanItem | null {
 
 function detectReadyNoRatifiedBy(ctx: UpgradeContext): HumanItem | null {
   const keys = nonContinuationDocs(ctx)
-    .filter((d) => d.status === "ready-to-implement" && !d.ratifiedBy)
+    .filter((d) => d.status === "ready-to-implement" && !d.ratifiedBy && (d.version ?? 1) > 1)
     .map((d) => d.key)
     .sort();
   if (keys.length === 0) return null;
   return {
     id: "ready-to-implement-no-ratifiedby",
-    reason: `${keys.length} ready-to-implement doc(s) with no ratifiedBy: ${keys.join(", ")} — run \`em slice ratify --by <name>\` on each`,
+    reason: `${keys.length} ready-to-implement doc(s) with no ratifiedBy (version > 1, reratified and awaiting a fresh sign-off): ${keys.join(", ")} — run \`em slice ratify --by <name>\` on each`,
   };
 }
 

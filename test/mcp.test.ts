@@ -80,7 +80,7 @@ beforeAll(() => {
   mkdirSync(join(dir, "slices"), { recursive: true });
   writeFileSync(
     join(dir, "slices", "ready-slice.md"),
-    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n" +
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n---\n" +
       "## Invariants / Business Rules\n- **INV-1:** cited\n- **INV-2:** not cited\n\n## Open Questions\n- [x] resolved\n",
   );
 
@@ -381,6 +381,7 @@ describe("slice_ready tool", () => {
       frontmatterUsable: true,
       statusReady: true,
       noUncheckedOpenQuestions: true,
+      ratified: true,
     });
     expect(doc.ready).toBe(true);
     expect(doc.diagnostics).toEqual([]);

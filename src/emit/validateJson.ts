@@ -57,15 +57,18 @@ export function buildValidateJson(file: string, diagnostics: Diagnostic[]): stri
 // the `gates` above actually verify. `gates` themselves already resolve straight through to the
 // originating slice's own doc/status (see `computeSliceReadyGates`); this field only explains
 // why. Additive-only.
-export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.1";
+// 1.2 (MIL-259, 1.14.0): `gates.ratified` — the doc carries a recorded `ratifiedBy`. A
+// ready-to-implement doc without one (e.g. right after `em slice reratify`) is no longer ready:
+// the `slice-ready-not-ratified` error joins the scoped diagnostics. Additive-only.
+export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.2";
 
 /** Build the `em validate <file> --slice-ready <key> --json` document — the machine verdict
  *  replacing the two hand-parsed English sentences ("is ready-to-implement" /
- *  "is NOT ready-to-implement") plus scraped warning prose. `gates` names each of the 4
+ *  "is NOT ready-to-implement") plus scraped warning prose. `gates` names each of the 5
  *  conditions individually (see `computeSliceReadyGates`, catalog/sliceReadyValidate.ts);
  *  `null` when `sliceKey` matches no slice in the model (the `slice-ready-unknown-slice` error
  *  case — nothing to gate). `ready` is the same predicate driving `em validate`'s exit code
- *  for `--slice-ready` (scoped diagnostics empty) — it is the AND of the 4 gates only when
+ *  for `--slice-ready` (scoped diagnostics empty) — it is the AND of the 5 gates only when
  *  `gates` is non-null AND nothing else concerning this slice is broken (e.g. a plain
  *  both-ends-of-a-flow diagnostic on one of its own elements); `diagnostics` carries that full
  *  scoped list so a consumer sees exactly why, never just the 4 named gates. `continuationOf`

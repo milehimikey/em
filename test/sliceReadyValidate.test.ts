@@ -99,7 +99,7 @@ describe("slice-ready-open-questions-unchecked", () => {
   it("warns with the unchecked/total count when Open Questions remain", () => {
     writeDoc(
       "unresolved",
-      "status: ready-to-implement\nversion: 1\n",
+      "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n",
       "## Open Questions\n- [ ] who validates this?\n- [x] already answered\n",
     );
     const diags = readyDiagsOf(
@@ -136,7 +136,7 @@ describe("cross-slice binding (MIL-121)", () => {
   it("passes the view-only slice through to a ready, no-open-questions covering doc", () => {
     writeDoc(
       "request-payment",
-      "status: ready-to-implement\nversion: 1\ncovers: detect-unpaid-orders\n",
+      "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\ncovers: detect-unpaid-orders\n",
       "## Open Questions\n- [x] resolved before ratification\n",
     );
     const diags = readyDiagsOf(
@@ -190,7 +190,7 @@ describe("ready: the all-clear case", () => {
   it("produces zero diagnostics for a bound, usable, ready-to-implement doc with no open questions", () => {
     writeDoc(
       "ready-slice",
-      "status: ready-to-implement\nversion: 1\n",
+      "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n",
       "## Open Questions\n- [x] resolved before ratification\n",
     );
     const diags = readyDiagsOf(
@@ -201,11 +201,39 @@ describe("ready: the all-clear case", () => {
   });
 
   it("produces zero diagnostics for a ready doc with no Open Questions section at all", () => {
-    writeDoc("ready-no-questions", "status: ready-to-implement\nversion: 1\n");
+    writeDoc("ready-no-questions", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n");
     const diags = readyDiagsOf(
       `slice "Ready No Questions" {\n  command Do Thing note "slices/ready-no-questions.md"\n}`,
       "ready-no-questions",
     );
     expect(diags).toEqual([]);
+  });
+});
+
+describe("slice-ready-not-ratified (MIL-259)", () => {
+  it("errors on a ready-to-implement doc with no ratifiedBy, with the exact message", () => {
+    writeDoc("reratified-slice", "status: ready-to-implement\nversion: 2\n");
+    const diags = readyDiagsOf(
+      `slice "Reratified Slice" {\n  command Do Thing note "slices/reratified-slice.md"\n}`,
+      "reratified-slice",
+    );
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        code: "slice-ready-not-ratified",
+        message:
+          'slice "reratified-slice" is ready-to-implement but carries no ratifiedBy — record the sign-off with `em slice ratify --by <name>`',
+        refs: ["reratified-slice"],
+      }),
+    ]);
+  });
+
+  it("does not add the finding when the status is already not-ready (one blocker, not two)", () => {
+    writeDoc("draft-unsigned", "status: draft\nversion: 1\n");
+    const diags = readyDiagsOf(
+      `slice "Draft Unsigned" {\n  command Do Thing note "slices/draft-unsigned.md"\n}`,
+      "draft-unsigned",
+    );
+    expect(diags.map((d) => d.code)).toEqual(["slice-ready-status-not-ready"]);
   });
 });

@@ -29,6 +29,8 @@ cherry-pick each one individually:
    that block already exists.
 5. `constitution` — scaffold `constitution.md` (draft, unratified) when it's absent and the
    repo has no `.specify/` directory.
+6. `ratified-signoff` — grandfather `ready-to-implement` docs that never recorded a sign-off (see
+   [1.14.0](#1140)).
 
 Each step is detected first and applied only under `--apply`; a step that finds nothing to
 do makes no commit. `--apply` refuses to start on a dirty working tree, or with no git
@@ -36,7 +38,7 @@ identity configured (`git config user.name`/`user.email` — needed before `git 
 work at all), and stops at the first failing step with the prior steps' commits intact. Once
 every applicable step has
 run, `--apply` writes the final `Em version: <to>` bullet to the state file as its own last
-commit — that write happens every run, independent of which of the five steps applied.
+commit — that write happens every run, independent of which of the six steps applied.
 
 `from` is read from the state file's `Em version:` bullet; when that bullet is absent (a
 state file predating this feature), `em upgrade` infers `from` from other evidence and says
@@ -61,8 +63,9 @@ detects and reports them:
 - **docs on continuation slices** — slices flagged by `continuation-has-own-doc`: an
   `again`-view continuation that still carries its own doc, which should fold into its
   originating slice's doc instead (MIL-208).
-- **`ready-to-implement` docs lacking `ratifiedBy`** — should go through `em slice ratify
-  --by <name>` (MIL-165).
+- **`ready-to-implement` docs lacking `ratifiedBy`** — since 1.14 only `version > 1` docs, i.e.
+  reratified and awaiting a fresh sign-off (version-1 docs are grandfathered by the
+  `ratified-signoff` step); run `em slice ratify --by <name>` (MIL-165, MIL-259).
 - **coverage default-scope change** — the generated CI block runs `em coverage --strict`
   and the model has zero `implemented` docs: since MIL-207, `--strict` counts only
   `implemented` docs by default, so a repo with none yet gets a trivially-green gate.
@@ -206,3 +209,11 @@ saying why, and a generated CI scaffold that could not pass a lint gate. Two beh
 | `em coverage --slice <key>` — the pre-merge check for one slice whatever its status; with `--strict` it fails on an uncited invariant or on a slice that is not ratified. The default form is unchanged and still counts `implemented` docs only (MIL-255) | no action needed — switch a per-slice pre-merge check to `--slice` |
 | `--json` schema versions, both additive: coverage 1.1 → 1.2 (`slice`, `continuationOf`); upgrade 1.0 → 1.1 (`stateFileError` is `null` for an absent state file) (MIL-255, MIL-257) | no action needed |
 | **Release note: run `em skill sync` in each consumer repo** (implement contract §4 and §5 changed; the design skill gained a sibling-slice invariant check; four summaries corrected) (MIL-254, MIL-255, MIL-258, #189) | `skill-bundle` |
+
+## 1.14.0
+
+Strict seams, API first.
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **Behavior change:** `--slice-ready` requires a recorded ratification: a `ready-to-implement` doc with no `ratifiedBy` (e.g. after `em slice reratify`) is not ready (`slice-ready-not-ratified`; `--json` schema 1.1 → 1.2 adds `gates.ratified`) (MIL-259) | `ratified-signoff` — writes `ratifiedBy: "grandfathered (unsigned before em 1.14)"` and `ratifiedOn:` today on `version: 1` docs without one; a reratified (`version > 1`) doc stays a human item: `em slice ratify --by <name>` |

@@ -621,7 +621,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     mkdirSync(join(readyDir, "slices"), { recursive: true });
     writeFileSync(
       join(readyDir, "slices", "ready-slice.md"),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n---\n## Open Questions\n- [x] resolved\n",
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n---\n## Open Questions\n- [x] resolved\n",
     );
     // Genuinely complete (ui -> command -> event -> view -> ui), so this slice's own
     // both-ends-of-a-flow diagnostics stay silent — the only way to isolate "ready" to
@@ -729,13 +729,14 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     const r = em(["validate", "ready.em", "--slice-ready", "ready-slice", "--json"], readyDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.validateSliceReadySchemaVersion).toBe("1.1");
+    expect(doc.validateSliceReadySchemaVersion).toBe("1.2");
     expect(doc.sliceKey).toBe("ready-slice");
     expect(doc.gates).toEqual({
       docBound: true,
       frontmatterUsable: true,
       statusReady: true,
       noUncheckedOpenQuestions: true,
+      ratified: true,
     });
     expect(doc.continuationOf).toBeNull();
     expect(doc.ready).toBe(true);
@@ -751,6 +752,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       frontmatterUsable: true,
       statusReady: false,
       noUncheckedOpenQuestions: false,
+      ratified: false,
     });
     expect(doc.ready).toBe(false);
     expect(doc.diagnostics).toEqual(
@@ -770,6 +772,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       frontmatterUsable: false,
       statusReady: false,
       noUncheckedOpenQuestions: false,
+      ratified: false,
     });
     expect(doc.ready).toBe(false);
   });
@@ -799,6 +802,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       frontmatterUsable: true,
       statusReady: true,
       noUncheckedOpenQuestions: true,
+      ratified: true,
     });
     expect(doc.ready).toBe(false);
     expect(doc.diagnostics).toEqual(
@@ -816,6 +820,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       frontmatterUsable: true,
       statusReady: true,
       noUncheckedOpenQuestions: true,
+      ratified: true,
     });
   });
 });
@@ -3738,6 +3743,31 @@ describe("em slice reratify (CLI, MIL-161)", () => {
     expect(content).not.toContain("reviewedOn:");
   });
 
+  it("MIL-259: --slice-ready reports not ready after reratify and before ratify --by, ready after", () => {
+    // Previous test left shipped-slice at `status: ready-to-implement`, version 2, no ratifiedBy.
+    const before = em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir);
+    expect(before.status).toBe(1);
+    const doc = JSON.parse(before.stdout);
+    expect(doc.validateSliceReadySchemaVersion).toBe("1.2");
+    expect(doc.ready).toBe(false);
+    expect(doc.gates).toEqual({
+      docBound: true,
+      frontmatterUsable: true,
+      statusReady: true,
+      noUncheckedOpenQuestions: true,
+      ratified: false,
+    });
+    expect(doc.diagnostics.map((d: { code: string; message: string }) => [d.code, d.message])).toEqual([
+      [
+        "slice-ready-not-ratified",
+        'slice "shipped-slice" is ready-to-implement but carries no ratifiedBy — record the sign-off with `em slice ratify --by <name>`',
+      ],
+    ]);
+    const text = em(["validate", "shipped.em", "--slice-ready", "shipped-slice"], dir);
+    expect(text.status).toBe(1);
+    expect(text.stderr).toContain("carries no ratifiedBy");
+  });
+
   it("a follow-up em slice ratify --by applies cleanly, needing no fresh review (MIL-201)", () => {
     const r = em(["slice", "ratify", "shipped.em", "shipped-slice", "--by", "Jordan Lee", "--on", "2026-08-28"], dir);
     expect(r.status).toBe(0);
@@ -3749,6 +3779,9 @@ describe("em slice reratify (CLI, MIL-161)", () => {
     expect(content).toContain("ratifiedBy: Jordan Lee");
     expect(content).toContain("status: ready-to-implement");
     expect(content).toContain("version: 2"); // ratify never bumps version
+    const after = em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir);
+    expect(after.status).toBe(0);
+    expect(JSON.parse(after.stdout).ready).toBe(true); // MIL-259: re-signed -> ready again
   });
 
   it("MIL-258: a re-signed (ratified, unshipped) doc takes the unshipped path; a repeat before re-signing refuses", () => {

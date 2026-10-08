@@ -34,14 +34,15 @@ const SLICE_READY_CODES = [
   "slice-ready-no-doc-bound",
   "slice-ready-status-not-ready",
   "slice-ready-open-questions-unchecked",
+  "slice-ready-not-ratified",
 ].sort();
 
 describe("RULES registry", () => {
   it("finds every registered rule (guards against a silently empty/truncated table)", () => {
-    expect(Object.keys(RULES).length).toBe(67); // MIL-218: +model-version-stale
+    expect(Object.keys(RULES).length).toBe(68); // MIL-259: +slice-ready-not-ratified
   });
 
-  it("marks exactly sliceReadyValidate.ts's 4 codes as optIn — nothing else", () => {
+  it("marks exactly sliceReadyValidate.ts's 5 codes as optIn — nothing else", () => {
     const optInCodes = RULE_ENTRIES
       .filter(([, r]) => r.optIn)
       .map(([code]) => code)
