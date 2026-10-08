@@ -101,7 +101,7 @@ describe("consumer-not-adapted end to end (multi-model example)", () => {
     const intake = readFileSync(repo.fulfillment, "utf8");
     writeFileSync(
       repo.fulfillment,
-      intake.replace("translation Order Intake consumes checkout:event.order-submitted {\n    orderId: uuid", "translation Order Intake consumes checkout:event.order-submitted {\n    customerOrderId: uuid"),
+      intake.replace(/(translation Order Intake consumes checkout:event\.order-submitted[^{\n]*\{\n {4})orderId: uuid/, "$1customerOrderId: uuid"),
     );
     const after = em(["system", "system.yaml", "--json"], repo.dir);
     expect(after.status).toBe(0);
@@ -132,7 +132,7 @@ describe("consumer-not-adapted end to end (multi-model example)", () => {
   it("a consumer with no declared fields has nothing to compare: no finding, checked 0", () => {
     repo = makeMultiModelRepo();
     const text = readFileSync(repo.fulfillment, "utf8");
-    writeFileSync(repo.fulfillment, text.replace(/(translation Order Intake consumes checkout:event\.order-submitted) \{\n {4}orderId: uuid\n {4}total: decimal\n {2}\}/, "$1"));
+    writeFileSync(repo.fulfillment, text.replace(/(translation Order Intake consumes checkout:event\.order-submitted[^{\n]*?) \{\n {4}orderId: uuid\n {4}total: decimal\n {2}\}/, "$1"));
     const out = em(["system", "system.yaml", "--json"], repo.dir);
     expect(out.status).toBe(0);
     expect(JSON.parse(out.stdout).consumerAdaptation).toEqual({ checked: 0, notAdapted: 0 });

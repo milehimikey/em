@@ -324,6 +324,9 @@ describe("slice-ready-contract-stale (MIL-238)", () => {
     expect(diags.map((x) => x.code)).toEqual(["slice-ready-status-not-ready", "slice-ready-contract-stale"]);
     expect(gates.statusReady).toBe(false);
     expect(gates.contractCurrent).toBe(false);
+  });
+});
+
 describe("slice-ready-structured-section-malformed (MIL-266)", () => {
   it("blocks a ready, ratified doc whose generated region is malformed, with the exact message", () => {
     writeDoc(
