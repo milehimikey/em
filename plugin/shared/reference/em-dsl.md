@@ -96,7 +96,7 @@ em state set-conformance <revision> [dir] --report <path>      # path to the con
 em state set-conformance <revision> [dir] --partial            # record the marker as PARTIAL even though some in-scope findings are still unruled
 em state set-review <date> [dir]                               # rewrite Last stakeholder review: (and Last updated:)
 em state log-usage <file>                                      # append one Usage log line — phase(s) touched + em validate's diagnostic categories hit, deduped and canonically formatted (MIL-161, docs/usage-data.md) — the mechanical half of 'save state at the end of every session' that used to be run-validate-then-hand-format; state file resolved next to <file>, same convention as em conform-scope
-em state log-usage <file> --phases <list>                      # comma-separated phase(s) touched this session: discover, extract, model, slice, implement, conform, review, validate, watch
+em state log-usage <file> --phases <list>                      # comma-separated phase(s) touched this session: discover, extract, model, slice, implement, conform, review, validate, watch, engagement
 em model version bump <file>                                   # bump the model's design version: write model-versions/v<N+1>.json (sibling of slices/, conformance/) and rewrite the state file's `Model version:` bullet (MIL-218). Refuses when the state file is missing (run `em scaffold` first), when --by is empty, and when nothing has changed since the current version (same model content hash AND same slice-version vector) unless --force — a no-op bump is the one case --force is right for.
 em model version bump <file> --by <name>                       # the bumper's name
 em model version bump <file> --on <date>                       # bump date, YYYY-MM-DD (default: today, local date)
@@ -190,6 +190,23 @@ em query path <files>                                          # shortest path b
 em query path <files> --from <ref-or-name>                     # the starting element's export ref or display name
 em query path <files> --to <ref-or-name>                       # the ending element's export ref or display name
 em query path <files> --json                                   # print a JSON document instead of the text report
+em engagement new <file> <slug>                                # write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the generated Ledger table; selection by --slices, --context, or --downstream-of (exactly one)
+em engagement new <file> <slug> --slices <keys>                # comma-separated slice export keys
+em engagement new <file> <slug> --context <name>               # every slice with an event in this context
+em engagement new <file> <slug> --downstream-of <ref>          # a slice key, element ref, or display name: it and everything downstream of it (loops-to excluded)
+em engagement new <file> <slug> --parallel <n>                 # how many slices of one level may be in flight at once
+em engagement new <file> <slug> --by <name>                    # who created the engagement (createdBy)
+em engagement new <file> <slug> --force                        # overwrite an existing engagement file with this slug
+em engagement plan <file> <slug>                               # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (main or impl/<upstream>), and any hold
+em engagement plan <file> <slug> --json                        # print a JSON document instead of text (same document as the MCP engagement_plan tool)
+em engagement set <file> <slug> <key>                          # the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); idempotent; merged is terminal; --state held records a human hold
+em engagement set <file> <slug> <key> --state <state>          # one of: planned | building | validating | review | awaiting-merge | merged | held | gap
+em engagement set <file> <slug> <key> --branch <name>          # the slice's branch
+em engagement set <file> <slug> <key> --base <name>            # the branch the slice's PR targets
+em engagement set <file> <slug> <key> --pr <url>               # the slice's PR URL
+em engagement status <file> <slug>                             # the Ledger joined with each slice doc's current status, plus whether the engagement is closable
+em engagement status <file> <slug> --json                      # print a JSON document instead of text (same document as the MCP engagement_status tool)
+em engagement close <file> <slug>                              # set status: closed — refuses unless every slice is merged (recorded or inferred) or gap
 em system [target]                                             # verify a system — every model's `consumes` refs resolved against the other models' `public` events/views, the cross-model half of "both ends of a flow" (MIL-194/MIL-235, see docs/cli.md). Reads system.yaml when given (or found in the directory), else discovers every *.em in the repo
 em system [target] --json                                      # print a JSON document instead of the text report (see docs/cli.md)
 em system codeowners [target]                                  # generate (or --check) the managed CODEOWNERS block that routes review: each model's team on its design directory, and every team that `consumes` a model's public surface on that model's contract file (MIL-234, see docs/ci.md and docs/cli.md)

@@ -1765,6 +1765,8 @@ describe("em mcp (CLI, MIL-21)", () => {
           "contract",
           "coverage",
           "diff",
+          "engagement_plan",
+          "engagement_status",
           "export_model",
           "export_slice",
           "freshness",

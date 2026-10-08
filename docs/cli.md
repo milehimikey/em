@@ -1629,6 +1629,7 @@ see [mcp.md](mcp.md)):
   ],
   "system": { "manifest": "../../system.yaml", "consumerNotAdapted": 0 },
   "publicSlicesUnconfirmed": 0,
+  "engagements": { "open": 1, "slugs": ["loans"] },
   "diagnostics": []
 }
 ```
@@ -1715,6 +1716,13 @@ before the API-first gate, or edited by hand). Continuation slices are skipped. 
 prints `public-touching slices without a meaning confirmation: N` after the `issues:` line. To
 clear one, re-run `em slice ratify` with the same `--by`/`--on` plus `--meaning-unchanged` or
 `--contract-change "<why>"`; a shipped slice is confirmed at its next `em slice reratify`.
+
+`engagements` (added under schema `1.8`, MIL-268) is `{ open, slugs }`: the engagement files
+beside the input models (`<model dir>/engagements/<slug>.md`, see
+[`em engagement`](#em-engagement)) whose frontmatter says `status: open`, slugs sorted. One scan
+per distinct model directory; an unparseable file is skipped (`em engagement status` names the
+problem). The text report always prints `open engagements: N`, followed by ` (<slugs>)` when N
+is not zero.
 
 `diagnostics` (added for the PR #116 review pass) carries every doc-join warning
 (`binding-missing-file`/`frontmatter-invalid`) raised while resolving each slice's doc, across
@@ -1919,6 +1927,131 @@ committed at that revision. `Em-Upgrade:` commits never count. The text report p
   "readinessGateEffect": null
 }
 ```
+
+## `em engagement`
+
+An engagement is a named chunk of the model that one lead session builds as a stack of slice PRs
+(MIL-268). It is the scope boundary: stacks never cross an engagement, and inside one only
+dependency edges stack. `em engagement` keeps two things beside the model, in
+`<model dir>/engagements/<slug>.md` ([engagement-schema.md](engagement-schema.md)): the
+selection (which slices, and how many may be in flight per level), and the **Ledger** (where
+each slice stands). The file is written only by these commands. Never hand-edit it.
+
+**Units.** One Ledger row is one slice doc, so one PR. A continuation slice (`view X again` only)
+and every `again` view instance fold into the originating slice. A slice bound to another
+slice's doc through a ratified `covers:` entry folds into that slice.
+
+**The graph.** Dependencies are the model's own edges (`em export`'s `model.edges`) with every
+`loops-to` edge excluded. A loop-back re-feeds an earlier read model, so keeping it would make
+every to-do list and its reaction a cycle. Edges are lifted from elements to units, and an
+upstream whose doc is already `implemented` imposes nothing.
+
+### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --downstream-of <ref>) [--parallel N] [--by <name>] [--force]`
+
+Writes `engagements/<slug>.md` with every selected slice at state `planned`. Exactly one
+selector:
+
+- `--slices`: export keys. Unknown keys are refused: `em engagement new: unknown slice key(s): <keys>`.
+- `--context <C>`: every slice with an event in context `<C>` (case-insensitive).
+- `--downstream-of <ref>`: a slice key (all its elements), an element ref, or a display name,
+  resolved the way `em query` resolves it, plus everything downstream of it (`loops-to` excluded).
+
+Slices that are not yet `ready-to-implement` are accepted; `plan` reports them held. `--parallel`
+(default 3) is the per-level ceiling the lead confirms once. `--by` records `createdBy`;
+`created` is today's local date. Refusals (exit 1, stderr): `pass exactly one of --slices,
+--context, --downstream-of`; `the selection is empty — nothing to engage`; `invalid slug "<s>"
+— expected kebab-case (a-z, 0-9, -)`; `--parallel must be a positive integer`; `engagement
+"<slug>" already exists (<path>) — pass --force to overwrite`.
+
+When the selection falls into more than one connected component of the whole model's graph
+(undirected), `new` still writes the file and warns:
+
+```
+warn: em engagement new: the selection has 3 unconnected components in the dependency graph — consider 3 engagements:
+  1: account-list
+  2: order-list
+  3: shipment-list
+```
+
+Two views over one shared foundation event are connected. Three lifecycles that never touch
+are three components.
+
+### `em engagement plan <file> <slug> [--json]`
+
+The build plan. **Levels** are a topological order of the engagement's slices over the graph
+above: level 0 has no upstream inside the engagement, and level n sits on level n−1. Levels come
+from the graph alone and do not move as PRs merge. Bases and holds are recomputed on every run.
+Per slice:
+
+| Field | Meaning |
+|---|---|
+| `ready`, `readyDiagnostics` | The `em validate --slice-ready` verdict and its scoped diagnostics, from the same helper (so the MIL-259 sign-off and MIL-238 contract gates apply) |
+| `level`, `upstreams` | The level, and the direct upstreams inside the engagement |
+| `branch` | `impl/<key>` |
+| `base` | `main` when no in-engagement upstream is unmerged; `impl/<upstream>` when exactly one is; `null` when two or more are |
+| `planHeld` | The plan's own computed hold (below), or `null`. Never written to the Ledger |
+| `held` | `planHeld`, else `human` when the Ledger records `set --state held`, else `null` |
+| `state`, `stateInferred` | The Ledger state; `merged` with `stateInferred: true` when the doc has reached `implemented` |
+
+| Hold reason | When |
+|---|---|
+| `not-ready` | The slice fails `--slice-ready` |
+| `upstream-outside-engagement-unmerged` | A direct upstream outside the engagement whose doc is not `implemented` |
+| `multiple-unmerged-upstreams` | Two or more in-engagement upstreams are not merged yet. Held until at most one remains; the plan recomputes |
+
+A merged slice (recorded or inferred) is never held. The text form prints one block per level
+with its width against the ceiling:
+
+```
+engagement "loans" (open) — 26 slice(s) in 3 level(s), parallel 3
+level 0: 23 slices (ceiling 3)
+  catalog-view-1 [state-view] impl/catalog-view-1 on main · state: planned
+  …
+level 1: 2 slices (ceiling 3)
+  send-overdue-notice [translation] impl/send-overdue-notice on impl/overdue-loans-to-notify · state: planned
+  reservations [state-view] impl/reservations on (none) · state: planned · held: multiple-unmerged-upstreams
+level 2: 1 slice (ceiling 3)
+  loan-history [state-view] impl/loan-history on impl/send-overdue-notice · state: planned
+```
+
+`--json` prints `engagementPlanSchemaVersion: "1.0"`, `generator`, `file`, `engagement` (the
+file's path), `slug`, `status`, `parallel`, `levels: [{ level, width, ceiling, slices }]` and
+`slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level. The MCP
+`engagement_plan` tool returns the same document. If a cycle survives the `loops-to` exclusion,
+`plan` refuses and names it: `em engagement plan: the engagement's dependency graph has a cycle
+(loops-to edges already excluded): a -> b -> a`. An engagement naming a slice the model no
+longer has is refused too.
+
+### `em engagement set <file> <slug> <key> --state <state> [--branch <b>] [--base <b>] [--pr <url>]`
+
+This is the only write path to the Ledger. States: `planned | building | validating | review |
+awaiting-merge | merged | held | gap`. Any state can be set. `set` rewrites that slice's one
+frontmatter entry line and regenerates the Ledger table. Every other byte is kept, the file's
+line ending included. `--branch`/`--base`/`--pr` replace their values, and omitted ones are
+kept.
+
+- **Idempotent:** the same state and values are a no-op (`no change: <key> is already <state>`).
+- **`merged` is terminal:** any different `set` afterwards is refused (`slice "<key>" is merged —
+  merged is terminal`).
+- **`--state held`** records `heldBy: human`. Setting any other state drops it.
+- Refusals: `slice "<key>" is not in engagement "<slug>"`, `invalid --state "<s>" — expected one
+  of: …`, `engagement "<slug>" is closed`, `no engagement "<slug>" (expected <path>)`.
+
+### `em engagement status <file> <slug> [--json]`
+
+The Ledger joined with each doc's current status: per slice `pattern`, `docStatus`, `state`
+(`merged` inferred when the doc is `implemented`), `stateInferred`, `heldBy`, `branch`, `base`,
+`pr`; `counts` per state; and `closable` (every slice is `merged` or `gap`). `--json` prints
+`engagementStatusSchemaVersion: "1.0"`; the MCP `engagement_status` tool returns the same
+document.
+
+### `em engagement close <file> <slug>`
+
+Sets `status: closed` once every slice is `merged` (recorded or inferred) or `gap`. Otherwise
+it refuses with `engagement "<slug>" is not closable — every slice must be merged or gap; still
+open: <key> (<state>), …`. Closing an already-closed engagement is a no-op. `em status` counts
+only open engagements. End the lead session with `em state log-usage <file> --phases
+engagement`.
 
 ## `em query <verb> <files...>`
 
@@ -3557,7 +3690,7 @@ frontmatter-coherence/note-binding/doc-model-consistency rules), and every diagn
 `usageCategory` (from the `RULES` registry, `src/model/rules.ts`) is deduped and sorted
 alphabetically — `["none"]` when the model is clean. `--phases` is deduped and sorted into
 [usage-data.md](usage-data.md)'s own canonical phase order (`discover, extract, model, slice,
-implement, conform, review, validate, watch`), not input order, so two sessions naming the same
+implement, conform, review, validate, watch, engagement`), not input order, so two sessions naming the same
 phases in a different order log an identical line.
 
 ```markdown
