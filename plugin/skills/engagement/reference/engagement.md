@@ -106,7 +106,39 @@ says so, and record that choice in the final report.
 
 ## Codex critic
 
-When the constitution names `critic=codex`, see MIL-271: the critic then runs through Codex rather
-than as the `em-critic` sub-agent. Its findings use the same list shape, and every rule above
-applies to them unchanged: fresh context, no access to the reviewer's findings, and
-disagreement is a finding.
+When the constitution's agent-models line says `critic=codex`, the critic runs through Codex instead
+of as the `em-critic` sub-agent. Its findings use the same list shape, and every rule above applies
+to them unchanged: fresh context, no access to the reviewer's findings, and disagreement is a
+finding. The Claude critic path is untouched.
+
+**Prerequisites (check; never write).** Any miss is reported to the human, the Claude critic
+(`em-critic`) runs for that PR instead, and the evidence bundle says "critic: codex unavailable
+(<reason>), ran em-critic":
+
+1. `command -v codex` succeeds.
+2. The project is trusted in Codex: `~/.codex/config.toml` has a `[projects."<repo root>"]` table with
+   `trust_level = "trusted"`. Read it; never add it. Trust is the human's to grant.
+3. If the project keeps `.codex/rules`, it is present in the review checkout. A repo without
+   `.codex/` is fine: the invocation below needs no rules file, and the lead never creates one.
+
+**Invocation** (flags verified against `codex exec --help`, codex-cli 0.159.1). Cut the review
+worktree at the PR head, save the diff, then run Codex read-only:
+
+```
+git worktree add --detach .claude/worktrees/review-<pr> <pr-head-sha>
+gh pr diff <pr> > <scratch>/pr-<pr>.diff
+codex exec --cd .claude/worktrees/review-<pr> --sandbox read-only --ephemeral \
+  --add-dir <scratch> -o <scratch>/critic-<pr>.txt "<prompt>" < /dev/null
+```
+
+`< /dev/null` is required: without it `codex exec` waits on stdin ("Reading additional input from
+stdin...") and hangs. `-o` (`--output-last-message`) writes only the final message to the file.
+The prompt gives the slice doc path, the constitution path and the diff path, says it is read-only,
+and asks for ONLY the `em-critic` list: `- [<severity>] <file:line or doc §> — <finding>`
+(`blocker`|`major`|`minor`), every finding citing a slice doc line or constitution rule, or
+`NO FINDINGS` naming what was checked. Do not pass the reviewer's findings.
+
+**Parse.** The output file is the critic's findings: keep lines matching `^- \[(blocker|major|minor)\] `
+or the `NO FINDINGS` line. If the file is missing, empty, or has neither, treat it as a failed run:
+report it and fall back to `em-critic`. Then continue with step 4 onward exactly as for the Claude
+critic. Remove the review worktree afterwards (`git worktree remove --force`).
