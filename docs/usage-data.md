@@ -64,6 +64,7 @@ affected lines written by hand.
 <!-- GENERATED:usage-categories-warnings:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Category |
 |---|
+| code spans seam |
 | colliding slice doc path across models |
 | command nothing triggers |
 | command produces no event |
@@ -92,6 +93,7 @@ affected lines written by hand.
 | invariant declared in model and doc |
 | model element missing from doc |
 | model version stale |
+| multi-model change set |
 | open issue |
 | orphaned slice doc left behind by a rename or removal |
 | owner not a handle |
@@ -100,6 +102,7 @@ affected lines written by hand.
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |
+| seam crossing greenfield |
 | seam manifest outdated |
 | slice doc cites undeclared invariant |
 | slice-ready slice has no doc bound |
@@ -141,6 +144,7 @@ affected lines written by hand.
 | reaction references unknown read model |
 | same-band collision |
 | seam consumer not a reaction |
+| seam crossing |
 | seam endpoint unresolved |
 | seam manifest invalid |
 | seam manifest model key mismatch |

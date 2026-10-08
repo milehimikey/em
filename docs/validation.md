@@ -593,6 +593,19 @@ reader in its own model, and a reaction with no `from`, are each a legitimate si
 and never opens the producer (compile isolation). `em system` is where the system-level claim is
 checked.
 
+### Seam scope
+
+Raised by [`em system scope`](cli.md#em-system-scope) (MIL-240) over a git change set, never by
+`em validate`. Only `seam-crossing` fails the run, and there is no override: review on the
+contract file is the gate ([ci.md](ci.md#em-system-scope-the-seam-crossing-gate)).
+
+| Code | Severity | Rule | Fix |
+|---|---|---|---|
+| `seam-crossing` | error | One change set alters a producer's `public` surface (or its contract file) and a model that `consumes` it | Land the contract change first, review it with the consumers, then adapt the consumer in a later change set |
+| `seam-crossing-greenfield` | warning | The surface change is new (or newly `public`) surface that nothing was bound to at the base revision | None: later changes to it are crossings |
+| `multi-model-change-set` | warning | The change set touches two or more model directories and crosses no contract | Prefer one model per change set |
+| `code-spans-seam` | warning | Advisory: code under two seam-joined models' declared `Code roots:` changed together | One code module per model; change the two sides in separate change sets |
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection

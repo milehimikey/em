@@ -60,6 +60,8 @@ import {
 import { buildStatusJson } from "./emit/statusJson.js";
 import { buildFreshnessJson } from "./emit/freshnessJson.js";
 import { computeMetrics, formatMetricsText } from "./cli/metrics.js";
+import { runSystemScope } from "./cli/scopeInputs.js";
+import { buildScopeJson } from "./emit/scopeJson.js";
 import { buildMetricsJson } from "./emit/metricsJson.js";
 import { planSkillSyncBundle, applySkillSyncBundle } from "./cli/skillSync.js";
 import { checkSkillSyncBundle } from "./cli/skillCheck.js";
@@ -2448,6 +2450,54 @@ systemCommand
     }
     // --check never writes and fails on anything but ok (same vocabulary as `em ci init --check`).
     if (opts.check && result.status !== "ok") process.exitCode = 1;
+  });
+
+const scopeCommand = systemCommand
+  .command("scope")
+  .description(
+    "check a change set against the seams (MIL-240): fail only when it alters a producer's public surface " +
+      "(or contract file) AND a consuming model's design dir together (`seam-crossing`); warn on other " +
+      "multi-model change sets. Files changed only by `Em-Upgrade:` commits are exempt. There is no " +
+      "override - review on the contract file is the gate (see docs/cli.md, docs/ci.md)",
+  )
+  .argument("[target]", "a system.yaml path, or a directory (its system.yaml if present, else discovery); default: the working directory")
+  .allowExcessArguments(false)
+  .option("--base <rev>", "the change set committed since <rev> (merge-base form, <rev>...HEAD); CI passes the PR base")
+  .option("--staged", "also (or only) check what is staged right now; never exempted")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((target: string | undefined, opts: { base?: string; staged?: boolean; json?: boolean }) => {
+    const shown = target ?? ".";
+    const run = runSystemScope(shown, { base: opts.base, staged: opts.staged });
+    if (!run.ok) {
+      printSystemDiagnostics(run.diagnostics);
+      console.error(run.message);
+      process.exit(1);
+    }
+    const { facts, report } = run;
+    // `--json` is also an option of the parent `system` command, which swallows it before this
+    // subcommand sees it: read the merged options.
+    const json = scopeCommand.optsWithGlobals().json === true;
+    const printFindings = () => {
+      for (const d of report.diagnostics) {
+        const line = `${d.file}: ${d.severity} [${d.code}] ${d.message}`;
+        if (d.severity === "error") console.error(line);
+        else console.warn(line);
+      }
+    };
+    if (json) {
+      printFindings();
+      process.stdout.write(buildScopeJson(facts, report) + "\n");
+    } else {
+      const range = [facts.base !== null ? `since ${facts.base}` : null, facts.staged ? "staged" : null].filter(Boolean).join(" + ");
+      console.log(
+        `scope ${range}: ${facts.changedPaths.length} changed path${facts.changedPaths.length === 1 ? "" : "s"}, ` +
+          `${report.touched.length} model${report.touched.length === 1 ? "" : "s"} touched` +
+          (facts.exemptPaths.length > 0 ? `, ${facts.exemptPaths.length} exempt (Em-Upgrade)` : ""),
+      );
+      printFindings();
+      if (report.diagnostics.length === 0) console.log("ok - no issues");
+    }
+    if (report.crossings > 0) process.exitCode = 1;
   });
 
 // Shared by install/sync/check: the `.claude/skills/` root bundled with whatever em package is

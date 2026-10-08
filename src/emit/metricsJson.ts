@@ -9,7 +9,9 @@ import { MetricsResult } from "../cli/metrics.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (MIL-170): initial shape.
-export const METRICS_SCHEMA_VERSION = "1.0";
+// 1.1 (MIL-240): `seamCrossings: {count, commits}` - commits in the range whose change set altered
+// a producer's public surface (or contract file) and a consuming model's design dir together.
+export const METRICS_SCHEMA_VERSION = "1.1";
 
 /** Build the `em metrics <file> --from <rev> [--to <rev>] --json` document. Pretty-printed
  *  (2-space), no trailing newline — the caller adds it, same convention as buildStatusJson/
@@ -24,6 +26,7 @@ export function buildMetricsJson(result: MetricsResult): string {
     ratificationTurnaround: result.ratificationTurnaround,
     conformCadence: result.conformCadence,
     statusVsReality: result.statusVsReality,
+    seamCrossings: result.seamCrossings,
     readinessGateEffect: result.readinessGateEffect,
   };
   return JSON.stringify(doc, null, 2);

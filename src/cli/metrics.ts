@@ -26,6 +26,10 @@ import { GitRunner, realGit, resolveRevision, resolveDocAtRevision, listSliceKey
 import { classifyImplementationDrift } from "../catalog/driftSignal.js";
 import { parseState, STATE_FILE_NAME } from "./stateFile.js";
 import { findingsPathForReport, validateFindingsShape } from "./findings.js";
+import { parseNameStatusZ, entryPaths } from "./conformScope.js";
+import { buildScopeModels, docFromText, HeadModel } from "./scopeInputs.js";
+import { EM_UPGRADE_TRAILER } from "./upgrade.js";
+import { evaluateScope, modelForPath } from "../system/scope.js";
 
 // git's own hex-byte format escapes — literal 4/4-character strings handed to `--format`, which
 // git substitutes with the corresponding raw byte IN THE OUTPUT. Same technique
@@ -133,6 +137,15 @@ export interface StatusVsRealityMetric {
   current: { disagreementCount: number; unpropagatedCount: number };
 }
 
+/** MIL-240: commits in the range whose change set (commit vs first parent) crossed a contract -
+ *  the same `evaluateScope` rule `em system scope` gates PRs with, applied per commit.
+ *  `Em-Upgrade:` commits are exempt. Models are those committed at that revision. */
+export interface SeamCrossingsMetric {
+  count: number;
+  /** Full hashes, oldest first. */
+  commits: string[];
+}
+
 export interface MetricsResult {
   from: string;
   to: string;
@@ -141,6 +154,8 @@ export interface MetricsResult {
   /** Metric 3 name in the register: whether `status:`/`implementedIn:` agree with what a
    *  conform sweep would actually find — see `StatusVsRealityMetric`. */
   statusVsReality: StatusVsRealityMetric;
+  /** MIL-240: see `SeamCrossingsMetric`. */
+  seamCrossings: SeamCrossingsMetric;
   /** Metric 4 — "does the readiness gate change what gets built" — is NOT computable from git
    *  history (no counterfactual repo without the gate exists to compare against); always
    *  `null`. See docs/usage-data.md. */
@@ -358,6 +373,43 @@ function computeStatusVsReality(anchorFile: string, baseDir: string, repoRoot: s
   return { series, current };
 }
 
+function computeSeamCrossings(repoRoot: string, from: string, to: string, runGit: GitRunner): SeamCrossingsMetric {
+  const commits: string[] = [];
+  for (const { hash } of logRecords(repoRoot, from, to, [], [], runGit)) {
+    const trailer = runGit(["-C", repoRoot, "log", "-1", `--format=%(trailers:key=${EM_UPGRADE_TRAILER},valueonly)`, hash]);
+    if (trailer.status === 0 && trailer.stdout.trim() !== "") continue;
+    if (runGit(["-C", repoRoot, "rev-parse", "--verify", "--quiet", `${hash}^`]).status !== 0) continue;
+    const diff = runGit(["-C", repoRoot, "diff", "--name-status", "-M", "-z", `${hash}^`, hash]);
+    if (diff.status !== 0) continue;
+    const entries = parseNameStatusZ(diff.stdout);
+    const tree = runGit(["-C", repoRoot, "ls-tree", "-r", "--name-only", hash]);
+    if (tree.status !== 0) continue;
+    const files = tree.stdout.split("\n").filter((f) => f.endsWith(".em") && !f.endsWith("-asis.em"));
+    // A crossing needs two models touched: skip the compile work for everything else.
+    const dirs = files.map((f) => ({ key: f, dir: f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "" }));
+    const paths = entryPaths(entries);
+    if (new Set(paths.map((p) => modelForPath(dirs, p)).filter((k) => k !== null)).size < 2) continue;
+    const heads: HeadModel[] = [];
+    for (const rel of files) {
+      const show = runGit(["-C", repoRoot, "show", `${hash}:${rel}`]);
+      const doc = show.status === 0 ? docFromText(show.stdout, rel) : null;
+      if (doc !== null) heads.push({ key: doc.model.key, rel, doc });
+    }
+    const renames = new Map(entries.filter((e) => e.oldPath !== null).map((e) => [e.path, e.oldPath as string]));
+    const models = buildScopeModels(
+      heads,
+      { raw: new Set(paths), changed: new Set(paths), renames },
+      (rel) => {
+        const show = runGit(["-C", repoRoot, "show", `${hash}^:${rel}`]);
+        return show.status === 0 ? show.stdout : null;
+      },
+      () => null,
+    );
+    if (evaluateScope({ models, changed: paths }).crossings > 0) commits.push(hash);
+  }
+  return { count: commits.length, commits };
+}
+
 /**
  * Compute `em metrics <file> --from <rev> --to <rev>` (MIL-170): the three git-history-
  * computable pilot metrics, plus `readinessGateEffect: null` (Metric 4, not computable — see
@@ -383,7 +435,9 @@ export function computeMetrics(anchorFile: string, from: string, to: string, run
   const conformCadence = computeConformCadence(baseDir, repoRoot, from, to, runGit);
   const statusVsReality = computeStatusVsReality(anchorFile, baseDir, repoRoot, from, to, runGit);
 
-  return { ok: true, result: { from, to, ratificationTurnaround, conformCadence, statusVsReality, readinessGateEffect: null } };
+  const seamCrossings = computeSeamCrossings(repoRoot, from, to, runGit);
+
+  return { ok: true, result: { from, to, ratificationTurnaround, conformCadence, statusVsReality, seamCrossings, readinessGateEffect: null } };
 }
 
 function pluralize(n: number, word: string): string {
@@ -432,6 +486,11 @@ export function formatMetricsText(m: MetricsResult): string {
   for (const p of m.statusVsReality.series) {
     lines.push(`    ${p.date} ${p.commit} — ${pluralize(p.disagreementCount, "disagreement")}, ${pluralize(p.unpropagatedCount, "unpropagated-delta")}`);
   }
+  lines.push("");
+
+  lines.push("Seam crossings:");
+  lines.push(`  ${pluralize(m.seamCrossings.count, "commit")} in this range altered a contract and a consuming model together`);
+  for (const c of m.seamCrossings.commits) lines.push(`    ${c}`);
   lines.push("");
 
   lines.push("Readiness-gate effect: not computable from history — see docs/usage-data.md");

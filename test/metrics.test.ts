@@ -11,6 +11,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeMetrics, formatMetricsText } from "../src/cli/metrics.js";
+import { buildMetricsJson } from "../src/emit/metricsJson.js";
+import { makeMultiModelRepo } from "./helpers/multiModelRepo.js";
+import { readFileSync } from "node:fs";
 
 const git = (args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) =>
   spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", env });
@@ -320,5 +323,64 @@ describe("computeMetrics: determinism, empty range, and refusals", () => {
     expect(result.result.readinessGateEffect).toBeNull();
     const text = formatMetricsText(result.result);
     expect(text).toContain("Readiness-gate effect: not computable from history — see docs/usage-data.md");
+  });
+});
+
+describe("computeMetrics: seam crossings (MIL-240)", () => {
+  it("counts commits whose change set alters a contract and a consuming model together; Em-Upgrade commits and single-side commits do not count", () => {
+    const repo = makeMultiModelRepo();
+    try {
+      const start = repo.git("rev-parse", "HEAD").trim();
+      const checkoutText = readFileSync(repo.checkout, "utf8");
+      const both = (n: number) => {
+        writeFileSync(repo.checkout, checkoutText.replace("    placedAt: datetime assigned\n", `    placedAt${n}: datetime assigned\n`));
+        mkdirSync(join(repo.dir, "models", "fulfillment", "slices"), { recursive: true });
+        writeFileSync(join(repo.dir, "models", "fulfillment", "slices", "receive-order.md"), `# Receive Order ${n}\n`);
+      };
+      // 1: two-sided (crossing)
+      both(1);
+      repo.git("add", "-A");
+      repo.git("commit", "-q", "-m", "two-sided");
+      const crossing = repo.git("rev-parse", "HEAD").trim();
+      // 2: producer only
+      writeFileSync(repo.checkout, checkoutText.replace("    placedAt: datetime assigned\n", "    placedAt2: datetime assigned\n"));
+      repo.git("add", "-A");
+      repo.git("commit", "-q", "-m", "producer only");
+      // 3: two-sided but an upgrade commit (exempt)
+      both(3);
+      repo.git("add", "-A");
+      repo.git("commit", "-q", "-m", "em upgrade: x", "-m", "Em-Upgrade: x");
+
+      const m = computeMetrics(repo.checkout, start, "HEAD");
+      expect(m.ok).toBe(true);
+      if (!m.ok) return;
+      expect(m.result.seamCrossings).toEqual({ count: 1, commits: [crossing] });
+      expect(formatMetricsText(m.result)).toContain(`Seam crossings:\n  1 commit in this range altered a contract and a consuming model together\n    ${crossing}`);
+      const doc = JSON.parse(buildMetricsJson(m.result));
+      expect(doc.metricsSchemaVersion).toBe("1.1");
+      expect(doc.seamCrossings).toEqual({ count: 1, commits: [crossing] });
+      // deterministic
+      const again = computeMetrics(repo.checkout, start, "HEAD");
+      expect(again.ok && buildMetricsJson(again.result)).toBe(buildMetricsJson(m.result));
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("a single-model repo reports zero", () => {
+    const repo = mkdtempSync(join(tmpdir(), "em-metrics-seam0-"));
+    try {
+      git(["init", "-q", "-b", "main"], repo);
+      writeFileSync(join(repo, "model.em"), 'slice "A" {}\n');
+      git(["add", "-A"], repo);
+      commitAt(repo, "2026-01-01", "one");
+      writeFileSync(join(repo, "model.em"), 'slice "B" {}\n');
+      git(["add", "-A"], repo);
+      commitAt(repo, "2026-01-02", "two");
+      const m = computeMetrics(join(repo, "model.em"), "HEAD~1", "HEAD");
+      expect(m.ok && m.result.seamCrossings).toEqual({ count: 0, commits: [] });
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

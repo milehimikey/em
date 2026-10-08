@@ -139,6 +139,30 @@ contract's doc comment says (see [`em api check`](#em-api-check-the-model-owned-
 is `npx @milehimikey/em@<version> system <manifest|.>`; `em ci init` wiring for it follows the
 MIL-233 restructure of the generator.
 
+## `em system scope`: the seam-crossing gate
+
+For a repository with more than one model, run the scope gate on pull requests:
+
+```yaml
+      - name: Check the change set against the seams
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          npx @milehimikey/em@<version> system scope --base "$base"
+```
+
+It needs `fetch-depth: 0` (it reads the base revision) and only runs on pull requests. It exits
+1 on a **contract crossing** and nothing else: the PR changes a producer's public surface or
+contract file and, in the same change set, a model that consumes it. Other multi-model change
+sets, new public surface with no consumer yet, and code spanning a seam are warnings. Files
+changed only by `Em-Upgrade:` commits (`em upgrade --apply`) are exempt. See
+[cli.md](cli.md#em-system-scope) for the rules.
+
+**Review is the override.** There is no flag or trailer to skip the gate. A change that must
+cross goes through the people who consume the contract: list each producer's
+`contracts/<model>.tsp` in CODEOWNERS with the consuming teams (below). The producer's contract
+change merges with their approval, and the consumer's adaptation follows in its own change set.
+`em ci init` does not generate this job yet; add the step above by hand.
+
 ## `em export` as the artifact step
 
 Once validation passes, `em export <file.em> -o <file.json>` produces a versioned JSON

@@ -322,6 +322,7 @@ describe("tools/list", () => {
         "slice_ready",
         "system",
         "system_codeowners",
+        "system_scope",
         "status",
         "upgrade",
         "validate",
@@ -1191,6 +1192,44 @@ describe("system tool (MIL-194, MIL-235)", () => {
     const missing = await callJson(client, "system", { manifest: join(dir, "no-such-system.yaml") });
     expect(missing.result.isError).toBe(true);
     expect((missing.result.content[0] as { text: string }).text).toContain("cannot read");
+  });
+});
+
+describe("system_scope tool (MIL-240)", () => {
+  it("byte-identical to `em system scope --base <rev> --json` (crossing reported inside the document)", async () => {
+    const repo = makeMultiModelRepo();
+    try {
+      const base = repo.git("rev-parse", "HEAD").trim();
+      writeFileSync(repo.checkout, readFileSync(repo.checkout, "utf8").replace("    placedAt: datetime assigned\n", ""));
+      mkdirSync(join(repo.dir, "models", "fulfillment", "slices"), { recursive: true });
+      writeFileSync(join(repo.dir, "models", "fulfillment", "slices", "receive-order.md"), "# Receive Order\n");
+      repo.git("add", "-A");
+      repo.git("commit", "-q", "-m", "both sides");
+      const { result, doc } = await callJson(client, "system_scope", { target: repo.dir, base });
+      expect(result.isError).toBeFalsy();
+      expect(doc.scopeSchemaVersion).toBe("1.0");
+      expect(doc.crossings).toBe(1);
+      const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+      const cli = em(["system", "scope", repo.dir, "--base", base, "--json"], dir);
+      expect(cli.status).toBe(1);
+      expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it("refuses without --base/--staged, and on an unknown revision (tool errors)", async () => {
+    const repo = makeMultiModelRepo();
+    try {
+      const none = await callJson(client, "system_scope", { target: repo.dir });
+      expect(none.result.isError).toBe(true);
+      expect((none.result.content[0] as { text: string }).text).toContain("em system scope: pass --base <rev>");
+      const bad = await callJson(client, "system_scope", { target: repo.dir, base: "no-such-rev" });
+      expect(bad.result.isError).toBe(true);
+      expect((bad.result.content[0] as { text: string }).text).toBe('em system scope: unknown revision "no-such-rev"');
+    } finally {
+      repo.cleanup();
+    }
   });
 });
 

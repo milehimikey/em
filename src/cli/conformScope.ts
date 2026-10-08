@@ -182,6 +182,85 @@ export function changedPathsSince(repo: string, revision: string, runGit: GitRun
   };
 }
 
+// ---- Rename-aware / staged variants (MIL-240, `em system scope`) -------------------------
+
+/** One entry of `git diff --name-status -M`: a renamed file reports its new path in `path` and
+ *  the old one in `oldPath` (`null` for every other status). Paths are repo-root-relative. */
+export interface ChangedEntry {
+  /** First letter of git's status: A, M, D, R, T … */
+  status: string;
+  path: string;
+  oldPath: string | null;
+}
+
+export type ChangedEntriesResult = { ok: true; repoRoot: string; entries: ChangedEntry[] } | { ok: false; message: string };
+
+/** Parse `git diff --name-status -M -z` output (NUL-separated: status, path[, newPath]). */
+export function parseNameStatusZ(out: string): ChangedEntry[] {
+  const tokens = out.split("\0");
+  const entries: ChangedEntry[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const status = tokens[i];
+    if (status === "") continue;
+    const letter = status[0];
+    if (letter === "R" || letter === "C") {
+      entries.push({ status: letter, oldPath: tokens[i + 1] ?? "", path: tokens[i + 2] ?? "" });
+      i += 2;
+    } else {
+      entries.push({ status: letter, path: tokens[i + 1] ?? "", oldPath: null });
+      i += 1;
+    }
+  }
+  return entries;
+}
+
+function repoRootOfDir(repo: string, runGit: GitRunner, label: string): { ok: true; repoRoot: string } | { ok: false; message: string } {
+  const toplevel = runGit(["-C", repo, "rev-parse", "--show-toplevel"]);
+  if (toplevel.status !== 0) return { ok: false, message: `${label}: ${repo} is not inside a git repository` };
+  return { ok: true, repoRoot: toplevel.stdout.trim() };
+}
+
+/** `git diff --name-status -M -z <revision>...HEAD` (merge-base form: what this branch changed
+ *  since it forked from `revision`), repo-root-relative, rename-aware. */
+export function changedEntriesSince(repo: string, revision: string, runGit: GitRunner = realGit, label = "em conform-scope"): ChangedEntriesResult {
+  const top = repoRootOfDir(repo, runGit, label);
+  if (!top.ok) return top;
+  const diff = runGit(["-C", top.repoRoot, "diff", "--name-status", "-M", "-z", `${revision}...HEAD`]);
+  if (diff.status !== 0) {
+    return { ok: false, message: `${label}: git diff failed: ${(diff.stderr || "").trim() || `unknown revision "${revision}"`}` };
+  }
+  return { ok: true, repoRoot: top.repoRoot, entries: parseNameStatusZ(diff.stdout) };
+}
+
+/** `git diff --cached --name-status -M -z`: what is staged right now (`--staged`). */
+export function changedEntriesStaged(repo: string, runGit: GitRunner = realGit, label = "em conform-scope"): ChangedEntriesResult {
+  const top = repoRootOfDir(repo, runGit, label);
+  if (!top.ok) return top;
+  const diff = runGit(["-C", top.repoRoot, "diff", "--cached", "--name-status", "-M", "-z"]);
+  if (diff.status !== 0) {
+    return { ok: false, message: `${label}: git diff --cached failed: ${(diff.stderr || "").trim() || "unknown error"}` };
+  }
+  return { ok: true, repoRoot: top.repoRoot, entries: parseNameStatusZ(diff.stdout) };
+}
+
+/** Every path an entry list names, both sides of a rename, sorted and de-duplicated. */
+export function entryPaths(entries: ChangedEntry[]): string[] {
+  const set = new Set<string>();
+  for (const e of entries) {
+    set.add(e.path);
+    if (e.oldPath !== null) set.add(e.oldPath);
+  }
+  return [...set].sort();
+}
+
+/** Staged paths only (both sides of a rename), repo-root-relative — the `--staged` twin of
+ *  `changedPathsSince`. */
+export function changedPathsStaged(repo: string, runGit: GitRunner = realGit, label = "em conform-scope"): ChangedPathsResult {
+  const r = changedEntriesStaged(repo, runGit, label);
+  if (!r.ok) return r;
+  return { ok: true, paths: entryPaths(r.entries) };
+}
+
 export interface SeedAsisResult {
   asisPath: string;
   gitignoreUpdated: boolean;

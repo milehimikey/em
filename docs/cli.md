@@ -152,6 +152,14 @@ contract at `<model dir>/contracts/<model key>.tsp` (`em api generate`, see belo
 `model-versions/`, `conformance/`, `contracts/`, `.event-modeling.md`, `README.md`) belongs to
 that model.
 
+**Recommended layout: one directory per model, one code module per model, contracts under the
+model directory.** `em system scope` (below) maps a changed path to a model by this convention:
+the model directory is `dirname(<model>.em)`, and a path belongs to the model with the longest
+matching directory prefix. Paths outside every model directory are ignored. Keeping each model's
+code in one module of its own (declared with a `Code roots:` bullet, see
+[`em system scope`](#em-system-scope)) is what lets the advisory code-side check tell you when a
+change reaches across a seam.
+
 **No key-namespacing needed.** Slice export keys and doc filenames stay exactly `kebabSlug(slice
 name)` — unqualified, no `<model>/<slice>` prefix — regardless of how many models a project has.
 Directory isolation is a *complete* guardrail on its own: as long as every model owns its own
@@ -1792,12 +1800,20 @@ gate) that doesn't exist in any one repository's commit log. The text report pri
 line `Readiness-gate effect: not computable from history — see docs/usage-data.md`; the JSON
 carries `readinessGateEffect: null`. No proxy metric is substituted for it.
 
-**`--json` shape** (`metricsSchemaVersion: "1.0"` — this is also the exact document the MCP
+**Metric 5 — seam crossings** (`metricsSchemaVersion` 1.1, MIL-240). The number of commits in
+`--from..--to` whose change set (the commit against its first parent) altered a producer's
+public surface or contract file **and** a consuming model's design dir together, the same rule
+[`em system scope`](#em-system-scope) gates pull requests with, applied per commit to the models
+committed at that revision. `Em-Upgrade:` commits never count. The text report prints
+`Seam crossings:` and the full hashes, oldest first; the JSON carries
+`seamCrossings: { count, commits }` (`{ "count": 0, "commits": [] }` for a single-model repo).
+
+**`--json` shape** (`metricsSchemaVersion: "1.1"` — this is also the exact document the MCP
 `metrics` tool returns, see [mcp.md](mcp.md)):
 
 ```json
 {
-  "metricsSchemaVersion": "1.0",
+  "metricsSchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "from": "v1.0",
   "to": "HEAD",
@@ -1835,6 +1851,7 @@ carries `readinessGateEffect: null`. No proxy metric is substituted for it.
     "series": [{ "commit": "abc123f", "date": "2026-08-01", "disagreementCount": 0, "unpropagatedCount": 0 }],
     "current": { "disagreementCount": 0, "unpropagatedCount": 0 }
   },
+  "seamCrossings": { "count": 0, "commits": [] },
   "readinessGateEffect": null
 }
 ```
@@ -2247,6 +2264,68 @@ only a real change of the public surface summons the consuming teams.
   writes.
 
 See [ci.md](ci.md#seams-consuming-teams-on-the-producers-contract) for wiring branch protection.
+### `em system scope`
+
+```
+em system scope [<system.yaml>|<dir>] [--base <rev>] [--staged] [--json]
+```
+
+The change-set gate for a system of models (MIL-240). It answers one question: does this change
+set alter a producer's contract **and** the model that consumes it in the same breath? That is
+the shape of a seam break that review cannot see, because the producer's change and the
+consumer's adaptation land together with nobody looking at the contract on its own. It reads
+`system.yaml` (or discovers the models, exactly as `em system` does).
+
+- **The change set** is `git diff --name-status -M <base>...HEAD` (merge-base form, what the
+  branch changed since it forked), `--staged` is `git diff --cached`, and both together are the
+  union. At least one of the two flags is required. Paths are repo-root-relative, both sides of
+  a rename count, and no output carries an absolute path.
+- **Path to model.** A path belongs to the model with the longest directory prefix, where a
+  model's directory is `dirname(<model>.em)` (R6). Everything under it is that model's design:
+  `slices/`, `model-versions/`, `conformance/`, `contracts/`, `.event-modeling.md`, `README.md`.
+  Paths under no model directory are ignored.
+- **Exemption.** A file whose every commit in `<base>..HEAD` carries an `Em-Upgrade:` trailer
+  (every `em upgrade --apply` commit does) is dropped before mapping, so a mechanical migration
+  may span models. A file that also has a hand-written commit, or is staged, is not exempt.
+
+| Finding | Severity | When |
+|---|---|---|
+| `seam-crossing` | error, exit 1 | The producer's `public` surface changed (any structural change: compile at the base and at HEAD and compare) **or** its contract file `<model dir>/contracts/<model key>.tsp` is in the change set, **and** a model whose translations `consumes` that producer (at HEAD or at the base) has a changed path under its directory. One finding per producer and consumer pair; it names the changed elements and the consumer's paths |
+| `seam-crossing-greenfield` | warning | The only surface changes are elements that are new (or newly `public`) and that no `consumes` bound at the base. New surface cannot break a consumer that did not exist yet. Any later change to it is a crossing |
+| `multi-model-change-set` | warning | The change set touches two or more model directories and crosses no contract |
+| `code-spans-seam` | warning | Advisory: the change set has code under the declared code roots of two models joined by a `consumes`. Roots are declared in each model's own state file with a `Code roots:` bullet, e.g. ``- **Code roots:** `src/checkout`, `src/shared` ``, repo-root-relative. Models without the bullet are not checked. Keep a model's code outside its design directory |
+
+A producer-only change set passes, and so does a consumer-only one. Run `em api check` for the
+producer-side annotation (additive or breaking) of the same public-surface change.
+
+**There is no override: no flag, no commit trailer.** The way through a crossing is review. Put
+the contract file on the consumers' CODEOWNERS (see [ci.md](ci.md#codeowners-routing-ratification-review)):
+a change that has to touch the contract needs their approval, and the consumer's adaptation lands
+in a following change set.
+
+Output: a header line (`scope since <rev>: N changed paths, M models touched`, with `+ staged` /
+`exempt` additions), then one line per finding (`<file>: error|warn [<code>] <message>`) on
+stderr, or `ok - no issues`. `--json` prints the document below on stdout, with the same findings
+on stderr; exit code unchanged. Refusals (no `--base`/`--staged`, unknown revision, not a git
+repository, a model that does not load) are one `em system scope: …` line and exit 1.
+
+```json
+{
+  "scopeSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "base": "origin/main",
+  "staged": false,
+  "changedPaths": ["models/checkout/checkout.em", "models/fulfillment/slices/receive-order.md"],
+  "exemptPaths": [],
+  "models": [{ "key": "checkout", "dir": "models/checkout", "paths": ["models/checkout/checkout.em"] }],
+  "unmappedPaths": [],
+  "crossings": 1,
+  "diagnostics": [{ "file": "models/checkout/checkout.em", "severity": "error", "code": "seam-crossing", "message": "…", "line": null, "refs": ["checkout:event.order-submitted", "fulfillment"] }]
+}
+```
+
+`--staged` compares the working tree's models against `HEAD` (or the base), so stage the files
+you are about to commit. The MCP tool is `system_scope`.
 
 ## `em glossary <files...>`
 

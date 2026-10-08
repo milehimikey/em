@@ -76,6 +76,8 @@ import { loadStateFile, parseState, modelPathMismatch } from "../cli/stateFile.j
 import { buildFreshnessJson } from "../emit/freshnessJson.js";
 import { computeMetrics } from "../cli/metrics.js";
 import { buildMetricsJson } from "../emit/metricsJson.js";
+import { runSystemScope } from "../cli/scopeInputs.js";
+import { buildScopeJson } from "../emit/scopeJson.js";
 import { checkFindingsFile, buildCheckFindingsJson } from "../cli/findings.js";
 import { compileForQuery } from "../query/pipeline.js";
 import type { ModelIndex } from "../model/queryIndex.js";
@@ -1043,6 +1045,36 @@ export function createServer(): McpServer {
       const result = runCodeowners(manifest ?? ".", { output, write: false });
       if (!result.ok) return errorResult(`em system codeowners: ${result.message}`);
       return textResult(buildCodeownersJson(result.file, result.plan.entries, result.status));
+    },
+  );
+
+  server.registerTool(
+    "system_scope",
+    {
+      title: "Check a change set against the seams",
+      description:
+        "Return the same JSON document `em system scope [<target>] [--base <rev>] [--staged] --json` prints " +
+        "(MIL-240): the change set (committed since `base` in merge-base form, and/or staged) mapped to " +
+        "models by the model-directory convention, with `seam-crossing` (error) when it alters a " +
+        "producer's public surface or contract file AND a consuming model's design dir together, " +
+        "`seam-crossing-greenfield`, `multi-model-change-set` and `code-spans-seam` warnings. Files changed " +
+        "only by `Em-Upgrade:` commits are exempt. There is no override. Refuses (tool error) when neither " +
+        "`base` nor `staged` is given, the system can't be loaded, the revision is unknown or the path " +
+        "is not in a git repository. A crossing is reported INSIDE the document (`crossings`, " +
+        "`diagnostics`), not as a tool error.",
+      inputSchema: {
+        target: z.string().optional().describe("a system.yaml path, or a directory (its system.yaml if present, else discovery); omitted = the working directory"),
+        base: z.string().optional().describe("revision the change set is measured from (`<base>...HEAD`)"),
+        staged: z.boolean().optional().describe("also (or only) check what is staged right now"),
+      },
+    },
+    async ({ target, base, staged }) => {
+      const run = runSystemScope(target ?? ".", { base, staged });
+      if (!run.ok) {
+        const detail = run.diagnostics.map((d) => `${d.file}${d.line ? `:${d.line}` : ""}: ${d.message}`).join("; ");
+        return errorResult(detail === "" ? run.message : `${run.message} - ${detail}`);
+      }
+      return textResult(buildScopeJson(run.facts, run.report));
     },
   );
 

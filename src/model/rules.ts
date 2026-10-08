@@ -523,6 +523,35 @@ export const RULES = {
     usageCategory: "undeclared seam candidate",
     docAnchor: "seam-manifest",
   },
+  // MIL-240: raised only by `em system scope` (a change-set check over git), never by `em validate`.
+  "seam-crossing": {
+    severity: "error",
+    title: "Change set alters a contract and its consumer together",
+    fix: "Split the change set: land the producer's public-surface change first, then adapt the consuming model in a later change. Review on the contract file is the only override.",
+    usageCategory: "seam crossing",
+    docAnchor: "seam-scope",
+  },
+  "seam-crossing-greenfield": {
+    severity: "warning",
+    title: "New public surface lands with its first consumer",
+    fix: "Nothing to fix: a public element no consumer was bound to at the base revision is new surface, not a crossing. Later changes to it are crossings.",
+    usageCategory: "seam crossing greenfield",
+    docAnchor: "seam-scope",
+  },
+  "multi-model-change-set": {
+    severity: "warning",
+    title: "Change set touches more than one model",
+    fix: "Prefer one model per change set. Unrelated models in one change set are fine; models joined by a seam are not, once a contract changes.",
+    usageCategory: "multi-model change set",
+    docAnchor: "seam-scope",
+  },
+  "code-spans-seam": {
+    severity: "warning",
+    title: "Code change spans a seam",
+    fix: "Keep one code module per model and change the two sides of a seam in separate change sets.",
+    usageCategory: "code spans seam",
+    docAnchor: "seam-scope",
+  },
   // MIL-218: the model-level counterpart to `em slice conform`'s per-slice certification — warns
   // when the `.em` content hash or the slice-version vector has moved since the last `em model
   // version bump` (src/catalog/modelVersionValidate.ts, modelVersion.ts's `modelVersionDrift`
