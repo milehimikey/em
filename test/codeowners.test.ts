@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // `em system codeowners [--check]` (MIL-234): the managed CODEOWNERS block that puts each
 // model's team on its design directory and every consuming team on the producer's contract.
-import { describe, it, expect, afterEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url";
 import { makeMultiModelRepo, MultiModelRepo } from "./helpers/multiModelRepo.js";
 import { codeownersPatternMatches, planCodeowners, spliceCodeowners } from "../src/system/codeowners.js";
 import { buildCodeownersJson, CODEOWNERS_SCHEMA_VERSION } from "../src/emit/codeownersJson.js";
+
+// CLI cases spawn the real `em` via tsx (~1 s locally, 6-10 s on a cold CI runner), which
+// exceeds vitest's 5 s default. File-level timeout, same as test/cli.test.ts (MIL-205).
+vi.setConfig({ testTimeout: 20_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");

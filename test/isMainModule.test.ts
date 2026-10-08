@@ -13,13 +13,17 @@
 // end-to-end test that builds and spawns the real dist/cli.js through an actual symlink, since
 // test/cli.test.ts's spawnSync(tsx, src/cli.ts, ...) structurally can never hit this path (it
 // always invokes src/cli.ts's own real, non-symlinked location).
-import { describe, it, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainModule } from "../src/util/isMainModule.js";
+
+// CLI cases spawn the real `em` via tsx (~1 s locally, 6-10 s on a cold CI runner), which
+// exceeds vitest's 5 s default. File-level timeout, same as test/cli.test.ts (MIL-205).
+vi.setConfig({ testTimeout: 20_000 });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
