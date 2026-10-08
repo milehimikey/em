@@ -167,7 +167,16 @@ function glossaryJob(em: string): string {
  *  day, which is the opposite of a preset. Because the pin lives inside the managed body,
  *  `--check` from a different em version reports the block as stale — the same
  *  upgrade-visibility `em skill check` gets from its version stamp — and a file scaffolded
- *  by a pre-pin em shows stale the same way. */
+ *  by a pre-pin em shows stale the same way.
+ *
+ *  Starting with em 1.14.0+ (MIL-223), repos can opt into a simpler model: commit a
+ *  `.em-version` file with the pinned version, then replace these pinned `npx` lines with
+ *  unpinned `npx @milehimikey/em`. The installed version will automatically detect `.em-version`
+ *  in the repo and transparently re-exec the pinned version via npx, exactly as it does
+ *  in local development. This eliminates the need to regenerate workflows on every em upgrade.
+ *  To migrate: (1) commit `.em-version` with your desired version; (2) re-run `em ci init`
+ *  (the generated block will still pin the current version as a bootstrap default); (3) manually
+ *  edit the generated workflow to use unpinned `npx @milehimikey/em` instead. */
 export function ciManagedBody(model: string, testsDir: string, emVersion: string): string {
   const em = `npx @milehimikey/em@${emVersion}`;
   return `  validate:
@@ -526,7 +535,8 @@ function modelJobs(m: CiModel, id: string, testsDir: string, em: string): string
 
 /** The managed block for a whole system: per-model `validate-`/`slice-index-`/`coverage-`/
  *  `ledger-`/`upgrade-check-`/`status-badge-<id>` jobs, then ONE `skill-check` and ONE
- *  `glossary` (both repo-wide). Same version-pin discipline as `ciManagedBody`. */
+ *  `glossary` (both repo-wide). Same version-pin discipline and `.em-version` migration path
+ *  as `ciManagedBody`. */
 export function ciManagedBodyMulti(models: CiModel[], testsDir: string, emVersion: string): string {
   const em = `npx @milehimikey/em@${emVersion}`;
   const sorted = sortedModels(models);
@@ -544,7 +554,8 @@ export function buildCiWorkflowFileMulti(arg: string, models: CiModel[], testsDi
 
 /** The managed block only (no header/`on:`/`permissions:`/`jobs:` scaffolding) — what gets
  *  written between the marker pair, both for a fresh file and to patch an existing marked one
- *  in place. */
+ *  in place. Like ciManagedBody, the conform job pins em's version at generation time (MIL-188).
+ *  See ciManagedBody's comment for the `.em-version` migration path (em 1.14.0+). */
 export function conformManagedBody(model: string, emVersion: string, usePlugin = false): string {
   const modelDir = dirname(model) === "." ? "." : dirname(model);
   // MIL-231: a repo that declares the em plugin installs it (pinned to this em's version) and runs

@@ -81,6 +81,7 @@ import { checkSkillSyncBundle, checkAgentFiles } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
+import { resolveDispatch, dispatchToPinnedVersion } from "./cli/versionPin.js";
 import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -3349,11 +3350,29 @@ program
 // realpath-resolve argv[1] — a naive path comparison breaks the `npm i -g` symlink case.
 export { program };
 
-if (isMainModule(import.meta.url)) {
+function runProgram(): void {
   program.parseAsync().catch((e) => {
     reportError(e);
     process.exit(1);
   });
+}
+
+if (isMainModule(import.meta.url)) {
+  const pin = resolveDispatch(process.cwd(), PKG_VERSION);
+  if (pin) {
+    dispatchToPinnedVersion(pin.version, process.argv.slice(2))
+      .then((code) => process.exit(code))
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        console.error(
+          `em: could not dispatch to version ${pin.version} pinned by ${pin.source} (${message}); ` +
+            `continuing with installed ${PKG_VERSION}`,
+        );
+        runProgram();
+      });
+  } else {
+    runProgram();
+  }
 }
 
 // ---- helpers ----

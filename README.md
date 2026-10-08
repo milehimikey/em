@@ -21,6 +21,23 @@ Requires Node ≥ 18. SVG, PNG, and PDF rendering are all fully self-contained (
 as bundled WebAssembly); nothing else to install. Only rarer formats (ps, eps, ...) need an
 optional system dependency — see [docs/dependencies.md](docs/dependencies.md).
 
+### Pinning a version per project
+
+A global install means every contributor (and every agent) runs whatever version happens to be
+installed on their machine, which drifts over time. To pin an exact version for one project — no
+`package.json` required, works in any repo regardless of language — drop a `.em-version` file next
+to the model (or anywhere above it):
+
+```bash
+echo "1.14.0" > .em-version
+```
+
+From then on, running the globally-installed `em` transparently re-execs the pinned version via
+`npx` whenever it differs from what's installed — same command, same output, nothing else to
+remember. This is the same pattern Node's Corepack uses for npm/yarn/pnpm's `packageManager`
+field. A repo without `.em-version` sees no change in behavior. Set `EM_SKIP_VERSION_PIN=1` to
+bypass pinning outright (e.g. while developing em itself from a local checkout).
+
 ## Quickstart
 
 ```bash
