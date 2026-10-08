@@ -386,5 +386,5 @@ describe("em engagement (CLI)", () => {
     const overall = em(["status", rel], dir);
     expect(overall.stdout).toContain("\nopen engagements: 1 (three)\n");
     expect(existsSync(join(dir, "engagements", "three.md"))).toBe(true);
-  });
+  }, 90_000); // ~8 CLI spawns in one case: 32 s on a cold CI runner (main red at 4956d19); per-test ceiling
 });
