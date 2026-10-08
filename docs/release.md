@@ -13,7 +13,7 @@ record of it and of the one-time setup it depends on.
    minor, fixes/docs → patch, breaking DSL/CLI changes → major).
 3. **Bump** — `version` in package.json **and** the `em-version:` stamp in every
    `.claude/skills/event-modeling*/SKILL.md` (six files — the router skill plus the
-   five focused phase skills; CI's skill-version-stamp gate requires all of them to
+   six focused phase skills; CI's skill-version-stamp gate requires all of them to
    agree with package.json); regenerate skill docs (`npm run docs:generate`, which
    also restamps the Claude Code plugin: `plugin/.claude-plugin/plugin.json`
    `version` and MCP pin, and the `.claude-plugin/marketplace.json` name

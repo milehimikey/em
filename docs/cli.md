@@ -3952,7 +3952,7 @@ See [mcp.md](mcp.md) for the full tool list, input/output shapes, and client con
 
 Copies the bundled event-modeling Claude Code skill bundle out of the npm package into
 `.claude/skills/` in the current directory: the `event-modeling` router skill (the
-`/event-modeling` entry point), five focused phase skills (`event-modeling-discover`, `-design`,
+`/event-modeling` entry point), six focused phase skills (`event-modeling-discover`, `-design`,
 `-implement`, `-conform`, `-review`, MIL-157), and the shared, non-skill
 `event-modeling-shared/` directory (reference/templates every skill points back to) — one
 command installs the whole bundle. Prints a reminder to run `/event-modeling` in Claude Code
@@ -4071,7 +4071,7 @@ content the agent runs. Findings:
 skill bundle for drift against the bundle shipped with the installed `em`. Two independent
 signals are checked and reported together (never short-circuited on the first), per directory:
 
-- for each of the five phase skills plus the router (each with its own `SKILL.md`): the
+- for each of the six phase skills plus the router (each with its own `SKILL.md`): the
   vendored `SKILL.md`'s `em-version:` frontmatter stamp vs. the installed `em`'s own version
   (`em --version`)
 - for every bundle directory, including the shared, non-skill `event-modeling-shared/`: a full

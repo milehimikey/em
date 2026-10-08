@@ -97,7 +97,7 @@ flowchart LR
 
 ## Model with AI
 
-`em` ships a Claude Code skill bundle — one router skill plus five focused, SDLC-stage skills
+`em` ships a Claude Code skill bundle — one router skill plus six focused, SDLC-stage skills
 (discover/extract, model/slice, implement, conform/validate, watch/review) — that runs a
 facilitated Event Modeling session: the AI asks the questions, you supply the domain, and the
 model renders live as it grows.
