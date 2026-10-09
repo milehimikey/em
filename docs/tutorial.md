@@ -26,6 +26,9 @@ npm install -g @milehimikey/em
 mkdir order-fulfillment && cd order-fulfillment
 ```
 
+(A global install is fine for learning. For a team repo, pin `em` per project instead — see
+[ai-workflow.md](ai-workflow.md#pinning-the-cli-to-the-same-version).)
+
 Create `order-fulfillment.em` with just a title and two swimlane declarations:
 
 ```em
