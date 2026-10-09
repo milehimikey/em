@@ -21,6 +21,18 @@ Requires Node ≥ 18. SVG, PNG, and PDF rendering are all fully self-contained (
 as bundled WebAssembly); nothing else to install. Only rarer formats (ps, eps, ...) need an
 optional system dependency — see [docs/dependencies.md](docs/dependencies.md).
 
+**Working in a team, or across several repos?** Pin `em` per project instead, so every
+contributor, agent and CI job runs the same version — with [mise](https://mise.jdx.dev) it's one
+line and needs no `package.json`:
+
+```bash
+mise use npm:@milehimikey/em@1.14.1   # writes the pin to mise.toml; bare `em` now resolves to it
+```
+
+Pair it with the Claude Code plugin pin (below) and the CLI, the skills and the MCP server are all
+on one version. See [docs/ai-workflow.md](docs/ai-workflow.md#pinning-the-cli-to-the-same-version)
+for the full motion, including the `npx` route for repos without mise.
+
 ## Quickstart
 
 ```bash

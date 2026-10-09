@@ -46,6 +46,50 @@ The skills are namespaced by the plugin: `/em:event-modeling` (the router), `/em
 em repo is generated from `.claude/skills/` by `scripts/build-plugin.ts` (`npm run docs:generate`);
 CI fails on drift. Its shared references resolve through `${CLAUDE_PLUGIN_ROOT}`.
 
+### Pinning the CLI to the same version
+
+The plugin pin above fixes which *skills* and which *MCP server* the agent runs (`plugin.json`
+launches `npx -y @milehimikey/em@<version> mcp`, stamped at release). It says nothing about the
+`em` binary the agent shells out to: the skills call bare `em validate`, `em slice new`, `em
+status`, ... dozens of times, and each one resolves to whatever `em` is first on PATH. On a team,
+that is a global install per contributor — and they drift. The symptom is confusing: the same
+model gives different `em slice sync` output or different validation results on different
+machines, and `em skill check` fails with `plugin-pin-mismatch` on some of them.
+
+The fix is to put a per-project `em` on PATH rather than to change the skills. Recommended:
+[mise](https://mise.jdx.dev), which already manages Node, the JDK and the rest for most teams,
+has an npm backend, and needs no `package.json` (so it works in a Kotlin or Go repo exactly as in
+a Node one):
+
+```bash
+mise use npm:@milehimikey/em@1.14.1
+```
+
+That writes the pin to `mise.toml` and shims `em`, so every bare `em <command>` — in your shell,
+in the skills, in the sub-agents, and in CI (`jdx/mise-action`, or `mise install && mise exec`) —
+runs exactly that version inside the repo:
+
+```toml
+[tools]
+"npm:@milehimikey/em" = "1.14.1"
+```
+
+Keep the two pins on the same version — the mise line and the plugin's `extraKnownMarketplaces`
+key — and the CLI, the skills and the MCP server cannot skew from each other. Commit both.
+
+Upgrading is then two edits: `em upgrade --apply` moves the plugin pin (and everything else in
+the repo it knows how to migrate), and you bump the `mise.toml` line by hand — `em upgrade` does
+not touch it yet. Until it does, `em skill check --ci` in the pipeline is the backstop: a
+contributor whose `em` disagrees with the committed plugin pin fails on `plugin-pin-mismatch`
+instead of producing silently different output.
+
+**Without mise.** Run the CLI through `npx` with the exact version, which needs no install at
+all — this is what the generated CI workflow does (`npx @milehimikey/em@<version> ...`, see
+[ci.md](ci.md)) — or add `@milehimikey/em` as an exact-version `devDependency` in a Node repo and
+run `npx em <command>`. Either covers humans and CI; it does not cover the agent path, because the
+skills still call bare `em`, so a repo that relies on `npx` alone still needs contributors' global
+`em` to match the plugin pin (which `em skill check` verifies).
+
 ### What `em skill check` verifies for a plugin repo
 
 `em skill check` (and the `skill-check` job in the [CI preset](ci.md)) recognises a repo that

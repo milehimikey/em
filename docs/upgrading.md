@@ -357,3 +357,14 @@ to a later version, and `em slice reratify` re-opens it when the slice reaches t
 | `em slice defer <model>.em <key> "<question>" --until v<n> --decision "<text>"`: checks the matching `## Open Questions` item with a `deferred to v<n>` marker and mirrors it into the state file's parking lot and Decisions log (MIL-275, [cli.md](cli.md#em-slice-defer-file-slice-key-question)); `em slice reratify` re-opens items deferred to the new version. New verb, no migration | no action needed |
 | Examples only: `examples/order-fulfillment` and `examples/headless-api` ship their committed contracts, the ready example slices carry a recorded sign-off, and a regression test runs `--slice-ready` and `em api check` over every example (MIL-276). No consumer action | no action needed |
 | **Release note: nothing to run** — update the `@milehimikey/em` dependency (and the plugin pin to `em-1-14-1` / `v1.14.1` on plugin repos); `em upgrade` has no 1.14.1 step. | no action needed |
+
+## 1.14.2
+
+A patch: `em slice mark-implemented` gains the status gate it was missing, and the docs gain the
+per-project pinning motion.
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| `em slice mark-implemented` now refuses a doc that is not `ready-to-implement` (or already `implemented`): a `draft`/`reviewed` slice can no longer be recorded as shipped without ratification (MIL-277, GH #222, [cli.md](cli.md#em-slice-mark-implemented-file-slice-key-pr-url)). Before 1.14.2 it flipped from any status. If an agent now reports `doc is \`status: draft\``, the slice was never ratified — ratify it (`em slice ratify --by`, with `--skip-review` as the auditable escape hatch), then re-run | no action needed; behavior change only |
+| **Per-project pinning** is now the documented motion for teams: `mise use npm:@milehimikey/em@<ver>` alongside the plugin pin, so the CLI the skills shell out to, the skills and the MCP server are on one version (MIL-278, GH #223, [ai-workflow.md](ai-workflow.md#pinning-the-cli-to-the-same-version)). Adopting it is optional; a repo that does carries one more version line to bump on upgrade | **not yet** — `em upgrade` moves the plugin pin but not the `mise.toml` line; bump that by hand until MIL-279 lands. `em skill check --ci` catches a contributor whose `em` disagrees with the plugin pin meanwhile |
+| **Release note: nothing to run** — update the `@milehimikey/em` dependency (and the plugin pin to `em-1-14-2` / `v1.14.2` on plugin repos); `em upgrade` has no 1.14.2 step. | no action needed |
