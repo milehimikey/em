@@ -3211,10 +3211,16 @@ other line — key order, spacing, comments, the whole body — survives byte-fo
 
 Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exits 0). Refuses,
 non-zero exit, leaving the file untouched, if the doc is already `status: implemented` with a
-**different** `implementedIn` — this command never silently overwrites provenance. There's no
-starting-status precondition otherwise (unlike `--slice-ready`, which gates *starting*
-implementation on `ready-to-implement`): this is supply-loop mechanics, not a ratification gate,
-so it flips from whatever status the doc is currently in.
+**different** `implementedIn` — this command never silently overwrites provenance.
+
+Applies only to a **ratified** doc (MIL-277, GH #222): the starting status must be
+`ready-to-implement` (the normal flip) or `implemented` (the idempotent re-run, or filling in a
+missing `implementedIn` on a doc already marked shipped). Any other status — `draft`, `reviewed`,
+`superseded`, empty — refuses, naming the status and pointing at `em slice ratify`. Before 1.14.2
+this command flipped from whatever status the doc held; since the implement contract (§6) and the
+engagement skill both run it at merge without re-checking, that let an agent record an unreviewed
+slice as implemented with no human gate. There is deliberately no bypass flag here — `em slice
+ratify` is the gate, and it carries its own `--skip-review` escape hatch.
 
 Scoped the same way `em export --slice`/`em validate --slice-ready` are: only a model error
 concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`) refuses —
@@ -3228,6 +3234,7 @@ an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't bloc
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
 | `already marked implemented with a different URL` | The idempotent/refusal guard — see above |
+| `doc is \`status: <status>\` — mark-implemented applies only to a ratified (\`ready-to-implement\`) doc: run \`em slice ratify ...\` first` | (MIL-277) The doc hasn't been ratified — a `draft`/`reviewed` slice can't be recorded as shipped; ratify it (or `--skip-review` there, auditably) and re-run |
 
 ```bash
 em slice mark-implemented model.em request-payment https://github.com/org/repo/pull/42

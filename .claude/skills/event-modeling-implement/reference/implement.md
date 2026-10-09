@@ -228,7 +228,10 @@ a bump here is a ledger defect.
 `em slice mark-implemented <model>.em <slice-key> <pr-url>` does the flip for you (MIL-103) —
 resolves the doc via the same note-binding join `--slice-ready` uses, is idempotent on a re-run
 with the same URL, and refuses (never silently overwrites) if the doc is already `implemented`
-with a different URL. Prefer it over hand-editing the doc's frontmatter.
+with a different URL. It also refuses a doc that isn't `ready-to-implement` (MIL-277): if it
+reports `doc is \`status: draft\``/`reviewed`, the slice was never ratified — stop and surface
+that to the human rather than editing the frontmatter by hand; the §1 gate should have caught it.
+Prefer it over hand-editing the doc's frontmatter.
 
 Then, if the project keeps a model README (from `../../event-modeling-shared/templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and
