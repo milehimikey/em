@@ -41,11 +41,24 @@ export type ApplyFrontmatterResult =
   | { ok: true; content: string; changed: boolean }
   | { ok: false; message: string };
 
+/** The status a doc must hold for `mark-implemented` to flip it: ratified, not yet shipped. */
+const RATIFIED_STATUS = "ready-to-implement";
+const IMPLEMENTED_STATUS = "implemented";
+
 /**
  * Pure text transform: flips `status:` to `implemented` and sets `implementedIn:` to `prUrl` in
  * `raw`'s frontmatter block. Idempotent (re-applying the same URL is a no-op, `changed: false`,
  * `content` returned byte-identical to `raw`); refuses (`ok: false`) rather than overwrite
  * provenance when the doc is already `status: implemented` with a *different* `implementedIn`.
+ *
+ * MIL-277 (GH #222): refuses any doc that isn't `ready-to-implement` or `implemented`. This
+ * command is the step AFTER ratification — the implement contract (§6) and the engagement skill
+ * both run it at merge without re-checking status, so without a gate here an agent pointed at a
+ * `draft` or `reviewed` slice would record it as shipped with no human sign-off. Same posture as
+ * `review.ts`/`ratify.ts` refusing out-of-order statuses; deliberately no escape flag, because
+ * `em slice ratify` IS the escape hatch (it has its own `--skip-review`). `implemented` stays
+ * legal so the idempotent re-run and the "status already implemented, `implementedIn` missing"
+ * repair (MIL-103 AC#5) keep working — neither skips a lifecycle step.
  * No fs access — the caller reads/writes; see `runMarkImplemented` below.
  */
 export function applyImplementedFrontmatter(raw: string, prUrl: string): ApplyFrontmatterResult {
@@ -69,7 +82,7 @@ export function applyImplementedFrontmatter(raw: string, prUrl: string): ApplyFr
   const currentStatus = normalizeFieldValue(statusMatch[2])?.toLowerCase() ?? null;
   const currentImplementedIn = implMatch ? normalizeFieldValue(implMatch[2]) : null;
 
-  if (currentStatus === "implemented" && currentImplementedIn !== null) {
+  if (currentStatus === IMPLEMENTED_STATUS && currentImplementedIn !== null) {
     if (currentImplementedIn === trimmedUrl) {
       return { ok: true, content: raw, changed: false }; // idempotent no-op
     }
@@ -78,6 +91,15 @@ export function applyImplementedFrontmatter(raw: string, prUrl: string): ApplyFr
       message:
         `already marked implemented with a different URL (existing: ${currentImplementedIn}, ` +
         `requested: ${trimmedUrl}) — refusing to overwrite`,
+    };
+  }
+
+  if (currentStatus !== RATIFIED_STATUS && currentStatus !== IMPLEMENTED_STATUS) {
+    return {
+      ok: false,
+      message:
+        `doc is \`status: ${currentStatus ?? "(empty)"}\` — mark-implemented applies only to a ` +
+        `ratified (\`${RATIFIED_STATUS}\`) doc: run \`em slice ratify <file> <key> --by <name>\` first`,
     };
   }
 

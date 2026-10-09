@@ -861,8 +861,9 @@ slice
     "flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the " +
       "one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the " +
       "em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). " +
-      "Idempotent on the same URL; refuses to overwrite a different one; never touches `version:` " +
-      "or the doc body",
+      "Applies only to a `ready-to-implement` doc (MIL-277: a `draft`/`reviewed` doc refuses — " +
+      "ratify first). Idempotent on the same URL; refuses to overwrite a different one; never " +
+      "touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")

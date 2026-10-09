@@ -136,6 +136,36 @@ describe("applyImplementedFrontmatter (pure text surgery)", () => {
     });
   });
 
+  // MIL-277 (GH #222): the status gate. mark-implemented is the step after ratification, so a
+  // doc that never reached `ready-to-implement` must refuse, byte-for-byte untouched.
+  for (const status of ["draft", "reviewed", "superseded"]) {
+    it(`refuses a \`status: ${status}\` doc — not ratified — naming the status and pointing at ratify`, () => {
+      const unratified = READY_DOC.replace("status: ready-to-implement", `status: ${status}`);
+      const result = applyImplementedFrontmatter(unratified, "https://github.com/org/repo/pull/42");
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.message).toContain(`doc is \`status: ${status}\``);
+      expect(result.message).toContain("em slice ratify");
+    });
+  }
+
+  it("refuses an empty `status:` value as unratified", () => {
+    const empty = READY_DOC.replace("status: ready-to-implement", "status:");
+    const result = applyImplementedFrontmatter(empty, "https://github.com/org/repo/pull/42");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("doc is `status: (empty)`");
+  });
+
+  it("matches the gate status case-insensitively, like every other frontmatter read", () => {
+    const upper = READY_DOC.replace("status: ready-to-implement", "status: Ready-To-Implement");
+    const result = applyImplementedFrontmatter(upper, "https://github.com/org/repo/pull/42");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changed).toBe(true);
+    expect(result.content).toContain("status: implemented");
+  });
+
   it("fills in a missing implementedIn when status is already implemented (MIL-103 AC#5)", () => {
     const alreadyImplementedNoLink =
       "---\n" +
@@ -191,6 +221,15 @@ describe("runMarkImplemented (note-binding resolution + fs orchestration)", () =
       join(dir, "invalid.em"),
       'slice "Invalid" {\n  command Do Thing note "slices/invalid.md"\n  event Thing Done\n}\n',
     );
+    // MIL-277: a bound doc that was never ratified.
+    writeFileSync(
+      join(dir, "slices", "draft-slice.md"),
+      READY_DOC.replace("status: ready-to-implement", "status: draft"),
+    );
+    writeFileSync(
+      join(dir, "draft.em"),
+      'slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n',
+    );
     // MIL-121 cross-binding: a view-only slice covered by the reaction slice's own doc — same
     // shape as sliceReadyValidate.test.ts's "request-payment" fixture: the doc's canonical path
     // matches the REACTION slice's own key, and its `covers:` list ratifies the view-only slice.
@@ -240,6 +279,16 @@ describe("runMarkImplemented (note-binding resolution + fs orchestration)", () =
     if (result.ok) return;
     expect(result.message).toContain("slices/ready-slice.md");
     expect(result.message).toContain("already marked implemented with a different URL");
+  });
+
+  it("refuses a draft doc without writing, naming the path and the status (MIL-277 / GH #222)", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    const result = run("draft.em", "draft-slice", "https://github.com/org/repo/pull/7");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("slices/draft-slice.md");
+    expect(result.message).toContain("doc is `status: draft`");
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
   });
 
   it("errors clearly for a key that names no slice in the model", () => {
