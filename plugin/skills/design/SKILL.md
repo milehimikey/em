@@ -1,6 +1,6 @@
 ---
 name: design
-em-version: 1.14.1
+em-version: 1.14.2
 description: >-
   Use when structuring a draft event model into swimlanes and the four patterns (State Change,
   State View, Automation, Translation), evaluating a model's structural completeness, or writing

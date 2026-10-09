@@ -1,6 +1,6 @@
 ---
 name: event-modeling-engagement
-em-version: 1.14.1
+em-version: 1.14.2
 description: >-
   Use when leading an engagement: building a named set of ratified event-modeling slices
   (`em engagement`) into a stack of PRs by dispatching the em-implementer, em-validator,

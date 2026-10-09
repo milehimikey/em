@@ -1,6 +1,6 @@
 ---
 name: event-modeling
-em-version: 1.14.1
+em-version: 1.14.2
 description: >-
   Use when the user runs `/em:event-modeling` (with or without a phase name), or wants to resume an
   event-modeling session without specifying which part of the process applies. Reads the model's
