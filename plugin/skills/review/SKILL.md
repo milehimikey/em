@@ -54,10 +54,20 @@ walk each one with the user, same as any open issue. Update the state file's Par
 section with who attended, and run `em state set-review <date>` to set the `Last stakeholder
 review:` marker (mirrors `Last conformance:`).
 
-**Per-slice outcome.** A slice whose open questions are all resolved in the room →
+**Per-slice outcome.** Walk the slice's questions — the doc's `## Open Questions` and every
+`issue "..."` note the room added to its elements — and give each one of three endings:
+
+- **Answered in the room** → edit the doc's authored section with the answer and delete the
+  `issue` note by hand. Defer is never used to record an answer.
+- **Raised in the room, not for this version** → `em slice defer <model> <key> --from-issue "<text>" --until v<n> --decision "<what this version does>"`:
+  promotes the captured `issue` into the doc's Open Questions as a deferred item, mirrors it
+  into the state file and removes the red note — one command, no hand edit mid-session.
+- **Already on the doc, not for this version** → the positional form. A question this version will not answer is deferred with `em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"` — never left `- [ ]`, never deleted, never answered by guessing.
+
+Then, and only then: a slice with nothing left `- [ ]` and no open `issue` →
 `em slice review <model>.em <key> --by <name>` (flips its doc to `status: reviewed` and records
 `reviewedBy:`/`reviewedOn:`). Anything still open stays `draft` — the walkthrough doesn't decide
-it, the next session or the open-questions list does. A question this version will not answer is deferred with `em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"` — never left `- [ ]`, never deleted, never answered by guessing.
+it, the next session or the open-questions list does.
 
 **The facilitator never ratifies, never offers to ratify, and never suggests ratification in a
 review session. Ratification is a separate human gate after review**

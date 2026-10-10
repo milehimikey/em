@@ -3358,10 +3358,12 @@ Records a question this version will not answer as **deferred to a later version
 `em validate --slice-ready` passes without a guess and the question has a return path.
 
 ```
-em slice defer <model>.em <slice-key> "<question>" --until v<n> --decision "<what this version does>" [--by <name>] [--on YYYY-MM-DD]
+em slice defer <model>.em <slice-key> "<question>"        --until v<n> --decision "<what this version does>" [--by <name>] [--on YYYY-MM-DD]
+em slice defer <model>.em <slice-key> --from-issue "<text>" --until v<n> --decision "<what this version does>" [--by <name>] [--on YYYY-MM-DD]
 ```
 
-Finds the single unchecked `- [ ]` item under `## Open Questions` whose text contains
+Two ways to name the question — exactly one of them per run. **Positional `"<question>"`**
+finds the single unchecked `- [ ]` item under `## Open Questions` whose text contains
 `<question>` (case-sensitive substring) on the doc resolved from `<slice-key>` (same join as
 `ratify`/`reratify`) and rewrites that one line:
 
@@ -3380,10 +3382,41 @@ a repeat run prints `already deferred (no-op): <doc path>`. [`em slice reratify`
 re-opens the item when it bumps to `v<n>`. A continuation key refuses like ratify does. No MCP
 tool (write path).
 
+**`--from-issue "<text>"`** (MIL-281) is the one-command path for a question that was raised in
+a review session and captured as an `issue "..."` clause in the `.em` — the form
+`em validate --list-issues` lists, and the one `defer` could not see before 1.15.0. It finds the
+single open issue on **this slice's own elements** whose text contains `<text>` (an issue on a
+sibling slice's element is never a candidate — the deferral lands on this slice's doc), then
+makes three edits, all computed before any is written:
+
+1. **Doc:** appends `- [x] <issue text> — v<current>: <decision>; deferred to v<n> (<date>[, <by>])`
+   at the end of `## Open Questions` (opening the section at EOF if a pre-template doc has
+   none). If an unchecked item already containing the text exists — someone wrote it down by
+   hand — that item is deferred in place instead, never duplicated.
+2. **State file:** the same two bullets the positional form writes, with the issue text as the
+   question.
+3. **Model:** removes the `issue "..."` clause from the `.em` — the clause span only (and the
+   whole line when the clause was alone on it), whether it sits on the element's declaration line
+   or trails its `{ … }` field block; every other byte, including the EOL style, is untouched.
+   The edited model is re-parsed first; if it would not compile cleanly or the issue count did
+   not drop by exactly one, nothing is written. The deferral record replaces the red note: the
+   question stops being open on the diagram (so `--slice-ready` and `--fail-on-issues` stop
+   counting it) and is tracked on the doc with a return path.
+
+Prints `deferred: <doc path> (issue "<text>" → v<n>; issue clause removed from <model>.em:<line>)`.
+A repeat run finds no clause, sees the doc already carries the item deferred to `v<n>`, and prints
+`already deferred (no-op): <doc path>` — nothing is written. The only thing a promoted issue can
+become is a deferred question: a question the room *answers* is still recorded by editing the doc
+and deleting the clause by hand.
+
 | Error (`em slice defer: …`, exit 1) | Meaning |
 |---|---|
+| `pass either "<question>" or --from-issue <text>, not both and not neither` | The two forms are exclusive |
 | `no unchecked Open Question matching "<q>"` | No `- [ ]` item (or no `## Open Questions` section) contains the text |
 | `ambiguous — matches: <item1> \| <item2>` | More than one unchecked item matches; lengthen the text |
+| `no open issue matching "<text>" on slice "<key>" (see \`em validate --list-issues\`)` | (`--from-issue`) No open `issue` on the slice's elements contains the text, and the doc does not already carry it deferred to `v<n>` |
+| `ambiguous — matches: <kind> "<name>" :<line> issue "<text>" \| …` | (`--from-issue`) More than one of the slice's issues matches; lengthen the text |
+| `<model>.em: removing the issue clause at line <n> would not leave a clean model — nothing written` | (`--from-issue`) The verify-before-write re-parse failed; the model is unusual enough to edit by hand |
 | `already checked: <item>` | The match is `- [x]` and not deferred to this version |
 | `--until <x> must be greater than the doc's current version v<n>` | Deferral must point forward |
 | `invalid --until "<x>" — expected v<n> (for example v2)` | Malformed `--until` |
