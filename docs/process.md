@@ -410,7 +410,7 @@ them through em's four sub-agents. The roles do not change; they are named here.
 - **The human merges, in any order, with the project's own strategy.** The lead hands over each
   PR at `awaiting-merge`. Every slice PR is cut from and targets `main` (the agent guide's §8
   rule 2) — an engagement groups related slices, it never stacks them — so no PR depends on
-  another, squash is fine, and nothing is retargeted or restacked. (Before 1.14.3 the plan
+  another, squash is fine, and nothing is retargeted or restacked. (Before 1.15.0 the plan
   stacked dependents on `impl/<upstream>` and required merge commits; MIL-280 removed that.)
 - **The constitution picks the models and the test command.** Its `- **Agent models:**` line
   assigns a model per sub-agent (the critic on a different model from the implementer) and its

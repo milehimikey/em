@@ -1985,7 +1985,7 @@ are three components.
 The build plan. **Levels** are a topological order of the engagement's slices over the graph
 above: level 0 has no upstream inside the engagement, and level n sits on level n−1. Levels come
 from the graph alone and do not move as PRs merge; they order dispatch and review, nothing more.
-Every slice's base is `main` — slice PRs never stack on one another (MIL-280, 1.14.3): the
+Every slice's base is `main` — slice PRs never stack on one another (MIL-280, 1.15.0): the
 foundation PR already holds every event and a slice never reaches into a sibling's code, so each
 PR compiles, tests and merges on its own. Holds are recomputed on every run. Per slice:
 

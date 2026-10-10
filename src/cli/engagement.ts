@@ -312,7 +312,7 @@ export function formatEngagementStatusText(s: EngagementStatus): string {
 
 // ---- the plan ----
 
-// MIL-280: every slice PR targets `main`. Until 1.14.3 the plan stacked PRs — `base` was
+// MIL-280: every slice PR targets `main`. Until 1.15.0 the plan stacked PRs — `base` was
 // `impl/<upstream>` when exactly one in-engagement upstream was unmerged, and a slice with two
 // or more was held (`multiple-unmerged-upstreams`) because a branch cannot be cut from two bases.
 // That topology was never needed: implement.md §8 rule 2 lands the foundation (the events)
