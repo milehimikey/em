@@ -312,8 +312,20 @@ export function formatEngagementStatusText(s: EngagementStatus): string {
 
 // ---- the plan ----
 
-export const HOLD_REASONS = ["not-ready", "upstream-outside-engagement-unmerged", "multiple-unmerged-upstreams"] as const;
+// MIL-280: every slice PR targets `main`. Until 1.15.0 the plan stacked PRs — `base` was
+// `impl/<upstream>` when exactly one in-engagement upstream was unmerged, and a slice with two
+// or more was held (`multiple-unmerged-upstreams`) because a branch cannot be cut from two bases.
+// That topology was never needed: implement.md §8 rule 2 lands the foundation (the events)
+// before any slice branch is cut, and rule 3 forbids a slice from reaching into a sibling's code,
+// so no slice has a compile-time dependency on another slice's branch. Stacking only added
+// merge-commit ceremony and retargeting, and made an engagement read as one big landing instead
+// of N isolated slices. Levels stay: they are the human's review order and the dispatch order,
+// not a branch topology.
+export const HOLD_REASONS = ["not-ready", "upstream-outside-engagement-unmerged"] as const;
 export type HoldReason = (typeof HOLD_REASONS)[number];
+
+/** The base every slice branch is cut from and every slice PR targets (MIL-280). */
+export const SLICE_BASE = "main";
 
 export interface EngagementPlanSlice {
   key: string;
@@ -325,8 +337,8 @@ export interface EngagementPlanSlice {
   /** Direct upstreams inside the engagement (model order). */
   upstreams: string[];
   branch: string;
-  /** `main`, `impl/<upstream>` (exactly one in-engagement upstream unmerged), or null (≥2). */
-  base: string | null;
+  /** Always `main` (MIL-280) — kept as a field so the Ledger's recorded `base` has something to agree with. */
+  base: string;
   /** The plan's own computed hold (R23) — never written to the Ledger. */
   planHeld: HoldReason | null;
   /** `planHeld`, else `"human"` when the Ledger records a human hold, else null. */
@@ -377,11 +389,6 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   }
 
   const entryOf = new Map(eng.slices.map((e) => [e.key, e]));
-  const mergedOf = (k: string): boolean => {
-    const e = entryOf.get(k);
-    const doc = idx.docStatus.get(k) ?? null;
-    return e ? effectiveState(e, doc).state === "merged" : doc === "implemented";
-  };
 
   const slices: EngagementPlanSlice[] = members.map((key) => {
     const entry = entryOf.get(key)!;
@@ -389,15 +396,13 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
     const { state, stateInferred } = effectiveState(entry, docStatus);
     const { scoped, ready } = computeSliceReadiness(input.model, input.refs, input.baseDir, key, input.contract, input.allDiagnostics);
     const upstreams = inPreds.get(key)!;
-    const unmergedIn = upstreams.filter((p) => !mergedOf(p));
+    // In-engagement upstreams impose no hold and no base (MIL-280): they only set the level.
     const unmergedOut = [...(preds.get(key) ?? [])].filter((p) => !memberSet.has(p) && idx.docStatus.get(p) !== "implemented");
     let planHeld: HoldReason | null = null;
     if (state !== "merged") {
       if (!ready) planHeld = "not-ready";
       else if (unmergedOut.length > 0) planHeld = "upstream-outside-engagement-unmerged";
-      else if (unmergedIn.length >= 2) planHeld = "multiple-unmerged-upstreams";
     }
-    const base = unmergedIn.length >= 2 ? null : unmergedIn.length === 1 ? `impl/${unmergedIn[0]}` : "main";
     return {
       key,
       pattern: idx.pattern.get(key) ?? "unknown",
@@ -407,7 +412,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       level: level.get(key)!,
       upstreams,
       branch: `impl/${key}`,
-      base,
+      base: SLICE_BASE,
       planHeld,
       held: planHeld ?? (entry.heldBy === "human" && state === "held" ? "human" : null),
       state,
@@ -448,7 +453,7 @@ export function formatEngagementPlanText(p: EngagementPlan): string {
     for (const s of p.slices.filter((x) => x.level === lvl.level)) {
       const held = s.held ? ` · held: ${s.held}` : "";
       const inferred = s.stateInferred ? " (inferred)" : "";
-      lines.push(`  ${s.key} [${s.pattern}] ${s.branch} on ${s.base ?? "(none)"} · state: ${s.state}${inferred}${held}`);
+      lines.push(`  ${s.key} [${s.pattern}] ${s.branch} on ${s.base} · state: ${s.state}${inferred}${held}`);
     }
   }
   return lines.join("\n");

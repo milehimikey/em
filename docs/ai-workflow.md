@@ -104,7 +104,7 @@ exits 1 under `--ci` / `CI=true`. The registry location follows `EM_CLAUDE_PLUGI
 
 ### Sub-agents em ships
 
-The engagement phase, and who operates these agents, is described in [process.md](process.md#engagements-who-operates-the-agents); the constitution's `Agent models`, `Merge strategy` and `Test command` lines configure them.
+The engagement phase, and who operates these agents, is described in [process.md](process.md#engagements-who-operates-the-agents); the constitution's `Agent models` and `Test command` lines configure them.
 
 em ships four Claude Code sub-agent definitions (MIL-269) that the engagement skill dispatches; each
 states an explicit `tools:` allowlist and fixes no model (the dispatcher passes it):
@@ -262,7 +262,7 @@ that live between sessions.
 | `watch` | `event-modeling-review` | Starts `em watch --serve` in the background for a live team view | A running live viewer |
 | `review` | `event-modeling-review` | Facilitated stakeholder walkthrough: steps the live viewer's Review mode through slices one at a time, capturing anything the room raises as `issue "..."` red notes | Triaged issues; a `Last stakeholder review:` marker in the state file |
 | `validate` | `event-modeling-conform` | Walks every diagnostic with you and applies fixes, plus the one check the validator can't do itself | A clean `em validate` |
-| `engagement` | `event-modeling-engagement` | The lead session for an `em engagement`: confirms the plan's parallel ceiling once, cuts each slice's worktree from the plan's base, dispatches `em-implementer`, then `em-validator`, `em-reviewer` and `em-critic` on each PR, records every step with `em engagement set`, and hands you the stack bottom-first to merge with merge commits. It never writes slice code or merges | A stack of reviewed PRs with their evidence, follow-up `mark-implemented` PRs per level, gaps parked in the state file, and a closed engagement |
+| `engagement` | `event-modeling-engagement` | The lead session for an `em engagement`: confirms the plan's parallel ceiling once, cuts each slice's worktree from `main`, dispatches `em-implementer`, then `em-validator`, `em-reviewer` and `em-critic` on each PR, records every step with `em engagement set`, and hands you each PR with its evidence as it passes — every PR independent and against `main`, merged in any order. It never writes slice code or merges | One reviewed PR per slice with its evidence, follow-up `mark-implemented` PRs per level, gaps parked in the state file, and a closed engagement |
 
 Each phase skill's own preconditions locate the model and, when invoked with no argument, defer
 to the `event-modeling` router skill — so `/event-modeling` alone is still all you need to

@@ -3,22 +3,30 @@ name: event-modeling-engagement
 em-version: 1.14.2
 description: >-
   Use when leading an engagement: building a named set of ratified event-modeling slices
-  (`em engagement`) into a stack of PRs by dispatching the em-implementer, em-validator,
-  em-reviewer and em-critic sub-agents, level by level, and handing the human the stack
-  bottom-first to merge. The lead session orchestrates and never writes slice code itself. To
-  build one slice by hand, use event-modeling-implement instead.
+  (`em engagement`) into one independent PR per slice, each against main, by dispatching the
+  em-implementer, em-validator, em-reviewer and em-critic sub-agents, level by level, and handing
+  the human each PR with its evidence as it passes review. The lead session orchestrates and never
+  writes slice code itself. To build one slice by hand, use event-modeling-implement instead.
 ---
 
 # Event Modeling — engagement (lead session)
 
 Goal: take an engagement (a named chunk of the model, `<model dir>/engagements/<slug>.md`) from
 its plan to merged PRs. You are the **lead**: you cut worktrees, dispatch scoped sub-agents,
-record every step in the Ledger with `em engagement set`, and hand the human a stack of PRs to
-merge bottom-first. You never write slice code, never merge, and never rebase a slice branch.
+record every step in the Ledger with `em engagement set`, and hand the human one PR per slice,
+each cut from and targeting `main`, to merge in any order. You never write slice code, never
+merge, and never rebase a slice branch.
+
+An engagement is a *related set* of isolated slices — a workflow, a lifecycle — built together.
+It is not a stack: no slice branch is ever cut from another slice's branch, and no PR ever
+targets another PR (MIL-280). The foundation PR (implement.md §8) already holds every event, and
+a slice never reaches into a sibling's code (§8 rule 3), so each PR compiles, tests and merges
+on its own. Levels order the work for the human's review and your dispatch; they never gate a
+merge.
 
 **Read `reference/engagement.md` before the first dispatch.** It holds the Ledger state machine,
-the evidence bundle format, the retarget check, the gap protocol and the model-selection rule
-this file uses by name. Each sub-agent runs `event-modeling-implement`'s contract
+the evidence bundle format, the gap protocol and the model-selection rule this file uses by
+name. Each sub-agent runs `event-modeling-implement`'s contract
 (`../event-modeling-implement/reference/implement.md`) for its one slice; that contract is
 theirs, not yours.
 
@@ -42,21 +50,17 @@ Run the shared preconditions first (tool check, bundle currency, locate the mode
 2. **Foundation PR merged.** Ask the human for the foundation PR (implement.md §8) and confirm it
    has merged into `main` (`gh pr view <n> --json state` shows `MERGED`). STOP if there is none
    or it is still open. No slice branch is cut before it lands.
-3. **Merge strategy.** The constitution's "Review and merge norms" must carry the line
-   `- **Merge strategy:** merge-commits-when-stacked`. STOP if the line is absent or names any
-   other value: tell the human the engagement needs that norm and point at the constitution
-   template's "Review and merge norms" prompt
-   (`../event-modeling-shared/templates/constitution.md`). The constitution is the human's to
-   amend and ratify, never yours.
-4. **Agent models.** Read the line `- **Agent models:** implementer=<model>,
+3. **Agent models.** Read the line `- **Agent models:** implementer=<model>,
    validator=<model>, reviewer=<model>, critic=<model|codex>`. If it is absent, say once:
    "no Agent models line — using implementer=sonnet, validator=sonnet, reviewer=sonnet,
    critic=opus", and proceed. Apply the model-selection rule in `reference/engagement.md`
-   (the critic never runs on the implementer's model).
-5. **Worktrees are ignored.** `git check-ignore -q .claude/worktrees/x` must succeed. If it
+   (the critic never runs on the implementer's model). A constitution that still carries a
+   `- **Merge strategy:**` line from em ≤ 1.14.2 is fine: the line is ignored, never a reason to
+   stop — PRs merge with whatever strategy the project uses.
+4. **Worktrees are ignored.** `git check-ignore -q .claude/worktrees/x` must succeed. If it
    fails, STOP and ask the human to add `.claude/worktrees/` to `.gitignore` in its own commit
    on `main`.
-6. **The engagement exists.** `em engagement status <model>.em <slug>`. If there is no such
+5. **The engagement exists.** `em engagement status <model>.em <slug>`. If there is no such
    engagement, ask the human which slices it covers (a list, a context, or "everything
    downstream of X") and run `em engagement new <model>.em <slug> --slices a,b,c` (or
    `--context <C>`, or `--downstream-of <ref>`) `--by "<their name>"`. When `new` warns that the
@@ -66,9 +70,9 @@ Run the shared preconditions first (tool check, bundle currency, locate the mode
 ## 2. Plan and confirm the ceiling once
 
 Run `em engagement plan <model>.em <slug>` (`--json` when you need the fields). Present it in
-plain terms: each level, its width against the ceiling (`parallel`), each slice's branch and
-base, and every held slice with its reason (`not-ready`, `upstream-outside-engagement-unmerged`,
-`multiple-unmerged-upstreams`, or `human`). Then ask exactly one question:
+plain terms: each level, its width against the ceiling (`parallel`), each slice's branch (every
+base is `main`), and every held slice with its reason (`not-ready`,
+`upstream-outside-engagement-unmerged`, or `human`). Then ask exactly one question:
 
 > "Ceiling N from the plan; proceed?"
 
@@ -78,13 +82,14 @@ A held slice is never started; the plan releases it when its hold clears.
 
 ## 3. Per level: cut the worktree, then dispatch the implementer
 
-Work level by level, in order. A slice in level n+1 starts only when its upstream has reached
-`awaiting-merge` or `merged`, so the base it is cut from no longer moves. Within a level, keep up
-to the ceiling of slices in flight (`building`, `validating` or `review`) at once, dispatched in
-parallel. For each slice the plan lists as not held:
+Work level by level, in order: a level's slices are dispatched before the next level's, so the
+human sees upstream slices first. Nothing in level n+1 waits for a merge — every slice is cut
+from `main`. Keep up to the ceiling of slices in flight (`building`, `validating` or `review`)
+at once, dispatched in parallel; when a slot frees, take the next not-held slice in level order.
+For each slice the plan lists as not held:
 
-1. Take `base` from the plan for this slice: `main`, or `impl/<upstream>`. **Never the current
-   HEAD**, and never a branch you picked yourself.
+1. Take `base` from the plan for this slice. It is always `main`. **Never the current HEAD**,
+   never another slice's branch, and never a branch you picked yourself.
 2. If `impl/<key>` already exists (`git rev-parse --verify --quiet impl/<key>`) or
    `.claude/worktrees/<key>` already exists, STOP for that slice and report it. Never delete,
    reuse or reset someone's branch.
@@ -94,17 +99,16 @@ parallel. For each slice the plan lists as not held:
    `em engagement set <model>.em <slug> <key> --state building --branch impl/<key> --base <base>`
 5. Dispatch `em-implementer` (`em:em-implementer` under the plugin) on the implementer model.
    Its prompt is ONLY the slice key and the absolute worktree path. It reads its own spec, the
-   constitution and the implement contract. Give it no plan, no other slice, and no merge or
-   stacking instructions.
+   constitution and the implement contract. Give it no plan, no other slice, and no merge
+   instructions.
 
 ## 4. Validate, review, criticise
 
 When the implementer returns a PR URL (and a per-invariant test map):
 
 1. `em engagement set <model>.em <slug> <key> --state validating --pr <url>`. Check the PR's
-   base: `gh pr view <url> --json baseRefName` must equal the Ledger's base. If not, fix it
-   with `gh pr edit <url> --base <base>`. That is a lead step; the implementer never changes a
-   base.
+   base: `gh pr view <url> --json baseRefName` must be `main`. If not, fix it with
+   `gh pr edit <url> --base main`. That is a lead step; the implementer never changes a base.
 2. Dispatch `em-validator` (`em:em-validator`) with the slice key and the worktree path. It
    returns one PASS/FAIL line per check and `OVERALL: PASS` or a failure.
 3. On `OVERALL: PASS`: `em engagement set <model>.em <slug> <key> --state review`. Dispatch
@@ -125,36 +129,31 @@ When the implementer returns a PR URL (and a per-invariant test map):
    human.
 6. `minor` findings do not loop. They go in the evidence bundle.
 
-## 5. Hand the human the stack, bottom first
+## 5. Hand the human each PR as it passes
 
 When a slice passes review: `em engagement set <model>.em <slug> <key> --state awaiting-merge`.
-Hand the human the PRs bottom-first, lowest level first, each with its evidence bundle
-(`reference/engagement.md`): the validator table, the reviewer's and critic's findings and any
-disagreement, and the per-invariant test map. Tell them, every time:
-
-- merge bottom-first, with a **merge commit** while any PR stacks on this one (implement.md §8
-  rule 2a). Squash is forbidden in that state;
-- delete the head branch on merge, so GitHub retargets the PRs that stacked on it.
+Hand the human the PR with its evidence bundle (`reference/engagement.md`): the validator table,
+the reviewer's and critic's findings and any disagreement, and the per-invariant test map. Every
+PR is independent — against `main`, carrying only its own slice — so the human merges them in
+any order, with the project's usual merge strategy (squash included), and nothing else needs
+retargeting or restacking. Suggest level order (upstream slices first) because it reads better,
+not because anything depends on it.
 
 You never merge.
 
 ## 6. After each human merge
 
 1. Update `main` in your own checkout: `git switch main && git pull --ff-only`.
-2. **Retarget check** (`reference/engagement.md`): `gh pr list --base impl/<key> --state open`
-   must be empty. For each PR still listed (the head branch was not deleted),
-   `gh pr edit <n> --base main`. Then record the new base on each dependent, keeping its state:
-   `em engagement set <model>.em <slug> <dependent> --state <its state> --base main`.
-3. `em engagement set <model>.em <slug> <key> --state merged`, then remove the worktree:
+2. `em engagement set <model>.em <slug> <key> --state merged`, then remove the worktree:
    `git worktree remove .claude/worktrees/<key>`.
-4. When every slice of a level is `merged` or `gap`, open one follow-up PR for that level from
+3. When every slice of a level is `merged` or `gap`, open one follow-up PR for that level from
    `main`: `git switch -c engagement/<slug>-level-<n> main`, run
    `em slice mark-implemented <model>.em <key> <pr-url>` for each slice merged in the level,
    then `em slice index <model>.em`, commit, and `gh pr create --base main`. The human merges it
    like any other PR.
-5. Recompute: `em engagement plan <model>.em <slug>`. Merges release holds
-   (`multiple-unmerged-upstreams` drops to one upstream, a base moves to `main`). Continue with
-   step 3 for anything newly startable.
+4. Recompute: `em engagement plan <model>.em <slug>`. A merge can release an
+   `upstream-outside-engagement-unmerged` hold once that upstream's doc reads `implemented`.
+   Continue with step 3 for anything newly startable.
 
 ## 7. Gaps
 
@@ -182,11 +181,12 @@ constitution), follow the gap protocol (`reference/engagement.md`):
 | Rule | Because |
 |---|---|
 | Never hand-edit `engagements/<slug>.md` | `em engagement set` and `close` are the only write paths; the Ledger table is generated |
-| Never restack or rebase a slice branch | Merge commits make restacking unnecessary; a rebase rewrites history a dependent was cut from |
-| Never squash a PR with an open dependent | It strands the dependent's history (implement.md §8 rule 2a) |
+| Never cut a slice branch from another slice's branch, or make a PR target another PR | Every slice PR is cut from and targets `main` (MIL-280); a stack turns isolated slices into one landing and adds merge ceremony the contract never needed |
+| Never rebase a slice branch | The branch is the implementer's; the lead orchestrates and records, it does not rewrite history |
 | Never run the implementer's work yourself | The lead orchestrates; code comes from a scoped implementer working from its own read of the spec |
 | Never dispatch beyond the ceiling | The ceiling was confirmed once for the engagement; exceeding it breaks that agreement |
-| Never cut a slice branch from the current HEAD | The base comes from the plan; any other base stacks the PR on the wrong history |
-| Never merge a PR | The human merges, bottom-first |
+| Never cut a slice branch from the current HEAD | The base is `main` from the plan; the lead's HEAD may be anything |
+| Never hold a PR back for an upstream merge | Slices do not depend on each other's branches (§8 rules 2 and 3); level order is for reading, not gating |
+| Never merge a PR | The human merges, in any order |
 | Never show the critic the reviewer's findings | The critic's value is an independent view; disagreement is a finding |
 | Never start a held slice, or ask "which slice first" | The plan decides order and holds; the human confirms only the ceiling |

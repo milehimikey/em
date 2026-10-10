@@ -1984,15 +1984,17 @@ are three components.
 
 The build plan. **Levels** are a topological order of the engagement's slices over the graph
 above: level 0 has no upstream inside the engagement, and level n sits on level n−1. Levels come
-from the graph alone and do not move as PRs merge. Bases and holds are recomputed on every run.
-Per slice:
+from the graph alone and do not move as PRs merge; they order dispatch and review, nothing more.
+Every slice's base is `main` — slice PRs never stack on one another (MIL-280, 1.15.0): the
+foundation PR already holds every event and a slice never reaches into a sibling's code, so each
+PR compiles, tests and merges on its own. Holds are recomputed on every run. Per slice:
 
 | Field | Meaning |
 |---|---|
 | `ready`, `readyDiagnostics` | The `em validate --slice-ready` verdict and its scoped diagnostics, from the same helper (so the MIL-259 sign-off and MIL-238 contract gates apply) |
 | `level`, `upstreams` | The level, and the direct upstreams inside the engagement |
 | `branch` | `impl/<key>` |
-| `base` | `main` when no in-engagement upstream is unmerged; `impl/<upstream>` when exactly one is; `null` when two or more are |
+| `base` | Always `main` |
 | `planHeld` | The plan's own computed hold (below), or `null`. Never written to the Ledger |
 | `held` | `planHeld`, else `human` when the Ledger records `set --state held`, else `null` |
 | `state`, `stateInferred` | The Ledger state; `merged` with `stateInferred: true` when the doc has reached `implemented` |
@@ -2001,10 +2003,12 @@ Per slice:
 |---|---|
 | `not-ready` | The slice fails `--slice-ready` |
 | `upstream-outside-engagement-unmerged` | A direct upstream outside the engagement whose doc is not `implemented` |
-| `multiple-unmerged-upstreams` | Two or more in-engagement upstreams are not merged yet. Held until at most one remains; the plan recomputes |
 
-A merged slice (recorded or inferred) is never held. The text form prints one block per level
-with its width against the ceiling:
+In-engagement upstreams impose no hold: they set the level only. (Until 1.14.2 a slice with two
+or more unmerged in-engagement upstreams was held as `multiple-unmerged-upstreams`, because a
+stacked branch cannot be cut from two bases; with every base `main` the reason is gone.) A merged
+slice (recorded or inferred) is never held. The text form prints one block per level with its
+width against the ceiling:
 
 ```
 engagement "loans" (open) — 26 slice(s) in 3 level(s), parallel 3
@@ -2012,10 +2016,10 @@ level 0: 23 slices (ceiling 3)
   catalog-view-1 [state-view] impl/catalog-view-1 on main · state: planned
   …
 level 1: 2 slices (ceiling 3)
-  send-overdue-notice [translation] impl/send-overdue-notice on impl/overdue-loans-to-notify · state: planned
-  reservations [state-view] impl/reservations on (none) · state: planned · held: multiple-unmerged-upstreams
+  send-overdue-notice [translation] impl/send-overdue-notice on main · state: planned
+  reservations [state-view] impl/reservations on main · state: planned
 level 2: 1 slice (ceiling 3)
-  loan-history [state-view] impl/loan-history on impl/send-overdue-notice · state: planned
+  loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
 `--json` prints `engagementPlanSchemaVersion: "1.0"`, `generator`, `file`, `engagement` (the

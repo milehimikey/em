@@ -201,7 +201,7 @@ em engagement new <file> <slug> --downstream-of <ref>            # a slice key, 
 em engagement new <file> <slug> --parallel <n>                   # how many slices of one level may be in flight at once
 em engagement new <file> <slug> --by <name>                      # who created the engagement (createdBy)
 em engagement new <file> <slug> --force                          # overwrite an existing engagement file with this slug
-em engagement plan <file> <slug>                                 # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (main or impl/<upstream>), and any hold
+em engagement plan <file> <slug>                                 # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (always main — MIL-280), and any hold
 em engagement plan <file> <slug> --json                          # print a JSON document instead of text (same document as the MCP engagement_plan tool)
 em engagement set <file> <slug> <key>                            # the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); idempotent; merged is terminal; --state held records a human hold
 em engagement set <file> <slug> <key> --state <state>            # one of: planned | building | validating | review | awaiting-merge | merged | held | gap

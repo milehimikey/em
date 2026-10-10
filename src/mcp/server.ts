@@ -1136,10 +1136,10 @@ export function createServer(): McpServer {
       description:
         "Return the same JSON document `em engagement plan <file> <slug> --json` prints (MIL-268): " +
         "the engagement's slices in dependency levels over model.edges (loops-to excluded), each " +
-        "with its --slice-ready verdict, branch impl/<key>, base (main, or impl/<upstream> when " +
-        "exactly one in-engagement upstream is unmerged), and any computed hold (not-ready, " +
-        "upstream-outside-engagement-unmerged, multiple-unmerged-upstreams); level widths vs the " +
-        "parallel ceiling. Read-only. Tool error when the engagement is missing or has a cycle.",
+        "with its --slice-ready verdict, branch impl/<key>, base (always main — every slice PR " +
+        "targets main, MIL-280), and any computed hold (not-ready, " +
+        "upstream-outside-engagement-unmerged); level widths vs the parallel ceiling. Read-only. " +
+        "Tool error when the engagement is missing or has a cycle.",
       inputSchema: { file: fileParam, slug: slugParam },
     },
     async ({ file, slug }) => {
