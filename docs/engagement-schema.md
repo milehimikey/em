@@ -64,14 +64,14 @@ are double-quoted, so a URL or a branch name containing `:` stays valid YAML.
 | `key` | slice export key | The unit. Continuations and `covers:`-bound slices are folded into it and never listed on their own. |
 | `state` | `planned \| building \| validating \| review \| awaiting-merge \| merged \| held \| gap` | The Ledger state. `merged` is terminal. |
 | `branch` | string or `null` | The slice branch, normally `impl/<key>`. |
-| `base` | string or `null` | The branch the PR targets (`main` or `impl/<upstream>`), as recorded. `plan` computes the current one. |
+| `base` | string or `null` | The branch the PR targets, as recorded: `main` for every slice since 1.14.3 (MIL-280 — slice PRs never stack). A file written by em ≤ 1.14.2 may still record `impl/<upstream>`; `plan` reports `main` regardless. |
 | `pr` | string or `null` | The PR URL. |
 | `heldBy` | `human` (optional) | Present only while `state` is `held` through `em engagement set --state held`. |
 
 `merged` is also *inferred*, without being written, when the slice doc reaches
 `status: implemented`. `plan` and `status` report that as `state: merged`, `stateInferred: true`.
-The plan's own computed hold (`not-ready`, `upstream-outside-engagement-unmerged`,
-`multiple-unmerged-upstreams`) is never stored here; see
+The plan's own computed hold (`not-ready`, `upstream-outside-engagement-unmerged`) is never
+stored here; see
 [`em engagement plan`](cli.md#em-engagement-plan-file-slug---json).
 
 ## Ledger region

@@ -71,7 +71,7 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("plan: the lending fixture (remaining-work shape + every hold reason)", () => {
-  it("levels over model.edges with loops-to excluded, one impl/<to-do view> base, every hold present", () => {
+  it("levels over model.edges with loops-to excluded, every base main (MIL-280), every hold present", () => {
     const { file } = writeLendingFixture(dir);
     // The translation's notice event loops back to the to-do view it reads: a real loops-to edge.
     const { model } = compile(readFileSync(file, "utf8"));
@@ -91,17 +91,19 @@ describe("plan: the lending fixture (remaining-work shape + every hold reason)",
       level: 1,
       pattern: "translation",
       upstreams: ["overdue-loans-to-notify"],
-      base: "impl/overdue-loans-to-notify",
+      base: "main",
       held: null,
     });
-    expect(by.get("loan-history")).toMatchObject({ level: 2, base: "impl/send-overdue-notice", held: null });
+    expect(by.get("loan-history")).toMatchObject({ level: 2, base: "main", held: null });
+    // MIL-280: two unmerged in-engagement upstreams set the level and nothing else — no hold, base main.
     expect(by.get("reservations")).toMatchObject({
       level: 1,
       upstreams: ["reserve-tool", "cancel-reservation"],
-      base: null,
-      planHeld: "multiple-unmerged-upstreams",
-      held: "multiple-unmerged-upstreams",
+      base: "main",
+      planHeld: null,
+      held: null,
     });
+    expect(p.slices.every((s) => s.base === "main")).toBe(true);
     expect(by.get("damage-reports")).toMatchObject({ level: 0, planHeld: "upstream-outside-engagement-unmerged" });
     const ratings = by.get("tool-ratings")!;
     expect(ratings).toMatchObject({ ready: false, planHeld: "not-ready", docStatus: "draft" });
@@ -113,30 +115,31 @@ describe("plan: the lending fixture (remaining-work shape + every hold reason)",
         "level 0: 23 slices (ceiling 3)",
         "level 1: 2 slices (ceiling 3)",
         "level 2: 1 slice (ceiling 3)",
-        "  send-overdue-notice [translation] impl/send-overdue-notice on impl/overdue-loans-to-notify · state: planned",
-        "  reservations [state-view] impl/reservations on (none) · state: planned · held: multiple-unmerged-upstreams",
+        "  send-overdue-notice [translation] impl/send-overdue-notice on main · state: planned",
+        "  reservations [state-view] impl/reservations on main · state: planned",
+        "  damage-reports [state-view] impl/damage-reports on main · state: planned · held: upstream-outside-engagement-unmerged",
       ]),
     );
   });
 
-  it("18 views + one translation on a to-do view: two levels, the only non-main base is impl/<to-do view>", () => {
+  it("18 views + one translation on a to-do view: two levels, every base main, nothing held", () => {
     const { file } = writeLendingFixture(dir);
     const warning = create(file, "views", { kind: "slices", keys: [...lendingViewKeys, "overdue-loans-to-notify", "send-overdue-notice"] });
     expect(warning).toBeNull(); // all over the same foundation: one component
     const p = plan(file, "views");
     expect(p.levels.map((l) => l.width)).toEqual([19, 1]);
-    const bases = [...new Set(p.slices.map((s) => s.base))];
-    expect(bases).toEqual(["main", "impl/overdue-loans-to-notify"]);
+    expect([...new Set(p.slices.map((s) => s.base))]).toEqual(["main"]);
     expect(p.slices.every((s) => s.held === null)).toBe(true);
   });
 
-  it("two unmerged upstreams hold the slice; after set --state merged on one it plans on the other's branch", () => {
+  it("in-engagement upstreams never hold a slice or move its base, merged or not (MIL-280)", () => {
     const { file } = writeLendingFixture(dir);
     create(file, "loans", { kind: "slices", keys: LENDING_ENGAGEMENT_KEYS });
-    expect(plan(file, "loans").slices.find((s) => s.key === "reservations")).toMatchObject({ held: "multiple-unmerged-upstreams", base: null });
+    const reservations = () => plan(file, "loans").slices.find((s) => s.key === "reservations");
+    expect(reservations()).toMatchObject({ held: null, planHeld: null, base: "main", upstreams: ["reserve-tool", "cancel-reservation"] });
     expect(set(file, "loans", "reserve-tool", "merged", { pr: "https://example.test/pr/1" })).toMatchObject({ ok: true, changed: true });
-    expect(plan(file, "loans").slices.find((s) => s.key === "reservations")).toMatchObject({ held: null, planHeld: null, base: "impl/cancel-reservation" });
-    // `merged` inferred from the doc: cancel-reservation's doc reaches implemented -> base main.
+    expect(reservations()).toMatchObject({ held: null, planHeld: null, base: "main" });
+    // `merged` inferred from the doc: cancel-reservation's doc reaches implemented -> still main, still not held.
     const docPath = join(dir, "slices", "cancel-reservation.md");
     writeFileSync(docPath, readFileSync(docPath, "utf8").replace("status: ready-to-implement", "status: implemented\nimplementedIn: https://example.test/pr/2"));
     const p = plan(file, "loans");

@@ -23,9 +23,9 @@ NAMED human and an ISO date, hand-filled at sign-off (no `em` command writes thi
 unratified, says so, and does not proceed on unilateral style or stack decisions for a first slice.
 
 `em status` reports this document as present or absent per model — existence only. em never reads
-or validates its content, and the CLI parses nothing here. Three lines are read as plain text by
+or validates its content, and the CLI parses nothing here. Two lines are read as plain text by
 the engagement skill and its sub-agents, so keep their exact shape: `- **Test command:**` (the
-validator), `- **Merge strategy:**` and `- **Agent models:**` (the engagement skill). In a spec-kit
+validator) and `- **Agent models:**` (the engagement skill). In a spec-kit
 project they merge under the same headings in `.specify/memory/constitution.md`.
 -->
 
@@ -120,11 +120,9 @@ it is silent, these apply.
   amend** — a `covers:` doc ships as one PR for both keys; a read model is one doc, so a later
   `again` instance is a continuation of the doc that first declared it, not a PR of its own. See
   the agent guide's §5/§10.
-- **Merge strategy:** merge-commits-when-stacked
-  {{**How do PRs merge, and what happens when one PR depends on another?** Merge commits whenever
-  a dependent PR is open; squash only a PR with no open dependent (implement contract §8 rule 2a).
-  Keep this exact line: it is the only value the engagement skill accepts, and it refuses to run
-  without it.}}
+- **Merge strategy:** {{squash | merge commit | rebase — the project's own choice. Every slice PR
+  is cut from and targets `main` (implement contract §8 rule 2), so no PR ever depends on
+  another and any strategy works; em reads nothing from this line.}}
 - **Agent models:** implementer=sonnet, validator=sonnet, reviewer=sonnet, critic=opus
   {{**Which model runs each em sub-agent?** Keep this exact line shape, with the defaults shown or
   your own choices. The critic must run on a different model from the implementer; `critic=codex`

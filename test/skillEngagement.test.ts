@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 // MIL-270 (goal-spec criterion 24): the `event-modeling-engagement` skill.
-//   (a) grep gates over the skill text, the router row, the amended implement contract (§8 rule 2
-//       and rule 2a, R27) and the em-implementer definition (no orchestration text leaks in);
+//   (a) grep gates over the skill text, the router row, the amended implement contract (§8 rule 2,
+//       R27 — rule 2a was removed by MIL-280) and the em-implementer definition (no orchestration
+//       text leaks in);
 //   (b) a scripted scenario, no agents run: on a git copy of the MIL-268 lending fixture, follow
 //       the skill's commands by hand (`em engagement new` + `plan`, step 3's `git worktree add`
 //       from the plan's base + `em engagement set --state building`, the step 4-6 Ledger walk, a
 //       simulated merge) and assert the worktree/branch/base layout and the Ledger states match
-//       the plan, and that a merge releases the held dependent onto `impl/<upstream>`.
+//       the plan. MIL-280: every base is `main` and no slice ever stacks on or waits for another —
+//       a dependent is cut from `main` while its upstream is still open, and a merge changes
+//       nothing about the slices around it.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { cpSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -77,12 +80,19 @@ describe("event-modeling-engagement skill text (MIL-270)", () => {
     }
   });
 
-  it("states the preconditions, the one ceiling question, the retarget check and the end", () => {
-    expect(skill).toContain("`- **Merge strategy:** merge-commits-when-stacked`");
+  it("states the preconditions, the one ceiling question, the main-base check and the end", () => {
+    // MIL-280: the merge-strategy gate is gone; a stale line is tolerated, never a STOP.
+    expect(skill).not.toContain("merge-commits-when-stacked");
+    expect(skillFlat).toContain("A constitution that still carries a `- **Merge strategy:**` line from em ≤ 1.14.2 is fine");
     expect(skillFlat).toContain("implementer=sonnet, validator=sonnet, reviewer=sonnet, critic=opus");
     expect(skill).toContain('"Ceiling N from the plan; proceed?"');
     expect(skillFlat).toContain('**Never ask "which slice first"**');
-    expect(skill).toContain("gh pr edit <n> --base main");
+    expect(skill).toContain("gh pr edit <url> --base main");
+    expect(skill).toContain("It is always `main`.");
+    for (const gone of ["Retarget check", "retarget check", "merge commit", "bottom-first", "stacking instructions", "multiple-unmerged-upstreams"]) {
+      expect(skill, gone).not.toContain(gone);
+    }
+    expect(read(REFERENCE_MD)).not.toContain("retarget");
     expect(skill).toContain("em slice mark-implemented <model>.em <key> <pr-url>");
     expect(skill).toContain("em slice index <model>.em");
     expect(skill).toContain("em state log-usage <model>.em --phases engagement");
@@ -97,8 +107,9 @@ describe("event-modeling-engagement skill text (MIL-270)", () => {
   it("carries the Never-do rows", () => {
     for (const row of [
       "| Never hand-edit `engagements/<slug>.md` |",
-      "| Never restack or rebase a slice branch |",
-      "| Never squash a PR with an open dependent |",
+      "| Never cut a slice branch from another slice's branch, or make a PR target another PR |",
+      "| Never rebase a slice branch |",
+      "| Never hold a PR back for an upstream merge |",
       "| Never run the implementer's work yourself |",
       "| Never dispatch beyond the ceiling |",
     ]) {
@@ -109,21 +120,20 @@ describe("event-modeling-engagement skill text (MIL-270)", () => {
   it("the router routes `engagement` to the new skill", () => {
     const router = read(ROUTER_MD);
     expect(router).toContain(
-      "| `engagement` | `event-modeling-engagement` — build a planned set of ready slices through scoped sub-agents to a stack of PRs |",
+      "| `engagement` | `event-modeling-engagement` — build a planned set of ready slices through scoped sub-agents to one PR per slice, each against main |",
     );
     expect(router).toContain("`conform`, `validate`, `watch`, `review`, `engagement`): look it up");
-    expect(flat(ROUTER_MD)).toContain("to a stack of PRs (an `em engagement`), event-modeling-engagement.");
+    expect(flat(ROUTER_MD)).toContain("to one PR per slice against main (an `em engagement`), event-modeling-engagement.");
   });
 
-  it("implement.md §8 rule 2 names the engagement base and rule 2a the merge-commit rule (R27), in the plugin copy too", () => {
+  it("implement.md §8 rule 2 cuts every slice branch from main and rule 2a is gone (MIL-280), in the plugin copy too", () => {
     for (const p of [IMPLEMENT_MD, PLUGIN_IMPLEMENT_MD]) {
       const text = flat(p);
       expect(text, p).toContain(
-        "cut the slice branch from the base the engagement plan names (`em engagement plan`); outside an engagement, from `main`",
+        "Every slice branch is cut from `main` and every slice PR targets `main` — inside an engagement (`em engagement plan` names `main` as every slice's base) and outside one alike",
       );
-      expect(text, p).toContain(
-        "2a. **While a dependent PR is open, the lower PR merges with a merge commit; squash is forbidden in that state (it strands the dependent's history).**",
-      );
+      expect(text, p).not.toContain("2a.");
+      expect(text, p).not.toContain("squash is forbidden");
     }
   });
 
@@ -186,7 +196,7 @@ interface PlanSlice {
   key: string;
   level: number;
   branch: string;
-  base: string | null;
+  base: string;
   planHeld: string | null;
   held: string | null;
   state: string;
@@ -223,7 +233,8 @@ describe("scripted engagement scenario — the skill's commands by hand, no agen
 
   /** Step 3 for one slice, exactly as the skill writes it: worktree from the plan's base, then the Ledger. */
   function cut(slice: PlanSlice): void {
-    if (slice.held || slice.base === null) throw new Error(`skill never starts a held slice (${slice.key})`);
+    if (slice.held) throw new Error(`skill never starts a held slice (${slice.key})`);
+    if (slice.base !== "main") throw new Error(`MIL-280: every base is main, got ${slice.base} (${slice.key})`);
     git(repo, "worktree", "add", `.claude/worktrees/${slice.key}`, "-b", `impl/${slice.key}`, slice.base);
     set(slice.key, "building", "--branch", `impl/${slice.key}`, "--base", slice.base);
   }
@@ -243,7 +254,7 @@ describe("scripted engagement scenario — the skill's commands by hand, no agen
     if (repo) rmSync(repo, { recursive: true, force: true });
   });
 
-  it("step 1-2: `em engagement new` + `plan` give three levels, one stacked base and one hold", () => {
+  it("step 1-2: `em engagement new` + `plan` give three levels, every base main, no hold (MIL-280)", () => {
     em(repo, "engagement", "new", MODEL, SLUG, "--slices", KEYS.join(","), "--by", "Alex Rivera");
     const p = plan();
     expect(p.levels.map((l) => [l.level, [...l.slices].sort()])).toEqual([
@@ -251,10 +262,8 @@ describe("scripted engagement scenario — the skill's commands by hand, no agen
       [1, ["reservations", "send-overdue-notice"]],
       [2, ["loan-history"]],
     ]);
-    const byKey = new Map(p.slices.map((s) => [s.key, s]));
-    expect(byKey.get("send-overdue-notice")!.base).toBe("impl/overdue-loans-to-notify");
-    expect(byKey.get("reservations")!.planHeld).toBe("multiple-unmerged-upstreams");
-    expect(byKey.get("reservations")!.base).toBeNull();
+    expect(p.slices.every((s) => s.base === "main")).toBe(true);
+    expect(p.slices.every((s) => s.planHeld === null && s.held === null)).toBe(true);
     expect(p.slices.every((s) => s.state === "planned")).toBe(true);
   });
 
@@ -292,47 +301,52 @@ describe("scripted engagement scenario — the skill's commands by hand, no agen
     expect(after).toMatchObject({ branch: `impl/${key}`, base: "main", pr: pr(key) });
   });
 
-  it("step 3, level 1: the dependent is cut from impl/<upstream>, never from HEAD; the held slice is not cut", () => {
+  it("step 3, level 1: dependents are cut from main while their upstreams are still open — never from impl/<upstream>, never from HEAD (MIL-280)", () => {
     const p = plan();
     const dep = p.slices.find((s) => s.key === "send-overdue-notice")!;
-    expect(dep.base).toBe("impl/overdue-loans-to-notify");
-    expect(p.slices.find((s) => s.key === "reservations")!.held).toBe("multiple-unmerged-upstreams");
+    const twoUpstreams = p.slices.find((s) => s.key === "reservations")!;
+    expect(dep.base).toBe("main");
+    expect(twoUpstreams).toMatchObject({ base: "main", held: null }); // two open upstreams: no hold
+    // The upstream is awaiting-merge, not merged — the dependent does not wait for it.
+    expect(ledger().get("overdue-loans-to-notify")!.state).toBe("awaiting-merge");
     cut(dep);
+    cut(twoUpstreams);
 
+    const mainTip = git(repo, "rev-parse", "main");
     const upstreamTip = git(repo, "rev-parse", "impl/overdue-loans-to-notify");
-    expect(upstreamTip).not.toBe(git(repo, "rev-parse", "HEAD")); // the lead's HEAD is main
-    expect(git(repo, "rev-parse", "impl/send-overdue-notice")).toBe(upstreamTip);
-    expect(ledger().get("send-overdue-notice")).toMatchObject({
-      state: "building",
-      branch: "impl/send-overdue-notice",
-      base: "impl/overdue-loans-to-notify",
-    });
-    expect(existsSync(join(repo, ".claude", "worktrees", "reservations"))).toBe(false);
+    expect(upstreamTip).not.toBe(mainTip); // the upstream has its implementer commit; the dependent does not carry it
+    for (const k of ["send-overdue-notice", "reservations"]) {
+      expect(git(repo, "rev-parse", `impl/${k}`)).toBe(mainTip);
+      expect(ledger().get(k)).toMatchObject({ state: "building", branch: `impl/${k}`, base: "main" });
+    }
   });
 
-  it("step 6: a merge releases the held dependent onto impl/<the other upstream>", () => {
+  it("step 6: a merge changes nothing about the slices around it — no release, no base move, no retarget (MIL-280)", () => {
     const key = "reserve-tool";
     implementerCommit(key);
     set(key, "validating", "--pr", pr(key));
     set(key, "review");
     set(key, "awaiting-merge");
-    git(repo, "merge", "-q", "--no-ff", "-m", "Merge pull request #1 from impl/reserve-tool", `impl/${key}`);
+    // The human may squash: no dependent branch was cut from this one, so nothing is stranded.
+    git(repo, "merge", "-q", "--squash", `impl/${key}`);
+    git(repo, "commit", "-q", "--allow-empty", "-m", "reserve-tool (#1)"); // the implementer commit is empty in this scenario
     set(key, "merged");
 
+    const before = ledger().get("reservations")!;
     const res = plan().slices.find((s) => s.key === "reservations")!;
-    expect(res.planHeld).toBeNull();
-    expect(res.held).toBeNull();
-    expect(res.base).toBe("impl/cancel-reservation");
+    expect(res).toMatchObject({ planHeld: null, held: null, base: "main", state: "building" });
+    expect(ledger().get("reservations")).toEqual(before);
     expect(ledger().get(key)!.state).toBe("merged");
   });
 
-  it("step 6: after the upstream merges, the dependent's base moves to main and is recorded with its state kept", () => {
+  it("step 6: after the upstream merges, the dependent's branch and base are untouched and its diff is only its own", () => {
     const key = "overdue-loans-to-notify";
     git(repo, "merge", "-q", "--no-ff", "-m", "Merge pull request #4 from impl/overdue-loans-to-notify", `impl/${key}`);
     set(key, "merged");
     expect(plan().slices.find((s) => s.key === "send-overdue-notice")!.base).toBe("main");
-    set("send-overdue-notice", "building", "--base", "main");
     expect(ledger().get("send-overdue-notice")).toMatchObject({ state: "building", base: "main" });
+    // The dependent was cut from main before the upstream merged: its branch holds none of the upstream's commits.
+    expect(git(repo, "log", "--oneline", "main..impl/send-overdue-notice")).toBe("");
   });
 
   it("step 7-8: gaps park the rest, and the engagement closes once every slice is merged or gap", () => {
@@ -340,13 +354,15 @@ describe("scripted engagement scenario — the skill's commands by hand, no agen
     em(repo, "engagement", "close", MODEL, SLUG);
     const status = JSON.parse(em(repo, "engagement", "status", MODEL, SLUG, "--json"));
     expect(status.status).toBe("closed");
-    expect((status.slices as StatusSlice[]).map((s) => [s.key, s.state])).toEqual([
-      ["reserve-tool", "merged"],
-      ["cancel-reservation", "gap"],
-      ["overdue-loans-to-notify", "merged"],
-      ["send-overdue-notice", "gap"],
-      ["loan-history", "gap"],
-      ["reservations", "gap"],
-    ]);
+    expect((status.slices as StatusSlice[]).map((s) => [s.key, s.state]).sort()).toEqual(
+      [
+        ["reserve-tool", "merged"],
+        ["cancel-reservation", "gap"],
+        ["overdue-loans-to-notify", "merged"],
+        ["send-overdue-notice", "gap"],
+        ["loan-history", "gap"],
+        ["reservations", "gap"],
+      ].sort(),
+    );
   });
 });

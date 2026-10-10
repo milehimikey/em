@@ -27,17 +27,17 @@ closed engagement refuses every `set`.
 `em engagement close <model>.em <slug>` succeeds only when every slice is `merged` (recorded or
 inferred) or `gap`; `em engagement status` reports this as `closable`.
 
-A dependent's base changes once, when its upstream merges: record it with the dependent's
-current state and `--base main` (step 6.2), so the Ledger matches the PR's real base.
+Every slice's `base` is `main` (MIL-280): recorded once at `building`, never changed. A Ledger
+that still shows an `impl/<upstream>` base came from em ≤ 1.14.2; `plan` reports `main` and the
+next `set` on that slice should record `--base main`.
 
 ## The evidence bundle (step 5)
 
-Hand the human one block per PR, bottom-first, in this shape:
+Hand the human one block per PR as it passes review, in this shape:
 
 ```markdown
 ### <level n> · `<key>` · <PR URL>
-Base: `<base>` · Ledger: awaiting-merge · Stacked on it: <PR URLs of open dependents, or "none">
-Merge with: a merge commit (<a dependent is open | squash allowed: no open dependent>)
+Base: `main` · Ledger: awaiting-merge · Independent: merges in any order with the project's usual strategy
 
 Validator (em-validator, <model>):
 | Check | Result |
@@ -60,20 +60,6 @@ Per-invariant tests (from em-implementer):
 ```
 
 Copy the agents' lines verbatim; never summarise a finding away.
-
-## The retarget check (step 6.2)
-
-GitHub retargets every open PR whose base was a merged head branch to the merged PR's base, but
-only when that head branch is deleted. After each merge of `impl/<key>`:
-
-1. `gh pr list --base impl/<key> --state open --json number,headRefName` must return `[]`.
-2. For each PR it does list, run `gh pr edit <number> --base main`. Then record it:
-   `em engagement set <model>.em <slug> <dependent> --state <its current state> --base main`.
-3. Confirm with `gh pr view <number> --json baseRefName`.
-
-Because the lower PR merged with a merge commit, the dependent's diff against `main` shrinks to
-its own commits by itself. Never rebase it. If its diff still shows the upstream's commits, the
-lower PR was squashed: STOP and tell the human. Restacking that PR is their decision.
 
 ## The gap protocol (step 7)
 

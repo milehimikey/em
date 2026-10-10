@@ -7,7 +7,7 @@ description: >-
   `.event-modeling.md` state (or the given phase name) and routes to the right focused skill —
   em:discover, em:design, em:implement, em:conform,
   or em:review — or, for building a planned set of ready slices through scoped
-  sub-agents to a stack of PRs (an `em engagement`), em:engagement. If you already
+  sub-agents to one PR per slice against main (an `em engagement`), em:engagement. If you already
   know which of those applies — starting a new model, extracting from existing code,
   slicing/writing specs, implementing a ratified slice, leading an engagement, checking drift, or
   running a live/stakeholder view — invoke that skill directly instead of this one.
@@ -29,7 +29,7 @@ phase lives in.
 | `implement` | `em:implement` — building one ratified slice into merged, tested code |
 | `conform`, `validate` | `em:conform` — drift-checking a model against its codebase, walking validation diagnostics |
 | `watch`, `review` | `em:review` — the live browser viewer, facilitated stakeholder walkthroughs |
-| `engagement` | `em:engagement` — build a planned set of ready slices through scoped sub-agents to a stack of PRs |
+| `engagement` | `em:engagement` — build a planned set of ready slices through scoped sub-agents to one PR per slice, each against main |
 
 ## Routing logic
 

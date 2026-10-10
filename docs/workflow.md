@@ -157,9 +157,10 @@ inventing or duplicating them (the agent guide's §8).
 **Handing off many slices at once: the engagement path.** When a planned set of ratified slices
 is ready, name them with `em engagement new`, level them with `em engagement plan`, and let the
 [engagement skill](../.claude/skills/event-modeling-engagement/SKILL.md) build them through
-scoped sub-agents into a stack of PRs. Each PR is one slice; you merge the stack bottom-first
-with merge commits, so no PR needs a manual restack. The review and ratification gates above
-are unchanged, and the lead never merges. The roles are in
+scoped sub-agents into one PR per slice. Every PR is cut from and targets `main` — never another
+slice's branch — so you merge them in any order with your usual strategy; an engagement groups
+related slices, it does not stack them. The review and ratification gates above are unchanged,
+and the lead never merges. The roles are in
 [process.md](process.md#engagements-who-operates-the-agents); the commands are in
 [cli.md](cli.md#em-engagement).
 

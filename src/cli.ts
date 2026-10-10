@@ -2599,7 +2599,7 @@ engagement
   .command("plan")
   .description(
     "the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per " +
-      "slice its readiness, branch impl/<key>, base (main or impl/<upstream>), and any hold",
+      "slice its readiness, branch impl/<key>, base (always main — MIL-280), and any hold",
   )
   .argument("<file>", "input .em file")
   .argument("<slug>", "engagement slug")

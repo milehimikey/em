@@ -123,8 +123,9 @@ ticket; `em` only stores and displays, it never talks to a tracker itself.
   touches it.
 - **Engagements** — shipped: `em engagement new|plan|set|status|close` names a chunk of the
   model and levels it (MIL-268), four vendored sub-agents (MIL-269) and the
-  `event-modeling-engagement` skill (MIL-270) build it as a stack of PRs, and the constitution
-  template prompts for the merge strategy, per-agent models and test command (MIL-272); see
+  `event-modeling-engagement` skill (MIL-270) build it as one independent PR per slice, each
+  against `main` (MIL-280 dropped the 1.14.0–1.14.2 stacking), and the constitution template
+  prompts for the per-agent models and test command (MIL-272); see
   [process.md](process.md#engagements-who-operates-the-agents).
 - **Vendored-skill drift** — shipped: the bundled `event-modeling` skill can itself go
   stale two ways. In-repo, an `em-version:` stamp plus a doctest/generated-reference gate
