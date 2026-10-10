@@ -383,6 +383,16 @@ describe("em slice defer --from-issue (CLI acceptance, MIL-281)", () => {
     expect(r.stdout).toContain("re-opened 2 deferred question(s)");
     expect(readFileSync(slicePath(), "utf8")).toContain("- [ ] What about chargebacks?\n- [ ] Is Paid final?\n");
   });
+  it("points at the positional form when the text matches a hand-written `- [ ]` item but no issue clause", () => {
+    // After reratify the doc is at v2, both questions are back on it unchecked, and the .em
+    // carries no clause.
+    const d = em(["slice", "defer", "model.em", "pay", "--from-issue", "chargebacks", "--until", "v3", "--decision", "later"], dir);
+    expect(d.status).toBe(1);
+    expect(d.stderr.endsWith(
+      'em slice defer: no open issue matching "chargebacks" on slice "pay" — but slices/pay.md has an unchecked Open Question containing it; ' +
+        'defer that with the positional form: em slice defer <model> pay "chargebacks" --until v3 --decision "..."\n',
+    )).toBe(true);
+  });
 });
 
 describe("skills carry the deferral sentence (MIL-275 grep gate)", () => {

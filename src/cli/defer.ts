@@ -435,6 +435,16 @@ export function runDeferFromIssue(
     // Already promoted on an earlier run? Then the doc carries it as deferred to this version.
     const probe = applyDefer(docRaw, { ...input, question: text, currentVersion: doc.version });
     if (probe.ok && !probe.changed) return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null };
+    if (probe.ok) {
+      // The question is on the doc as a hand-written `- [ ]` item, never on the diagram: that is
+      // the positional form's job.
+      return {
+        ok: false,
+        message:
+          `no open issue matching "${text}" on slice "${sliceKey}" — but ${doc.path} has an unchecked Open Question ` +
+          `containing it; defer that with the positional form: em slice defer <model> ${sliceKey} "${text}" --until ${input.until} --decision "..."`,
+      };
+    }
     return { ok: false, message: `no open issue matching "${text}" on slice "${sliceKey}" (see \`em validate --list-issues\`)` };
   }
   if (candidates.length > 1) {
@@ -451,18 +461,20 @@ export function runDeferFromIssue(
   const emRaw = readFileSync(modelFile, "utf8");
   const removed = removeIssueClause(emRaw, cand.line, cand.issue);
   if (!removed.ok) return { ok: false, message: `${modelFile}: ${removed.message}` };
-  // Verify before write: the edited model must still compile, and exactly this one issue must
-  // be gone — the same discipline `em migrate` holds for its own `.em` rewrite.
-  const before = findIssueCandidates(model, doc.sliceIndex, cand.issue).length;
-  let remaining: number;
+  // Verify before write: the edited model must still compile, and this issue must be gone from
+  // the slice — the same discipline `em migrate` holds for its own `.em` rewrite. (The candidate
+  // was the slice's only issue containing its own text — a second one would have been ambiguous
+  // above — so "gone" is simply "no element of the slice still carries it".)
+  let clean: boolean;
   try {
     const after = compile(removed.content);
-    remaining = after.model.elements.filter((el) => el.sliceIndex === doc.sliceIndex && el.issue === cand.issue).length;
-    if (after.diagnostics.some((d) => d.severity === "error")) remaining = -1;
+    clean =
+      !after.diagnostics.some((d) => d.severity === "error") &&
+      !after.model.elements.some((el) => el.sliceIndex === doc.sliceIndex && el.issue === cand.issue);
   } catch {
-    remaining = -1;
+    clean = false;
   }
-  if (remaining !== before - 1) {
+  if (!clean) {
     return { ok: false, message: `${modelFile}: removing the issue clause at line ${removed.removedLine} would not leave a clean model — nothing written` };
   }
 

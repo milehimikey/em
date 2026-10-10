@@ -3415,6 +3415,7 @@ and deleting the clause by hand.
 | `no unchecked Open Question matching "<q>"` | No `- [ ]` item (or no `## Open Questions` section) contains the text |
 | `ambiguous — matches: <item1> \| <item2>` | More than one unchecked item matches; lengthen the text |
 | `no open issue matching "<text>" on slice "<key>" (see \`em validate --list-issues\`)` | (`--from-issue`) No open `issue` on the slice's elements contains the text, and the doc does not already carry it deferred to `v<n>` |
+| `no open issue matching "<text>" on slice "<key>" — but <doc> has an unchecked Open Question containing it; defer that with the positional form: …` | (`--from-issue`) The question is on the doc as a hand-written `- [ ]` item, not on the diagram — use the positional `"<question>"` form |
 | `ambiguous — matches: <kind> "<name>" :<line> issue "<text>" \| …` | (`--from-issue`) More than one of the slice's issues matches; lengthen the text |
 | `<model>.em: removing the issue clause at line <n> would not leave a clean model — nothing written` | (`--from-issue`) The verify-before-write re-parse failed; the model is unusual enough to edit by hand |
 | `already checked: <item>` | The match is `- [x]` and not deferred to this version |
