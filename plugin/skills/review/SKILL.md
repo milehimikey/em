@@ -1,6 +1,6 @@
 ---
 name: review
-em-version: 1.14.2
+em-version: 1.15.0
 description: >-
   Use when starting em's live browser viewer (`em watch --serve`) so a team can watch a model
   update in real time, or facilitating a SCHEDULED stakeholder walkthrough that steps through
