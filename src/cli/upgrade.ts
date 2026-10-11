@@ -621,12 +621,12 @@ function elementRefOf(ctx: UpgradeContext): (id: string) => string {
  *  exclusion of continuation slices, MIL-208: a continuation's own join already resolves to its
  *  originating slice's doc, so counting it again here would double-count). */
 function nonContinuationDocs(ctx: UpgradeContext) {
-  const results: Array<{ key: string; status: string | null; ratifiedBy: string | null; version: number | null; path: string }> = [];
+  const results: Array<{ key: string; status: string | null; shipped: boolean; ratifiedBy: string | null; version: number | null; path: string }> = [];
   ctx.model.slices.forEach((slice, i) => {
     const key = ctx.refs.sliceKeys[i];
     const { doc, continuationOf } = resolveSliceDocJoin(ctx.model, ctx.refs, slice, key, ctx.baseDir, elementRefOf(ctx));
     if (continuationOf !== null) return;
-    results.push({ key, status: doc.status, ratifiedBy: doc.ratifiedBy, version: doc.version, path: doc.path });
+    results.push({ key, status: doc.status, shipped: doc.shipped !== null, ratifiedBy: doc.ratifiedBy, version: doc.version, path: doc.path });
   });
   return results;
 }
@@ -636,7 +636,7 @@ function detectNoModelVersion(ctx: UpgradeContext): HumanItem | null {
   if (!loaded.ok) return null;
   const parsed = parseState(loaded.text);
   if (!parsed.ok || parsed.state.modelVersion !== null) return null;
-  const hasImplemented = nonContinuationDocs(ctx).some((d) => d.status === "implemented");
+  const hasImplemented = nonContinuationDocs(ctx).some((d) => d.shipped); // MIL-283: the shipped record, not the working status
   if (!hasImplemented) return null;
   return {
     id: "no-model-version",
@@ -660,9 +660,12 @@ function detectReadyNoRatifiedBy(ctx: UpgradeContext): HumanItem | null {
     .map((d) => d.key)
     .sort();
   if (keys.length === 0) return null;
+  // MIL-283: since 1.15.0 an unsigned `ready-to-implement` is a state no command produces (the
+  // next version opens as `draft`) and `em slice ratify` no longer accepts it — the exit is
+  // `em slice revise`, which reopens the doc as a draft at the same version.
   return {
     id: "ready-to-implement-no-ratifiedby",
-    reason: `${keys.length} ready-to-implement doc(s) with no ratifiedBy (version > 1, reratified and awaiting a fresh sign-off): ${keys.join(", ")} — run \`em slice ratify --by <name>\` on each`,
+    reason: `${keys.length} ready-to-implement doc(s) with no ratifiedBy (version > 1 — a pre-1.15 reratify left them unsigned): ${keys.join(", ")} — run \`em slice revise\` on each (reopens it as a draft at the same version), then review and \`em slice ratify --by <name>\``,
   };
 }
 
@@ -671,7 +674,7 @@ function detectCoverageScopeDefault(ctx: UpgradeContext): HumanItem | null {
   if (!existsSync(ciPath)) return null;
   const content = readFileSync(ciPath, "utf8");
   if (!/\bcoverage\b[^\n]*--strict\b/.test(content)) return null;
-  const anyImplemented = nonContinuationDocs(ctx).some((d) => d.status === "implemented");
+  const anyImplemented = nonContinuationDocs(ctx).some((d) => d.shipped); // MIL-283
   if (anyImplemented) return null;
   return {
     id: "coverage-scope-default",

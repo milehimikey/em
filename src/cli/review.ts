@@ -18,12 +18,12 @@
 // walked in a review session) and from `reviewed` itself (idempotent re-run, or a refusal when a
 // DIFFERENT reviewer/date is already recorded). Refuses from `ready-to-implement`/`implemented`:
 // review applies BEFORE ratification, and a slice that has already shipped is reopened with
-// `em slice reratify`, not reviewed in place.
+// `em slice revise` (MIL-283), not reviewed in place.
 //
 // `reviewedBy`/`reviewedOn` are additive, optional frontmatter keys in every status
 // (docs/slice-doc-schema.md) — exactly like `ratifiedBy`/`ratifiedOn`. `em slice ratify` never
 // clears them (the review record stays as provenance for the version it described);
-// `em slice reratify` does clear them alongside `ratifiedBy`/`ratifiedOn`, since neither the old
+// `em slice revise` does clear them alongside `ratifiedBy`/`ratifiedOn`, since neither the old
 // sign-off nor the old review describes the brand-new version.
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -100,7 +100,7 @@ export function applyReviewFrontmatter(raw: string, reviewedBy: string, reviewed
       ok: false,
       message:
         `doc is \`status: ${currentStatus}\` — review applies before ratification; a shipped ` +
-        "slice is reopened with `em slice reratify`",
+        "slice is reopened with `em slice revise`",
     };
   }
 

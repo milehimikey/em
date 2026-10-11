@@ -6,18 +6,22 @@
 // of this doc" — the gap the whole engagement (MIL-214) exists to close. Sets exactly three
 // frontmatter fields — `conformedVersion: <doc.version>`, `conformedAt: <rev>`,
 // `conformedOn: <local date>` — on the slice doc resolved from the key via the SAME note-binding
-// resolution `ratify`/`reratify`/`mark-implemented`/`em export` use (catalog/docJoin.ts's
+// resolution `ratify`/`revise`/`mark-implemented`/`em export` use (catalog/docJoin.ts's
 // resolveSliceDocJoin).
 //
 // Write strategy: the same surgical index-math splicing ratify.ts/markImplemented.ts use, via
 // the shared primitives in ./frontmatterSurgery.js — never a parse+re-serialize. New fields are
 // inserted directly after `implementedIn:` (the anchor this ticket's ruling names) when none of
 // the three exist yet; an existing triple is edited in place. Everything else — the body,
-// `version:` itself (read, never written), `status:`, lineage/`covers` keys, and (best-effort)
+// `version:`/`shippedVersion:` themselves (read, never written), `status:`, lineage/`covers` keys, and (best-effort)
 // the file's own line-ending style — is copied through verbatim.
 //
 // Preconditions (the owner's ruling, MIL-214):
-//  - Legal only for `status: implemented` — a slice that hasn't shipped has no code to certify.
+//  - Legal only for a SHIPPED slice — a slice that hasn't shipped has no code to certify. Since
+//    MIL-283 "shipped" is the shipped record, not `status`: `status: implemented`, or any status
+//    with a `shippedVersion:` (a `draft` of v<N+1> opened over a shipped v<N> still has v<N>'s
+//    code to certify — the auto-open at merge would otherwise leave it in conformance scope but
+//    uncertifiable). `conformedVersion:` is the SHIPPED version, never the open draft's.
 //  - Refuses when there's no `implementedIn:` link at all (the OLD, pre-MIL-214
 //    driftSignal-would-be-"in-sync" precondition, computed directly from status+implementedIn
 //    here rather than via classifyImplementationDrift — that function is now conformedVersion-
@@ -51,8 +55,9 @@ export type ApplyConformResult =
   | { ok: false; message: string };
 
 /**
- * Pure text transform: reads the CURRENT `version:` value (never writes it) and writes
- * `conformedVersion:`/`conformedAt:`/`conformedOn:` in `raw`'s frontmatter block. See module
+ * Pure text transform: reads the SHIPPED version (`shippedVersion:`, else the doc's `version:`
+ * for a pre-1.15 `implemented` doc — the same read-both rule as `shippedRecordOf`; never writes
+ * either) and writes `conformedVersion:`/`conformedAt:`/`conformedOn:` in `raw`'s frontmatter block. See module
  * header for the full precondition/idempotency contract. No fs access — the caller reads/writes;
  * see `runSliceConform` below.
  */
@@ -73,29 +78,36 @@ export function applyConformFrontmatter(raw: string, sliceKey: string, at: strin
   const statusMatch = fieldLineRegex("status").exec(inner);
   if (!statusMatch) return { ok: false, message: "no `status:` field found in frontmatter" };
   const currentStatus = normalizeFieldValue(statusMatch[2])?.toLowerCase() ?? null;
-  if (currentStatus !== "implemented") {
+  const shippedVersionMatch = fieldLineRegex("shippedVersion").exec(inner);
+  const shippedVersionRaw = shippedVersionMatch ? normalizeFieldValue(shippedVersionMatch[2]) : null;
+  const isImplemented = currentStatus === "implemented";
+  if (!isImplemented && shippedVersionRaw === null) {
     return {
       ok: false,
       message:
-        `slice "${sliceKey}" is \`status: ${currentStatus ?? "(empty)"}\` — only a slice at ` +
-        "`status: implemented` can be certified; run `em slice mark-implemented` first",
+        `slice "${sliceKey}" is \`status: ${currentStatus ?? "(empty)"}\` with no shipped record — only a shipped ` +
+        "slice (`status: implemented`, or any status with `shippedVersion:`) can be certified; run `em slice mark-implemented` first",
     };
   }
+  const shippedAs = isImplemented ? "`status: implemented`" : `\`shippedVersion: ${shippedVersionRaw}\``;
 
   const implMatch = fieldLineRegex("implementedIn").exec(inner);
   const currentImplementedIn = implMatch ? normalizeFieldValue(implMatch[2]) : null;
   if (currentImplementedIn === null) {
     return {
       ok: false,
-      message: `slice "${sliceKey}" has \`status: implemented\` but no \`implementedIn:\` link — nothing to certify against`,
+      message: `slice "${sliceKey}" has ${shippedAs} but no \`implementedIn:\` link — nothing to certify against`,
     };
   }
 
+  // The shipped version: `shippedVersion:` when the record exists, else (a doc shipped before
+  // em 1.15) the doc's own `version:` — what `status: implemented` meant then.
   const versionMatch = fieldLineRegex("version").exec(inner);
-  const currentVersionRaw = versionMatch ? normalizeFieldValue(versionMatch[2]) : null;
+  const versionKey = shippedVersionRaw !== null ? "shippedVersion" : "version";
+  const currentVersionRaw = shippedVersionRaw ?? (versionMatch ? normalizeFieldValue(versionMatch[2]) : null);
   const version = currentVersionRaw !== null ? Number(currentVersionRaw) : NaN;
   if (!Number.isInteger(version) || version < 1) {
-    return { ok: false, message: `doc's \`version:\` value "${currentVersionRaw ?? ""}" isn't a positive integer — refusing to certify` };
+    return { ok: false, message: `doc's \`${versionKey}:\` value "${currentVersionRaw ?? ""}" isn't a positive integer — refusing to certify` };
   }
 
   const cvMatch = fieldLineRegex("conformedVersion").exec(inner);
@@ -165,7 +177,7 @@ export type RunSliceConformResult =
   | { ok: false; message: string };
 
 /**
- * Resolves `sliceKey` to its bound doc via the same note-binding join `ratify`/`reratify`/
+ * Resolves `sliceKey` to its bound doc via the same note-binding join `ratify`/`revise`/
  * `mark-implemented`/`em export` use (MIL-121 cross-binding included), runs the findings-check
  * gate, then reads/applies/writes it. `baseDir` is the `.em` file's directory, same convention
  * every doc/note path in `em` uses.

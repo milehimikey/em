@@ -359,6 +359,42 @@ function splitFrontmatter(
   return { fields, body: lines.slice(closeIndex + 1).join("\n"), frontmatterPresent: true };
 }
 
+/** MIL-284/283: the shipped record — what `em slice mark-implemented` wrote at merge, or, for a
+ *  doc shipped before em 1.15 (no `shippedVersion:`), what `status: implemented` meant then. */
+export interface ShippedRecord {
+  /** The doc's `version:` when the merge was recorded (`shippedVersion:`); for a pre-1.15
+   *  `implemented` doc, its current `version:` (null when that is unparseable). */
+  version: number | null;
+  /** The `ratifiedRef` that version was signed at (`shippedRef:`), or null when the doc had none. */
+  ratifiedRef: string | null;
+  /** The merged PR/commit URL — the same `implementedIn:` the doc carries at top level. */
+  implementedIn: string | null;
+  /** `YYYY-MM-DD`, the local date mark-implemented ran (`shippedOn:`), or null when absent. */
+  on: string | null;
+}
+
+/**
+ * MIL-283: THE question every lifecycle reader asks — "has a version of this slice shipped, and
+ * which?" — answered from the shipped record, not from `status`. `status` is the WORKING state:
+ * since 1.15.0 a shipped slice can read `status: draft` again (`em slice mark-implemented` opens
+ * the next version when a question is deferred to it; `em slice revise` on demand) while its v1
+ * stays shipped. The read-both rule for docs written before 1.15.0: `status: implemented` with no
+ * `shippedVersion:` is shipped at its current `version:`. Anything else is not shipped — a
+ * `ready-to-implement` doc still carrying a prior `implementedIn:` (the 1.13–1.14 reratify
+ * state) included; `driftSignal` reads that as `unpropagated-delta`, as it always did.
+ */
+export function shippedRecordOf(
+  doc: Pick<SliceDoc, "status" | "version" | "implementedIn" | "ratifiedRef" | "shippedVersion" | "shippedRef" | "shippedOn">,
+): ShippedRecord | null {
+  if (doc.shippedVersion !== null) {
+    return { version: doc.shippedVersion, ratifiedRef: doc.shippedRef, implementedIn: doc.implementedIn, on: doc.shippedOn };
+  }
+  if (doc.status === "implemented") {
+    return { version: doc.version, ratifiedRef: doc.ratifiedRef, implementedIn: doc.implementedIn, on: null };
+  }
+  return null;
+}
+
 /** MIL-284: the identity `em slice ratify` records as `ratifiedHash:` and `--slice-ready` checks
  *  against: `sha256:<hex>` over the doc BODY — everything after the closing frontmatter fence (or
  *  the whole doc when there is none), EOLs normalised to `\n` by `splitFrontmatter`'s split/join.

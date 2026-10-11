@@ -72,8 +72,8 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `shippedVersion` | integer | positive integer | written only by `em slice mark-implemented` (MIL-284): the doc's `version:` when the merge was recorded. With `shippedRef`/`shippedOn`/`implementedIn`, joined into `em export`'s `slice.doc.shipped` (schema `1.16`). Additive in 1.15 — `status`/`implementedIn` still carry the lifecycle for every reader |
 | `shippedRef` | string | full commit sha | written only by `em slice mark-implemented` (MIL-284): the doc's `ratifiedRef` at merge time, i.e. the ref the shipped version was signed at; absent when the doc had none |
 | `shippedOn` | string | `YYYY-MM-DD` | written only by `em slice mark-implemented` (MIL-284): the local date of the merge record, or `--on <date>` |
-| `meaningConfirmed` | boolean | `true` | written only by `em slice ratify`/`reratify --meaning-unchanged` (MIL-238 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name)): the API-first sign-off on a public-touching slice — this version does not change what the public contract means. Joined into `em export`'s `slice.doc.meaningConfirmed` (schema `1.15`; `false` when absent) |
-| `contractChange` | string | quoted free text (`contractChange: "<why>"`) | written only by `em slice ratify`/`reratify --contract-change "<why>"` (MIL-238): the API-first sign-off on a public-touching slice — why a consumer must read this change differently. Joined into `em export`'s `slice.doc.contractChange` (schema `1.15`, quotes stripped; `null` when absent) |
+| `meaningConfirmed` | boolean | `true` | written only by `em slice ratify --meaning-unchanged` (MIL-238 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name)): the API-first sign-off on a public-touching slice — this version does not change what the public contract means. Joined into `em export`'s `slice.doc.meaningConfirmed` (schema `1.15`; `false` when absent) |
+| `contractChange` | string | quoted free text (`contractChange: "<why>"`) | written only by `em slice ratify --contract-change "<why>"` (MIL-238): the API-first sign-off on a public-touching slice — why a consumer must read this change differently. Joined into `em export`'s `slice.doc.contractChange` (schema `1.15`, quotes stripped; `null` when absent) |
 | `owner` | string | free text (typically a person or team name) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.owner` (schema `1.9`, MIL-171), `em slice index`'s Owner column, and `em status`'s per-slice `owners[]` |
 | `tracking` | string | free text (typically an external ticket/issue URL) | hand-filled — no `em` command writes it; joined into `em export`'s `slice.doc.tracking` (schema `1.9`, MIL-171) and `em slice index`'s Tracking column. This is the exact field `em-tracker-bridge` reads to find the ticket mirroring this slice — `em` only stores and displays it, it never talks to a tracker itself |
 | `conformedVersion` | integer | positive integer | written only by `em slice conform` (MIL-214 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-conform-file-slice-key---at-rev)): this slice's `version:` at the time a conform sweep last certified it. Joined into `em export`'s `slice.doc.conformedVersion` (schema `1.13`); paired with `version` to compute `slice.doc.driftSignal`'s `"uncertified"` case |
@@ -250,7 +250,7 @@ straight through to the originating slice's own doc, exactly the way a ratified 
 binding resolves a covered slice — same `doc.found`/`status`/`driftSignal`, plus a
 `continuationOf: <originating-key>` field naming why. `em export`, `em status`, `em coverage`,
 `em slice index`, `em catalog`, and the render pipeline's Slice Status legend all resolve a
-continuation slice this way; `em slice ratify`/`review`/`reratify`/`mark-implemented` and
+continuation slice this way; `em slice ratify`/`review`/`revise`/`mark-implemented` and
 `em slice new --wire` refuse on one outright, naming the originating slice to act on instead —
 a continuation slice has no status/ratification of its own to flip.
 
@@ -487,7 +487,7 @@ prior one — exactly the ambiguity a live, current-version-only section avoids.
 **Deferral marker (MIL-275).** A question this version will not answer is not left `- [ ]` and
 not deleted: `em slice defer` checks it and rewrites it as `- [x] <original> — v<current>:
 <decision>; deferred to v<n> (<date>[, <by>])`. The `deferred to v<n>` marker is what
-`em slice reratify` reads: when a bump reaches v<n> it rewrites each such item back to
+`em slice revise` (and `mark-implemented`, which opens v<n> at merge when something is deferred to it) reads: when the doc reaches v<n> it rewrites each such item back to
 `- [ ] <original>`, so the question must be resolved or re-deferred before `--slice-ready` passes
 again. The prune rule above does not apply to a deferred item before v<n> (it stays as the
 record); once reopened it is an ordinary open question.
@@ -502,26 +502,51 @@ actually happened on re-ratification).
 
 ## `status` under re-ratification
 
-When a new version is ratified for a slice whose previous version already shipped, `status`
-tracks the **current version's** implementation state, not a running "has this ever shipped"
-flag. Ratifying v2 on an `implemented` slice flips `status` back to `ready-to-implement`, while
-`implementedIn` keeps naming the v1 PR until v2 ships. That deliberate mismatch — version 2,
-implemented-link still pointing at v1's work — is not staleness, it's the **drift signal**: a
-reader, `em export`'s `slice.doc.driftSignal` (`"unpropagated-delta"`, schema `1.5`, MIL-85), and
-the event-modeling skill's `conform` phase all read it the same way — a ratified delta hasn't
-shipped yet, not a fresh finding against the still-live v1 code. `em validate`'s
-frontmatter-coherence check (MIL-85) deliberately never flags this combination — only
-`status: implemented` with no `implementedIn` link at all is checkable incoherence; see
+Since 1.15.0 (MIL-283) two separate facts live in the frontmatter, and every reader knows which
+one it is asking about:
+
+- **`status` is the working state** of the doc's current `version:` — `draft`, `reviewed`,
+  `ready-to-implement`, `implemented`.
+- **The shipped record is what is in production**: `shippedVersion:`/`shippedRef:`/`shippedOn:`
+  (written by `em slice mark-implemented`, MIL-284) together with `implementedIn:`. For a doc
+  shipped before 1.15 — no `shippedVersion:` — the read-both rule applies: `status: implemented`
+  means "shipped at the current `version:`". The one function that answers "has a version of this
+  slice shipped, and which" is `shippedRecordOf()` (`src/catalog/sliceDoc.ts`); `em export`
+  publishes its answer as `slice.doc.shipped`.
+
+So a shipped slice can be a `draft` again. `em slice revise <key>`
+([cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-revise-file-slice-key)) opens v<N+1> as `status: draft`, bumps
+`version:`, clears the prior version's review and sign-off, and leaves `implementedIn`/`shipped*`
+alone — v<N> stays shipped. `em slice mark-implemented` does the same automatically at merge when a
+question was deferred to v<N+1> (`em slice defer`), so known work is on the list the moment the
+previous version lands. Version 2 then takes both human gates like version 1 did: `em slice review
+--by`, then `em slice ratify --by` (which records a fresh `ratifiedRef`/`ratifiedHash`).
+
+The deliberate mismatch — `version: 2` open while `implementedIn`/`shippedVersion` still name v1's
+work — is not staleness, it's the **drift signal**: `em export`'s `slice.doc.driftSignal` is
+`"unpropagated-delta"` whenever `version` is past the shipped version (MIL-85/283), and the
+event-modeling skill's `conform` phase reads it as "a delta hasn't shipped yet", not a fresh finding
+against the still-live v1 code. `em validate`'s frontmatter-coherence check (MIL-85) never flags it;
+only a shipped slice with no `implementedIn` link at all is checkable incoherence
+(`implemented-without-link`); see
 [validation.md#frontmatter-coherence](https://github.com/milehimikey/em/blob/main/docs/validation.md#frontmatter-coherence).
 
-**An unshipped version has nothing to flip back** (MIL-258). A ratified doc that has not shipped
-yet (`status: ready-to-implement` with `ratifiedBy:` set) changes the same way: `em slice
-reratify` bumps `version:` and clears `ratifiedBy`/`ratifiedOn`/`reviewedBy`/`reviewedOn` (and `meaningConfirmed`/`contractChange`, MIL-238), but
-leaves `status` at `ready-to-implement` (and any `implementedIn` as it was — an absent one stays
-absent). This is the path for an answered gap mid-build. In both cases the new version is not
-ratified until `em slice ratify --by <name>` records the sign-off. A `ready-to-implement` doc with
-no `ratifiedBy` is awaiting that sign-off, so a second `reratify` refuses rather than
-double-bump; `draft`/`reviewed` docs are not ratified and are simply edited.
+**Which readers decide on the shipped record, not `status`** (MIL-283): `em status`'s
+`byStatus.shipped` count and its conformance scope, `em coverage --strict`'s default scope, `em
+conform-scope` / `em conform-supersede`'s in-scope slices, `em slice conform` (legal when shipped;
+`conformedVersion:` is the **shipped** version), the engagement Ledger's inferred `merged` and its
+outside-upstream hold, `em upgrade`'s pre-release signal, `em slice ratify`'s upstream advisory, and
+`driftSignal`. `byStatus.implemented`, the render/legend colouring and `--slice-ready` still read the
+working `status` — that is what they are about.
+
+**A ratified version that never shipped** (`status: ready-to-implement` with `ratifiedBy:` set — a
+gap answered mid-build) is revised the same way: `draft`, `version + 1`, sign-off cleared; the
+ratification of v<N> is withdrawn and nothing shipped, so no shipped record is written. **A
+`ready-to-implement` doc with no `ratifiedBy`** is the leftover of a pre-1.15 `reratify` (which
+bumped the version and left the doc unsigned at that status); no command produces it any more and
+`em slice ratify` no longer accepts it — `em slice revise` reopens it as a `draft` at the same
+version, and the normal road follows. `draft`/`reviewed` docs are not ratified and are simply
+edited; `revise` refuses them ("the next version is already open").
 
 Pair a re-ratification with a `## Delta` section (see
 [Delta section: grammar and lifecycle](#delta-section-grammar-and-lifecycle) above) recording
@@ -531,10 +556,11 @@ the ratified change in typed operation blocks, so it's reviewable without openin
 see [cli.md#em-ledger-file](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-ledger-file)) checks that `version:` and a slice doc's
 content (body + lineage refs) always change together across two git revisions — a version bump
 with no real content change, or a content change with no version bump, is a ledger bug.
-It **deliberately excludes `status`/`implementedIn`** from what counts as "content" for exactly
-the reason this section explains: a re-ratification legitimately flips `status` and leaves
-`implementedIn` naming prior work, with no version bump of its own — including either field in
-the comparison would flag every ordinary lifecycle transition as a false positive.
+It **deliberately excludes `status`/`implementedIn`** (and the `shipped*` keys) from what counts
+as "content" for exactly the reason this section explains: a lifecycle transition legitimately
+moves `status` and leaves `implementedIn`/`shippedVersion` naming prior work, with no version bump
+of its own — including those fields in the comparison would flag every ordinary lifecycle
+transition as a false positive.
 
 ## Unknown keys
 
@@ -568,7 +594,7 @@ legacy form; they're frontmatter-only from the day they were introduced.
 - [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-render-file) — slice status colors
 - [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-catalog-files) — pattern / doc lookup
 - [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name) — `em slice ratify`, the mechanized ratification act (`ratifiedBy`/`ratifiedOn`, schema `1.8`, MIL-165)
-- [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-reratify-file-slice-key) — `em slice reratify`, the mechanized re-ratification version bump/status flip (MIL-161)
+- [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-revise-file-slice-key) — `em slice revise`, which opens the next version as a draft (the successor of `reratify`)
 - [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-export-file) — the `em export` join (`slice.pattern`/`slice.doc`, schema `1.4`, MIL-91), including `owner`/`tracking` (schema `1.9`, MIL-171)
 - [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-diff-old-new) — the `em diff` lineage annotation (schema `1.6`, MIL-84)
 - [validation.md#lineage](https://github.com/milehimikey/em/blob/main/docs/validation.md#lineage) — `em validate`'s lineage-ref resolution (MIL-84)

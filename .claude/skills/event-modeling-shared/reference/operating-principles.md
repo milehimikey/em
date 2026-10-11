@@ -119,12 +119,12 @@ including sessions started from bare `/event-modeling`.
 - **Version rule: never bump a draft's `version:` on edit.** A `draft`/`reviewed` doc is edited
   in place. Check the release state with `em status <model>.em --json`: the model is
   **pre-release** when its `modelVersion` entry has `design: null` and
-  `slices.byStatus.implemented === 0`. Pre-release: never run `em slice reratify`; edit
+  `slices.byStatus.shipped === 0`. Pre-release: never run `em slice revise`; edit
   `draft`/`reviewed` docs in place and leave `version:` as it is. A pre-release doc that is
   already ratified (`ready-to-implement` with `ratifiedBy`) carries a human sign-off: STOP,
   record the needed change as an open question, and let the ratifier decide. Released (either
-  condition false): changing an `implemented` or ratified doc goes through `em slice reratify`
-  (see `event-modeling-design`).
+  condition false): changing a shipped or ratified doc goes through `em slice revise`, which
+  opens the next version as a `draft` (see `event-modeling-design`).
 - **Pre-commit check (STOP on any finding).** Stage the session's files, then run both:
   1. `em system scope --staged` from the repository root. Any `seam-crossing` error → STOP:
      unstage the other model's files and record a seam change request instead.

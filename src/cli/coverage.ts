@@ -79,14 +79,14 @@ const STRUCTURAL_LINE_RE = /^(?:[-*]\s|#{3,6}\s)/;
  *  stays in scope forever after (tests shouldn't regress away from citing an invariant just
  *  because the slice shipped). Anything else (`draft`, `reviewed`, or no doc at all) is out of
  *  scope. */
-const IN_SCOPE_STATUSES_DEFAULT = new Set(["implemented"]);
+const IN_SCOPE_STATUSES_DEFAULT = new Set<string>([]); // MIL-283: the default scope is the shipped record, not a status
 
 /** `--include-ready` (CLI `em coverage`; `includeReady` on the MCP `coverage` tool's input)
  *  opts back into the pre-MIL-207 scope — `ready-to-implement` docs included — for a team that
  *  wants the forward-looking report: which invariants will need a citing test once
  *  implementation starts. Never the default, since that's exactly the every-ratification-PR-
  *  is-red behavior MIL-207 fixes. */
-const IN_SCOPE_STATUSES_WITH_READY = new Set(["ready-to-implement", "implemented"]);
+const IN_SCOPE_STATUSES_WITH_READY = new Set(["ready-to-implement"]);
 
 function inScopeStatuses(includeReady: boolean): Set<string> {
   return includeReady ? IN_SCOPE_STATUSES_WITH_READY : IN_SCOPE_STATUSES_DEFAULT;
@@ -305,7 +305,11 @@ export function resolveScopedSlices(
     // doc, which already gets its own entry here. Including the continuation key too would just
     // duplicate that entry under a second key.
     if (continuationOfKey !== null) return;
-    const inScope = doc.reason === null && doc.status !== null && scopeStatuses.has(doc.status);
+    // MIL-283: "implemented" means a version has shipped (`doc.shipped`, the shipped record — or a
+    // pre-1.15 `status: implemented`), not the working status: a slice whose next version is an
+    // open draft still has shipped code whose invariants must stay cited. `--include-ready` adds
+    // the working status `ready-to-implement` on top, as before.
+    const inScope = doc.reason === null && (doc.shipped !== null || (doc.status !== null && scopeStatuses.has(doc.status)));
     result.push({ key, status: doc.status, docReason: doc.reason, inScope, docPath: doc.path });
   });
   return result;

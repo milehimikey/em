@@ -70,6 +70,10 @@ export interface UnitIndex {
   pattern: Map<string, string>;
   /** The unit doc's current `status:` (null: no doc / unusable frontmatter). */
   docStatus: Map<string, string | null>;
+  /** MIL-283: whether a version of the unit's doc has shipped (`shippedRecordOf`) — the fact the
+   *  Ledger's inferred `merged` and the outside-upstream hold read, in place of
+   *  `docStatus === "implemented"` (a shipped slice can be `draft` again). */
+  docShipped: Map<string, boolean>;
 }
 
 export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir: string): UnitIndex {
@@ -94,6 +98,7 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
   const sliceIndexOf = new Map<string, number>();
   const pattern = new Map<string, string>();
   const docStatus = new Map<string, string | null>();
+  const docShipped = new Map<string, boolean>();
   for (let i = 0; i < keys.length; i++) {
     if (unitOfSlice[i] !== keys[i]) continue;
     units.push(keys[i]);
@@ -101,8 +106,9 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
     pattern.set(keys[i], classifySlicePattern(model.slices[i]));
     const join = joinSliceDocFast(model, refs, model.slices[i], keys[i], docsByKey);
     docStatus.set(keys[i], join.found && join.reason === null ? join.status : null);
+    docShipped.set(keys[i], join.found && join.reason === null && join.shipped);
   }
-  return { unitOfSlice, units, sliceIndexOf, pattern, docStatus };
+  return { unitOfSlice, units, sliceIndexOf, pattern, docStatus, docShipped };
 }
 
 /** Unit of one element: an `again` view instance belongs to its originating declaration. */
@@ -232,9 +238,11 @@ export function ledgerFacts(idx: UnitIndex, keys: string[]): Map<string, LedgerR
 
 // ---- the Ledger join (status, plan) ----
 
-/** R23: `merged` is also inferred (read-only) when the slice doc has reached `implemented`. */
-export function effectiveState(entry: EngagementSliceEntry, docStatus: string | null): { state: LedgerState; stateInferred: boolean } {
-  if (entry.state !== "merged" && docStatus === "implemented") return { state: "merged", stateInferred: true };
+/** R23: `merged` is also inferred (read-only) when a version of the slice has shipped — MIL-283:
+ *  the shipped record (`docShipped`), not `status === "implemented"`, since a shipped slice can be
+ *  `draft` again while the engagement that shipped it is still being closed out. */
+export function effectiveState(entry: EngagementSliceEntry, docShipped: boolean): { state: LedgerState; stateInferred: boolean } {
+  if (entry.state !== "merged" && docShipped) return { state: "merged", stateInferred: true };
   return { state: entry.state, stateInferred: false };
 }
 
@@ -268,7 +276,7 @@ export function buildEngagementStatus(file: string, engagementFile: string, eng:
   const counts = Object.fromEntries(LEDGER_STATES.map((s) => [s, 0])) as Record<LedgerState, number>;
   const slices = eng.slices.map((e) => {
     const docStatus = idx.docStatus.get(e.key) ?? null;
-    const { state, stateInferred } = effectiveState(e, docStatus);
+    const { state, stateInferred } = effectiveState(e, idx.docShipped.get(e.key) ?? false);
     counts[state]++;
     return {
       key: e.key,
@@ -393,11 +401,11 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   const slices: EngagementPlanSlice[] = members.map((key) => {
     const entry = entryOf.get(key)!;
     const docStatus = idx.docStatus.get(key) ?? null;
-    const { state, stateInferred } = effectiveState(entry, docStatus);
+    const { state, stateInferred } = effectiveState(entry, idx.docShipped.get(key) ?? false);
     const { scoped, ready } = computeSliceReadiness(input.model, input.refs, input.baseDir, key, input.contract, input.allDiagnostics);
     const upstreams = inPreds.get(key)!;
     // In-engagement upstreams impose no hold and no base (MIL-280): they only set the level.
-    const unmergedOut = [...(preds.get(key) ?? [])].filter((p) => !memberSet.has(p) && idx.docStatus.get(p) !== "implemented");
+    const unmergedOut = [...(preds.get(key) ?? [])].filter((p) => !memberSet.has(p) && !(idx.docShipped.get(p) ?? false));
     let planHeld: HoldReason | null = null;
     if (state !== "merged") {
       if (!ready) planHeld = "not-ready";

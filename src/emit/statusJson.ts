@@ -49,7 +49,10 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 //  - MIL-268: a new top-level `engagements` — `{ open, slugs }`: the engagement files
 //    (`<modelDir>/engagements/<slug>.md`) whose frontmatter says `status: open`, beside every
 //    input model, slugs sorted. See ../cli/status.ts's StatusReport.engagements.
-export const STATUS_SCHEMA_VERSION = "1.8";
+// 1.9 (MIL-283): `slices.byStatus.shipped` — slices with a shipped record (`shippedVersion:`, or a
+// pre-1.15 `status: implemented`) in any working status; `implemented` stays the working-status
+// count. Conformance scope (`unruledFindings`) and `slicePRsBehindHead` key on the shipped record.
+export const STATUS_SCHEMA_VERSION = "1.9";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No

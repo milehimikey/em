@@ -64,9 +64,9 @@ describe("matchImplementedInToPaths", () => {
 
 describe("buildConformScope", () => {
   const slices: SliceDocFacts[] = [
-    { key: "checkout", status: "implemented", implementedIn: "src/checkout" },
-    { key: "billing", status: "implemented", implementedIn: "https://github.com/example/repo/pull/9" },
-    { key: "draft-slice", status: "draft", implementedIn: null },
+    { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true },
+    { key: "billing", status: "implemented", implementedIn: "https://github.com/example/repo/pull/9", shipped: true },
+    { key: "draft-slice", status: "draft", implementedIn: null, shipped: false },
   ];
   const lastConformance: LastConformance = {
     date: "2026-08-01",

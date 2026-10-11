@@ -41,6 +41,10 @@ export interface SliceDocFacts {
   key: string;
   status: string | null;
   implementedIn: string | null;
+  /** MIL-283: a version of this slice has shipped (`shippedRecordOf` — the `shipped*` keys, or a
+   *  pre-1.15 `status: implemented`). The scope predicate, in place of `status === "implemented"`:
+   *  a slice whose next version is an open `draft` still has shipped code to check. */
+  shipped: boolean;
 }
 
 export interface CandidateSlice {
@@ -101,7 +105,7 @@ export function buildConformScope(
 
   if (full || lastConformance === null) {
     const candidateSlices: CandidateSlice[] = slices
-      .filter((s) => s.status === "implemented")
+      .filter((s) => s.shipped)
       .map((s) => ({ key: s.key, matchedBy: "full" as const, paths: [] as string[] }));
     return { lastConformance: lastConformanceOut, changedPaths: [], candidateSlices, unmappedPaths: [] };
   }
@@ -147,7 +151,7 @@ export function resolveSliceDocFacts(model: NormalizedModel, refs: RefsResult, b
     // under two different keys for one actual change. The originating slice's own fact already
     // covers it.
     if (continuationOfKey !== null) return;
-    facts.push({ key, status: doc.status, implementedIn: doc.implementedIn });
+    facts.push({ key, status: doc.status, implementedIn: doc.implementedIn, shipped: doc.shipped !== null });
   });
   return { facts, diagnostics };
 }

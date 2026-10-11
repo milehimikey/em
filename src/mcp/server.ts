@@ -556,7 +556,7 @@ export function createServer(): McpServer {
       // merged `sliceFacts` above (which spans every input file when several are given).
       const conformance = compiledFiles.map(({ file }) => {
         const facts = factsByFile.get(file) ?? [];
-        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn }));
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped }));
         return resolveConformanceEntry(file, repo, sliceDocFacts);
       });
       // MIL-218: one model-version entry per input file — same computation cli.ts's `status`

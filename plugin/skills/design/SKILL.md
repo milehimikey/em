@@ -52,10 +52,10 @@ evidence"). In short:
 - **Evidence rule.** The `.em` model and the slice docs are the evidence for modeling
   decisions. Never read implementation source, generated contracts or `specs/` to decide a
   modeling question — ask the user. Code is read only in `extract` and `conform`.
-- **Version rule.** Never bump a draft's `version:` on edit. Before any `em slice reratify`,
+- **Version rule.** Never bump a draft's `version:` on edit. Before any `em slice revise`,
   run `em status <model>.em --json`: pre-release = the model's `modelVersion` entry has
-  `design: null` **and** `slices.byStatus.implemented === 0`. Pre-release → never run
-  `reratify`; edit `draft`/`reviewed` docs in place. Released → the re-ratification path in
+  `design: null` **and** `slices.byStatus.shipped === 0`. Pre-release → never run
+  `revise`; edit `draft`/`reviewed` docs in place. Released → the revision path in
   the `slice` phase below.
 - **Pre-commit check.** Stage the session's files, run `em system scope --staged` (STOP on any
   `seam-crossing`), then `git diff --cached --name-only` (STOP on any path outside this model's
@@ -152,7 +152,7 @@ For each slice:
    it in place and leave its `version:` alone. If `slices/<slice-name>.md` already exists with
    `status: implemented` (or is ratified and needs a change), run `em status <model>.em --json`
    first. **Pre-release** (the model's `modelVersion` entry has `design: null` and
-   `slices.byStatus.implemented === 0`): never run `em slice reratify`; a ratified doc holds a
+   `slices.byStatus.shipped === 0`): never run `em slice revise`; a ratified doc holds a
    human sign-off, so STOP, park the change as an open question, and let the ratifier decide.
    **Released** (either condition false): a doc with `status: implemented` is a
    re-ratification, not fresh authoring: hold a Socratic
@@ -242,26 +242,29 @@ For each slice:
    lineage key(s) by hand (`split-from`/`merged-from`/`superseded-by`, `<slice-key>@v<N>` grammar
    — see `${CLAUDE_PLUGIN_ROOT}/shared/reference/slice-doc-schema.md` for the full schema; `em validate` catches a malformed one
    after the fact, see the `lineage-*` rules below).
-   **Re-ratification (step 0) — released models only.** Confirm the model is released first
+   **Revision (step 0) — released models only.** Confirm the model is released first
    (`em status <model>.em --json`: the `modelVersion` entry's `design` is not `null`, or
-   `slices.byStatus.implemented > 0`); on a pre-release model never run `reratify`. The doc
+   `slices.byStatus.shipped > 0`); on a pre-release model never run `revise`. The doc
    already exists, so `em slice new` doesn't apply here
    (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
-   doc's authored body) — run `em slice reratify <model>.em <slice-key>` instead: it bumps
-   `version` and flips `status` back to `ready-to-implement` in the existing frontmatter,
-   clearing any stale `ratifiedBy:`/`ratifiedOn:` from the prior version so a follow-up
-   `em slice ratify --by <name>` (if the team records that) applies cleanly. The same command
-   changes a ratified doc that **never shipped** (`ready-to-implement` with `ratifiedBy` set — a
-   gap answered mid-build, MIL-258): it bumps `version` and clears the sign-off but leaves
-   `status` alone. Either way the doc is not ratified until `em slice ratify --by <name>` records
-   the new sign-off. **Commit before ratifying (MIL-284):** `em slice ratify` records the commit
-   and body hash it signs and refuses a doc with uncommitted changes — finish the doc's edits
-   (deferrals included: `em slice defer` rewrites a body line, so a deferral after sign-off trips
-   `slice-ready-body-changed-since-ratification`), commit, then ratify. A `ready-to-implement` doc with no `ratifiedBy` is already awaiting that
-   sign-off and refuses a second `reratify`; a `draft`/`reviewed` doc is simply edited, and its
-   `version:` never moves.
+   doc's authored body) — run `em slice revise <model>.em <slice-key>` instead (MIL-283): it
+   opens the next version as a **`draft`** in the existing frontmatter — `version` bumped,
+   `status: draft`, the prior version's review and sign-off cleared — while the shipped version
+   stays shipped in the shipped record (`implementedIn:`/`shippedVersion:`, untouched). If a
+   question was deferred to this version, `em slice mark-implemented` already opened the draft
+   at merge and the question is back on the list; `revise` then refuses ("the next version is
+   already open") and you simply edit. The same command revises a ratified doc that **never
+   shipped** (`ready-to-implement` with `ratifiedBy` set — a gap answered mid-build): the
+   ratification is withdrawn and the draft opens. Either way the new version is a new spec:
+   write the delta into `## Delta`, walk it in a review session (`em slice review --by`), and
+   only then does `em slice ratify --by <name>` sign it. **Commit before ratifying (MIL-284):**
+   `em slice ratify` records the commit and body hash it signs and refuses a doc with uncommitted
+   changes — finish the doc's edits (deferrals included: `em slice defer` rewrites a body line, so
+   a deferral after sign-off trips `slice-ready-body-changed-since-ratification`), commit, then
+   ratify. A `draft`/`reviewed` doc is simply edited, and its `version:` never moves.
    **Public-touching slices (MIL-238).** On a slice that owns a `public` command, event or view,
-   `em slice ratify --by <name>` and `em slice reratify` refuse without one of two flags: pass
+   `em slice ratify --by <name>` refuses without one of two flags (`revise` takes neither — the
+   confirmation belongs to the new version's ratification): pass
    `--meaning-unchanged` when this version does not change what the public contract means, or
    `--contract-change "<why>"` when a consumer must read the change differently. Without
    either, both refuse with `slice "<key>" touches the public surface — pass

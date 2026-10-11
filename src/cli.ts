@@ -111,7 +111,7 @@ import { wireSliceNote } from "./cli/sliceLink.js";
 import { isStubStatus, runStubAll, STUB_STATUSES } from "./cli/sliceStubAll.js";
 import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
-import { runReratify } from "./cli/reratify.js";
+import { runRevise } from "./cli/revise.js";
 import { runDefer, runDeferFromIssue } from "./cli/defer.js";
 import { runSliceConform } from "./cli/sliceConform.js";
 import { checkFindingsFile, buildCheckFindingsJson, lookupFindingsBesideReport, unruledFindingsInScope, Finding, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
@@ -863,8 +863,10 @@ slice
       "em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). " +
       "Applies only to a `ready-to-implement` doc (MIL-277: a `draft`/`reviewed` doc refuses — " +
       "ratify first). Also records the shipped version beside the link (MIL-284): `shippedVersion:`, " +
-      "`shippedRef:` (the doc's `ratifiedRef:`, when it has one) and `shippedOn:`. Idempotent on " +
-      "the same URL; refuses to overwrite a different one; never touches `version:` or the doc body",
+      "`shippedRef:` (the doc's `ratifiedRef:`, when it has one) and `shippedOn:`, and opens the next " +
+      "version as a `draft` when an Open Question was deferred to it (MIL-283). Idempotent on " +
+      "the same URL — also after that draft opened; refuses to overwrite a different one; never touches " +
+      "the doc body except to re-open those deferred questions",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
@@ -900,6 +902,12 @@ slice
         ? `marked implemented: ${result.path} (implementedIn: ${prUrl})`
         : `already implemented (no-op): ${result.path}`,
     );
+    if (result.ok && result.openedDraft) {
+      console.log(
+        `opened draft v${result.openedDraft.version}: ${result.path} — re-opened ${result.openedDraft.reopened} deferred question(s); ` +
+          `v${result.openedDraft.version - 1} stays shipped`,
+      );
+    }
   });
 
 slice
@@ -961,8 +969,9 @@ slice
       "`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#the-slice-lifecycle-gates) " +
       "that makes who ratified, and when, a first-class recorded fact. The review gate is a check " +
       "on the doc's current `status:`, not on whether `reviewedBy:`/`reviewedOn:` are populated: " +
-      "a doc at `reviewed` or `ready-to-implement` passes (the latter is where `em slice " +
-      "reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status " +
+      "a doc at `reviewed` passes; a `ready-to-implement` doc only when the same signer is " +
+      "completing their own record (since 1.15.0, MIL-283 — a new sign-off is a new version: " +
+      "`em slice revise`); any other status " +
       "— a `draft` that never went through `em slice review` — is refused unless --skip-review " +
       "is passed. Idempotent on " +
       "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
@@ -1054,36 +1063,20 @@ slice
     },
   );
 
-slice
-  .command("reratify")
-  .description(
-    "bump `version:` and flip a shipped slice doc's frontmatter back to `status: " +
-      "ready-to-implement` — the re-ratification mechanical edit (MIL-161, mirrors `em slice " +
-      "mark-implemented`). Applies to a doc at `status: implemented`, or (MIL-258) to a " +
-      "`ready-to-implement` doc that is ratified but not yet shipped — there it bumps `version:` " +
-      "and clears the sign-off but leaves `status:` alone; a `ready-to-implement` doc with no " +
-      "`ratifiedBy:` refuses (awaiting `em slice ratify --by`). Clears any stale " +
-      "`ratifiedBy:`/`ratifiedOn:`/`reviewedBy:`/`reviewedOn:` (they describe the PRIOR version's " +
-      "review and sign-off) so a follow-up `em slice ratify --by` applies cleanly — and needs no " +
-      "fresh review; never touches `implementedIn:` or the doc body",
-  )
-  .argument("<file>", "input .em file")
-  .argument("<slice-key>", "slice export key (kebab-case)")
-  .option(
-    "--meaning-unchanged",
-    "API-first sign-off (MIL-238): the new version does not change what the public contract means — " +
-      "records `meaningConfirmed: true`; required (or --contract-change) on a slice touching a `public` element",
-  )
-  .option(
-    "--contract-change <why>",
-    "API-first sign-off (MIL-238): a consumer must read the new version differently, and why — records " +
-      "`contractChange: \"<why>\"`",
-  )
-  .action((file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string }) => {
-    const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
-    if (!flags.ok) {
-      console.error(`em slice reratify: ${flags.message}`);
-      process.exit(1);
+/** MIL-283: `em slice revise` and its deprecated alias `em slice reratify` share one action. */
+function reviseAction(commandName: "revise" | "reratify") {
+  return (file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string }) => {
+    if (commandName === "reratify") {
+      console.error(
+        "notice: `em slice reratify` is deprecated since 1.15.0 — it is `em slice revise`, and the result is a " +
+          "`draft` of the next version (not an unsigned `ready-to-implement`). Review and ratify it like v1.",
+      );
+    }
+    if (opts.meaningUnchanged || opts.contractChange !== undefined) {
+      console.error(
+        `notice: --meaning-unchanged/--contract-change are not taken by \`em slice ${commandName}\` since 1.15.0 — the ` +
+          "API-first confirmation belongs to the ratification of the new version (`em slice ratify --by ... --meaning-unchanged`)",
+      );
     }
     const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
@@ -1094,38 +1087,65 @@ slice
       (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
     );
     if (scopedErrors.length > 0) {
-      console.error(`em slice reratify: slice "${sliceKey}" has errors — fix them first`);
+      console.error(`em slice ${commandName}: slice "${sliceKey}" has errors — fix them first`);
       process.exit(1);
     }
 
-    const result = runReratify(model, refs, dirname(file), sliceKey, flags.confirmation);
+    const result = runRevise(model, refs, dirname(file), sliceKey);
     if (!result.ok) {
-      console.error(`em slice reratify: ${result.message}`);
+      console.error(`em slice ${commandName}: ${result.message}`);
       process.exit(1);
     }
-    // MIL-214: advisory only, never refuses — see reratify.ts's reratifyAdvisory. Both warnings
-    // can fire together (a version that was never certified AND still carries unruled findings).
+    // MIL-214: advisory only, never refuses — see revise.ts's reviseAdvisory. Both warnings can
+    // fire together (a shipped version that was never certified AND still carries unruled findings).
     if (result.advisory?.neverCertified) {
-      console.error(`warn: reratifying "${sliceKey}" whose v${result.newVersion - 1} was never certified`);
+      console.error(`warn: revising "${sliceKey}" whose shipped v${result.newVersion - 1} was never certified`);
     }
     if (result.advisory && result.advisory.unruledFindingsCount > 0) {
-      console.error(`warn: reratifying "${sliceKey}" has ${result.advisory.unruledFindingsCount} unruled conformance finding(s)`);
+      console.error(`warn: revising "${sliceKey}" with ${result.advisory.unruledFindingsCount} unruled conformance finding(s) on the shipped version`);
     }
-    if (result.kind === "unshipped") {
-      // MIL-258: nothing was flipped — say what DID happen, and that the new version is unsigned.
-      console.log(
-        `reratified: ${result.path} (version: ${result.newVersion - 1} -> ${result.newVersion}, sign-off cleared, ` +
-          `status unchanged: ready-to-implement${confirmationSuffix(flags.confirmation)}) — not ratified until ` +
-          `\`em slice ratify --by <name>\` records the new sign-off`,
-      );
-    } else {
-      console.log(
-        `reratified: ${result.path} (version: ${result.newVersion}, status: ready-to-implement${confirmationSuffix(flags.confirmation)})`,
-      );
-    }
+    const what =
+      result.kind === "shipped"
+        ? `v${result.newVersion - 1} stays shipped; v${result.newVersion} opened as draft`
+        : result.kind === "unshipped"
+          ? `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
+          : `v${result.newVersion} was never signed; reopened as draft at the same version`;
+    console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
-    warnModelVersionDrift(dirname(file), model, refs, source, `reratifying "${sliceKey}"`);
-  });
+    warnModelVersionDrift(dirname(file), model, refs, source, `revising "${sliceKey}"`);
+  };
+}
+
+const REVISE_DESCRIPTION =
+  "open the next version of a slice doc as a `draft` (MIL-283): bumps `version:`, flips `status:` to " +
+  "`draft`, clears the prior version's review and sign-off (`reviewedBy/On`, `ratifiedBy/On/Ref/Hash`, " +
+  "`meaningConfirmed`/`contractChange`) and re-opens the questions deferred to the new version. The " +
+  "shipped version stays shipped: `implementedIn:` and the `shipped*` keys are untouched (written first on " +
+  "a doc shipped before 1.15). Applies to `status: implemented` (the shipped case) and to a ratified " +
+  "`ready-to-implement` doc (ratification withdrawn, never shipped); a `ready-to-implement` doc with no " +
+  "`ratifiedBy:` reopens as draft at the same version; `draft`/`reviewed` refuse — the next version is " +
+  "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`";
+
+slice
+  .command("revise")
+  .description(REVISE_DESCRIPTION)
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .action(reviseAction("revise"));
+
+slice
+  .command("reratify")
+  .description(
+    "DEPRECATED alias of `em slice revise` (MIL-283, since 1.15.0; removed in a later minor). Until 1.14 this " +
+      "left the doc at an unsigned `ready-to-implement`; it now opens a `draft` of the next version like `revise`. " +
+      "The --meaning-unchanged/--contract-change flags are accepted and ignored with a notice — the API-first " +
+      "confirmation is taken by `em slice ratify` on the new version",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .option("--meaning-unchanged", "ignored since 1.15.0 (see above)")
+  .option("--contract-change <why>", "ignored since 1.15.0 (see above)")
+  .action(reviseAction("reratify"));
 
 slice
   .command("defer")
@@ -1204,7 +1224,8 @@ slice
   .description(
     "record per-slice-per-version conformance certification: sets `conformedVersion:`/" +
       "`conformedAt:`/`conformedOn:` on a slice doc (MIL-214) — the fact `driftSignal: in-sync` " +
-      "now depends on. Legal only for `status: implemented` with an `implementedIn:` link. " +
+      "now depends on. Legal only for a shipped slice (`status: implemented`, or any status with " +
+      "a `shippedVersion:` — MIL-283) with an `implementedIn:` link; `conformedVersion:` is the shipped version. " +
       "Idempotent on the same (version, --at) pair; a different --at simply overwrites (a " +
       "later re-certification is normal — there's no way for em to tell 'later' from 'earlier' " +
       "for an arbitrary revision string, so there's no --force to reach for). Refuses when the " +
@@ -1220,7 +1241,7 @@ slice
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
 
-    // Scoped the same way `em slice ratify`/`em slice reratify`/`em slice mark-implemented` are:
+    // Scoped the same way `em slice ratify`/`em slice revise`/`em slice mark-implemented` are:
     // only an error concerning THIS slice refuses.
     const scopedErrors = diagnostics.filter(
       (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
@@ -1398,7 +1419,7 @@ state
       const compiled = compileFile(modelFile);
       if (!hasErrors(compiled.diagnostics)) {
         const { facts } = resolveSliceDocFacts(compiled.model, compiled.refs, modelDir);
-        inScope = new Set(facts.filter((f) => f.status === "implemented").map((f) => f.key));
+        inScope = new Set(facts.filter((f) => f.shipped).map((f) => f.key));
         compiledForCertify = { model: compiled.model, refs: compiled.refs, source: compiled.source };
       }
     }
@@ -2290,7 +2311,7 @@ program
       // merged `sliceFacts` above (which spans every input file when several are given).
       const conformance = compiled.map(({ file }) => {
         const facts = factsByFile.get(file) ?? [];
-        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn }));
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped }));
         return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
       });
       // MIL-218: one model-version entry per input file.

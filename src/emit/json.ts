@@ -156,8 +156,13 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    commit and body hash that were ratified) and `slice.doc.shipped: { version, ratifiedRef,
 //    implementedIn, on } | null` (frontmatter `shippedVersion:`/`shippedRef:`/`shippedOn:` +
 //    `implementedIn:`, written by `em slice mark-implemented`) — `null` on a doc written before
-//    1.15 or outside git (`ratifiedRef` only). `slice.doc.status`/`implementedIn` are unchanged
-//    and still carry the lifecycle for every reader; `shipped` is the record MIL-283 moves them to.
+//    1.15 or outside git (`ratifiedRef` only). `slice.doc.status`/`implementedIn` are unchanged.
+//  - MIL-283 (still 1.16 — no shape change): `slice.doc.shipped` is derived by `shippedRecordOf`,
+//    so a doc shipped before 1.15 (`status: implemented`, no `shippedVersion:`) now reports
+//    `shipped: { version: <its version>, ratifiedRef, implementedIn, on: null }` instead of null.
+//    `shipped` — not `status` — is the fact that means "in production": since 1.15.0 a shipped
+//    slice can be `status: draft` again (its next version open) while `shipped` names v<N>.
+//    `driftSignal` reads the same record (`unpropagated-delta` = `version` past `shipped.version`).
 // Additive-only.
 export const SCHEMA_VERSION = "1.16";
 

@@ -156,7 +156,7 @@ describe("consumer-not-adapted end to end (multi-model example)", () => {
     const withManifest = em(["status", join("models", "fulfillment", "fulfillment.em"), "--json"], repo.dir);
     expect(withManifest.status).toBe(0);
     const doc = JSON.parse(withManifest.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.8");
+    expect(doc.statusSchemaVersion).toBe("1.9");
     expect(doc.system).toEqual({ manifest: "system.yaml", consumerNotAdapted: 1 });
     const text = em(["status", join("models", "fulfillment", "fulfillment.em")], repo.dir);
     expect(text.stdout).toContain("consumer adaptation: 1 not adapted (system.yaml)");

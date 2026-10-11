@@ -354,7 +354,7 @@ and treat a finding as the start of a conversation.
 | Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
 | Strict types on `public` fields | `em validate` exits non-zero (`public-field-type-unresolved`) | — |
 | Contract current for a public-touching slice | `em validate --slice-ready <key>` and `em api check` exit non-zero on a stale or missing contract | `em api check --base` additive/breaking annotation |
-| Meaning question on a public-touching ratification | `em slice ratify`/`reratify` refuse without `--meaning-unchanged` or `--contract-change` | — |
+| Meaning question on a public-touching ratification | `em slice ratify` refuses without `--meaning-unchanged` or `--contract-change` (and asks again on every revised version) | — |
 | Consumers adapted to the producer's public surface | `em system` exits non-zero (`consumer-not-adapted`) | `em status` count |
 | A contract and its consumer changed in one PR | `em system scope --base` exits non-zero (`seam-crossing`; review is the only override) | other multi-model change sets warn |
 | Consuming teams on the contract file | `em system codeowners --check` exits non-zero on drift; the review itself is your git host's branch protection | — |

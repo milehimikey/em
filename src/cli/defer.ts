@@ -2,10 +2,10 @@
 // `em slice defer` (MIL-275): the missing verb behind docs/process.md's "resolved or explicitly
 // deferred". Rewrites ONE unchecked `## Open Questions` item as a checked, dated "deferred to
 // v<n>" item, and mirrors it into the model's `.event-modeling.md` (the `## Open questions /
-// parking lot` bullet and a dated `## Decisions log` bullet), idempotently. `em slice reratify`
-// reads the `deferred to v<n>` marker back and re-opens the item (`reopenDeferred`, below).
+// parking lot` bullet and a dated `## Decisions log` bullet), idempotently. `em slice revise`
+// (and `mark-implemented`'s auto-open, MIL-283) reads the `deferred to v<n>` marker back and re-opens the item (`reopenDeferred`, below).
 //
-// Write strategy: surgical line edits (the same discipline as ratify.ts/reratify.ts) — every
+// Write strategy: surgical line edits (the same discipline as ratify.ts/revise.ts) — every
 // byte outside the edited line / appended bullet, including the file's own EOL style, is copied
 // through verbatim. Pure `apply*` functions here; the fs orchestration (`runDefer`) is thin.
 //
@@ -191,7 +191,7 @@ export function applyDeferStateFile(raw: string, input: StateMirrorInput): Apply
   return { ok: true, content: b.lines.join(""), changed: a.changed || b.changed };
 }
 
-/** Pure (reratify): re-opens every `- [x] … — v<old>: …; deferred to v<newVersion> (…)` item under
+/** Pure (revise): re-opens every `- [x] … — v<old>: …; deferred to v<newVersion> (…)` item under
  *  `## Open Questions` as `- [ ] <original text>`. Items deferred to a later version are untouched. */
 export function reopenDeferred(raw: string, newVersion: number): { content: string; count: number } {
   const lines = splitKeepEol(raw);
@@ -313,7 +313,7 @@ export type RunDeferResult =
 
 type ResolvedDeferDoc = { ok: true; sliceIndex: number; path: string; version: number } | { ok: false; message: string };
 
-/** The doc resolution both paths share (same join as ratify/reratify): continuation and
+/** The doc resolution both paths share (same join as ratify/revise): continuation and
  *  binding refusals, frontmatter validity, the doc's current version. */
 function resolveDeferDoc(model: NormalizedModel, refs: RefsResult, baseDir: string, sliceKey: string): ResolvedDeferDoc {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
@@ -380,7 +380,7 @@ function mirrorIntoStateFile(
   return { ok: true, path: statePath, content: r.content, changed: r.changed };
 }
 
-/** Resolves `sliceKey` to its bound doc (same join as ratify/reratify), computes both edits, and
+/** Resolves `sliceKey` to its bound doc (same join as ratify/revise), computes both edits, and
  *  writes only when every precondition holds (the state file is required and never created). */
 export function runDefer(
   model: NormalizedModel,

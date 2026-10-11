@@ -391,3 +391,21 @@ describe("em engagement (CLI)", () => {
     expect(existsSync(join(dir, "engagements", "three.md"))).toBe(true);
   }, 90_000); // ~8 CLI spawns in one case: 32 s on a cold CI runner (main red at 4956d19); per-test ceiling
 });
+
+// MIL-283: the Ledger's inferred `merged` and the outside-upstream hold read the shipped record.
+describe("engagement reads the shipped record, not the working status (MIL-283)", () => {
+  it("a slice whose next version is an open draft over a shipped one is inferred merged; an outside upstream in that state imposes no hold", () => {
+    const { file } = writeLendingFixture(dir);
+    create(file, "loans", { kind: "slices", keys: ["damage-reports"] });
+    expect(plan(file, "loans").slices[0].held).toBe("upstream-outside-engagement-unmerged");
+    // The outside upstream ships, then its next version opens as a draft (what `mark-implemented` /
+    // `revise` produce): still shipped → no hold.
+    const upstream = join(dir, "slices", "report-damage.md");
+    writeFileSync(upstream, readFileSync(upstream, "utf8").replace("status: ready-to-implement\nversion: 1", "status: draft\nversion: 2\nimplementedIn: https://example.test/pr/3\nshippedVersion: 1"));
+    expect(plan(file, "loans").slices[0]).toMatchObject({ held: null, base: "main" });
+    // The engagement's own slice in the same shape is inferred merged.
+    const own = join(dir, "slices", "damage-reports.md");
+    writeFileSync(own, readFileSync(own, "utf8").replace("status: ready-to-implement\nversion: 1", "status: draft\nversion: 2\nimplementedIn: https://example.test/pr/4\nshippedVersion: 1"));
+    expect(plan(file, "loans").slices[0]).toMatchObject({ state: "merged", stateInferred: true, docStatus: "draft" });
+  });
+});

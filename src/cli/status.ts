@@ -75,6 +75,9 @@ export interface SliceStatusFact {
    *  covered slice. */
   docPath: string | null;
   rawStatus: string | null;
+  /** MIL-283: a version of this slice has shipped (`doc.shipped`, the shipped record) — the fact
+   *  conformance scope and `byStatus.shipped` read; `rawStatus`/`bucket` stay the WORKING status. */
+  shipped: boolean;
   /** The doc's own `implementedIn:` value verbatim (or null) — carried through from the same
    *  `resolveSliceDocJoin` call this fact set already makes, so `resolveSlicePRsBehindHead`
    *  (MIL-164) can build its `SliceDocFacts[]` input from these facts directly rather than
@@ -152,6 +155,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       docReason: doc.reason,
       docPath,
       rawStatus: doc.status,
+      shipped: doc.shipped !== null,
       implementedIn: doc.implementedIn,
       owner: doc.owner,
       bucket: classifyStatusBucket(doc.found, doc.reason, doc.status),
@@ -376,7 +380,7 @@ export function resolveConformanceEntry(
   // findings JSON off disk beside the recorded report, not git. Every `implemented` slice is in
   // scope, same "in scope" definition `em state set-conformance`'s own refusal/`--partial` gate
   // uses (a `slice: null` finding counts as in scope for all of them).
-  const inScope = new Set(sliceDocFacts.filter((s) => s.status === "implemented").map((s) => s.key));
+  const inScope = new Set(sliceDocFacts.filter((s) => s.shipped).map((s) => s.key));
   const findingsLookup = lookupFindingsBesideReport(modelDir, report);
   const unruledFindings = findingsLookup.kind === "found" ? unruledFindingsInScope(findingsLookup.doc.findings, inScope).length : null;
   const commitsResult = commitsBehindHead(repo, revision, runGit);
@@ -496,7 +500,12 @@ export interface StatusSliceCounts {
     draft: number;
     reviewed: number;
     readyToImplement: number;
+    /** Working status `implemented` — the doc's current version is the shipped one. */
     implemented: number;
+    /** MIL-283: slices with a shipped record (any working status) — `implemented` plus every slice
+     *  whose next version is open as `draft`/`reviewed`/`ready-to-implement` over a shipped one.
+     *  Added in status schema 1.9; always >= `implemented`. */
+    shipped: number;
     noDoc: number;
     /** A doc IS bound (a `note` names it) but its frontmatter is missing/malformed — see
      *  `StatusBucket`'s `"frontmatter-invalid"` doc comment. Kept apart from `noDoc` (nothing
@@ -621,7 +630,7 @@ export function buildStatusReport(
   system: StatusReport["system"] = null,
   engagements: StatusReport["engagements"] = { open: 0, slugs: [] },
 ): StatusReport {
-  const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
+  const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, shipped: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
   const drift: StatusDriftCounts = {
     inSync: 0,
     neverImplemented: 0,
@@ -651,6 +660,7 @@ export function buildStatusReport(
       continuations++;
       continue;
     }
+    if (f.shipped) byStatus.shipped++;
     switch (f.bucket) {
       case "draft":
         byStatus.draft++;
@@ -843,7 +853,7 @@ export function formatStatusDetail(report: StatusReport): string {
   const { byStatus } = report.slices;
   const lines: string[] = [];
   lines.push(
-    `slices: ${report.slices.total} total — ${byStatus.implemented} implemented, ${byStatus.readyToImplement} ready-to-implement, ` +
+    `slices: ${report.slices.total} total — ${byStatus.shipped} shipped (${byStatus.implemented} implemented), ${byStatus.readyToImplement} ready-to-implement, ` +
       `${byStatus.reviewed} reviewed, ${byStatus.draft} draft, ${byStatus.noDoc} no doc, ${byStatus.frontmatterInvalid} frontmatter invalid, ` +
       `${byStatus.unknown} unknown status`,
   );
@@ -928,7 +938,7 @@ function escapeCell(s: string): string {
 export function formatStatusMarkdown(report: StatusReport): string {
   const { byStatus } = report.slices;
   const rows: Array<[string, string]> = [
-    ["Slices", `${byStatus.implemented}/${report.slices.total} implemented (${byStatus.readyToImplement} ready-to-implement, ${byStatus.reviewed} reviewed, ${byStatus.draft} draft)`],
+    ["Slices", `${byStatus.shipped}/${report.slices.total} shipped (${byStatus.implemented} implemented, ${byStatus.readyToImplement} ready-to-implement, ${byStatus.reviewed} reviewed, ${byStatus.draft} draft)`],
     ["Continuations", `${report.continuations}`],
     ["Invariants", report.invariants ? `${report.invariants.cited}/${report.invariants.total} covered` : "not checked"],
     ["Open issues", `${report.issues.openIssues}`],

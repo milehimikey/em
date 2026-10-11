@@ -81,8 +81,8 @@ describe("MIL-236 (a): required write-scope text in each design entry point", ()
       const text = flat(path);
       expect(text).toContain("em status <model>.em --json");
       expect(text).toContain("`design: null`");
-      expect(text).toContain("`slices.byStatus.implemented === 0`");
-      expect(text).toMatch(/never run `(em slice )?reratify`/);
+      expect(text).toContain("`slices.byStatus.shipped === 0`"); // MIL-283: the shipped record, not the working status
+      expect(text).toMatch(/never run `(em slice )?revise`/);
       expect(text).toMatch(/[Nn]ever bump a draft's `version:` on edit/);
     }
   });
@@ -114,7 +114,7 @@ describe("MIL-236 (a): required write-scope text in each design entry point", ()
   it("the design skill teaches the MIL-238 ratify flags and keeps ratification a human gate", () => {
     const text = flat(DESIGN);
     expect(text).toContain(
-      "`em slice ratify --by <name>` and `em slice reratify` refuse without one of two flags: pass `--meaning-unchanged` when this version does not change what the public contract means, or `--contract-change \"<why>\"` when a consumer must read the change differently.",
+      "`em slice ratify --by <name>` refuses without one of two flags (`revise` takes neither — the confirmation belongs to the new version's ratification): pass `--meaning-unchanged` when this version does not change what the public contract means, or `--contract-change \"<why>\"` when a consumer must read the change differently.",
     );
     // The quoted refusal is the CLI's own message (src/cli/ratify.ts), so the skill cannot drift from it.
     expect(text).toContain(meaningConfirmationRequiredMessage("<key>"));
@@ -176,10 +176,10 @@ function em(args: string[], cwd: string) {
 function isPreRelease(statusJson: string): boolean {
   const doc = JSON.parse(statusJson) as {
     modelVersion: { file: string; design: number | null }[];
-    slices: { byStatus: { implemented: number } };
+    slices: { byStatus: { implemented: number; shipped: number } };
   };
   expect(doc.modelVersion).toHaveLength(1);
-  return doc.modelVersion[0].design === null && doc.slices.byStatus.implemented === 0;
+  return doc.modelVersion[0].design === null && doc.slices.byStatus.shipped === 0;
 }
 
 function frontmatterVersion(doc: string): string | undefined {
@@ -235,9 +235,11 @@ describe("MIL-236 (b): the R20 pre-release signal on real em status --json outpu
     const r = em(["status", model(), "--json"], cwd);
     expect(isPreRelease(r.stdout)).toBe(false);
 
-    // Released → the existing re-ratification path bumps version: as today.
-    const rr = em(["slice", "reratify", "fulfillment.em", "browse-catalog"], dir);
+    // Released → the revision path opens v2 as a draft (MIL-283; `reratify` is the deprecated alias).
+    const rr = em(["slice", "revise", "fulfillment.em", "browse-catalog"], dir);
     expect(rr.status, rr.stderr).toBe(0);
-    expect(frontmatterVersion(readFileSync(slicesDoc(), "utf8"))).toBe("2");
+    const revised = readFileSync(slicesDoc(), "utf8");
+    expect(frontmatterVersion(revised)).toBe("2");
+    expect(revised).toContain("status: draft");
   });
 });

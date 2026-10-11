@@ -50,22 +50,22 @@ three specific points:
    ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) — pair it with a
    [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**` so the edit
    itself can't merge without review by a designated ratifier.
-   **Re-ratifying** a slice that already shipped is the same act for a change: record the hop
-   in the `## Delta` section, then `em slice reratify <model>.em <key>` (MIL-161,
-   [cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:` and flips `status` back to
-   `ready-to-implement` mechanically — mirroring `em slice mark-implemented`'s shape at the other
-   end of the lifecycle ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
-   The same command changes a ratified doc that **never shipped** (MIL-258 — typically a gap
-   answered mid-build): it bumps `version:` and clears the sign-off but leaves `status:` at
-   `ready-to-implement`. Either way the doc is not ratified until `em slice ratify --by <name>`
-   records the new sign-off.
+   **Revising** a slice that already shipped is the same act for a change: `em slice revise
+   <model>.em <key>` (MIL-283, [cli.md](cli.md#em-slice-revise-file-slice-key)) opens the next
+   version as a `draft` — `version:` bumped, the prior sign-off cleared, the shipped version kept
+   in the shipped record ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification))
+   — and `em slice mark-implemented` does it automatically at merge when a question was deferred
+   to the next version. Record the hop in the `## Delta` section, then the new version takes both
+   gates again: review, then `em slice ratify --by <name>`. The same command revises a ratified
+   doc that **never shipped** (a gap answered mid-build): the ratification is withdrawn and the
+   draft of the next version opens.
    **API first (MIL-238):** ratifying a *public-touching* slice — one that owns a `public`
    command, event or view — also asserts that the model's generated contract
    (`contracts/<model key>.tsp`, written by `em api generate`) is current, and says whether this
    version changes what that contract means to a consumer: `--meaning-unchanged`, or
    `--contract-change "<why>"`, recorded as `meaningConfirmed:`/`contractChange:` frontmatter.
-   `em slice ratify` and `reratify` refuse such a slice without one, and `--slice-ready` is not
-   ready until the committed contract matches the model.
+   `em slice ratify` refuses such a slice without one (and takes it again on every revised
+   version), and `--slice-ready` is not ready until the committed contract matches the model.
 2. **Ratifying model changes** — every edit to a committed `.em` or slice doc is a ratified
    decision, made in (or reviewed out of) a facilitated session. The PR review of a model
    change is part of this: the diff *is* the decision record.
@@ -123,20 +123,26 @@ draft ──(review session)──▶ reviewed ──(ratification gate)──�
    Confirm readiness mechanically with `em validate <model>.em --slice-ready <key>`.
 4. **The merge → `implemented`.** Not a gate — bookkeeping. The implementing agent or engineer
    runs `em slice mark-implemented <model>.em <key> <pr-url>` at merge; the human checkpoint here
-   was the PR review, which already happened.
+   was the PR review, which already happened. It writes the **shipped record** (`shippedVersion:`,
+   `shippedRef:`, `shippedOn:` beside `implementedIn:`, MIL-284) — the fact every reader that asks
+   "has this shipped?" decides on from 1.15.0 — and, when a question was deferred to the next
+   version, opens that version as a `draft` on the spot (MIL-283), so the diagram shows a slice
+   with known work rather than an `implemented` one hiding it.
 
 A **continuation slice** (MIL-208 — a later `view X again` instance with no doc of its own)
 skips all four statuses and both gates above: it inherits the originating slice's status
 wholesale, since it isn't a spec unit to review, ratify, or mark implemented separately. See
 [slice-doc-schema.md](slice-doc-schema.md#continuations).
 
-**Re-ratification** re-enters the loop rather than repeating it: `em slice reratify <model>.em
-<key>` ([cli.md](cli.md#em-slice-reratify-file-slice-key)) bumps `version:`, returns a shipped doc
-to `ready-to-implement` (a ratified doc that never shipped, MIL-258, is already there and keeps
-its status), and clears both the old sign-off and the old review record (neither
-describes the new version). A `em slice ratify --by <name>` following a `reratify` **does not need
-a fresh review session** — the doc is already `ready-to-implement`, which the review gate accepts;
-the delta was decided when it was written into the `## Delta` section.
+**Revision re-enters the loop at the top** (MIL-283): `em slice revise <model>.em <key>`
+([cli.md](cli.md#em-slice-revise-file-slice-key)) opens the next version as a **`draft`** — `version:`
+bumped, the old sign-off and the old review record cleared (neither describes the new version),
+the shipped version kept in the shipped record so every reader still sees it in production. The
+new version then passes the same two gates v1 did: a review session (`em slice review --by`) and
+the ratification (`em slice ratify --by`, which signs a fresh `ratifiedRef`). Until 1.14 the bump
+left the doc at an unsigned `ready-to-implement` that the ratification gate accepted without a
+fresh review; that carve-out is gone — a v2 is a new spec, and "the room understood this slice"
+has to be true of *this* version too.
 
 Why two gates and not one: "the room understood this slice" and "we commit to building this
 slice" are different decisions, made by different people, often days apart. Collapsing them means
@@ -164,7 +170,7 @@ new bullets in `.event-modeling.md`: `Model version:` and `Certified:`.
 
 **`em` warns, never auto-bumps.** If the slice-version vector or the `.em` file's own content
 has moved since the last bump, `em status`, `em validate` (`model-version-stale`), and `em slice
-ratify`/`reratify` all say so — on stderr or in their JSON — but nothing forces a bump. The same
+ratify`/`revise` all say so — on stderr or in their JSON — but nothing forces a bump. The same
 "humans ratify, tools verify" rule the rest of this document holds: a design version is a
 deliberate checkpoint the team calls, not a side effect of an unrelated edit.
 
@@ -217,7 +223,7 @@ flowchart LR
    matches the model (`slice-ready-contract-stale`; the message names the regenerate command).
    Ratifying or re-ratifying it also answers the meaning question: `--meaning-unchanged`, or
    `--contract-change "<why>"` when a consumer must read the change differently. `em slice
-   ratify`/`reratify` refuse without one of the two, and record it as `meaningConfirmed:` or
+   ratify` refuses without one of the two, and record it as `meaningConfirmed:` or
    `contractChange:` frontmatter. A slice that owns a `public` command also needs that command's
    invariants declared in the model before it is ready
    (`invariants/public-command-without-invariants` is a warning scoped to the slice, and
@@ -248,7 +254,7 @@ flowchart LR
 | 2. Generate the contract | Whoever edits the public surface, in the same commit | `em api generate`, `em api check` | — |
 | 3. Declare `consumes` | Consumer's design session | `em validate` grammar; `em system` resolution | **What the consumer depends on** |
 | 4. Route review | Model owners, once and on change | `em system codeowners [--check]` | **Choosing each model's owner handle; enabling "Require review from Code Owners"** |
-| 5. API-first gate | Ratifier of a public-touching slice | `--slice-ready` contract check; ratify/reratify refusal | **Signing the ratification; answering the meaning question** |
+| 5. API-first gate | Ratifier of a public-touching slice | `--slice-ready` contract check; ratify refusal | **Signing the ratification; answering the meaning question** |
 | 6. Consumer adaptation | CI, on every PR; the consuming team fixes | `em system` (`consumer-not-adapted`) | Consumers review the adaptation |
 | 7. Scope gate | CI, on every PR; the design skill before committing | `em system scope --base` / `--staged` | **Consuming teams approve a contract change** (review is the only override) |
 

@@ -297,9 +297,12 @@ since an accepted divergence should never fail a build.
 ### Frontmatter coherence
 
 `em validate`'s second fs-aware rule (MIL-85), alongside lineage above: it reads a slice doc's
-`status`/`implementedIn` frontmatter and flags exactly one combination as broken —
-`status: implemented` with no `implementedIn` link at all. Everything else is silent, including
-the one combination that looks the most like drift at a glance.
+shipped record (MIL-283: `shippedVersion:`, or a pre-1.15 `status: implemented`) and
+`implementedIn` frontmatter and flags exactly one combination as broken — a **shipped** slice with
+no `implementedIn` link at all. Everything else is silent, including the one combination that
+looks the most like drift at a glance: a `draft`/`reviewed`/`ready-to-implement` doc whose
+`version` is past its shipped version (`unpropagated-delta` — the next version is open over a
+shipped one, which is exactly what `em slice revise` and `mark-implemented`'s auto-open produce).
 
 Requires usable frontmatter — a closed fence with every required key present
 (`hasUsableFrontmatter()`, `src/catalog/sliceDoc.ts`), the exact same predicate `em export`'s

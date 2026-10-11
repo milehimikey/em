@@ -86,7 +86,7 @@ describe("applyReviewFrontmatter (pure text surgery)", () => {
       ok: false,
       message:
         "doc is `status: ready-to-implement` — review applies before ratification; a shipped " +
-        "slice is reopened with `em slice reratify`",
+        "slice is reopened with `em slice revise`",
     });
   });
 
@@ -97,7 +97,7 @@ describe("applyReviewFrontmatter (pure text surgery)", () => {
       ok: false,
       message:
         "doc is `status: implemented` — review applies before ratification; a shipped " +
-        "slice is reopened with `em slice reratify`",
+        "slice is reopened with `em slice revise`",
     });
   });
 
@@ -314,7 +314,7 @@ describe("runReview (note-binding resolution + fs orchestration)", () => {
     if (result.ok) return;
     expect(result.message).toBe(
       "slices/shipped-slice.md: doc is `status: implemented` — review applies before " +
-        "ratification; a shipped slice is reopened with `em slice reratify`",
+        "ratification; a shipped slice is reopened with `em slice revise`",
     );
     expect(readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8")).toBe(before);
   });

@@ -19,7 +19,7 @@ import { resolveScopedSlices } from "../src/cli/coverage.js";
 import { buildSliceIndexTable } from "../src/cli/sliceIndex.js";
 import { runRatify } from "../src/cli/ratify.js";
 import { runReview } from "../src/cli/review.js";
-import { runReratify } from "../src/cli/reratify.js";
+import { runRevise } from "../src/cli/revise.js";
 import { runMarkImplemented } from "../src/cli/markImplemented.js";
 import { resolvePrimaryElement } from "../src/cli/sliceLink.js";
 import { validateNoteBindings } from "../src/catalog/noteBindingValidate.js";
@@ -318,7 +318,7 @@ describe("em slice index: continuation row (src/cli/sliceIndex.ts)", () => {
   });
 });
 
-describe("ratify/review/reratify/mark-implemented refuse on a continuation key", () => {
+describe("ratify/review/revise/mark-implemented refuse on a continuation key", () => {
   function compiled() {
     return compile(MODEL);
   }
@@ -347,14 +347,14 @@ describe("ratify/review/reratify/mark-implemented refuse on a continuation key",
     });
   });
 
-  it("runReratify refuses, verbatim message", () => {
+  it("runRevise refuses, verbatim message", () => {
     const { model, refs } = compiled();
-    const result = runReratify(model, refs, dir, "catalog-shows-removal");
+    const result = runRevise(model, refs, dir, "catalog-shows-removal");
     expect(result).toEqual({
       ok: false,
       message:
         '"catalog-shows-removal" is a continuation of "browse-catalog" (view "Catalog" again) — ' +
-        'it has no doc of its own; reratify "browse-catalog" instead',
+        'it has no doc of its own; revise "browse-catalog" instead',
     });
   });
 
@@ -371,7 +371,9 @@ describe("ratify/review/reratify/mark-implemented refuse on a continuation key",
 
   it("ratifying the ORIGINATING slice itself still works normally", () => {
     const { model, refs } = compiled();
-    const result = runRatify(model, refs, dir, "browse-catalog", "Alex Rivera", "2026-09-07");
+    // The fixture doc is an unsigned `ready-to-implement` (never reviewed through the command), so
+    // since MIL-283 the review gate applies — --skip-review is the explicit way through here.
+    const result = runRatify(model, refs, dir, "browse-catalog", "Alex Rivera", "2026-09-07", true);
     expect(result.ok).toBe(true);
   });
 });

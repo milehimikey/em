@@ -43,7 +43,9 @@ import { Diagnostic } from "../model/validate.js";
 import { makeDiag } from "../model/rules.js";
 import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
-import { hasUsableFrontmatter, SliceDoc, SliceRef } from "./sliceDoc.js";
+import { hasUsableFrontmatter, ShippedRecord, shippedRecordOf, SliceDoc, SliceRef } from "./sliceDoc.js";
+
+export type { ShippedRecord } from "./sliceDoc.js";
 
 // Matches a `note "slices/<key>.md"` value's path shape, to pull `<key>` back out for the
 // MIL-121 cross-binding search below (and MIL-126's mismatch sweep, catalog/noteBindingValidate.ts)
@@ -75,18 +77,6 @@ export function resolveCrossCandidate(baseDir: string, candidateKey: string, sli
 }
 
 export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
-
-/** MIL-284: the shipped record `em slice mark-implemented` writes (export `slice.doc.shipped`). */
-export interface ShippedRecord {
-  /** The doc's `version:` when the merge was recorded (`shippedVersion:`). */
-  version: number;
-  /** The `ratifiedRef` that version was signed at (`shippedRef:`), or null when the doc had none. */
-  ratifiedRef: string | null;
-  /** The merged PR/commit URL — the same `implementedIn:` the doc carries at top level. */
-  implementedIn: string | null;
-  /** `YYYY-MM-DD`, the local date mark-implemented ran (`shippedOn:`), or null when absent. */
-  on: string | null;
-}
 
 /** A slice's export-facing doc join — always a non-null object (never JSON `null`), matching
  *  every other optional field in `em export`'s style: explicit-null-on-a-stable-key, never a
@@ -135,10 +125,12 @@ export interface SliceDocExport {
    *  written only by `em slice ratify` — null when absent. `--slice-ready` compares it to the
    *  current body (`slice-ready-body-changed-since-ratification`). */
   ratifiedHash: string | null;
-  /** MIL-284: the shipped record `em slice mark-implemented` writes beside `implementedIn:`
-   *  (frontmatter `shippedVersion:`/`shippedRef:`/`shippedOn:`), or null when the doc has no
-   *  `shippedVersion:` (shipped before em 1.15, or never). Additive: `status`/`implementedIn`
-   *  still carry the lifecycle for every reader until MIL-283 moves them here. */
+  /** MIL-283/284: the shipped record — `em slice mark-implemented`'s `shippedVersion:`/
+   *  `shippedRef:`/`shippedOn:` beside `implementedIn:`, or, for a doc shipped before em 1.15
+   *  (no `shippedVersion:`), the `status: implemented` it carries (read-both rule,
+   *  `shippedRecordOf`). Null when nothing has shipped. THIS — not `status` — is what every
+   *  lifecycle reader decides on since 1.15.0: `status` is the working state, and a shipped slice
+   *  can be `draft` again while its earlier version stays shipped. */
   shipped: ShippedRecord | null;
   /** MIL-171: who (a person or team) holds this slice, from frontmatter `owner:` — hand-filled,
    *  no `em` command writes it. Null when absent. */
@@ -336,10 +328,7 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     ratifiedOn: parsed.ratifiedOn,
     ratifiedRef: parsed.ratifiedRef,
     ratifiedHash: parsed.ratifiedHash,
-    shipped:
-      parsed.shippedVersion === null
-        ? null
-        : { version: parsed.shippedVersion, ratifiedRef: parsed.shippedRef, implementedIn: parsed.implementedIn, on: parsed.shippedOn },
+    shipped: shippedRecordOf(parsed),
     owner: parsed.owner,
     tracking: parsed.tracking,
     conformedVersion: parsed.conformedVersion,
