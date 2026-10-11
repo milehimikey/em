@@ -371,10 +371,12 @@ per-project pinning motion.
 
 ## 1.15.0
 
-Engagements stop stacking: every slice PR is cut from and targets `main`.
+Engagements stop stacking: every slice PR is cut from and targets `main`. Defer works in the
+room.
 
 | What changed for a model repo | Handled by `em upgrade`? |
 |---|---|
+| `em slice defer --from-issue "<text>"` (MIL-281, [cli.md](cli.md#em-slice-defer-file-slice-key-question)): the question a review session captures as an `issue "..."` clause can now be deferred in one command — the deferred item is written to the doc's `## Open Questions`, mirrored into `.event-modeling.md`, and the `issue` clause is removed from the `.em`. The positional `"<question>"` form is unchanged; the two are exclusive. The review and design skills now walk each question to one of three endings (answered → edit + delete the note; room-raised + deferred → `--from-issue`; on the doc + deferred → positional) before `em slice review --by` | no action needed |
 | `em engagement plan` reports `base: main` for every slice and never holds a slice for its in-engagement upstreams: the `multiple-unmerged-upstreams` hold reason is gone and `impl/<upstream>` is never a base (MIL-280, [cli.md](cli.md#em-engagement-plan-file-slug---json)). Levels still order dispatch and review. The `event-modeling-engagement` skill hands over each PR as it passes, to merge in any order with the project's usual strategy; the retarget check and the merge-commit rule are removed. The implement contract's §8 rule 2 now cuts every slice branch from `main`, inside and outside an engagement; rule 2a is removed | no action needed. An open engagement from 1.14.0–1.14.2 keeps working: a Ledger entry still recording `base: impl/<upstream>` is reported as `main` by `plan`; record `--base main` on its next `em engagement set`. A dependent PR already stacked on an unmerged upstream is the human's to retarget (`gh pr edit <n> --base main`) or leave to merge as it is |
 | The constitution template no longer requires `- **Merge strategy:** merge-commits-when-stacked`; the prompt is now a free-text line for the project's own strategy, and nothing in em reads it. The engagement skill no longer refuses without the line | no action needed; a constitution that still carries the old line is fine — the skill ignores it. Edit it to your real strategy when you next amend the constitution (the owner ratifies) |
 | **Release note: nothing to run** — update the `@milehimikey/em` dependency (and the plugin pin to `em-1-15-0` / `v1.15.0` on plugin repos); `em upgrade` has no 1.15.0 step. | no action needed |

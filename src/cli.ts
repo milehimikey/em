@@ -112,7 +112,7 @@ import { isStubStatus, runStubAll, STUB_STATUSES } from "./cli/sliceStubAll.js";
 import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runReratify } from "./cli/reratify.js";
-import { runDefer } from "./cli/defer.js";
+import { runDefer, runDeferFromIssue } from "./cli/defer.js";
 import { runSliceConform } from "./cli/sliceConform.js";
 import { checkFindingsFile, buildCheckFindingsJson, lookupFindingsBesideReport, unruledFindingsInScope, Finding, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import {
@@ -1128,24 +1128,32 @@ slice
       "v<current>: <decision>; deferred to v<n> (<date>[, <by>])` so `--slice-ready` passes without a " +
       "guess, and mirrors it into `.event-modeling.md` (the parking lot and a dated Decisions-log " +
       "bullet; the file must exist, it is never created). Idempotent; `em slice reratify` re-opens " +
-      "the item when it bumps to v<n>",
+      "the item when it bumps to v<n>. With --from-issue <text> instead of <question> (MIL-281): " +
+      "promotes the single open `issue \"...\"` on the slice's own elements containing <text> into " +
+      "the doc's Open Questions as that same deferred item, mirrors it, and removes the `issue` " +
+      "clause from the .em — the one-command path for a question raised in a review session",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
-  .argument("<question>", "text identifying the unchecked Open Question (case-sensitive substring)")
+  .argument("[question]", "text identifying the unchecked Open Question (case-sensitive substring); omit when using --from-issue")
   .requiredOption("--until <version>", "the version that must answer it, v<n> (greater than the doc's version)")
   .requiredOption("--decision <text>", "what this version does instead")
+  .option("--from-issue <text>", "defer a captured `issue \"...\"` on this slice instead of a doc Open Question (case-sensitive substring of its text)")
   .option("--by <name>", "who deferred it")
   .option("--on <date>", "deferral date, YYYY-MM-DD (default: today, local date)")
   .action(
     (
       file: string,
       sliceKey: string,
-      question: string,
-      opts: { until: string; decision: string; by?: string; on?: string },
+      question: string | undefined,
+      opts: { until: string; decision: string; fromIssue?: string; by?: string; on?: string },
     ) => {
       if (opts.on !== undefined && !isValidDateString(opts.on)) {
         console.error(`em slice defer: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+        process.exit(1);
+      }
+      if ((question === undefined) === (opts.fromIssue === undefined)) {
+        console.error('em slice defer: pass either "<question>" or --from-issue <text>, not both and not neither');
         process.exit(1);
       }
       const { model, refs, diagnostics } = compileFile(file);
@@ -1157,13 +1165,21 @@ slice
         console.error(`em slice defer: slice "${sliceKey}" has errors — fix them first`);
         process.exit(1);
       }
-      const result = runDefer(model, refs, dirname(file), sliceKey, {
-        question,
-        until: opts.until,
-        decision: opts.decision,
-        by: opts.by,
-        on: opts.on ?? localIsoDate(),
-      });
+      const common = { until: opts.until, decision: opts.decision, by: opts.by, on: opts.on ?? localIsoDate() };
+      if (opts.fromIssue !== undefined) {
+        const result = runDeferFromIssue(model, refs, dirname(file), file, sliceKey, opts.fromIssue, common);
+        if (!result.ok) {
+          console.error(`em slice defer: ${result.message}`);
+          process.exit(1);
+        }
+        console.log(
+          result.changed
+            ? `deferred: ${result.path} (issue "${result.issue}" → ${opts.until}; issue clause removed from ${file}:${result.modelLine})`
+            : `already deferred (no-op): ${result.path}`,
+        );
+        return;
+      }
+      const result = runDefer(model, refs, dirname(file), sliceKey, { question: question!, ...common });
       if (!result.ok) {
         console.error(`em slice defer: ${result.message}`);
         process.exit(1);
