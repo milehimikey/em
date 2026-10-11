@@ -17,7 +17,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseSliceDoc, SliceDoc, hasUsableFrontmatter } from "../catalog/sliceDoc.js";
+import { parseSliceDoc, SliceDoc, hasUsableFrontmatter, shippedRecordOf } from "../catalog/sliceDoc.js";
 import { classifyImplementationDrift, DriftSignalKind } from "../catalog/driftSignal.js";
 import { NOTE_SLICE_PATH } from "../catalog/docJoin.js";
 import { NormalizedModel, Slice } from "./model.js";
@@ -76,6 +76,9 @@ export interface SliceQueryDoc {
   reason: "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
   status: string | null;
   implementedIn: string | null;
+  /** MIL-283: a version of this slice has shipped (`shippedRecordOf`) — what the readers that used
+   *  to test `status === "implemented"` read now; false whenever `found` is false. */
+  shipped: boolean;
   driftSignal: DriftSignalKind | null;
   /** The doc's body text (post-frontmatter), for `extractInvariantIds()` — null whenever
    *  `found` is false or the frontmatter wasn't usable (nothing safe to scan). */
@@ -121,13 +124,13 @@ export function joinSliceDocFast(
       const originatingDoc = joinSliceDocFast(model, refs, originatingSlice, continuation.sliceKey, docsByKey);
       return { ...originatingDoc, continuationOf: continuation.sliceKey };
     }
-    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, driftSignal: null, body: null, continuationOf: null };
+    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, shipped: false, driftSignal: null, body: null, continuationOf: null };
   }
 
   const doc = docsByKey.get(sliceKey);
-  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, driftSignal: null, body: null, continuationOf: null };
+  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, shipped: false, driftSignal: null, body: null, continuationOf: null };
   if (!hasUsableFrontmatter(doc)) {
-    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, driftSignal: null, body: null, continuationOf: null };
+    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, shipped: false, driftSignal: null, body: null, continuationOf: null };
   }
   return foundDoc(path, doc);
 }
@@ -139,6 +142,7 @@ function foundDoc(path: string, doc: SliceDoc): SliceQueryDoc {
     reason: null,
     status: doc.status,
     implementedIn: doc.implementedIn,
+    shipped: shippedRecordOf(doc) !== null,
     driftSignal: classifyImplementationDrift(doc),
     body: doc.body,
     continuationOf: null,

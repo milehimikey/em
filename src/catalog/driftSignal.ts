@@ -22,36 +22,44 @@
 // "shipped" — so this is not folded into `in-sync` and not flagged by `em validate` (same
 // "expected, not a defect" treatment `unpropagated-delta` gets).
 
-import { SliceDoc } from "./sliceDoc.js";
+import { shippedRecordOf, SliceDoc } from "./sliceDoc.js";
 
 export type DriftSignalKind =
-  /** status: implemented, implementedIn set, conformedVersion === version — certified current. */
+  /** shipped, implementedIn set, the doc's version IS the shipped version and conformedVersion
+   *  matches it — certified current. */
   | "in-sync"
-  /** status not implemented, implementedIn absent — normal pre-ship state. */
+  /** nothing shipped, implementedIn absent — normal pre-ship state. */
   | "never-implemented"
-  /** status not implemented, implementedIn still set — a ratified delta hasn't shipped yet.
-   *  Expected, not a defect: never surface this as fresh drift or a validate diagnostic. */
+  /** a ratified/drafted delta hasn't shipped yet: either the doc's `version:` is past the shipped
+   *  version (MIL-283 — a later draft is open over a shipped version), or (pre-1.15 shape) status
+   *  is off `implemented` while `implementedIn` still names the prior version's PR. Expected, not
+   *  a defect: never surface this as fresh drift or a validate diagnostic. */
   | "unpropagated-delta"
-  /** status: implemented, implementedIn absent — genuine incoherence (em validate warns). */
+  /** shipped, implementedIn absent — genuine incoherence (em validate warns). */
   | "implemented-without-link"
-  /** status: implemented, implementedIn set, but conformedVersion is absent or doesn't match the
-   *  current version — nobody has certified THIS version yet. Expected post-ship default, not a
-   *  defect: never surface this as an `em validate` diagnostic (see
+  /** shipped, implementedIn set, the doc's version is the shipped version, but conformedVersion
+   *  is absent or doesn't match — nobody has certified THIS version yet. Expected post-ship
+   *  default, not a defect: never surface this as an `em validate` diagnostic (see
    *  catalog/frontmatterCoherenceValidate.ts, which only ever flags implemented-without-link). */
   | "uncertified";
 
 /**
- * Classify a doc's status/implementedIn/version/conformedVersion quadruple. Takes a `Pick`
- * rather than the full `SliceDoc` so callers building a partial/synthetic doc (tests, future
- * callers) don't need every field.
+ * Classify a doc's drift from its shipped record (MIL-283: `shippedRecordOf`, which reads the
+ * `shipped*` keys and, for a doc written before 1.15, `status: implemented`), its `implementedIn`,
+ * its working `version` and `conformedVersion`. Takes a `Pick` rather than the full `SliceDoc`
+ * so callers building a partial/synthetic doc (tests, future callers) don't need every field.
  */
 export function classifyImplementationDrift(
-  doc: Pick<SliceDoc, "status" | "implementedIn" | "version" | "conformedVersion">,
+  doc: Pick<
+    SliceDoc,
+    "status" | "implementedIn" | "version" | "conformedVersion" | "ratifiedRef" | "shippedVersion" | "shippedRef" | "shippedOn"
+  >,
 ): DriftSignalKind {
   const hasLink = typeof doc.implementedIn === "string" && doc.implementedIn.trim().length > 0;
-  if (doc.status === "implemented") {
-    if (!hasLink) return "implemented-without-link";
-    return doc.conformedVersion !== null && doc.conformedVersion === doc.version ? "in-sync" : "uncertified";
-  }
-  return hasLink ? "unpropagated-delta" : "never-implemented";
+  const shipped = shippedRecordOf(doc);
+  if (shipped === null) return hasLink ? "unpropagated-delta" : "never-implemented";
+  if (!hasLink) return "implemented-without-link";
+  // A later version is open (draft/reviewed/ready-to-implement) over the shipped one.
+  if (shipped.version !== null && doc.version !== null && doc.version > shipped.version) return "unpropagated-delta";
+  return doc.conformedVersion !== null && doc.conformedVersion === shipped.version ? "in-sync" : "uncertified";
 }

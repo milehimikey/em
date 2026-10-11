@@ -36,6 +36,8 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
+import { reopenDeferred } from "./defer.js";
+import { openNextDraft } from "./revise.js";
 
 export type ApplyFrontmatterResult =
   | { ok: true; content: string; changed: boolean }
@@ -173,7 +175,14 @@ export function applyImplementedFrontmatter(raw: string, prUrl: string, shippedO
 }
 
 export type RunMarkImplementedResult =
-  | { ok: true; path: string; changed: boolean }
+  | {
+      ok: true;
+      path: string;
+      changed: boolean;
+      /** MIL-283: set when the merge opened the next version as a `draft` because at least one
+       *  Open Question was deferred to it — `version` is the new draft's, `reopened` the count. */
+      openedDraft: { version: number; reopened: number } | null;
+    }
   | { ok: false; message: string };
 
 /**
@@ -239,8 +248,29 @@ export function runMarkImplemented(
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
   }
-  if (result.changed) {
-    writeFileSync(absPath, result.content, "utf8");
-  }
-  return { ok: true, path: doc.path, changed: result.changed };
+  if (!result.changed) return { ok: true, path: doc.path, changed: false, openedDraft: null };
+
+  // MIL-283: the shipped version is recorded; if the ratified doc deferred any question to the
+  // NEXT version, that version is known work — open it as a `draft` right now so the deferred
+  // questions are back on the list (and `shippedVersion:` keeps saying v<N> shipped). A doc with
+  // nothing deferred stays `implemented` until someone runs `em slice revise`. Only on the real
+  // flip (`changed`), never on the idempotent re-run or the missing-link repair of an already
+  // implemented doc — those recorded their shipment before.
+  const next = nextDraftIfDeferred(result.content);
+  writeFileSync(absPath, next.content, "utf8");
+  return { ok: true, path: doc.path, changed: true, openedDraft: next.openedDraft };
+}
+
+/** Pure: when `content` (a freshly implemented doc) has a question deferred to v<version+1>,
+ *  returns it with the next draft opened (`openNextDraft`); else returns it unchanged. */
+export function nextDraftIfDeferred(content: string): { content: string; openedDraft: { version: number; reopened: number } | null } {
+  const range = locateFrontmatterInner(content);
+  if (!range) return { content, openedDraft: null };
+  const versionMatch = fieldLineRegex("version").exec(content.slice(range.innerStart, range.innerEnd));
+  const version = versionMatch ? Number(normalizeFieldValue(versionMatch[2])) : NaN;
+  if (!Number.isInteger(version) || version < 1) return { content, openedDraft: null };
+  if (reopenDeferred(content, version + 1).count === 0) return { content, openedDraft: null };
+  const opened = openNextDraft(content);
+  if (!opened.ok) return { content, openedDraft: null };
+  return { content: opened.content, openedDraft: { version: opened.newVersion, reopened: opened.reopened } };
 }

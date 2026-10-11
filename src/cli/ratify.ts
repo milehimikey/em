@@ -135,10 +135,13 @@ function sameConfirmation(a: MeaningConfirmation, b: MeaningConfirmation): boole
  *  resolved or deferred, ready for an implementing agent or engineer to pick up. */
 export const RATIFIED_STATUS = "ready-to-implement";
 
-/** The statuses the review gate (MIL-201) lets through without `--skip-review`: `reviewed` (the
- *  ordinary path — `em slice review` recorded a review session) and `ready-to-implement` (the
- *  idempotent re-run, and the post-`reratify` path — see the module header). */
-const RATIFIABLE_STATUSES: readonly string[] = [REVIEWED_STATUS, RATIFIED_STATUS];
+/** The statuses the review gate (MIL-201) lets through without `--skip-review`: `reviewed` only,
+ *  since 1.15.0 (MIL-283). `ready-to-implement` used to be here for the post-`reratify` path — a
+ *  bumped, unsigned doc that "needed no fresh review session". That state no longer exists:
+ *  `em slice revise` opens the next version as a `draft`, and a new version is a new spec that
+ *  takes both gates. The same-identity idempotent re-run is handled before this gate is consulted,
+ *  so an already-ratified doc re-run with the same `--by`/`--on` still no-ops rather than refuses. */
+const RATIFIABLE_STATUSES: readonly string[] = [REVIEWED_STATUS];
 
 /** Doc statuses an upstream producing slice can hold without triggering MIL-198's advisory —
  *  the two statuses that mean "this slice's contract is settled enough to build against". */
@@ -187,7 +190,11 @@ export function upstreamUnratifiedSlices(
   const results: UpstreamUnratifiedSlice[] = [];
   for (const upstreamIndex of [...upstreamSliceIndexes].sort((a, b) => a - b)) {
     const upstreamKey = refs.sliceKeys[upstreamIndex];
-    const status = index.sliceFacts.get(upstreamKey)?.doc.status ?? null;
+    const upstreamDoc = index.sliceFacts.get(upstreamKey)?.doc;
+    const status = upstreamDoc?.status ?? null;
+    // MIL-283: a shipped upstream (its shipped record, not its working status — it may be `draft`
+    // again for its next version) is settled; so is a ratified one.
+    if (upstreamDoc?.shipped) continue;
     if (status !== null && UPSTREAM_SETTLED_STATUSES.includes(status)) continue;
     results.push({ sliceKey: upstreamKey, status: status ?? "no doc" });
   }
@@ -345,7 +352,13 @@ export function applyRatifyFrontmatter(
   // exact failure this refusal exists to prevent. `--skip-review` is the deliberate, visible
   // escape hatch, not a silent bypass: the caller prints a notice naming the status it skipped.
   const gateStatus = currentStatus ?? "(empty)";
-  const gateWouldRefuse = currentStatus === null || !RATIFIABLE_STATUSES.includes(currentStatus);
+  // MIL-283: a `ready-to-implement` doc passes only when the SAME signer is completing or adding
+  // to their own record (a hand-ratified doc missing `ratifiedOn:`, or MIL-238's confirmation
+  // added on a later run). An unsigned `ready-to-implement` — the pre-1.15 reratify leftover —
+  // or another signer's record refuses: `em slice revise` reopens the former as a draft.
+  const sameSignerCompleting =
+    currentStatus === RATIFIED_STATUS && currentBy === trimmedBy && (currentOn === null || currentOn === ratifiedOn);
+  const gateWouldRefuse = currentStatus === null || !(RATIFIABLE_STATUSES.includes(currentStatus) || sameSignerCompleting);
   if (gateWouldRefuse && !skipReview) {
     return {
       ok: false,

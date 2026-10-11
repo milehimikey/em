@@ -1295,7 +1295,8 @@ describe("slice-doc join (MIL-91)", () => {
       ratifiedOn: null,
       ratifiedRef: null,
       ratifiedHash: null,
-      shipped: null,
+      // MIL-283 read-both rule: a pre-1.15 `status: implemented` doc is shipped at its current version.
+      shipped: { version: 2, ratifiedRef: null, implementedIn: "https://github.com/example/pr/41", on: null },
       owner: null,
       tracking: null,
       conformedVersion: 2,

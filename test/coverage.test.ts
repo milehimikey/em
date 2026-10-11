@@ -364,3 +364,28 @@ describe("buildCoverageReport — model-declared invariants first (MIL-265)", ()
     expect(r.slices.find((s) => s.key === "cancel-order")!.invariants.map((i) => i.id)).toEqual(["INV-1", "INV-ORD-1"]);
   });
 });
+
+// MIL-283: scope follows the shipped record, not the working status.
+describe("coverage scope reads the shipped record (MIL-283)", () => {
+  it("a draft v2 open over a shipped v1 is in scope by default; an unshipped draft is not", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { compile } = await import("../src/pipeline.js");
+    const { resolveScopedSlices } = await import("../src/cli/coverage.js");
+    const dir = mkdtempSync(join(tmpdir(), "em-coverage-shipped-"));
+    try {
+      mkdirSync(join(dir, "slices"));
+      const fm = (status: string, extra = "") => `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ${status}\nversion: 2\n${extra}---\nbody\n`;
+      writeFileSync(join(dir, "slices", "revised.md"), fm("draft", "implementedIn: https://x/1\nshippedVersion: 1\n"));
+      writeFileSync(join(dir, "slices", "fresh.md"), fm("draft"));
+      writeFileSync(join(dir, "slices", "legacy.md"), fm("implemented", "implementedIn: https://x/2\n"));
+      writeFileSync(join(dir, "m.em"), 'slice "Revised" {\n  command A note "slices/revised.md"\n  event A Done\n}\nslice "Fresh" {\n  command B note "slices/fresh.md"\n  event B Done\n}\nslice "Legacy" {\n  command C note "slices/legacy.md"\n  event C Done\n}\n');
+      const { model, refs } = compile(readFileSync(join(dir, "m.em"), "utf8"));
+      const scope = resolveScopedSlices(model, refs, dir, false);
+      expect(Object.fromEntries(scope.map((s) => [s.key, s.inScope]))).toEqual({ revised: true, fresh: false, legacy: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

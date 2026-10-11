@@ -1592,7 +1592,7 @@ see [mcp.md](mcp.md)):
   "slices": {
     "total": 8,
     "byStatus": {
-      "draft": 0, "reviewed": 0, "readyToImplement": 0, "implemented": 8,
+      "draft": 0, "reviewed": 0, "readyToImplement": 0, "implemented": 8, "shipped": 8,
       "noDoc": 0, "frontmatterInvalid": 0, "unknown": 0
     }
   },
@@ -3258,6 +3258,17 @@ Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exi
 non-zero exit, leaving the file untouched, if the doc is already `status: implemented` with a
 **different** `implementedIn` — this command never silently overwrites provenance.
 
+**Opens the next draft when work is already waiting (MIL-283, 1.15.0).** After the shipped record
+is written, if any `## Open Questions` item is `deferred to v<N+1>` (the marker
+[`em slice defer`](#em-slice-defer-file-slice-key-question) writes), the command also runs the
+[`em slice revise`](#em-slice-revise-file-slice-key) transition on the same write: `status: draft`,
+`version: <N+1>`, sign-off cleared, those questions back to `- [ ]` — and prints `opened draft v<N+1>:
+<doc> — re-opened <n> deferred question(s); v<N> stays shipped`. The shipped record keeps v<N> shipped
+for every reader (`em status`, coverage, conformance, the engagement Ledger), so the diagram shows a
+`draft` with work on it rather than an `implemented` slice hiding a known gap. A doc with nothing
+deferred stays `implemented` until someone runs `revise`. Only on the real flip — never on the
+idempotent re-run or the missing-link repair.
+
 Applies only to a **ratified** doc (MIL-277, GH #222): the starting status must be
 `ready-to-implement` (the normal flip) or `implemented` (the idempotent re-run, or filling in a
 missing `implementedIn` on a doc already marked shipped). Any other status — `draft`, `reviewed`,
@@ -3285,113 +3296,69 @@ an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't bloc
 em slice mark-implemented model.em request-payment https://github.com/org/repo/pull/42
 ```
 
-## `em slice reratify <file> <slice-key>`
+## `em slice revise <file> <slice-key>`
 
-The mechanical bump/flip a re-ratified slice doc gets (MIL-161), mirroring `em slice
-mark-implemented`'s shape at the OTHER end of the lifecycle. Sets exactly two frontmatter fields
-on the doc resolved from `<slice-key>` via the same note-binding join `ratify`/
-`mark-implemented`/`--slice-ready`/`em export` use (`resolveSliceDocJoin` — MIL-121 cross-binding
-included):
+Opens the **next version of a slice doc as a real `draft`** (MIL-283, 1.15.0) — the successor of
+`em slice reratify`, which is now a deprecated alias of this command. Edits the doc resolved from
+`<slice-key>` via the same note-binding join `ratify`/`mark-implemented`/`--slice-ready`/`em export`
+use (`resolveSliceDocJoin` — MIL-121 cross-binding included):
 
 ```yaml
+status: draft
 version: <current + 1>
-status: ready-to-implement
 ```
 
-Two cases apply. The **shipped** case (MIL-161): a doc currently `status: implemented` — the
-precondition
-[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)
-describes ("a new version is ratified for a slice whose previous version already shipped"); the
-status flips back to `ready-to-implement`. The **unshipped** case (MIL-258): a doc at
-`status: ready-to-implement` that still has `ratifiedBy:` set — a ratified version that has not
-shipped, the usual state when an implementer hits a gap, a human answers it, and the doc must
-change before the build resumes. There `version:` is bumped and the sign-off cleared, but `status:`
-is already `ready-to-implement` and is left alone (an absent `implementedIn:` stays absent). After
-either case the doc is **not ratified** until `em slice ratify --by <name>` records the new
-sign-off.
+and clears every key that described the version being left behind — `ratifiedBy`/`ratifiedOn`/
+`ratifiedRef`/`ratifiedHash` (MIL-165/284), `reviewedBy`/`reviewedOn` (MIL-201),
+`meaningConfirmed`/`contractChange` (MIL-238). `implementedIn:`, the `shipped*` keys and the
+`conformed*` keys are untouched: they describe the version that shipped, which is still the version
+in production. Questions deferred to the new version come back as `- [ ]` (MIL-275).
 
-Refuses, non-zero exit, leaving the file untouched, otherwise. A `ready-to-implement` doc with no
-`ratifiedBy:` is the exact state a reratify leaves behind (or a doc never signed off): it is
-awaiting ratification, so the message points at `em slice ratify --by` — re-running would silently
-double-increment `version`, which this command never does (unlike `ratify`/`mark-implemented`'s
-idempotent same-value no-op, a version bump has no natural idempotent form, so the refusal is the
-safety net instead). `draft`/`reviewed` docs are not ratified and refuse too — they can simply be
-edited (first-time authoring uses `em slice new`, not this command).
+Three starting states:
 
-Also clears `ratifiedBy:`/`ratifiedOn:` if either is present, since they describe who signed off
-the PRIOR version — leaving them in place would make the brand-new, not-yet-reviewed version read
-as already ratified. Clearing them is also what lets a follow-up `em slice ratify --by <name>`
-apply cleanly afterward: without this, `ratify`'s own idempotent-refusal guard would read the
-leftover prior `ratifiedBy`/`ratifiedOn` as "already ratified by someone else" and refuse.
+| Doc is | Result | Printed as |
+|---|---|---|
+| `status: implemented` — the **shipped** case | `draft`, `version + 1`, sign-off cleared. On a doc shipped before 1.15 (no `shippedVersion:`), the shipped record is written first (`shippedVersion: <current>`, and `shippedRef:` from `ratifiedRef:` when present) so leaving `implemented` loses nothing: every reader still sees v<N> shipped via [`shippedRecordOf`](slice-doc-schema.md#status-under-re-ratification) | `v<N> stays shipped; v<N+1> opened as draft` |
+| `status: ready-to-implement` **with** `ratifiedBy:` — ratified, never shipped (a gap answered mid-build) | `draft`, `version + 1`, sign-off cleared; the ratification of v<N> is withdrawn, nothing shipped | `ratification of v<N> withdrawn (never shipped); v<N+1> opened as draft` |
+| `status: ready-to-implement` **without** `ratifiedBy:` — the unsigned leftover a pre-1.15 `reratify` produced | `draft` at the **same** version (nothing was signed at this version, so nothing is left behind) — the exit path for a state no command produces any more | `v<N> was never signed; reopened as draft at the same version` |
+| `draft` / `reviewed` | **refuses**: the next version is already open — edit it | — |
 
-`reviewedBy:`/`reviewedOn:` are cleared in the same sweep (MIL-201), for the same reason: the
-review record describes the version that shipped, not the new one. So are `meaningConfirmed:`/
-`contractChange:` (MIL-238): they describe the prior version's API-first sign-off.
+The new version then takes the normal road: `em slice review --by` after the review session, then
+`em slice ratify --by` (which records a fresh `ratifiedRef`/`ratifiedHash`, and on a public-touching
+slice requires `--meaning-unchanged` or `--contract-change` again). **This command takes no
+API-first flag**: the confirmation belongs to the ratification of the new version, not to opening
+its draft. The pre-1.15 carve-out — "a reratified doc needs no fresh review session" — is gone with
+the state that needed it: a v2 is a new spec and gets both gates.
 
-**API-first sign-off (MIL-238).** On a public-touching slice (one owning a `public` command, event
-or view) the bump requires `--meaning-unchanged` or `--contract-change "<why>"`, exactly as
-[`em slice ratify`](#em-slice-ratify-file-slice-key---by-name) does, with the same refusal
-messages; the new `meaningConfirmed: true` / `contractChange: "<why>"` line is written directly
-after the bumped `version:` line. The doc's own preconditions (status, version) are checked first.
-On a slice with no `public` element neither flag is required; either is accepted and recorded.
-The follow-up `em slice ratify --by` on a public-touching slice needs the flag again (its
-confirmation then replaces the one recorded here). The re-ratified doc needs no
-fresh review session — it lands at `status: ready-to-implement`, which
-[`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)'s review gate accepts — but leaving
-the old review in place would claim the room walked a version it has never seen.
+**Why `draft`, not an unsigned `ready-to-implement`.** Until 1.14 the bump left the doc at
+`status: ready-to-implement` with the sign-off cleared — a status that lied, which MIL-258/259 then
+had to special-case in `ratify`, `--slice-ready` and `em upgrade`. Since the shipped version now
+lives in the shipped record (MIL-284), `status` is free to say what the working copy is.
 
-**Deferred questions come back (MIL-275).** After the bump to `v<new>`, every `- [x] … deferred to
-v<new> (…)` item under `## Open Questions` (the marker [`em slice defer`](#em-slice-defer-file-slice-key-question)
-writes) is rewritten to `- [ ] <original text>` (the text before ` — v<old>:`), and the command
-prints `re-opened N deferred question(s)` when N > 0. Items deferred to a later version are left
-alone. This is the one place reratify edits the body.
-
-Never touches `implementedIn:` (kept pointing at the prior version's PR on purpose — see
-[slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)'s
-drift-signal framing) or the doc body: the write is a surgical in-place edit of just the
-`version:`/`status:` lines (and, when present, removing the `ratifiedBy:`/`ratifiedOn:`/
-`reviewedBy:`/`reviewedOn:`/`meaningConfirmed:`/`contractChange:` lines entirely), not a parse-and-re-serialize, so every other line — key order, spacing, comments, the
-whole body — survives byte-for-byte.
-
-Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
-`em validate --slice-ready` are: only a model error concerning THIS slice (its bare export key,
-or an element ref prefixed `<key>/`) refuses — an unrelated slice's breakage elsewhere in a large,
-still-WIP model doesn't block it.
+**MIL-214 advisory (shipped case only, never refuses):** `warn: revising "<key>" whose shipped v<N>
+was never certified` when the shipped version has no matching `conformedVersion:`, and `warn:
+revising "<key>" with <n> unruled conformance finding(s) on the shipped version` when any
+`conformance/*-findings.json` beside the model still has an unruled finding in scope.
 
 | Error | Meaning |
 |---|---|
 | `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
-| `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; reratify "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — reratify the originating slice named |
-| `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
-| `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
-| `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
-| `doc is status: <x> — reratify only applies to ...` | (`draft`/`reviewed`/empty) not ratified, so there is nothing to re-ratify — edit the doc |
-| `doc is status: ready-to-implement with no ratifiedBy: — it is awaiting ratification ...` | (MIL-258) the double-bump guard — record the sign-off with `em slice ratify --by <name>` |
-| `doc's version: "<x>" isn't a positive integer` | Refuses rather than guess a bump when `version:` isn't parseable |
-| `slice "<key>" touches the public surface — pass --meaning-unchanged, ...` | (MIL-238) A public-touching slice needs an API-first sign-off flag (`--meaning-unchanged` / `--contract-change "<why>"`) |
-| `pass one of --meaning-unchanged or --contract-change "<why>", not both` | (MIL-238) Both flags were passed |
+| `"<key>" is a continuation of "<originating-key>" … revise "<originating-key>" instead` | (MIL-208) a continuation has no doc of its own |
+| `slice "<key>" has no doc bound via ...` / `notes "..." but no such file exists` / `has missing or invalid frontmatter` | The usual binding refusals |
+| `doc is \`status: draft\` — the next version is already open …` | Nothing to open; edit the draft |
+| `doc's \`version:\` value "<x>" isn't a positive integer — refusing to guess a bump` | Fix `version:` by hand first |
 
 ```bash
-em slice reratify model.em request-payment
-# -> reratified: slices/request-payment.md (version: 2, status: ready-to-implement)
-
-# a ratified doc that never shipped (MIL-258): status is unchanged, only the version and sign-off move
-em slice reratify model.em place-order
-# -> reratified: slices/place-order.md (version: 1 -> 2, sign-off cleared, status unchanged: ready-to-implement) — not ratified until `em slice ratify --by <name>` records the new sign-off
+em slice revise model.em request-payment      # v1 stays shipped; v2 opens as draft
 ```
 
-**Certification advisory (MIL-214).** Shipped case only (MIL-258: an unshipped version has no certification to lack, so that case prints neither warning below). Never refuses — printed to stderr, computed from the
-version being SUPERSEDED (i.e. before the bump): `warn: reratifying "<key>" whose v<N> was never
-certified` when the current version's `conformedVersion` is absent or doesn't match it, and/or
-`warn: reratifying "<key>" has <n> unruled conformance finding(s)` when any
-`conformance/*-findings.json` beside the model still has an unruled (`locus: null`) finding in
-scope for this slice — the same advisory pattern `em slice ratify`'s MIL-198 upstream-timeline
-warning uses (data, not a gate: the team may have good reason to move on before a conform sweep
-ever ran).
+### `em slice reratify <file> <slice-key>` (deprecated alias)
 
-**Model-version advisory (MIL-218).** Same `warn: reratifying "<key>" moved the model past v<N>
-— run \`em model version bump\` to record it` line `em slice ratify` prints, checked after the
-write — see that command's own section above for the full contract.
+Since 1.15.0 `reratify` **is** `revise`: same action, same output, plus a notice on stderr
+(`notice: \`em slice reratify\` is deprecated since 1.15.0 — it is \`em slice revise\` …`). Its
+old `--meaning-unchanged`/`--contract-change` flags are accepted and ignored with a second notice —
+the confirmation is taken by `em slice ratify` on the new version. Removed in a later minor; the
+`event-modeling-design` skill and the implement contract already say `revise`.
 
 ## `em slice defer <file> <slice-key> "<question>"`
 
@@ -3492,8 +3459,11 @@ conformedOn: <local date>
 | `--on <date>` | Certification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-findings-check` | Certify even with unruled findings in scope — prints a loud notice on stderr |
 
-Legal only for `status: implemented` with a non-empty `implementedIn:` link — refuses otherwise
-(there's no code to certify, or nothing to certify it against). Idempotent on the exact same
+Legal only for a **shipped** slice (MIL-283: `status: implemented`, or any status with a
+`shippedVersion:` — a draft of v<N+1> open over a shipped v<N> still has v<N>'s code to certify)
+with a non-empty `implementedIn:` link — refuses otherwise (there's no code to certify, or nothing
+to certify it against). `conformedVersion:` records the **shipped** version, never the open
+draft's: certification is a statement about code in production. Idempotent on the exact same
 `(conformedVersion, conformedAt)` pair (re-running is a no-op, `conformedOn` untouched); a
 DIFFERENT `--at` for the same version simply OVERWRITES — a later re-certification is legal and
 common, and `em` has no way to tell "later" from "earlier" for an arbitrary target-repo revision

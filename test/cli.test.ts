@@ -2741,7 +2741,7 @@ slice "Billing" {
     );
     const detail = rest.join("\n\n");
     expect(detail).toContain(
-      "slices: 2 total — 1 implemented, 0 ready-to-implement, 0 reviewed, 1 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status",
+      "slices: 2 total — 1 shipped (1 implemented), 0 ready-to-implement, 0 reviewed, 1 draft, 0 no doc, 0 frontmatter invalid, 0 unknown status",
     );
     expect(detail).toContain(
       "driftSignal: 1 in-sync, 1 never-implemented, 0 unpropagated-delta, 0 implemented-without-link, 0 uncertified, 0 n/a (no doc), 0 n/a (frontmatter invalid)",
@@ -2755,12 +2755,12 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.8");
+    expect(doc.statusSchemaVersion).toBe("1.9");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
       total: 2,
-      byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, noDoc: 0, frontmatterInvalid: 0, unknown: 0 },
+      byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, shipped: 1, noDoc: 0, frontmatterInvalid: 0, unknown: 0 },
     });
     expect(doc.continuations).toBe(0);
     expect(doc.driftSignal).toEqual({
@@ -2798,7 +2798,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--md"], modelDir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("| Metric | Value |");
-    expect(r.stdout).toContain("| Slices | 1/2 implemented");
+    expect(r.stdout).toContain("| Slices | 1/2 shipped (1 implemented");
     expect(r.stdout).toContain("| Invariants | 1/2 covered |");
     expect(r.stdout).toContain("| Open issues | 1 |");
     expect(r.stdout).toContain(`| Last conformed | \`${baseRev}\` — 1 commit and 0 slice-PRs behind HEAD |`);
@@ -3705,9 +3705,9 @@ describe("em slice ratify (CLI, MIL-165)", () => {
   });
 });
 
-describe("em slice reratify (CLI, MIL-161)", () => {
-  // Pure-transform and note-binding-resolution coverage lives in test/reratify.test.ts; this
-  // block is exit-code/process-level only, same split as `em slice ratify`.
+describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
+  // Pure-transform and note-binding-resolution coverage lives in test/revise.test.ts; this block
+  // is exit-code/process-level only, same split as `em slice ratify`.
   let dir: string;
   const IMPLEMENTED_DOC =
     "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n" +
@@ -3716,7 +3716,7 @@ describe("em slice reratify (CLI, MIL-161)", () => {
     "# Slice: Shipped Slice\n\nbody\n";
 
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), "em-cli-reratify-"));
+    dir = mkdtempSync(join(tmpdir(), "em-cli-revise-"));
     mkdirSync(join(dir, "slices"), { recursive: true });
     writeFileSync(join(dir, "slices", "shipped-slice.md"), IMPLEMENTED_DOC);
     writeFileSync(
@@ -3724,7 +3724,6 @@ describe("em slice reratify (CLI, MIL-161)", () => {
       'slice "Shipped Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/shipped-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n',
     );
     writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
-    // Genuine error in an UNRELATED slice — same scoping regression coverage ratify's CLI block has.
     writeFileSync(
       join(dir, "slices", "good.md"),
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: https://x/1\n---\nbody\n",
@@ -3733,8 +3732,6 @@ describe("em slice reratify (CLI, MIL-161)", () => {
       join(dir, "scoped.em"),
       'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
     );
-    // MIL-214: a dedicated fixture for the certification-advisory warning, never touched by the
-    // scoping tests above — implemented, but no `conformedVersion:` at all.
     writeFileSync(
       join(dir, "slices", "uncertified-slice.md"),
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\nimplementedIn: https://x/2\n---\nbody\n",
@@ -3746,137 +3743,98 @@ describe("em slice reratify (CLI, MIL-161)", () => {
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it("bumps version, flips status, clears stale ratifiedBy/ratifiedOn, confirms on stdout", () => {
-    const r = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
+  it("opens v2 as a draft: version bumped, status draft, sign-off and review cleared, v1 stays shipped (record materialised on a pre-1.15 doc)", () => {
+    const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("reratified: slices/shipped-slice.md");
-    expect(r.stdout).toContain("version: 2");
+    expect(r.stdout).toBe("revised: slices/shipped-slice.md (status: draft, version: 2 — v1 stays shipped; v2 opened as draft)\n");
     const content = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
-    expect(content).toContain("status: ready-to-implement");
+    expect(content).toContain("status: draft");
     expect(content).toContain("version: 2");
-    expect(content).toContain("implementedIn: https://github.com/org/repo/pull/1"); // untouched
+    expect(content).toContain("implementedIn: https://github.com/org/repo/pull/1\nshippedVersion: 1\n"); // the shipped record, written so the flip loses nothing
     expect(content).not.toContain("ratifiedBy:");
     expect(content).not.toContain("ratifiedOn:");
-    expect(content).not.toContain("reviewedBy:"); // MIL-201: cleared in the same sweep
+    expect(content).not.toContain("reviewedBy:");
     expect(content).not.toContain("reviewedOn:");
   });
 
-  it("MIL-259: --slice-ready reports not ready after reratify and before ratify --by, ready after", () => {
-    // Previous test left shipped-slice at `status: ready-to-implement`, version 2, no ratifiedBy.
-    const before = em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir);
-    expect(before.status).toBe(1);
-    const doc = JSON.parse(before.stdout);
-    expect(doc.validateSliceReadySchemaVersion).toBe("1.2");
+  it("the open draft is not ready, status counts it as shipped AND draft, and the readers still see v1 shipped", () => {
+    const ready = em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir);
+    expect(ready.status).toBe(1);
+    const doc = JSON.parse(ready.stdout);
     expect(doc.ready).toBe(false);
-    expect(doc.gates).toEqual({
-      docBound: true,
-      frontmatterUsable: true,
-      statusReady: true,
-      noUncheckedOpenQuestions: true,
-      ratified: false,
-      contractCurrent: true,
-    });
-    expect(doc.diagnostics.map((d: { code: string; message: string }) => [d.code, d.message])).toEqual([
-      [
-        "slice-ready-not-ratified",
-        'slice "shipped-slice" is ready-to-implement but carries no ratifiedBy — record the sign-off with `em slice ratify --by <name>`',
-      ],
-    ]);
-    const text = em(["validate", "shipped.em", "--slice-ready", "shipped-slice"], dir);
-    expect(text.status).toBe(1);
-    expect(text.stderr).toContain("carries no ratifiedBy");
+    expect(doc.gates.statusReady).toBe(false); // a draft, not an unsigned ready-to-implement
+    const status = em(["status", "shipped.em", "--json"], dir);
+    const report = JSON.parse(status.stdout);
+    expect(report.slices.byStatus).toMatchObject({ draft: 1, implemented: 0, shipped: 1 });
+    expect(report.driftSignal.unpropagatedDelta).toBe(1); // v2 open over shipped v1
+    const exported = JSON.parse(em(["export", "shipped.em", "--slice", "shipped-slice"], dir).stdout);
+    expect(exported.slice.doc.shipped).toMatchObject({ version: 1, implementedIn: "https://github.com/org/repo/pull/1" });
   });
 
-  it("a follow-up em slice ratify --by applies cleanly, needing no fresh review (MIL-201)", () => {
+  it("v2 takes the normal road: ratify refuses the draft (review gate), review then ratify applies, then ready", () => {
+    const refused = em(["slice", "ratify", "shipped.em", "shipped-slice", "--by", "Jordan Lee", "--on", "2026-08-28"], dir);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("the review gate comes first");
+    expect(em(["slice", "review", "shipped.em", "shipped-slice", "--by", "Sam Okafor", "--on", "2026-08-27"], dir).status).toBe(0);
     const r = em(["slice", "ratify", "shipped.em", "shipped-slice", "--by", "Jordan Lee", "--on", "2026-08-28"], dir);
     expect(r.status).toBe(0);
-    // The review gate passes on the `ready-to-implement` status reratify left behind — no
-    // --skip-review needed, and no skip notice printed.
-    expect(r.stderr).not.toContain("--skip-review");
-    expect(r.stderr).not.toContain("review gate");
     const content = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     expect(content).toContain("ratifiedBy: Jordan Lee");
     expect(content).toContain("status: ready-to-implement");
-    expect(content).toContain("version: 2"); // ratify never bumps version
-    const after = em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir);
-    expect(after.status).toBe(0);
-    expect(JSON.parse(after.stdout).ready).toBe(true); // MIL-259: re-signed -> ready again
+    expect(content).toContain("version: 2");
+    expect(JSON.parse(em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir).stdout).ready).toBe(true);
   });
 
-  it("MIL-258: a re-signed (ratified, unshipped) doc takes the unshipped path; a repeat before re-signing refuses", () => {
-    // The previous test left shipped-slice ratified at v2 and never reimplemented, so reratify
-    // now treats it as an unshipped version (v2 -> v3, status untouched) — and refuses again
-    // until `ratify --by` records a new sign-off.
-    const r = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
+  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft v3; a second revise refuses (already open)", () => {
+    const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("version: 2 -> 3");
-    expect(r.stderr).not.toContain("never certified");
-    const again = em(["slice", "reratify", "shipped.em", "shipped-slice"], dir);
+    expect(r.stdout).toContain("ratification of v2 withdrawn (never shipped); v3 opened as draft");
+    const again = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(again.status).not.toBe(0);
-    expect(again.stderr).toContain("awaiting ratification");
+    expect(again.stderr).toContain("the next version is already open");
   });
 
-  it("MIL-258: reratify on a ratified, unshipped doc bumps version, clears sign-off, then ratify --by applies; a second reratify before re-signing refuses", () => {
+  it("the pre-1.15 unsigned ready-to-implement leftover reopens as a draft at the SAME version", () => {
     writeFileSync(
-      join(dir, "slices", "unshipped-slice.md"),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n" +
-        "ratifiedBy: Pat\nratifiedOn: 2026-10-01\n---\n# Slice: Unshipped Slice\n\nbody\n",
+      join(dir, "slices", "legacy.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 2\nimplementedIn: https://x/9\n---\nbody\n",
     );
-    writeFileSync(
-      join(dir, "unshipped.em"),
-      'slice "Unshipped Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/unshipped-slice.md"\n  event Thing Done\n}\n',
-    );
-    const r = em(["slice", "reratify", "unshipped.em", "unshipped-slice"], dir);
+    writeFileSync(join(dir, "legacy.em"), 'slice "Legacy" {\n  ui Screen @Customer\n  command Do Thing note "slices/legacy.md"\n  event Thing Done\n}\n');
+    const r = em(["slice", "revise", "legacy.em", "legacy"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("version: 1 -> 2");
-    expect(r.stdout).toContain("status unchanged");
-    expect(r.stderr).not.toContain("never certified");
-    let content = readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8");
-    expect(content).toContain("status: ready-to-implement");
-    expect(content).toContain("version: 2");
-    expect(content).not.toContain("ratifiedBy:");
-    expect(content).not.toContain("ratifiedOn:");
-
-    const again = em(["slice", "reratify", "unshipped.em", "unshipped-slice"], dir);
-    expect(again.status).not.toBe(0);
-    expect(again.stderr).toContain("awaiting ratification");
-    expect(readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8")).toContain("version: 2");
-
-    const ratify = em(["slice", "ratify", "unshipped.em", "unshipped-slice", "--by", "Pat", "--on", "2026-10-03"], dir);
-    expect(ratify.status).toBe(0);
-    content = readFileSync(join(dir, "slices", "unshipped-slice.md"), "utf8");
-    expect(content).toContain("ratifiedBy: Pat");
-    expect(content).toContain("version: 2");
+    expect(r.stdout).toContain("v2 was never signed; reopened as draft at the same version");
+    expect(readFileSync(join(dir, "slices", "legacy.md"), "utf8")).toContain("status: draft\nversion: 2\n");
   });
 
   it("errors clearly for a key that names no slice in the model", () => {
-    const r = em(["slice", "reratify", "shipped.em", "no-such-key"], dir);
+    const r = em(["slice", "revise", "shipped.em", "no-such-key"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('no slice with export key "no-such-key" in this model');
   });
 
   it("errors clearly when no doc is bound via note", () => {
-    const r = em(["slice", "reratify", "unbound.em", "unbound"], dir);
+    const r = em(["slice", "revise", "unbound.em", "unbound"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('no doc bound via `note "slices/unbound.md"`');
   });
 
   it("stays scoped to the named slice: a genuine error in an unrelated slice doesn't block it", () => {
-    const r = em(["slice", "reratify", "scoped.em", "good"], dir);
+    const r = em(["slice", "revise", "scoped.em", "good"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("reratified: slices/good.md");
+    expect(r.stdout).toContain("revised: slices/good.md");
   });
 
   it("refuses on an error concerning the named slice itself", () => {
-    const r = em(["slice", "reratify", "scoped.em", "bad"], dir);
+    const r = em(["slice", "revise", "scoped.em", "bad"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('slice "bad" has errors');
   });
 
-  it("MIL-214: warns (never refuses) when the version being bumped was never certified", () => {
-    const r = em(["slice", "reratify", "uncertified.em", "uncertified-slice"], dir);
+  it("MIL-214: warns (never refuses) when the shipped version being left behind was never certified", () => {
+    const r = em(["slice", "reratify", "uncertified.em", "uncertified-slice"], dir); // the deprecated alias
     expect(r.status).toBe(0);
-    expect(r.stderr).toContain('warn: reratifying "uncertified-slice" whose v1 was never certified');
+    expect(r.stderr).toContain("notice: `em slice reratify` is deprecated since 1.15.0");
+    expect(r.stderr).toContain('warn: revising "uncertified-slice" whose shipped v1 was never certified');
   });
 });
 
@@ -4745,7 +4703,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.8");
+    expect(doc.statusSchemaVersion).toBe("1.9");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);
@@ -5638,15 +5596,19 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(JSON.parse(after.stdout).gates.contractCurrent).toBe(true);
   });
 
-  it("reratify refuses without a confirmation, accepts --contract-change and clears the prior one", () => {
-    const refused = em(["slice", "reratify", "shop.em", "place-order"], dir);
-    expect(refused.status).toBe(1);
-    expect(refused.stderr).toContain(`em slice reratify: ${PUBLIC_REFUSAL}\n`);
-    const r = em(["slice", "reratify", "shop.em", "place-order", "--contract-change", "orderId is now the public order number"], dir);
+  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify of v2 requires it again", () => {
+    const r = em(["slice", "revise", "shop.em", "place-order"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain('contractChange: "orderId is now the public order number"');
     const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
-    expect(content).toContain('version: 2\ncontractChange: "orderId is now the public order number"\n');
+    expect(content).toContain("status: draft\nversion: 2\n");
     expect(content).not.toContain("meaningConfirmed");
+    expect(content).not.toContain("contractChange");
+    expect(em(["slice", "review", "shop.em", "place-order", "--by", "Sam", "--on", "2026-10-07"], dir).status).toBe(0);
+    const refused = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-08"], dir);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`em slice ratify: ${PUBLIC_REFUSAL}\n`);
+    const ok = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-08", "--contract-change", "orderId is now the public order number"], dir);
+    expect(ok.status).toBe(0);
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toContain('contractChange: "orderId is now the public order number"');
   });
 });

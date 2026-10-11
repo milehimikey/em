@@ -10,83 +10,92 @@
 import { describe, it, expect } from "vitest";
 import { classifyImplementationDrift } from "../src/catalog/driftSignal.js";
 
+/** A pre-1.15 doc shape: no shipped record keys — `status: implemented` is the shipped fact. */
+const doc = (d: { status: string | null; implementedIn: string | null; version: number | null; conformedVersion: number | null }) => ({
+  ...d,
+  ratifiedRef: null,
+  shippedVersion: null,
+  shippedRef: null,
+  shippedOn: null,
+});
+
 describe("classifyImplementationDrift", () => {
   it("returns in-sync when implemented with a link and conformedVersion matches version", () => {
     expect(
-      classifyImplementationDrift({
+      classifyImplementationDrift(doc({
         status: "implemented",
         implementedIn: "https://example.com/pr/1",
         version: 1,
         conformedVersion: 1,
-      }),
+      })),
     ).toBe("in-sync");
   });
 
   it("returns uncertified when implemented with a link but conformedVersion is absent", () => {
     expect(
-      classifyImplementationDrift({
+      classifyImplementationDrift(doc({
         status: "implemented",
         implementedIn: "https://example.com/pr/1",
         version: 1,
         conformedVersion: null,
-      }),
+      })),
     ).toBe("uncertified");
   });
 
   it("returns uncertified when conformedVersion doesn't match the current version (reratified since)", () => {
     expect(
-      classifyImplementationDrift({
+      classifyImplementationDrift(doc({
         status: "implemented",
         implementedIn: "https://example.com/pr/2",
         version: 2,
         conformedVersion: 1,
-      }),
+      })),
     ).toBe("uncertified");
   });
 
   it("returns implemented-without-link when implemented with no link, regardless of conformedVersion", () => {
     expect(
-      classifyImplementationDrift({ status: "implemented", implementedIn: null, version: 1, conformedVersion: 1 }),
+      classifyImplementationDrift(doc({ status: "implemented", implementedIn: null, version: 1, conformedVersion: 1 })),
     ).toBe("implemented-without-link");
   });
 
   it("treats a whitespace-only link as absent (implemented-without-link)", () => {
     expect(
-      classifyImplementationDrift({ status: "implemented", implementedIn: "   ", version: 1, conformedVersion: null }),
+      classifyImplementationDrift(doc({ status: "implemented", implementedIn: "   ", version: 1, conformedVersion: null })),
     ).toBe("implemented-without-link");
   });
 
   it("returns unpropagated-delta when not implemented but a link is still present", () => {
     expect(
-      classifyImplementationDrift({
+      classifyImplementationDrift(doc({
         status: "ready-to-implement",
         implementedIn: "https://example.com/pr/1",
         version: 2,
         conformedVersion: 1,
-      }),
+      })),
     ).toBe("unpropagated-delta");
   });
 
   it("returns never-implemented when not implemented and no link", () => {
     expect(
-      classifyImplementationDrift({ status: "draft", implementedIn: null, version: 1, conformedVersion: null }),
+      classifyImplementationDrift(doc({ status: "draft", implementedIn: null, version: 1, conformedVersion: null })),
     ).toBe("never-implemented");
   });
 
   it("falls through cleanly (never-implemented) when status is null and no link", () => {
     expect(
-      classifyImplementationDrift({ status: null, implementedIn: null, version: null, conformedVersion: null }),
+      classifyImplementationDrift(doc({ status: null, implementedIn: null, version: null, conformedVersion: null })),
     ).toBe("never-implemented");
   });
 
   it("falls through cleanly (unpropagated-delta) when status is null but a link is present", () => {
     expect(
-      classifyImplementationDrift({
+      classifyImplementationDrift(doc({
         status: null,
         implementedIn: "https://example.com/pr/1",
         version: null,
         conformedVersion: null,
-      }),
+      })),
     ).toBe("unpropagated-delta");
   });
 });

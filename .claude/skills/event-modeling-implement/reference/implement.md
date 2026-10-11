@@ -158,9 +158,11 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   answered open question or a small ratified delta alongside your fix, so the decision is
   recorded instead of buried in an implementation diff.
 - **How a delta is ratified on a doc that never shipped** (it is `ready-to-implement` with
-  `ratifiedBy` set): once the human has answered, the doc changes by `em slice reratify
-  <model>.em <slice-key>` (bumps `version:`, clears the old sign-off, leaves `status` alone),
-  the answer is written into the doc and committed, and the human re-signs with `em slice ratify
+  `ratifiedBy` set): once the human has answered, the doc changes by `em slice revise
+  <model>.em <slice-key>` (MIL-283: opens the next version as a `draft` — `version:` bumped,
+  the old sign-off cleared; the ratification of the unshipped version is withdrawn),
+  the answer is written into the doc and committed, the room reviews it (`em slice review
+  --by`), and the human re-signs with `em slice ratify
   <model>.em <slice-key> --by <name>` (it records the commit it signs and refuses uncommitted
   changes, MIL-284) — on a slice owning a `public` element both commands also need
   `--meaning-unchanged` or `--contract-change "<why>"` (MIL-238). That is the human's step, not
@@ -232,7 +234,12 @@ with the same URL, and refuses (never silently overwrites) if the doc is already
 with a different URL. It also refuses a doc that isn't `ready-to-implement` (MIL-277): if it
 reports `doc is \`status: draft\``/`reviewed`, the slice was never ratified — stop and surface
 that to the human rather than editing the frontmatter by hand; the §1 gate should have caught it.
-Prefer it over hand-editing the doc's frontmatter.
+Prefer it over hand-editing the doc's frontmatter. It also writes the **shipped record**
+(`shippedVersion:`/`shippedRef:`/`shippedOn:`, MIL-284) — what every reader decides "has this
+shipped?" on since 1.15.0 — and, when the ratified doc deferred a question to the next version,
+**opens that version as a `draft` on the same write** (MIL-283: `status: draft`, `version` bumped,
+the question back to `- [ ]`; the version you built stays shipped). If it prints `opened draft
+v<N+1>`, say so in your report: the slice has known work, and a design session, not you, decides it.
 
 Then, if the project keeps a model README (from `../../event-modeling-shared/templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and
