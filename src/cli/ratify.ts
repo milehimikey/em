@@ -54,7 +54,9 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
+import { sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { buildModelIndex } from "../model/queryIndex.js";
+import { GitRunner, realGit } from "./diff-inputs.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { REVIEWED_STATUS } from "./review.js";
 import { isValidDateString } from "./stateFile.js";
@@ -221,6 +223,51 @@ export type ApplyRatifyResult =
  * that refusal message (and in the caller's skip notice); every other refusal here is about the
  * doc's own text. No fs access — the caller reads/writes; see `runRatify` below.
  */
+/**
+ * MIL-284: what `em slice ratify` records as the ratified content's address — `ratifiedRef:` (the
+ * commit whose tree holds the body being signed; null outside a git repository) and
+ * `ratifiedHash:` (`sha256:` over the body, always). `runRatify` resolves it via
+ * `resolveRatifiedIdentity`; the pure transform just writes whatever it is handed, so tests and
+ * non-git callers can pass their own.
+ */
+export interface RatifiedIdentity {
+  ref: string | null;
+  hash: string;
+}
+
+export type RatifiedIdentityResult = { ok: true; identity: RatifiedIdentity } | { ok: false; message: string };
+
+/**
+ * MIL-284: computes the identity `applyRatifyFrontmatter` records. The hash needs no git. The
+ * ref does, and ratifying a doc with uncommitted changes would record a ref whose tree does not
+ * hold the body being signed — so inside a repository that is a refusal, not a warning. Outside
+ * one (`git` null, or the model dir is not in a work tree) the ref is simply absent: the hash
+ * still gives the ratified body an identity, and `--slice-ready` still checks it. Every git call
+ * runs `-C baseDir` — the model's directory, never the process cwd — so a model nested in a
+ * larger repository, or run from elsewhere, resolves against the right work tree.
+ */
+export function resolveRatifiedIdentity(git: GitRunner | null, baseDir: string, docPath: string, raw: string): RatifiedIdentityResult {
+  const hash = sliceDocBodyHash(raw);
+  if (git === null) return { ok: true, identity: { ref: null, hash } };
+  const inside = git(["-C", baseDir, "rev-parse", "--is-inside-work-tree"]);
+  if (inside.status !== 0 || inside.stdout.trim() !== "true") return { ok: true, identity: { ref: null, hash } };
+  const status = git(["-C", baseDir, "status", "--porcelain", "--", docPath]);
+  if (status.status !== 0) {
+    return { ok: false, message: `git status failed for ${docPath}: ${status.stderr.trim() || "unknown error"}` };
+  }
+  if (status.stdout.trim() !== "") {
+    return {
+      ok: false,
+      message: `${docPath} has uncommitted changes — commit the body you are ratifying first (ratification records the exact ref it signs)`,
+    };
+  }
+  const head = git(["-C", baseDir, "rev-parse", "HEAD"]);
+  if (head.status !== 0 || !/^[0-9a-f]{7,64}$/.test(head.stdout.trim())) {
+    return { ok: false, message: `cannot resolve HEAD in ${baseDir} (no commits yet?) — ratification records the exact ref it signs` };
+  }
+  return { ok: true, identity: { ref: head.stdout.trim(), hash } };
+}
+
 export function applyRatifyFrontmatter(
   raw: string,
   sliceKey: string,
@@ -228,6 +275,7 @@ export function applyRatifyFrontmatter(
   ratifiedOn: string,
   skipReview = false,
   confirmation: MeaningConfirmation | null = null,
+  identity: RatifiedIdentity | null = null,
 ): ApplyRatifyResult {
   const trimmedBy = ratifiedBy.trim();
   if (!trimmedBy) return { ok: false, message: "a ratifier name is required (--by)" };
@@ -315,10 +363,21 @@ export function applyRatifyFrontmatter(
   const missingLines: string[] = [];
   if (!byMatch) missingLines.push(`ratifiedBy: ${trimmedBy}`);
   if (!onMatch) missingLines.push(`ratifiedOn: ${ratifiedOn}`);
-  // MIL-238: the confirmation line goes directly after `ratifiedOn:` — at the end of the
-  // inserted block when `ratifiedOn:` is new, else appended to the existing line's edit below.
+  // MIL-284: `ratifiedRef:`/`ratifiedHash:` sit right after `ratifiedOn:`. An existing line is
+  // replaced in place (a re-ratification after `reratify` normally finds none — it clears them);
+  // a missing one rides along after `ratifiedOn:` — in the inserted block when that line is new,
+  // else appended to the existing line's edit, ahead of the MIL-238 confirmation line.
+  const refMatch = identity ? fieldLineRegex("ratifiedRef").exec(inner) : null;
+  const hashMatch = identity ? fieldLineRegex("ratifiedHash").exec(inner) : null;
+  const identityLines: string[] = [];
+  if (identity && identity.ref !== null && !refMatch) identityLines.push(`ratifiedRef: ${identity.ref}`);
+  if (identity && !hashMatch) identityLines.push(`ratifiedHash: ${identity.hash}`);
+  // MIL-238: the confirmation line goes directly after `ratifiedOn:` (and the identity lines) —
+  // at the end of the inserted block when `ratifiedOn:` is new, else appended to the existing
+  // line's edit below.
   const confirmationText = confirmation ? meaningConfirmationLine(confirmation) : null;
-  if (confirmationText && !onMatch) missingLines.push(confirmationText);
+  const afterOnLines = [...identityLines, ...(confirmationText ? [confirmationText] : [])];
+  if (!onMatch) missingLines.push(...afterOnLines);
   const newStatusText = `${statusMatch[1]}${RATIFIED_STATUS}`;
   const statusNext = missingLines.length > 0 ? `${newStatusText}${eol}${missingLines.join(eol)}` : newStatusText;
 
@@ -335,9 +394,13 @@ export function applyRatifyFrontmatter(
     edits.push({
       index: onMatch.index,
       oldLen: onMatch[0].length,
-      next: confirmationText ? `${onNext}${eol}${confirmationText}` : onNext,
+      next: afterOnLines.length > 0 ? `${onNext}${eol}${afterOnLines.join(eol)}` : onNext,
     });
   }
+  if (identity && refMatch && identity.ref !== null) {
+    edits.push({ index: refMatch.index, oldLen: refMatch[0].length, next: `${refMatch[1]}${identity.ref}` });
+  }
+  if (identity && hashMatch) edits.push({ index: hashMatch.index, oldLen: hashMatch[0].length, next: `${hashMatch[1]}${identity.hash}` });
   edits.sort((a, b) => b.index - a.index);
 
   let updatedInner = inner;
@@ -376,6 +439,7 @@ export function runRatify(
   ratifiedOn: string,
   skipReview = false,
   confirmation: MeaningConfirmation | null = null,
+  git: GitRunner | null = realGit,
 ): RunRatifyResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -426,9 +490,20 @@ export function runRatify(
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation);
-  if (!result.ok) {
-    return { ok: false, message: `${doc.path}: ${result.message}` };
+  // MIL-284: probe first without an identity. The idempotent re-run and every refusal need no
+  // git at all — and must not be turned into a "uncommitted changes" refusal by a ratify edit
+  // that simply has not been committed yet. Only a run that WILL write resolves the identity.
+  const probe = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation);
+  if (!probe.ok) {
+    return { ok: false, message: `${doc.path}: ${probe.message}` };
+  }
+  let result: Extract<ApplyRatifyResult, { ok: true }> = probe;
+  if (probe.changed) {
+    const identity = resolveRatifiedIdentity(git, baseDir, doc.path, raw);
+    if (!identity.ok) return identity;
+    const applied = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation, identity.identity);
+    if (!applied.ok) return { ok: false, message: `${doc.path}: ${applied.message}` };
+    result = applied;
   }
   // MIL-238: the API-first gate — after the doc's own preconditions, before any write: a
   // public-touching slice needs a meaning confirmation.

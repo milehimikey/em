@@ -595,6 +595,12 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       when absent (a doc predating this feature, or ratified by hand before it existed). The two
       pairs record the two human gates, in that order — see
       [process.md#the-slice-lifecycle-gates](process.md#the-slice-lifecycle-gates).
+      `ratifiedRef`/`ratifiedHash` (added in schema `1.16`, MIL-284) are the ratified content's
+      address — the commit whose tree holds the signed body (`null` outside git or before 1.15)
+      and `sha256:` over that body — and `shipped` (schema `1.16`) is the record
+      `em slice mark-implemented` writes beside the link: `{ version, ratifiedRef, implementedIn,
+      on }`, or `null` when the doc carries no `shippedVersion:`. `status`/`implementedIn` are
+      unchanged and still carry the lifecycle for every reader in 1.15.
       `owner`/`tracking` (added in schema `1.9`, MIL-171) are the doc's `owner:`/`tracking:`
       frontmatter — hand-filled, no `em` command writes either — both `null` when absent.
       `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
@@ -3042,6 +3048,8 @@ slice's doc is only reached via a ratified `covers:` entry):
 status: ready-to-implement
 ratifiedBy: <name>
 ratifiedOn: <date>
+ratifiedRef: <full commit sha>      # MIL-284 — inside a git repository
+ratifiedHash: sha256:<hex>          # MIL-284 — always
 ```
 
 `--by <name>` is required — free text, typically a person's name (spaces are fine; unlike a
@@ -3050,6 +3058,20 @@ today (same convention `em state set-review`'s date argument uses). `ratifiedBy`
 are additive, optional frontmatter keys (docs/slice-doc-schema.md) — a doc that predates this
 feature, or was hand-ratified, simply has neither key, and every existing `em` command already
 tolerates an unknown/absent field.
+
+**Ratification has an address (MIL-284, 1.15.0).** The sign-off also records *what* was
+signed: `ratifiedRef:` is `HEAD` of the model directory's repository at the moment of
+ratification — the commit whose tree holds the body being ratified — and `ratifiedHash:` is
+`sha256:` over the doc body (everything after the frontmatter fence, EOLs normalised; frontmatter
+is excluded because this edit, `mark-implemented`, `conform` and `defer`'s mirror all touch it
+without changing what was ratified). Because a ref whose tree does not hold the signed body would
+be meaningless, **ratify refuses a doc with uncommitted changes** — commit the body first — and
+refuses in a repository with no commits. Outside a git work tree the ref is simply omitted; the
+hash is still written, and `--slice-ready` still checks it
+(`slice-ready-body-changed-since-ratification`, [validation.md](validation.md#slice-readiness)).
+`em slice conform` defaults `--at` to this ref; `em slice reratify` clears both keys with the
+rest of the sign-off. The idempotent re-run below never consults git (the ratify edit itself is
+usually still uncommitted when someone re-runs the command).
 
 Never touches `version:` or the doc body: the write is a surgical in-place edit of just the
 `status:`/`ratifiedBy:`/`ratifiedOn:` lines (inserting whichever of `ratifiedBy:`/`ratifiedOn:`
@@ -3141,6 +3163,8 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
 | `already ratified by ... — refusing to overwrite` | The idempotent/refusal guard — see above |
+| `slices/<key>.md has uncommitted changes — commit the body you are ratifying first (ratification records the exact ref it signs)` | (MIL-284) The doc is modified or untracked in the model's repository; `ratifiedRef` must point at a tree holding the signed body |
+| `cannot resolve HEAD in <dir> (no commits yet?) — ratification records the exact ref it signs` | (MIL-284) A repository with no commits |
 | ``slice "<key>" is `status: <s>` — the review gate comes first`` | The doc never passed through `em slice review`; review it, or pass `--skip-review` |
 | `slice "<key>" touches the public surface — pass --meaning-unchanged, ...` | (MIL-238) A public-touching slice needs an API-first sign-off flag |
 | `pass one of --meaning-unchanged or --contract-change "<why>", not both` | (MIL-238) Both flags were passed |
@@ -3205,13 +3229,26 @@ via a ratified `covers:` entry):
 ```yaml
 status: implemented
 implementedIn: <pr-url>
+shippedVersion: <doc.version>       # MIL-284
+shippedRef: <the doc's ratifiedRef>  # MIL-284 — when it has one
+shippedOn: <local date>              # MIL-284 — or --on <date>
 ```
+
+**The shipped record (MIL-284, 1.15.0).** Beside the link, the command records *which* version
+shipped and the ref it was ratified at: `shippedVersion:` is the doc's `version:` now,
+`shippedRef:` copies its `ratifiedRef:` (omitted when the doc has none — ratified before 1.15 or
+outside git), `shippedOn:` is today or `--on <date>`. `em export` joins the three with
+`implementedIn` as `slice.doc.shipped` (schema `1.16`) and `em slice conform` prefers
+`shippedRef` as its default `--at`. Additive: `status: implemented` and `implementedIn:` are
+unchanged and every reader still decides on them; `shipped` is the record MIL-283 will move them
+to.
 
 Never touches `version:` — a bump here is an `em ledger` defect, since `version` moves only when
 a delta is ratified, not at merge — and never touches the doc body: the write is a surgical
 in-place edit of just the `status:`/`implementedIn:` lines (inserting `implementedIn:` fresh,
-right after `status:`, if the doc doesn't have one yet), not a parse-and-re-serialize, so every
-other line — key order, spacing, comments, the whole body — survives byte-for-byte.
+right after `status:`, if the doc doesn't have one yet) plus the three `shipped*` lines right
+after `implementedIn:`, not a parse-and-re-serialize, so every other line — key order, spacing,
+comments, the whole body — survives byte-for-byte.
 
 Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exits 0). Refuses,
 non-zero exit, leaving the file untouched, if the doc is already `status: implemented` with a
@@ -3443,7 +3480,7 @@ conformedOn: <local date>
 
 | Flag | Effect |
 |---|---|
-| `--at <rev>` | Required. The target-repo revision this certification sweep diffed against |
+| `--at <rev>` | The target-repo revision this certification sweep diffed against. Optional since 1.15.0 (MIL-284): defaults to the doc's `shippedRef:`, else its `ratifiedRef:` — the exact ref the shipped version was signed at; required when the doc records neither (ratified before 1.15, or outside git) |
 | `--on <date>` | Certification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-findings-check` | Certify even with unruled findings in scope — prints a loud notice on stderr |
 
@@ -3476,6 +3513,7 @@ error — nothing to check, certification proceeds.
 | `slice "<key>" is \`status: <x>\` — only a slice at \`status: implemented\` can be certified; ...` | The status precondition |
 | `slice "<key>" has \`status: implemented\` but no \`implementedIn:\` link — nothing to certify against` | The implementedIn precondition |
 | `doc's \`version:\` value "<x>" isn't a positive integer — refusing to certify` | Can't derive `conformedVersion` from an unparseable `version:` |
+| `--at is required: <doc path> records no ratifiedRef (ratified before em 1.15, or outside a git repository)` | (MIL-284) No `--at` and nothing to default it from |
 | `slice "<key>" has <n> unruled conformance finding(s) in ... — rule on them (...) or pass --skip-findings-check` | The findings-check gate — see above |
 
 ```bash

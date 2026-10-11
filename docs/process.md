@@ -35,7 +35,9 @@ three specific points:
    `reviewed` to `ready-to-implement`: contracts and invariants are agreed, every open question is
    resolved or explicitly deferred ([`em slice defer`](cli.md#em-slice-defer-file-slice-key-question) —
    positional for a question already on the doc, `--from-issue` for one the room raised and the
-   walkthrough captured as an `issue "..."` note). This is the second of the two per-slice human gates (the first
+   walkthrough captured as an `issue "..."` note), and — since 1.15.0 — the sign-off names exactly
+   what it signed: `em slice ratify` records the commit (`ratifiedRef`) and body hash
+   (`ratifiedHash`) of the doc, and refuses a doc with uncommitted changes. This is the second of the two per-slice human gates (the first
    is the review session itself — the whole sequence is
    [The slice lifecycle gates](#the-slice-lifecycle-gates) below), the handoff gate between
    deciding and building, and it's

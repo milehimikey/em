@@ -61,7 +61,44 @@ const IMPLEMENTED_STATUS = "implemented";
  * repair (MIL-103 AC#5) keep working — neither skips a lifecycle step.
  * No fs access — the caller reads/writes; see `runMarkImplemented` below.
  */
-export function applyImplementedFrontmatter(raw: string, prUrl: string): ApplyFrontmatterResult {
+/**
+ * MIL-284: the shipped record, written beside `implementedIn:` — `shippedVersion:` (the doc's
+ * `version:` now), `shippedRef:` (its `ratifiedRef:`, when it has one) and `shippedOn:`
+ * (`shippedOn`, the local date). Each key that already has a line is replaced in place; the rest
+ * are inserted right after `implementedIn:`. `status`/`implementedIn` keep carrying the lifecycle
+ * for every reader; this is the record MIL-283 moves them to. Pure; `null` writes nothing.
+ */
+function withShippedRecord(inner: string, eol: string, shippedOn: string | null): string {
+  if (shippedOn === null) return inner;
+  const implMatch = fieldLineRegex("implementedIn").exec(inner);
+  if (!implMatch) return inner; // unreachable after the edits above; defensive
+  const versionMatch = fieldLineRegex("version").exec(inner);
+  const refMatch = fieldLineRegex("ratifiedRef").exec(inner);
+  const version = versionMatch ? normalizeFieldValue(versionMatch[2]) : null;
+  const ref = refMatch ? normalizeFieldValue(refMatch[2]) : null;
+  const wanted: [string, string | null][] = [
+    ["shippedVersion", version],
+    ["shippedRef", ref],
+    ["shippedOn", shippedOn],
+  ];
+  const edits: { index: number; oldLen: number; next: string }[] = [];
+  const fresh: string[] = [];
+  for (const [key, value] of wanted) {
+    if (value === null) continue;
+    const m = fieldLineRegex(key).exec(inner);
+    if (m) edits.push({ index: m.index, oldLen: m[0].length, next: `${m[1]}${value}` });
+    else fresh.push(`${key}: ${value}`);
+  }
+  if (fresh.length > 0) {
+    edits.push({ index: implMatch.index, oldLen: implMatch[0].length, next: `${implMatch[0]}${eol}${fresh.join(eol)}` });
+  }
+  edits.sort((a, b) => b.index - a.index);
+  let out = inner;
+  for (const edit of edits) out = out.slice(0, edit.index) + edit.next + out.slice(edit.index + edit.oldLen);
+  return out;
+}
+
+export function applyImplementedFrontmatter(raw: string, prUrl: string, shippedOn: string | null = null): ApplyFrontmatterResult {
   const trimmedUrl = prUrl.trim();
   if (!trimmedUrl) return { ok: false, message: "a PR URL is required" };
   // Refuse control characters (including an embedded \r/\n, which could splice a multi-line
@@ -128,6 +165,8 @@ export function applyImplementedFrontmatter(raw: string, prUrl: string): ApplyFr
     const eol = rest.startsWith("\r\n") ? "\r\n" : "\n";
     updatedInner = inner.slice(0, statusMatch.index) + `${statusMatch[1]}implemented` + `${eol}implementedIn: ${trimmedUrl}` + rest;
   }
+  const afterStatus = inner.slice(statusMatch.index + statusMatch[0].length);
+  updatedInner = withShippedRecord(updatedInner, afterStatus.startsWith("\r\n") ? "\r\n" : "\n", shippedOn);
 
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
   return { ok: true, content, changed: true };
@@ -150,6 +189,7 @@ export function runMarkImplemented(
   baseDir: string,
   sliceKey: string,
   prUrl: string,
+  shippedOn: string | null = null,
 ): RunMarkImplementedResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -195,7 +235,7 @@ export function runMarkImplemented(
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyImplementedFrontmatter(raw, prUrl);
+  const result = applyImplementedFrontmatter(raw, prUrl, shippedOn);
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
   }

@@ -155,7 +155,9 @@ export function applyReratifyFrontmatter(raw: string, confirmation: MeaningConfi
   // These keys are disjoint from `status:`/`version:` by construction (fieldLineRegex matches one
   // key at a time), so the two lines are re-located on the cleared text unchanged.
   let cleared = inner;
-  for (const key of ["ratifiedBy", "ratifiedOn", "reviewedBy", "reviewedOn", ...MEANING_CONFIRMATION_KEYS]) {
+  // MIL-284: `ratifiedRef`/`ratifiedHash` are the prior version's address — cleared with the
+  // sign-off they belong to; the next `em slice ratify` records the new version's own.
+  for (const key of ["ratifiedBy", "ratifiedOn", "ratifiedRef", "ratifiedHash", "reviewedBy", "reviewedOn", ...MEANING_CONFIRMATION_KEYS]) {
     cleared = cleared.replace(fieldLineWithEolRegex(key), "");
   }
   const clearedStatus = fieldLineRegex("status").exec(cleared)!;

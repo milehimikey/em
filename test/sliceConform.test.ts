@@ -246,7 +246,7 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
 
   it("certifies a note-bound doc and writes it to disk", () => {
     const result = run("shipped.em", "shipped-slice", "8f12ed8", "2026-09-08");
-    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: true, version: 2, skippedFindingsCheck: null });
+    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: true, at: "8f12ed8", version: 2, skippedFindingsCheck: null });
     const written = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     expect(written).toContain("conformedVersion: 2");
     expect(written).toContain("conformedAt: 8f12ed8");
@@ -256,7 +256,7 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
   it("is idempotent on a second run with the same --at", () => {
     const before = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     const result = run("shipped.em", "shipped-slice", "8f12ed8", "2026-09-08");
-    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: false, version: 2, skippedFindingsCheck: null });
+    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: false, at: "8f12ed8", version: 2, skippedFindingsCheck: null });
     expect(readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8")).toBe(before);
   });
 
@@ -310,6 +310,7 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
       ok: true,
       path: "slices/gated-slice.md",
       changed: true,
+      at: "8f12ed8",
       version: 2,
       skippedFindingsCheck: [1],
     });
@@ -328,5 +329,48 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.skippedFindingsCheck).toBeNull();
+  });
+});
+
+// --- MIL-284: --at defaults to the recorded ref ---------------------------------------------------
+
+describe("runSliceConform without --at (MIL-284)", () => {
+  let dir: string;
+  const REF = "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a";
+  const SHIPPED_REF = "77777777777777777777777777777777777777aa";
+  function doc(extra: string): string {
+    return IMPLEMENTED_DOC.replace("implementedIn: https://github.com/org/repo/pull/9\n", `implementedIn: https://github.com/org/repo/pull/9\n${extra}`);
+  }
+  function run(file: string, sliceKey: string, at: string | null) {
+    const { model, refs } = compile(readFileSync(join(dir, file), "utf8"));
+    return runSliceConform(model, refs, dir, sliceKey, at, "2026-10-12");
+  }
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-conform-default-at-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(join(dir, "slices", "ratified-only.md"), doc(`ratifiedRef: ${REF}\n`));
+    writeFileSync(join(dir, "slices", "shipped.md"), doc(`ratifiedRef: ${REF}\nshippedVersion: 2\nshippedRef: ${SHIPPED_REF}\nshippedOn: 2026-10-10\n`));
+    writeFileSync(join(dir, "slices", "no-ref.md"), IMPLEMENTED_DOC);
+    for (const [key, name] of [["ratified-only", "Ratified Only"], ["shipped", "Shipped"], ["no-ref", "No Ref"]]) {
+      writeFileSync(join(dir, `${key}.em`), `slice "${name}" {\n  command Do Thing note "slices/${key}.md"\n  event Thing Done\n}\n`);
+    }
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("uses the doc's ratifiedRef when no --at is given", () => {
+    expect(run("ratified-only.em", "ratified-only", null)).toMatchObject({ ok: true, changed: true, at: REF });
+    expect(readFileSync(join(dir, "slices", "ratified-only.md"), "utf8")).toContain(`conformedAt: ${REF}`);
+  });
+  it("prefers the shipped version's ref over the current ratifiedRef", () => {
+    expect(run("shipped.em", "shipped", null)).toMatchObject({ ok: true, at: SHIPPED_REF });
+  });
+  it("an explicit --at still wins", () => {
+    expect(run("shipped.em", "shipped", "deadbee")).toMatchObject({ ok: true, at: "deadbee" });
+  });
+  it("refuses, naming the doc, when it records no ref at all", () => {
+    expect(run("no-ref.em", "no-ref", null)).toEqual({
+      ok: false,
+      message: "--at is required: slices/no-ref.md records no ratifiedRef (ratified before em 1.15, or outside a git repository)",
+    });
   });
 });

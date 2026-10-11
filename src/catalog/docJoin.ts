@@ -76,6 +76,18 @@ export function resolveCrossCandidate(baseDir: string, candidateKey: string, sli
 
 export type DocReason = "no-doc-bound" | "binding-missing-file" | "frontmatter-invalid" | null;
 
+/** MIL-284: the shipped record `em slice mark-implemented` writes (export `slice.doc.shipped`). */
+export interface ShippedRecord {
+  /** The doc's `version:` when the merge was recorded (`shippedVersion:`). */
+  version: number;
+  /** The `ratifiedRef` that version was signed at (`shippedRef:`), or null when the doc had none. */
+  ratifiedRef: string | null;
+  /** The merged PR/commit URL — the same `implementedIn:` the doc carries at top level. */
+  implementedIn: string | null;
+  /** `YYYY-MM-DD`, the local date mark-implemented ran (`shippedOn:`), or null when absent. */
+  on: string | null;
+}
+
 /** A slice's export-facing doc join — always a non-null object (never JSON `null`), matching
  *  every other optional field in `em export`'s style: explicit-null-on-a-stable-key, never a
  *  nullable wrapper. `reason` is null exactly when `found` is true and the frontmatter parsed
@@ -115,6 +127,20 @@ export interface SliceDocExport {
   /** MIL-165: when this doc was ratified (frontmatter `ratifiedOn:`, `YYYY-MM-DD`), written only
    *  by `em slice ratify` — null when absent, same as `ratifiedBy`. */
   ratifiedOn: string | null;
+  /** MIL-284: the commit (full sha) whose tree holds the ratified body (frontmatter
+   *  `ratifiedRef:`), written only by `em slice ratify` inside a git repository — null when
+   *  absent (ratified before em 1.15, by hand, or outside git). The ratified content's address:
+   *  `em slice conform` defaults `--at` to it. */
+  ratifiedRef: string | null;
+  /** MIL-284: `sha256:<hex>` over the doc body at ratification (frontmatter `ratifiedHash:`),
+   *  written only by `em slice ratify` — null when absent. `--slice-ready` compares it to the
+   *  current body (`slice-ready-body-changed-since-ratification`). */
+  ratifiedHash: string | null;
+  /** MIL-284: the shipped record `em slice mark-implemented` writes beside `implementedIn:`
+   *  (frontmatter `shippedVersion:`/`shippedRef:`/`shippedOn:`), or null when the doc has no
+   *  `shippedVersion:` (shipped before em 1.15, or never). Additive: `status`/`implementedIn`
+   *  still carry the lifecycle for every reader until MIL-283 moves them here. */
+  shipped: ShippedRecord | null;
   /** MIL-171: who (a person or team) holds this slice, from frontmatter `owner:` — hand-filled,
    *  no `em` command writes it. Null when absent. */
   owner: string | null;
@@ -171,6 +197,9 @@ const EMPTY_CONTENT = {
   reviewedOn: null as string | null,
   ratifiedBy: null as string | null,
   ratifiedOn: null as string | null,
+  ratifiedRef: null as string | null,
+  ratifiedHash: null as string | null,
+  shipped: null as ShippedRecord | null,
   owner: null as string | null,
   tracking: null as string | null,
   conformedVersion: null as number | null,
@@ -306,6 +335,12 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     reviewedOn: parsed.reviewedOn,
     ratifiedBy: parsed.ratifiedBy,
     ratifiedOn: parsed.ratifiedOn,
+    ratifiedRef: parsed.ratifiedRef,
+    ratifiedHash: parsed.ratifiedHash,
+    shipped:
+      parsed.shippedVersion === null
+        ? null
+        : { version: parsed.shippedVersion, ratifiedRef: parsed.shippedRef, implementedIn: parsed.implementedIn, on: parsed.shippedOn },
     owner: parsed.owner,
     tracking: parsed.tracking,
     conformedVersion: parsed.conformedVersion,
