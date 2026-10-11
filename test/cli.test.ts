@@ -198,14 +198,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.15"); // MIL-235: 1.14.0 release bump (consumes, owner)
+    expect(doc.schemaVersion).toBe("1.16"); // MIL-235: 1.14.0 release bump (consumes, owner)
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.15");
+    expect(doc.schemaVersion).toBe("1.16");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -221,7 +221,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.15");
+    expect(doc.schemaVersion).toBe("1.16");
     expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
@@ -243,6 +243,9 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       reviewedOn: null,
       ratifiedBy: null,
       ratifiedOn: null,
+      ratifiedRef: null,
+      ratifiedHash: null,
+      shipped: null,
       owner: null,
       tracking: null,
       conformedVersion: null,
@@ -5612,7 +5615,8 @@ describe("API-first gate (CLI, MIL-238)", () => {
     const r = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("ratified: slices/place-order.md (ratifiedBy: Alex Rivera, ratifiedOn: 2026-10-07, meaningConfirmed: true)");
-    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toContain("ratifiedOn: 2026-10-07\nmeaningConfirmed: true\n");
+    // MIL-284: the body hash sits between ratifiedOn and the confirmation (no ref: the fixture is not a git repo).
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nmeaningConfirmed: true\n/);
     const again = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
     expect(again.stdout).toContain("already ratified (no-op): slices/place-order.md");
     const after = em(["status", "shop.em", "--json"], dir);

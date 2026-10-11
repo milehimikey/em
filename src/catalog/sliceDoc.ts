@@ -66,7 +66,19 @@
 // `--contract-change "<why>"` -> `contractChange: "<why>"`). Additive, tolerate-unknown-fields:
 // absent on every doc predating this feature, and on every non-public slice ratified without
 // either flag.
+//
+// `ratifiedRef`/`ratifiedHash` and `shippedVersion`/`shippedRef`/`shippedOn` (MIL-284, the
+// additive half of MIL-283 "ratification has an address") give the two lifecycle facts an exact
+// identity. `ratifiedRef` is the commit whose tree holds the ratified body and `ratifiedHash` the
+// `sha256:` of that body (`sliceDocBodyHash`, below) — written only by `em slice ratify`, which
+// refuses a doc with uncommitted changes so the ref really does hold what was signed. The
+// `shipped*` trio is written only by `em slice mark-implemented` beside `implementedIn`: the
+// version that shipped, the ref it was ratified at, the local date. Flat keys, not a nested
+// block, because this parser is line-based (no yaml dependency, see above) and because every
+// writer in cli/*.ts is a surgical single-line splice. Additive, tolerate-unknown-fields; the
+// readers that will DECIDE on `shipped*` instead of `status` are MIL-283's breaking half.
 
+import { createHash } from "node:crypto";
 import { marked } from "marked";
 
 /** A parsed `<slice-key>@v<N>` lineage reference. */
@@ -154,6 +166,25 @@ export interface SliceDoc {
    *  to find the ticket mirroring this slice — its export name/shape (docJoin.ts) is a
    *  cross-tool contract, not just an internal display field. */
   tracking: string | null;
+  /** MIL-284: `ratifiedRef:` — the commit (full sha) whose tree holds the body that was ratified,
+   *  written only by `em slice ratify` when the model dir is inside a git repository; null when
+   *  absent (a doc ratified before em 1.15, or outside git). The ratified content's address. */
+  ratifiedRef: string | null;
+  /** MIL-284: `ratifiedHash:` — `sha256:<hex>` over the doc body at ratification (see
+   *  `sliceDocBodyHash`), written only by `em slice ratify`; null when absent. Identity that
+   *  needs no git: `--slice-ready` compares it to the current body
+   *  (`slice-ready-body-changed-since-ratification`). */
+  ratifiedHash: string | null;
+  /** MIL-284: `shippedVersion:` — this doc's `version:` at the moment `em slice mark-implemented`
+   *  recorded the merge; null when absent (shipped before em 1.15, or never). The three
+   *  `shipped*` keys plus `implementedIn` are the shipped record the lifecycle's readers move to
+   *  in MIL-283; here they are additive. */
+  shippedVersion: number | null;
+  /** MIL-284: `shippedRef:` — the `ratifiedRef` of the version that shipped, copied at
+   *  mark-implemented time; null when the doc had none. */
+  shippedRef: string | null;
+  /** MIL-284: `shippedOn:` — `YYYY-MM-DD`, the local date mark-implemented ran; null when absent. */
+  shippedOn: string | null;
   /** MIL-214: `conformedVersion:` — this slice's `version:` at the time a conform sweep last
    *  certified it, or null when never certified. Written only by `em slice conform`. Paired with
    *  `version` to compute `driftSignal`'s `uncertified` case (catalog/driftSignal.ts). */
@@ -328,6 +359,18 @@ function splitFrontmatter(
   return { fields, body: lines.slice(closeIndex + 1).join("\n"), frontmatterPresent: true };
 }
 
+/** MIL-284: the identity `em slice ratify` records as `ratifiedHash:` and `--slice-ready` checks
+ *  against: `sha256:<hex>` over the doc BODY — everything after the closing frontmatter fence (or
+ *  the whole doc when there is none), EOLs normalised to `\n` by `splitFrontmatter`'s split/join.
+ *  Frontmatter is excluded on purpose: the ratify edit itself, `mark-implemented` and `conform`
+ *  touch only frontmatter, without changing what was ratified. `em slice defer` is NOT in that
+ *  list — it rewrites a body line (the Open Questions item), so a deferral belongs before the
+ *  sign-off; after it, the hash no longer matches and `--slice-ready` says so. */
+export function sliceDocBodyHash(markdown: string): string {
+  const { body } = splitFrontmatter(markdown);
+  return `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;
+}
+
 export function parseSliceDoc(markdown: string): SliceDoc {
   const { fields, body, frontmatterPresent } = splitFrontmatter(markdown);
   const legacyMatch = body.match(STATUS_LINE);
@@ -354,6 +397,11 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     reviewedOn: fields.get("reviewedon") ?? null,
     ratifiedBy: fields.get("ratifiedby") ?? null,
     ratifiedOn: fields.get("ratifiedon") ?? null,
+    ratifiedRef: fields.get("ratifiedref") ?? null,
+    ratifiedHash: fields.get("ratifiedhash") ?? null,
+    shippedVersion: parseVersion(fields.get("shippedversion")),
+    shippedRef: fields.get("shippedref") ?? null,
+    shippedOn: fields.get("shippedon") ?? null,
     owner: fields.get("owner") ?? null,
     tracking: fields.get("tracking") ?? null,
     conformedVersion: parseVersion(fields.get("conformedversion")),

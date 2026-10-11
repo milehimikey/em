@@ -330,3 +330,4 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
     expect(result.skippedFindingsCheck).toBeNull();
   });
 });
+

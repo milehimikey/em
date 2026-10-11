@@ -254,7 +254,10 @@ For each slice:
    changes a ratified doc that **never shipped** (`ready-to-implement` with `ratifiedBy` set — a
    gap answered mid-build, MIL-258): it bumps `version` and clears the sign-off but leaves
    `status` alone. Either way the doc is not ratified until `em slice ratify --by <name>` records
-   the new sign-off. A `ready-to-implement` doc with no `ratifiedBy` is already awaiting that
+   the new sign-off. **Commit before ratifying (MIL-284):** `em slice ratify` records the commit
+   and body hash it signs and refuses a doc with uncommitted changes — finish the doc's edits
+   (deferrals included: `em slice defer` rewrites a body line, so a deferral after sign-off trips
+   `slice-ready-body-changed-since-ratification`), commit, then ratify. A `ready-to-implement` doc with no `ratifiedBy` is already awaiting that
    sign-off and refuses a second `reratify`; a `draft`/`reviewed` doc is simply edited, and its
    `version:` never moves.
    **Public-touching slices (MIL-238).** On a slice that owns a `public` command, event or view,

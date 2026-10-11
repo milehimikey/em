@@ -31,6 +31,7 @@ import { Diagnostic } from "../model/validate.js";
 import { makeDiag, pushDiag } from "../model/rules.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
+import { sliceDocBodyHash } from "./sliceDoc.js";
 import { findStructuredSectionProblems } from "./sliceSections.js";
 import { ContractCheckInput, contractStatus, slicePublicTouching } from "./apiFirst.js";
 
@@ -145,6 +146,19 @@ export function validateSliceReady(
   // actually supplied status/version above, not always this slice's own file.
   const boundKey = doc.path.replace(/^slices\//, "").replace(/\.md$/, "");
   const parsed = readSliceDoc(baseDir, boundKey)!;
+
+  // MIL-284: the ratified body has an identity now. A doc whose body moved after `em slice
+  // ratify` recorded `ratifiedHash:` is not the spec that was signed — the ratification stands
+  // on content that is gone. Only checked when a hash exists (a doc ratified before em 1.15 has
+  // none and is judged on `ratifiedBy` alone, as before) and only at ready-to-implement.
+  if (doc.status === "ready-to-implement" && doc.ratifiedHash !== null && sliceDocBodyHash(parsed.raw) !== doc.ratifiedHash) {
+    pushDiag(diags, "slice-ready-body-changed-since-ratification", {
+      message: `slice "${sliceKey}"'s doc ${doc.path} was edited after ratification (body no longer matches ratifiedHash) — revert, or re-ratify the new content`,
+      line: slice.line,
+      refs: [sliceKey],
+    });
+  }
+
   if (parsed.openQuestionsUnchecked > 0) {
     pushDiag(diags, "slice-ready-open-questions-unchecked", {
       message: `slice "${sliceKey}" has ${parsed.openQuestionsUnchecked} of ${parsed.openQuestionsTotal} Open Question(s) unchecked`,

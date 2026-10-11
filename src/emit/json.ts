@@ -151,8 +151,15 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    | null` — the doc's authored `### Scenario:` blocks (constrained Given/When/Then grammar,
 //    catalog/scenarios.ts), in document order; `null` when the doc has no well-formed block or
 //    no usable doc is bound.
+//  - MIL-284 (1.16): `slice.doc.ratifiedRef: string | null` and `slice.doc.ratifiedHash: string |
+//    null` (frontmatter `ratifiedRef:`/`ratifiedHash:`, written by `em slice ratify` — the exact
+//    commit and body hash that were ratified) and `slice.doc.shipped: { version, ratifiedRef,
+//    implementedIn, on } | null` (frontmatter `shippedVersion:`/`shippedRef:`/`shippedOn:` +
+//    `implementedIn:`, written by `em slice mark-implemented`) — `null` on a doc written before
+//    1.15 or outside git (`ratifiedRef` only). `slice.doc.status`/`implementedIn` are unchanged
+//    and still carry the lifecycle for every reader; `shipped` is the record MIL-283 moves them to.
 // Additive-only.
-export const SCHEMA_VERSION = "1.15";
+export const SCHEMA_VERSION = "1.16";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

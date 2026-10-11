@@ -13,6 +13,7 @@ import { compile } from "../src/pipeline.js";
 import { validateSliceReady, computeSliceReadyGates, computeSliceReadiness } from "../src/catalog/sliceReadyValidate.js";
 import type { Diagnostic } from "../src/model/validate.js";
 import { generateContract } from "../src/cli/api.js";
+import { sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
 
 let dir: string;
 beforeAll(() => {
@@ -392,5 +393,40 @@ describe("computeSliceReadiness (R34, MIL-268: the one verdict CLI, MCP and enga
     expect(r.ready).toBe(false);
     expect(r.result).toBeNull();
     expect(r.scoped.map((d) => d.code)).toEqual(["slice-ready-unknown-slice"]);
+  });
+});
+
+// MIL-284 — the ratified body has an identity: a doc edited after `em slice ratify` recorded
+// `ratifiedHash:` is not the spec that was signed.
+describe("slice-ready-body-changed-since-ratification (MIL-284)", () => {
+  const SIGNED = "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n";
+  const matchingHash = sliceDocBodyHash("---\nx: 1\n---\nbody\n"); // writeDoc's default body
+
+  it("is silent when the body still matches ratifiedHash", () => {
+    writeDoc("signed-intact", `${SIGNED}ratifiedHash: ${matchingHash}\n`);
+    expect(readyDiagsOf(`slice "Signed Intact" {\n  command Do Thing note "slices/signed-intact.md"\n}`, "signed-intact")).toEqual([]);
+  });
+
+  it("errors, with the exact message, when the body moved after ratification", () => {
+    writeDoc("signed-edited", `${SIGNED}ratifiedHash: ${matchingHash}\n`, "body\n\nAn edit after sign-off.\n");
+    const diags = readyDiagsOf(`slice "Signed Edited" {\n  command Do Thing note "slices/signed-edited.md"\n}`, "signed-edited");
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        code: "slice-ready-body-changed-since-ratification",
+        message:
+          'slice "signed-edited"\'s doc slices/signed-edited.md was edited after ratification (body no longer matches ratifiedHash) — revert, or re-ratify the new content',
+        refs: ["signed-edited"],
+      }),
+    ]);
+  });
+
+  it("is silent on a doc with no ratifiedHash (ratified before em 1.15) and off the ready status", () => {
+    writeDoc("pre-115", SIGNED, "anything\n");
+    expect(readyDiagsOf(`slice "Pre 115" {\n  command Do Thing note "slices/pre-115.md"\n}`, "pre-115")).toEqual([]);
+    writeDoc("draft-moved", `status: draft\nversion: 1\nratifiedHash: ${matchingHash}\n`, "moved\n");
+    expect(readyDiagsOf(`slice "Draft Moved" {\n  command Do Thing note "slices/draft-moved.md"\n}`, "draft-moved").map((d) => d.code)).toEqual([
+      "slice-ready-status-not-ready",
+    ]);
   });
 });

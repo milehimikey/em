@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { applyImplementedFrontmatter, runMarkImplemented } from "../src/cli/markImplemented.js";
+import { parseSliceDoc } from "../src/catalog/sliceDoc.js";
 
 const READY_DOC =
   "---\n" +
@@ -325,5 +326,77 @@ describe("runMarkImplemented (note-binding resolution + fs orchestration)", () =
     const written = readFileSync(join(dir, "slices", "covering-slice.md"), "utf8");
     expect(written).toContain("status: implemented");
     expect(written).toContain("implementedIn: https://github.com/org/repo/pull/7");
+  });
+});
+
+// --- MIL-284: the shipped record -----------------------------------------------------------------
+
+describe("applyImplementedFrontmatter — shipped record (MIL-284)", () => {
+  const REF = "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a";
+  const RATIFIED_DOC = READY_DOC.replace("version: 1\n", `version: 1\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedRef: ${REF}\nratifiedHash: sha256:00\n`);
+  const URL = "https://github.com/org/repo/pull/42";
+
+  it("writes shippedVersion/shippedRef/shippedOn right after implementedIn", () => {
+    const result = applyImplementedFrontmatter(RATIFIED_DOC, URL, "2026-10-12");
+    expect(result.ok && result.content).toContain(
+      `status: implemented\nimplementedIn: ${URL}\nshippedVersion: 1\nshippedRef: ${REF}\nshippedOn: 2026-10-12\nversion: 1\nratifiedBy: Alex\n`,
+    );
+  });
+  it("omits shippedRef when the doc has no ratifiedRef (ratified before em 1.15 or outside git)", () => {
+    const result = applyImplementedFrontmatter(READY_DOC, URL, "2026-10-12");
+    expect(result.ok && result.content).toContain(`implementedIn: ${URL}\nshippedVersion: 1\nshippedOn: 2026-10-12\n`);
+    expect(result.ok && result.content).not.toContain("shippedRef:");
+  });
+  it("writes nothing extra when no date is given (the pure default), keeping the pre-1.15 shape", () => {
+    const result = applyImplementedFrontmatter(READY_DOC, URL);
+    expect(result.ok && result.content).not.toContain("shipped");
+  });
+  it("is idempotent on the same URL once shipped", () => {
+    const first = applyImplementedFrontmatter(RATIFIED_DOC, URL, "2026-10-12");
+    if (!first.ok) throw new Error("setup");
+    expect(applyImplementedFrontmatter(first.content, URL, "2026-10-13")).toEqual({ ok: true, content: first.content, changed: false });
+  });
+  it("replaces stale shipped* lines in place on the repair path (implemented, implementedIn missing)", () => {
+    const stale =
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 3\nshippedVersion: 2\nshippedOn: 2026-01-01\n---\nbody\n";
+    const result = applyImplementedFrontmatter(stale, URL, "2026-10-12");
+    expect(result.ok && result.content).toBe(
+      `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nimplementedIn: ${URL}\nversion: 3\nshippedVersion: 3\nshippedOn: 2026-10-12\n---\nbody\n`,
+    );
+  });
+  it("keeps CRLF", () => {
+    const crlf = RATIFIED_DOC.replace(/\n/g, "\r\n");
+    const result = applyImplementedFrontmatter(crlf, URL, "2026-10-12");
+    expect(result.ok && result.content).toContain(`implementedIn: ${URL}\r\nshippedVersion: 1\r\nshippedRef: ${REF}\r\nshippedOn: 2026-10-12\r\n`);
+    expect(result.ok && result.content).not.toMatch(/[^\r]\n/);
+  });
+});
+
+describe("runMarkImplemented writes the shipped record the doc parser and export read back (MIL-284)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-mark-implemented-shipped-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "ready-slice.md"),
+      READY_DOC.replace("version: 1\n", "version: 1\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedRef: abc1234abc1234abc1234abc1234abc1234abc12\n"),
+    );
+    writeFileSync(join(dir, "ready.em"), 'slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n');
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("round-trips through parseSliceDoc", () => {
+    const { model, refs } = compile(readFileSync(join(dir, "ready.em"), "utf8"));
+    const result = runMarkImplemented(model, refs, dir, "ready-slice", "https://github.com/org/repo/pull/7", "2026-10-12");
+    expect(result).toMatchObject({ ok: true, changed: true });
+    const parsed = parseSliceDoc(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8"));
+    expect(parsed).toMatchObject({
+      status: "implemented",
+      implementedIn: "https://github.com/org/repo/pull/7",
+      shippedVersion: 1,
+      shippedRef: "abc1234abc1234abc1234abc1234abc1234abc12",
+      shippedOn: "2026-10-12",
+      ratifiedRef: "abc1234abc1234abc1234abc1234abc1234abc12",
+    });
   });
 });

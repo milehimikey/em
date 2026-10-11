@@ -221,6 +221,12 @@ export function runSliceConform(
     };
   }
 
+  // `--at` stays required (MIL-284 review): it is the TARGET repo's revision the sweep diffed
+  // against — the findings-check gate below keys on it — while `ratifiedRef`/`shippedRef` are
+  // the MODEL repo's commit at sign-off, before any implementation existed. Defaulting one to
+  // the other would certify against a tree holding no code for the slice and let the gate pass
+  // vacuously (no findings file for that revision).
+
   const found = findLatestFindingsForRevision(baseDir, at);
   let skippedFindingsCheck: number[] | null = null;
   if (found) {

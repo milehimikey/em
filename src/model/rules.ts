@@ -651,6 +651,14 @@ export const RULES = {
     docAnchor: "slice-readiness",
     optIn: true,
   },
+  "slice-ready-body-changed-since-ratification": {
+    severity: "error",
+    title: "Body changed since ratification",
+    fix: "The doc body no longer matches the `ratifiedHash:` recorded at sign-off — either revert the edit, or re-ratify the new content (`em slice reratify`, then review and `em slice ratify --by`). A deferral after sign-off (`em slice defer` rewrites a body line) is the usual cause: defer before ratifying.",
+    usageCategory: "slice-ready body changed since ratification",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
   "slice-ready-contract-stale": {
     severity: "error",
     title: "Contract missing or stale",

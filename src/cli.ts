@@ -862,13 +862,19 @@ slice
       "one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the " +
       "em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). " +
       "Applies only to a `ready-to-implement` doc (MIL-277: a `draft`/`reviewed` doc refuses — " +
-      "ratify first). Idempotent on the same URL; refuses to overwrite a different one; never " +
-      "touches `version:` or the doc body",
+      "ratify first). Also records the shipped version beside the link (MIL-284): `shippedVersion:`, " +
+      "`shippedRef:` (the doc's `ratifiedRef:`, when it has one) and `shippedOn:`. Idempotent on " +
+      "the same URL; refuses to overwrite a different one; never touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .argument("<pr-url>", "merged PR (or commit) URL")
-  .action((file: string, sliceKey: string, prUrl: string) => {
+  .option("--on <date>", "merge date recorded as `shippedOn:`, YYYY-MM-DD (default: today, local date; MIL-284)")
+  .action((file: string, sliceKey: string, prUrl: string, opts: { on?: string }) => {
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em slice mark-implemented: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
 
@@ -884,7 +890,7 @@ slice
       process.exit(1);
     }
 
-    const result = runMarkImplemented(model, refs, dirname(file), sliceKey, prUrl);
+    const result = runMarkImplemented(model, refs, dirname(file), sliceKey, prUrl, opts.on ?? localIsoDate());
     if (!result.ok) {
       console.error(`em slice mark-implemented: ${result.message}`);
       process.exit(1);
@@ -959,7 +965,8 @@ slice
       "reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status " +
       "— a `draft` that never went through `em slice review` — is refused unless --skip-review " +
       "is passed. Idempotent on " +
-      "the same --by/--on pair; refuses to overwrite a different one already recorded; never " +
+      "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
+      "same-pair re-run on a doc whose body moved after sign-off; never " +
       "touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")

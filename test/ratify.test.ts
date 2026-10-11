@@ -17,10 +17,13 @@
 // coverage lives in test/cli.test.ts's ratify block.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
+import { sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
+import type { GitRunner } from "../src/cli/diff-inputs.js";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { applyRatifyFrontmatter, parseMeaningFlags, runRatify, upstreamUnratifiedSlices } from "../src/cli/ratify.js";
+import { applyRatifyFrontmatter, parseMeaningFlags, resolveRatifiedIdentity, runRatify, upstreamUnratifiedSlices } from "../src/cli/ratify.js";
 
 const DRAFT_DOC =
   "---\n" +
@@ -789,7 +792,11 @@ describe("runRatify — public-touching slices (MIL-238)", () => {
 
   it("accepts --meaning-unchanged on it and records meaningConfirmed: true", () => {
     expect(run("place-order", { kind: "meaning-unchanged" })).toMatchObject({ ok: true, changed: true });
-    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toContain("ratifiedOn: 2026-08-28\nmeaningConfirmed: true\n");
+    // MIL-284: runRatify records the body hash between ratifiedOn and the confirmation line
+    // (no ratifiedRef — the fixture dir is not a git repository).
+    const written = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
+    expect(written).toContain(`ratifiedOn: 2026-08-28\nratifiedHash: ${sliceDocBodyHash(written)}\nmeaningConfirmed: true\n`);
+    expect(written).not.toContain("ratifiedRef:");
   });
 
   it("ratifies a non-public slice without a flag, and still records one when given (harmless)", () => {
@@ -798,5 +805,192 @@ describe("runRatify — public-touching slices (MIL-238)", () => {
     writeFileSync(join(dir, "slices", "audit.md"), REVIEWED_DOC);
     expect(run("audit", { kind: "contract-change", why: "internal only" })).toMatchObject({ ok: true, changed: true });
     expect(readFileSync(join(dir, "slices", "audit.md"), "utf8")).toContain('contractChange: "internal only"\n');
+  });
+});
+
+// --- MIL-284: ratification has an address ------------------------------------------------------
+
+describe("applyRatifyFrontmatter — ratifiedRef/ratifiedHash (MIL-284)", () => {
+  const ID = { ref: "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a", hash: "sha256:" + "ab".repeat(32) };
+
+  it("writes ratifiedRef and ratifiedHash right after a freshly inserted ratifiedOn", () => {
+    const result = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28", false, null, ID);
+    expect(result.ok && result.content).toBe(
+      REVIEWED_DOC.replace(
+        "status: reviewed\n",
+        `status: ready-to-implement\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-28\nratifiedRef: ${ID.ref}\nratifiedHash: ${ID.hash}\n`,
+      ),
+    );
+  });
+
+  it("omits ratifiedRef when the identity has none (outside git) and still writes the hash", () => {
+    const result = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28", false, null, { ref: null, hash: ID.hash });
+    expect(result.ok && result.content).toContain(`ratifiedOn: 2026-08-28\nratifiedHash: ${ID.hash}\n`);
+    expect(result.ok && result.content).not.toContain("ratifiedRef:");
+  });
+
+  it("places the identity lines before a meaning confirmation, after an existing ratifiedOn", () => {
+    const doc = REVIEWED_DOC.replace("status: reviewed\n", "status: reviewed\nratifiedOn: 2026-01-01\n");
+    const result = applyRatifyFrontmatter(doc, "draft-slice", "Alex Rivera", "2026-08-28", false, { kind: "meaning-unchanged" }, ID);
+    expect(result.ok && result.content).toContain(
+      `ratifiedOn: 2026-08-28\nratifiedRef: ${ID.ref}\nratifiedHash: ${ID.hash}\nmeaningConfirmed: true\n`,
+    );
+  });
+
+  it("replaces stale ratifiedRef/ratifiedHash lines in place rather than duplicating them", () => {
+    const doc = REVIEWED_DOC.replace("status: reviewed\n", "status: reviewed\nratifiedRef: 0000000\nratifiedHash: sha256:00\n");
+    const result = applyRatifyFrontmatter(doc, "draft-slice", "Alex Rivera", "2026-08-28", false, null, ID);
+    expect(result.ok && result.content).toContain(`ratifiedRef: ${ID.ref}\n`);
+    expect(result.ok && result.content).toContain(`ratifiedHash: ${ID.hash}\n`);
+    expect(result.ok && (result.content.match(/ratifiedRef:/g) ?? []).length).toBe(1);
+    expect(result.ok && (result.content.match(/ratifiedHash:/g) ?? []).length).toBe(1);
+  });
+
+  it("keeps CRLF", () => {
+    const crlf = REVIEWED_DOC.replace(/\n/g, "\r\n");
+    const result = applyRatifyFrontmatter(crlf, "draft-slice", "Alex Rivera", "2026-08-28", false, null, ID);
+    expect(result.ok && result.content).toContain(`ratifiedOn: 2026-08-28\r\nratifiedRef: ${ID.ref}\r\nratifiedHash: ${ID.hash}\r\n`);
+    expect(result.ok && result.content).not.toContain("\n\n"); // no bare-LF line slipped in
+  });
+});
+
+describe("resolveRatifiedIdentity (MIL-284, fake git)", () => {
+  const RAW = "---\nversion: 1\n---\nbody\n";
+  const fakeGit =
+    (answers: Record<string, { status: number; stdout: string }>): GitRunner =>
+    (args) => {
+      const key = args.slice(2).join(" "); // drop `-C <baseDir>`
+      const a = answers[key] ?? { status: 128, stdout: "" };
+      return { status: a.status, stdout: a.stdout, stderr: a.status === 0 ? "" : `fatal: ${key}` };
+    };
+
+  it("hashes the body and skips the ref with no git at all", () => {
+    expect(resolveRatifiedIdentity(null, "/m", "slices/x.md", RAW)).toEqual({ ok: true, identity: { ref: null, hash: sliceDocBodyHash(RAW) } });
+  });
+  it("skips the ref outside a work tree", () => {
+    const git = fakeGit({ "rev-parse --is-inside-work-tree": { status: 128, stdout: "" } });
+    expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW)).toMatchObject({ ok: true, identity: { ref: null } });
+  });
+  it("refuses a doc with uncommitted changes, naming the file", () => {
+    const git = fakeGit({
+      "rev-parse --is-inside-work-tree": { status: 0, stdout: "true\n" },
+      "status --porcelain -- slices/x.md": { status: 0, stdout: " M slices/x.md\n" },
+    });
+    expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW)).toEqual({
+      ok: false,
+      message: "slices/x.md has uncommitted changes — commit the body you are ratifying first (ratification records the exact ref it signs)",
+    });
+  });
+  it("records HEAD when the doc is committed and clean; every call runs -C <baseDir>", () => {
+    const seen: string[][] = [];
+    const inner = fakeGit({
+      "rev-parse --is-inside-work-tree": { status: 0, stdout: "true\n" },
+      "status --porcelain -- slices/x.md": { status: 0, stdout: "" },
+      "rev-parse HEAD": { status: 0, stdout: "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a\n" },
+    });
+    const git: GitRunner = (args) => {
+      seen.push(args);
+      return inner(args);
+    };
+    expect(resolveRatifiedIdentity(git, "/models/shop", "slices/x.md", RAW)).toEqual({
+      ok: true,
+      identity: { ref: "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a", hash: sliceDocBodyHash(RAW) },
+    });
+    expect(seen.every((a) => a[0] === "-C" && a[1] === "/models/shop")).toBe(true);
+  });
+  it("refuses when HEAD cannot be resolved (a repository with no commits)", () => {
+    const git = fakeGit({
+      "rev-parse --is-inside-work-tree": { status: 0, stdout: "true\n" },
+      "status --porcelain -- slices/x.md": { status: 0, stdout: "" },
+    });
+    expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW)).toMatchObject({ ok: false });
+  });
+});
+
+describe("runRatify in a real git repository (MIL-284)", () => {
+  let repo: string;
+  const git = (...args: string[]) => {
+    const r = spawnSync("git", ["-C", repo, "-c", "user.email=t@example.test", "-c", "user.name=T", ...args], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const EM = 'slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n';
+  function run(by = "Alex Rivera", on = "2026-08-28") {
+    const { model, refs } = compile(EM);
+    return runRatify(model, refs, repo, "draft-slice", by, on); // default runner: real git
+  }
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "em-ratify-git-"));
+    git("init", "-q", "-b", "main");
+    mkdirSync(join(repo, "slices"));
+    writeFileSync(join(repo, "slices", "draft-slice.md"), REVIEWED_DOC);
+    writeFileSync(join(repo, "model.em"), EM);
+    git("add", "-A");
+    git("commit", "-q", "-m", "reviewed doc");
+  });
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+  it("records HEAD as ratifiedRef and the body hash as ratifiedHash on a committed doc", () => {
+    const head = git("rev-parse", "HEAD");
+    expect(run()).toMatchObject({ ok: true, changed: true });
+    const written = readFileSync(join(repo, "slices", "draft-slice.md"), "utf8");
+    expect(written).toContain(`ratifiedOn: 2026-08-28\nratifiedRef: ${head}\nratifiedHash: ${sliceDocBodyHash(written)}\n`);
+    // The ratify edit touched frontmatter only, so the hash of the written file equals the hash of what was signed.
+    expect(sliceDocBodyHash(written)).toBe(sliceDocBodyHash(REVIEWED_DOC));
+  });
+
+  it("a same-identity re-run is still the no-op, even though the ratify edit itself is uncommitted", () => {
+    expect(git("status", "--porcelain", "--", "slices/draft-slice.md")).not.toBe("");
+    expect(run()).toMatchObject({ ok: true, changed: false });
+  });
+
+  it("refuses to ratify a doc whose body has uncommitted changes, writing nothing", () => {
+    git("add", "-A");
+    git("commit", "-q", "-m", "ratified v1");
+    writeFileSync(join(repo, "slices", "other.md"), REVIEWED_DOC.replace("Ready Slice", "Other"));
+    writeFileSync(join(repo, "other.em"), 'slice "Other" {\n  command Do Other note "slices/other.md"\n  event Other Done\n}\n');
+    git("add", "-A");
+    git("commit", "-q", "-m", "other reviewed");
+    writeFileSync(join(repo, "slices", "other.md"), REVIEWED_DOC.replace("Ready Slice", "Other") + "\nAn uncommitted edit.\n");
+    const before = readFileSync(join(repo, "slices", "other.md"), "utf8");
+    const { model, refs } = compile(readFileSync(join(repo, "other.em"), "utf8"));
+    const result = runRatify(model, refs, repo, "other", "Alex Rivera", "2026-08-28");
+    expect(result).toEqual({
+      ok: false,
+      message: "slices/other.md has uncommitted changes — commit the body you are ratifying first (ratification records the exact ref it signs)",
+    });
+    expect(readFileSync(join(repo, "slices", "other.md"), "utf8")).toBe(before);
+  });
+});
+
+describe("runRatify — same-sign-off re-run after a body edit (MIL-284)", () => {
+  let dir: string;
+  const EM = 'slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n';
+  const docPath = () => join(dir, "slices", "draft-slice.md");
+  function run() {
+    const { model, refs } = compile(EM);
+    return runRatify(model, refs, dir, "draft-slice", "Alex Rivera", "2026-08-28", false, null, null); // no git: hash only
+  }
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-ratify-rerun-"));
+    mkdirSync(join(dir, "slices"));
+    writeFileSync(docPath(), REVIEWED_DOC);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("ratifies, and the same-sign-off re-run is the no-op while the body is intact", () => {
+    expect(run()).toMatchObject({ ok: true, changed: true });
+    expect(readFileSync(docPath(), "utf8")).toContain("ratifiedHash: sha256:");
+    expect(run()).toMatchObject({ ok: true, changed: false });
+  });
+
+  it("refuses the same-sign-off re-run once the body moved, writing nothing", () => {
+    writeFileSync(docPath(), readFileSync(docPath(), "utf8") + "\nAn edit after sign-off.\n");
+    const before = readFileSync(docPath(), "utf8");
+    expect(run()).toEqual({
+      ok: false,
+      message: "slices/draft-slice.md: body changed since ratification (no longer matches ratifiedHash) — revert the edit, or `em slice reratify` and sign the new content",
+    });
+    expect(readFileSync(docPath(), "utf8")).toBe(before);
   });
 });

@@ -160,8 +160,9 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 - **How a delta is ratified on a doc that never shipped** (it is `ready-to-implement` with
   `ratifiedBy` set): once the human has answered, the doc changes by `em slice reratify
   <model>.em <slice-key>` (bumps `version:`, clears the old sign-off, leaves `status` alone),
-  the answer is written into the doc, and the human re-signs with `em slice ratify <model>.em
-  <slice-key> --by <name>` — on a slice owning a `public` element both commands also need
+  the answer is written into the doc and committed, and the human re-signs with `em slice ratify
+  <model>.em <slice-key> --by <name>` (it records the commit it signs and refuses uncommitted
+  changes, MIL-284) — on a slice owning a `public` element both commands also need
   `--meaning-unchanged` or `--contract-change "<why>"` (MIL-238). That is the human's step, not
   yours — you never run `ratify`, and
   the doc is not ratified again until they do; resume the build after that.
