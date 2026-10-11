@@ -268,6 +268,14 @@ export function resolveRatifiedIdentity(git: GitRunner | null, baseDir: string, 
   return { ok: true, identity: { ref: head.stdout.trim(), hash } };
 }
 
+/** MIL-284: the `ratifiedHash:` a doc currently records, or null when it has none. */
+function recordedRatifiedHash(raw: string): string | null {
+  const range = locateFrontmatterInner(raw);
+  if (!range) return null;
+  const m = fieldLineRegex("ratifiedHash").exec(raw.slice(range.innerStart, range.innerEnd));
+  return m ? normalizeFieldValue(m[2]) : null;
+}
+
 export function applyRatifyFrontmatter(
   raw: string,
   sliceKey: string,
@@ -496,6 +504,21 @@ export function runRatify(
   const probe = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation);
   if (!probe.ok) {
     return { ok: false, message: `${doc.path}: ${probe.message}` };
+  }
+  // MIL-284: the no-op path still compares the body to the recorded hash — pure text, no git. A
+  // doc whose body moved after sign-off, re-run with the same --by/--on, is not "already
+  // ratified": the signature stands on content that is gone, so it is refused like a different
+  // ratifier is, with nothing written.
+  if (!probe.changed) {
+    const recorded = recordedRatifiedHash(raw);
+    if (recorded !== null && recorded !== sliceDocBodyHash(raw)) {
+      return {
+        ok: false,
+        message:
+          `${doc.path}: body changed since ratification (no longer matches ratifiedHash) — ` +
+          "revert the edit, or `em slice reratify` and sign the new content",
+      };
+    }
   }
   let result: Extract<ApplyRatifyResult, { ok: true }> = probe;
   if (probe.changed) {

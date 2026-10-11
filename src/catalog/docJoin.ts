@@ -129,8 +129,7 @@ export interface SliceDocExport {
   ratifiedOn: string | null;
   /** MIL-284: the commit (full sha) whose tree holds the ratified body (frontmatter
    *  `ratifiedRef:`), written only by `em slice ratify` inside a git repository — null when
-   *  absent (ratified before em 1.15, by hand, or outside git). The ratified content's address:
-   *  `em slice conform` defaults `--at` to it. */
+   *  absent (ratified before em 1.15, by hand, or outside git). The ratified content's address. */
   ratifiedRef: string | null;
   /** MIL-284: `sha256:<hex>` over the doc body at ratification (frontmatter `ratifiedHash:`),
    *  written only by `em slice ratify` — null when absent. `--slice-ready` compares it to the

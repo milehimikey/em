@@ -962,3 +962,35 @@ describe("runRatify in a real git repository (MIL-284)", () => {
     expect(readFileSync(join(repo, "slices", "other.md"), "utf8")).toBe(before);
   });
 });
+
+describe("runRatify — same-sign-off re-run after a body edit (MIL-284)", () => {
+  let dir: string;
+  const EM = 'slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n';
+  const docPath = () => join(dir, "slices", "draft-slice.md");
+  function run() {
+    const { model, refs } = compile(EM);
+    return runRatify(model, refs, dir, "draft-slice", "Alex Rivera", "2026-08-28", false, null, null); // no git: hash only
+  }
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-ratify-rerun-"));
+    mkdirSync(join(dir, "slices"));
+    writeFileSync(docPath(), REVIEWED_DOC);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("ratifies, and the same-sign-off re-run is the no-op while the body is intact", () => {
+    expect(run()).toMatchObject({ ok: true, changed: true });
+    expect(readFileSync(docPath(), "utf8")).toContain("ratifiedHash: sha256:");
+    expect(run()).toMatchObject({ ok: true, changed: false });
+  });
+
+  it("refuses the same-sign-off re-run once the body moved, writing nothing", () => {
+    writeFileSync(docPath(), readFileSync(docPath(), "utf8") + "\nAn edit after sign-off.\n");
+    const before = readFileSync(docPath(), "utf8");
+    expect(run()).toEqual({
+      ok: false,
+      message: "slices/draft-slice.md: body changed since ratification (no longer matches ratifiedHash) — revert the edit, or `em slice reratify` and sign the new content",
+    });
+    expect(readFileSync(docPath(), "utf8")).toBe(before);
+  });
+});

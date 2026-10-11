@@ -965,7 +965,8 @@ slice
       "reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status " +
       "— a `draft` that never went through `em slice review` — is refused unless --skip-review " +
       "is passed. Idempotent on " +
-      "the same --by/--on pair; refuses to overwrite a different one already recorded; never " +
+      "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
+      "same-pair re-run on a doc whose body moved after sign-off; never " +
       "touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
@@ -1212,13 +1213,10 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
-  .option(
-    "--at <rev>",
-    "the target-repo revision this certification sweep diffed against (default, MIL-284: the doc's `shippedRef:`, else its `ratifiedRef:`; required when the doc records neither)",
-  )
+  .requiredOption("--at <rev>", "the target-repo revision this certification sweep diffed against")
   .option("--on <date>", "certification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-findings-check", "certify even with unruled findings in scope — prints a loud notice on stderr")
-  .action((file: string, sliceKey: string, opts: { at?: string; on?: string; skipFindingsCheck?: boolean }) => {
+  .action((file: string, sliceKey: string, opts: { at: string; on?: string; skipFindingsCheck?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
 
@@ -1239,7 +1237,7 @@ slice
       process.exit(1);
     }
 
-    const result = runSliceConform(model, refs, dirname(file), sliceKey, opts.at ?? null, on, opts.skipFindingsCheck === true);
+    const result = runSliceConform(model, refs, dirname(file), sliceKey, opts.at, on, opts.skipFindingsCheck === true);
     if (!result.ok) {
       console.error(`em slice conform: ${result.message}`);
       process.exit(1);
@@ -1252,7 +1250,7 @@ slice
     }
     console.log(
       result.changed
-        ? `certified: ${result.path} (conformedVersion: ${result.version}, conformedAt: ${result.at}, conformedOn: ${on})`
+        ? `certified: ${result.path} (conformedVersion: ${result.version}, conformedAt: ${opts.at}, conformedOn: ${on})`
         : `already certified (no-op): ${result.path}`,
     );
   });

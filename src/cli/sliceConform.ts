@@ -155,8 +155,6 @@ export type RunSliceConformResult =
       ok: true;
       path: string;
       changed: boolean;
-      /** MIL-284: the revision actually certified — `--at` when given, else the doc's recorded ref. */
-      at: string;
       version: number;
       /** Non-null exactly when `--skip-findings-check` is what let this certification through —
        *  the finding ids that were still unruled, for the caller's loud notice. `null` whenever
@@ -177,7 +175,7 @@ export function runSliceConform(
   refs: RefsResult,
   baseDir: string,
   sliceKey: string,
-  atOption: string | null,
+  at: string,
   on: string,
   skipFindingsCheck = false,
 ): RunSliceConformResult {
@@ -223,16 +221,11 @@ export function runSliceConform(
     };
   }
 
-  // MIL-284: `--at` defaults to the address the doc already records — the ref the shipped
-  // version was ratified at, else the current ratification's ref. A doc with neither (ratified
-  // before em 1.15, or outside git) still needs the revision spelled out, as before.
-  const at = atOption ?? doc.shipped?.ratifiedRef ?? doc.ratifiedRef;
-  if (at === null) {
-    return {
-      ok: false,
-      message: `--at is required: ${doc.path} records no ratifiedRef (ratified before em 1.15, or outside a git repository)`,
-    };
-  }
+  // `--at` stays required (MIL-284 review): it is the TARGET repo's revision the sweep diffed
+  // against — the findings-check gate below keys on it — while `ratifiedRef`/`shippedRef` are
+  // the MODEL repo's commit at sign-off, before any implementation existed. Defaulting one to
+  // the other would certify against a tree holding no code for the slice and let the gate pass
+  // vacuously (no findings file for that revision).
 
   const found = findLatestFindingsForRevision(baseDir, at);
   let skippedFindingsCheck: number[] | null = null;
@@ -261,5 +254,5 @@ export function runSliceConform(
   if (result.changed) {
     writeFileSync(absPath, result.content, "utf8");
   }
-  return { ok: true, path: doc.path, changed: result.changed, at, version: result.version, skippedFindingsCheck };
+  return { ok: true, path: doc.path, changed: result.changed, version: result.version, skippedFindingsCheck };
 }
