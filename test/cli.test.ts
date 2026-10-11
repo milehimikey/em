@@ -3454,7 +3454,7 @@ describe("em slice review (CLI, MIL-201)", () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain(
       "doc is `status: implemented` — review applies before ratification; a shipped slice is " +
-        "reopened with `em slice reratify`",
+        "reopened with `em slice revise`",
     );
     expect(readFileSync(join(dir, "slices", "shipped.md"), "utf8")).toBe(before);
   });

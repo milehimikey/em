@@ -80,7 +80,7 @@ describe("applyImplementedFrontmatter (pure text surgery)", () => {
     expect(result.content).toContain("version: 2");
   });
 
-  it("touches only status/implementedIn even when frontmatter keys are out of the usual order", () => {
+  it("touches only status/implementedIn (+ the shipped record) even when frontmatter keys are out of the usual order", () => {
     const reordered =
       "---\n" +
       "schemaVersion: 1\n" +
@@ -98,6 +98,7 @@ describe("applyImplementedFrontmatter (pure text surgery)", () => {
       "---\n" +
         "schemaVersion: 1\n" +
         "implementedIn: https://x/1\n" +
+        "shippedVersion: 1\n" +
         "pattern: state-change\n" +
         "swimlane: order\n" +
         "status: implemented\n" +
@@ -347,9 +348,18 @@ describe("applyImplementedFrontmatter — shipped record (MIL-284)", () => {
     expect(result.ok && result.content).toContain(`implementedIn: ${URL}\nshippedVersion: 1\nshippedOn: 2026-10-12\n`);
     expect(result.ok && result.content).not.toContain("shippedRef:");
   });
-  it("writes nothing extra when no date is given (the pure default), keeping the pre-1.15 shape", () => {
-    const result = applyImplementedFrontmatter(READY_DOC, URL);
-    expect(result.ok && result.content).not.toContain("shipped");
+  it("always writes shippedVersion/shippedRef on a flip; only shippedOn needs a date (the pure default skips it)", () => {
+    const result = applyImplementedFrontmatter(RATIFIED_DOC, URL);
+    expect(result.ok && result.content).toContain(`implementedIn: ${URL}\nshippedVersion: 1\nshippedRef: ${REF}\nversion: 1\n`);
+    expect(result.ok && result.content).not.toContain("shippedOn");
+  });
+  it("a v2 merge with no date still moves shippedVersion off the stale v1 record (it is what every reader decides on)", () => {
+    const v2Ratified =
+      `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nimplementedIn: https://github.com/org/repo/pull/1\nshippedVersion: 1\nshippedOn: 2026-01-01\nversion: 2\nratifiedBy: Alex\n---\nbody\n`;
+    const result = applyImplementedFrontmatter(v2Ratified, URL);
+    expect(result.ok && result.content).toBe(
+      `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nimplementedIn: ${URL}\nshippedVersion: 2\nshippedOn: 2026-01-01\nversion: 2\nratifiedBy: Alex\n---\nbody\n`,
+    );
   });
   it("is idempotent on the same URL once shipped", () => {
     const first = applyImplementedFrontmatter(RATIFIED_DOC, URL, "2026-10-12");
@@ -414,6 +424,11 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
     expect(nextDraftIfDeferred(implemented.content)).toEqual({ content: implemented.content, openedDraft: null });
   });
 
+  it("nextDraftIfDeferred: an unparseable version → unchanged (openNextDraft refuses, nothing is guessed)", () => {
+    const bad = DEFERRED.replace("version: 1\n", "version: one\n");
+    expect(nextDraftIfDeferred(bad)).toEqual({ content: bad, openedDraft: null });
+  });
+
   it("nextDraftIfDeferred: a question deferred to v2 → draft v2 with it re-opened, v1 shipped in the record", () => {
     const implemented = applyImplementedFrontmatter(DEFERRED, URL, "2026-10-12");
     if (!implemented.ok) throw new Error("setup");
@@ -435,8 +450,16 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
       const opened = runMarkImplemented(model, refs, dir, "ready-slice", URL, "2026-10-12");
       expect(opened).toEqual({ ok: true, path: "slices/ready-slice.md", changed: true, openedDraft: { version: 2, reopened: 1 } });
       expect(parseSliceDoc(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8"))).toMatchObject({ status: "draft", version: 2, shippedVersion: 1 });
-      // Re-running on the now-draft doc: status is draft, so the MIL-277 gate refuses — the merge was recorded once.
-      expect(runMarkImplemented(model, refs, dir, "ready-slice", URL, "2026-10-12")).toMatchObject({ ok: false, message: expect.stringContaining("doc is `status: draft`") });
+      // Re-running on the now-draft doc with the same URL is still the idempotent no-op: the shipped
+      // record already names it, and the working status is not what mark-implemented keys on.
+      const afterOpen = readFileSync(join(dir, "slices", "ready-slice.md"), "utf8");
+      expect(runMarkImplemented(model, refs, dir, "ready-slice", URL, "2026-10-12")).toEqual({ ok: true, path: "slices/ready-slice.md", changed: false, openedDraft: null });
+      expect(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8")).toBe(afterOpen);
+      // A DIFFERENT URL against the open draft refuses, and says the draft is the next version.
+      const other = runMarkImplemented(model, refs, dir, "ready-slice", "https://github.com/org/repo/pull/43", "2026-10-12");
+      expect(other).toMatchObject({ ok: false, message: expect.stringContaining("already marked implemented with a different URL") });
+      expect(!other.ok && other.message).toContain("the doc is `status: draft` for its next version");
+      expect(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8")).toBe(afterOpen);
       const plain = runMarkImplemented(model, refs, dir, "plain", URL, "2026-10-12");
       expect(plain).toEqual({ ok: true, path: "slices/plain.md", changed: true, openedDraft: null });
       expect(parseSliceDoc(readFileSync(join(dir, "slices", "plain.md"), "utf8"))).toMatchObject({ status: "implemented", version: 1, shippedVersion: 1 });

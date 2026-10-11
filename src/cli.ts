@@ -863,8 +863,10 @@ slice
       "em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). " +
       "Applies only to a `ready-to-implement` doc (MIL-277: a `draft`/`reviewed` doc refuses — " +
       "ratify first). Also records the shipped version beside the link (MIL-284): `shippedVersion:`, " +
-      "`shippedRef:` (the doc's `ratifiedRef:`, when it has one) and `shippedOn:`. Idempotent on " +
-      "the same URL; refuses to overwrite a different one; never touches `version:` or the doc body",
+      "`shippedRef:` (the doc's `ratifiedRef:`, when it has one) and `shippedOn:`, and opens the next " +
+      "version as a `draft` when an Open Question was deferred to it (MIL-283). Idempotent on " +
+      "the same URL — also after that draft opened; refuses to overwrite a different one; never touches " +
+      "the doc body except to re-open those deferred questions",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
@@ -967,8 +969,9 @@ slice
       "`ratifiedOn:` — the handoff sign-off (MIL-165, docs/process.md#the-slice-lifecycle-gates) " +
       "that makes who ratified, and when, a first-class recorded fact. The review gate is a check " +
       "on the doc's current `status:`, not on whether `reviewedBy:`/`reviewedOn:` are populated: " +
-      "a doc at `reviewed` or `ready-to-implement` passes (the latter is where `em slice " +
-      "reratify` leaves a doc, so the follow-up ratify needs no --skip-review); any other status " +
+      "a doc at `reviewed` passes; a `ready-to-implement` doc only when the same signer is " +
+      "completing their own record (since 1.15.0, MIL-283 — a new sign-off is a new version: " +
+      "`em slice revise`); any other status " +
       "— a `draft` that never went through `em slice review` — is refused unless --skip-review " +
       "is passed. Idempotent on " +
       "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
@@ -1221,7 +1224,8 @@ slice
   .description(
     "record per-slice-per-version conformance certification: sets `conformedVersion:`/" +
       "`conformedAt:`/`conformedOn:` on a slice doc (MIL-214) — the fact `driftSignal: in-sync` " +
-      "now depends on. Legal only for `status: implemented` with an `implementedIn:` link. " +
+      "now depends on. Legal only for a shipped slice (`status: implemented`, or any status with " +
+      "a `shippedVersion:` — MIL-283) with an `implementedIn:` link; `conformedVersion:` is the shipped version. " +
       "Idempotent on the same (version, --at) pair; a different --at simply overwrites (a " +
       "later re-certification is normal — there's no way for em to tell 'later' from 'earlier' " +
       "for an arbitrary revision string, so there's no --force to reach for). Refuses when the " +
@@ -1237,7 +1241,7 @@ slice
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
 
-    // Scoped the same way `em slice ratify`/`em slice reratify`/`em slice mark-implemented` are:
+    // Scoped the same way `em slice ratify`/`em slice revise`/`em slice mark-implemented` are:
     // only an error concerning THIS slice refuses.
     const scopedErrors = diagnostics.filter(
       (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),

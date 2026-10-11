@@ -3006,8 +3006,8 @@ is already `status: reviewed` with a **different** `reviewedBy`/`reviewedOn` rec
 command never silently overwrites provenance, same discipline `ratify`/`mark-implemented` hold.
 
 Refuses a doc already `ready-to-implement` or `implemented`: review applies *before* ratification,
-and a slice that has already shipped is reopened with `em slice reratify` (which clears the old
-review and sign-off), not reviewed in place.
+and a slice that has already shipped is reopened with [`em slice revise`](#em-slice-revise-file-slice-key)
+(which clears the old review and sign-off), not reviewed in place.
 
 Scoped the same way `em slice ratify`/`em export --slice`/`em validate --slice-ready` are: only a
 model error concerning THIS slice (its bare export key, or an element ref prefixed `<key>/`)
@@ -3026,7 +3026,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
 | ``already reviewed by ... — refusing to overwrite`` | The idempotent/refusal guard — see above |
-| ``doc is `status: ...` — review applies before ratification`` | The doc is already `ready-to-implement`/`implemented` — use `em slice reratify` |
+| ``doc is `status: ...` — review applies before ratification`` | The doc is already `ready-to-implement`/`implemented` — use `em slice revise` |
 | `invalid --on date "..."` | `--on` didn't match `YYYY-MM-DD` |
 
 ```bash
@@ -3090,23 +3090,28 @@ with a **different** `ratifiedBy`/`ratifiedOn` already recorded — this command
 overwrites provenance, same discipline `mark-implemented` holds for `implementedIn`.
 
 **The review gate (MIL-201).** After that idempotency check, `em slice ratify` refuses any doc
-whose `status` is neither `reviewed` nor `ready-to-implement` — exit 1, file byte-untouched:
+whose `status` is not `reviewed` — exit 1, file byte-untouched:
 
 ```
 slice "<key>" is `status: <s>` — the review gate comes first: run `em slice review <file> <key> --by <name>` after the review session, or pass --skip-review to ratify without one
 ```
 
 Ratification is the sign-off *after* a review, not a substitute for one. `reviewed` is the
-ordinary way in (written by [`em slice review`](#em-slice-review-file-slice-key---by-name));
-`ready-to-implement` stays legal because it covers both the idempotent re-run above and the
-post-`reratify` path.
+ordinary way in (written by [`em slice review`](#em-slice-review-file-slice-key---by-name)). A
+`ready-to-implement` doc passes only when the **same signer** is completing their own record (a
+hand-ratified doc missing `ratifiedOn:`, or MIL-238's confirmation added on a later run). Any
+other `ready-to-implement` doc — unsigned (the leftover of a pre-1.15 `reratify`), or another
+signer's — refuses with its own message, because `em slice review` would refuse it too and the
+real exit is a new version:
 
-**After `em slice reratify`, a `ratify --by` needs no fresh review.** `reratify` bumps `version:`,
-leaves the doc at `status: ready-to-implement`, and clears `ratifiedBy:`/`ratifiedOn:` *and*
-`reviewedBy:`/`reviewedOn:`; the follow-up `em slice ratify --by <name>` for the new version
-passes the gate on the `ready-to-implement` status and applies cleanly. Re-ratifying a doc that is
-still `status: implemented` is not a supported hop any more — reopen it with `em slice reratify`
-first (see
+```
+slice "<key>" is `status: ready-to-implement` with no `ratifiedBy:` (the unsigned leftover of a pre-1.15 `em slice reratify`) — a new sign-off is a new version: run `em slice revise <file> <key>` to reopen it as a draft, then `em slice review --by` and `em slice ratify --by`; or pass --skip-review to ratify it in place
+```
+
+**A new version takes both gates (MIL-283, 1.15.0).** [`em slice revise`](#em-slice-revise-file-slice-key)
+(formerly `reratify`) opens the next version as a `draft`; it is reviewed and ratified like v1 was.
+Re-ratifying a doc that is still `status: implemented` is not a supported hop — reopen it with
+`em slice revise` first (see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)).
 
 **`--skip-review`** is the explicit, auditable escape hatch: it lets any status through and prints
@@ -3244,19 +3249,22 @@ shipped and the ref it was ratified at: `shippedVersion:` is the doc's `version:
 `shippedRef:` copies its `ratifiedRef:` (omitted when the doc has none — ratified before 1.15 or
 outside git), `shippedOn:` is today or `--on <date>`. `em export` joins the three with
 `implementedIn` as `slice.doc.shipped` (schema `1.16`). Additive: `status: implemented` and
-`implementedIn:` are unchanged and every reader still decides on them; `shipped` is the record
-MIL-283 will move them to.
+`implementedIn:` are unchanged; since MIL-283 `shipped` is the record every lifecycle reader
+decides on (see [slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
 
-Never touches `version:` — a bump here is an `em ledger` defect, since `version` moves only when
-a delta is ratified, not at merge — and never touches the doc body: the write is a surgical
-in-place edit of just the `status:`/`implementedIn:` lines (inserting `implementedIn:` fresh,
-right after `status:`, if the doc doesn't have one yet) plus the three `shipped*` lines right
-after `implementedIn:`, not a parse-and-re-serialize, so every other line — key order, spacing,
-comments, the whole body — survives byte-for-byte.
+The write is a surgical in-place edit of just the `status:`/`implementedIn:` lines (inserting
+`implementedIn:` fresh, right after `status:`, if the doc doesn't have one yet) plus the three
+`shipped*` lines right after `implementedIn:`, not a parse-and-re-serialize, so every other line —
+key order, spacing, comments, the whole body — survives byte-for-byte. `version:` and the body move
+only on the auto-open below, and only the way `em slice revise` moves them.
 
-Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exits 0). Refuses,
-non-zero exit, leaving the file untouched, if the doc is already `status: implemented` with a
-**different** `implementedIn` — this command never silently overwrites provenance.
+Idempotent: re-running with the same `<pr-url>` is a no-op (reports as such, exits 0) — including
+after the merge opened the next draft (below): the shipped record already names the URL, whatever
+the working `status` now is, so the engagement skill's per-level pass or a CI retry never hits the
+status gate. Refuses, non-zero exit, leaving the file untouched, if the shipped record already names
+a **different** `implementedIn` — this command never silently overwrites provenance. (A
+`ready-to-implement` doc over a shipped record is the *next* version's merge: the flip replaces the
+link and the record.)
 
 **Opens the next draft when work is already waiting (MIL-283, 1.15.0).** After the shipped record
 is written, if any `## Open Questions` item is `deferred to v<N+1>` (the marker
@@ -3443,12 +3451,12 @@ and deleting the clause by hand.
 Records per-slice-per-version conformance certification (MIL-214): "a conform sweep walked THIS
 version of this slice's code, against target-repo revision `<rev>`, and found nothing left
 unruled." Sets exactly three frontmatter fields on the doc resolved from `<slice-key>` via the
-same note-binding join `ratify`/`reratify`/`mark-implemented`/`em export` use
+same note-binding join `ratify`/`revise`/`mark-implemented`/`em export` use
 (`resolveSliceDocJoin` — MIL-121 cross-binding included), inserted directly after
 `implementedIn:` when none of the three exist yet:
 
 ```yaml
-conformedVersion: <doc.version>
+conformedVersion: <the shipped version — shippedVersion:, else version: on a pre-1.15 doc>
 conformedAt: <rev>
 conformedOn: <local date>
 ```
@@ -3488,9 +3496,9 @@ error — nothing to check, certification proceeds.
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key |
-| `slice "<key>" is \`status: <x>\` — only a slice at \`status: implemented\` can be certified; ...` | The status precondition |
-| `slice "<key>" has \`status: implemented\` but no \`implementedIn:\` link — nothing to certify against` | The implementedIn precondition |
-| `doc's \`version:\` value "<x>" isn't a positive integer — refusing to certify` | Can't derive `conformedVersion` from an unparseable `version:` |
+| `slice "<key>" is \`status: <x>\` with no shipped record — only a shipped slice (...) can be certified; ...` | The shipped precondition: neither `status: implemented` nor a `shippedVersion:` |
+| `slice "<key>" has \`status: implemented\` (or \`shippedVersion: <n>\`) but no \`implementedIn:\` link — nothing to certify against` | The implementedIn precondition |
+| `doc's \`shippedVersion:\` (or \`version:\`) value "<x>" isn't a positive integer — refusing to certify` | Can't derive `conformedVersion` from an unparseable shipped version |
 | `slice "<key>" has <n> unruled conformance finding(s) in ... — rule on them (...) or pass --skip-findings-check` | The findings-check gate — see above |
 
 ```bash

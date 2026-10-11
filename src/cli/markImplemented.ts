@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 // `em slice mark-implemented` (MIL-103): promotes the lifecycle flip that used to live only in
 // em-sdd-bridge's `em-sdd-mark-implemented <slice-key> <pr-url>` (see reference/implement.md §6)
-// into `em` itself, the same way MIL-87 promoted `--slice-ready`. Sets exactly two frontmatter
-// fields — `status: implemented` and `implementedIn: <pr-url>` — on the slice doc resolved from
-// the key via the SAME note-binding resolution `--slice-ready`/`em export` use
-// (catalog/docJoin.ts's resolveSliceDocJoin). Never touches `version:` (a bump here is an `em
-// ledger` defect per docs/slice-doc-schema.md) and never touches the markdown body.
+// into `em` itself, the same way MIL-87 promoted `--slice-ready`. Flips `status: implemented`,
+// sets `implementedIn: <pr-url>` and writes the shipped record beside it (MIL-284:
+// `shippedVersion:`/`shippedRef:`/`shippedOn:`) on the slice doc resolved from the key via the
+// SAME note-binding resolution `--slice-ready`/`em export` use (catalog/docJoin.ts's
+// resolveSliceDocJoin). Then, only when an Open Question was deferred to v<N+1> (MIL-283), opens
+// that next version as a `draft` through `revise.ts`'s `openNextDraft` — the one path on which
+// `version:` moves here, and the body changes only to re-open those questions.
 //
 // Write strategy: surgical index-math splicing on the raw file text, not a parse+re-serialize
 // (sliceDoc.ts's own parser is deliberately read-only and drops everything not in its `SliceDoc`
@@ -36,7 +38,6 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
-import { reopenDeferred } from "./defer.js";
 import { openNextDraft } from "./revise.js";
 
 export type ApplyFrontmatterResult =
@@ -60,18 +61,23 @@ const IMPLEMENTED_STATUS = "implemented";
  * `review.ts`/`ratify.ts` refusing out-of-order statuses; deliberately no escape flag, because
  * `em slice ratify` IS the escape hatch (it has its own `--skip-review`). `implemented` stays
  * legal so the idempotent re-run and the "status already implemented, `implementedIn` missing"
- * repair (MIL-103 AC#5) keep working — neither skips a lifecycle step.
+ * repair (MIL-103 AC#5) keep working — neither skips a lifecycle step. MIL-283 widens the
+ * idempotent re-run to any doc whose shipped record already names this URL, whatever its working
+ * `status` — the merge itself may have opened v<N+1> as a `draft`, and a re-run (the engagement
+ * skill's per-level pass, a CI retry) must still no-op rather than hit the gate.
  * No fs access — the caller reads/writes; see `runMarkImplemented` below.
  */
 /**
  * MIL-284: the shipped record, written beside `implementedIn:` — `shippedVersion:` (the doc's
  * `version:` now), `shippedRef:` (its `ratifiedRef:`, when it has one) and `shippedOn:`
  * (`shippedOn`, the local date). Each key that already has a line is replaced in place; the rest
- * are inserted right after `implementedIn:`. `status`/`implementedIn` keep carrying the lifecycle
- * for every reader; this is the record MIL-283 moves them to. Pure; `null` writes nothing.
+ * are inserted right after `implementedIn:`. Since MIL-283 this record, not `status`, is what
+ * every lifecycle reader decides on (`shippedRecordOf` in catalog/sliceDoc.ts), so
+ * `shippedVersion:`/`shippedRef:` are ALWAYS written on a real flip — a v2 merge that left a
+ * stale `shippedVersion: 1` beside `version: 2` would read as an unshipped delta forever. Only
+ * `shippedOn:` depends on the caller: `null` (the pure default, no clock here) skips it. Pure.
  */
 function withShippedRecord(inner: string, eol: string, shippedOn: string | null): string {
-  if (shippedOn === null) return inner;
   const implMatch = fieldLineRegex("implementedIn").exec(inner);
   if (!implMatch) return inner; // unreachable after the edits above; defensive
   const versionMatch = fieldLineRegex("version").exec(inner);
@@ -120,16 +126,28 @@ export function applyImplementedFrontmatter(raw: string, prUrl: string, shippedO
   const implMatch = fieldLineRegex("implementedIn").exec(inner);
   const currentStatus = normalizeFieldValue(statusMatch[2])?.toLowerCase() ?? null;
   const currentImplementedIn = implMatch ? normalizeFieldValue(implMatch[2]) : null;
+  const shippedVersionMatch = fieldLineRegex("shippedVersion").exec(inner);
+  const hasShippedRecord =
+    currentStatus === IMPLEMENTED_STATUS || (shippedVersionMatch !== null && normalizeFieldValue(shippedVersionMatch[2]) !== null);
 
-  if (currentStatus === IMPLEMENTED_STATUS && currentImplementedIn !== null) {
+  // A merge already recorded — the read-both rule `shippedRecordOf` applies: `status: implemented`,
+  // or a `shippedVersion:` under any working status (MIL-283 opened the next draft at merge). The
+  // same URL is the idempotent no-op; a different one refuses rather than overwrite provenance. A
+  // `ready-to-implement` doc over a shipped record is the NEXT version's merge — it falls through
+  // to the ordinary flip below, which replaces the link and the record.
+  if (hasShippedRecord && currentImplementedIn !== null && currentStatus !== RATIFIED_STATUS) {
     if (currentImplementedIn === trimmedUrl) {
       return { ok: true, content: raw, changed: false }; // idempotent no-op
     }
+    const nextVersionNote =
+      currentStatus === IMPLEMENTED_STATUS
+        ? ""
+        : `; the doc is \`status: ${currentStatus ?? "(empty)"}\` for its next version — ratify that before marking its merge`;
     return {
       ok: false,
       message:
         `already marked implemented with a different URL (existing: ${currentImplementedIn}, ` +
-        `requested: ${trimmedUrl}) — refusing to overwrite`,
+        `requested: ${trimmedUrl}) — refusing to overwrite${nextVersionNote}`,
     };
   }
 
@@ -262,15 +280,12 @@ export function runMarkImplemented(
 }
 
 /** Pure: when `content` (a freshly implemented doc) has a question deferred to v<version+1>,
- *  returns it with the next draft opened (`openNextDraft`); else returns it unchanged. */
+ *  returns it with the next draft opened (`openNextDraft`); else returns it unchanged. One call:
+ *  `openNextDraft` is pure and reports how many questions it re-opened, so "was anything
+ *  deferred to v<N+1>" is read off its result rather than decided by a second scan that would
+ *  have to agree with it on what the deferral marker looks like. */
 export function nextDraftIfDeferred(content: string): { content: string; openedDraft: { version: number; reopened: number } | null } {
-  const range = locateFrontmatterInner(content);
-  if (!range) return { content, openedDraft: null };
-  const versionMatch = fieldLineRegex("version").exec(content.slice(range.innerStart, range.innerEnd));
-  const version = versionMatch ? Number(normalizeFieldValue(versionMatch[2])) : NaN;
-  if (!Number.isInteger(version) || version < 1) return { content, openedDraft: null };
-  if (reopenDeferred(content, version + 1).count === 0) return { content, openedDraft: null };
   const opened = openNextDraft(content);
-  if (!opened.ok) return { content, openedDraft: null };
+  if (!opened.ok || opened.reopened === 0) return { content, openedDraft: null };
   return { content: opened.content, openedDraft: { version: opened.newVersion, reopened: opened.reopened } };
 }

@@ -164,8 +164,9 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   the answer is written into the doc and committed, the room reviews it (`em slice review
   --by`), and the human re-signs with `em slice ratify
   <model>.em <slice-key> --by <name>` (it records the commit it signs and refuses uncommitted
-  changes, MIL-284) — on a slice owning a `public` element both commands also need
-  `--meaning-unchanged` or `--contract-change "<why>"` (MIL-238). That is the human's step, not
+  changes, MIL-284) — on a slice owning a `public` element that `ratify` also needs
+  `--meaning-unchanged` or `--contract-change "<why>"` (MIL-238; `revise` takes neither — the
+  confirmation belongs to the new version's sign-off). That is the human's step, not
   yours — you never run `ratify`, and
   the doc is not ratified again until they do; resume the build after that.
 - **Never edit the ratified doc to record your own answer**, and never quietly pick a behavior

@@ -288,7 +288,7 @@ describe("applyRatifyFrontmatter — the review gate (MIL-201, D1)", () => {
     expect(result.skippedReviewFrom).toBeNull();
   });
 
-  it("lets a ready-to-implement doc through — the post-reratify path needs no fresh review", () => {
+  it("refuses an unsigned ready-to-implement doc and points at `em slice revise`, not the review gate (a dead end)", () => {
     const afterReratify =
       "---\n" +
       "schemaVersion: 1\n" +
@@ -306,7 +306,9 @@ describe("applyRatifyFrontmatter — the review gate (MIL-201, D1)", () => {
     expect(result).toEqual({
       ok: false,
       message:
-        'slice "shipped-slice" is `status: ready-to-implement` — the review gate comes first: run `em slice review <file> <key> --by <name>` after the review session, or pass --skip-review to ratify without one',
+        'slice "shipped-slice" is `status: ready-to-implement` with no `ratifiedBy:` (the unsigned leftover of a pre-1.15 `em slice reratify`) — ' +
+        "a new sign-off is a new version: run `em slice revise <file> <key>` to reopen it as a draft, then `em slice review --by` and " +
+        "`em slice ratify --by`; or pass --skip-review to ratify it in place",
     });
     const skipped = applyRatifyFrontmatter(afterReratify, "shipped-slice", "Jordan Lee", "2026-08-28", true);
     expect(skipped).toMatchObject({ ok: true, changed: true, skippedReviewFrom: "ready-to-implement" });
@@ -319,8 +321,11 @@ describe("applyRatifyFrontmatter — the review gate (MIL-201, D1)", () => {
     expect(result.ok && result.content).toContain("ratifiedOn: 2026-08-28\n");
     expect(result.ok && result.content).toContain("ratifiedBy: Alex Rivera\n");
     expect(result.ok && (result.content.match(/ratifiedBy:/g) ?? []).length).toBe(1);
-    // ...but refuses another signer: that is a new ratification of a doc that never re-passed review.
-    expect(applyRatifyFrontmatter(partial, "draft-slice", "Jordan Lee", "2026-08-28")).toMatchObject({ ok: false, message: expect.stringContaining("the review gate comes first") });
+    // ...but refuses another signer: that is a new ratification of a doc that never re-passed review —
+    // and `em slice review` would refuse the status too, so the message names `revise`, not review.
+    const other = applyRatifyFrontmatter(partial, "draft-slice", "Jordan Lee", "2026-08-28");
+    expect(other).toMatchObject({ ok: false, message: expect.stringContaining("signed by Alex Rivera — a new sign-off is a new version: run `em slice revise") });
+    expect(!other.ok && other.message).not.toContain("the review gate comes first");
   });
 
   it("applies with --skip-review from draft and reports the status it skipped", () => {

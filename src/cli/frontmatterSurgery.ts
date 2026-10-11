@@ -35,9 +35,9 @@ export function normalizeFieldValue(raw: string | undefined): string | null {
 /** Same anchor as `fieldLineRegex`, but captures through the line's own trailing EOL (or
  *  end-of-string, for a field that happens to be the frontmatter's last line) so a match can be
  *  spliced out ENTIRELY — key, value, and terminator — rather than just replaced. Used by
- *  `em slice reratify` (reratify.ts) to drop a now-stale `ratifiedBy:`/`ratifiedOn:` pair: those
- *  fields describe who signed off the PRIOR version, and silently leaving them in place would
- *  make a fresh version look already ratified. */
+ *  `em slice revise` (revise.ts, MIL-283 — formerly `reratify`) to drop the now-stale sign-off
+ *  keys (`SIGN_OFF_KEYS` there): those fields describe who signed off the PRIOR version, and
+ *  silently leaving them in place would make a fresh version look already ratified. */
 export function fieldLineWithEolRegex(key: string): RegExp {
   return new RegExp(`^${key}[ \\t]*:[ \\t]*[^\\r\\n]*\\r?\\n?`, "im");
 }

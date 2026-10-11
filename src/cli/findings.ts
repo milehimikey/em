@@ -233,8 +233,8 @@ export function lookupFindingsBesideReport(baseDir: string, reportPath: string):
 /** Every `conformance/*-findings.json` beside `baseDir`, newest filename first, that parses and
  *  shape-validates — a malformed candidate is silently skipped (`em conform-findings check` is
  *  the loud diagnosis for a broken file, not this scan). Shared by `cli/sliceConform.ts`'s
- *  `findLatestFindingsForRevision` (filters to one `revision`) and `em slice reratify`'s advisory
- *  (`reratifyAdvisory`, cli/reratify.ts — looks across every past run, not just one revision).
+ *  `findLatestFindingsForRevision` (filters to one `revision`) and `em slice revise`'s advisory
+ *  (`reviseAdvisory`, cli/revise.ts — looks across every past run, not just one revision).
  *  Returns `[]` when `conformance/` doesn't exist. */
 export function listAllFindingsFiles(baseDir: string): { path: string; doc: FindingsDoc }[] {
   const dir = join(baseDir, "conformance");

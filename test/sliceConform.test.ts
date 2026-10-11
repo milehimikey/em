@@ -82,13 +82,54 @@ describe("applyConformFrontmatter (pure text surgery)", () => {
     expect(second.content.match(/conformedOn:/g)?.length).toBe(1);
   });
 
-  it("refuses a doc that isn't status: implemented", () => {
+  // MIL-283: the merge opens v<N+1> as a draft when a question was deferred to it; the slice is
+  // still in conformance scope (its v<N> shipped) and must stay certifiable — at the SHIPPED version.
+  it("certifies a draft open over a shipped version, recording the shipped version (not the draft's)", () => {
+    const draftOverShipped =
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\n" +
+      "implementedIn: https://github.com/org/repo/pull/9\nshippedVersion: 1\nshippedOn: 2026-10-01\nversion: 2\n---\nbody\n";
+    const result = applyConformFrontmatter(draftOverShipped, "shipped-slice", "8f12ed8", "2026-10-08");
+    expect(result).toMatchObject({ ok: true, changed: true, version: 1 });
+    expect(result.ok && result.content).toContain(
+      "implementedIn: https://github.com/org/repo/pull/9\nconformedVersion: 1\nconformedAt: 8f12ed8\nconformedOn: 2026-10-08\nshippedVersion: 1\n",
+    );
+    expect(result.ok && result.content).toContain("status: draft\n"); // untouched
+    expect(result.ok && result.content).toContain("version: 2\n"); // untouched
+    // Idempotent on the same (shipped version, --at) pair, like any other certification.
+    if (!result.ok) return;
+    expect(applyConformFrontmatter(result.content, "shipped-slice", "8f12ed8", "2026-10-09")).toEqual({ ok: true, content: result.content, changed: false, version: 1 });
+  });
+
+  it("an implemented doc with a shipped record certifies shippedVersion, not version", () => {
+    const stale = IMPLEMENTED_DOC.replace("version: 2\n", "version: 3\nshippedVersion: 2\n");
+    const result = applyConformFrontmatter(stale, "shipped-slice", "8f12ed8", "2026-09-08");
+    expect(result).toMatchObject({ ok: true, version: 2 });
+    expect(result.ok && result.content).toContain("conformedVersion: 2\n");
+  });
+
+  it("refuses a shipped record with no implementedIn link, naming the record", () => {
+    const noLink = "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nshippedVersion: 1\nversion: 2\n---\nbody\n";
+    expect(applyConformFrontmatter(noLink, "k", "8f12ed8", "2026-09-08")).toEqual({
+      ok: false,
+      message: 'slice "k" has `shippedVersion: 1` but no `implementedIn:` link — nothing to certify against',
+    });
+  });
+
+  it("refuses an unparseable shippedVersion, naming the key it read", () => {
+    const bad = "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nimplementedIn: https://x/1\nshippedVersion: one\nversion: 2\n---\nbody\n";
+    expect(applyConformFrontmatter(bad, "k", "8f12ed8", "2026-09-08")).toEqual({
+      ok: false,
+      message: "doc's `shippedVersion:` value \"one\" isn't a positive integer — refusing to certify",
+    });
+  });
+
+  it("refuses a doc that isn't shipped (no implemented status, no shipped record)", () => {
     const result = applyConformFrontmatter(DRAFT_DOC, "draft-slice", "8f12ed8", "2026-09-08");
     expect(result).toEqual({
       ok: false,
       message:
-        'slice "draft-slice" is `status: draft` — only a slice at `status: implemented` can be certified; ' +
-        "run `em slice mark-implemented` first",
+        'slice "draft-slice" is `status: draft` with no shipped record — only a shipped slice ' +
+        "(`status: implemented`, or any status with `shippedVersion:`) can be certified; run `em slice mark-implemented` first",
     });
   });
 
@@ -291,8 +332,8 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toBe(
-      'slices/draft-slice.md: slice "draft-slice" is `status: draft` — only a slice at `status: implemented` ' +
-        "can be certified; run `em slice mark-implemented` first",
+      'slices/draft-slice.md: slice "draft-slice" is `status: draft` with no shipped record — only a shipped slice ' +
+        "(`status: implemented`, or any status with `shippedVersion:`) can be certified; run `em slice mark-implemented` first",
     );
   });
 
