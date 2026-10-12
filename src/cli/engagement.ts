@@ -74,6 +74,8 @@ export interface UnitIndex {
    *  Ledger's inferred `merged` and the outside-upstream hold read, in place of
    *  `docStatus === "implemented"` (a shipped slice can be `draft` again). */
   docShipped: Map<string, boolean>;
+  /** GH #241: the unit doc's own `tracking:` (null: absent / no doc). */
+  docTracking: Map<string, string | null>;
 }
 
 export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir: string): UnitIndex {
@@ -99,6 +101,7 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
   const pattern = new Map<string, string>();
   const docStatus = new Map<string, string | null>();
   const docShipped = new Map<string, boolean>();
+  const docTracking = new Map<string, string | null>();
   for (let i = 0; i < keys.length; i++) {
     if (unitOfSlice[i] !== keys[i]) continue;
     units.push(keys[i]);
@@ -107,8 +110,9 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
     const join = joinSliceDocFast(model, refs, model.slices[i], keys[i], docsByKey);
     docStatus.set(keys[i], join.found && join.reason === null ? join.status : null);
     docShipped.set(keys[i], join.found && join.reason === null && join.shipped);
+    docTracking.set(keys[i], join.found && join.reason === null ? join.tracking : null);
   }
-  return { unitOfSlice, units, sliceIndexOf, pattern, docStatus, docShipped };
+  return { unitOfSlice, units, sliceIndexOf, pattern, docStatus, docShipped, docTracking };
 }
 
 /** Unit of one element: an `again` view instance belongs to its originating declaration. */
@@ -241,6 +245,12 @@ export function ledgerFacts(idx: UnitIndex, keys: string[]): Map<string, LedgerR
 /** R23: `merged` is also inferred (read-only) when a version of the slice has shipped — MIL-283:
  *  the shipped record (`docShipped`), not `status === "implemented"`, since a shipped slice can be
  *  `draft` again while the engagement that shipped it is still being closed out. */
+/** GH #241: the ticket key a slice's PR cites — the slice doc's own `tracking:` when present,
+ *  else the engagement's; null when neither is set. */
+export function effectiveTracking(sliceTracking: string | null, engagementTracking: string | null): string | null {
+  return sliceTracking ?? engagementTracking;
+}
+
 export function effectiveState(entry: EngagementSliceEntry, docShipped: boolean): { state: LedgerState; stateInferred: boolean } {
   if (entry.state !== "merged" && docShipped) return { state: "merged", stateInferred: true };
   return { state: entry.state, stateInferred: false };
@@ -256,6 +266,8 @@ export interface EngagementStatusSlice {
   branch: string | null;
   base: string | null;
   pr: string | null;
+  /** GH #241: the ticket key this slice's PR cites (slice doc `tracking:` wins over the engagement's). */
+  tracking: string | null;
 }
 
 export interface EngagementStatus {
@@ -265,6 +277,7 @@ export interface EngagementStatus {
   status: "open" | "closed";
   created: string;
   createdBy: string | null;
+  tracking: string | null;
   parallel: number;
   slices: EngagementStatusSlice[];
   counts: Record<LedgerState, number>;
@@ -288,6 +301,7 @@ export function buildEngagementStatus(file: string, engagementFile: string, eng:
       branch: e.branch,
       base: e.base,
       pr: e.pr,
+      tracking: effectiveTracking(idx.docTracking.get(e.key) ?? null, eng.tracking),
     };
   });
   const closable = slices.every((s) => s.state === "merged" || s.state === "gap");
@@ -298,6 +312,7 @@ export function buildEngagementStatus(file: string, engagementFile: string, eng:
     status: eng.status,
     created: eng.created,
     createdBy: eng.createdBy,
+    tracking: eng.tracking,
     parallel: eng.parallel,
     slices,
     counts,
@@ -307,10 +322,11 @@ export function buildEngagementStatus(file: string, engagementFile: string, eng:
 
 export function formatEngagementStatusText(s: EngagementStatus): string {
   const by = s.createdBy ? ` by ${s.createdBy}` : "";
-  const lines = [`engagement "${s.slug}" (${s.status}) — ${s.slices.length} slice(s), parallel ${s.parallel}, created ${s.created}${by}`];
+  const track = s.tracking ? ` · tracking ${s.tracking}` : "";
+  const lines = [`engagement "${s.slug}" (${s.status}) — ${s.slices.length} slice(s), parallel ${s.parallel}, created ${s.created}${by}${track}`];
   for (const x of s.slices) {
     const state = `${x.state}${x.stateInferred ? " (inferred: doc implemented)" : ""}${x.heldBy ? ` (${x.heldBy})` : ""}`;
-    const extra = [x.branch ? `branch ${x.branch}` : null, x.base ? `base ${x.base}` : null, x.pr ? `pr ${x.pr}` : null].filter(Boolean).join(" · ");
+    const extra = [x.branch ? `branch ${x.branch}` : null, x.base ? `base ${x.base}` : null, x.pr ? `pr ${x.pr}` : null, x.tracking ? `tracking ${x.tracking}` : null].filter(Boolean).join(" · ");
     lines.push(`  ${x.key} [${x.pattern}] doc: ${x.docStatus ?? "(no doc)"} · state: ${state}${extra ? ` · ${extra}` : ""}`);
   }
   const open = s.slices.filter((x) => x.state !== "merged" && x.state !== "gap").length;
@@ -353,6 +369,8 @@ export interface EngagementPlanSlice {
   held: HoldReason | "human" | null;
   state: LedgerState;
   stateInferred: boolean;
+  /** GH #241: the ticket key this slice's PR cites (slice doc `tracking:` wins over the engagement's). */
+  tracking: string | null;
 }
 
 export interface EngagementPlanLevel {
@@ -367,6 +385,7 @@ export interface EngagementPlan {
   engagement: string;
   slug: string;
   status: "open" | "closed";
+  tracking: string | null;
   parallel: number;
   levels: EngagementPlanLevel[];
   slices: EngagementPlanSlice[];
@@ -425,6 +444,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       held: planHeld ?? (entry.heldBy === "human" && state === "held" ? "human" : null),
       state,
       stateInferred,
+      tracking: effectiveTracking(idx.docTracking.get(key) ?? null, eng.tracking),
     };
   });
 
@@ -436,7 +456,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   }
   // Slices listed level by level, model order within a level.
   slices.sort((a, b) => a.level - b.level || order(a.key, b.key));
-  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, parallel: eng.parallel, levels, slices } };
+  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, parallel: eng.parallel, levels, slices } };
 }
 
 /** Walk predecessors among the unlevelled nodes until one repeats: `a -> b -> a` (upstream
@@ -455,13 +475,14 @@ function describeCycle(remaining: string[], inPreds: Map<string, string[]>): str
 }
 
 export function formatEngagementPlanText(p: EngagementPlan): string {
-  const lines = [`engagement "${p.slug}" (${p.status}) — ${p.slices.length} slice(s) in ${p.levels.length} level(s), parallel ${p.parallel}`];
+  const lines = [`engagement "${p.slug}" (${p.status}) — ${p.slices.length} slice(s) in ${p.levels.length} level(s), parallel ${p.parallel}${p.tracking ? `, tracking ${p.tracking}` : ""}`];
   for (const lvl of p.levels) {
     lines.push(`level ${lvl.level}: ${lvl.width} slice${lvl.width === 1 ? "" : "s"} (ceiling ${lvl.ceiling})`);
     for (const s of p.slices.filter((x) => x.level === lvl.level)) {
       const held = s.held ? ` · held: ${s.held}` : "";
       const inferred = s.stateInferred ? " (inferred)" : "";
-      lines.push(`  ${s.key} [${s.pattern}] ${s.branch} on ${s.base} · state: ${s.state}${inferred}${held}`);
+      const track = s.tracking ? ` · tracking: ${s.tracking}` : "";
+      lines.push(`  ${s.key} [${s.pattern}] ${s.branch} on ${s.base} · state: ${s.state}${inferred}${held}${track}`);
     }
   }
   return lines.join("\n");
@@ -500,6 +521,8 @@ export interface NewEngagementOptions {
   selector: Selector;
   parallel: number;
   createdBy: string | null;
+  /** GH #241: `--tracking` — a ticket key or URL; null/absent when not given. */
+  tracking?: string | null;
   created: string;
 }
 
@@ -508,6 +531,8 @@ export type NewResult = { ok: true; text: string; units: string[]; warning: stri
 export function buildNewEngagement(input: { file: string; model: NormalizedModel; refs: RefsResult; baseDir: string }, opts: NewEngagementOptions): NewResult {
   if (!SLUG_RE.test(opts.slug)) return { ok: false, message: `invalid slug "${opts.slug}" — expected kebab-case (a-z, 0-9, -)` };
   if (!Number.isInteger(opts.parallel) || opts.parallel < 1) return { ok: false, message: "--parallel must be a positive integer" };
+  const tracking = opts.tracking === undefined || opts.tracking === null ? null : opts.tracking.trim();
+  if (tracking !== null && (tracking === "" || /[\r\n]/.test(tracking))) return { ok: false, message: "--tracking must be a non-empty single line (a ticket key or URL)" };
   const idx = buildUnitIndex(input.model, input.refs, input.baseDir);
   const sel = resolveSelection(input, idx, opts.selector);
   if (!sel.ok) return sel;
@@ -520,6 +545,7 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
     model: modelRefFor(engagementPath(input.file, opts.slug), input.file),
     created: opts.created,
     createdBy: opts.createdBy,
+    tracking,
     parallel: opts.parallel,
     status: "open",
     slices: sel.units.map((key) => ({ key, state: "planned", branch: null, base: null, pr: null })),

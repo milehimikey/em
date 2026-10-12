@@ -9,14 +9,20 @@ import type { EngagementPlan, EngagementStatus } from "../cli/engagement.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 /** The engagement FILE's frontmatter contract (`engagementSchemaVersion`, docs/engagement-schema.md).
- *  1.0 (MIL-268): slug, created, createdBy, parallel, status, slices[{key, state, branch, base, pr, heldBy?}]. */
-export const ENGAGEMENT_SCHEMA_VERSION = "1.0";
+ *  1.0 (MIL-268): slug, created, createdBy, parallel, status, slices[{key, state, branch, base, pr, heldBy?}].
+ *  1.1 (GH #241): optional `tracking` — the engagement-level ticket key or URL. A 1.0 file still reads. */
+export const ENGAGEMENT_SCHEMA_VERSION = "1.1";
+
+/** Every `engagementSchemaVersion` this em reads; it always writes {@link ENGAGEMENT_SCHEMA_VERSION}. */
+export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1"];
 
 // 1.0 (MIL-268): initial shape.
-export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.0";
+// 1.1 (GH #241): additive `tracking` on the document and on each slice.
+export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.1";
 
 // 1.0 (MIL-268): initial shape.
-export const ENGAGEMENT_STATUS_SCHEMA_VERSION = "1.0";
+// 1.1 (GH #241): additive `tracking` on the document and on each slice.
+export const ENGAGEMENT_STATUS_SCHEMA_VERSION = "1.1";
 
 export function buildEngagementPlanJson(plan: EngagementPlan): string {
   const doc = {
@@ -27,6 +33,7 @@ export function buildEngagementPlanJson(plan: EngagementPlan): string {
     slug: plan.slug,
     status: plan.status,
     parallel: plan.parallel,
+    tracking: plan.tracking,
     levels: plan.levels,
     slices: plan.slices,
   };
@@ -44,6 +51,7 @@ export function buildEngagementStatusJson(status: EngagementStatus): string {
     created: status.created,
     createdBy: status.createdBy,
     parallel: status.parallel,
+    tracking: status.tracking,
     slices: status.slices,
     counts: status.counts,
     closable: status.closable,

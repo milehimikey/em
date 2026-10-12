@@ -79,6 +79,8 @@ export interface SliceQueryDoc {
   /** MIL-283: a version of this slice has shipped (`shippedRecordOf`) — what the readers that used
    *  to test `status === "implemented"` read now; false whenever `found` is false. */
   shipped: boolean;
+  /** GH #241: the doc's own frontmatter `tracking:` (null when absent or no usable doc). */
+  tracking: string | null;
   driftSignal: DriftSignalKind | null;
   /** The doc's body text (post-frontmatter), for `extractInvariantIds()` — null whenever
    *  `found` is false or the frontmatter wasn't usable (nothing safe to scan). */
@@ -124,13 +126,13 @@ export function joinSliceDocFast(
       const originatingDoc = joinSliceDocFast(model, refs, originatingSlice, continuation.sliceKey, docsByKey);
       return { ...originatingDoc, continuationOf: continuation.sliceKey };
     }
-    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, shipped: false, driftSignal: null, body: null, continuationOf: null };
+    return { found: false, path, reason: "no-doc-bound", status: null, implementedIn: null, shipped: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
   }
 
   const doc = docsByKey.get(sliceKey);
-  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, shipped: false, driftSignal: null, body: null, continuationOf: null };
+  if (!doc) return { found: false, path, reason: "binding-missing-file", status: null, implementedIn: null, shipped: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
   if (!hasUsableFrontmatter(doc)) {
-    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, shipped: false, driftSignal: null, body: null, continuationOf: null };
+    return { found: true, path, reason: "frontmatter-invalid", status: null, implementedIn: null, shipped: false, tracking: null, driftSignal: null, body: null, continuationOf: null };
   }
   return foundDoc(path, doc);
 }
@@ -143,6 +145,7 @@ function foundDoc(path: string, doc: SliceDoc): SliceQueryDoc {
     status: doc.status,
     implementedIn: doc.implementedIn,
     shipped: shippedRecordOf(doc) !== null,
+    tracking: doc.tracking,
     driftSignal: classifyImplementationDrift(doc),
     body: doc.body,
     continuationOf: null,

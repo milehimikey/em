@@ -19,7 +19,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { locateFrontmatterInner, fieldLineRegex } from "./frontmatterSurgery.js";
 import { markerPair, markerRegex } from "../util/markers.js";
-import { ENGAGEMENT_SCHEMA_VERSION } from "../emit/engagementJson.js";
+import { ENGAGEMENT_READABLE_VERSIONS } from "../emit/engagementJson.js";
 
 /** The Ledger states (R23), in lifecycle order. Any state is settable; `merged` is terminal. */
 export const LEDGER_STATES = ["planned", "building", "validating", "review", "awaiting-merge", "merged", "held", "gap"] as const;
@@ -51,6 +51,8 @@ export interface EngagementFile {
   model: string;
   created: string;
   createdBy: string | null;
+  /** GH #241: the engagement-level ticket key or URL (same `tracking:` name slice docs use); null when absent. */
+  tracking: string | null;
   parallel: number;
   status: "open" | "closed";
   slices: EngagementSliceEntry[];
@@ -113,6 +115,7 @@ export function renderEngagementFile(fm: EngagementFile, ledgerLines: string[]):
     `model: ${q(fm.model)}`,
     `created: ${fm.created}`,
     `createdBy: ${q(fm.createdBy)}`,
+    ...(fm.tracking === null ? [] : [`tracking: ${q(fm.tracking)}`]),
     `parallel: ${fm.parallel}`,
     `status: ${fm.status}`,
     "slices:",
@@ -151,8 +154,8 @@ export function parseEngagementFile(text: string): ParseResult {
   if (!data || typeof data !== "object") return { ok: false, message: "frontmatter is not a mapping" };
   const d = data as Record<string, unknown>;
   const version = str(d.engagementSchemaVersion);
-  if (version !== ENGAGEMENT_SCHEMA_VERSION) {
-    return { ok: false, message: `unsupported engagementSchemaVersion "${version ?? "(missing)"}" (this em reads "${ENGAGEMENT_SCHEMA_VERSION}")` };
+  if (!version || !ENGAGEMENT_READABLE_VERSIONS.includes(version)) {
+    return { ok: false, message: `unsupported engagementSchemaVersion "${version ?? "(missing)"}" (this em reads ${ENGAGEMENT_READABLE_VERSIONS.map((v) => `"${v}"`).join(" and ")})` };
   }
   const model = str(d.model);
   if (!model) return { ok: false, message: "model must name the model file (path relative to the engagement file)" };
@@ -181,6 +184,7 @@ export function parseEngagementFile(text: string): ParseResult {
       model,
       created: str(d.created) ?? "",
       createdBy: str(d.createdBy),
+      tracking: str(d.tracking),
       parallel,
       status,
       slices,

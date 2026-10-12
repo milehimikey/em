@@ -74,7 +74,7 @@ describe("event-modeling-engagement skill text (MIL-270)", () => {
     expect(skill).toContain("git worktree add .claude/worktrees/<key> -b impl/<key> <base>");
     expect(skill).toContain("--state building --branch impl/<key> --base <base>");
     expect(skillFlat).toContain("**Never the current HEAD**");
-    expect(skillFlat).toContain("Its prompt is ONLY the slice key and the absolute worktree path");
+    expect(skillFlat).toContain("Its prompt is ONLY the slice key, the absolute worktree path and, when the plan's slice carries one, its tracking key");
     for (const agent of ["em-implementer", "em-validator", "em-reviewer", "em-critic"]) {
       expect(skill, agent).toContain(`\`em:${agent}\``);
     }

@@ -1953,7 +1953,7 @@ slice's doc through a ratified `covers:` entry folds into that slice.
 every to-do list and its reaction a cycle. Edges are lifted from elements to units, and an
 upstream whose doc is already `implemented` imposes nothing.
 
-### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --downstream-of <ref>) [--parallel N] [--by <name>] [--force]`
+### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --downstream-of <ref>) [--parallel N] [--by <name>] [--tracking <key>] [--force]`
 
 Writes `engagements/<slug>.md` with every selected slice at state `planned`, and records the
 model it belongs to (`model:`, relative to the file). Every other subcommand refuses a model
@@ -1968,7 +1968,10 @@ selector:
 
 Slices that are not yet `ready-to-implement` are accepted; `plan` reports them held. `--parallel`
 (default 3) is the per-level ceiling the lead confirms once. `--by` records `createdBy`;
-`created` is today's local date. Refusals (exit 1, stderr): `pass exactly one of --slices,
+`created` is today's local date. `--tracking <key>` (GH #241) records an issue-tracker key or URL
+as `tracking:` in the frontmatter — the same name a slice doc's `tracking:` uses — so the lead
+can pass it to every implementer and the PRs cite one ticket; it is free text and must be a
+non-empty single line (`--tracking must be a non-empty single line (a ticket key or URL)`). Refusals (exit 1, stderr): `pass exactly one of --slices,
 --context, --downstream-of`; `the selection is empty — nothing to engage`; `invalid slug "<s>"
 — expected kebab-case (a-z, 0-9, -)`; `--parallel must be a positive integer`; `engagement
 "<slug>" already exists (<path>) — pass --force to overwrite`.
@@ -2004,6 +2007,7 @@ PR compiles, tests and merges on its own. Holds are recomputed on every run. Per
 | `planHeld` | The plan's own computed hold (below), or `null`. Never written to the Ledger |
 | `held` | `planHeld`, else `human` when the Ledger records `set --state held`, else `null` |
 | `state`, `stateInferred` | The Ledger state; `merged` with `stateInferred: true` when the doc has reached `implemented` |
+| `tracking` | The ticket key this slice's PR cites: the slice doc's own `tracking:` when present, else the engagement's; `null` when neither is set |
 
 | Hold reason | When |
 |---|---|
@@ -2028,8 +2032,8 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.0"`, `generator`, `file`, `engagement` (the
-file's path), `slug`, `status`, `parallel`, `levels: [{ level, width, ceiling, slices }]` and
+`--json` prints `engagementPlanSchemaVersion: "1.1"`, `generator`, `file`, `engagement` (the
+file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `parallel`, `levels: [{ level, width, ceiling, slices }]` and
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level. The MCP
 `engagement_plan` tool returns the same document. If a cycle survives the `loops-to` exclusion,
 `plan` refuses and names it: `em engagement plan: the engagement's dependency graph has a cycle
@@ -2055,8 +2059,8 @@ kept.
 
 The Ledger joined with each doc's current status: per slice `pattern`, `docStatus`, `state`
 (`merged` inferred when the doc is `implemented`), `stateInferred`, `heldBy`, `branch`, `base`,
-`pr`; `counts` per state; and `closable` (every slice is `merged` or `gap`). `--json` prints
-`engagementStatusSchemaVersion: "1.0"`; the MCP `engagement_status` tool returns the same
+`pr`, `tracking` (as in `plan`); the engagement-level `tracking`; `counts` per state; and `closable` (every slice is `merged` or `gap`). `--json` prints
+`engagementStatusSchemaVersion: "1.1"`; the MCP `engagement_status` tool returns the same
 document.
 
 ### `em engagement close <file> <slug>`

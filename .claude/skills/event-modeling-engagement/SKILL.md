@@ -98,9 +98,12 @@ For each slice the plan lists as not held:
 4. Record it:
    `em engagement set <model>.em <slug> <key> --state building --branch impl/<key> --base <base>`
 5. Dispatch `em-implementer` (`em:em-implementer` under the plugin) on the implementer model.
-   Its prompt is ONLY the slice key and the absolute worktree path. It reads its own spec, the
-   constitution and the implement contract. Give it no plan, no other slice, and no merge
-   instructions.
+   Its prompt is ONLY the slice key, the absolute worktree path and, when the plan's slice
+   carries one, its tracking key (`tracking` in `em engagement plan --json` — GH #241). That
+   field is already resolved: the slice doc's own `tracking:` wins over the engagement's
+   `--tracking`, and it is `null` when neither is set (then say nothing about tracking). It reads
+   its own spec, the constitution and the implement contract. Give it no plan, no other slice,
+   and no merge instructions.
 
 ## 4. Validate, review, criticise
 
@@ -109,7 +112,8 @@ When the implementer returns a PR URL (and a per-invariant test map):
 1. `em engagement set <model>.em <slug> <key> --state validating --pr <url>`. Check the PR's
    base: `gh pr view <url> --json baseRefName` must be `main`. If not, fix it with
    `gh pr edit <url> --base main`. That is a lead step; the implementer never changes a base.
-2. Dispatch `em-validator` (`em:em-validator`) with the slice key and the worktree path. It
+2. Dispatch `em-validator` (`em:em-validator`) with the slice key, the worktree path and the same
+   tracking key (when the slice has one). It
    returns one PASS/FAIL line per check and `OVERALL: PASS` or a failure.
 3. On `OVERALL: PASS`: `em engagement set <model>.em <slug> <key> --state review`. Dispatch
    `em-reviewer` (`em:em-reviewer`) with the slice key and the PR URL. Dispatch `em-critic`

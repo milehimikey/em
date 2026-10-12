@@ -42,8 +42,8 @@ function input(file: string): EngagementModelInput {
 }
 
 /** `new` through the builder, written to disk; returns the warning (or null). */
-function create(file: string, slug: string, selector: Selector, parallel = 3): string | null {
-  const r = buildNewEngagement(input(file), { slug, selector, parallel, createdBy: "Alex Rivera", created: "2026-10-08" });
+function create(file: string, slug: string, selector: Selector, parallel = 3, tracking: string | null = null): string | null {
+  const r = buildNewEngagement(input(file), { slug, selector, parallel, createdBy: "Alex Rivera", tracking, created: "2026-10-08" });
   if (!r.ok) throw new Error(r.message);
   mkdirSync(join(dirname(file), "engagements"), { recursive: true });
   writeFileSync(engagementPath(file, slug), r.text);
@@ -390,6 +390,65 @@ describe("em engagement (CLI)", () => {
     expect(overall.stdout).toContain("\nopen engagements: 1 (three)\n");
     expect(existsSync(join(dir, "engagements", "three.md"))).toBe(true);
   }, 90_000); // ~8 CLI spawns in one case: 32 s on a cold CI runner (main red at 4956d19); per-test ceiling
+});
+
+// GH #241: the engagement-level `tracking:` key, and the slice doc's own `tracking:` winning over it.
+describe("engagement tracking key (GH #241)", () => {
+  const status = (file: string, slug: string) => {
+    const r = engagementStatusFor(input(file), slug);
+    if (!r.ok) throw new Error(r.message);
+    return r.status;
+  };
+
+  it("new writes the key when given and no tracking line when absent; plan and status carry it", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    create(file, "plain", { kind: "slices", keys: ["order-list"] });
+    expect(readFileSync(engagementPath(file, "plain"), "utf8")).not.toContain("tracking:");
+    expect(plan(file, "plain")).toMatchObject({ tracking: null, slices: [{ tracking: null }] });
+
+    create(file, "tracked", { kind: "slices", keys: ["order-list"] }, 3, "PROJ-123");
+    const text = readFileSync(engagementPath(file, "tracked"), "utf8");
+    expect(text).toContain('\ntracking: "PROJ-123"\n');
+    expect(text).toContain('engagementSchemaVersion: "1.1"');
+    expect(plan(file, "tracked")).toMatchObject({ tracking: "PROJ-123", slices: [{ key: "order-list", tracking: "PROJ-123" }] });
+    expect(status(file, "tracked")).toMatchObject({ tracking: "PROJ-123", slices: [{ key: "order-list", tracking: "PROJ-123" }] });
+  });
+
+  it("a 1.0 engagement file (no tracking) still reads", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    create(file, "old", { kind: "slices", keys: ["order-list"] });
+    const path = engagementPath(file, "old");
+    writeFileSync(path, readFileSync(path, "utf8").replace('engagementSchemaVersion: "1.1"', 'engagementSchemaVersion: "1.0"'));
+    expect(plan(file, "old").tracking).toBeNull();
+  });
+
+  it("a slice doc's own tracking: wins over the engagement's for that slice only", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    const doc = join(dir, "slices", "order-list.md");
+    writeFileSync(doc, readFileSync(doc, "utf8").replace("status: ready-to-implement", "status: ready-to-implement\ntracking: https://tracker.test/ORD-9"));
+    create(file, "mixed", { kind: "slices", keys: ["order-list", "account-list"] }, 3, "PROJ-123");
+    const bySlice = (rows: { key: string; tracking: string | null }[]) => Object.fromEntries(rows.map((r) => [r.key, r.tracking]));
+    expect(bySlice(plan(file, "mixed").slices)).toEqual({ "order-list": "https://tracker.test/ORD-9", "account-list": "PROJ-123" });
+    expect(bySlice(status(file, "mixed").slices)).toEqual({ "order-list": "https://tracker.test/ORD-9", "account-list": "PROJ-123" });
+  });
+
+  it("rejects an empty or multi-line key", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    for (const bad of ["", "   ", "A\nB"]) {
+      const r = buildNewEngagement(input(file), { slug: "bad", selector: { kind: "slices", keys: ["order-list"] }, parallel: 3, createdBy: null, tracking: bad, created: "2026-10-08" });
+      expect(r).toEqual({ ok: false, message: "--tracking must be a non-empty single line (a ticket key or URL)" });
+    }
+  });
+
+  it("the CLI flag writes the key and --json carries it", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    expect(em(["engagement", "new", "lifecycles.em", "cli", "--slices", "order-list", "--tracking", "PROJ-7"], dir).status).toBe(0);
+    expect(readFileSync(engagementPath(file, "cli"), "utf8")).toContain('tracking: "PROJ-7"');
+    const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
+    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
+    expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+  }, 60_000);
 });
 
 // MIL-283: the Ledger's inferred `merged` and the outside-upstream hold read the shipped record.

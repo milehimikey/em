@@ -25,6 +25,7 @@ const FM: EngagementFile = {
   model: "../a.em",
   created: "2026-10-08",
   createdBy: "Alex Rivera",
+  tracking: null,
   parallel: 3,
   status: "open",
   slices: [
@@ -44,7 +45,7 @@ describe("renderEngagementFile", () => {
     expect(render()).toBe(
       [
         "---",
-        'engagementSchemaVersion: "1.0"',
+        'engagementSchemaVersion: "1.1"',
         "slug: loans",
         'model: "../a.em"',
         "created: 2026-10-08",
@@ -83,7 +84,7 @@ describe("parseEngagementFile refusals", () => {
   it.each([
     ["no fence", "# nothing\n", "no frontmatter (expected a leading --- fence)"],
     ["no model", '---\nengagementSchemaVersion: "1.0"\nstatus: open\n---\n', "model must name the model file (path relative to the engagement file)"],
-    ["wrong version", '---\nengagementSchemaVersion: "9.9"\n---\n', 'unsupported engagementSchemaVersion "9.9" (this em reads "1.0")'],
+    ["wrong version", '---\nengagementSchemaVersion: "9.9"\n---\n', 'unsupported engagementSchemaVersion "9.9" (this em reads "1.0" and "1.1")'],
     ["bad status", '---\nengagementSchemaVersion: "1.0"\nmodel: "../a.em"\nstatus: done\n---\n', 'status must be open or closed, got "done"'],
     ["bad state", '---\nengagementSchemaVersion: "1.0"\nmodel: "../a.em"\nstatus: open\nparallel: 2\nslices:\n  - {key: a, state: nope}\n---\n', 'slice "a" has an unknown state "nope"'],
   ])("%s", (_name, text, message) => {
