@@ -1480,10 +1480,12 @@ nothing here re-derives a rule another module owns:
   is only counted **once** — an Open Question belongs to the doc, not to each slice bound to it,
   so a shared doc's single unresolved question doesn't inflate the total once per covering slice.
 - **the implementation constitution, present or absent** (MIL-202) — existence only, per model.
-  Resolution: walk up from the model's directory looking for a `.specify/` directory; if one is
-  found, the document IS `<root>/.specify/memory/constitution.md` (spec-kit's own slot — `em`
-  never expects a second copy); otherwise it's `<modelDir>/constitution.md`, where `em scaffold`
-  writes it. `em` never opens the file: a blank stock template and a fully answered, ratified
+  Resolution (one locator, shared with `em upgrade`): walk up from the model's directory looking
+  for a `.specify/` directory; if one is found, the document is `<root>/.specify/memory/constitution.md`
+  (spec-kit's own slot — it wins whenever it exists); otherwise, or when that slot is empty, it's
+  `<modelDir>/constitution.md`, where `em scaffold` writes it. Symlinks are followed (a repo-root
+  constitution linked in beside the model counts; a dangling link doesn't). An `absent` report
+  names every path tried. `em` never opens the file: a blank stock template and a fully answered, ratified
   constitution are indistinguishable here **by design** — judging content is a human's job (and
   keeps the core deterministic and LLM-free).
 - **last-conformance revision, with computed commits-behind-HEAD** — reads each model's sibling
@@ -1664,12 +1666,12 @@ silently dropped from the total. The text/`--md` reports show it on its own line
 
 `constitution` (added in schema `1.3`, MIL-202) is per model, inside its `conformance[]` entry:
 `present` is a plain existence check, and `path` is the **expected** location — set whether or not
-the file is there, so an `absent` report always says where `em` looked. It is expressed relative
+the file is there (the primary location when absent, the one found when present). It is expressed relative
 to that entry's own `modelDir`, always with `/` separators, so the document stays
 machine-independent: `constitution.md` for a model with no spec-kit above it,
 `../../.specify/memory/constitution.md` for a model two directories below a spec-kit root.
 `join(modelDir, path)` reconstructs the real location. The text report prints
-`constitution: present` or `constitution: absent (<expected path>)` per model (labelled
+`constitution: present` or `constitution: absent (<every path tried>)` per model (labelled
 `constitution (<file>):` when there's more than one input), and `--md` carries a matching
 `Constitution` row.
 

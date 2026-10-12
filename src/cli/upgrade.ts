@@ -53,7 +53,7 @@ import {
   CI_WORKFLOW_MARKER,
   CONFORM_WORKFLOW_MARKER,
 } from "./ciInit.js";
-import { findSpecifyRoot } from "./status.js";
+import { findSpecifyRoot, locateConstitution } from "./status.js";
 import { scaffoldConstitution, scaffoldStateFile } from "../templates.js";
 import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolveStateFilePath } from "./stateFile.js";
 import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner } from "./frontmatterSurgery.js";
@@ -401,8 +401,8 @@ function applyCiBlock(ctx: UpgradeContext): StepApplyOutcome {
 // ---- Step 5: constitution — scaffold a draft when absent and no .specify/ owns the slot. ----
 
 function detectConstitution(ctx: UpgradeContext): StepDetection {
-  const path = join(ctx.baseDir, "constitution.md");
-  if (existsSync(path)) return { applicable: false, reason: "constitution.md already exists" };
+  const existing = locateConstitution(ctx.baseDir);
+  if (existing) return { applicable: false, reason: `${existing} already exists` };
   const specifyRoot = findSpecifyRoot(ctx.baseDir);
   if (specifyRoot) {
     return {
@@ -416,7 +416,7 @@ function detectConstitution(ctx: UpgradeContext): StepDetection {
 
 function applyConstitution(ctx: UpgradeContext): StepApplyOutcome {
   const path = join(ctx.baseDir, "constitution.md");
-  if (existsSync(path)) return { ok: false, message: "constitution.md already exists" };
+  if (locateConstitution(ctx.baseDir)) return { ok: false, message: "constitution.md already exists" };
   if (findSpecifyRoot(ctx.baseDir)) return { ok: false, message: ".specify/ exists — not scaffolding a second constitution" };
   writeFileSync(path, scaffoldConstitution(ctx.model.name));
   return { ok: true, changedFiles: [path] };
@@ -683,10 +683,11 @@ function detectCoverageScopeDefault(ctx: UpgradeContext): HumanItem | null {
 }
 
 function detectUnratifiedConstitution(ctx: UpgradeContext): HumanItem | null {
-  const specifyRoot = findSpecifyRoot(ctx.baseDir);
-  const path = specifyRoot ? join(specifyRoot, ".specify", "memory", "constitution.md") : join(ctx.baseDir, "constitution.md");
-  if (!existsSync(path)) return null;
+  const path = locateConstitution(ctx.baseDir);
+  if (!path) return null;
   const content = readFileSync(path, "utf8");
+  // spec-kit's own sign-off is a `**Ratified**: <date>` footer line (MIL-287): either form counts.
+  if (/^\*\*Ratified\*\*:\s*\S/m.test(content)) return null;
   const inner = locateFrontmatterInner(content);
   if (!inner) return null;
   const innerText = content.slice(inner.innerStart, inner.innerEnd);

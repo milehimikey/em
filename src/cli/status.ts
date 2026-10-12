@@ -22,7 +22,7 @@
 // same inputs. Text/markdown/badge are formatting layers over one aggregated StatusReport; the
 // JSON document (emit/statusJson.ts) is a versioned envelope around the exact same object.
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -248,13 +248,42 @@ export function findSpecifyRoot(startDir: string): string | null {
 }
 
 /**
- * Resolve one model's implementation constitution (MIL-202). Two project shapes, one document —
- * em never writes or expects a second copy:
+ * Every place a model's implementation constitution may live, in precedence order (MIL-202,
+ * MIL-287). The one locator for `em status`, `em upgrade` and anything else asking "where is it":
  *
- *  - **spec-kit project** (a `.specify/` directory exists at or above `modelDir`): the document
- *    IS `<root>/.specify/memory/constitution.md`, spec-kit's own slot. em defers to it.
- *  - **anything else**: `<modelDir>/constitution.md`, beside the model — what `em scaffold`
- *    writes.
+ *  1. **spec-kit slot**, when a `.specify/` directory exists at or above `modelDir`:
+ *     `<root>/.specify/memory/constitution.md`. It wins whenever it exists — em never keeps a
+ *     second copy beside it.
+ *  2. **beside the model**: `<modelDir>/constitution.md` — what `em scaffold` writes, and the
+ *     fallback in a spec-kit repo whose own slot is empty (a repo-root constitution symlinked
+ *     next to the model, say).
+ */
+export function constitutionCandidates(modelDir: string): string[] {
+  const base = resolve(modelDir);
+  const specifyRoot = findSpecifyRoot(base);
+  const beside = join(base, "constitution.md");
+  return specifyRoot ? [join(specifyRoot, ".specify", "memory", "constitution.md"), beside] : [beside];
+}
+
+/** True when `path` resolves, through any symlinks, to a regular file. `stat` follows links, so a
+ *  symlinked constitution counts and a dangling one doesn't — never `lstat`. */
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** The absolute path of the model's constitution, or null when no candidate exists. */
+export function locateConstitution(modelDir: string): string | null {
+  return constitutionCandidates(modelDir).find(isFile) ?? null;
+}
+
+/**
+ * Resolve one model's implementation constitution (MIL-202, MIL-287) — see
+ * `constitutionCandidates` for where it looks. `path` is where it was found, else the first
+ * (primary) location tried; relative to `modelDir`.
  *
  * Existence only: this never opens the file, so a blank stock template and a fully answered,
  * ratified constitution are indistinguishable here by design (content judgment is a human's, and
@@ -263,9 +292,9 @@ export function findSpecifyRoot(startDir: string): string | null {
  */
 export function resolveConstitution(modelDir: string): ConstitutionEntry {
   const base = resolve(modelDir);
-  const specifyRoot = findSpecifyRoot(base);
-  const absolute = specifyRoot ? join(specifyRoot, ".specify", "memory", "constitution.md") : join(base, "constitution.md");
-  return { present: existsSync(absolute), path: relative(base, absolute).split(sep).join("/") };
+  const found = locateConstitution(base);
+  const absolute = found ?? constitutionCandidates(base)[0];
+  return { present: found !== null, path: relative(base, absolute).split(sep).join("/") };
 }
 
 /**
@@ -806,7 +835,10 @@ function formatConformanceValue(entry: ConformanceEntry): string {
  *  the path the entry already resolved (relative to that model's own directory). Shared by the
  *  text and markdown reports so the two can't drift. Existence only; never a content judgment. */
 export function formatConstitutionPart(entry: ConformanceEntry): string {
-  return entry.constitution.present ? "present" : `absent (${entry.constitution.path ?? "unresolved"})`;
+  if (entry.constitution.present) return "present";
+  const base = resolve(entry.modelDir);
+  const tried = constitutionCandidates(base).map((p) => relative(base, p).split(sep).join("/"));
+  return `absent (${tried.join(", ")})`;
 }
 
 /** MIL-218: the per-model model-version clause — design version, most recently certified

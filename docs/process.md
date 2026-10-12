@@ -366,14 +366,15 @@ for the human doing the handing:
 0. **Once per project, before the first slice: the constitution exists and is ratified.** The
    implementation constitution is the project's house rules for *how* implementation happens —
    stack and architectural shape (including which implementation skill each slice pattern routes
-   to), code style, testing norms, NFR baselines, review and merge norms. It lives in exactly one
-   place: `.specify/memory/constitution.md` in a spec-kit project, otherwise `constitution.md`
-   beside the model (`em scaffold` writes the template there). The implement skill elicits it in a
+   to), code style, testing norms, NFR baselines, review and merge norms. It lives in one
+   place: `.specify/memory/constitution.md` in a spec-kit project, otherwise (or while that slot
+   is empty) `constitution.md` beside the model, symlinks followed (`em scaffold` writes the
+   template there). The implement skill elicits it in a
    short conversation and drafts the answers; **a named human signs it off** — `ratifiedBy:`/
    `ratifiedOn:` in the em-native file, spec-kit's own `**Ratified**:` footer in
    `.specify/memory/constitution.md`. An empty `ratifiedBy:` means draft, and an implementing
    agent is told to stop rather than decide the project's stack or style for you.
-   `em status` reports it per model (`constitution: present` / `absent (<path>)`) — existence
+   `em status` reports it per model (`constitution: present` / `absent (<paths tried>)`) — existence
    only; `em` never reads or judges its content. See
    [cli.md](cli.md#em-status-files) and the agent guide's §7.
 1. Ratify the slice — `em slice ratify <model>.em <key> --by <name>` (status →

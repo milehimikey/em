@@ -375,6 +375,13 @@ slice "Place Order" {
     expect(human.map((h) => h.id)).not.toContain("unratified-constitution");
   });
 
+  it("accepts spec-kit's **Ratified**: footer as a sign-off too (MIL-287)", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    writeFileSync(join(dir, "constitution.md"), "---\nratifiedBy:\n---\n# Constitution\n\n**Ratified**: 2026-01-01\n");
+    const human = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).human;
+    expect(human.map((h) => h.id)).not.toContain("unratified-constitution");
+  });
+
   it("flags coverage-scope-default when em-ci.yml runs --strict and nothing is implemented", () => {
     const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
     mkdirSync(join(dir, ".github", "workflows"), { recursive: true });

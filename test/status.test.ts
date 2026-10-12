@@ -9,7 +9,7 @@
 // PR #116 review). CLI-level exit-code/flag-parsing coverage lives in test/cli.test.ts;
 // MCP-tool parity coverage lives in test/mcp.test.ts.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { compile } from "../src/pipeline.js";
@@ -23,6 +23,8 @@ import {
   resolveConformanceEntry,
   findSpecifyRoot,
   resolveConstitution,
+  locateConstitution,
+  constitutionCandidates,
   formatConstitutionPart,
   buildStatusReport,
   aggregateInvariantTotals,
@@ -583,9 +585,44 @@ describe("findSpecifyRoot / resolveConstitution", () => {
     expect(resolveConstitution(dir)).toEqual({ present: false, path: "../../.specify/memory/constitution.md" });
     writeFileSync(join(repo, ".specify", "memory", "constitution.md"), "# spec-kit's own file\n");
     expect(resolveConstitution(dir)).toEqual({ present: true, path: "../../.specify/memory/constitution.md" });
-    // ...and em never expects a second copy beside the model, even if one is sitting there.
-    writeFileSync(join(dir, "constitution.md"), "# a stray second copy\n");
+    // ...and the spec-kit slot still wins over a copy beside the model while it exists.
+    writeFileSync(join(dir, "constitution.md"), "# a second copy\n");
     expect(resolveConstitution(dir).path).toBe("../../.specify/memory/constitution.md");
+  });
+
+  // MIL-287 (GH #238): a spec-kit repo whose own slot is empty, with the constitution beside the
+  // model (regular file or symlink to a repo-root file) — the spec-kit path used to be exclusive.
+  it.each([
+    ["regular file", false, "---\nratifiedBy: Jo\nratifiedOn: 2026-01-01\n---\n# c\n"],
+    ["symlink", true, "# c\n**Ratified**: 2026-01-01\n"],
+  ])("falls back to constitution.md beside the model (%s) when the .specify/ slot is empty", (_label, symlink, content) => {
+    const repo = join(root, `fallback-${symlink ? "link" : "file"}`);
+    const dir = join(repo, "models", "checkout");
+    mkdirSync(join(repo, ".specify", "memory"), { recursive: true });
+    mkdirSync(dir, { recursive: true });
+    if (symlink) {
+      writeFileSync(join(repo, "constitution.md"), content);
+      symlinkSync("../../constitution.md", join(dir, "constitution.md"));
+    } else {
+      writeFileSync(join(dir, "constitution.md"), content);
+    }
+    expect(resolveConstitution(dir)).toEqual({ present: true, path: "constitution.md" });
+    expect(locateConstitution(dir)).toBe(join(resolve(dir), "constitution.md"));
+  });
+
+  it("treats a dangling constitution.md symlink as absent, and the absent message names every path tried", () => {
+    const repo = join(root, "dangling");
+    const dir = join(repo, "models", "checkout");
+    mkdirSync(join(repo, ".specify", "memory"), { recursive: true });
+    mkdirSync(dir, { recursive: true });
+    symlinkSync("../../nowhere.md", join(dir, "constitution.md"));
+    expect(resolveConstitution(dir).present).toBe(false);
+    expect(constitutionCandidates(dir)).toEqual([
+      join(resolve(repo), ".specify", "memory", "constitution.md"),
+      join(resolve(dir), "constitution.md"),
+    ]);
+    const entry = resolveConformanceEntry(join(dir, "m.em"), undefined, [], fakeGit([]));
+    expect(formatConstitutionPart(entry)).toBe("absent (../../.specify/memory/constitution.md, constitution.md)");
   });
 
   it("reads existence only — a blank stock template counts as present", () => {
