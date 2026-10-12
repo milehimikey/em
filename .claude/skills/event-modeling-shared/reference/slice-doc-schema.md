@@ -541,7 +541,18 @@ working `status` — that is what they are about.
 
 **A ratified version that never shipped** (`status: ready-to-implement` with `ratifiedBy:` set — a
 gap answered mid-build) is revised the same way: `draft`, `version + 1`, sign-off cleared; the
-ratification of v<N> is withdrawn and nothing shipped, so no shipped record is written. **A
+ratification of v<N> is withdrawn and nothing shipped, so no shipped record is written. Because that
+withdraws the only implementable version, `em slice revise` **refuses it without `--withdraw`**
+(GH #236).
+
+**Questions found against a ratified or shipped version are queued, not written into the body**
+(GH #236). `ratifiedHash` covers the whole body, `## Open Questions` included, so `em slice defer` on
+a `ready-to-implement` + `ratifiedBy:` or `implemented` doc does not edit the doc: it records the
+question in the model's `.event-modeling.md` as queued for `<key>@v<N+1>` (exact bullet shape in
+[cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-defer-file-slice-key-question)), keeping `ratifiedHash` and `--slice-ready`
+valid. When v<N+1> opens as a draft — `mark-implemented` at merge, or `revise` — each queued item is
+injected into that draft's `## Open Questions` (unchecked, carrying its decision) and the queue is
+cleared. `em export` reports the waiting count as `slice.doc.queuedForNext` (schema `1.17`). **A
 `ready-to-implement` doc with no `ratifiedBy`** is the leftover of a pre-1.15 `reratify` (which
 bumped the version and left the doc unsigned at that status); no command produces it any more and
 `em slice ratify` no longer accepts it — `em slice revise` reopens it as a `draft` at the same

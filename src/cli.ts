@@ -904,8 +904,9 @@ slice
     );
     if (result.ok && result.openedDraft) {
       console.log(
-        `opened draft v${result.openedDraft.version}: ${result.path} — re-opened ${result.openedDraft.reopened} deferred question(s); ` +
-          `v${result.openedDraft.version - 1} stays shipped`,
+        `opened draft v${result.openedDraft.version}: ${result.path} — re-opened ${result.openedDraft.reopened} deferred question(s)` +
+          (result.openedDraft.injected > 0 ? `, injected ${result.openedDraft.injected} queued question(s) (GH #236)` : "") +
+          `; v${result.openedDraft.version - 1} stays shipped`,
       );
     }
   });
@@ -1065,7 +1066,7 @@ slice
 
 /** MIL-283: `em slice revise` and its deprecated alias `em slice reratify` share one action. */
 function reviseAction(commandName: "revise" | "reratify") {
-  return (file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string }) => {
+  return (file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string; withdraw?: boolean }) => {
     if (commandName === "reratify") {
       console.error(
         "notice: `em slice reratify` is deprecated since 1.15.0 — it is `em slice revise`, and the result is a " +
@@ -1091,7 +1092,7 @@ function reviseAction(commandName: "revise" | "reratify") {
       process.exit(1);
     }
 
-    const result = runRevise(model, refs, dirname(file), sliceKey);
+    const result = runRevise(model, refs, dirname(file), sliceKey, opts.withdraw === true);
     if (!result.ok) {
       console.error(`em slice ${commandName}: ${result.message}`);
       process.exit(1);
@@ -1112,6 +1113,7 @@ function reviseAction(commandName: "revise" | "reratify") {
           : `v${result.newVersion} was never signed; reopened as draft at the same version`;
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
+    if (result.injected > 0) console.log(`injected ${result.injected} queued question(s) into Open Questions (queue cleared)`);
     warnModelVersionDrift(dirname(file), model, refs, source, `revising "${sliceKey}"`);
   };
 }
@@ -1124,13 +1126,17 @@ const REVISE_DESCRIPTION =
   "a doc shipped before 1.15). Applies to `status: implemented` (the shipped case) and to a ratified " +
   "`ready-to-implement` doc (ratification withdrawn, never shipped); a `ready-to-implement` doc with no " +
   "`ratifiedBy:` reopens as draft at the same version; `draft`/`reviewed` refuse — the next version is " +
-  "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`";
+  "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`. " +
+  "Questions queued by `em slice defer` for the new version (GH #236) are injected into its Open Questions. " +
+  "A ratified, never-shipped doc REFUSES without --withdraw (revising withdraws the only implementable version; " +
+  "queue a question with `em slice defer` instead)";
 
 slice
   .command("revise")
   .description(REVISE_DESCRIPTION)
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
+  .option("--withdraw", "GH #236: required on a ratified, never-shipped doc — confirms withdrawing the ratification of the only implementable version")
   .action(reviseAction("revise"));
 
 slice
@@ -1145,6 +1151,7 @@ slice
   .argument("<slice-key>", "slice export key (kebab-case)")
   .option("--meaning-unchanged", "ignored since 1.15.0 (see above)")
   .option("--contract-change <why>", "ignored since 1.15.0 (see above)")
+  .option("--withdraw", "see `em slice revise --withdraw`")
   .action(reviseAction("reratify"));
 
 slice
@@ -1158,7 +1165,10 @@ slice
       "the item when it bumps to v<n>. With --from-issue <text> instead of <question> (MIL-281): " +
       "promotes the single open `issue \"...\"` on the slice's own elements containing <text> into " +
       "the doc's Open Questions as that same deferred item, mirrors it, and removes the `issue` " +
-      "clause from the .em — the one-command path for a question raised in a review session",
+      "clause from the .em — the one-command path for a question raised in a review session. " +
+      "On a RATIFIED (`ready-to-implement` + `ratifiedBy:`) or shipped (`implemented`) doc (GH #236) the " +
+      "doc is NOT edited — its body is the signed spec — and the question is queued in `.event-modeling.md` " +
+      "for v<N+1>; `em slice revise` / `mark-implemented` inject it into the next draft",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
@@ -1199,6 +1209,14 @@ slice
           console.error(`em slice defer: ${result.message}`);
           process.exit(1);
         }
+        if (result.queued) {
+          console.log(
+            result.changed
+              ? `queued, not edited: ${result.path} stays as ratified (v${result.queued.docVersion}) — issue "${result.issue}" → ${opts.until} queued for ${sliceKey}@v${result.queued.forVersion} in .event-modeling.md; issue clause removed from ${file}:${result.modelLine}`
+              : `already queued (no-op): ${result.path}`,
+          );
+          return;
+        }
         console.log(
           result.changed
             ? `deferred: ${result.path} (issue "${result.issue}" → ${opts.until}; issue clause removed from ${file}:${result.modelLine})`
@@ -1210,6 +1228,14 @@ slice
       if (!result.ok) {
         console.error(`em slice defer: ${result.message}`);
         process.exit(1);
+      }
+      if (result.queued) {
+        console.log(
+          result.changed
+            ? `queued, not edited: ${result.path} stays as ratified (v${result.queued.docVersion}) — "${question}" → ${opts.until} queued for ${sliceKey}@v${result.queued.forVersion} in .event-modeling.md; \`em slice revise\` or \`mark-implemented\` injects it into the next draft`
+            : `already queued (no-op): ${result.path}`,
+        );
+        return;
       }
       console.log(
         result.changed

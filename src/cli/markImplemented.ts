@@ -39,6 +39,8 @@ import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { openNextDraft } from "./revise.js";
+import { clearQueue, readQueue } from "./defer.js";
+import { QueuedItem } from "../catalog/deferQueue.js";
 
 export type ApplyFrontmatterResult =
   | { ok: true; content: string; changed: boolean }
@@ -199,7 +201,7 @@ export type RunMarkImplementedResult =
       changed: boolean;
       /** MIL-283: set when the merge opened the next version as a `draft` because at least one
        *  Open Question was deferred to it — `version` is the new draft's, `reopened` the count. */
-      openedDraft: { version: number; reopened: number } | null;
+      openedDraft: { version: number; reopened: number; injected: number } | null;
     }
   | { ok: false; message: string };
 
@@ -274,8 +276,11 @@ export function runMarkImplemented(
   // nothing deferred stays `implemented` until someone runs `em slice revise`. Only on the real
   // flip (`changed`), never on the idempotent re-run or the missing-link repair of an already
   // implemented doc — those recorded their shipment before.
-  const next = nextDraftIfDeferred(result.content);
+  // GH #236: a question queued by `em slice defer` while the doc was ratified counts the same —
+  // it is injected into the draft, and the queue is cleared once the draft is on disk.
+  const next = nextDraftIfDeferred(result.content, (v) => readQueue(baseDir, sliceKey, v).items);
   writeFileSync(absPath, next.content, "utf8");
+  if (next.openedDraft && next.openedDraft.injected > 0) clearQueue(baseDir, sliceKey, next.openedDraft.version);
   return { ok: true, path: doc.path, changed: true, openedDraft: next.openedDraft };
 }
 
@@ -284,8 +289,11 @@ export function runMarkImplemented(
  *  `openNextDraft` is pure and reports how many questions it re-opened, so "was anything
  *  deferred to v<N+1>" is read off its result rather than decided by a second scan that would
  *  have to agree with it on what the deferral marker looks like. */
-export function nextDraftIfDeferred(content: string): { content: string; openedDraft: { version: number; reopened: number } | null } {
-  const opened = openNextDraft(content);
-  if (!opened.ok || opened.reopened === 0) return { content, openedDraft: null };
-  return { content: opened.content, openedDraft: { version: opened.newVersion, reopened: opened.reopened } };
+export function nextDraftIfDeferred(
+  content: string,
+  queuedFor?: (version: number) => QueuedItem[],
+): { content: string; openedDraft: { version: number; reopened: number; injected: number } | null } {
+  const opened = openNextDraft(content, { queuedFor });
+  if (!opened.ok || opened.reopened + opened.injected === 0) return { content, openedDraft: null };
+  return { content: opened.content, openedDraft: { version: opened.newVersion, reopened: opened.reopened, injected: opened.injected } };
 }

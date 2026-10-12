@@ -164,7 +164,10 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    slice can be `status: draft` again (its next version open) while `shipped` names v<N>.
 //    `driftSignal` reads the same record (`unpropagated-delta` = `version` past `shipped.version`).
 // Additive-only.
-export const SCHEMA_VERSION = "1.16";
+// 1.17 (GH #236): `slice.doc.queuedForNext: number` — the questions `em slice defer` queued in
+// `.event-modeling.md` for `<key>@v<version + 1>` because the doc is ratified/shipped and its body
+// must not change (always present; 0 when none, no state file, or no doc). Additive-only.
+export const SCHEMA_VERSION = "1.17";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

@@ -153,13 +153,15 @@ describe("em slice defer (CLI acceptance, MIL-275)", () => {
   let dir: string;
   const slicePath = () => join(dir, "slices", "pay.md");
   const ready = () => em(["validate", "model.em", "--slice-ready", "pay"], dir);
+  const openQuestionsErr = () => ready().stderr.includes("Open Question");
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "em-cli-defer-"));
     mkdirSync(join(dir, "slices"));
     writeFileSync(
       slicePath(),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n" +
-        "reviewedBy: Sam\nreviewedOn: 2026-10-01\nratifiedBy: Alex\nratifiedOn: 2026-10-02\n---\n# Slice: Pay\n\n## Open Questions\n\n- [ ] What is the retry policy?\n",
+      // `reviewed`, not ratified: GH #236 queues (and never edits) a ratified doc — see deferQueue.test.ts.
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n" +
+        "reviewedBy: Sam\nreviewedOn: 2026-10-01\n---\n# Slice: Pay\n\n## Open Questions\n\n- [ ] What is the retry policy?\n",
     );
     writeFileSync(
       join(dir, "model.em"),
@@ -169,15 +171,15 @@ describe("em slice defer (CLI acceptance, MIL-275)", () => {
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it("fails slice-ready, defers, then passes slice-ready", () => {
-    expect(ready().status).toBe(1);
+  it("complains of the open question, then defers it on the reviewed doc (the body is edited)", () => {
+    expect(openQuestionsErr()).toBe(true);
     const d = em(["slice", "defer", "model.em", "pay", "retry policy", "--until", "v2", "--decision", "fail fast", "--by", "Alex", "--on", "2026-10-08"], dir);
     expect(d.stderr).toBe("");
     expect(d.stdout).toBe("deferred: slices/pay.md (retry policy → v2)\n");
     expect(readFileSync(slicePath(), "utf8")).toContain(
       "- [x] What is the retry policy? — v1: fail fast; deferred to v2 (2026-10-08, Alex)",
     );
-    expect(ready().status).toBe(0);
+    expect(openQuestionsErr()).toBe(false);
     const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
     expect(state).toContain("- retry policy (from slice pay, deferred to v2)");
     expect(state).toContain('- 2026-10-08: deferred "retry policy" on pay to v2 — v1: fail fast — by Alex');
@@ -216,7 +218,9 @@ describe("em slice defer (CLI acceptance, MIL-275)", () => {
     }
   });
   it("reratify to v2 re-opens exactly that item and slice-ready fails again", () => {
-    const r = em(["slice", "reratify", "model.em", "pay"], dir);
+    // Ratify by hand (this is a defer fixture, not a ratify one) so reratify has a ratified doc to revise.
+    writeFileSync(slicePath(), readFileSync(slicePath(), "utf8").replace("status: reviewed", "status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
+    const r = em(["slice", "reratify", "model.em", "pay", "--withdraw"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("re-opened 1 deferred question(s)");
     expect(readFileSync(slicePath(), "utf8")).toContain("\n- [ ] What is the retry policy?\n");
@@ -321,8 +325,8 @@ describe("em slice defer --from-issue (CLI acceptance, MIL-281)", () => {
     mkdirSync(join(dir, "slices"));
     writeFileSync(
       slicePath(),
-      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\n" +
-        "reviewedBy: Sam\nreviewedOn: 2026-10-01\nratifiedBy: Alex\nratifiedOn: 2026-10-02\n---\n# Slice: Pay\n\n## Open Questions\n\n## Notes\n",
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: reviewed\nversion: 1\n" +
+        "reviewedBy: Sam\nreviewedOn: 2026-10-01\n---\n# Slice: Pay\n\n## Open Questions\n\n## Notes\n",
     );
     writeFileSync(modelPath(), EM);
     writeFileSync(join(dir, ".event-modeling.md"), STATE);
@@ -374,11 +378,13 @@ describe("em slice defer --from-issue (CLI acceptance, MIL-281)", () => {
     expect(d.stdout).toBe("already deferred (no-op): slices/pay.md\n");
     expect([modelPath(), slicePath(), join(dir, ".event-modeling.md")].map((p) => readFileSync(p, "utf8"))).toEqual(before);
   });
-  it("deferring the slice's last open issue makes --slice-ready pass; reratify re-opens both", () => {
+  it("deferring the slice's last open issue clears the issues; reratify re-opens both", () => {
     expect(defer("--from-issue", "final").status).toBe(0);
     expect(readFileSync(modelPath(), "utf8")).toContain("  event Paid\n");
-    expect(ready().status).toBe(0);
-    const r = em(["slice", "reratify", "model.em", "pay"], dir);
+    expect(ready().stderr).not.toContain("issue");
+    // Ratify by hand (this is a defer fixture) so reratify has a ratified doc to revise.
+    writeFileSync(slicePath(), readFileSync(slicePath(), "utf8").replace("status: reviewed", "status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
+    const r = em(["slice", "reratify", "model.em", "pay", "--withdraw"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("re-opened 2 deferred question(s)");
     expect(readFileSync(slicePath(), "utf8")).toContain("- [ ] What about chargebacks?\n- [ ] Is Paid final?\n");

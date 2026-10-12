@@ -433,7 +433,7 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
     const implemented = applyImplementedFrontmatter(DEFERRED, URL, "2026-10-12");
     if (!implemented.ok) throw new Error("setup");
     const next = nextDraftIfDeferred(implemented.content);
-    expect(next.openedDraft).toEqual({ version: 2, reopened: 1 });
+    expect(next.openedDraft).toEqual({ version: 2, reopened: 1, injected: 0 });
     const parsed = parseSliceDoc(next.content);
     expect(parsed).toMatchObject({ status: "draft", version: 2, shippedVersion: 1, implementedIn: URL, ratifiedBy: null, ratifiedHash: null });
     expect(next.content).toContain("\n- [ ] Retry policy?\n- [x] Audit? — v1: later; deferred to v3 (2026-10-08)\n");
@@ -448,7 +448,7 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
       writeFileSync(join(dir, "m.em"), 'slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Plain" {\n  command Do Plain note "slices/plain.md"\n  event Plain Done\n}\n');
       const { model, refs } = compile(readFileSync(join(dir, "m.em"), "utf8"));
       const opened = runMarkImplemented(model, refs, dir, "ready-slice", URL, "2026-10-12");
-      expect(opened).toEqual({ ok: true, path: "slices/ready-slice.md", changed: true, openedDraft: { version: 2, reopened: 1 } });
+      expect(opened).toEqual({ ok: true, path: "slices/ready-slice.md", changed: true, openedDraft: { version: 2, reopened: 1, injected: 0 } });
       expect(parseSliceDoc(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8"))).toMatchObject({ status: "draft", version: 2, shippedVersion: 1 });
       // Re-running on the now-draft doc with the same URL is still the idempotent no-op: the shipped
       // record already names it, and the working status is not what mark-implemented keys on.

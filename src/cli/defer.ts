@@ -20,6 +20,14 @@
 // computed before any is written; the `.em` edit is a single clause span (or the whole line when
 // the clause was alone on it), re-parsed before it is accepted. Not a generic "move issue to doc"
 // verb: the only thing a promoted issue can become is a deferred question.
+//
+// GH #236 — a RATIFIED or SHIPPED doc is never edited by defer. Its body is the signed spec
+// (`ratifiedHash`), so on `status: ready-to-implement` + `ratifiedBy:` or `status: implemented`
+// both paths QUEUE the question instead: one bullet in the state file's parking lot plus the dated
+// Decisions-log bullet, the doc untouched (catalog/deferQueue.ts has the bullet format).
+// `revise`/`mark-implemented` inject the queue into the v<N+1> draft they open
+// (`injectQueuedQuestions`) and `drainQueueInState` turns the bullets back into ordinary
+// deferral mirrors. `draft`/`reviewed` docs behave exactly as before.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -29,6 +37,8 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { decodeQuoted, matchQuote } from "../parser/lexer.js";
 import { compile } from "../pipeline.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
+import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
+import { QueuedItem, parseQueuedBullet, queuedBullet, queuedItems } from "../catalog/deferQueue.js";
 
 const OPEN_QUESTIONS_HEADING = /^##\s+Open Questions\s*$/i;
 const TASK_ITEM = /^([ \t]*[-*]\s*)\[([ xX])\](.*)$/;
@@ -139,7 +149,7 @@ export function applyDefer(raw: string, input: DeferInput): ApplyDeferResult {
 
 /** Appends `bullet` at the end of the section under `heading` (before the next `## ` heading or
  *  EOF, after the section's last non-blank line) unless an identical bullet line exists. */
-function appendBullet(
+export function appendBullet(
   lines: string[],
   heading: RegExp,
   bullet: string,
@@ -214,6 +224,117 @@ export function reopenDeferred(raw: string, newVersion: number): { content: stri
     count++;
   }
   return { content: lines.join(""), count };
+}
+
+// ---- GH #236: the queue for a ratified / shipped doc --------------------------------------
+
+/** True when the doc's body is a signed spec that defer must not touch: `status: implemented`, or
+ *  `status: ready-to-implement` with a `ratifiedBy:`. A `draft`/`reviewed` doc — including the
+ *  next version of a shipped slice — is still being written, so defer edits it as ever. */
+export function isLockedDoc(raw: string): boolean {
+  const range = locateFrontmatterInner(raw);
+  if (!range) return false;
+  const inner = raw.slice(range.innerStart, range.innerEnd);
+  const statusMatch = fieldLineRegex("status").exec(inner);
+  const status = statusMatch ? normalizeFieldValue(statusMatch[2])?.toLowerCase() : null;
+  if (status === "implemented") return true;
+  if (status !== "ready-to-implement") return false;
+  const by = fieldLineRegex("ratifiedBy").exec(inner);
+  return by !== null && normalizeFieldValue(by[2]) !== null;
+}
+
+/** Pure: mirrors a QUEUED deferral into the state file — the queued parking-lot bullet and a
+ *  dated Decisions-log bullet. Idempotent on an identical bullet. */
+export function applyQueueStateFile(raw: string, input: StateMirrorInput): ApplyDeferResult {
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const target = input.currentVersion + 1;
+  const parking = queuedBullet({
+    question: input.question,
+    sliceKey: input.sliceKey,
+    targetVersion: target,
+    until: input.until,
+    on: input.on,
+    ...(input.by !== undefined ? { by: input.by.trim() } : {}),
+    decision: input.decision.trim(),
+  });
+  const decision =
+    `- ${input.on}: queued "${input.question}" on ${input.sliceKey} for ${input.sliceKey}@v${target} (until v${input.until}) — ` +
+    `v${input.currentVersion}: ${input.decision.trim()}${input.by !== undefined ? ` — by ${input.by.trim()}` : ""}`;
+  let lines = splitKeepEol(raw);
+  const a = appendBullet(lines, PARKING_LOT_HEADING, parking, eol);
+  if (!a) return { ok: false, message: `${STATE_FILE_NAME} has no "## Open questions / parking lot" heading` };
+  lines = a.lines;
+  const b = appendBullet(lines, DECISIONS_HEADING, decision, eol);
+  if (!b) return { ok: false, message: `${STATE_FILE_NAME} has no "## Decisions log" heading` };
+  return { ok: true, content: b.lines.join(""), changed: a.changed || b.changed };
+}
+
+/** Pure: the Open Questions line a queued item becomes in the v<target> draft. Aimed at the
+ *  draft's own version it is an unchecked `- [ ]` carrying its decision; aimed further out
+ *  (`--until` beyond it) it is the ordinary checked deferral, so the draft is not asked to
+ *  answer what the room already pushed past it. */
+function injectedLine(item: QueuedItem): string {
+  const prior = item.targetVersion - 1;
+  const who = `${item.on}${item.by !== undefined ? `, ${item.by}` : ""}`;
+  return item.until > item.targetVersion
+    ? `- [x] ${item.question} — v${prior}: ${item.decision}; deferred to v${item.until} (${who})`
+    : `- [ ] ${item.question} — v${prior}: ${item.decision} (queued ${who})`;
+}
+
+/** Pure (revise / mark-implemented): appends every queued item to `## Open Questions` of the
+ *  freshly opened draft (creating the section at EOF when the doc has none), skipping a line
+ *  already present. Returns how many items were written. */
+export function injectQueuedQuestions(raw: string, items: QueuedItem[]): { content: string; count: number } {
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  let content = raw;
+  let count = 0;
+  for (const item of items) {
+    const bullet = injectedLine(item);
+    const appended = appendBullet(splitKeepEol(content), OPEN_QUESTIONS_HEADING, bullet, eol);
+    if (appended) {
+      if (appended.changed) count++;
+      content = appended.lines.join("");
+      continue;
+    }
+    if (content.length > 0 && !/\r?\n$/.test(content)) content += eol;
+    if (content.length > 0 && !/(\r?\n){2}$/.test(content)) content += eol;
+    content += `## Open Questions${eol}${eol}${bullet}${eol}`;
+    count++;
+  }
+  return { content, count };
+}
+
+/** Pure: "clears" the queue for `<sliceKey>@v<targetVersion>` in the state file — each queued
+ *  parking-lot bullet becomes the ordinary `- <q> (from slice <key>, deferred to v<until>)`
+ *  mirror a draft-doc defer writes. Other slices' and other versions' bullets are untouched. */
+export function drainQueueInState(raw: string, sliceKey: string, targetVersion: number): { content: string; count: number } {
+  const lines = splitKeepEol(raw);
+  let count = 0;
+  for (let j = 0; j < lines.length; j++) {
+    const { body, eol } = stripEol(lines[j]);
+    const item = parseQueuedBullet(body);
+    if (!item || item.sliceKey !== sliceKey || item.targetVersion !== targetVersion) continue;
+    lines[j] = `- ${item.question} (from slice ${item.sliceKey}, deferred to v${item.until})${eol}`;
+    count++;
+  }
+  return { content: lines.join(""), count };
+}
+
+/** Reads the queue for `<sliceKey>@v<targetVersion>` from `<baseDir>/.event-modeling.md`; empty
+ *  when the file is absent. */
+export function readQueue(baseDir: string, sliceKey: string, targetVersion: number): { items: QueuedItem[]; statePath: string; stateRaw: string | null } {
+  const statePath = join(baseDir, STATE_FILE_NAME);
+  if (!existsSync(statePath)) return { items: [], statePath, stateRaw: null };
+  const stateRaw = readFileSync(statePath, "utf8");
+  return { items: queuedItems(stateRaw, sliceKey, targetVersion), statePath, stateRaw };
+}
+
+/** Writes the drained state file once the draft carrying the queue is on disk. */
+export function clearQueue(baseDir: string, sliceKey: string, targetVersion: number): void {
+  const { stateRaw, statePath } = readQueue(baseDir, sliceKey, targetVersion);
+  if (stateRaw === null) return;
+  const drained = drainQueueInState(stateRaw, sliceKey, targetVersion);
+  if (drained.count > 0) writeFileSync(statePath, drained.content, "utf8");
 }
 
 // ---- MIL-281: --from-issue ----------------------------------------------------------------
@@ -308,8 +429,15 @@ export function applyDeferFromIssueDoc(raw: string, issueText: string, input: Om
 }
 
 export type RunDeferResult =
-  | { ok: true; path: string; changed: boolean }
+  | { ok: true; path: string; changed: boolean; queued: QueuedNote | null }
   | { ok: false; message: string };
+
+/** GH #236: set when defer QUEUED the question (a ratified/shipped doc) instead of editing the
+ *  doc — `forVersion` is the draft that will carry it, `docVersion` the version left untouched. */
+export interface QueuedNote {
+  forVersion: number;
+  docVersion: number;
+}
 
 type ResolvedDeferDoc = { ok: true; sliceIndex: number; path: string; version: number } | { ok: false; message: string };
 
@@ -362,12 +490,13 @@ function mirrorIntoStateFile(
   question: string,
   input: Omit<DeferInput, "question" | "currentVersion">,
   currentVersion: number,
+  queue = false,
 ): { ok: true; path: string; content: string; changed: boolean } | { ok: false; message: string } {
   const statePath = join(baseDir, STATE_FILE_NAME);
   if (!existsSync(statePath)) {
     return { ok: false, message: `no ${STATE_FILE_NAME} beside the model — defer mirrors into it and never creates it` };
   }
-  const r = applyDeferStateFile(readFileSync(statePath, "utf8"), {
+  const r = (queue ? applyQueueStateFile : applyDeferStateFile)(readFileSync(statePath, "utf8"), {
     question,
     sliceKey,
     until: parseUntil(input.until)!,
@@ -392,19 +521,30 @@ export function runDefer(
   const doc = resolveDeferDoc(model, refs, baseDir, sliceKey);
   if (!doc.ok) return doc;
   const absDoc = join(baseDir, doc.path);
-  const result = applyDefer(readFileSync(absDoc, "utf8"), { ...input, currentVersion: doc.version });
+  const docRaw = readFileSync(absDoc, "utf8");
+
+  // GH #236: a ratified / shipped doc is not edited — the question is queued for v<N+1>.
+  if (isLockedDoc(docRaw)) {
+    const v = validateInput({ ...input, currentVersion: doc.version });
+    if (!v.ok) return { ok: false, message: `${doc.path}: ${v.message}` };
+    const state = mirrorIntoStateFile(baseDir, sliceKey, input.question, input, doc.version, true);
+    if (!state.ok) return state;
+    if (state.changed) writeFileSync(state.path, state.content, "utf8");
+    return { ok: true, path: doc.path, changed: state.changed, queued: { forVersion: doc.version + 1, docVersion: doc.version } };
+  }
+
+  const result = applyDefer(docRaw, { ...input, currentVersion: doc.version });
   if (!result.ok) return { ok: false, message: `${doc.path}: ${result.message}` };
 
   const state = mirrorIntoStateFile(baseDir, sliceKey, input.question, input, doc.version);
   if (!state.ok) return state;
-
   if (result.changed) writeFileSync(absDoc, result.content, "utf8");
   if (state.changed) writeFileSync(state.path, state.content, "utf8");
-  return { ok: true, path: doc.path, changed: result.changed || state.changed };
+  return { ok: true, path: doc.path, changed: result.changed || state.changed, queued: null };
 }
 
 export type RunDeferFromIssueResult =
-  | { ok: true; path: string; changed: boolean; issue: string; modelLine: number | null }
+  | { ok: true; path: string; changed: boolean; issue: string; modelLine: number | null; queued: QueuedNote | null }
   | { ok: false; message: string };
 
 /**
@@ -430,11 +570,20 @@ export function runDeferFromIssue(
   const absDoc = join(baseDir, doc.path);
   const docRaw = readFileSync(absDoc, "utf8");
 
+  const locked = isLockedDoc(docRaw);
+  const queued: QueuedNote | null = locked ? { forVersion: doc.version + 1, docVersion: doc.version } : null;
   const candidates = findIssueCandidates(model, doc.sliceIndex, text);
   if (candidates.length === 0) {
-    // Already promoted on an earlier run? Then the doc carries it as deferred to this version.
+    // Already promoted on an earlier run? Then the doc carries it as deferred to this version —
+    // or, on a ratified/shipped doc (GH #236), the state file carries it as queued.
+    if (locked) {
+      if (readQueue(baseDir, sliceKey, doc.version + 1).items.some((q) => q.question.includes(text))) {
+        return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null, queued };
+      }
+      return { ok: false, message: `no open issue matching "${text}" on slice "${sliceKey}" (see \`em validate --list-issues\`)` };
+    }
     const probe = applyDefer(docRaw, { ...input, question: text, currentVersion: doc.version });
-    if (probe.ok && !probe.changed) return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null };
+    if (probe.ok && !probe.changed) return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null, queued: null };
     if (probe.ok) {
       // The question is on the doc as a hand-written `- [ ]` item, never on the diagram: that is
       // the positional form's job.
@@ -452,10 +601,16 @@ export function runDeferFromIssue(
   }
   const [cand] = candidates;
 
-  const docResult = applyDeferFromIssueDoc(docRaw, cand.issue, { ...input, currentVersion: doc.version });
+  // GH #236: on a ratified/shipped doc the promoted issue is queued, not written into the body.
+  const docResult: ApplyDeferResult = locked
+    ? (() => {
+        const v = validateInput({ ...input, question: cand.issue, currentVersion: doc.version });
+        return v.ok ? { ok: true as const, content: docRaw, changed: false } : v;
+      })()
+    : applyDeferFromIssueDoc(docRaw, cand.issue, { ...input, currentVersion: doc.version });
   if (!docResult.ok) return { ok: false, message: `${doc.path}: ${docResult.message}` };
 
-  const state = mirrorIntoStateFile(baseDir, sliceKey, cand.issue, input, doc.version);
+  const state = mirrorIntoStateFile(baseDir, sliceKey, cand.issue, input, doc.version, locked);
   if (!state.ok) return state;
 
   const emRaw = readFileSync(modelFile, "utf8");
@@ -481,5 +636,5 @@ export function runDeferFromIssue(
   if (docResult.changed) writeFileSync(absDoc, docResult.content, "utf8");
   if (state.changed) writeFileSync(state.path, state.content, "utf8");
   writeFileSync(modelFile, removed.content, "utf8");
-  return { ok: true, path: doc.path, changed: true, issue: cand.issue, modelLine: removed.removedLine };
+  return { ok: true, path: doc.path, changed: true, issue: cand.issue, modelLine: removed.removedLine, queued };
 }

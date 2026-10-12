@@ -492,7 +492,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.16");
+    expect(doc.schemaVersion).toBe("1.17");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -649,7 +649,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.9");
+    expect(doc.statusSchemaVersion).toBe("1.10");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);

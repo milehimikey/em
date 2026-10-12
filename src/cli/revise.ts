@@ -34,6 +34,11 @@
 // is deferred to it (MIL-283's "the draft is ready for continued work"), and only then — a
 // merged slice with nothing deferred stays `implemented` until someone runs this command.
 //
+// GH #236: `unshipped` refuses without `--withdraw` — it ends the ratification of the only
+// implementable version. A question found mid-build is queued by `em slice defer` instead
+// (cli/defer.ts), and every queued question for v<N+1> is injected into the draft this opens
+// (here and in `mark-implemented`'s auto-open), then cleared from the state file.
+//
 // Write strategy: surgical splices over the frontmatter text (frontmatterSurgery.ts), same as
 // every other lifecycle writer; the body is copied through verbatim.
 
@@ -46,7 +51,8 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { listAllFindingsFiles, unruledFindingsInScope } from "./findings.js";
 import { MEANING_CONFIRMATION_KEYS } from "./ratify.js";
-import { reopenDeferred } from "./defer.js";
+import { clearQueue, injectQueuedQuestions, readQueue, reopenDeferred } from "./defer.js";
+import { QueuedItem } from "../catalog/deferQueue.js";
 
 const DRAFT_STATUS = "draft";
 const RATIFIED_STATUS = "ready-to-implement";
@@ -67,8 +73,16 @@ export const SIGN_OFF_KEYS: readonly string[] = [
 export type ReviseKind = "shipped" | "unshipped" | "unsigned";
 
 export type ApplyReviseResult =
-  | { ok: true; content: string; newVersion: number; kind: ReviseKind; reopened: number }
+  | { ok: true; content: string; newVersion: number; kind: ReviseKind; reopened: number; injected: number }
   | { ok: false; message: string };
+
+/** GH #236 inputs to the pure transitions: `withdraw` confirms ending the ratification of an
+ *  unshipped ratified doc; `queuedFor` yields the questions `em slice defer` queued for the
+ *  version being opened (they are injected into the new draft's Open Questions). */
+export interface ReviseOptions {
+  withdraw?: boolean;
+  queuedFor?: (version: number) => QueuedItem[];
+}
 
 /**
  * Pure: the shipped → draft transition shared by `revise` and `mark-implemented`'s auto-open.
@@ -77,15 +91,15 @@ export type ApplyReviseResult =
  * questions deferred to the new version. Refuses a doc whose `version:` is not a positive
  * integer. `raw` is the whole doc.
  */
-export function openNextDraft(raw: string): ApplyReviseResult {
-  return applyRevise(raw, "shipped");
+export function openNextDraft(raw: string, opts: ReviseOptions = {}): ApplyReviseResult {
+  return applyRevise(raw, "shipped", opts);
 }
 
 /**
  * Pure: classifies the doc's starting state (see module header) and applies the matching
  * transition. Refuses `draft`/`reviewed` (already open) and anything unrecognised.
  */
-export function applyReviseFrontmatter(raw: string): ApplyReviseResult {
+export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): ApplyReviseResult {
   const range = locateFrontmatterInner(raw);
   if (!range) return { ok: false, message: "no frontmatter block found" };
   const inner = raw.slice(range.innerStart, range.innerEnd);
@@ -97,8 +111,20 @@ export function applyReviseFrontmatter(raw: string): ApplyReviseResult {
   const ratifiedByMatch = fieldLineRegex("ratifiedBy").exec(inner);
   const hasRatifiedBy = ratifiedByMatch !== null && normalizeFieldValue(ratifiedByMatch[2]) !== null;
 
-  if (currentStatus === IMPLEMENTED_STATUS) return applyRevise(raw, "shipped");
-  if (currentStatus === RATIFIED_STATUS) return applyRevise(raw, hasRatifiedBy ? "unshipped" : "unsigned");
+  if (currentStatus === IMPLEMENTED_STATUS) return applyRevise(raw, "shipped", opts);
+  if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && !hasShipped && !opts.withdraw) {
+    // GH #236: a ratified, never-shipped doc is the ONLY implementable version of the slice;
+    // revising it withdraws that. A question found mid-build does not need this — it is queued.
+    return {
+      ok: false,
+      message:
+        "doc is ratified and has never shipped — revising it would withdraw the ratification of the only implementable " +
+        "version. To record a question found mid-build, queue it instead (the ratification stays valid): " +
+        '`em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"`. ' +
+        "If the spec itself must change, pass --withdraw to open the next version as a draft",
+    };
+  }
+  if (currentStatus === RATIFIED_STATUS) return applyRevise(raw, hasRatifiedBy ? "unshipped" : "unsigned", opts);
   if (currentStatus === DRAFT_STATUS || currentStatus === "reviewed") {
     return {
       ok: false,
@@ -115,7 +141,7 @@ export function applyReviseFrontmatter(raw: string): ApplyReviseResult {
   };
 }
 
-function applyRevise(raw: string, kind: ReviseKind): ApplyReviseResult {
+function applyRevise(raw: string, kind: ReviseKind, opts: ReviseOptions = {}): ApplyReviseResult {
   const range = locateFrontmatterInner(raw);
   if (!range) return { ok: false, message: "no frontmatter block found" };
   const inner = raw.slice(range.innerStart, range.innerEnd);
@@ -164,7 +190,12 @@ function applyRevise(raw: string, kind: ReviseKind): ApplyReviseResult {
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
   // MIL-275: questions deferred to the version this opens come back as `- [ ]`.
   const reopened = kind === "unsigned" ? { content, count: 0 } : reopenDeferred(content, newVersion);
-  return { ok: true, content: reopened.content, newVersion, kind, reopened: reopened.count };
+  // GH #236: questions queued while the old version was ratified/shipped join the new draft.
+  const injected =
+    kind === "unsigned" || !opts.queuedFor
+      ? { content: reopened.content, count: 0 }
+      : injectQueuedQuestions(reopened.content, opts.queuedFor(newVersion));
+  return { ok: true, content: injected.content, newVersion, kind, reopened: reopened.count, injected: injected.count };
 }
 
 /** MIL-214: the certification-aware advisory `runRevise` computes about the shipped version being
@@ -188,7 +219,7 @@ export function reviseAdvisory(baseDir: string, sliceKey: string, shippedVersion
 }
 
 export type RunReviseResult =
-  | { ok: true; path: string; newVersion: number; kind: ReviseKind; advisory: ReviseAdvisory | null; reopened: number }
+  | { ok: true; path: string; newVersion: number; kind: ReviseKind; advisory: ReviseAdvisory | null; reopened: number; injected: number }
   | { ok: false; message: string };
 
 /**
@@ -196,7 +227,7 @@ export type RunReviseResult =
  * `ratify`/`--slice-ready`/`em export` use (MIL-121 cross-binding included), then reads/applies/
  * writes it. `baseDir` is the `.em` file's directory.
  */
-export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: string, sliceKey: string): RunReviseResult {
+export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: string, sliceKey: string, withdraw = false): RunReviseResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) return { ok: false, message: `no slice with export key "${sliceKey}" in this model` };
   const slice = model.slices[sliceIndex];
@@ -233,11 +264,12 @@ export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: str
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyReviseFrontmatter(raw);
+  const result = applyReviseFrontmatter(raw, { withdraw, queuedFor: (v) => readQueue(baseDir, sliceKey, v).items });
   if (!result.ok) return { ok: false, message: `${doc.path}: ${result.message}` };
   // MIL-214: "was the version we are leaving behind ever certified" — only meaningful when one
   // shipped. Computed from the pre-write join.
   const advisory = result.kind === "shipped" ? reviseAdvisory(baseDir, sliceKey, doc.shipped?.version ?? doc.version, doc.conformedVersion) : null;
   writeFileSync(absPath, result.content, "utf8");
-  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, advisory, reopened: result.reopened };
+  if (result.injected > 0) clearQueue(baseDir, sliceKey, result.newVersion);
+  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, advisory, reopened: result.reopened, injected: result.injected };
 }

@@ -399,9 +399,9 @@ export function shippedRecordOf(
  *  against: `sha256:<hex>` over the doc BODY — everything after the closing frontmatter fence (or
  *  the whole doc when there is none), EOLs normalised to `\n` by `splitFrontmatter`'s split/join.
  *  Frontmatter is excluded on purpose: the ratify edit itself, `mark-implemented` and `conform`
- *  touch only frontmatter, without changing what was ratified. `em slice defer` is NOT in that
- *  list — it rewrites a body line (the Open Questions item), so a deferral belongs before the
- *  sign-off; after it, the hash no longer matches and `--slice-ready` says so. */
+ *  touch only frontmatter, without changing what was ratified. `## Open Questions` is part of the
+ *  body and stays hashed (GH #236): on a ratified doc `em slice defer` therefore queues the
+ *  question in the state file instead of rewriting the body (cli/defer.ts). */
 export function sliceDocBodyHash(markdown: string): string {
   const { body } = splitFrontmatter(markdown);
   return `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;

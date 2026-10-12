@@ -91,6 +91,8 @@ export interface SliceStatusFact {
   driftSignal: DriftSignalKind | null;
   openQuestionsTotal: number;
   openQuestionsUnchecked: number;
+  /** GH #236: questions `em slice defer` queued for this slice's next version (0 when none). */
+  queuedForNext: number;
   /** MIL-208: non-null when this slice is a continuation (an again-view-only slice with no
    *  legacy doc of its own) — the originating slice's export key. `buildStatusReport` excludes
    *  a continuation fact from every `byStatus`/`driftSignal` bucket (the originating slice's own
@@ -162,6 +164,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       driftSignal: doc.driftSignal,
       openQuestionsTotal,
       openQuestionsUnchecked,
+      queuedForNext: doc.queuedForNext,
       continuationOf: continuationOfKey,
       publicTouching: slicePublicTouching(slice),
       meaningConfirmationRecorded: doc.meaningConfirmed || doc.contractChange !== null,
@@ -549,6 +552,10 @@ export interface StatusIssueTotals {
   openIssues: number;
   openQuestionsTotal: number;
   openQuestionsUnchecked: number;
+  /** GH #236 (status schema 1.10): questions queued by `em slice defer` on ratified/shipped docs
+   *  for their next version — known work the docs themselves cannot show without breaking their
+   *  sign-off. */
+  queuedQuestions: number;
 }
 
 /** One doc-join diagnostic, tagged with the input file it came from — `em status` can aggregate
@@ -642,6 +649,7 @@ export function buildStatusReport(
   };
   let openQuestionsTotal = 0;
   let openQuestionsUnchecked = 0;
+  let queuedQuestions = 0;
   // MIL-121 `covers:` cross-binding lets several slices resolve to the SAME doc file — a doc's
   // own Open Questions belong to the doc, not to each slice covered by it, so a shared doc is
   // only counted once regardless of how many slices are bound to it (keyed by resolved absolute
@@ -712,6 +720,7 @@ export function buildStatusReport(
     ) {
       publicSlicesUnconfirmed++;
     }
+    if (f.continuationOf === null) queuedQuestions += f.queuedForNext;
     const alreadyCounted = f.docPath !== null && countedDocPaths.has(f.docPath);
     if (f.docPath !== null) countedDocPaths.add(f.docPath);
     if (!alreadyCounted) {
@@ -726,7 +735,7 @@ export function buildStatusReport(
     continuations,
     driftSignal: drift,
     invariants,
-    issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked },
+    issues: { openIssues: openIssuesCount, openQuestionsTotal, openQuestionsUnchecked, queuedQuestions },
     conformance,
     modelVersion,
     emVersion,
@@ -842,7 +851,9 @@ export function formatStatusSummary(report: StatusReport): string {
     ? `${report.invariants.cited}/${report.invariants.total} invariants covered`
     : "invariants not checked (pass --tests <dir>)";
   const issuesPart = pluralize(report.issues.openIssues, "open issue");
-  const oqPart = report.issues.openQuestionsUnchecked > 0 ? `, ${pluralize(report.issues.openQuestionsUnchecked, "unchecked open question")}` : "";
+  const oqPart =
+    (report.issues.openQuestionsUnchecked > 0 ? `, ${pluralize(report.issues.openQuestionsUnchecked, "unchecked open question")}` : "") +
+    (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} queued for next version` : "");
   const conformancePart = formatConformancePart(report.conformance[0]);
   return `${implemented}/${total} implemented · ${invPart} · ${issuesPart}${oqPart} · ${conformancePart}`;
 }
@@ -874,7 +885,8 @@ export function formatStatusDetail(report: StatusReport): string {
   );
   lines.push(
     `issues: ${pluralize(report.issues.openIssues, "open issue")}, ` +
-      `${report.issues.openQuestionsUnchecked}/${report.issues.openQuestionsTotal} open question(s) unchecked`,
+      `${report.issues.openQuestionsUnchecked}/${report.issues.openQuestionsTotal} open question(s) unchecked` +
+      (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} queued for next version (em slice defer, GH #236)` : ""),
   );
   // MIL-238: the API-first gate's backlog — ratified/shipped public-touching slices with no
   // recorded meaning confirmation.
@@ -942,7 +954,7 @@ export function formatStatusMarkdown(report: StatusReport): string {
     ["Continuations", `${report.continuations}`],
     ["Invariants", report.invariants ? `${report.invariants.cited}/${report.invariants.total} covered` : "not checked"],
     ["Open issues", `${report.issues.openIssues}`],
-    ["Open questions", `${report.issues.openQuestionsUnchecked} unchecked`],
+    ["Open questions", `${report.issues.openQuestionsUnchecked} unchecked${report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} queued for next version` : ""}`],
   ];
   if (report.conformance.length <= 1) {
     const entry = report.conformance[0];

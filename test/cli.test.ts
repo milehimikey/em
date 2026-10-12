@@ -198,14 +198,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.16"); // MIL-235: 1.14.0 release bump (consumes, owner)
+    expect(doc.schemaVersion).toBe("1.17"); // MIL-235: 1.14.0 release bump (consumes, owner)
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.16");
+    expect(doc.schemaVersion).toBe("1.17");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -221,7 +221,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.16");
+    expect(doc.schemaVersion).toBe("1.17");
     expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
@@ -254,6 +254,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       meaningConfirmed: false,
       contractChange: null,
       scenarios: null,
+      queuedForNext: 0,
     });
     // Only the one slice's object — never the whole model's slices array.
     expect(doc.model).toBeUndefined();
@@ -2755,7 +2756,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.9");
+    expect(doc.statusSchemaVersion).toBe("1.10");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -2773,7 +2774,7 @@ slice "Billing" {
       frontmatterInvalid: 0,
     });
     expect(doc.invariants).toEqual({ testsDir: "tests", total: 2, cited: 1, uncovered: 1 });
-    expect(doc.issues).toEqual({ openIssues: 1, openQuestionsTotal: 2, openQuestionsUnchecked: 1 });
+    expect(doc.issues).toEqual({ openIssues: 1, openQuestionsTotal: 2, openQuestionsUnchecked: 1, queuedQuestions: 0 });
     expect(doc.conformance).toHaveLength(1);
     expect(doc.conformance[0]).toMatchObject({
       file: "checkout.em",
@@ -4703,7 +4704,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.9");
+    expect(doc.statusSchemaVersion).toBe("1.10");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);
@@ -5597,7 +5598,7 @@ describe("API-first gate (CLI, MIL-238)", () => {
   });
 
   it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify of v2 requires it again", () => {
-    const r = em(["slice", "revise", "shop.em", "place-order"], dir);
+    const r = em(["slice", "revise", "shop.em", "place-order", "--withdraw"], dir);
     expect(r.status).toBe(0);
     const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
     expect(content).toContain("status: draft\nversion: 2\n");

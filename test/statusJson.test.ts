@@ -22,7 +22,7 @@ function sampleReport(): StatusReport {
     continuations: 0,
     driftSignal: { inSync: 8, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, uncertified: 0, notApplicable: 0, frontmatterInvalid: 0 },
     invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
-    issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0 },
+    issues: { openIssues: 0, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedQuestions: 0 },
     conformance: [
       {
         file: "model.em",
@@ -52,7 +52,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.9");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.10");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);

@@ -68,10 +68,31 @@ describe("applyReviseFrontmatter (pure, MIL-283)", () => {
   });
 
   it("unshipped (ratified, never shipped): version bumped, sign-off cleared, no shipped record invented", () => {
-    const r = applyReviseFrontmatter(RATIFIED_UNSHIPPED);
+    const r = applyReviseFrontmatter(RATIFIED_UNSHIPPED, { withdraw: true });
     expect(r).toMatchObject({ ok: true, kind: "unshipped", newVersion: 2 });
     expect(r.ok && r.content).toBe("---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 2\n---\n" + BODY);
     expect(r.ok && shippedRecordOf(parseSliceDoc(r.content))).toBeNull();
+  });
+
+  it("GH #236: unshipped ratified REFUSES without withdraw, pointing at defer; --withdraw proceeds", () => {
+    const refused = applyReviseFrontmatter(RATIFIED_UNSHIPPED);
+    expect(refused).toMatchObject({ ok: false, message: expect.stringContaining("would withdraw the ratification of the only implementable version") });
+    expect(!refused.ok && refused.message).toContain("em slice defer <model> <key>");
+    expect(!refused.ok && refused.message).toContain("--withdraw");
+    expect(applyReviseFrontmatter(RATIFIED_UNSHIPPED, { withdraw: true })).toMatchObject({ ok: true, kind: "unshipped" });
+    // A shipped doc and the legacy unsigned doc are unchanged: no --withdraw needed.
+    expect(applyReviseFrontmatter(SHIPPED_115)).toMatchObject({ ok: true, kind: "shipped" });
+    expect(applyReviseFrontmatter(LEGACY_UNSIGNED)).toMatchObject({ ok: true, kind: "unsigned" });
+  });
+
+  it("GH #236: queued questions for the new version are injected into Open Questions (unchecked; checked when --until is further out)", () => {
+    const doc = SHIPPED_115 + "\n## Open Questions\n\n- [x] old — v1: a; deferred to v2 (2026-01-01)\n";
+    const q = (question: string, until: number) => ({ question, sliceKey: "k", targetVersion: 2, until, on: "2026-10-12", by: "Sam", decision: "ship without" });
+    const r = applyReviseFrontmatter(doc, { queuedFor: (v) => (v === 2 ? [q("new gap", 2), q("far gap", 3)] : []) });
+    expect(r).toMatchObject({ ok: true, reopened: 1, injected: 2 });
+    expect(r.ok && r.content).toContain(
+      "- [ ] old\n- [ ] new gap — v1: ship without (queued 2026-10-12, Sam)\n- [x] far gap — v1: ship without; deferred to v3 (2026-10-12, Sam)\n",
+    );
   });
 
   it("legacy unsigned ready-to-implement: reopened as draft at the SAME version — the exit path", () => {

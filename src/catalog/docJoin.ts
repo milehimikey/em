@@ -35,6 +35,7 @@
 // one) to tell "extra" from "dangling" from "unratified". It reuses `NOTE_SLICE_PATH` and
 // `resolveCrossCandidate` below rather than re-deriving the ratification predicate.
 
+import { queuedCount } from "./deferQueue.js";
 import { parseScenarios, Scenario } from "./scenarios.js";
 import { NormalizedModel, Slice } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -161,6 +162,11 @@ export interface SliceDocExport {
    *  `{ title, given, when, then }` string arrays, in document order. Null when the doc has no
    *  well-formed block (every 1.13-style doc) or isn't found / usable. */
   scenarios: Scenario[] | null;
+  /** GH #236: how many questions `em slice defer` has QUEUED for this slice's next version
+   *  (`.event-modeling.md` parking lot, catalog/deferQueue.ts) — known work for v<version+1> that
+   *  a ratified/shipped doc could not take without breaking its sign-off. 0 when none, when the
+   *  state file is absent, and whenever no doc was found. */
+  queuedForNext: number;
 }
 
 export interface SliceDocJoinResult {
@@ -199,6 +205,7 @@ const EMPTY_CONTENT = {
   meaningConfirmed: false,
   contractChange: null as string | null,
   scenarios: null as Scenario[] | null,
+  queuedForNext: 0,
 };
 
 /**
@@ -241,7 +248,7 @@ export function resolveSliceDocJoin(
       // read — `slices/request-payment.md` — not the note's original casing. Otherwise a
       // consumer that re-derives the key from `doc.path` (sliceReadyValidate.ts) would try to
       // re-read the mixed-case path and get null on a case-sensitive filesystem.
-      return { doc: foundDoc(`slices/${otherKey}.md`, result.doc), diagnostics: [], continuationOf: null };
+      return { doc: foundDoc(`slices/${otherKey}.md`, result.doc, baseDir, sliceKey), diagnostics: [], continuationOf: null };
     }
 
     // MIL-208: no note-bound doc of its own (`boundEls.length === 0`, checked above) and no
@@ -305,12 +312,12 @@ export function resolveSliceDocJoin(
     };
   }
 
-  return { doc: foundDoc(path, parsed), diagnostics: [], continuationOf: null };
+  return { doc: foundDoc(path, parsed, baseDir, sliceKey), diagnostics: [], continuationOf: null };
 }
 
 /** Builds the `found: true, reason: null` doc join result shared by a canonical binding and a
  *  ratified MIL-121 cross-binding — `path` is whichever path the content actually came from. */
-function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
+function foundDoc(path: string, parsed: SliceDoc, baseDir: string, docKey: string): SliceDocExport {
   return {
     found: true,
     path,
@@ -337,6 +344,7 @@ function foundDoc(path: string, parsed: SliceDoc): SliceDocExport {
     meaningConfirmed: parsed.meaningConfirmed,
     contractChange: parsed.contractChange,
     scenarios: scenariosOf(parsed.body),
+    queuedForNext: queuedCount(baseDir, docKey, parsed.version),
   };
 }
 
