@@ -35,8 +35,8 @@ em-sdd-bridge (redirect mode) and never run `/speckit.specify`.
 **Gate: no constitution, no first slice.** The constitution is the project's ratified house rules
 — stack and architectural shape (including which implementation skill each slice pattern routes
 to), code style, testing norms, NFR baselines, review/merge norms. It lives at
-`.specify/memory/constitution.md` in a spec-kit project, otherwise `constitution.md` beside the
-model; `em status` reports which, and whether it's there. If it's missing — or its `ratifiedBy:`
+`.specify/memory/constitution.md` in a spec-kit project (when that file exists), otherwise
+`constitution.md` beside the model; `em status` reports which, and whether it's there. If it's missing — or its `ratifiedBy:`
 is empty, meaning nobody has signed it off — run `reference/implement.md` §7 ("Before the first
 slice: the constitution") first: ask its questions conversationally, write the answers in, and
 have a human ratify them. Don't decide the project's stack or style yourself to get moving.

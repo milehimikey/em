@@ -103,6 +103,15 @@ holds a slice, and a URL into an external tracker mirroring it — both hand-fil
 `owners[]` list (`statusSchemaVersion` `1.2`). This is the `em`-side half of slice ownership —
 `tracking` is the exact field `em-tracker-bridge` (built in parallel) reads to find the mirrored
 ticket; `em` only stores and displays, it never talks to a tracker itself.
+Most recently (1.16.0, "the exchange, first hardening" — fixes from a real engagement run
+end to end): every `<slice-key>` argument resolves from the export key, the display name or a
+unique prefix, with did-you-mean on a miss (GH #237); a view's field sources are the union of
+`from` across all its `again` instances (GH #235); doc-to-model consistency honours `\|` in
+table cells (GH #234); `em engagement new --tracking <key>` carries a tracker key through the
+plan, status and implementer prompts (GH #241); one constitution locator shared by `em status`
+and `em upgrade` (GH #238); a missing comma between inline fields is a parse error instead of a
+silent mis-parse (GH #245); and `em slice defer` on a ratified or shipped doc queues the
+question for the next draft rather than editing the signed body (GH #236).
 
 **Modeling and rendering**
 
@@ -125,7 +134,8 @@ ticket; `em` only stores and displays, it never talks to a tracker itself.
   model and levels it (MIL-268), four vendored sub-agents (MIL-269) and the
   `event-modeling-engagement` skill (MIL-270) build it as one independent PR per slice, each
   against `main` (MIL-280 dropped the 1.14.0–1.14.2 stacking), and the constitution template
-  prompts for the per-agent models and test command (MIL-272); see
+  prompts for the per-agent models and test command (MIL-272); `--tracking <key>` (1.16.0)
+  records a tracker key on the plan and each slice's PR title and prompt; see
   [process.md](process.md#engagements-who-operates-the-agents).
 - **Vendored-skill drift** — shipped: the bundled `event-modeling` skill can itself go
   stale two ways. In-repo, an `em-version:` stamp plus a doctest/generated-reference gate

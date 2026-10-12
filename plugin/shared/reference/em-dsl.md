@@ -421,7 +421,7 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   command/event/`ui`/`type` field is a parse error. Excludes the field from
   `fields-completeness/view-field-no-source` entirely (and thus from `--slice-ready`). The
   traced form still checks something: every named event must resolve among the view's ACTUAL
-  sources (its own `from` list, or the same-slice events for a `from`-less view) — an
+  sources (the union of `from` across the view's originating and every `again` instance, or the same-slice events for a `from`-less view) — an
   unresolved name is a validation error, `derived-from-unresolved`. `em export` carries it as
   `derived: boolean` on the field (always present, same `=== true` convention as `tag`/
   `assigned`) and `derivedFrom: string[] | null` (the traced event name(s), `null` on a bare

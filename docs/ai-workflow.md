@@ -289,7 +289,7 @@ NFR baselines, review and merge norms. The `implement` skill elicits it in a sho
 before the first slice is built and a named human ratifies it (`ratifiedBy:`/`ratifiedOn:` — an
 empty `ratifiedBy:` means it's still a draft, and the implementing agent is told to stop rather
 than decide your stack or style for you). **In a spec-kit project the document IS
-`.specify/memory/constitution.md`** — em defers to that slot, writes no second copy, and merges
+`.specify/memory/constitution.md`** — em defers to that slot once it exists, writes no second copy, and merges
 its sections into that file under their own headings. `em status` reports which location applies
 and whether the file is there (`constitution: present` / `absent (<path>)`) — existence only, no
 content check. See [cli.md](cli.md#em-status-files) and

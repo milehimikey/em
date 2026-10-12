@@ -48,12 +48,14 @@ facilitated session, not in an implementation branch.
 
 **First, read the project's constitution** — the house rules for *how* implementation happens
 here (stack and architectural shape, which implementation skill each slice pattern routes to,
-code style, testing norms, NFR baselines, review and merge norms). It lives in one of exactly two
-places, never both:
+code style, testing norms, NFR baselines, review and merge norms). It lives in one place, found by
+one lookup (shared by `em status` and `em upgrade`):
 
 - **spec-kit project** (a `.specify/` directory exists at or above the model):
-  `.specify/memory/constitution.md` — spec-kit's own slot, which em defers to.
-- **anything else**: `constitution.md` beside the model, where `em scaffold` writes it.
+  `.specify/memory/constitution.md` — spec-kit's own slot, which em defers to — wins whenever it
+  exists.
+- **otherwise, or while that slot is empty**: `constitution.md` beside the model, where
+  `em scaffold` writes it (a symlink to a repo-root file counts).
 
 `em status <model>.em --json` reports which one applies and whether it's there
 (`conformance[].constitution`) — existence only; nothing in `em` reads or judges its content.

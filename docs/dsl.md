@@ -408,8 +408,8 @@ view Waitlist Queue from "Waitlist Entry Added" {
   [validation.md](validation.md)) — no warning, and it no longer counts against
   `em validate --slice-ready` either, since the diagnostic never fires.
 - The traced form still checks something: every named event must resolve among the view's
-  ACTUAL sources — its own `from` list, or (for a `from`-less view) the events in its own
-  slice. A name that doesn't resolve there is a validation error, `derived-from-unresolved`,
+  ACTUAL sources — the union of `from` across its originating and every `view … again`
+  instance, or (for a `from`-less view) the events in its own slice. A name that doesn't resolve there is a validation error, `derived-from-unresolved`,
   naming the field, the view, the bad name, and the view's real sources — a typo or a stale
   reference doesn't get to hide behind the marker.
 
