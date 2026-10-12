@@ -66,7 +66,7 @@ import { classifySlicePattern, slicePatternLabel } from "./classify.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { SliceDoc } from "./sliceDoc.js";
-import { findStructuredSectionProblems } from "./sliceSections.js";
+import { findStructuredSectionProblems, splitCells } from "./sliceSections.js";
 
 /** The three element kinds this rule's doc markers can name — the DSL has more (`ui`,
  *  `automation`/`processor`/`saga`/`translation`), but the slice.md template only gives
@@ -114,11 +114,6 @@ const TABLE_ROW = /^\s*\|/;
 const TABLE_SEPARATOR_CELL = /^:?-+:?$/;
 const PLACEHOLDER = /\{\{.*\}\}/;
 
-function splitRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  return trimmed.split("|").map((c) => c.trim());
-}
-
 function cleanCell(raw: string | undefined): string | null {
   if (raw === undefined) return null;
   const stripped = raw.replace(/^`|`$/g, "").trim();
@@ -134,16 +129,16 @@ function cleanCell(raw: string | undefined): string | null {
 function findFieldTable(lines: string[], start: number, end: number): DocField[] | null {
   for (let i = start; i < end - 1; i++) {
     if (!TABLE_ROW.test(lines[i]) || !TABLE_ROW.test(lines[i + 1])) continue;
-    const sepCells = splitRow(lines[i + 1]);
+    const sepCells = splitCells(lines[i + 1]);
     if (sepCells.length === 0 || !sepCells.every((c) => TABLE_SEPARATOR_CELL.test(c))) continue;
-    const headerCells = splitRow(lines[i]);
+    const headerCells = splitCells(lines[i]);
     if (normalizeName(headerCells[0] ?? "") !== "field") continue;
     const typeIdx = headerCells.findIndex((c, idx) => idx > 0 && normalizeName(c) === "type");
 
     const fields: DocField[] = [];
     for (let j = i + 2; j < end; j++) {
       if (!TABLE_ROW.test(lines[j])) break;
-      const cells = splitRow(lines[j]);
+      const cells = splitCells(lines[j]);
       const name = cleanCell(cells[0]);
       if (!name) continue; // blank or placeholder row — not a real field declaration
       const type = typeIdx >= 0 ? cleanCell(cells[typeIdx]) : null;

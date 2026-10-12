@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { validateDocModelConsistency } from "../src/catalog/docModelConsistencyValidate.js";
+import { buildSliceRegions, splitCells } from "../src/catalog/sliceSections.js";
+import { buildSliceDocContent } from "../src/cli/sliceNew.js";
 
 let dir: string;
 beforeAll(() => {
@@ -436,5 +438,35 @@ describe("slice-doc/structured-section-malformed (MIL-266)", () => {
       'slice doc "slices/view-region.md"\'s view `Region List` field table lists "stale", but view "Region List" (slice "View Region") has no such field',
       'view "Region List" (slice "View Region") has field "total", but slice doc "slices/view-region.md"\'s view `Region List` field table doesn\'t list it',
     ]);
+  });
+});
+
+describe("table cells honour the \\| escape (MIL-285)", () => {
+  it("splitCells splits on unescaped pipes only and unescapes \\| in a cell", () => {
+    expect(splitCells('| resolution | "refund" \\| "cancel" | yes |')).toEqual(["resolution", '"refund" | "cancel"', "yes"]);
+  });
+
+  it("splitCells still reads a plain pipe-free row", () => {
+    expect(splitCells("| orderId | string | yes |")).toEqual(["orderId", "string", "yes"]);
+  });
+
+  it("a freshly synced doc with inline-union fields on a command, event and view has no doc-model diagnostics", () => {
+    const src = [
+      'slice "Resolve Order" {',
+      '  command ResolveOrder note "slices/resolve-order.md" {',
+      "    orderId: string",
+      '    resolution: "refund" | "cancel" | "write_off"',
+      "  }",
+      '  event OrderResolved @Order { resolution: "refund" | "cancel" | "write_off" }',
+      '  view ResolvedOrders { resolution: "refund" | "cancel" | "write_off" }',
+      "}",
+    ].join("\n");
+    const { model, refs } = compile(src);
+    const regions = buildSliceRegions(model, [0]);
+    const doc = buildSliceDocContent("Resolve Order", "resolve-order", "state-change", "Order", regions);
+    expect(doc).toContain('"refund" \\| "cancel" \\| "write_off"');
+    writeFileSync(join(dir, "slices", "resolve-order.md"), doc);
+    const diags = validateDocModelConsistency(model, refs, dir).filter((d) => d.code.startsWith("doc-model"));
+    expect(diags).toEqual([]);
   });
 });

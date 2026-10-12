@@ -302,8 +302,17 @@ export function scanSliceRegions(text: string): RegionScan {
   return { regions, problems };
 }
 
-function splitCells(line: string): string[] {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+/** Splits a markdown table row into trimmed cells on unescaped pipes only, then unescapes `\|`
+ *  in each cell — the inverse of `cell()`, so a union type like `"a" | "b"` that sync wrote as
+ *  `"a" \| "b"` reads back as the one cell it is. The shared row splitter for every doc-table
+ *  reader (MIL-285). */
+export function splitCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((c) => c.replace(/\\\|/g, "|").trim());
 }
 
 /** A field-table region's header problem, or null when its first table's header matches the
