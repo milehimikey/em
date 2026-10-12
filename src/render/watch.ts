@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Debounced file watcher for `em watch`.
 
-import chokidar from "chokidar";
+import chokidar, { type FSWatcher } from "chokidar";
 
 /**
  * Wrap an async build fn so overlapping triggers never run it concurrently.
@@ -36,13 +36,17 @@ export function watchFile(
   paths: string | string[],
   onChange: () => void | Promise<void>,
   debounceMs = 80,
-): chokidar.FSWatcher {
-  // A glob path (e.g. a slices/*.md pattern) picks up files created after the
-  // watcher starts, not just ones that already exist — needed so authoring a
-  // slice's first design doc mid-session still triggers a re-render.
+  only?: (path: string) => boolean,
+): FSWatcher {
+  // Paths are files or directories, never globs: chokidar 4 dropped glob support
+  // (and with it the `braces` dependency, CVE-2026-93687). A directory path picks
+  // up files created after the watcher starts — needed so authoring a slice's
+  // first design doc mid-session still triggers a re-render — and `only` narrows
+  // which files inside it count (e.g. just `*.md`), the way the old glob did.
   const watcher = chokidar.watch(paths, { ignoreInitial: true });
   let timer: NodeJS.Timeout | null = null;
-  const trigger = () => {
+  const trigger = (path: string) => {
+    if (only && !only(path)) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       void onChange();

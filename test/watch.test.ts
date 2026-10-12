@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Coverage for src/render/watch.ts's multi-path support — added so `em watch`
-// can watch a slice doc glob alongside the .em file (see cli.ts's watch command) —
+// can watch the slices/ directory alongside the .em file (see cli.ts's watch command) —
 // and for serializeBuilds, the coalescing wrapper the watch command runs builds through.
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
@@ -11,13 +11,17 @@ import { serializeBuilds, watchFile } from "../src/render/watch.js";
 describe("watchFile", () => {
   let dir: string;
   let watcher: ReturnType<typeof watchFile> | undefined;
+  // chokidar 4 reports `ready` a beat before a watched file is actually armed on macOS;
+  // a write in that window is dropped. Not a product concern (a human edits seconds later),
+  // but the tests write immediately, so give the watcher a moment first.
+  const settle = () => new Promise<void>((r) => setTimeout(r, 150));
 
   afterEach(async () => {
     await watcher?.close();
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  it("accepts an array of paths/globs and rebuilds on a change to any of them", async () => {
+  it("accepts an array of files/directories and rebuilds on a change to any of them", async () => {
     dir = mkdtempSync(join(tmpdir(), "em-watch-"));
     const modelFile = join(dir, "model.em");
     writeFileSync(modelFile, "slice \"X\" {\n  command X\n}\n");
@@ -32,8 +36,10 @@ describe("watchFile", () => {
       resolveCall?.();
     };
 
-    watcher = watchFile([modelFile, join(dir, "slices", "*.md")], onChange, 20);
-    await new Promise((r) => watcher!.on("ready", r));
+    watcher = watchFile([modelFile, join(dir, "slices")], onChange, 20);
+    await new Promise<void>((r) => watcher!.on("ready", () => r()));
+    await settle();
+    calls = 0; // same startup-event guard as above
 
     const waitForCall = () => new Promise<void>((resolve) => (resolveCall = resolve));
 
@@ -50,6 +56,33 @@ describe("watchFile", () => {
     expect(calls).toBe(2);
   });
 
+  it("an `only` filter narrows a watched directory to the files that count, and a doc authored after start still fires", async () => {
+    dir = mkdtempSync(join(tmpdir(), "em-watch-only-"));
+    const modelFile = join(dir, "model.em");
+    writeFileSync(modelFile, "slice \"X\" {\n  command X\n}\n");
+    const slicesDir = join(dir, "slices");
+    mkdirSync(slicesDir, { recursive: true });
+
+    let calls = 0;
+    let resolveCall: (() => void) | undefined;
+    const onChange = () => {
+      calls++;
+      resolveCall?.();
+    };
+    watcher = watchFile([modelFile, slicesDir], onChange, 20, (p) => p === modelFile || p.endsWith(".md"));
+    await new Promise<void>((r) => watcher!.on("ready", () => r()));
+    await settle();
+    calls = 0; // drop the one spurious startup `change` chokidar 4 can report for a just-written fixture
+    const waitForCall = () => new Promise<void>((resolve) => (resolveCall = resolve));
+
+    // a non-.md file in slices/ is ignored; the .md created afterwards is not
+    writeFileSync(join(slicesDir, "notes.txt"), "ignored\n");
+    const first = waitForCall();
+    writeFileSync(join(slicesDir, "new.md"), "- **Status:** draft\n");
+    await first;
+    expect(calls).toBe(1);
+  });
+
   it("still works with a single string path (back-compat)", async () => {
     dir = mkdtempSync(join(tmpdir(), "em-watch-single-"));
     const modelFile = join(dir, "model.em");
@@ -57,7 +90,8 @@ describe("watchFile", () => {
 
     let resolveCall: (() => void) | undefined;
     watcher = watchFile(modelFile, () => resolveCall?.(), 20);
-    await new Promise((r) => watcher!.on("ready", r));
+    await new Promise<void>((r) => watcher!.on("ready", () => r()));
+    await settle();
 
     const called = new Promise<void>((resolve) => (resolveCall = resolve));
     appendFileSync(modelFile, "\n");

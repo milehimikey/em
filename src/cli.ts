@@ -1895,8 +1895,10 @@ program
 
     // Also watch slice design docs (slices/*.md): editing just a doc's Status
     // line should live-update the diagram's header colors without touching
-    // the .em file. The glob still fires for docs authored after watch starts.
-    watchFile([file, join(dirname(file), "slices", "*.md")], build);
+    // the .em file. Watching the directory (not a glob — chokidar 4 has none)
+    // still fires for docs authored after watch starts; the filter keeps it to .md.
+    const slicesDir = join(dirname(file), "slices");
+    watchFile([file, slicesDir], build, 80, (p) => p === file || p.endsWith(".md"));
     console.log(`watching ${file} … (ctrl-c to stop)`);
     if (!opts.serve) console.log("tip: add --serve for the live browser view");
   });
