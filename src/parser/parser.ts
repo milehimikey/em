@@ -966,6 +966,59 @@ function splitOptionalMarker(rawName: string): { rawName: string; optional: bool
   return { rawName: t, optional: false };
 }
 
+/** Same-length copy of `s` with quoted spans and bracketed (`<…>`, `[…]`, `(…)`, `{…}`) contents
+ *  blanked to `_`, so a scan for a second `name:` sees only top-level text and indices still
+ *  line up with `s`. */
+function maskQuotedAndBracketed(s: string): string {
+  let out = "";
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') {
+      const close = matchQuote(s, i);
+      const end = close >= 0 ? close : s.length - 1;
+      out += "_".repeat(end - i + 1);
+      i = end;
+    } else if ("<[({".includes(c)) {
+      depth++;
+      out += depth === 1 ? c : "_";
+    } else if (">])}".includes(c) && depth > 0) {
+      depth--;
+      out += depth === 0 ? c : "_";
+    } else {
+      out += depth > 0 ? "_" : c;
+    }
+  }
+  return out;
+}
+
+/** A second field's start inside a field's type: whitespace, a name (bare, or quoted and so
+ *  already masked to `_`), an optional `?`, then `:` — `orderId: string  total: number`. Clause
+ *  keywords (`tag`, `derived from "…"`, …) carry no colon, so they never match. Runs on the
+ *  masked type. */
+const SECOND_FIELD_START = /\s+(?=(?:[A-Za-z_][\w.-]*|_+)\??\s*:)/g;
+
+/** Throws when a field's type swallowed a second field because inline fields were separated by
+ *  whitespace instead of commas (GH #245) — otherwise `{ orderId: string  total: number }`
+ *  parses silently as one field typed `string  total: number`. */
+function assertNoSecondField(name: string, rawType: string, line: number): void {
+  const type = rawType.trim();
+  const starts = [...maskQuotedAndBracketed(type).matchAll(SECOND_FIELD_START)];
+  if (starts.length === 0) return;
+  let fixed = "";
+  let last = 0;
+  for (const m of starts) {
+    fixed += type.slice(last, m.index) + ", ";
+    last = m.index + m[0].length;
+  }
+  fixed += type.slice(last);
+  throw new ParseError(
+    `field "${name}" type \`${type}\` looks like two fields — inline fields are comma-separated: ` +
+      `\`{ ${name}: ${fixed} }\``,
+    line,
+  );
+}
+
 /** Parse one field spec: `name`, `name: Type`, `name?: Type` or `name?` (optional, MIL-237),
  *  plus any trailing field-level clauses (`extractFieldClauses`). Returns null for blanks. */
 function parseFieldSpec(raw: string, line: number, context: FieldClauseContext): Field | null {
@@ -982,7 +1035,9 @@ function parseFieldSpec(raw: string, line: number, context: FieldClauseContext):
     const marker = splitOptionalMarker(spec.slice(0, colon));
     optional = marker.optional;
     const name = unquote(marker.rawName);
-    const type = unquote(spec.slice(colon + 1).trim());
+    const rawType = spec.slice(colon + 1).trim();
+    if (name) assertNoSecondField(name, rawType, line);
+    const type = unquote(rawType);
     field = name ? { name, ...(type ? { type } : {}) } : null;
   } else {
     const marker = splitOptionalMarker(spec);

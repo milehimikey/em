@@ -26,6 +26,7 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | An `arrow` that points backward in time | Restructure so the target comes later |
 | An `arrow` between element kinds the four patterns don't connect | Add the missing step — the message names it |
 | A declared `type` nesting itself with no array to terminate it (directly or through other declared types) | Break the cycle, or route the self/mutual reference through an array (`children: Node[]`) if the data is genuinely tree-shaped — see [dsl.md](dsl.md#named-types) |
+| An inline field whose type contains a second `name:` — fields separated by whitespace instead of commas, e.g. `{ orderId: string  total: number }` (GH #245). A parse error with no diagnostic `code`: it stops the parse at that line, and the message suggests the comma form | Separate inline fields with commas (`{ orderId: string, total: number }`), or put one field per line — see [dsl.md](dsl.md#fields) |
 | A composite `tag` naming a field the event doesn't declare (`tag-composite-unknown-field`) | Fix the field name, or add it to the event's fields — see [dsl.md](dsl.md#event-tags) |
 | An event declaring the same tag key twice — inline identity and element-level keys share one namespace (`tag-duplicate-key`) | Rename one of the tags so every key on the event is unique — see [dsl.md](dsl.md#event-tags) |
 | A lineage ref (`split-from`/`merged-from`/`superseded-by`) that doesn't match the `<slice-key>@v<N>` grammar (`lineage-ref-malformed`) | Fix the value to `<slice-key>@v<N>`, or remove it |

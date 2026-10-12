@@ -193,7 +193,8 @@ Any element can declare data fields in a `{ … }` block: the data a command acc
 records, a read model projects, or a UI shows. Each field is a `name` with an optional
 `: Type`. On internal elements types are free text with no semantic checking; on `public`
 elements they are strict (see [Strict public types](#strict-public-types)). Write fields one
-per line or inline, comma-separated:
+per line or inline, comma-separated (whitespace alone between inline fields is a parse error, not
+one field with a long type):
 
 ```
 command Place Order {            # one per line

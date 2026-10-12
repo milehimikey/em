@@ -1816,3 +1816,57 @@ describe("standalone `invariant` line (MIL-265)", () => {
     expect(ast.slices[0].elements[0].fields).toEqual([{ name: "invariant check", type: "Boolean" }]);
   });
 });
+
+describe("whitespace-separated inline fields (GH #245)", () => {
+  const model = (body: string) => `slice "S" {\n  event E @C ${body}\n}`;
+
+  it("rejects an inline block without commas, on the element's line, with the comma-fixed form", () => {
+    try {
+      parse(model("{ orderId: string  total: number }"));
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(ParseError);
+      expect((e as ParseError).line).toBe(2);
+      expect((e as ParseError).message).toBe(
+        'line 2: field "orderId" type `string  total: number` looks like two fields — inline fields are comma-separated: `{ orderId: string, total: number }`',
+      );
+    }
+  });
+
+  it("rejects the same slip on one line of a multi-line block, on that line", () => {
+    try {
+      parse(model("{\n    ok: string\n    orderId: string  total?: number\n  }"));
+      expect.unreachable();
+    } catch (e) {
+      expect((e as ParseError).line).toBe(4);
+      expect((e as ParseError).message).toMatch(/field "orderId" type `string {2}total\?: number` looks like two fields/);
+    }
+  });
+
+  it("accepts the comma form", () => {
+    const ast = parse(model("{ orderId: string, total: number }"));
+    expect(ast.slices[0].elements[0].fields).toEqual([
+      { name: "orderId", type: "string" },
+      { name: "total", type: "number" },
+    ]);
+  });
+
+  it("keeps space-bearing types and clauses working", () => {
+    const ast = parse(
+      `slice "S" {\n  event E @C { a: "refund" | "cancel", b: Name[], c: Map<string>, d: List<List<a>>, e: UUID tag, f?: text renamed from "g", h: x assigned }\n  view V from "E" { s: text derived from "E", t: int derived }\n}`,
+    );
+    const [e, v] = ast.slices[0].elements;
+    expect(e.fields!.map((f) => [f.name, f.type])).toEqual([
+      ["a", '"refund" | "cancel"'],
+      ["b", "Name[]"],
+      ["c", "Map<string>"],
+      ["d", "List<List<a>>"],
+      ["e", "UUID"],
+      ["f", "text"],
+      ["h", "x"],
+    ]);
+    expect(e.fields![4].tag).toBe(true);
+    expect(e.fields![5].renamedFrom).toEqual(["g"]);
+    expect(v.fields!.map((f) => f.derived)).toEqual([true, true]);
+  });
+});
