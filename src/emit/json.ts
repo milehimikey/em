@@ -12,7 +12,8 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { collectTags, Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
+import { againInstancesOf } from "../model/continuation.js";
+import { collectTags,Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -505,10 +506,7 @@ export function buildExportDoc(
     const seen = new Set<string>();
     const result: AlsoReadsExport[] = [];
     for (const originEl of originViews) {
-      const followers = model.elements
-        .filter((other) => other.kind === "view" && other.again === true && other.logicalId === originEl.id)
-        .sort((a, b) => a.sliceIndex - b.sliceIndex);
-      for (const follower of followers) {
+      for (const follower of againInstancesOf(model, originEl)) {
         const atSlice = sliceKeys[follower.sliceIndex];
         for (const name of follower.from ?? []) {
           const ref = refOf(resolveByName(model.byName, name));

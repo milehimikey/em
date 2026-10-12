@@ -112,7 +112,9 @@ reappears where the event lands.
 
 Instances are one logical view. The first declaration owns the `note` doc; each later
 instance lists only the new events that reach it at that point; and a reaction reading the
-view connects to the nearest instance at or before its own slice. `again` on a name with no
+view connects to the nearest instance at or before its own slice. A view's field sources
+(`em validate`'s View ← events check, and a traced `derived from`) are the union of the
+events across every instance. `again` on a name with no
 earlier declaration is a validation error, and `again` on anything but a `view` is a parse
 error.
 

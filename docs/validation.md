@@ -32,7 +32,7 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | A lineage ref that names its own slice, or that closes a cycle with another slice's lineage ref (`lineage-ref-cycle`) | Break the cycle — a slice can't be its own ancestor |
 | `superseded-by` naming a slice absent from the current model (`lineage-forward-dangling`) | Fix the key, or remove the stale successor |
 | A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the pending delta on the target slice first (bumping its `version:`) |
-| A view field's traced `derived from "Event A", "Event B"` naming an event that isn't among the view's actual sources (`derived-from-unresolved`) | Name one of the view's actual sources — its `from` list, or the same-slice events for a `from`-less view — or drop the traced event |
+| A view field's traced `derived from "Event A", "Event B"` naming an event that isn't among the view's actual sources (`derived-from-unresolved`) | Name one of the view's actual sources — the `from` events of any of its instances (including `view X again`), or the same-slice events for a `from`-less view — or drop the traced event |
 | Two `public` elements of the same kind whose names slug alike (`Order Placed` / `Order-Placed`) — a consumer's `consumes <model>:<kind>.<slug>` names no slice, so it couldn't tell them apart (`public-name-not-unique`, MIL-235). A `view … again` instance is the same read model, not a second name | Rename one, or drop `public` from one — see [dsl.md](dsl.md#consuming-another-models-public-surface) |
 | A field of a `public` command/event/view (or of a declared `type` reachable from one) whose type is not in the public type table, not `X[]`, and not a declared `type` — including an untyped one (`public-field-type-unresolved`) | Use a table type, `X[]`, or a declared `type` — see [Strict public types](#strict-public-types) |
 
@@ -209,7 +209,8 @@ what data an element actually carries, `em validate` can check that data flows f
 consistently instead of trusting it by eye.
 
 - **View ← events** — every field on a `view` should trace back to a field on one of its
-  source events (any instance of each named event, unioned). A view field with no matching
+  source events (any instance of each named event, unioned; a `view X again` instance's `from`
+  events count toward the same view). A view field with no matching
   event field gets a warning — unless the field carries a trailing `derived` clause (below).
 - **Event ← command** — every field on an `event` should trace back to a field on a command
   in the same slice (unioned across commands, in the rare case a slice has more than one).
@@ -257,7 +258,7 @@ from`'s event/command-only posture) and it's excluded from the View ← events c
 no warning, and it no longer counts against `em validate --slice-ready` either. Optionally
 trace it — `derived from "Event A", "Event B"` — naming the event(s) whose arrival the value
 actually depends on; the traced form still checks something, since every named event must
-resolve among the view's actual sources (its own `from` list, or the same-slice events for a
+resolve among the view's actual sources (the union of `from` across the view's originating and every `again` instance, or the same-slice events for a
 `from`-less view), an error (`derived-from-unresolved`) otherwise:
 
 ```

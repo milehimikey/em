@@ -18,7 +18,8 @@ import {
 import type { Field } from "../parser/ast.js";
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
-import { connectionKind, resolveLoopsToTarget } from "./edges.js";
+import { viewSourceNames } from "./continuation.js";
+import { connectionKind,resolveLoopsToTarget } from "./edges.js";
 import { kebabSlug } from "../util/slug.js";
 
 export type Severity = "error" | "warning";
@@ -152,7 +153,9 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       // model's own record that the field is computed from which events have landed, not
       // copied from a single source event's payload.
       if (view.fields && view.fields.length > 0) {
-        const fromNames = view.from ?? [];
+        // Instances of a repeated read model are one logical view (MIL-286): its sources are
+        // the union of `from` across the originating instance and every `again` instance.
+        const fromNames = viewSourceNames(model, view);
         const sourceEvents: Element[] = [];
         for (const src of fromNames) {
           const bucket = model.byName.get(normalizeName(src)) ?? [];
@@ -183,7 +186,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
 
         // `derived from "Event A", "Event B"` (view fields only, MIL-200): the traced form
         // still checks something — every named event must resolve among the view's ACTUAL
-        // sources, its `from` names, or (for a `from`-less view) the events in its own slice.
+        // sources, its `from` names across every instance, or (for a `from`-less view) the events in its own slice.
         // Independent of `sourcesDeclareFields` above: this checks event *names*, not field
         // completeness, so it applies whether or not the sources declare `{ fields }`.
         const actualSourceEvents = fromNames.length > 0 ? sourceEvents : events;

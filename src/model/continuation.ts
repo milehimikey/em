@@ -15,7 +15,7 @@
 // by each consumer, never folded in here: this module has no filesystem access and no opinion
 // about docs at all.
 
-import { NormalizedModel } from "./model.js";
+import { Element, NormalizedModel, normalizeName } from "./model.js";
 import { RefsResult } from "./refs.js";
 
 export interface ContinuationInfo {
@@ -58,4 +58,33 @@ export function continuationOf(model: NormalizedModel, refs: RefsResult, sliceIn
     sliceIndex: originating.sliceIndex,
     viewLogicalId: firstAgainView.logicalId,
   };
+}
+
+/** Every `again` instance of the read model `origin` (an originating, non-`again` view), in
+ *  timeline order (`sliceIndex` ascending). The one place "which instances belong to this
+ *  view" is answered, shared by `em export`'s `alsoReads` and validate's view-field source
+ *  check (MIL-286) so the two can't drift. */
+export function againInstancesOf(model: NormalizedModel, origin: Element): Element[] {
+  return model.elements
+    .filter((el) => el.kind === "view" && el.again === true && el.logicalId === origin.id)
+    .sort((a, b) => a.sliceIndex - b.sliceIndex);
+}
+
+/** The `from` event names a read model reads across ALL its instances — the originating
+ *  instance first, then each `again` instance in timeline order, deduped by normalized name.
+ *  `view` may be any instance. Instances are one logical view (MIL-208) and each lists only
+ *  the NEW events landing at that point, so a view's sources are the union. */
+export function viewSourceNames(model: NormalizedModel, view: Element): string[] {
+  const origin = model.byId.get(view.logicalId) ?? view;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const inst of [origin, ...againInstancesOf(model, origin)]) {
+    for (const name of inst.from ?? []) {
+      const key = normalizeName(name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+  }
+  return names;
 }
