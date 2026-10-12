@@ -214,6 +214,31 @@ happens (never fatal — a warning, same posture as every other doc-join diagnos
 single-model project, or a multi-model project laid out one-directory-per-model, never triggers
 it.
 
+## Slice keys
+
+Every `<slice-key>` argument (and `--slice <key>`, `--slice-ready <key>`, `--slices a,b`) names a
+slice by its **export key** — `kebabSlug` of the display name, `~2`/`~3`-deduped, e.g.
+`ord-0001-place-order` for `slice "ORD-0001 Place Order"`. The input is *resolved* to that key (GH #237), in this order:
+
+1. the exact export key;
+2. else the slice's display name, exact, case-insensitive, whitespace-normalized
+   (`"ORD-0001 Place Order"`);
+3. else a **unique prefix** of an export key or of a display name, compared case-insensitively —
+   the kebab form of the input counts too, so `ORD-0001` finds `ord-0001-place-order`. A prefix
+   that matches several slices is refused, listing them: `slice "ORD" is ambiguous — it matches
+   ord-0001-place-order, ord-0002-cancel-order`;
+4. else the key is unknown: `no slice with export key "<input>" in this model — valid keys: …`. A
+   model with more than 20 slices prints the three nearest by edit distance instead
+   (`— did you mean …?`).
+
+Resolution is input-side only: output, state files, engagement files and every stored reference
+keep the canonical export key. Verbs on the shared resolver: `em validate --slice-ready`,
+`em export --slice`, `em coverage --slice`, `em slice review | ratify | revise | reratify | defer |
+mark-implemented | conform | sync`, `em engagement new --slices` and `em engagement set` (an input
+that resolves to no slice falls through to its own "not in engagement" refusal there). Not on it:
+`em render --slice` (takes a display name), `em slice new`/`link` (create or wire a key), the MCP
+tools (exact export keys), and `em engagement new --downstream-of` (its own ref resolver).
+
 ## `em render <file>`
 
 Renders the model. The output format is `-T` when given, otherwise it's derived from the
@@ -331,7 +356,7 @@ exists at all).
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
 | `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code. A `public` view with no `ui`/reaction reading it anywhere in this model gets a "(no in-model reader)" note (MIL-215) — an audit hint, not a warning: a genuinely cross-model `public` view's reader lives in another model, which `em validate` can't see (`em system <manifest>` checks that claim). |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
-| `--slice-ready <key>` | Readiness gate for one slice (export key) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
+| `--slice-ready <key>` | Readiness gate for one slice ([slice key](#slice-keys)) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
 | `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
 ```bash
@@ -489,7 +514,7 @@ default (pipe-friendly); `-o` writes a file.
 | Flag | Effect |
 |---|---|
 | `-o, --out <path>` | Write to a file instead of stdout |
-| `--slice <key>` | Export only this slice's object instead of the whole model — see below (MIL-128) |
+| `--slice <key>` | Export only this slice's object instead of the whole model ([slice key](#slice-keys)) — see below (MIL-128) |
 
 ```bash
 em export model.em                    # pretty JSON on stdout
@@ -1337,7 +1362,7 @@ line produces byte-identical output to 1.13.
 | `--tests <dir>` | Directory to scan recursively for test files citing invariant IDs (**required**) |
 | `--strict` | Exit non-zero if any invariant ID has zero citations (CI) |
 | `--include-ready` | Also count `ready-to-implement` docs, not just `implemented` (MIL-207, forward-looking report) |
-| `--slice <key>` | Report only this slice (export key, same convention as `em export --slice` / `em validate --slice-ready`), whatever its status — see **Scoped check** below (MIL-255) |
+| `--slice <key>` | Report only this slice ([slice key](#slice-keys)), whatever its status — see **Scoped check** below (MIL-255) |
 | `--json` | Print a JSON document instead of the text report |
 
 ```bash
@@ -1354,7 +1379,7 @@ it `inScope: false`, checks nothing, and exits 0. `--include-ready` is no substi
 every `ready-to-implement` doc, so `--strict` fails on every ratified slice nobody has started.
 `--slice <key>` reports only that slice's invariants, whether its doc is `ready-to-implement` or
 `implemented` (so `--include-ready` is not needed with it), and `--strict` exits non-zero only
-if *that* slice has an uncited invariant. The key is the same export key `em export --slice`
+if *that* slice has an uncited invariant. The key is a [slice key](#slice-keys), as `em export --slice`
 takes; an unknown key is an error (exit 1, `no slice with export key "<key>"`), never a
 vacuously passing empty report. A **continuation key** (MIL-208, an `again` view instance)
 resolves to its originating slice — whose doc carries the invariants — and the text output says
@@ -1961,7 +1986,7 @@ argument that does not resolve to that file: `em engagement <verb>: engagements/
 belongs to <model>, not <arg>`. Exactly one
 selector:
 
-- `--slices`: export keys. Unknown keys are refused: `em engagement new: unknown slice key(s): <keys>`.
+- `--slices`: [slice keys](#slice-keys) — export keys, display names or unique prefixes, stored as export keys. An unresolvable key is refused with the valid keys listed.
 - `--context <C>`: every slice with an event in context `<C>` (case-insensitive).
 - `--downstream-of <ref>`: a slice key (all its elements), an element ref, or a display name,
   resolved the way `em query` resolves it, plus everything downstream of it (`loops-to` excluded).
@@ -3020,7 +3045,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 
 | Error | Meaning |
 |---|---|
-| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; review "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — review the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
@@ -3166,7 +3191,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 
 | Error | Meaning |
 |---|---|
-| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; ratify "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — ratify the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
@@ -3292,7 +3317,7 @@ an unrelated slice's breakage elsewhere in a large, still-WIP model doesn't bloc
 
 | Error | Meaning |
 |---|---|
-| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; mark-implemented "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — mark the originating slice named implemented instead |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
@@ -3350,7 +3375,7 @@ revising "<key>" with <n> unruled conformance finding(s) on the shipped version`
 
 | Error | Meaning |
 |---|---|
-| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" … revise "<originating-key>" instead` | (MIL-208) a continuation has no doc of its own |
 | `slice "<key>" has no doc bound via ...` / `notes "..." but no such file exists` / `has missing or invalid frontmatter` | The usual binding refusals |
 | `doc is \`status: draft\` — the next version is already open …` | Nothing to open; edit the draft |
@@ -3491,7 +3516,7 @@ error — nothing to check, certification proceeds.
 
 | Error | Meaning |
 |---|---|
-| `no slice with export key "<key>" in this model` | `<slice-key>` isn't a known export key |
+| `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; conform "<originating-key>" instead` | (MIL-208) certify the originating slice named instead |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |

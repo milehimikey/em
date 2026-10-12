@@ -27,6 +27,7 @@
 
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { resolveSliceKey } from "../model/resolveSlice.js";
 import { Diagnostic } from "../model/validate.js";
 import { makeDiag, pushDiag } from "../model/rules.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
@@ -60,6 +61,12 @@ function contractStaleDiagnostic(
   });
 }
 
+/** GH #237: the resolver's own words for an input that names no slice (the valid keys, or an ambiguity). */
+function resolveSliceMessage(model: NormalizedModel, refs: RefsResult, sliceKey: string): string {
+  const r = resolveSliceKey(model, refs, sliceKey);
+  return r.ok ? `no slice with export key "${sliceKey}" in this model` : r.message;
+}
+
 /**
  * Readiness gate for one slice, named by its export key (`refs.sliceKeys`). `baseDir` is the
  * `.em` file's directory, same convention every other doc/note path in em uses. Always warning-
@@ -82,7 +89,7 @@ export function validateSliceReady(
   if (sliceIndex === -1) {
     return [
       makeDiag("slice-ready-unknown-slice", {
-        message: `no slice with export key "${sliceKey}" in this model`,
+        message: resolveSliceMessage(model, refs, sliceKey),
         refs: [sliceKey],
       }),
     ];

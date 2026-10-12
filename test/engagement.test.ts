@@ -215,11 +215,20 @@ describe("new: selection", () => {
   });
 
   it.each([
-    [{ kind: "slices", keys: ["nope", "also-nope"] } as Selector, "unknown slice key(s): nope, also-nope"],
     [{ kind: "context", context: "Nowhere" } as Selector, "the selection is empty — nothing to engage"],
   ])("refuses %j", (selector, message) => {
     const { file } = writeLifecyclesFixture(dir);
     expect(buildNewEngagement(input(file), { slug: "x", selector, parallel: 3, createdBy: null, created: "2026-10-08" })).toEqual({ ok: false, message });
+  });
+
+  it("refuses unknown slice keys, naming each and the valid keys (GH #237)", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    const r = buildNewEngagement(input(file), { slug: "x", selector: { kind: "slices", keys: ["nope", "also-nope"] }, parallel: 3, createdBy: null, created: "2026-10-08" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.message).toContain('no slice with export key "nope" in this model — valid keys: ');
+      expect(r.message).toContain('; no slice with export key "also-nope"');
+    }
   });
 
   it("refuses a bad slug and a bad --parallel", () => {

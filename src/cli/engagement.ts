@@ -17,6 +17,7 @@
 
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import { resolveSliceKey } from "../model/resolveSlice.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { semanticEdges } from "../model/edges.js";
 import { classifySlicePattern } from "../catalog/classify.js";
@@ -144,9 +145,11 @@ export function resolveSelection(input: { file: string; model: NormalizedModel; 
   const { model, refs } = input;
   const picked = new Set<string>();
   if (sel.kind === "slices") {
-    const unknown = sel.keys.filter((k) => !refs.sliceKeys.includes(k));
-    if (unknown.length > 0) return { ok: false, message: `unknown slice key(s): ${unknown.join(", ")}` };
-    for (const k of sel.keys) picked.add(idx.unitOfSlice[refs.sliceKeys.indexOf(k)]);
+    // GH #237: `--slices` takes export keys, display names or unique prefixes (resolveSliceKey).
+    const resolved = sel.keys.map((k) => resolveSliceKey(model, refs, k));
+    const bad = resolved.flatMap((r) => (r.ok ? [] : [r.message]));
+    if (bad.length > 0) return { ok: false, message: bad.join("; ") };
+    for (const r of resolved) if (r.ok) picked.add(idx.unitOfSlice[r.index]);
   } else if (sel.kind === "context") {
     const want = sel.context.toLowerCase();
     model.slices.forEach((slice, i) => {

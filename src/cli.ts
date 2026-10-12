@@ -15,6 +15,7 @@ import { ParseError } from "./parser/parser.js";
 import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from "./render/render.js";
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
 import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
+import { resolveSliceKey } from "./model/resolveSlice.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader } from "./model/validate.js";
@@ -378,7 +379,7 @@ program
       // "don't gate on breakage elsewhere" call `--slice-ready` already made (see its own
       // scoping comment above). Only an error that concerns THIS slice (bare key, or an
       // element ref prefixed `<key>/`) refuses.
-      const key = opts.slice;
+      const key = resolveSliceOrExit("em export --slice", model, refs, opts.slice);
       const scopedErrors = diagnostics.filter(
         (d) => d.severity === "error" && d.refs?.some((r) => r === key || r.startsWith(`${key}/`)),
       );
@@ -751,6 +752,7 @@ slice
       process.exit(1);
     }
     const check = opts.check === true;
+    if (key !== undefined) key = resolveSliceOrExit("em slice sync", model, refs, key);
     const outcome = runSliceSync(model, refs, dirname(file), key, check);
     if (!outcome.ok) {
       console.error(`em slice sync: ${outcome.message}`);
@@ -879,6 +881,7 @@ slice
     }
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
+    sliceKey = resolveSliceOrExit("em slice mark-implemented", model, refs, sliceKey);
 
     // Scoped the same way `em export --slice`/`em validate --slice-ready` are: only an error
     // concerning THIS slice (bare key, or an element ref prefixed `<key>/`) refuses — an
@@ -927,6 +930,7 @@ slice
   .action((file: string, sliceKey: string, opts: { by: string; on?: string }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
+    sliceKey = resolveSliceOrExit("em slice review", model, refs, sliceKey);
 
     // Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
     // `em validate --slice-ready` are: only an error concerning THIS slice refuses.
@@ -1006,6 +1010,7 @@ slice
       }
       const { model, refs, diagnostics, source } = compileFile(file);
       printDiagnostics(diagnostics);
+      sliceKey = resolveSliceOrExit("em slice ratify", model, refs, sliceKey);
 
       // Scoped the same way `em slice mark-implemented`/`em export --slice`/`em validate
       // --slice-ready` are: only an error concerning THIS slice refuses.
@@ -1080,6 +1085,7 @@ function reviseAction(commandName: "revise" | "reratify") {
     }
     const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
+    sliceKey = resolveSliceOrExit(`em slice ${commandName}`, model, refs, sliceKey);
 
     // Scoped the same way `em slice ratify`/`em slice mark-implemented`/`em export --slice`/
     // `em validate --slice-ready` are: only an error concerning THIS slice refuses.
@@ -1185,6 +1191,7 @@ slice
       }
       const { model, refs, diagnostics } = compileFile(file);
       printDiagnostics(diagnostics);
+      sliceKey = resolveSliceOrExit("em slice defer", model, refs, sliceKey);
       const scopedErrors = diagnostics.filter(
         (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
       );
@@ -1240,6 +1247,7 @@ slice
   .action((file: string, sliceKey: string, opts: { at: string; on?: string; skipFindingsCheck?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
+    sliceKey = resolveSliceOrExit("em slice conform", model, refs, sliceKey);
 
     // Scoped the same way `em slice ratify`/`em slice revise`/`em slice mark-implemented` are:
     // only an error concerning THIS slice refuses.
@@ -1934,7 +1942,10 @@ program
         // R34 (MIL-268): one shared verdict helper for this flag, the MCP `slice_ready` tool, and
         // `em engagement plan`.
         const contractInput = { file, source, diagnostics };
-        const key = opts.sliceReady;
+        // GH #237: an unresolvable input goes through as typed so the gate reports its own
+        // `slice-ready-unknown-slice` error (carrying the resolver's message).
+        const resolved = resolveSliceKey(model, refs, opts.sliceReady);
+        const key = resolved.ok ? resolved.key : opts.sliceReady;
         const { scoped, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics);
         printDiagnostics(scoped);
         if (opts.json) {
@@ -2142,11 +2153,8 @@ program
     let onlyKey: string | undefined;
     let continuationOfKey: string | null = null;
     if (opts.slice !== undefined) {
-      const target = resolveCoverageSliceKey(model, refs, opts.slice);
-      if (!target) {
-        console.error(`em coverage --slice: no slice with export key "${opts.slice}" in this model`);
-        process.exit(1);
-      }
+      const resolved = resolveSliceOrExit("em coverage --slice", model, refs, opts.slice);
+      const target = resolveCoverageSliceKey(model, refs, resolved)!;
       onlyKey = target.key;
       continuationOfKey = target.continuationOf;
     }
@@ -2631,6 +2639,17 @@ engagement
     },
   );
 
+/** GH #237: resolve a `<slice-key>` argument (export key, display name, or unique prefix —
+ *  docs/cli.md "Slice keys") to the canonical export key, or print the resolver's error and exit 1. */
+function resolveSliceOrExit(command: string, model: NormalizedModel, refs: RefsResult, input: string): string {
+  const resolved = resolveSliceKey(model, refs, input);
+  if (!resolved.ok) {
+    console.error(`${command}: ${resolved.message}`);
+    process.exit(1);
+  }
+  return resolved.key;
+}
+
 /** Compile `file` with the full `em validate` diagnostic set — what `engagement plan` needs for
  *  each slice's `--slice-ready` verdict (R34). */
 function engagementModelInput(file: string): EngagementModelInput {
@@ -2678,6 +2697,10 @@ engagement
     const loaded = loadEngagement(file, slug);
     if (!loaded.ok) return fail(loaded.message);
     const { model, refs } = compileFile(file);
+    // GH #237: an input that resolves to no slice goes through as typed, so the engagement's own
+    // "is not in engagement" refusal (which names what the Ledger holds) still speaks.
+    const resolved = resolveSliceKey(model, refs, key);
+    if (resolved.ok) key = resolved.key;
     const result = applyEngagementSet({ file, model, refs, baseDir: dirname(file) }, slug, loaded.text, loaded.file, { key, ...opts });
     if (!result.ok) return fail(result.message);
     if (!result.changed) {

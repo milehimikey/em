@@ -205,7 +205,7 @@ describe("em slice sync (CLI)", () => {
     writeFileSync(join(dir, "m.em"), MODEL("couponCode"));
     const unknown = em(["slice", "sync", "m.em", "nope"], dir);
     expect(unknown.status).toBe(1);
-    expect(unknown.stderr).toBe('em slice sync: no slice with export key "nope" in this model\n');
+    expect(unknown.stderr).toBe('em slice sync: no slice with export key "nope" in this model — valid keys: pay, paid\n');
     const unbound = em(["slice", "sync", "m.em", "paid"], dir);
     expect(unbound.status).toBe(1);
     expect(unbound.stderr).toBe('em slice sync: slice "paid" has no doc bound via `note "slices/paid.md"` — nothing to sync\n');
