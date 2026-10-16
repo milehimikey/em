@@ -54,7 +54,7 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
-import { sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { buildModelIndex } from "../model/queryIndex.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
@@ -557,7 +557,7 @@ export function runRatify(
   // ratifier is, with nothing written.
   if (!probe.changed) {
     const recorded = recordedRatifiedHash(raw);
-    if (recorded !== null && recorded !== sliceDocBodyHash(raw)) {
+    if (recorded !== null && ratifiedHashScope(raw, recorded) === "mismatch") {
       return {
         ok: false,
         message:

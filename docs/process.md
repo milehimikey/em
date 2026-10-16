@@ -144,17 +144,22 @@ left the doc at an unsigned `ready-to-implement` that the ratification gate acce
 fresh review; that carve-out is gone — a v2 is a new spec, and "the room understood this slice"
 has to be true of *this* version too.
 
-**A question found mid-build on a ratified doc is queued, not written in** (GH #236). A ratified
-doc's body is exactly what was signed (`ratifiedHash`); adding a `- [ ]` under `## Open Questions`
-breaks `--slice-ready` and makes `ratify` refuse the changed body, and `revise` would withdraw the
-only implementable version. So `em slice defer <model>.em <key> "<question>" --until v<n> --decision
-"…"` on a ratified (or shipped) doc leaves the body alone and queues the question in
-`.event-modeling.md` for `<key>@v<N+1>` — the hash stays valid and the build goes on. `em status`
-and `em export` show how many questions are queued. When v<N+1> opens — `mark-implemented` at merge
-does it automatically, `revise` by hand — every queued question is injected into the new draft's
-`## Open Questions` with its decision, and the queue clears. On a `draft`/`reviewed` doc defer edits
-the body as before. `em slice revise` on a ratified doc that never shipped refuses unless you pass
-`--withdraw`: that is for changing the spec itself, not for recording a question.
+**A question found mid-build on a ratified doc is deferred into the doc, outside the hash** (GH
+#253). A ratified doc's body is what was signed (`ratifiedHash`), so adding a `- [ ]` under
+`## Open Questions` by hand breaks `--slice-ready` and makes `ratify` refuse the changed body, and
+`revise` would withdraw the only implementable version. But a *deferral* describes a later version,
+not the one that was signed, so the hash leaves the `## Open Questions` heading and its `deferred
+to v<n>` items out: `em slice defer <model>.em <key> "<question>" --until v<n> --decision "…"` on a
+ratified (or shipped) doc appends the already-deferred `- [x]` item to the doc — the hash stays
+valid, the build goes on, and anyone reading the ratified doc (an implementer, a reviewer, the
+readiness gate) sees what has already been raised against it. `em status` and `em export` show how
+much work waits on later versions. When v<n> opens — `mark-implemented` at merge does it
+automatically, `revise` by hand — the item is reopened as `- [ ]` in the new draft. On a
+`draft`/`reviewed` doc defer rewrites the existing `- [ ]` as before. `em slice revise` on a
+ratified doc that never shipped refuses unless you pass `--withdraw`: that is for changing the spec
+itself, not for recording a question. (1.16.0 queued such questions in `.event-modeling.md` instead,
+GH #236; anything still queued there is injected when the next draft opens, and `em upgrade` moves
+it into the doc.)
 
 Why two gates and not one: "the room understood this slice" and "we commit to building this
 slice" are different decisions, made by different people, often days apart. Collapsing them means

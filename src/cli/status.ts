@@ -91,7 +91,8 @@ export interface SliceStatusFact {
   driftSignal: DriftSignalKind | null;
   openQuestionsTotal: number;
   openQuestionsUnchecked: number;
-  /** GH #236: questions `em slice defer` queued for this slice's next version (0 when none). */
+  /** Questions `em slice defer` deferred to a later version of this slice (GH #253; plus any
+   *  leftover of GH #236's 1.16 state-file queue). 0 when none. */
   queuedForNext: number;
   /** MIL-208: non-null when this slice is a continuation (an again-view-only slice with no
    *  legacy doc of its own) — the originating slice's export key. `buildStatusReport` excludes
@@ -581,9 +582,9 @@ export interface StatusIssueTotals {
   openIssues: number;
   openQuestionsTotal: number;
   openQuestionsUnchecked: number;
-  /** GH #236 (status schema 1.10): questions queued by `em slice defer` on ratified/shipped docs
-   *  for their next version — known work the docs themselves cannot show without breaking their
-   *  sign-off. */
+  /** Status schema 1.10 (GH #236), re-sourced by GH #253: questions `em slice defer` has deferred
+   *  to a later version across the model's docs — known work waiting on the next versions — plus
+   *  any question the 1.16 state-file queue still holds. */
   queuedQuestions: number;
 }
 
@@ -885,7 +886,7 @@ export function formatStatusSummary(report: StatusReport): string {
   const issuesPart = pluralize(report.issues.openIssues, "open issue");
   const oqPart =
     (report.issues.openQuestionsUnchecked > 0 ? `, ${pluralize(report.issues.openQuestionsUnchecked, "unchecked open question")}` : "") +
-    (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} queued for next version` : "");
+    (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} deferred to a later version` : "");
   const conformancePart = formatConformancePart(report.conformance[0]);
   return `${implemented}/${total} implemented · ${invPart} · ${issuesPart}${oqPart} · ${conformancePart}`;
 }
@@ -918,7 +919,7 @@ export function formatStatusDetail(report: StatusReport): string {
   lines.push(
     `issues: ${pluralize(report.issues.openIssues, "open issue")}, ` +
       `${report.issues.openQuestionsUnchecked}/${report.issues.openQuestionsTotal} open question(s) unchecked` +
-      (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} queued for next version (em slice defer, GH #236)` : ""),
+      (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} deferred to a later version (em slice defer)` : ""),
   );
   // MIL-238: the API-first gate's backlog — ratified/shipped public-touching slices with no
   // recorded meaning confirmation.
@@ -986,7 +987,7 @@ export function formatStatusMarkdown(report: StatusReport): string {
     ["Continuations", `${report.continuations}`],
     ["Invariants", report.invariants ? `${report.invariants.cited}/${report.invariants.total} covered` : "not checked"],
     ["Open issues", `${report.issues.openIssues}`],
-    ["Open questions", `${report.issues.openQuestionsUnchecked} unchecked${report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} queued for next version` : ""}`],
+    ["Open questions", `${report.issues.openQuestionsUnchecked} unchecked${report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} deferred to a later version` : ""}`],
   ];
   if (report.conformance.length <= 1) {
     const entry = report.conformance[0];

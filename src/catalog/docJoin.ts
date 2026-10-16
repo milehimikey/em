@@ -36,6 +36,7 @@
 // `resolveCrossCandidate` below rather than re-deriving the ratification predicate.
 
 import { queuedCount } from "./deferQueue.js";
+import { countDeferredBeyond } from "./sliceDoc.js";
 import { parseScenarios, Scenario } from "./scenarios.js";
 import { NormalizedModel, Slice } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -124,7 +125,9 @@ export interface SliceDocExport {
   ratifiedRef: string | null;
   /** MIL-284: `sha256:<hex>` over the doc body at ratification (frontmatter `ratifiedHash:`),
    *  written only by `em slice ratify` — null when absent. `--slice-ready` compares it to the
-   *  current body (`slice-ready-body-changed-since-ratification`). */
+   *  current body (`slice-ready-body-changed-since-ratification`). Since 1.17.0 the `## Open
+   *  Questions` heading and its `deferred to v<n>` items are outside the hash (GH #253,
+   *  `sliceDoc.ts`'s `ratifiedBody`); a pre-1.17 whole-body hash is still accepted as intact. */
   ratifiedHash: string | null;
   /** MIL-283/284: the shipped record — `em slice mark-implemented`'s `shippedVersion:`/
    *  `shippedRef:`/`shippedOn:` beside `implementedIn:`, or, for a doc shipped before em 1.15
@@ -162,10 +165,11 @@ export interface SliceDocExport {
    *  `{ title, given, when, then }` string arrays, in document order. Null when the doc has no
    *  well-formed block (every 1.13-style doc) or isn't found / usable. */
   scenarios: Scenario[] | null;
-  /** GH #236: how many questions `em slice defer` has QUEUED for this slice's next version
-   *  (`.event-modeling.md` parking lot, catalog/deferQueue.ts) — known work for v<version+1> that
-   *  a ratified/shipped doc could not take without breaking its sign-off. 0 when none, when the
-   *  state file is absent, and whenever no doc was found. */
+  /** Known work waiting on a later version of this slice: the doc's `## Open Questions` items
+   *  deferred to a version past `version` (GH #253, `countDeferredBeyond`), plus any question
+   *  GH #236's 1.16 state-file queue still holds for v<version+1> (catalog/deferQueue.ts) until
+   *  `em upgrade`'s `ratified-hash-scope` step or the next `revise`/`mark-implemented` drains it.
+   *  0 when none, and whenever no doc was found. */
   queuedForNext: number;
 }
 
@@ -344,7 +348,9 @@ function foundDoc(path: string, parsed: SliceDoc, baseDir: string, docKey: strin
     meaningConfirmed: parsed.meaningConfirmed,
     contractChange: parsed.contractChange,
     scenarios: scenariosOf(parsed.body),
-    queuedForNext: queuedCount(baseDir, docKey, parsed.version),
+    // GH #253: the doc carries its own deferrals now; the state-file count is the 1.16 queue's
+    // leftovers until `em upgrade` (or the next `revise`/`mark-implemented`) drains them.
+    queuedForNext: countDeferredBeyond(parsed.body, parsed.version) + queuedCount(baseDir, docKey, parsed.version),
   };
 }
 

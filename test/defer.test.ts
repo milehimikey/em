@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Coverage for `em slice defer` (src/cli/defer.ts, MIL-275): pure text surgery (applyDefer,
 // applyDeferStateFile, reopenDeferred), the fs orchestration, and the CLI acceptance fixture.
-// MIL-281 adds `--from-issue`: removeIssueClause / applyDeferFromIssueDoc (pure) and a CLI fixture
+// MIL-281 adds `--from-issue`: removeIssueClause / applyDeferOrAppend (pure) and a CLI fixture
 // whose slice carries `issue "..."` clauses on its own elements and on a sibling slice's.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawnSync } from "node:child_process";
@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyDefer, applyDeferFromIssueDoc, applyDeferStateFile, removeIssueClause, reopenDeferred, DeferInput } from "../src/cli/defer.js";
+import { applyDefer, applyDeferOrAppend, applyDeferStateFile, removeIssueClause, reopenDeferred, DeferInput } from "../src/cli/defer.js";
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -273,30 +273,30 @@ describe("removeIssueClause (pure, MIL-281)", () => {
   });
 });
 
-describe("applyDeferFromIssueDoc (pure, MIL-281)", () => {
+describe("applyDeferOrAppend (pure, MIL-281)", () => {
   const INPUT = { until: "v2", decision: "manual review", by: "Alex", on: "2026-10-08", currentVersion: 1 };
   const ITEM = "- [x] What about chargebacks? — v1: manual review; deferred to v2 (2026-10-08, Alex)";
   it("appends the deferred item at the end of Open Questions", () => {
-    const r = applyDeferFromIssueDoc(DOC, "What about chargebacks?", INPUT);
+    const r = applyDeferOrAppend(DOC, "What about chargebacks?", INPUT);
     expect(r).toMatchObject({ ok: true, changed: true });
     expect(r.ok && r.content).toContain(`- [x] Settled thing\n${ITEM}\n\n## Notes\n`);
   });
   it("defers an existing unchecked item in place instead of appending a duplicate", () => {
-    const r = applyDeferFromIssueDoc(DOC, "retry policy", INPUT);
+    const r = applyDeferOrAppend(DOC, "retry policy", INPUT);
     expect(r.ok && r.content).toContain("- [x] What is the retry policy? — v1: manual review; deferred to v2 (2026-10-08, Alex)\n- [ ] Who owns billing?\n");
     expect(r.ok && (r.content.match(/retry policy/g) ?? []).length).toBe(1);
   });
   it("opens an Open Questions section at EOF when the doc has none", () => {
-    const r = applyDeferFromIssueDoc("---\nversion: 1\n---\n# Slice\n\nbody", "What about chargebacks?", INPUT);
+    const r = applyDeferOrAppend("---\nversion: 1\n---\n# Slice\n\nbody", "What about chargebacks?", INPUT);
     expect(r.ok && r.content).toBe(`---\nversion: 1\n---\n# Slice\n\nbody\n\n## Open Questions\n\n${ITEM}\n`);
   });
   it("is idempotent once the item is there", () => {
-    const first = applyDeferFromIssueDoc(DOC, "What about chargebacks?", INPUT);
+    const first = applyDeferOrAppend(DOC, "What about chargebacks?", INPUT);
     if (!first.ok) throw new Error("setup");
-    expect(applyDeferFromIssueDoc(first.content, "What about chargebacks?", INPUT)).toEqual({ ok: true, content: first.content, changed: false });
+    expect(applyDeferOrAppend(first.content, "What about chargebacks?", INPUT)).toEqual({ ok: true, content: first.content, changed: false });
   });
   it("still validates --until and --decision", () => {
-    expect(applyDeferFromIssueDoc(DOC, "x", { ...INPUT, until: "v1" })).toEqual({
+    expect(applyDeferOrAppend(DOC, "x", { ...INPUT, until: "v1" })).toEqual({
       ok: false,
       message: "--until v1 must be greater than the doc's current version v1",
     });

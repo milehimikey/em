@@ -206,6 +206,16 @@ import { buildCodeownersJson } from "./emit/codeownersJson.js";
 import { verifySystem, SystemDiagnostic } from "./system/verify.js";
 import { buildSystemJson } from "./emit/systemJson.js";
 
+/** GH #253: the trailing note `em slice defer` prints after `deferred: …` on a ratified/shipped
+ *  doc — the item went into the signed body, outside `ratifiedHash`, and when the stamp was still
+ *  in the pre-1.17 whole-body scope it was re-stamped in the same edit (body unchanged). */
+function deferSignedNote(result: { signed: boolean; restamped: boolean }): string {
+  if (!result.signed) return "";
+  return result.restamped
+    ? " — appended to the signed doc's Open Questions, outside ratifiedHash; ratifiedHash re-stamped to the 1.17 scope (body unchanged)"
+    : " — appended to the signed doc's Open Questions, outside ratifiedHash";
+}
+
 const program = new Command();
 
 // Single source of truth for the version (also read by src/emit/json.ts for
@@ -1146,9 +1156,8 @@ const REVISE_DESCRIPTION =
   "`ready-to-implement` doc (ratification withdrawn, never shipped); a `ready-to-implement` doc with no " +
   "`ratifiedBy:` reopens as draft at the same version; `draft`/`reviewed` refuse — the next version is " +
   "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`. " +
-  "Questions queued by `em slice defer` for the new version (GH #236) are injected into its Open Questions. " +
   "A ratified, never-shipped doc REFUSES without --withdraw (revising withdraws the only implementable version; " +
-  "queue a question with `em slice defer` instead)";
+  "record a question with `em slice defer` instead — it sits outside the hash, GH #253)";
 
 slice
   .command("revise")
@@ -1185,9 +1194,11 @@ slice
       "promotes the single open `issue \"...\"` on the slice's own elements containing <text> into " +
       "the doc's Open Questions as that same deferred item, mirrors it, and removes the `issue` " +
       "clause from the .em — the one-command path for a question raised in a review session. " +
-      "On a RATIFIED (`ready-to-implement` + `ratifiedBy:`) or shipped (`implemented`) doc (GH #236) the " +
-      "doc is NOT edited — its body is the signed spec — and the question is queued in `.event-modeling.md` " +
-      "for v<N+1>; `em slice revise` / `mark-implemented` inject it into the next draft",
+      "On a RATIFIED (`ready-to-implement` + `ratifiedBy:`) or shipped (`implemented`) doc (GH #253) the " +
+      "already-deferred `[x]` item is APPENDED to the doc's Open Questions — `ratifiedHash` excludes the " +
+      "section heading and its `deferred to v<n>` items, so the signature, `--slice-ready` and ratify's " +
+      "re-run stay valid, and the question is visible in the ratified doc; a pre-1.17 whole-body hash is " +
+      "re-stamped in the same edit. Refuses a doc whose body already fails its hash",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
@@ -1229,17 +1240,9 @@ slice
           console.error(`em slice defer: ${result.message}`);
           process.exit(1);
         }
-        if (result.queued) {
-          console.log(
-            result.changed
-              ? `queued, not edited: ${result.path} stays as ratified (v${result.queued.docVersion}) — issue "${result.issue}" → ${opts.until} queued for ${sliceKey}@v${result.queued.forVersion} in .event-modeling.md; issue clause removed from ${file}:${result.modelLine}`
-              : `already queued (no-op): ${result.path}`,
-          );
-          return;
-        }
         console.log(
           result.changed
-            ? `deferred: ${result.path} (issue "${result.issue}" → ${opts.until}; issue clause removed from ${file}:${result.modelLine})`
+            ? `deferred: ${result.path} (issue "${result.issue}" → ${opts.until}; issue clause removed from ${file}:${result.modelLine})${deferSignedNote(result)}`
             : `already deferred (no-op): ${result.path}`,
         );
         return;
@@ -1249,17 +1252,9 @@ slice
         console.error(`em slice defer: ${result.message}`);
         process.exit(1);
       }
-      if (result.queued) {
-        console.log(
-          result.changed
-            ? `queued, not edited: ${result.path} stays as ratified (v${result.queued.docVersion}) — "${question}" → ${opts.until} queued for ${sliceKey}@v${result.queued.forVersion} in .event-modeling.md; \`em slice revise\` or \`mark-implemented\` injects it into the next draft`
-            : `already queued (no-op): ${result.path}`,
-        );
-        return;
-      }
       console.log(
         result.changed
-          ? `deferred: ${result.path} (${question} → ${opts.until})`
+          ? `deferred: ${result.path} (${question} → ${opts.until})${deferSignedNote(result)}`
           : `already deferred (no-op): ${result.path}`,
       );
     },

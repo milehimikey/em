@@ -69,7 +69,7 @@ to decide `frontmatter-invalid` without re-deriving frontmatter-shape rules of i
 | `ratifiedBy` | string | free text (typically a person's name) | written only by `em slice ratify` (MIL-165 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name)); joined into `em export`'s `slice.doc.ratifiedBy` (schema `1.8`) and `em slice index`'s Ratified by column |
 | `ratifiedOn` | string | `YYYY-MM-DD` | written only by `em slice ratify` (MIL-165); joined into `em export`'s `slice.doc.ratifiedOn` (schema `1.8`) |
 | `ratifiedRef` | string | full commit sha | written only by `em slice ratify` (MIL-284 — see [cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-ratify-file-slice-key---by-name)) when the model directory is inside a git repository: `HEAD` at ratification, the commit whose tree holds the body that was signed (ratify refuses a doc with uncommitted changes so this holds). Absent when ratified before 1.15, outside git, or with `em slice ratify --no-ref` (GH #255 — for a repo whose squash/rebase merges would leave the commit unreachable from the target branch; `--no-ref` also removes a line already present). **An address, not the identity:** valid only while the commit stays reachable; `ratifiedHash` is what identifies the signed content. Cleared by `em slice revise`. Joined into `em export`'s `slice.doc.ratifiedRef` (schema `1.16`). Not a target-repo revision: `em slice conform --at` still names that itself |
-| `ratifiedHash` | string | `sha256:<64 hex>` | written only by `em slice ratify` (MIL-284): `sha256` over the doc body (everything after the frontmatter fence, EOLs normalised) — the signed content's identity without git. Cleared by `em slice reratify`. Read by `em validate --slice-ready` (`slice-ready-body-changed-since-ratification`); joined into `em export`'s `slice.doc.ratifiedHash` (schema `1.16`) |
+| `ratifiedHash` | string | `sha256:<64 hex>` | written only by `em slice ratify` (MIL-284): `sha256` over the doc body (everything after the frontmatter fence, EOLs normalised) **minus what describes a later version** (GH #253, since 1.17.0): inside `## Open Questions` the heading line, blank lines and every `deferred to v<n>` item are left out, then trailing whitespace is trimmed — so `em slice defer` can record a question on a ratified or shipped doc without moving the hash, while answered `- [x]` history, any `- [ ]`, and every other section stay signed. The signed content's identity without git. A hash recorded before 1.17.0 (whole body) is still read as intact; `em upgrade`'s `ratified-hash-scope` step re-stamps it. Cleared by `em slice revise`. Read by `em validate --slice-ready` (`slice-ready-body-changed-since-ratification`) and by `ratify`'s same-sign-off re-run; joined into `em export`'s `slice.doc.ratifiedHash` (schema `1.16`) |
 | `shippedVersion` | integer | positive integer | written only by `em slice mark-implemented` (MIL-284): the doc's `version:` when the merge was recorded. With `shippedRef`/`shippedOn`/`implementedIn`, joined into `em export`'s `slice.doc.shipped` (schema `1.16`). Additive in 1.15 — `status`/`implementedIn` still carry the lifecycle for every reader |
 | `shippedRef` | string | full commit sha | written only by `em slice mark-implemented` (MIL-284): the doc's `ratifiedRef` at merge time, i.e. the ref the shipped version was signed at; absent when the doc had none (ratified before 1.15, outside git, or with `--no-ref`, GH #255). Same caveat as `ratifiedRef`: an address, valid while reachable — `ratifiedHash` identifies the content |
 | `shippedOn` | string | `YYYY-MM-DD` | written only by `em slice mark-implemented` (MIL-284): the local date of the merge record, or `--on <date>` |
@@ -491,7 +491,11 @@ not deleted: `em slice defer` checks it and rewrites it as `- [x] <original> —
 `em slice revise` (and `mark-implemented`, which opens v<n> at merge when something is deferred to it) reads: when the doc reaches v<n> it rewrites each such item back to
 `- [ ] <original>`, so the question must be resolved or re-deferred before `--slice-ready` passes
 again. The prune rule above does not apply to a deferred item before v<n> (it stays as the
-record); once reopened it is an ordinary open question.
+record); once reopened it is an ordinary open question. A deferred item describes v<n>, not the
+version that was signed, so it sits **outside `ratifiedHash`** (GH #253, with the section heading
+and its blank lines; see the `ratifiedHash` row above) — which is what lets `em slice defer` write
+one into a ratified or shipped doc. Every other line of the section — an answered `- [x]`, a hand-added
+`- [ ]` — is inside the hash and moves it.
 
 **Not a parsing/grammar change.** `countOpenQuestions()` (`sliceDoc.ts`) and
 `slice-ready-open-questions-unchecked` (`sliceReadyValidate.ts`,
@@ -546,14 +550,17 @@ ratification of v<N> is withdrawn and nothing shipped, so no shipped record is w
 withdraws the only implementable version, `em slice revise` **refuses it without `--withdraw`**
 (GH #236).
 
-**Questions found against a ratified or shipped version are queued, not written into the body**
-(GH #236). `ratifiedHash` covers the whole body, `## Open Questions` included, so `em slice defer` on
-a `ready-to-implement` + `ratifiedBy:` or `implemented` doc does not edit the doc: it records the
-question in the model's `.event-modeling.md` as queued for `<key>@v<N+1>` (exact bullet shape in
-[cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-slice-defer-file-slice-key-question)), keeping `ratifiedHash` and `--slice-ready`
-valid. When v<N+1> opens as a draft — `mark-implemented` at merge, or `revise` — each queued item is
-injected into that draft's `## Open Questions` (unchecked, carrying its decision) and the queue is
-cleared. `em export` reports the waiting count as `slice.doc.queuedForNext` (schema `1.17`). **A
+**Questions found against a ratified or shipped version are written into the body, outside the
+hash** (GH #253, superseding GH #236's 1.16 queue). `ratifiedHash` leaves out the `## Open Questions`
+heading and its `deferred to v<n>` items, so `em slice defer` on a `ready-to-implement` +
+`ratifiedBy:` or `implemented` doc appends the already-deferred item
+`- [x] <question> — v<N>: <decision>; deferred to v<n> (<date>[, <by>])` to the doc — visible to
+every reader of the ratified doc — and `ratifiedHash`, `--slice-ready` and `ratify`'s re-run all
+stay valid. When v<n> opens as a draft — `mark-implemented` at merge, or `revise` — the item is
+reopened as `- [ ] <question>` exactly as a pre-ratification deferral is. A question `em slice
+defer` queued in `.event-modeling.md` under 1.16.x is still injected when the next draft opens, and
+`em upgrade`'s `ratified-hash-scope` step moves any leftover into its doc. `em export` reports the
+work waiting on later versions as `slice.doc.queuedForNext` (schema `1.17`). **A
 `ready-to-implement` doc with no `ratifiedBy`** is the leftover of a pre-1.15 `reratify` (which
 bumped the version and left the doc unsigned at that status); no command produces it any more and
 `em slice ratify` no longer accepts it — `em slice revise` reopens it as a `draft` at the same

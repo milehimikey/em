@@ -75,11 +75,12 @@ constitution. The implementer stops and reports it as the doc line plus the ques
 4. Carry on with every other startable slice. Never answer the question yourself, never edit the
    doc, and never let the implementer guess.
 
-A question the build can finish without (it does not block the slice) is not a gap: queue it with
+A question the build can finish without (it does not block the slice) is not a gap: defer it with
 `em slice defer <model>.em <key> "<question>" --until v<n> --decision "<what this version does>"`
-(GH #236). On a ratified doc that never edits the body — `ratifiedHash` and `--slice-ready` stay
-green — and records the question in `.event-modeling.md` for `<key>@v<N+1>`; `mark-implemented`
-at merge opens v<N+1> as a draft with it in Open Questions. Never write the `- [ ]` into the
+(GH #253). On a ratified doc that appends the already-deferred `- [x]` item to the doc's Open
+Questions, outside `ratifiedHash` — the hash and `--slice-ready` stay green, and the question is
+visible in the ratified doc; `mark-implemented` at merge opens v<n> as a draft with it reopened
+as `- [ ]`. Never write a `- [ ]` into the
 ratified doc, and do not run `em slice revise` for it (an unshipped ratified doc refuses
 `revise` without `--withdraw`).
 

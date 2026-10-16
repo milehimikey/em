@@ -42,6 +42,20 @@ export function fieldLineWithEolRegex(key: string): RegExp {
   return new RegExp(`^${key}[ \\t]*:[ \\t]*[^\\r\\n]*\\r?\\n?`, "im");
 }
 
+/** Replaces the value of the one column-0 `key:` line inside the frontmatter with `value`,
+ *  preserving the `key:<ws>` prefix, the line's EOL, and every other byte. `null` when there is
+ *  no frontmatter or no such line — the caller decides whether that is a refusal (GH #253:
+ *  `em slice defer` and `em upgrade` re-stamp `ratifiedHash:` with it; neither ever inserts one). */
+export function replaceFieldValue(markdown: string, key: string, value: string): string | null {
+  const range = locateFrontmatterInner(markdown);
+  if (!range) return null;
+  const inner = markdown.slice(range.innerStart, range.innerEnd);
+  const m = fieldLineRegex(key).exec(inner);
+  if (!m) return null;
+  const at = range.innerStart + m.index;
+  return markdown.slice(0, at) + m[1] + value + markdown.slice(at + m[0].length);
+}
+
 /** Byte offsets of the frontmatter block's inner lines (between the two `---` fences), located
  *  by walking lines with `indexOf` rather than `split(/\r?\n/)` — a rewrite can't afford the
  *  line-ending normalization a split/join would silently perform across the WHOLE file the

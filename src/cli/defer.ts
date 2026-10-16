@@ -21,13 +21,21 @@
 // the clause was alone on it), re-parsed before it is accepted. Not a generic "move issue to doc"
 // verb: the only thing a promoted issue can become is a deferred question.
 //
-// GH #236 — a RATIFIED or SHIPPED doc is never edited by defer. Its body is the signed spec
-// (`ratifiedHash`), so on `status: ready-to-implement` + `ratifiedBy:` or `status: implemented`
-// both paths QUEUE the question instead: one bullet in the state file's parking lot plus the dated
-// Decisions-log bullet, the doc untouched (catalog/deferQueue.ts has the bullet format).
-// `revise`/`mark-implemented` inject the queue into the v<N+1> draft they open
-// (`injectQueuedQuestions`) and `drainQueueInState` turns the bullets back into ordinary
-// deferral mirrors. `draft`/`reviewed` docs behave exactly as before.
+// GH #253 — a RATIFIED or SHIPPED doc (`status: ready-to-implement` + `ratifiedBy:`, or
+// `status: implemented`) takes the deferral in its body too. Its body is the signed spec, but
+// `ratifiedHash` is computed over `ratifiedBody()` (catalog/sliceDoc.ts), which leaves out the
+// `## Open Questions` heading and every `deferred to v<n>` item — a deferral describes a later
+// version, not the one that was signed. So on a signed doc both paths APPEND the already-deferred
+// `- [x]` item (the shape `--from-issue` always wrote) and the hash does not move; `--slice-ready`
+// and `ratify`'s re-run keep passing. Before writing, `finishSignedDocEdit` re-stamps a hash still
+// in the pre-1.17 whole-body scope (the body is intact, only the stamp is old) and refuses, with
+// nothing written, if the edit would somehow leave the hash unmatched.
+//
+// GH #236's state-file QUEUE (1.16.x) is write-retired by this: `revise`/`mark-implemented` still
+// inject any leftover queued bullets into the v<N+1> draft they open (`injectQueuedQuestions`)
+// and `drainQueueInState` turns them back into ordinary deferral mirrors; `em upgrade`'s
+// `ratified-hash-scope` step moves leftovers into their docs. `draft`/`reviewed` docs behave
+// exactly as before: the positional form rewrites an existing `- [ ]` item, never appends.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -37,8 +45,9 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { decodeQuoted, matchQuote } from "../parser/lexer.js";
 import { compile } from "../pipeline.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
-import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
-import { QueuedItem, parseQueuedBullet, queuedBullet, queuedItems } from "../catalog/deferQueue.js";
+import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue, replaceFieldValue } from "./frontmatterSurgery.js";
+import { QueuedItem, parseQueuedBullet, queuedItems } from "../catalog/deferQueue.js";
+import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 
 const OPEN_QUESTIONS_HEADING = /^##\s+Open Questions\s*$/i;
 const TASK_ITEM = /^([ \t]*[-*]\s*)\[([ xX])\](.*)$/;
@@ -226,12 +235,15 @@ export function reopenDeferred(raw: string, newVersion: number): { content: stri
   return { content: lines.join(""), count };
 }
 
-// ---- GH #236: the queue for a ratified / shipped doc --------------------------------------
+// ---- GH #253: a signed (ratified / shipped) doc -------------------------------------------
 
-/** True when the doc's body is a signed spec that defer must not touch: `status: implemented`, or
- *  `status: ready-to-implement` with a `ratifiedBy:`. A `draft`/`reviewed` doc — including the
- *  next version of a shipped slice — is still being written, so defer edits it as ever. */
-export function isLockedDoc(raw: string): boolean {
+/** True when the doc's body is a signed spec: `status: implemented`, or `status:
+ *  ready-to-implement` with a `ratifiedBy:`. On such a doc the positional form appends the
+ *  deferred item instead of requiring an existing `- [ ]` (a ratified doc has none — readiness
+ *  required that), and the write goes through `finishSignedDocEdit`. A `draft`/`reviewed` doc —
+ *  including the next version of a shipped slice — is still being written, so defer edits it as
+ *  ever. */
+export function isSignedDoc(raw: string): boolean {
   const range = locateFrontmatterInner(raw);
   if (!range) return false;
   const inner = raw.slice(range.innerStart, range.innerEnd);
@@ -243,31 +255,51 @@ export function isLockedDoc(raw: string): boolean {
   return by !== null && normalizeFieldValue(by[2]) !== null;
 }
 
-/** Pure: mirrors a QUEUED deferral into the state file — the queued parking-lot bullet and a
- *  dated Decisions-log bullet. Idempotent on an identical bullet. */
-export function applyQueueStateFile(raw: string, input: StateMirrorInput): ApplyDeferResult {
-  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
-  const target = input.currentVersion + 1;
-  const parking = queuedBullet({
-    question: input.question,
-    sliceKey: input.sliceKey,
-    targetVersion: target,
-    until: input.until,
-    on: input.on,
-    ...(input.by !== undefined ? { by: input.by.trim() } : {}),
-    decision: input.decision.trim(),
-  });
-  const decision =
-    `- ${input.on}: queued "${input.question}" on ${input.sliceKey} for ${input.sliceKey}@v${target} (until v${input.until}) — ` +
-    `v${input.currentVersion}: ${input.decision.trim()}${input.by !== undefined ? ` — by ${input.by.trim()}` : ""}`;
-  let lines = splitKeepEol(raw);
-  const a = appendBullet(lines, PARKING_LOT_HEADING, parking, eol);
-  if (!a) return { ok: false, message: `${STATE_FILE_NAME} has no "## Open questions / parking lot" heading` };
-  lines = a.lines;
-  const b = appendBullet(lines, DECISIONS_HEADING, decision, eol);
-  if (!b) return { ok: false, message: `${STATE_FILE_NAME} has no "## Decisions log" heading` };
-  return { ok: true, content: b.lines.join(""), changed: a.changed || b.changed };
+/** The `ratifiedHash:` a doc records, or null when it has none (ratified before 1.15, or never). */
+function recordedHash(raw: string): string | null {
+  const range = locateFrontmatterInner(raw);
+  if (!range) return null;
+  const m = fieldLineRegex("ratifiedHash").exec(raw.slice(range.innerStart, range.innerEnd));
+  return m ? normalizeFieldValue(m[2]) : null;
 }
+
+export type SignedEditResult = { ok: true; content: string; restamped: boolean } | { ok: false; message: string };
+
+/**
+ * Pure (GH #253): the last step of any defer that edits a signed doc. `before` is the doc as
+ * read, `after` the doc with the deferral written. Refuses when `before` already fails its own
+ * `ratifiedHash` (the body moved after sign-off — defer is not the command that papers over
+ * that), re-stamps a hash still in the pre-1.17 whole-body scope to the current scope (same
+ * body, new normalisation — not a re-signing), and finally checks that `after` matches the
+ * recorded hash in the current scope, refusing with nothing written if it does not: the one
+ * invariant this whole design rests on is that a deferral never moves the hash.
+ */
+export function finishSignedDocEdit(before: string, after: string): SignedEditResult {
+  const recorded = recordedHash(before);
+  if (recorded === null) return { ok: true, content: after, restamped: false };
+  const scope = ratifiedHashScope(before, recorded);
+  if (scope === "mismatch") {
+    return {
+      ok: false,
+      message: "body no longer matches ratifiedHash (edited after ratification) — revert that edit, or `em slice revise` and re-ratify, before deferring",
+    };
+  }
+  let content = after;
+  let restamped = false;
+  if (scope === "legacy") {
+    const next = replaceFieldValue(after, "ratifiedHash", sliceDocBodyHash(before));
+    if (next === null) return { ok: false, message: "could not locate ratifiedHash: in the frontmatter" };
+    content = next;
+    restamped = true;
+  }
+  const check = recordedHash(content);
+  if (check === null || ratifiedHashScope(content, check) !== "current") {
+    return { ok: false, message: "the deferral would leave the body unmatched by ratifiedHash — nothing written (this is a bug in em; please report it)" };
+  }
+  return { ok: true, content, restamped };
+}
+
+// ---- GH #236's 1.16 queue: the read side, kept so leftover state-file bullets still drain -----
 
 /** Pure: the Open Questions line a queued item becomes in the v<target> draft. Aimed at the
  *  draft's own version it is an unchecked `- [ ]` carrying its decision; aimed further out
@@ -404,9 +436,10 @@ export function removeIssueClause(raw: string, startLine: number, issueText: str
  * item containing the text already exists (someone wrote it down by hand), that item is deferred
  * in place via `applyDefer` — never a duplicate. Otherwise the `[x]` item is appended to
  * `## Open Questions`, creating the section at EOF when the doc has none (a pre-template doc).
- * An identical item already present → `changed: false`.
+ * An identical item already present → `changed: false`. Used by `--from-issue` in every status
+ * and by the positional form on a signed doc (GH #253), where there is no `- [ ]` to rewrite.
  */
-export function applyDeferFromIssueDoc(raw: string, issueText: string, input: Omit<DeferInput, "question">): ApplyDeferResult {
+export function applyDeferOrAppend(raw: string, issueText: string, input: Omit<DeferInput, "question">): ApplyDeferResult {
   const full: DeferInput = { ...input, question: issueText };
   const v = validateInput(full);
   if (!v.ok) return v;
@@ -429,15 +462,8 @@ export function applyDeferFromIssueDoc(raw: string, issueText: string, input: Om
 }
 
 export type RunDeferResult =
-  | { ok: true; path: string; changed: boolean; queued: QueuedNote | null }
+  | { ok: true; path: string; changed: boolean; signed: boolean; restamped: boolean }
   | { ok: false; message: string };
-
-/** GH #236: set when defer QUEUED the question (a ratified/shipped doc) instead of editing the
- *  doc — `forVersion` is the draft that will carry it, `docVersion` the version left untouched. */
-export interface QueuedNote {
-  forVersion: number;
-  docVersion: number;
-}
 
 type ResolvedDeferDoc = { ok: true; sliceIndex: number; path: string; version: number } | { ok: false; message: string };
 
@@ -490,13 +516,12 @@ function mirrorIntoStateFile(
   question: string,
   input: Omit<DeferInput, "question" | "currentVersion">,
   currentVersion: number,
-  queue = false,
 ): { ok: true; path: string; content: string; changed: boolean } | { ok: false; message: string } {
   const statePath = join(baseDir, STATE_FILE_NAME);
   if (!existsSync(statePath)) {
     return { ok: false, message: `no ${STATE_FILE_NAME} beside the model — defer mirrors into it and never creates it` };
   }
-  const r = (queue ? applyQueueStateFile : applyDeferStateFile)(readFileSync(statePath, "utf8"), {
+  const r = applyDeferStateFile(readFileSync(statePath, "utf8"), {
     question,
     sliceKey,
     until: parseUntil(input.until)!,
@@ -523,28 +548,27 @@ export function runDefer(
   const absDoc = join(baseDir, doc.path);
   const docRaw = readFileSync(absDoc, "utf8");
 
-  // GH #236: a ratified / shipped doc is not edited — the question is queued for v<N+1>.
-  if (isLockedDoc(docRaw)) {
-    const v = validateInput({ ...input, currentVersion: doc.version });
-    if (!v.ok) return { ok: false, message: `${doc.path}: ${v.message}` };
-    const state = mirrorIntoStateFile(baseDir, sliceKey, input.question, input, doc.version, true);
-    if (!state.ok) return state;
-    if (state.changed) writeFileSync(state.path, state.content, "utf8");
-    return { ok: true, path: doc.path, changed: state.changed, queued: { forVersion: doc.version + 1, docVersion: doc.version } };
-  }
-
-  const result = applyDefer(docRaw, { ...input, currentVersion: doc.version });
-  if (!result.ok) return { ok: false, message: `${doc.path}: ${result.message}` };
+  // GH #253: a signed doc has no `- [ ]` to rewrite (readiness required none) — the deferral is
+  // appended as an already-deferred item, outside the hash. A draft is edited as ever.
+  const signed = isSignedDoc(docRaw);
+  const edited = signed
+    ? applyDeferOrAppend(docRaw, input.question, { ...input, currentVersion: doc.version })
+    : applyDefer(docRaw, { ...input, currentVersion: doc.version });
+  if (!edited.ok) return { ok: false, message: `${doc.path}: ${edited.message}` };
+  // The hash check and any legacy re-stamp ride on a real write only — a no-op re-run stays a no-op.
+  const finished =
+    signed && edited.changed ? finishSignedDocEdit(docRaw, edited.content) : { ok: true as const, content: edited.content, restamped: false };
+  if (!finished.ok) return { ok: false, message: `${doc.path}: ${finished.message}` };
 
   const state = mirrorIntoStateFile(baseDir, sliceKey, input.question, input, doc.version);
   if (!state.ok) return state;
-  if (result.changed) writeFileSync(absDoc, result.content, "utf8");
+  if (edited.changed) writeFileSync(absDoc, finished.content, "utf8");
   if (state.changed) writeFileSync(state.path, state.content, "utf8");
-  return { ok: true, path: doc.path, changed: result.changed || state.changed, queued: null };
+  return { ok: true, path: doc.path, changed: edited.changed || state.changed, signed, restamped: finished.restamped };
 }
 
 export type RunDeferFromIssueResult =
-  | { ok: true; path: string; changed: boolean; issue: string; modelLine: number | null; queued: QueuedNote | null }
+  | { ok: true; path: string; changed: boolean; issue: string; modelLine: number | null; signed: boolean; restamped: boolean }
   | { ok: false; message: string };
 
 /**
@@ -570,20 +594,12 @@ export function runDeferFromIssue(
   const absDoc = join(baseDir, doc.path);
   const docRaw = readFileSync(absDoc, "utf8");
 
-  const locked = isLockedDoc(docRaw);
-  const queued: QueuedNote | null = locked ? { forVersion: doc.version + 1, docVersion: doc.version } : null;
+  const signed = isSignedDoc(docRaw);
   const candidates = findIssueCandidates(model, doc.sliceIndex, text);
   if (candidates.length === 0) {
-    // Already promoted on an earlier run? Then the doc carries it as deferred to this version —
-    // or, on a ratified/shipped doc (GH #236), the state file carries it as queued.
-    if (locked) {
-      if (readQueue(baseDir, sliceKey, doc.version + 1).items.some((q) => q.question.includes(text))) {
-        return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null, queued };
-      }
-      return { ok: false, message: `no open issue matching "${text}" on slice "${sliceKey}" (see \`em validate --list-issues\`)` };
-    }
+    // Already promoted on an earlier run? Then the doc carries it as deferred to this version.
     const probe = applyDefer(docRaw, { ...input, question: text, currentVersion: doc.version });
-    if (probe.ok && !probe.changed) return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null, queued: null };
+    if (probe.ok && !probe.changed) return { ok: true, path: doc.path, changed: false, issue: text, modelLine: null, signed, restamped: false };
     if (probe.ok) {
       // The question is on the doc as a hand-written `- [ ]` item, never on the diagram: that is
       // the positional form's job.
@@ -601,16 +617,13 @@ export function runDeferFromIssue(
   }
   const [cand] = candidates;
 
-  // GH #236: on a ratified/shipped doc the promoted issue is queued, not written into the body.
-  const docResult: ApplyDeferResult = locked
-    ? (() => {
-        const v = validateInput({ ...input, question: cand.issue, currentVersion: doc.version });
-        return v.ok ? { ok: true as const, content: docRaw, changed: false } : v;
-      })()
-    : applyDeferFromIssueDoc(docRaw, cand.issue, { ...input, currentVersion: doc.version });
+  const edited = applyDeferOrAppend(docRaw, cand.issue, { ...input, currentVersion: doc.version });
+  if (!edited.ok) return { ok: false, message: `${doc.path}: ${edited.message}` };
+  // GH #253: on a signed doc the appended item sits outside `ratifiedHash` — verified before write.
+  const docResult = signed ? finishSignedDocEdit(docRaw, edited.content) : { ok: true as const, content: edited.content, restamped: false };
   if (!docResult.ok) return { ok: false, message: `${doc.path}: ${docResult.message}` };
 
-  const state = mirrorIntoStateFile(baseDir, sliceKey, cand.issue, input, doc.version, locked);
+  const state = mirrorIntoStateFile(baseDir, sliceKey, cand.issue, input, doc.version);
   if (!state.ok) return state;
 
   const emRaw = readFileSync(modelFile, "utf8");
@@ -633,8 +646,8 @@ export function runDeferFromIssue(
     return { ok: false, message: `${modelFile}: removing the issue clause at line ${removed.removedLine} would not leave a clean model — nothing written` };
   }
 
-  if (docResult.changed) writeFileSync(absDoc, docResult.content, "utf8");
+  if (edited.changed || docResult.restamped) writeFileSync(absDoc, docResult.content, "utf8");
   if (state.changed) writeFileSync(state.path, state.content, "utf8");
   writeFileSync(modelFile, removed.content, "utf8");
-  return { ok: true, path: doc.path, changed: true, issue: cand.issue, modelLine: removed.removedLine, queued };
+  return { ok: true, path: doc.path, changed: true, issue: cand.issue, modelLine: removed.removedLine, signed, restamped: docResult.restamped };
 }

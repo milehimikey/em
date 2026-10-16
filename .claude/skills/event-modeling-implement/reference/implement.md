@@ -159,12 +159,14 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
   your recommendation. The human resolves it — at the model, where the resolution lands as an
   answered open question or a small ratified delta alongside your fix, so the decision is
   recorded instead of buried in an implementation diff.
-- **A question this build will not wait on is queued, never written into the doc** (GH #236). On a
-  ratified doc the body is the signed spec: `em slice defer <model>.em <slice-key> "<question>"
-  --until v<n> --decision "<what this version does>"` records it in `.event-modeling.md` as queued
-  for `<key>@v<N+1>` and leaves the doc — and `ratifiedHash`, and `--slice-ready` — untouched. When
-  the slice merges (`mark-implemented`) or is revised, the queued question is injected into the
-  v<N+1> draft's Open Questions. Never add the `- [ ]` item to the ratified doc yourself.
+- **A question this build will not wait on is deferred through `em slice defer`, never written
+  into the doc by hand** (GH #253). On a ratified doc the body is the signed spec, but a deferral
+  sits outside `ratifiedHash`: `em slice defer <model>.em <slice-key> "<question>" --until v<n>
+  --decision "<what this version does>"` appends the already-deferred `- [x]` item to the doc's
+  Open Questions — visible to the next reader — and `ratifiedHash` and `--slice-ready` stay
+  untouched. When the slice merges (`mark-implemented`) or is revised, the item is reopened as
+  `- [ ]` in the v<n> draft. Never add a `- [ ]` item to the ratified doc yourself: that does
+  move the hash.
 - **How a delta is ratified on a doc that never shipped** (it is `ready-to-implement` with
   `ratifiedBy` set) when the spec itself must change: once the human has answered, the doc changes
   by `em slice revise <model>.em <slice-key> --withdraw` (MIL-283: opens the next version as a
@@ -248,8 +250,8 @@ Prefer it over hand-editing the doc's frontmatter. It also writes the **shipped 
 (`shippedVersion:`/`shippedRef:`/`shippedOn:`, MIL-284) — what every reader decides "has this
 shipped?" on since 1.15.0 — and, when the ratified doc deferred a question to the next version,
 **opens that version as a `draft` on the same write** (MIL-283: `status: draft`, `version` bumped,
-the question back to `- [ ]`; the version you built stays shipped) — questions queued with `em slice
-defer` while the doc was ratified (GH #236) are injected into that draft too. If it prints `opened draft
+the question back to `- [ ]`; the version you built stays shipped) — a question deferred with `em
+slice defer` while the doc was ratified (GH #253) is one of those. If it prints `opened draft
 v<N+1>`, say so in your report: the slice has known work, and a design session, not you, decides it.
 
 Then, if the project keeps a model README (from `../../event-modeling-shared/templates/model-readme.md`), run

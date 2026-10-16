@@ -626,10 +626,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       `em slice mark-implemented` writes beside the link: `{ version, ratifiedRef, implementedIn,
       on }`, or `null` when the doc carries no `shippedVersion:`. `status`/`implementedIn` are
       unchanged and still carry the lifecycle for every reader in 1.15.
-      `queuedForNext` (added in schema `1.17`, GH #236) is a number — how many questions
-      `em slice defer` queued in `.event-modeling.md` for this slice's next version
-      (`<key>@v<version + 1>`) because the doc is ratified/shipped and its body must not change;
-      always present, `0` when none, when there is no state file, or when no doc was found.
+      `queuedForNext` (added in schema `1.17`, GH #236; re-sourced in 1.17.0, GH #253) is a
+      number — the doc's `## Open Questions` items `em slice defer` deferred to a version past
+      its `version`, plus any question 1.16's defer still has queued in `.event-modeling.md` for
+      `<key>@v<version + 1>`; always present, `0` when none or when no doc was found.
       `owner`/`tracking` (added in schema `1.9`, MIL-171) are the doc's `owner:`/`tracking:`
       frontmatter — hand-filled, no `em` command writes either — both `null` when absent.
       `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
@@ -1687,10 +1687,12 @@ written (see [`em state set-conformance`](#em-state-set-conformance-revision-dir
 `unruledFindings` (added in schema `1.5`, MIL-214) is the count described above — `null` when no
 findings JSON exists beside the recorded report.
 
-`issues.queuedQuestions` (added in schema `1.10`, GH #236) is the number of questions `em slice defer`
-queued in `.event-modeling.md` for a ratified/shipped slice's next version (summed over every slice
-with a doc, continuations excluded) — known work the signed docs cannot show. The text report adds
-`, N queued for next version` to the issues/open-questions line and `--md` to its `Open questions` row.
+`issues.queuedQuestions` (added in schema `1.10`, GH #236; re-sourced in 1.17.0, GH #253) is the
+number of questions `em slice defer` has deferred to a later version across the model's docs (each
+doc's `## Open Questions` items deferred past its `version`, plus anything 1.16's defer still has
+queued in `.event-modeling.md`; summed over every slice with a doc, continuations excluded) — known
+work waiting on the next versions. The text report adds `, N deferred to a later version` to the
+issues/open-questions line and `--md` to its `Open questions` row.
 
 `continuations` (added in schema `1.4`, MIL-208) is the count of continuation slices (`again`
 view instances with no legacy doc of their own) across every input file — excluded from every
@@ -3104,8 +3106,12 @@ signed: `ratifiedRef:` is `HEAD` of the model directory's repository at the mome
 ratification — the commit whose tree holds the body being ratified — and `ratifiedHash:` is
 `sha256:` over the doc body (everything after the frontmatter fence, EOLs normalised; frontmatter
 is excluded because this edit, `mark-implemented` and `conform` all touch it without changing
-what was ratified. `em slice defer` on a ratified doc never touches the body either: it queues the
-question in `.event-modeling.md` (GH #236, see [`em slice defer`](#em-slice-defer-file-slice-key-question))). Because a ref whose tree does not hold the signed body would
+what was ratified; the `## Open Questions` heading and its `deferred to v<n>` items are excluded
+too — GH #253, since 1.17.0 — because a deferral describes a later version, which is what lets
+[`em slice defer`](#em-slice-defer-file-slice-key-question) write one into a ratified doc without
+moving the hash; everything else in the section stays signed). A hash recorded before 1.17.0 covers
+the whole body and is still read as intact; `em upgrade`'s `ratified-hash-scope` step re-stamps it,
+and `defer` does so on first touch. Because a ref whose tree does not hold the signed body would
 be meaningless, **ratify refuses a doc with uncommitted changes** — commit the body first — and
 refuses in a repository with no commits. Outside a git work tree the ref is simply omitted; the
 hash is still written, and `--slice-ready` still checks it
@@ -3440,9 +3446,10 @@ the confirmation is taken by `em slice ratify` on the new version. Removed in a 
 
 Records a question this version will not answer as **deferred to a later version** (MIL-275), so
 `em validate --slice-ready` passes without a guess and the question has a return path. On a
-`draft`/`reviewed` doc it edits the doc **body** (the Open Questions line). A **ratified or shipped**
-doc's body is the signed spec, so there defer *queues* the question instead and never edits the body
-(GH #236, below) — a question found mid-build no longer needs a `revise` that withdraws the ratification.
+`draft`/`reviewed` doc it rewrites the doc's own `- [ ]` Open Questions line. On a **ratified or
+shipped** doc it appends the deferred item to the body (GH #253, below): a deferral sits outside
+`ratifiedHash`, so the signature stays valid and the question is visible in the doc to every
+reader — a question found mid-build never needs a `revise` that withdraws the ratification.
 
 ```
 em slice defer <model>.em <slice-key> "<question>"        --until v<n> --decision "<what this version does>" [--by <name>] [--on YYYY-MM-DD]
@@ -3458,34 +3465,38 @@ finds the single unchecked `- [ ]` item under `## Open Questions` whose text con
 - [x] <original text> — v<current>: <decision>; deferred to v<n> (<date>[, <by>])
 ```
 
-**On a ratified or shipped doc defer queues instead (GH #236).** When the doc is `status:
-ready-to-implement` with `ratifiedBy:` set, or `status: implemented`, its body is the signed spec:
-editing it would break `ratifiedHash` (`--slice-ready` would fail with
-`slice-ready-body-changed-since-ratification`, `ratify` would refuse the changed body). So defer
-**does not touch the doc**. It validates `--until`/`--decision` as ever, then records the question in
-`.event-modeling.md` as *queued for `<key>@v<N+1>`* (N = the doc's version) and prints
-`queued, not edited: <doc> stays as ratified (v<N>) — … queued for <key>@v<N+1> in .event-modeling.md`.
-`<question>` is the full text to record (nothing in the ratified body is matched or rewritten). The
-queue is one parking-lot bullet — the exact shape —
+**On a ratified or shipped doc defer appends, outside the hash (GH #253).** When the doc is
+`status: ready-to-implement` with `ratifiedBy:` set, or `status: implemented`, it has no `- [ ]` to
+rewrite (readiness required none), and its body is the signed spec. `ratifiedHash` is computed over
+the body **minus** the `## Open Questions` heading and its `deferred to v<n>` items
+([slice-doc-schema.md](slice-doc-schema.md#how-the-parser-reads-frontmatter)) — a deferral describes
+a later version, not the one that was signed — so defer appends the already-deferred item
 
 ```
-- <question> (from slice <key>, queued for <key>@v<N+1>, until v<U>, <YYYY-MM-DD>[, by <by>]; decision: <decision>)
+- [x] <question> — v<N>: <decision>; deferred to v<n> (<date>[, <by>])
 ```
 
-plus a dated Decisions-log bullet, `- <date>: queued "<question>" on <key> for <key>@v<N+1> (until
-v<U>) — v<N>: <decision>[ — by <by>]`. A repeat run prints `already queued (no-op): <doc>`. The queue
-is drained when v<N+1> opens as a draft — by [`em slice mark-implemented`](#em-slice-mark-implemented-file-slice-key-pr-url)
-(at merge) or [`em slice revise`](#em-slice-revise-file-slice-key): each queued item is appended to the
-draft's `## Open Questions` carrying its decision — unchecked, `- [ ] <question> — v<N>: <decision>
-(queued <date>[, <by>])` when `--until` is v<N+1>; as the ordinary checked
-`- [x] … deferred to v<U> (<date>[, <by>])` deferral when `--until` points further out — and the
-parking-lot bullet becomes the ordinary `- <question> (from slice <key>, deferred to v<U>)` mirror.
-The count waiting for the next version shows in `em status` (`issues.queuedQuestions`, status
-schema `1.10`; the text/markdown output says `N queued for next version`) and in `em export` /
-`em export --slice <key>` as `slice.doc.queuedForNext` (schema `1.17`). A `draft` or `reviewed`
-doc — including the next version of a shipped slice — is still being written, so defer edits it
-exactly as described above. The same queueing applies to `--from-issue` (the doc is untouched; the
-issue clause is still removed from the `.em`).
+to `## Open Questions` (opening the section at EOF when the doc has none) and the hash does not
+move: `--slice-ready` stays green, `ratify`'s same-sign-off re-run still reads the doc as intact.
+`<question>` is the full text to record. Before writing, defer checks that the doc as read still
+matches its `ratifiedHash` (a body someone edited by hand after sign-off is refused — revert, or
+`revise` and re-ratify — defer is not the command that papers over that) and verifies the result
+matches it afterwards; a hash recorded before 1.17.0 (whole-body scope) is accepted as intact and
+**re-stamped in the same edit** to the 1.17 scope, body unchanged (`em upgrade`'s
+`ratified-hash-scope` step does the same model-wide). Prints `deferred: <doc> (<question> → v<n>)
+— appended to the signed doc's Open Questions, outside ratifiedHash[; ratifiedHash re-stamped to
+the 1.17 scope (body unchanged)]`. When v<n> opens as a draft — by
+[`em slice mark-implemented`](#em-slice-mark-implemented-file-slice-key-pr-url) (at merge) or
+[`em slice revise`](#em-slice-revise-file-slice-key) — the item is reopened as `- [ ] <question>`,
+exactly as a pre-ratification deferral is. The work waiting on later versions shows in `em status`
+(`issues.queuedQuestions`, status schema `1.10`; the text/markdown output says `N deferred to a
+later version`) and in `em export` / `em export --slice <key>` as `slice.doc.queuedForNext` (schema
+`1.17`) — the count of the doc's items deferred past its `version`, plus any question still queued
+in `.event-modeling.md` by 1.16's defer (GH #236; `revise`/`mark-implemented` still inject those
+when they open the next draft, and `em upgrade` moves leftovers into their docs). A `draft` or
+`reviewed` doc — including the next version of a shipped slice — is still being written, so defer
+edits it exactly as described above and never appends. `--from-issue` behaves the same way on a
+signed doc (it always appended; the issue clause is still removed from the `.em`).
 
 It then mirrors the deferral into `.event-modeling.md` beside the model, each bullet appended at
 the end of its section unless an identical one exists: `- <question> (from slice <key>, deferred
@@ -4484,6 +4495,19 @@ The mechanical steps, in this fixed order:
 6. **`constitution`** — scaffolds `constitution.md` (MIL-202, draft, unratified) when it's absent
    and the repo has no `.specify/` directory. When `.specify/` exists instead, that's a human
    item, not mechanical (spec-kit owns the slot).
+7. **`ratified-signoff`** (1.14.0, MIL-259) — grandfathers a version-1 `ready-to-implement` doc
+   that never recorded a sign-off (see [upgrading.md](upgrading.md#1140)).
+8. **`ratified-hash-scope`** (1.17.0, GH #253) — re-stamps every `ratifiedHash:` still in the
+   pre-1.17 whole-body scope with the 1.17-scope hash of the **same** body (the `## Open
+   Questions` heading and its `deferred to v<n>` items excluded; a renormalisation, not a
+   re-signing — `ratifiedRef` still holds that body), and moves every question 1.16's
+   `em slice defer` queued in `.event-modeling.md` (GH #236) into its doc's `## Open Questions`
+   as the deferred item defer writes today, draining the queue bullet. A doc whose body no longer
+   matches its hash in either scope is reported and left alone; so is a queued question whose doc
+   has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
+   would not match its hash afterwards.
+9. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
+   to 2.0 (see [upgrading.md](upgrading.md#running-it)).
 
 Deliberately does **not** refuse when the model has validation errors: the old two-slice reaction
 shape `reaction-shape` migrates is itself such an error under the current `em validate` rules, so

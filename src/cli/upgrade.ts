@@ -56,7 +56,11 @@ import {
 import { findSpecifyRoot, locateConstitution } from "./status.js";
 import { scaffoldConstitution, scaffoldStateFile } from "../templates.js";
 import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolveStateFilePath } from "./stateFile.js";
-import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner } from "./frontmatterSurgery.js";
+import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner, replaceFieldValue } from "./frontmatterSurgery.js";
+import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { QueuedItem } from "../catalog/deferQueue.js";
+import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc, readQueue } from "./defer.js";
+import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
 import { compile } from "../pipeline.js";
 import { hasErrors } from "../model/validate.js";
@@ -90,7 +94,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -498,7 +502,126 @@ function applyRatifiedSignoff(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: writes.map((w) => w.file) };
 }
 
-// ---- Step 7: system-manifest (MIL-235, R3) — system.yaml 1.0 -> 2.0. ----
+// ---- Step 7: ratified-hash-scope (GH #253) — `ratifiedHash` leaves `## Open Questions`' deferrals. ----
+// 1.17.0 computes `ratifiedHash` over `ratifiedBody()` (catalog/sliceDoc.ts): the `## Open
+// Questions` heading and its `deferred to v<n>` items are outside it, so `em slice defer` can write
+// to a ratified or shipped doc. Every hash recorded before that is in the whole-body scope. Readers
+// accept both (`ratifiedHashScope`), so nothing breaks — but a legacy-scope doc cannot take a
+// deferral until its stamp moves, and GH #236's 1.16 state-file queue may still hold questions
+// that now belong in their docs. This step does both, model-wide: re-stamps every intact
+// legacy-scope hash with the current-scope hash of the SAME body (a renormalisation, not a
+// re-signing — `ratifiedRef` still holds that body), and appends each queued question to its doc
+// as the deferred item `defer` would write today, draining the queue bullet. A doc whose body no
+// longer matches its hash in either scope is reported and left alone; so is a queued question
+// whose doc has already moved past the version it was queued for.
+
+interface HashScopeCandidate {
+  key: string;
+  path: string;
+  version: number | null;
+  scope: "current" | "legacy" | "mismatch";
+}
+
+function hashScopeCandidates(ctx: UpgradeContext): HashScopeCandidate[] {
+  const seen = new Set<string>();
+  const out: HashScopeCandidate[] = [];
+  for (const d of nonContinuationDocs(ctx)) {
+    if (d.ratifiedHash === null || seen.has(d.path)) continue;
+    seen.add(d.path);
+    const file = join(ctx.baseDir, d.path);
+    if (!existsSync(file)) continue;
+    out.push({ key: d.key, path: d.path, version: d.version, scope: ratifiedHashScope(readFileSync(file, "utf8"), d.ratifiedHash) });
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Leftover 1.16 queue bullets aimed at each doc's v<version+1>, with the doc they belong to. */
+function queuedLeftovers(ctx: UpgradeContext): Array<{ key: string; path: string; version: number; items: QueuedItem[] }> {
+  const out: Array<{ key: string; path: string; version: number; items: QueuedItem[] }> = [];
+  const seen = new Set<string>();
+  for (const d of nonContinuationDocs(ctx)) {
+    if (d.version === null || seen.has(d.path)) continue;
+    seen.add(d.path);
+    const items = readQueue(ctx.baseDir, d.key, d.version + 1).items;
+    if (items.length > 0) out.push({ key: d.key, path: d.path, version: d.version, items });
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function detectRatifiedHashScope(ctx: UpgradeContext): StepDetection {
+  const legacy = hashScopeCandidates(ctx).filter((c) => c.scope === "legacy");
+  const mismatch = hashScopeCandidates(ctx).filter((c) => c.scope === "mismatch");
+  const queued = queuedLeftovers(ctx);
+  if (legacy.length === 0 && queued.length === 0) {
+    return { applicable: false, reason: "every ratifiedHash is in the 1.17 scope and no question is queued in the state file" };
+  }
+  const parts: string[] = [];
+  if (legacy.length > 0) parts.push(`${legacy.length} doc(s) carry a pre-1.17 whole-body ratifiedHash (body intact): ${legacy.map((c) => c.key).join(", ")} — em upgrade will re-stamp them in the 1.17 scope (Open Questions deferrals excluded; same body, not a re-signing)`);
+  if (queued.length > 0) {
+    const n = queued.reduce((s, q) => s + q.items.length, 0);
+    parts.push(`${n} question(s) queued in ${STATE_FILE_NAME} by 1.16's em slice defer (GH #236) for ${queued.map((q) => `${q.key}@v${q.version + 1}`).join(", ")} — em upgrade will write each into its doc's Open Questions as a deferred item and drain the queue`);
+  }
+  if (mismatch.length > 0) parts.push(`left alone: ${mismatch.map((c) => c.key).join(", ")} — body no longer matches ratifiedHash in either scope (revert, or em slice revise and re-ratify)`);
+  return { applicable: true, reason: parts.join("; ") };
+}
+
+function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
+  const legacy = new Set(hashScopeCandidates(ctx).filter((c) => c.scope === "legacy").map((c) => c.path));
+  const queued = queuedLeftovers(ctx);
+  const touched = new Map<string, string>(); // abs path -> next content
+  const current = (path: string): string => touched.get(path) ?? readFileSync(path, "utf8");
+  // Queue first, on the doc as read: `finishSignedDocEdit` re-stamps a legacy hash itself.
+  for (const q of queued) {
+    const file = join(ctx.baseDir, q.path);
+    let content = current(file);
+    const before = content;
+    for (const item of q.items) {
+      const r = applyDeferOrAppend(content, item.question, {
+        until: `v${item.until}`,
+        decision: item.decision,
+        ...(item.by !== undefined ? { by: item.by } : {}),
+        on: item.on,
+        currentVersion: q.version,
+      });
+      if (!r.ok) return { ok: false, message: `${q.path}: queued question "${item.question}" — ${r.message}` };
+      content = r.content;
+    }
+    if (isSignedDoc(before)) {
+      const finished = finishSignedDocEdit(before, content);
+      if (!finished.ok) return { ok: false, message: `${q.path}: ${finished.message}` };
+      content = finished.content;
+    }
+    touched.set(file, content);
+    legacy.delete(q.path);
+  }
+  for (const path of legacy) {
+    const file = join(ctx.baseDir, path);
+    const raw = current(file);
+    const next = replaceFieldValue(raw, "ratifiedHash", sliceDocBodyHash(raw));
+    if (next === null) return { ok: false, message: `${path}: could not locate ratifiedHash: in the frontmatter` };
+    touched.set(file, next);
+  }
+  // Verify before write: every touched doc must now match its hash in the current scope.
+  for (const [file, content] of touched) {
+    const m = fieldLineRegex("ratifiedHash").exec(content);
+    const recorded = m ? normalizeFieldValue(m[2]) : null;
+    if (recorded !== null && ratifiedHashScope(content, recorded) !== "current") {
+      return { ok: false, message: `${relative(ctx.baseDir, file)}: the rewrite would not match ratifiedHash — aborting, nothing written` };
+    }
+  }
+  for (const [file, content] of touched) writeFileSync(file, content, "utf8");
+  const changedFiles = [...touched.keys()];
+  if (queued.length > 0) {
+    const statePath = join(ctx.baseDir, STATE_FILE_NAME);
+    let state = readFileSync(statePath, "utf8");
+    for (const q of queued) state = drainQueueInState(state, q.key, q.version + 1).content;
+    writeFileSync(statePath, state, "utf8");
+    changedFiles.push(statePath);
+  }
+  return { ok: true, changedFiles };
+}
+
+// ---- Step 8: system-manifest (MIL-235, R3) — system.yaml 1.0 -> 2.0. ----
 // The one mechanical step that writes OTHER models' files: the legacy manifest's seams become
 // `consumes` clauses on each consuming translation and its owners become `owner "…"` on each
 // member model's header, in the same single commit as the manifest rewrite (its `Em-Upgrade:`
@@ -592,6 +715,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
+  { id: "ratified-hash-scope", sinceVersion: "1.17.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
   { id: "system-manifest", sinceVersion: "1.14.0", detect: detectSystemManifest, apply: applySystemManifest },
 ];
 
@@ -621,12 +745,12 @@ function elementRefOf(ctx: UpgradeContext): (id: string) => string {
  *  exclusion of continuation slices, MIL-208: a continuation's own join already resolves to its
  *  originating slice's doc, so counting it again here would double-count). */
 function nonContinuationDocs(ctx: UpgradeContext) {
-  const results: Array<{ key: string; status: string | null; shipped: boolean; ratifiedBy: string | null; version: number | null; path: string }> = [];
+  const results: Array<{ key: string; status: string | null; shipped: boolean; ratifiedBy: string | null; ratifiedHash: string | null; version: number | null; path: string }> = [];
   ctx.model.slices.forEach((slice, i) => {
     const key = ctx.refs.sliceKeys[i];
     const { doc, continuationOf } = resolveSliceDocJoin(ctx.model, ctx.refs, slice, key, ctx.baseDir, elementRefOf(ctx));
     if (continuationOf !== null) return;
-    results.push({ key, status: doc.status, shipped: doc.shipped !== null, ratifiedBy: doc.ratifiedBy, version: doc.version, path: doc.path });
+    results.push({ key, status: doc.status, shipped: doc.shipped !== null, ratifiedBy: doc.ratifiedBy, ratifiedHash: doc.ratifiedHash, version: doc.version, path: doc.path });
   });
   return results;
 }

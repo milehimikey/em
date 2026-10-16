@@ -28,6 +28,7 @@ import {
   applyGrandfatherSignoff,
 } from "../src/cli/upgrade.js";
 import { localIsoDate } from "../src/util/localDate.js";
+import { ratifiedHashScope, sliceDocBodyHash, sliceDocLegacyBodyHash } from "../src/catalog/sliceDoc.js";
 import { STATE_FILE_NAME, loadStateFile, parseState } from "../src/cli/stateFile.js";
 
 const INSTALLED_VERSION = "1.13.0";
@@ -1053,5 +1054,81 @@ describe("agent files in skill-bundle / skill-plugin (MIL-269)", () => {
     if (out.ok) for (const f of AGENT_FILES) expect(out.changedFiles).toContain(join(".claude", "agents", f));
     for (const f of AGENT_FILES) expect(existsSync(join(r.dir, ".claude", "agents", f))).toBe(false);
     expect(readFileSync(join(r.dir, ".claude", "agents", "my-agent.md"), "utf8")).toBe("mine\n");
+  });
+});
+
+describe("ratified-hash-scope step (GH #253)", () => {
+  const CLEAN = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n';
+  const BODY = "# Slice\n\n## Open Questions\n\n- [x] answered — yes\n\n## Notes\n\nnone\n";
+  const signed = (hash: string, status = "ready-to-implement") =>
+    `---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ${status}\nversion: 1\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${hash}\n---\n${BODY}`;
+  const STATE = `${SIX_BULLET_STATE_FILE}\n## Decisions log\n- 2026-01-01: old — why\n\n## Open questions / parking lot\n\n## Slice inventory\n`;
+  const QUEUED = "- retry policy (from slice place-order, queued for place-order@v2, until v2, 2026-10-12, by Alex; decision: fail fast)";
+  const stepOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root)).steps.find((st) => st.id === "ratified-hash-scope")!;
+
+  it("is registered after ratified-signoff and before system-manifest, since 1.17.0", () => {
+    const ids = UPGRADE_STEPS.map((s) => s.id);
+    expect(ids.indexOf("ratified-hash-scope")).toBe(ids.indexOf("ratified-signoff") + 1);
+    expect(ids.at(-1)).toBe("system-manifest");
+    expect(UPGRADE_STEPS.find((s) => s.id === "ratified-hash-scope")!.sinceVersion).toBe("1.17.0");
+  });
+
+  it("not applicable when every hash is current and nothing is queued; a mismatched doc alone is reported, never applied", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: STATE });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docPath = join(dir, "slices", "place-order.md");
+    writeFileSync(docPath, signed(sliceDocBodyHash(signed("x"))));
+    expect(stepOf(dir, packagedSkillsRoot)).toMatchObject({ applicable: false, reason: "every ratifiedHash is in the 1.17 scope and no question is queued in the state file" });
+    writeFileSync(docPath, signed(sliceDocBodyHash(signed("x"))).replace("— yes", "— no"));
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+  });
+
+  it("--apply re-stamps a legacy whole-body hash (same body), in one commit, and a second run is a no-op", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: STATE });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docPath = join(dir, "slices", "place-order.md");
+    const legacy = sliceDocLegacyBodyHash(signed("x"));
+    writeFileSync(docPath, signed(legacy));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "doc");
+    const d = stepOf(dir, packagedSkillsRoot);
+    expect(d.applicable).toBe(true);
+    expect(d.reason).toBe("1 doc(s) carry a pre-1.17 whole-body ratifiedHash (body intact): place-order — em upgrade will re-stamp them in the 1.17 scope (Open Questions deferrals excluded; same body, not a re-signing)");
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const step = result.applied.find((a) => a.id === "ratified-hash-scope")!;
+    expect(step.applied).toBe(true);
+    expect(step.changedFiles).toEqual([docPath]);
+    const text = readFileSync(docPath, "utf8");
+    expect(text).toBe(signed(sliceDocBodyHash(signed("x"))));
+    const log = spawnSync("git", ["-C", dir, "log", "--format=%s"], { encoding: "utf8" }).stdout;
+    expect(log.split("\n").filter((l) => l.startsWith("em upgrade: ratified-hash-scope"))).toHaveLength(1);
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+  });
+
+  it("--apply moves a 1.16 queued question into its doc as the deferred item (re-stamping a legacy hash on the way) and drains the queue", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: STATE.replace("## Open questions / parking lot\n", `## Open questions / parking lot\n${QUEUED}\n`) });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docPath = join(dir, "slices", "place-order.md");
+    writeFileSync(docPath, signed(sliceDocLegacyBodyHash(signed("x")), "implemented"));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "doc");
+    const d = stepOf(dir, packagedSkillsRoot);
+    expect(d.applicable).toBe(true);
+    expect(d.reason).toContain("1 question(s) queued in .event-modeling.md by 1.16's em slice defer (GH #236) for place-order@v2");
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const step = result.applied.find((a) => a.id === "ratified-hash-scope")!;
+    expect(step.changedFiles).toEqual([docPath, join(dir, STATE_FILE_NAME)]);
+    const text = readFileSync(docPath, "utf8");
+    expect(text).toContain("- [x] answered — yes\n- [x] retry policy — v1: fail fast; deferred to v2 (2026-10-12, Alex)\n\n## Notes");
+    const hash = /ratifiedHash: (\S+)/.exec(text)![1];
+    expect(ratifiedHashScope(text, hash)).toBe("current");
+    const state = readFileSync(join(dir, STATE_FILE_NAME), "utf8");
+    expect(state).not.toContain("queued for");
+    expect(state).toContain("- retry policy (from slice place-order, deferred to v2)");
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
   });
 });

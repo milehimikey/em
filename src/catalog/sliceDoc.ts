@@ -70,7 +70,8 @@
 // `ratifiedRef`/`ratifiedHash` and `shippedVersion`/`shippedRef`/`shippedOn` (MIL-284, the
 // additive half of MIL-283 "ratification has an address") give the two lifecycle facts an exact
 // identity. `ratifiedRef` is the commit whose tree holds the ratified body and `ratifiedHash` the
-// `sha256:` of that body (`sliceDocBodyHash`, below) — written only by `em slice ratify`, which
+// `sha256:` of that body minus what describes a later version (`sliceDocBodyHash` over
+// `ratifiedBody`, below — GH #253) — written only by `em slice ratify`, which
 // refuses a doc with uncommitted changes so the ref really does hold what was signed. The
 // `shipped*` trio is written only by `em slice mark-implemented` beside `implementedIn`: the
 // version that shipped, the ref it was ratified at, the local date. Flat keys, not a nested
@@ -395,16 +396,85 @@ export function shippedRecordOf(
   return null;
 }
 
-/** MIL-284: the identity `em slice ratify` records as `ratifiedHash:` and `--slice-ready` checks
- *  against: `sha256:<hex>` over the doc BODY — everything after the closing frontmatter fence (or
- *  the whole doc when there is none), EOLs normalised to `\n` by `splitFrontmatter`'s split/join.
- *  Frontmatter is excluded on purpose: the ratify edit itself, `mark-implemented` and `conform`
- *  touch only frontmatter, without changing what was ratified. `## Open Questions` is part of the
- *  body and stays hashed (GH #236): on a ratified doc `em slice defer` therefore queues the
- *  question in the state file instead of rewriting the body (cli/defer.ts). */
+/** A checked `## Open Questions` item carrying `em slice defer`'s marker (cli/defer.ts writes
+ *  exactly this shape): `- [x] <q> — v<N>: <decision>; deferred to v<n> (<date>[, <by>])`. */
+const DEFERRED_ITEM = /^[ \t]*[-*]\s*\[[xX]\]\s.* — v\d+: .*; deferred to v(\d+) \(.*\)\s*$/;
+
+/**
+ * GH #253: the text `ratifiedHash` is computed over — the body minus what describes a LATER
+ * version. Inside the `## Open Questions` section (heading to the next `#`/`##` heading or EOF)
+ * the heading line itself, blank lines, and every `deferred to v<n>` item are dropped; everything
+ * else — every other section, the section's answered `- [x]` history, any `- [ ]` — is kept, in
+ * order. Trailing whitespace is trimmed last, so appending a deferred item (and, on a doc with no
+ * section, the heading before it) never moves the hash. The blank lines go because `appendBullet`
+ * (cli/defer.ts) inserts one after a bare heading; keeping them would make an empty section and
+ * a one-item section hash differently.
+ */
+export function ratifiedBody(body: string): string {
+  const lines = body.split("\n");
+  const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
+  if (start === -1) return body.trimEnd();
+  const out = lines.slice(0, start);
+  let i = start + 1;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^#{1,2}\s/.test(line)) break;
+    if (line.trim() === "" || DEFERRED_ITEM.test(line)) continue;
+    out.push(line);
+  }
+  out.push(...lines.slice(i));
+  return out.join("\n").trimEnd();
+}
+
+function sha256(text: string): string {
+  return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+/** MIL-284 / GH #253: the identity `em slice ratify` records as `ratifiedHash:` and
+ *  `--slice-ready` checks against: `sha256:<hex>` over `ratifiedBody()` of the doc BODY —
+ *  everything after the closing frontmatter fence (or the whole doc when there is none), EOLs
+ *  normalised to `\n` by `splitFrontmatter`'s split/join. Frontmatter is excluded on purpose: the
+ *  ratify edit itself, `mark-implemented` and `conform` touch only frontmatter, without changing
+ *  what was ratified. Since 1.17.0 the `## Open Questions` heading and its `deferred to v<n>`
+ *  items are excluded too, so `em slice defer` can record a question on a ratified or shipped doc
+ *  (GH #253, superseding GH #236's state-file queue). */
 export function sliceDocBodyHash(markdown: string): string {
-  const { body } = splitFrontmatter(markdown);
-  return `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;
+  return sha256(ratifiedBody(splitFrontmatter(markdown).body));
+}
+
+/** The pre-1.17.0 scope: the whole body (GH #236 kept `## Open Questions` inside it). Readers
+ *  still accept a hash in this scope — `ratifiedHashScope()` — and `em upgrade`'s
+ *  `ratified-hash-scope` step (or `em slice defer`, on first touch) re-stamps it. */
+export function sliceDocLegacyBodyHash(markdown: string): string {
+  return sha256(splitFrontmatter(markdown).body);
+}
+
+/** How a recorded `ratifiedHash:` relates to the doc as it stands: `current` (matches the 1.17
+ *  scope), `legacy` (matches only the pre-1.17 whole-body scope — the body is intact, the stamp
+ *  is old), or `mismatch` (the body moved after sign-off). Every reader that judges "was the
+ *  body edited after ratification" goes through this, never through `===` on one hash. */
+export function ratifiedHashScope(markdown: string, recorded: string): "current" | "legacy" | "mismatch" {
+  if (recorded === sliceDocBodyHash(markdown)) return "current";
+  if (recorded === sliceDocLegacyBodyHash(markdown)) return "legacy";
+  return "mismatch";
+}
+
+/** GH #253: how many `## Open Questions` items are deferred to a version later than `version` —
+ *  the known work waiting on a later version that `em status` / `em export` report as
+ *  `queuedForNext` (the name predates #253: GH #236's state-file queue reported the same fact
+ *  for the one release when a ratified doc could not carry it). 0 when `version` is null. */
+export function countDeferredBeyond(body: string, version: number | null): number {
+  if (version === null) return 0;
+  const lines = body.split("\n");
+  const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
+  if (start === -1) return 0;
+  let count = 0;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^#{1,2}\s/.test(lines[i])) break;
+    const m = DEFERRED_ITEM.exec(lines[i]);
+    if (m && Number(m[1]) > version) count++;
+  }
+  return count;
 }
 
 export function parseSliceDoc(markdown: string): SliceDoc {

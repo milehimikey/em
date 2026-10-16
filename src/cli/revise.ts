@@ -114,12 +114,13 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
   if (currentStatus === IMPLEMENTED_STATUS) return applyRevise(raw, "shipped", opts);
   if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && !hasShipped && !opts.withdraw) {
     // GH #236: a ratified, never-shipped doc is the ONLY implementable version of the slice;
-    // revising it withdraws that. A question found mid-build does not need this — it is queued.
+    // revising it withdraws that. A question found mid-build does not need this — `em slice
+    // defer` records it on the doc outside the hash (GH #253), ratification intact.
     return {
       ok: false,
       message:
         "doc is ratified and has never shipped — revising it would withdraw the ratification of the only implementable " +
-        "version. To record a question found mid-build, queue it instead (the ratification stays valid): " +
+        "version. To record a question found mid-build, defer it instead (the ratification stays valid): " +
         '`em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"`. ' +
         "If the spec itself must change, pass --withdraw to open the next version as a draft",
     };
