@@ -46,9 +46,10 @@ import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.j
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateInvariants } from "../catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "../catalog/sliceReadyValidate.js";
-import { engagementPlanFor, engagementStatusFor } from "../cli/engagement.js";
+import { engagementMembersFor, engagementPlanFor, engagementStatusFor } from "../cli/engagement.js";
+import { checkFoundation } from "../cli/engagementFoundation.js";
 import { readOpenEngagements } from "../cli/engagementFile.js";
-import { buildEngagementPlanJson, buildEngagementStatusJson } from "../emit/engagementJson.js";
+import { buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "../emit/engagementJson.js";
 import { buildSliceSyncJson, runSliceSync } from "../cli/sliceSync.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
@@ -1182,6 +1183,29 @@ export function createServer(): McpServer {
       const result = engagementStatusFor({ file, model: compiled.model, refs: compiled.refs, baseDir: dirname(file) }, slug);
       if (!result.ok) return errorResult(`em engagement status: ${result.message}`);
       return textResult(buildEngagementStatusJson(result.status));
+    },
+  );
+
+  server.registerTool(
+    "engagement_foundation",
+    {
+      title: "Check the foundation PR is in the code for an engagement's events",
+      description:
+        "Return the same JSON document `em engagement foundation <file> <slug> --code <dir> --json` prints (GH #240): " +
+        "for every event the engagement's slices emit or consume, whether a file under `code` carries an identifier " +
+        "derived from its name (OrderPlaced / order_placed / ORDER_PLACED / order-placed) and, in those files, each " +
+        "model field and tag field — per event `present` | `incomplete` (missingFields / missingTagFields named) | " +
+        "`missing-event`, so the lead can tell \"foundation absent\" from \"foundation incomplete\" before fan-out. " +
+        "A text scan, not a type check. Read-only.",
+      inputSchema: { file: fileParam, slug: slugParam, code: z.string().describe("the target repository directory to scan") },
+    },
+    async ({ file, slug, code }) => {
+      if (!existsSync(code) || !statSync(code).isDirectory()) return errorResult(`em engagement foundation: --code ${code} is not a directory`);
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const members = engagementMembersFor({ file, model: compiled.model, refs: compiled.refs, baseDir: dirname(file) }, slug);
+      if (!members.ok) return errorResult(`em engagement foundation: ${members.message}`);
+      return textResult(buildEngagementFoundationJson(file, slug, checkFoundation(compiled.model, members.members, members.idx, code)));
     },
   );
 

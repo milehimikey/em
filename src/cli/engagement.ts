@@ -633,6 +633,17 @@ export function engagementPlanFor(input: EngagementModelInput, slug: string): Pl
   return buildEngagementPlan(input, loaded.path, loaded.file, idx);
 }
 
+/** GH #240: the engagement's member keys plus the unit index, for the foundation check (shared by
+ *  the CLI and the MCP tool). Refuses a missing engagement or one naming slices the model lost. */
+export function engagementMembersFor(input: { file: string; model: NormalizedModel; refs: RefsResult; baseDir: string }, slug: string): { ok: true; members: string[]; idx: UnitIndex } | { ok: false; message: string } {
+  const loaded = loadEngagement(input.file, slug);
+  if (!loaded.ok) return loaded;
+  const idx = buildUnitIndex(input.model, input.refs, input.baseDir);
+  const missing = missingKeys(loaded.file, idx);
+  if (missing.length > 0) return { ok: false, message: missingMessage(slug, missing) };
+  return { ok: true, members: loaded.file.slices.map((e) => e.key), idx };
+}
+
 export type StatusResult = { ok: true; status: EngagementStatus } | { ok: false; message: string };
 
 export function engagementStatusFor(input: { file: string; model: NormalizedModel; refs: RefsResult; baseDir: string }, slug: string): StatusResult {

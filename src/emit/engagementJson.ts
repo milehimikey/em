@@ -6,6 +6,7 @@
 // it), no timestamps: byte-identical for the same model, docs and engagement file.
 
 import type { EngagementPlan, EngagementStatus } from "../cli/engagement.js";
+import type { FoundationCheck } from "../cli/engagementFoundation.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 /** The engagement FILE's frontmatter contract (`engagementSchemaVersion`, docs/engagement-schema.md).
@@ -40,6 +41,28 @@ export function buildEngagementPlanJson(plan: EngagementPlan): string {
     levels: plan.levels,
     slices: plan.slices,
     preflight: plan.preflight,
+  };
+  return JSON.stringify(doc, null, 2);
+}
+
+// 1.0 (GH #240): `{ engagementFoundationSchemaVersion, generator, file, slug, code, scannedFiles,
+//   events[{ event, emittedBy, consumedBy, status, files, missingFields, missingTagFields,
+//   untaggedInModel, identifiers }], counts { present, incomplete, missingEvent }, ok }` —
+//   `status` one of `present | incomplete | missing-event`. The MCP `engagement_foundation` tool
+//   returns the same document.
+export const ENGAGEMENT_FOUNDATION_SCHEMA_VERSION = "1.0";
+
+export function buildEngagementFoundationJson(file: string, slug: string, check: FoundationCheck): string {
+  const doc = {
+    engagementFoundationSchemaVersion: ENGAGEMENT_FOUNDATION_SCHEMA_VERSION,
+    generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
+    file,
+    slug,
+    code: check.code,
+    scannedFiles: check.scannedFiles,
+    events: check.events,
+    counts: check.counts,
+    ok: check.ok,
   };
   return JSON.stringify(doc, null, 2);
 }

@@ -42,13 +42,15 @@ import {
   applyEngagementClose,
   applyEngagementSet,
   buildNewEngagement,
+  engagementMembersFor,
   engagementPlanFor,
   engagementStatusFor,
   formatEngagementPlanText,
   formatEngagementStatusText,
 } from "./cli/engagement.js";
 import { LEDGER_STATES, engagementPath, loadEngagement, readOpenEngagements } from "./cli/engagementFile.js";
-import { buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
+import { buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
+import { checkFoundation, formatFoundationText } from "./cli/engagementFoundation.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
@@ -2813,6 +2815,36 @@ engagement
       process.exit(1);
     }
     process.stdout.write((opts.json ? buildEngagementPlanJson(result.plan) : formatEngagementPlanText(result.plan)) + "\n");
+  });
+
+engagement
+  .command("foundation")
+  .description(
+    "GH #240: is the foundation PR (implement.md §8) actually in the code for the events this engagement's slices " +
+      "emit and consume? A text scan of --code: an event is present when a file carries an identifier derived from " +
+      "its name (OrderPlaced / order_placed / ORDER_PLACED / order-placed), its model fields and tag fields are then " +
+      "looked for in those files. Per event: present | incomplete (missing-field / missing-tag, named) | missing-event " +
+      "— so \"foundation absent\" and \"foundation incomplete\" are different reports. Exits 1 unless every event is " +
+      "present. Proves the contract was written down, not that it type-checks",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug")
+  .requiredOption("--code <dir>", "the target repository (or the directory the constitution's \"where a slice's code lives\" rule points at)")
+  .option("--json", "print a JSON document instead of text (same document as the MCP engagement_foundation tool)")
+  .action((file: string, slug: string, opts: { code: string; json?: boolean }) => {
+    if (!existsSync(opts.code) || !statSync(opts.code).isDirectory()) {
+      console.error(`em engagement foundation: --code ${opts.code} is not a directory`);
+      process.exit(1);
+    }
+    const { model, refs } = compileFile(file);
+    const members = engagementMembersFor({ file, model, refs, baseDir: dirname(file) }, slug);
+    if (!members.ok) {
+      console.error(`em engagement foundation: ${members.message}`);
+      process.exit(1);
+    }
+    const check = checkFoundation(model, members.members, members.idx, opts.code);
+    process.stdout.write((opts.json ? buildEngagementFoundationJson(file, slug, check) : formatFoundationText(slug, check)) + "\n");
+    if (!check.ok) process.exitCode = 1;
   });
 
 engagement

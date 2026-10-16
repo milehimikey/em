@@ -48,9 +48,17 @@ Run the shared preconditions first (tool check, bundle currency, locate the mode
    beside the model, or `.specify/memory/constitution.md`). STOP if it is missing or its
    `ratifiedBy:` is empty (spec-kit: no `**Ratified**:` footer). Say so and point at
    `em:implement`'s §7; never draft house rules to get moving.
-2. **Foundation PR merged.** Ask the human for the foundation PR (implement.md §8) and confirm it
-   has merged into `main` (`gh pr view <n> --json state` shows `MERGED`). STOP if there is none
-   or it is still open. No slice branch is cut before it lands.
+2. **Foundation is in the code.** Do not ask the human whether the foundation PR (implement.md
+   §8) landed — check: `em engagement foundation <model>.em <slug> --code <repo root>` (GH #240;
+   `--json` when you need the fields). It reports every event the engagement's slices emit or
+   consume as `present`, `incomplete` (which fields, which tag fields are missing — named), or
+   `missing-event`. Any `missing-event`: STOP — the foundation has not landed for that event; ask
+   for the foundation PR and confirm it merged into `main` (`gh pr view <n> --json state` shows
+   `MERGED`), then re-run. Any `incomplete`: **one question to the human**, listing every gap the
+   report names (an implementer never discovers these alone) — the fix is a foundation follow-up
+   on `main`, never a slice PR. All `present`: go on. No slice branch is cut before this is clean.
+   The check is a text scan of the target tree, not a compiler: a `present` event may still fail
+   to type-check in the slice PR, and that is the slice PR's job to surface.
 3. **Agent models.** Read the line `- **Agent models:** implementer=<model>,
    validator=<model>, reviewer=<model>, critic=<model|codex>`. If it is absent, say once:
    "no Agent models line — using implementer=sonnet, validator=sonnet, reviewer=sonnet,

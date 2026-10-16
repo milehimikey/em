@@ -2215,6 +2215,51 @@ file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`),
 (loops-to edges already excluded): a -> b -> a`. An engagement naming a slice the model no
 longer has is refused too.
 
+### `em engagement foundation <file> <slug> --code <dir> [--json]`
+
+Is the **foundation PR** (implement.md §8 — every event as a contract, fields verbatim from the
+slice docs' Event tables, the entity's tag) actually in the code, for the events this engagement's
+slices emit *and consume*? (GH #240, 1.17.0.) The engagement precondition used to take the human's
+word for it; in the run that filed the issue four events were missing a field the ratified slice
+lists, one lacked two, and one implementer concluded the foundation had not landed at all. This
+answers **per event**, and says which of three things is wrong, so "foundation absent" and
+"foundation incomplete" stop being the same report:
+
+| Status | Meaning |
+|---|---|
+| `present` | A file under `--code` carries an identifier derived from the event's name, and every model field and tag field of the event appears in those files |
+| `incomplete` | The event is there but `missingFields` and/or `missingTagFields` names what isn't — the "four events missing a field" case, named per event |
+| `missing-event` | No file carries any identifier variant — the foundation is absent for this event (or lives somewhere `--code` doesn't cover) |
+
+**What "present" means, precisely.** A text scan, the same discipline as `em coverage`'s
+citation check — em does not parse Kotlin, TypeScript or Go, and the constitution's "where a
+slice's code lives" rule is prose. An event is found when any text file under `--code` (skipping
+`node_modules`, `.git`, `dist`, `build`, `target`, `vendor`, … and binaries) contains one of its
+identifier variants on a word boundary: `OrderPlaced`, `orderPlaced`, `order_placed`,
+`ORDER_PLACED`, `order-placed`, or `Order Placed` itself. Its fields and tag fields are then
+looked for **in those files only**, with the same variants (`orderId` / `order_id` / `ORDER_ID`
+…). A match proves the contract was written down where an implementer would import it from — not
+that it type-checks; that is the slice PR's compiler's job. Events are the ones an engagement
+unit emits, plus every event a unit's `view`/`processor`/`translation` names in `from` (an
+implementer of the consuming slice imports it from the foundation all the same); an `again`
+instance is the same contract once. An event the model declares no tag for is reported with
+`untaggedInModel: true` — nothing to verify; that gap is the pre-flight's `event-without-tag`.
+
+| Flag | Effect |
+|---|---|
+| `--code <dir>` | Required. The target repository, or the directory the constitution's "where a slice's code lives" rule points at. Must be a directory |
+| `--json` | Print a JSON document instead of the text report |
+
+Exits `1` unless every event is `present`. Text: one line per event with where it was found (or
+what was searched for), then `ok — the foundation holds every event these slices need (N present)`
+or `foundation absent for N event(s), incomplete for M event(s) (K present)`. `--json`:
+`engagementFoundationSchemaVersion: "1.0"`, `generator`, `file`, `slug`, `code`, `scannedFiles`,
+`events: [{ event, emittedBy, consumedBy, status, files, missingFields, missingTagFields,
+untaggedInModel, identifiers }]`, `counts: { present, incomplete, missingEvent }`, `ok`. The MCP
+`engagement_foundation` tool returns the same document. The `event-modeling-engagement` skill
+runs this in its precondition step instead of asking for the foundation PR: `missing-event`
+stops; `incomplete` is one question to the human, with the gaps named, not one per implementer.
+
 ### `em engagement set <file> <slug> <key> --state <state> [--branch <b>] [--base <b>] [--pr <url>]`
 
 This is the only write path to the Ledger. States: `planned | building | validating | review |

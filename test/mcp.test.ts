@@ -302,7 +302,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the twenty-two documented tools", async () => {
+  it("exposes exactly the documented tools (GH #240 adds engagement_foundation)", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -314,7 +314,8 @@ describe("tools/list", () => {
         "contract",
         "coverage",
         "diff",
-        "engagement_plan",
+        "engagement_foundation",
+      "engagement_plan",
         "engagement_status",
         "export_model",
         "export_slice",
