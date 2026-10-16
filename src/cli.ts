@@ -981,11 +981,19 @@ slice
       "is passed. Idempotent on " +
       "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
       "same-pair re-run on a doc whose body moved after sign-off; never " +
-      "touches `version:` or the doc body",
+      "touches `version:` or the doc body. Inside a git work tree also records `ratifiedRef:` (HEAD, " +
+      "refusing a doc with uncommitted changes) and always `ratifiedHash:`; with --no-ref (GH #255) " +
+      "only the hash — for a repo whose squash/rebase merges would leave the ref unreachable — and " +
+      "git is not consulted",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .requiredOption("--by <name>", "the ratifier's name")
+  .option(
+    "--no-ref",
+    "record ratifiedHash: only, no ratifiedRef: (GH #255) — the signed content keeps its identity, nothing " +
+      "points at a commit a squash or rebase merge would orphan; the uncommitted-changes check does not apply",
+  )
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-review", "ratify without a recorded review — prints a loud notice on stderr")
   .option(
@@ -1002,8 +1010,10 @@ slice
     (
       file: string,
       sliceKey: string,
-      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string },
+      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string; ref?: boolean },
     ) => {
+      // commander: `--no-ref` sets `opts.ref === false`; unset leaves it undefined (ref recorded).
+      const noRef = opts.ref === false;
       const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
       if (!flags.ok) {
         console.error(`em slice ratify: ${flags.message}`);
@@ -1039,6 +1049,8 @@ slice
         ratifiedOn,
         opts.skipReview === true,
         flags.confirmation,
+        undefined,
+        noRef,
       );
       if (!result.ok) {
         console.error(`em slice ratify: ${result.message}`);
@@ -1062,7 +1074,8 @@ slice
       }
       console.log(
         result.changed
-          ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn}${confirmationSuffix(flags.confirmation)})`
+          ? `ratified: ${result.path} (ratifiedBy: ${opts.by}, ratifiedOn: ${ratifiedOn}${confirmationSuffix(flags.confirmation)})` +
+              (noRef ? " — ratifiedHash only, no ratifiedRef (--no-ref)" : "")
           : `already ratified (no-op): ${result.path}`,
       );
       warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);

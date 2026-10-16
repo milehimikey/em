@@ -251,10 +251,24 @@ export type RatifiedIdentityResult = { ok: true; identity: RatifiedIdentity } | 
  * still gives the ratified body an identity, and `--slice-ready` still checks it. Every git call
  * runs `-C baseDir` — the model's directory, never the process cwd — so a model nested in a
  * larger repository, or run from elsewhere, resolves against the right work tree.
+ *
+ * GH #255 — `noRef`: the repo's merge strategy rewrites commits (squash, rebase, merge queue),
+ * so `HEAD` of the ratification PR branch will not be reachable from the target branch once the
+ * branch is deleted; a ref recorded here would dangle, and `mark-implemented` would copy the
+ * dangling pointer into `shippedRef`. With `noRef` the identity is the hash alone — the same shape
+ * as outside git — and git is not consulted at all: the uncommitted-changes refusal exists only so
+ * the recorded ref's tree really holds the signed body, and with no ref there is nothing for it to
+ * protect (the hash is computed from the body itself).
  */
-export function resolveRatifiedIdentity(git: GitRunner | null, baseDir: string, docPath: string, raw: string): RatifiedIdentityResult {
+export function resolveRatifiedIdentity(
+  git: GitRunner | null,
+  baseDir: string,
+  docPath: string,
+  raw: string,
+  opts: { noRef?: boolean } = {},
+): RatifiedIdentityResult {
   const hash = sliceDocBodyHash(raw);
-  if (git === null) return { ok: true, identity: { ref: null, hash } };
+  if (git === null || opts.noRef === true) return { ok: true, identity: { ref: null, hash } };
   const inside = git(["-C", baseDir, "rev-parse", "--is-inside-work-tree"]);
   if (inside.status !== 0 || inside.stdout.trim() !== "true") return { ok: true, identity: { ref: null, hash } };
   const status = git(["-C", baseDir, "status", "--porcelain", "--", docPath]);
@@ -402,6 +416,10 @@ export function applyRatifyFrontmatter(
   // else appended to the existing line's edit, ahead of the MIL-238 confirmation line.
   const refMatch = identity ? fieldLineRegex("ratifiedRef").exec(inner) : null;
   const hashMatch = identity ? fieldLineRegex("ratifiedHash").exec(inner) : null;
+  // GH #255: a ref-less identity (`--no-ref`, or outside git) must not leave an earlier
+  // `ratifiedRef:` line standing — that stale pointer is exactly what the caller asked not to
+  // record. The whole line goes, EOL included.
+  const staleRef = identity && identity.ref === null ? fieldLineWithEolRegex("ratifiedRef").exec(inner) : null;
   const identityLines: string[] = [];
   if (identity && identity.ref !== null && !refMatch) identityLines.push(`ratifiedRef: ${identity.ref}`);
   if (identity && !hashMatch) identityLines.push(`ratifiedHash: ${identity.hash}`);
@@ -433,6 +451,7 @@ export function applyRatifyFrontmatter(
   if (identity && refMatch && identity.ref !== null) {
     edits.push({ index: refMatch.index, oldLen: refMatch[0].length, next: `${refMatch[1]}${identity.ref}` });
   }
+  if (staleRef) edits.push({ index: staleRef.index, oldLen: staleRef[0].length, next: "" });
   if (identity && hashMatch) edits.push({ index: hashMatch.index, oldLen: hashMatch[0].length, next: `${hashMatch[1]}${identity.hash}` });
   edits.sort((a, b) => b.index - a.index);
 
@@ -473,6 +492,8 @@ export function runRatify(
   skipReview = false,
   confirmation: MeaningConfirmation | null = null,
   git: GitRunner | null = realGit,
+  /** GH #255: record `ratifiedHash:` only — no `ratifiedRef:`, no git consulted (`--no-ref`). */
+  noRef = false,
 ): RunRatifyResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -547,7 +568,7 @@ export function runRatify(
   }
   let result: Extract<ApplyRatifyResult, { ok: true }> = probe;
   if (probe.changed) {
-    const identity = resolveRatifiedIdentity(git, baseDir, doc.path, raw);
+    const identity = resolveRatifiedIdentity(git, baseDir, doc.path, raw, { noRef });
     if (!identity.ok) return identity;
     const applied = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation, identity.identity);
     if (!applied.ok) return { ok: false, message: `${doc.path}: ${applied.message}` };

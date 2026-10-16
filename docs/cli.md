@@ -3117,6 +3117,23 @@ edited after sign-off and re-run with the same `--by`/`--on` is refused, not rep
 already ratified. (`em slice conform --at` stays required: that revision belongs to the target
 repo, while `ratifiedRef` is the model repo's commit before any implementation existed.)
 
+**Which field is authoritative when the merge rewrites commits (GH #255, 1.17.0).** `ratifiedRef`
+is `HEAD` of whatever branch the ratification ran on. Under a merge-commit strategy that commit
+stays in the target branch's history; under **squash or rebase merges** (merge queues,
+linear-history rules) it exists only on the PR branch, and once that branch is deleted it is
+unreachable — `git show <ref>` fails, and `em slice mark-implemented` would have copied the
+dangling pointer into `shippedRef`. So: **`ratifiedHash` identifies the signed content** and
+needs no git; **`ratifiedRef` is only an address, valid while the commit stays reachable.** A
+repo with that merge strategy ratifies with **`--no-ref`**: the doc gets `ratifiedHash:` (and
+`ratifiedBy:`/`ratifiedOn:`) and no `ratifiedRef:` — the same record a doc ratified outside a git
+work tree carries, which every reader already accepts — and `mark-implemented` later writes no
+`shippedRef:`. Under `--no-ref` git is not consulted at all, so the uncommitted-changes refusal
+does not apply: that check exists only to make the recorded ref's tree match the body, and with
+no ref there is nothing for it to protect (the hash is computed from the body itself). A
+`ratifiedRef:` line already on the doc is removed, not carried forward. The command prints
+`ratified: … — ratifiedHash only, no ratifiedRef (--no-ref)`. There is no repo-level default
+yet — the flag is per run.
+
 Never touches `version:` or the doc body: the write is a surgical in-place edit of just the
 `status:`/`ratifiedBy:`/`ratifiedOn:` lines (inserting whichever of `ratifiedBy:`/`ratifiedOn:`
 the doc doesn't have yet, right after `status:`), same as `em slice mark-implemented` — not a
@@ -3201,6 +3218,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 | `--by <name>` | **Required.** The ratifier's name |
 | `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr |
+| `--no-ref` | (GH #255) Record `ratifiedHash:` only — no `ratifiedRef:`, and git is not consulted (the uncommitted-changes check does not apply). For a repo whose squash/rebase merges would leave the ref unreachable. Removes a `ratifiedRef:` line already on the doc |
 | `--meaning-unchanged` | (MIL-238) API-first sign-off: records `meaningConfirmed: true`. Required, or `--contract-change`, on a public-touching slice |
 | `--contract-change <why>` | (MIL-238) API-first sign-off: records `contractChange: "<why>"` — a consumer must read this change differently |
 

@@ -406,3 +406,12 @@ engagement and implemented.
 | **An inline field block that omits commas is a parse error** (GH #245): `{ a: string  b: number }` fails with a suggestion in the comma form, instead of silently parsing the second field into the first field's type | `human:` add the commas (or put one field per line) in any model written without them; `em validate` names the line |
 | **`em slice defer` on a ratified or shipped doc queues the question** (GH #236): the question is written to `.event-modeling.md` instead of the signed body, then injected into the next draft by `em slice mark-implemented` / `em slice revise`. `em slice revise --withdraw` is now required on a ratified doc that has not shipped. `em status` reports `issues.queuedQuestions` (status schema `1.10`); `em export` carries `slice.doc.queuedForNext` (export schema `1.17`) | no action needed. Consumers reading `schemaVersion` should accept export `1.17` and status `1.10` (both additive) |
 | **Release note: nothing to run** — update the `@milehimikey/em` dependency (and the plugin pin to `em-1-16-0` / `v1.16.0` on plugin repos); `em upgrade` has no 1.16.0 step. | no action needed |
+
+## 1.17.0
+
+The record survives the merge: ratification and conformance facts that stay true under squash and
+rebase merges and are checkable in CI.
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **`em slice ratify --no-ref`** (GH #255, [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)): hash-only ratification inside a git work tree — `ratifiedHash:` written, no `ratifiedRef:`, git not consulted (so the uncommitted-changes refusal does not apply), and a `ratifiedRef:` line already on the doc is removed. For a repo whose squash/rebase merges would leave the PR-branch `HEAD` unreachable once the branch is deleted — the ref would dangle, and `mark-implemented` would copy it into `shippedRef`. The docs now state the rule: `ratifiedHash` identifies the signed content; `ratifiedRef`/`shippedRef` are addresses, valid only while reachable. `mark-implemented` on such a doc writes no `shippedRef:` (it already did; now pinned). The default without the flag is unchanged | no action needed. Docs already carrying a `ratifiedRef` that squash merges have orphaned keep working — no reader resolves the ref today (GH #258 will, and will skip docs without one). To stop recording new dangling refs, pass `--no-ref` at ratify; there is no repo-level default yet |

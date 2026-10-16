@@ -873,6 +873,19 @@ describe("applyRatifyFrontmatter — ratifiedRef/ratifiedHash (MIL-284)", () => 
     expect(result.ok && result.content).toContain(`ratifiedOn: 2026-08-28\r\nratifiedRef: ${ID.ref}\r\nratifiedHash: ${ID.hash}\r\n`);
     expect(result.ok && result.content).not.toContain("\n\n"); // no bare-LF line slipped in
   });
+
+  it("GH #255: a ref-less identity removes a stale ratifiedRef line outright (LF and CRLF), replacing the hash in place", () => {
+    const doc = REVIEWED_DOC.replace("status: reviewed\n", "status: reviewed\nratifiedRef: 0000000\nratifiedHash: sha256:00\n");
+    const result = applyRatifyFrontmatter(doc, "draft-slice", "Alex Rivera", "2026-08-28", false, null, { ref: null, hash: ID.hash });
+    expect(result.ok && result.content).toBe(
+      REVIEWED_DOC.replace("status: reviewed\n", `status: ready-to-implement\nratifiedBy: Alex Rivera\nratifiedOn: 2026-08-28\nratifiedHash: ${ID.hash}\n`),
+    );
+    const crlf = doc.replace(/\n/g, "\r\n");
+    const r2 = applyRatifyFrontmatter(crlf, "draft-slice", "Alex Rivera", "2026-08-28", false, null, { ref: null, hash: ID.hash });
+    expect(r2.ok && r2.content).not.toContain("ratifiedRef:");
+    expect(r2.ok && r2.content).toContain(`ratifiedOn: 2026-08-28\r\nratifiedHash: ${ID.hash}\r\n`);
+    expect(r2.ok && r2.content).not.toContain("\n\n");
+  });
 });
 
 describe("resolveRatifiedIdentity (MIL-284, fake git)", () => {
@@ -925,6 +938,18 @@ describe("resolveRatifiedIdentity (MIL-284, fake git)", () => {
       "status --porcelain -- slices/x.md": { status: 0, stdout: "" },
     });
     expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW)).toMatchObject({ ok: false });
+  });
+  it("GH #255: noRef hashes the body and never calls git — a dirty tree or missing HEAD is irrelevant", () => {
+    let calls = 0;
+    const git: GitRunner = (args) => {
+      calls++;
+      return fakeGit({
+        "rev-parse --is-inside-work-tree": { status: 0, stdout: "true\n" },
+        "status --porcelain -- slices/x.md": { status: 0, stdout: " M slices/x.md\n" },
+      })(args);
+    };
+    expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW, { noRef: true })).toEqual({ ok: true, identity: { ref: null, hash: sliceDocBodyHash(RAW) } });
+    expect(calls).toBe(0);
   });
 });
 
