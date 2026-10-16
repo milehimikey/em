@@ -206,6 +206,11 @@ export interface SliceDoc {
    *  contract differently (`--contract-change "<why>"`), surrounding quotes stripped; null when
    *  absent. Written only by `em slice ratify`/`reratify`. */
   contractChange: string | null;
+  /** GH #260: `reviewSkipped:` — the status `em slice ratify --skip-review` ratified from
+   *  (`draft`, `reviewed`-less states…) when the bypass is what let the ratification through;
+   *  null when the ratification passed the review gate, or the doc predates 1.17. Written only
+   *  by `em slice ratify`, cleared by `em slice revise` with the rest of the sign-off. */
+  reviewSkipped: string | null;
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -515,6 +520,7 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     conformedOn: fields.get("conformedon") ?? null,
     meaningConfirmed: fields.get("meaningconfirmed")?.toLowerCase() === "true",
     contractChange: fields.get("contractchange") ?? null,
+    reviewSkipped: fields.get("reviewskipped") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: marked.parse(body, { async: false }) as string,

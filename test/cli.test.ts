@@ -198,14 +198,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.17"); // MIL-235: 1.14.0 release bump (consumes, owner)
+    expect(doc.schemaVersion).toBe("1.18"); // MIL-235: 1.14.0 release bump (consumes, owner)
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.17");
+    expect(doc.schemaVersion).toBe("1.18");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -221,7 +221,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.17");
+    expect(doc.schemaVersion).toBe("1.18");
     expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
@@ -253,6 +253,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       conformedOn: null,
       meaningConfirmed: false,
       contractChange: null,
+      reviewSkipped: null,
       scenarios: null,
       queuedForNext: 0,
     });
@@ -737,7 +738,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     const r = em(["validate", "ready.em", "--slice-ready", "ready-slice", "--json"], readyDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.validateSliceReadySchemaVersion).toBe("1.2");
+    expect(doc.validateSliceReadySchemaVersion).toBe("1.3");
     expect(doc.sliceKey).toBe("ready-slice");
     expect(doc.gates).toEqual({
       docBound: true,

@@ -168,7 +168,10 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // 1.17 (GH #236): `slice.doc.queuedForNext: number` — the questions `em slice defer` queued in
 // `.event-modeling.md` for `<key>@v<version + 1>` because the doc is ratified/shipped and its body
 // must not change (always present; 0 when none, no state file, or no doc). Additive-only.
-export const SCHEMA_VERSION = "1.17";
+// 1.18 (GH #260): `slice.doc.reviewSkipped: string | null` — the status `em slice ratify
+// --skip-review` ratified from, when that bypass is what let the ratification through; null for a
+// ratification that passed the review gate, a doc predating 1.17, or no doc. Additive-only.
+export const SCHEMA_VERSION = "1.18";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

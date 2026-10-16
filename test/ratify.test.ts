@@ -125,7 +125,7 @@ describe("applyRatifyFrontmatter (pure text surgery)", () => {
     expect(result.skippedReviewFrom).toBe("implemented");
     expect(result.content).toContain("status: ready-to-implement");
     expect(result.content).toContain("ratifiedBy: Jordan Lee");
-    expect(result.content).toContain("ratifiedOn: 2026-08-28");
+    expect(result.content).toContain("ratifiedOn: 2026-08-28\nreviewSkipped: implemented\n"); // GH #260: the bypass is on the doc
     expect(result.content).toContain("implementedIn: https://github.com/org/repo/pull/1"); // untouched
     expect(result.content).toContain("version: 2"); // untouched
   });
@@ -336,6 +336,28 @@ describe("applyRatifyFrontmatter — the review gate (MIL-201, D1)", () => {
     expect(result.skippedReviewFrom).toBe("draft");
     expect(result.content).toContain("status: ready-to-implement");
     expect(result.content).toContain("ratifiedBy: Alex Rivera");
+    // GH #260: persisted right after ratifiedOn, ahead of the identity and confirmation lines.
+    expect(result.content).toContain("ratifiedOn: 2026-08-28\nreviewSkipped: draft\n");
+  });
+
+  it("GH #260: a ratification that passed the gate writes no reviewSkipped; the marker sits before identity + confirmation; a same-signer run replaces it in place (CRLF kept)", () => {
+    const ID = { ref: "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a", hash: "sha256:" + "ab".repeat(32) };
+    const reviewed = applyRatifyFrontmatter(REVIEWED_DOC, "draft-slice", "Alex Rivera", "2026-08-28", true, null, ID);
+    expect(reviewed.ok && reviewed.content).not.toContain("reviewSkipped"); // --skip-review passed but did nothing
+    const skipped = applyRatifyFrontmatter(DRAFT_DOC, "draft-slice", "Alex Rivera", "2026-08-28", true, { kind: "meaning-unchanged" }, ID);
+    expect(skipped.ok && skipped.content).toContain(
+      `ratifiedOn: 2026-08-28\nreviewSkipped: draft\nratifiedRef: ${ID.ref}\nratifiedHash: ${ID.hash}\nmeaningConfirmed: true\n`,
+    );
+    expect(skipped.ok && (skipped.content.match(/reviewSkipped:/g) ?? []).length).toBe(1);
+    // A hand-ratified doc missing ratifiedOn, already carrying a marker: the same signer completing
+    // their record is not a bypass (the gate passes), so the earlier marker stands — untouched, not
+    // duplicated, CRLF kept. It records that the ORIGINAL ratification skipped review.
+    const partial = DRAFT_DOC.replace("status: draft\n", "status: ready-to-implement\nratifiedBy: Alex Rivera\nreviewSkipped: draft\n").replace(/\n/g, "\r\n");
+    const completed = applyRatifyFrontmatter(partial, "draft-slice", "Alex Rivera", "2026-08-28", true);
+    expect(completed.ok && completed.skippedReviewFrom).toBeNull();
+    expect(completed.ok && (completed.content.match(/reviewSkipped:/g) ?? []).length).toBe(1);
+    expect(completed.ok && completed.content).toContain("reviewSkipped: draft\r\n");
+    expect(completed.ok && completed.content).not.toContain("\n\n");
   });
 
   it("never clears reviewedBy/reviewedOn — the review record is provenance ratify doesn't consume", () => {

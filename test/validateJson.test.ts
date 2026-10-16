@@ -183,6 +183,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
         contractCurrent: true,
       },
       continuationOf: null,
+      reviewSkipped: null,
     });
   });
 
@@ -200,6 +201,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
         contractCurrent: true,
       },
       continuationOf: null,
+      reviewSkipped: null,
     });
   });
 
@@ -217,6 +219,7 @@ describe("computeSliceReadyGates / buildSliceReadyJson", () => {
         contractCurrent: true,
       },
       continuationOf: null,
+      reviewSkipped: null,
     });
   });
 

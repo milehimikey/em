@@ -62,6 +62,7 @@ const IMPLEMENTED_STATUS = "implemented";
 export const SIGN_OFF_KEYS: readonly string[] = [
   "ratifiedBy",
   "ratifiedOn",
+  "reviewSkipped",
   "ratifiedRef",
   "ratifiedHash",
   "reviewedBy",

@@ -161,6 +161,11 @@ export interface SliceDocExport {
    *  differently (`--contract-change "<why>"`); null when absent. At most one of
    *  `meaningConfirmed`/`contractChange` is set by em's own writers. */
   contractChange: string | null;
+  /** GH #260 (schema 1.18): frontmatter `reviewSkipped:` — the status `em slice ratify
+   *  --skip-review` ratified from, when that bypass is what let the ratification through. Null
+   *  when the ratification passed the review gate, when the doc predates 1.17, and whenever no
+   *  doc was found. A host gate reads it to fail or warn on an unreviewed ratification. */
+  reviewSkipped: string | null;
   /** MIL-266: the doc's authored `### Scenario:` blocks (catalog/scenarios.ts), each as
    *  `{ title, given, when, then }` string arrays, in document order. Null when the doc has no
    *  well-formed block (every 1.13-style doc) or isn't found / usable. */
@@ -208,6 +213,7 @@ const EMPTY_CONTENT = {
   conformedOn: null as string | null,
   meaningConfirmed: false,
   contractChange: null as string | null,
+  reviewSkipped: null as string | null,
   scenarios: null as Scenario[] | null,
   queuedForNext: 0,
 };
@@ -347,6 +353,7 @@ function foundDoc(path: string, parsed: SliceDoc, baseDir: string, docKey: strin
     conformedOn: parsed.conformedOn,
     meaningConfirmed: parsed.meaningConfirmed,
     contractChange: parsed.contractChange,
+    reviewSkipped: parsed.reviewSkipped,
     scenarios: scenariosOf(parsed.body),
     // GH #253: the doc carries its own deferrals now; the state-file count is the 1.16 queue's
     // leftovers until `em upgrade` (or the next `revise`/`mark-implemented`) drains them.

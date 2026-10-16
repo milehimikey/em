@@ -226,6 +226,10 @@ export interface SliceReadyGates {
 export interface SliceReadyResult {
   gates: SliceReadyGates;
   continuationOf: string | null;
+  /** GH #260: the doc's `reviewSkipped:` — the status `em slice ratify --skip-review` ratified
+   *  from when that bypass is what let it through; null otherwise (and when the doc is unusable).
+   *  Informational, never a gate: a host decides whether an unreviewed ratification passes. */
+  reviewSkipped: string | null;
 }
 
 export function computeSliceReadyGates(
@@ -244,7 +248,7 @@ export function computeSliceReadyGates(
   const docBound = doc.reason !== "no-doc-bound";
   const frontmatterUsable = doc.reason === null;
   if (!frontmatterUsable) {
-    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false, ratified: false, contractCurrent }, continuationOf };
+    return { gates: { docBound, frontmatterUsable, statusReady: false, noUncheckedOpenQuestions: false, ratified: false, contractCurrent }, continuationOf, reviewSkipped: null };
   }
 
   const statusReady = doc.status === "ready-to-implement";
@@ -256,7 +260,7 @@ export function computeSliceReadyGates(
 
   const ratified = !!doc.ratifiedBy;
 
-  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions, ratified, contractCurrent }, continuationOf };
+  return { gates: { docBound, frontmatterUsable, statusReady, noUncheckedOpenQuestions, ratified, contractCurrent }, continuationOf, reviewSkipped: doc.reviewSkipped };
 }
 
 /** R34 (MIL-268): the full `--slice-ready` verdict for one slice — the ONE computation `em

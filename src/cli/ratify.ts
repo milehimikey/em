@@ -421,6 +421,14 @@ export function applyRatifyFrontmatter(
   // record. The whole line goes, EOL included.
   const staleRef = identity && identity.ref === null ? fieldLineWithEolRegex("ratifiedRef").exec(inner) : null;
   const identityLines: string[] = [];
+  // GH #260: when `--skip-review` is what let this ratification through, the bypass is persisted
+  // on the doc as `reviewSkipped: <status it skipped from>`, right after `ratifiedOn:` — so a
+  // later reader of the doc (or of its git history, or a CI diff) can tell a reviewed
+  // ratification from one that bypassed review. A ratification that passed the gate writes
+  // nothing. An existing line (a same-signer run completing its record) is replaced in place.
+  // `em slice revise` clears it with the other sign-off keys.
+  const skippedMatch = fieldLineRegex("reviewSkipped").exec(inner);
+  if (skippedReviewFrom !== null && !skippedMatch) identityLines.push(`reviewSkipped: ${skippedReviewFrom}`);
   if (identity && identity.ref !== null && !refMatch) identityLines.push(`ratifiedRef: ${identity.ref}`);
   if (identity && !hashMatch) identityLines.push(`ratifiedHash: ${identity.hash}`);
   // MIL-238: the confirmation line goes directly after `ratifiedOn:` (and the identity lines) —
@@ -452,6 +460,9 @@ export function applyRatifyFrontmatter(
     edits.push({ index: refMatch.index, oldLen: refMatch[0].length, next: `${refMatch[1]}${identity.ref}` });
   }
   if (staleRef) edits.push({ index: staleRef.index, oldLen: staleRef[0].length, next: "" });
+  if (skippedReviewFrom !== null && skippedMatch) {
+    edits.push({ index: skippedMatch.index, oldLen: skippedMatch[0].length, next: `${skippedMatch[1]}${skippedReviewFrom}` });
+  }
   if (identity && hashMatch) edits.push({ index: hashMatch.index, oldLen: hashMatch[0].length, next: `${hashMatch[1]}${identity.hash}` });
   edits.sort((a, b) => b.index - a.index);
 

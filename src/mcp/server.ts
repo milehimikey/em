@@ -287,7 +287,7 @@ export function createServer(): McpServer {
       const contractInput = { file, source, diagnostics };
       const { scoped, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics);
       return textResult(
-        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null),
+        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null),
       );
     },
   );

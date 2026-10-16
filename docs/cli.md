@@ -399,17 +399,18 @@ from) — dedupe that field yourself rather than reaching for a separate flag; t
 Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff --json`:
 `severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`.
 
-**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.2"`) — see the
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.3"`) — see the
 `--slice-ready` section below for what each gate means:
 
 ```json
 {
-  "validateSliceReadySchemaVersion": "1.2",
+  "validateSliceReadySchemaVersion": "1.3",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "sliceKey": "checkout",
   "gates": { "docBound": true, "frontmatterUsable": true, "statusReady": false, "noUncheckedOpenQuestions": false, "ratified": false, "contractCurrent": true },
   "continuationOf": null,
+  "reviewSkipped": null,
   "ready": false,
   "diagnostics": [ … ]
 }
@@ -428,6 +429,12 @@ scoped list so a consumer sees exactly why, not just the 6 named gates.
 `gates.ratified` (added in schema `1.2`, MIL-259) is `true` when the doc carries a non-empty
 `ratifiedBy:`. It is informational like the other gates: the blocking verdict is the
 `slice-ready-not-ratified` error in `diagnostics`.
+
+`reviewSkipped` (top-level, added in schema `1.3`, GH #260) is the status
+`em slice ratify --skip-review` ratified the doc from when that bypass is what let the
+ratification through (the doc's `reviewSkipped:` key), else `null` — a reviewed ratification, a
+doc ratified before 1.17.0, an unusable doc, or an unknown slice. Not a gate and never changes
+`ready`: a host CI job decides whether an unreviewed ratification passes, and now can.
 
 `gates.contractCurrent` (MIL-238, under the same schema `1.2` — added in the same release) is
 `true` when the slice touches no `public` element, or when the model's
@@ -630,6 +637,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       number — the doc's `## Open Questions` items `em slice defer` deferred to a version past
       its `version`, plus any question 1.16's defer still has queued in `.event-modeling.md` for
       `<key>@v<version + 1>`; always present, `0` when none or when no doc was found.
+      `reviewSkipped` (added in schema `1.18`, GH #260) is the doc's `reviewSkipped:` — the
+      status `em slice ratify --skip-review` ratified from when that bypass is what let the
+      ratification through — or `null` (a reviewed ratification, a doc ratified before 1.17.0,
+      or no doc).
       `owner`/`tracking` (added in schema `1.9`, MIL-171) are the doc's `owner:`/`tracking:`
       frontmatter — hand-filled, no `em` command writes either — both `null` when absent.
       `tracking` in particular is the exact field `em-tracker-bridge` reads to find the ticket
@@ -3177,16 +3188,29 @@ Re-ratifying a doc that is still `status: implemented` is not a supported hop �
 `em slice revise` first (see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification)).
 
-**`--skip-review`** is the explicit, auditable escape hatch: it lets any status through and prints
-one loud line to **stderr** naming what it skipped, while writing nothing about the skip into the
-file (the doc records ratification, never "ratification without review"):
+**`--skip-review`** is the explicit, auditable escape hatch: it lets any status through, prints
+one loud line to **stderr** naming what it skipped, and — since 1.17.0 (GH #260) — **persists the
+bypass on the doc** as `reviewSkipped: <status it skipped from>`, written right after
+`ratifiedOn:`:
 
 ```
 notice: --skip-review — ratifying "<key>" without a recorded review (status was <s>)
 ```
 
-The notice prints only when the flag actually did something — passing `--skip-review` on a doc
-that *was* reviewed is silent.
+```yaml
+ratifiedBy: Alex Rivera
+ratifiedOn: 2026-10-15
+reviewSkipped: draft
+```
+
+Both happen only when the flag actually did something — passing `--skip-review` on a doc that
+*was* reviewed is silent and writes no marker. So a later reader of the doc (or of its git
+history, or a CI job diffing the PR) can tell a reviewed ratification from one that bypassed
+review: `em export` carries it as `slice.doc.reviewSkipped` (schema `1.18`, `null` when absent),
+`em validate --slice-ready <key> --json` as a top-level `reviewSkipped` (schema `1.3`), and a
+host gate can fail or warn on it. The marker is cleared by [`em slice revise`](#em-slice-revise-file-slice-key)
+with the rest of the sign-off (the next version takes both gates afresh). Docs ratified with
+`--skip-review` before 1.17.0 carry no marker — em cannot reconstruct one.
 
 `em slice ratify` never clears `reviewedBy:`/`reviewedOn:`: the review record is provenance for
 the version being ratified, not something ratification consumes.
@@ -3223,7 +3247,7 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 |---|---|
 | `--by <name>` | **Required.** The ratifier's name |
 | `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today, local date) |
-| `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr |
+| `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc (GH #260) |
 | `--no-ref` | (GH #255) Record `ratifiedHash:` only — no `ratifiedRef:`, and git is not consulted (the uncommitted-changes check does not apply). For a repo whose squash/rebase merges would leave the ref unreachable. Removes a `ratifiedRef:` line already on the doc |
 | `--meaning-unchanged` | (MIL-238) API-first sign-off: records `meaningConfirmed: true`. Required, or `--contract-change`, on a public-touching slice |
 | `--contract-change <why>` | (MIL-238) API-first sign-off: records `contractChange: "<why>"` — a consumer must read this change differently |

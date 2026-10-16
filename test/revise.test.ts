@@ -74,6 +74,14 @@ describe("applyReviseFrontmatter (pure, MIL-283)", () => {
     expect(r.ok && shippedRecordOf(parseSliceDoc(r.content))).toBeNull();
   });
 
+  it("GH #260: reviewSkipped is a sign-off key — cleared on every bumping path", () => {
+    const skipped = RATIFIED_UNSHIPPED.replace("ratifiedOn: 2026-08-01\n", "ratifiedOn: 2026-08-01\nreviewSkipped: draft\n");
+    const r = applyReviseFrontmatter(skipped, { withdraw: true });
+    expect(r.ok && r.content).toBe("---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 2\n---\n" + BODY);
+    const shipped = applyReviseFrontmatter(SHIPPED_115.replace("ratifiedOn: 2026-08-02\n", "ratifiedOn: 2026-08-02\nreviewSkipped: draft\n"));
+    expect(shipped.ok && shipped.content).not.toContain("reviewSkipped");
+  });
+
   it("GH #236: unshipped ratified REFUSES without withdraw, pointing at defer; --withdraw proceeds", () => {
     const refused = applyReviseFrontmatter(RATIFIED_UNSHIPPED);
     expect(refused).toMatchObject({ ok: false, message: expect.stringContaining("would withdraw the ratification of the only implementable version") });

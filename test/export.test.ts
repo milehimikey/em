@@ -32,7 +32,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.17"); // MIL-235: 1.14.0 release bump (consumes, owner)
+    expect(doc.schemaVersion).toBe("1.18"); // MIL-235: 1.14.0 release bump (consumes, owner)
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -93,6 +93,7 @@ slice "Submit Order" {
       conformedOn: null,
       meaningConfirmed: false,
       contractChange: null,
+      reviewSkipped: null,
       scenarios: null,
       queuedForNext: 0,
     });
@@ -1089,7 +1090,7 @@ type Order { billing: Address }
   });
 
   it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.17");
+    expect(docOf(SRC).schemaVersion).toBe("1.18");
   });
 });
 
@@ -1306,6 +1307,7 @@ describe("slice-doc join (MIL-91)", () => {
       // MIL-238: the API-first sign-off, quotes stripped; meaningConfirmed false when absent.
       meaningConfirmed: false,
       contractChange: "total now includes tax",
+      reviewSkipped: null,
       scenarios: null,
       queuedForNext: 0,
     });
@@ -1411,6 +1413,7 @@ describe("slice-doc join: cross-binding (MIL-121)", () => {
       conformedOn: null,
       meaningConfirmed: false,
       contractChange: null,
+      reviewSkipped: null,
       scenarios: null,
       queuedForNext: 0,
     });

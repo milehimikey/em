@@ -1005,7 +1005,11 @@ slice
       "points at a commit a squash or rebase merge would orphan; the uncommitted-changes check does not apply",
   )
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
-  .option("--skip-review", "ratify without a recorded review — prints a loud notice on stderr")
+  .option(
+    "--skip-review",
+    "ratify without a recorded review — prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc " +
+      "(GH #260) so the bypass is visible to later readers, `em export` and `--slice-ready --json`; cleared by `em slice revise`",
+  )
   .option(
     "--meaning-unchanged",
     "API-first sign-off (MIL-238): this version does not change what the public contract means — " +
@@ -1999,7 +2003,7 @@ program
           // diagnostics and `ready` verdict driving the exit code below — replaces both the
           // scraped warning prose and the two hand-parsed English sentences.
           process.stdout.write(
-            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null) + "\n",
+            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null) + "\n",
           );
         } else {
           console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);

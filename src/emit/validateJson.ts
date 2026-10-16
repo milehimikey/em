@@ -63,7 +63,11 @@ export function buildValidateJson(file: string, diagnostics: Diagnostic[]): stri
 //  - MIL-266: `slice-ready-structured-section-malformed` (error) can join the scoped diagnostics
 //    — a doc whose generated regions or `### Scenario:` blocks don't parse. Diagnostic-only:
 //    `gates` is unchanged.
-export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.2";
+// 1.3 (GH #260, 1.17.0): top-level `reviewSkipped: string | null` — the status `em slice ratify
+// --skip-review` ratified from when that bypass is what let the ratification through; null for a
+// reviewed ratification, a doc predating 1.17, an unusable doc, or an unknown slice. Informational
+// (not a gate): a host decides whether an unreviewed ratification passes. Additive-only.
+export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.3";
 
 /** Build the `em validate <file> --slice-ready <key> --json` document — the machine verdict
  *  replacing the two hand-parsed English sentences ("is ready-to-implement" /
@@ -83,6 +87,7 @@ export function buildSliceReadyJson(
   diagnostics: Diagnostic[],
   ready: boolean,
   continuationOf: string | null,
+  reviewSkipped: string | null = null,
 ): string {
   const doc = {
     validateSliceReadySchemaVersion: VALIDATE_SLICE_READY_SCHEMA_VERSION,
@@ -91,6 +96,7 @@ export function buildSliceReadyJson(
     sliceKey,
     gates,
     continuationOf,
+    reviewSkipped,
     ready,
     diagnostics: diagnostics.map(serializeDiagnosticWithUsage),
   };
