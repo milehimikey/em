@@ -85,6 +85,32 @@ describe("applyReviseFrontmatter (pure, MIL-283)", () => {
     expect(applyReviseFrontmatter(LEGACY_UNSIGNED)).toMatchObject({ ok: true, kind: "unsigned" });
   });
 
+  it("GH #262: --keep-version on a ratified, never-shipped doc: draft at the SAME version, sign-off cleared, deferrals left waiting", () => {
+    const deferred = "\n## Open Questions\n\n- [x] later — v1: a; deferred to v2 (2026-01-01)\n";
+    const r = applyReviseFrontmatter(RATIFIED_UNSHIPPED + deferred, { withdraw: true, keepVersion: true, queuedFor: () => [{ question: "q", sliceKey: "k", targetVersion: 2, until: 2, on: "2026-10-12", decision: "d" }] });
+    expect(r).toMatchObject({ ok: true, kind: "unshipped-kept", newVersion: 1, reopened: 0, injected: 0 });
+    expect(r.ok && r.content).toBe("---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n" + BODY + deferred);
+    expect(r.ok && shippedRecordOf(parseSliceDoc(r.content))).toBeNull();
+    // --withdraw is still the confirmation the unshipped case needs; --keep-version only changes the numbering.
+    expect(applyReviseFrontmatter(RATIFIED_UNSHIPPED, { keepVersion: true })).toMatchObject({ ok: false, message: expect.stringContaining("--withdraw") });
+  });
+
+  it("GH #262: --keep-version refuses a shipped doc, and a ratified version that IS the shipped one; a later ratified version over a shipped one keeps its number", () => {
+    const shipped = applyReviseFrontmatter(SHIPPED_115, { keepVersion: true });
+    expect(shipped).toMatchObject({ ok: false, message: expect.stringContaining("--keep-version applies only to a ratified doc that never shipped") });
+    expect(!shipped.ok && shipped.message).toContain("Use plain `em slice revise`");
+    // v2 ratified while v1 shipped: keeps v2 (no --withdraw needed — nothing is the only implementable version).
+    const v2 = SHIPPED_115.replace("status: implemented\n", "status: ready-to-implement\n").replace("version: 1\n", "version: 2\n");
+    const kept = applyReviseFrontmatter(v2, { keepVersion: true });
+    expect(kept).toMatchObject({ ok: true, kind: "unshipped-kept", newVersion: 2 });
+    expect(kept.ok && kept.content).toContain("status: draft\nimplementedIn: https://github.com/org/repo/pull/1\nshippedVersion: 1\nshippedRef: " + REF + "\nshippedOn: 2026-10-12\nversion: 2\n---\n");
+    // A hand-edited state: ratified at the very version that shipped — refused rather than reopened in place.
+    const same = SHIPPED_115.replace("status: implemented\n", "status: ready-to-implement\n");
+    expect(applyReviseFrontmatter(same, { keepVersion: true })).toMatchObject({ ok: false, message: expect.stringContaining("is the version that shipped") });
+    // Without the flag these two still bump, as before.
+    expect(applyReviseFrontmatter(v2)).toMatchObject({ ok: true, kind: "unshipped", newVersion: 3 });
+  });
+
   it("GH #236: queued questions for the new version are injected into Open Questions (unchecked; checked when --until is further out)", () => {
     const doc = SHIPPED_115 + "\n## Open Questions\n\n- [x] old — v1: a; deferred to v2 (2026-01-01)\n";
     const q = (question: string, until: number) => ({ question, sliceKey: "k", targetVersion: 2, until, on: "2026-10-12", by: "Sam", decision: "ship without" });
@@ -215,5 +241,46 @@ describe("em slice revise / reratify (CLI)", () => {
     expect(r.stderr).toContain("--meaning-unchanged/--contract-change are not taken");
     expect(r.stdout).toContain("revised: slices/ship.md (status: draft, version: 2");
     expect(readFileSync(join(dir, "slices", "ship.md"), "utf8")).not.toContain("meaningConfirmed");
+  });
+});
+
+// GH #262's acceptance line: reopening with --keep-version, then review → ratify → --slice-ready,
+// with no manual frontmatter edit anywhere. Outside a git work tree so ratify records the hash only.
+describe("em slice revise --withdraw --keep-version → review → ratify → --slice-ready (GH #262, CLI)", () => {
+  let dir: string;
+  const MODEL = 'slice "Pay" {\n  ui Screen @Customer\n  command Pay Now note "slices/pay.md"\n  event Paid\n}\nslice "Read Model" {\n  view Paid List from "Paid"\n  ui List Screen @Customer\n}\n';
+  const doc = () => readFileSync(join(dir, "slices", "pay.md"), "utf8");
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-revise-keep-"));
+    mkdirSync(join(dir, "slices"));
+    // No `ratifiedHash:` (as ratified before 1.15): the pure fixture's `sha256:00` placeholder would fail readiness on its own.
+    writeFileSync(join(dir, "slices", "pay.md"), RATIFIED_UNSHIPPED.replace("Shipped Slice", "Pay").replace("ratifiedHash: sha256:00\n", ""));
+    writeFileSync(join(dir, "model.em"), MODEL);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("reopens at version 1, and the doc passes review, ratify and readiness again with no hand edit", () => {
+    expect(em(["validate", "model.em", "--slice-ready", "pay"], dir).status).toBe(0);
+    const refused = em(["slice", "revise", "model.em", "pay", "--keep-version"], dir);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("--withdraw");
+    const r = em(["slice", "revise", "model.em", "pay", "--withdraw", "--keep-version"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("revised: slices/pay.md (status: draft, version: 1 — ratification of v1 withdrawn (never shipped); reopened as draft at the same version (--keep-version))\n");
+    expect(doc()).toContain("status: draft\nversion: 1\n---\n");
+    expect(doc()).not.toContain("ratifiedBy");
+    expect(em(["slice", "review", "model.em", "pay", "--by", "Sam", "--on", "2026-10-15"], dir).status).toBe(0);
+    expect(em(["slice", "ratify", "model.em", "pay", "--by", "Alex", "--on", "2026-10-15"], dir).status).toBe(0);
+    expect(doc()).toContain("status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-15\nratifiedHash: sha256:");
+    expect(doc()).toContain("version: 1\n");
+    expect(em(["validate", "model.em", "--slice-ready", "pay"], dir).status).toBe(0);
+  });
+
+  it("refuses on a shipped doc, pointing at plain revise", () => {
+    em(["slice", "mark-implemented", "model.em", "pay", "https://github.com/org/repo/pull/7"], dir);
+    const r = em(["slice", "revise", "model.em", "pay", "--keep-version"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--keep-version applies only to a ratified doc that never shipped");
+    expect(doc()).toContain("status: implemented\n");
   });
 });

@@ -3395,6 +3395,7 @@ Three starting states:
 |---|---|---|
 | `status: implemented` — the **shipped** case | `draft`, `version + 1`, sign-off cleared. On a doc shipped before 1.15 (no `shippedVersion:`), the shipped record is written first (`shippedVersion: <current>`, and `shippedRef:` from `ratifiedRef:` when present) so leaving `implemented` loses nothing: every reader still sees v<N> shipped via [`shippedRecordOf`](slice-doc-schema.md#status-under-re-ratification) | `v<N> stays shipped; v<N+1> opened as draft` |
 | `status: ready-to-implement` **with** `ratifiedBy:` — ratified, never shipped (a gap answered mid-build) | **refuses without `--withdraw`** (GH #236: it would withdraw the only implementable version). With `--withdraw`: `draft`, `version + 1`, sign-off cleared; the ratification of v<N> is withdrawn, nothing shipped | `ratification of v<N> withdrawn (never shipped); v<N+1> opened as draft` |
+| `status: ready-to-implement` **with** `ratifiedBy:`, **`--withdraw --keep-version`** (GH #262) | `draft` at the **same** version, sign-off cleared — the correction-before-first-release path (below) | `ratification of v<N> withdrawn (never shipped); reopened as draft at the same version (--keep-version)` |
 | `status: ready-to-implement` **without** `ratifiedBy:` — the unsigned leftover a pre-1.15 `reratify` produced | `draft` at the **same** version (nothing was signed at this version, so nothing is left behind) — the exit path for a state no command produces any more | `v<N> was never signed; reopened as draft at the same version` |
 | `draft` / `reviewed` | **refuses**: the next version is already open — edit it | — |
 
@@ -3410,6 +3411,24 @@ is **injected** into the new draft's `## Open Questions` and cleared from the qu
 API-first flag**: the confirmation belongs to the ratification of the new version, not to opening
 its draft. The pre-1.15 carve-out — "a reratified doc needs no fresh review session" — is gone with
 the state that needed it: a v2 is a new spec and gets both gates.
+
+**`--keep-version` (GH #262, 1.17.0): reopen without a bump.** A project that holds every slice at
+its initial version until a first public release treats a content change before that release as a
+*correction*, not a *delta* — and a `version` above 1 changes what implementation does with the doc
+(a first implementation builds the whole slice at v1; a higher version with a `## Delta` is a delta),
+so a bumped doc with no Delta sits between the two modes. `--keep-version` on a ratified,
+never-shipped doc does the same status flip and sign-off clearing as the unshipped path and leaves
+`version:` where it is; the doc then takes `em slice review --by`, `em slice ratify --by` and
+`--slice-ready` again with no hand edit of the frontmatter. `--withdraw` is still required with it
+(that flag confirms *withdrawing the ratification*; `--keep-version` only changes the numbering).
+Nothing is reopened or injected into Open Questions on this path — a question deferred to v<N+1>
+still waits for v<N+1>. **Refused on a shipped doc** (`status: implemented`): the version in
+production must keep its number, the next one is a new number — use plain `revise`. Also refused
+when a ratified doc's `version` is the very version that shipped (`shippedVersion`), a state no
+command produces. A later version ratified over a shipped one (`version: 2`, `shippedVersion: 1`)
+may keep its number, no `--withdraw` needed there. There is no model-level "pre-release: never
+bump" setting yet (which would also have to reach `mark-implemented`'s auto-open) — the flag is
+per run.
 
 **Why `draft`, not an unsigned `ready-to-implement`.** Until 1.14 the bump left the doc at
 `status: ready-to-implement` with the sign-off cleared — a status that lied, which MIL-258/259 then

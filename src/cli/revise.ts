@@ -69,8 +69,9 @@ export const SIGN_OFF_KEYS: readonly string[] = [
   ...MEANING_CONFIRMATION_KEYS,
 ];
 
-/** See the module header. `unsigned` is the only kind that does not bump `version:`. */
-export type ReviseKind = "shipped" | "unshipped" | "unsigned";
+/** See the module header. `unsigned` and `unshipped-kept` are the kinds that do not bump
+ *  `version:` — the latter is `--keep-version` on a ratified, never-shipped doc (GH #262). */
+export type ReviseKind = "shipped" | "unshipped" | "unshipped-kept" | "unsigned";
 
 export type ApplyReviseResult =
   | { ok: true; content: string; newVersion: number; kind: ReviseKind; reopened: number; injected: number }
@@ -82,6 +83,12 @@ export type ApplyReviseResult =
 export interface ReviseOptions {
   withdraw?: boolean;
   queuedFor?: (version: number) => QueuedItem[];
+  /** GH #262: reopen a ratified, never-shipped doc at the SAME `version:` — the status flip and
+   *  sign-off clearing of the unshipped path with no bump. For a project that holds every slice at
+   *  its initial version until a first release, where a change before that release is a correction,
+   *  not a delta (a `version` above 1 with no `## Delta` sits between the two implementation modes).
+   *  Refused on a shipped doc: the shipped version must stay distinct from the next one. */
+  keepVersion?: boolean;
 }
 
 /**
@@ -111,6 +118,15 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
   const ratifiedByMatch = fieldLineRegex("ratifiedBy").exec(inner);
   const hasRatifiedBy = ratifiedByMatch !== null && normalizeFieldValue(ratifiedByMatch[2]) !== null;
 
+  if (currentStatus === IMPLEMENTED_STATUS && opts.keepVersion) {
+    // GH #262: the version in production must keep its number; the next one is a new number.
+    return {
+      ok: false,
+      message:
+        "doc is shipped (`status: implemented`) — --keep-version applies only to a ratified doc that never shipped; " +
+        "the shipped version must stay distinct from the next one. Use plain `em slice revise` to open the next version as a draft",
+    };
+  }
   if (currentStatus === IMPLEMENTED_STATUS) return applyRevise(raw, "shipped", opts);
   if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && !hasShipped && !opts.withdraw) {
     // GH #236: a ratified, never-shipped doc is the ONLY implementable version of the slice;
@@ -124,6 +140,23 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
         '`em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"`. ' +
         "If the spec itself must change, pass --withdraw to open the next version as a draft",
     };
+  }
+  if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && opts.keepVersion) {
+    // GH #262: a later version ratified over a shipped one may keep its number too — unless that
+    // number IS the shipped one (a hand-edited state no command produces), which plain revise
+    // handles by bumping.
+    const versionMatch = fieldLineRegex("version").exec(inner);
+    const current = versionMatch ? normalizeFieldValue(versionMatch[2]) : null;
+    const shippedVersion = shippedVersionMatch ? normalizeFieldValue(shippedVersionMatch[2]) : null;
+    if (shippedVersion !== null && current !== null && shippedVersion === current) {
+      return {
+        ok: false,
+        message:
+          `doc's \`version: ${current}\` is the version that shipped (\`shippedVersion: ${shippedVersion}\`) — --keep-version would ` +
+          "reopen the shipped version in place; use plain `em slice revise` to open the next version as a draft",
+      };
+    }
+    return applyRevise(raw, "unshipped-kept", opts);
   }
   if (currentStatus === RATIFIED_STATUS) return applyRevise(raw, hasRatifiedBy ? "unshipped" : "unsigned", opts);
   if (currentStatus === DRAFT_STATUS || currentStatus === "reviewed") {
@@ -156,7 +189,8 @@ function applyRevise(raw: string, kind: ReviseKind, opts: ReviseOptions = {}): A
       message: `doc's \`version:\` value "${currentVersionRaw ?? ""}" isn't a positive integer — refusing to guess a bump`,
     };
   }
-  const newVersion = kind === "unsigned" ? currentVersion : currentVersion + 1;
+  const keepsNumber = kind === "unsigned" || kind === "unshipped-kept";
+  const newVersion = keepsNumber ? currentVersion : currentVersion + 1;
 
   // Materialise the shipped record on a pre-1.15 doc BEFORE the status leaves `implemented`,
   // otherwise `shippedRecordOf`'s read-both rule would forget that v<N> shipped. Inserted right
@@ -189,11 +223,12 @@ function applyRevise(raw: string, kind: ReviseKind, opts: ReviseOptions = {}): A
     updatedInner = updatedInner.slice(0, edit.index) + edit.next + updatedInner.slice(edit.index + edit.oldLen);
   }
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
-  // MIL-275: questions deferred to the version this opens come back as `- [ ]`.
-  const reopened = kind === "unsigned" ? { content, count: 0 } : reopenDeferred(content, newVersion);
+  // MIL-275: questions deferred to the version this opens come back as `- [ ]`. Nothing to reopen
+  // or inject when the number did not move (GH #262: a deferral to v<N+1> still waits for v<N+1>).
+  const reopened = keepsNumber ? { content, count: 0 } : reopenDeferred(content, newVersion);
   // GH #236: questions queued while the old version was ratified/shipped join the new draft.
   const injected =
-    kind === "unsigned" || !opts.queuedFor
+    keepsNumber || !opts.queuedFor
       ? { content: reopened.content, count: 0 }
       : injectQueuedQuestions(reopened.content, opts.queuedFor(newVersion));
   return { ok: true, content: injected.content, newVersion, kind, reopened: reopened.count, injected: injected.count };
@@ -228,7 +263,7 @@ export type RunReviseResult =
  * `ratify`/`--slice-ready`/`em export` use (MIL-121 cross-binding included), then reads/applies/
  * writes it. `baseDir` is the `.em` file's directory.
  */
-export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: string, sliceKey: string, withdraw = false): RunReviseResult {
+export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: string, sliceKey: string, withdraw = false, keepVersion = false): RunReviseResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) return { ok: false, message: `no slice with export key "${sliceKey}" in this model` };
   const slice = model.slices[sliceIndex];
@@ -265,7 +300,7 @@ export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: str
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyReviseFrontmatter(raw, { withdraw, queuedFor: (v) => readQueue(baseDir, sliceKey, v).items });
+  const result = applyReviseFrontmatter(raw, { withdraw, keepVersion, queuedFor: (v) => readQueue(baseDir, sliceKey, v).items });
   if (!result.ok) return { ok: false, message: `${doc.path}: ${result.message}` };
   // MIL-214: "was the version we are leaving behind ever certified" — only meaningful when one
   // shipped. Computed from the pre-write join.

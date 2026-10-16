@@ -1094,7 +1094,7 @@ slice
 
 /** MIL-283: `em slice revise` and its deprecated alias `em slice reratify` share one action. */
 function reviseAction(commandName: "revise" | "reratify") {
-  return (file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string; withdraw?: boolean }) => {
+  return (file: string, sliceKey: string, opts: { meaningUnchanged?: boolean; contractChange?: string; withdraw?: boolean; keepVersion?: boolean }) => {
     if (commandName === "reratify") {
       console.error(
         "notice: `em slice reratify` is deprecated since 1.15.0 — it is `em slice revise`, and the result is a " +
@@ -1121,7 +1121,7 @@ function reviseAction(commandName: "revise" | "reratify") {
       process.exit(1);
     }
 
-    const result = runRevise(model, refs, dirname(file), sliceKey, opts.withdraw === true);
+    const result = runRevise(model, refs, dirname(file), sliceKey, opts.withdraw === true, opts.keepVersion === true);
     if (!result.ok) {
       console.error(`em slice ${commandName}: ${result.message}`);
       process.exit(1);
@@ -1139,7 +1139,9 @@ function reviseAction(commandName: "revise" | "reratify") {
         ? `v${result.newVersion - 1} stays shipped; v${result.newVersion} opened as draft`
         : result.kind === "unshipped"
           ? `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
-          : `v${result.newVersion} was never signed; reopened as draft at the same version`;
+          : result.kind === "unshipped-kept"
+            ? `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version (--keep-version)`
+            : `v${result.newVersion} was never signed; reopened as draft at the same version`;
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
     if (result.injected > 0) console.log(`injected ${result.injected} queued question(s) into Open Questions (queue cleared)`);
@@ -1157,7 +1159,10 @@ const REVISE_DESCRIPTION =
   "`ratifiedBy:` reopens as draft at the same version; `draft`/`reviewed` refuse — the next version is " +
   "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`. " +
   "A ratified, never-shipped doc REFUSES without --withdraw (revising withdraws the only implementable version; " +
-  "record a question with `em slice defer` instead — it sits outside the hash, GH #253)";
+  "record a question with `em slice defer` instead — it sits outside the hash, GH #253). " +
+  "With --keep-version (GH #262) a ratified, never-shipped doc " +
+  "reopens as a draft at the SAME `version:` — same status flip and sign-off clearing, no bump — for a project that " +
+  "holds every slice at its initial version until a first release; refused on a shipped doc";
 
 slice
   .command("revise")
@@ -1165,6 +1170,11 @@ slice
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .option("--withdraw", "GH #236: required on a ratified, never-shipped doc — confirms withdrawing the ratification of the only implementable version")
+  .option(
+    "--keep-version",
+    "GH #262: reopen a ratified, never-shipped doc as a draft at the same `version:` (no bump) — a correction before a first " +
+      "release, not a delta; refused on a shipped doc, whose version must stay distinct from the next one",
+  )
   .action(reviseAction("revise"));
 
 slice
