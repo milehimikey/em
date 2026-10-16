@@ -13,9 +13,10 @@
 // docs/usage-data.md's Categories tables the same way (MIL-97) — the fixed vocabulary a
 // `.event-modeling.md` Usage log line picks from, so it can't drift from RULES either.
 //
-// `optIn: true` marks the 7 codes `em validate --slice-ready <key>` adds (MIL-87) — never part
-// of a plain `em validate` run, excluded from the generated base rule reference (but still
-// included in the usage-log Categories tables — a session can hit them too).
+// `optIn: true` marks the codes a flag adds — `em validate --slice-ready <key>` (MIL-87) and
+// `--check-signed-bodies` (GH #257) — never part of a plain `em validate` run, excluded from the
+// generated base rule reference (but still included in the usage-log Categories tables — a
+// session can hit them too).
 
 import type { Diagnostic, Severity } from "./validate.js";
 
@@ -33,7 +34,8 @@ export interface RuleDef {
   usageCategory: string;
   /** docs/validation.md H3 anchor this rule nests under, when one exists and covers >1 rule. */
   docAnchor?: string;
-  /** True for the 7 `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts, MIL-87). */
+  /** True for a flag-gated code: the `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts,
+   *  MIL-87) and `--check-signed-bodies`' (src/catalog/signedBodyValidate.ts, GH #257). */
   optIn?: true;
 }
 
@@ -665,6 +667,14 @@ export const RULES = {
     fix: "`--require-ratified-hash` is on and this ready-to-implement doc records no `ratifiedHash:` (ratified before em 1.15, grandfathered by `em upgrade`, or hand-edited). Re-ratify it so the signed body has an identity: `em slice revise --withdraw`, review, `em slice ratify --by`.",
     usageCategory: "slice-ready ready doc has no ratifiedHash (strict)",
     docAnchor: "slice-readiness",
+    optIn: true,
+  },
+  "slice-body-changed-since-ratification": {
+    severity: "error",
+    title: "Signed body changed (any status)",
+    fix: "`em validate --check-signed-bodies` (GH #257) found a doc — ready, implemented, or otherwise — whose body no longer matches the `ratifiedHash:` recorded at sign-off. Revert the edit, or open the next version (`em slice revise`, review, `em slice ratify --by`) so the change is signed. A deferral written by `em slice defer` never trips this; a hand edit does.",
+    usageCategory: "signed body changed since ratification",
+    docAnchor: "signed-bodies",
     optIn: true,
   },
   "slice-ready-contract-stale": {

@@ -1110,7 +1110,7 @@ describe("em ledger (CLI, real git repo, MIL-89)", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
     expect(r.status).toBe(1);
     const doc = JSON.parse(r.stdout);
-    expect(doc.ledgerSchemaVersion).toBe("1.1");
+    expect(doc.ledgerSchemaVersion).toBe("1.2");
     expect(doc.from).toBe("HEAD~1");
     expect(doc.to).toBe("HEAD");
     expect(doc.ok).toBe(false);
@@ -1228,11 +1228,11 @@ describe("em ledger --waive: trailer waiver (CLI, real git repo, MIL-185)", () =
     expect(r.stdout).toContain("ok — ledger agrees (1 slice doc(s) checked, 1 waived)");
   });
 
-  it("--json carries ledgerSchemaVersion 1.1, an empty findings array, and the waived entry", () => {
+  it("--json carries ledgerSchemaVersion 1.2, an empty findings array, and the waived entry", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~2", "--to", "HEAD~1", "--json"], repo);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.ledgerSchemaVersion).toBe("1.1");
+    expect(doc.ledgerSchemaVersion).toBe("1.2");
     expect(doc.findings).toEqual([]);
     expect(doc.ok).toBe(true);
     expect(doc.waived).toEqual([

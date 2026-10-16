@@ -360,3 +360,60 @@ describe("readLedgerWaiverTrailers", () => {
     expect(readLedgerWaiverTrailers("model.em", "HEAD~1", "HEAD", git)).toEqual([]);
   });
 });
+
+// GH #257: the hash finding — the signed body moved while `ratifiedHash:` stayed — beside the
+// version rule, waivable like the formatting-only finding; and the version rule's "content" is the
+// signed body, so a deferral `em slice defer` appends to a ratified doc is not a content change.
+describe("checkLedger: ledger-body-changed-without-reratification (GH #257)", () => {
+  const HASH = "ratifiedBy: Alex\nratifiedHash: sha256:" + "ab".repeat(32) + "\n";
+  const signed = (version: number, body: string, extra = HASH) => doc(version, "implemented", "PR#1", body, extra);
+
+  it("fires beside the version-rule finding when the body changed and the hash did not; alone when version was bumped by hand", () => {
+    const same = checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", signed(1, "Original."), signed(1, "Edited."))));
+    expect(same.findings.map((f) => f.code)).toEqual(["ledger-content-without-version-bump", "ledger-body-changed-without-reratification"]);
+    expect(same.findings[1]).toMatchObject({
+      sliceKey: "checkout",
+      message: 'slice "checkout": signed body changed but ratifiedHash did not (v1 -> v1) — edited without re-ratification',
+      oldVersion: 1,
+      newVersion: 1,
+      bodyChanged: true,
+    });
+    const bumped = checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", signed(1, "Original."), signed(2, "Edited."))));
+    expect(bumped.findings.map((f) => f.code)).toEqual(["ledger-body-changed-without-reratification"]);
+    expect(bumped.findings[0].message).toContain("(v1 -> v2)");
+  });
+
+  it("is silent when the hash moved with the body (re-ratified), was cleared (revise), or never existed (pre-1.15)", () => {
+    const rehashed = signed(2, "Edited.", "ratifiedBy: Alex\nratifiedHash: sha256:" + "cd".repeat(32) + "\n");
+    expect(checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", signed(1, "Original."), rehashed))).findings).toEqual([]);
+    const cleared = doc(2, "draft", "PR#1", "Edited.");
+    expect(checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", signed(1, "Original."), cleared))).findings).toEqual([]);
+    const pre115 = checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", doc(1, "implemented", "PR#1", "Original."), doc(1, "implemented", "PR#1", "Edited."))));
+    expect(pre115.findings.map((f) => f.code)).toEqual(["ledger-content-without-version-bump"]);
+  });
+
+  it("a deferral appended to a ratified doc (outside the hash) is not a content change for either rule", () => {
+    const before = signed(1, "# Slice\n\n## Open Questions\n\n- [x] answered — yes\n");
+    const after = signed(1, "# Slice\n\n## Open Questions\n\n- [x] answered — yes\n- [x] later — v1: wait; deferred to v2 (2026-10-15, Alex)\n");
+    expect(checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", before, after))).findings).toEqual([]);
+    // …while a hand-added unchecked question is.
+    const unchecked = signed(1, "# Slice\n\n## Open Questions\n\n- [x] answered — yes\n- [ ] sneaked in\n");
+    expect(checkLedger("model.em", "HEAD~1", "HEAD", fakeGit(bothRevisionsResponses("checkout", before, unchecked))).findings.map((f) => f.code)).toEqual([
+      "ledger-content-without-version-bump",
+      "ledger-body-changed-without-reratification",
+    ]);
+  });
+
+  it("a waiver on the slice key excuses both waivable findings, never a regression on the same key", () => {
+    const hashFinding: LedgerFinding = { ...contentFinding("checkout"), code: "ledger-body-changed-without-reratification", message: "x" };
+    const both = baseResult([contentFinding("checkout"), hashFinding]);
+    const { result: out, unknownWaivers } = applyLedgerWaivers(both, ["checkout"], []);
+    expect(out.findings).toEqual([]);
+    expect(out.waived.map((w) => w.code)).toEqual(["ledger-content-without-version-bump", "ledger-body-changed-without-reratification"]);
+    expect(unknownWaivers).toEqual([]);
+    const withRegression = baseResult([regressionFinding("checkout"), hashFinding]);
+    const r = applyLedgerWaivers(withRegression, [], [{ sliceKey: "checkout", commit: "abc1234" }]);
+    expect(r.result.findings.map((f) => f.code)).toEqual(["ledger-version-regression"]);
+    expect(r.result.waived.map((w) => w.code)).toEqual(["ledger-body-changed-without-reratification"]);
+  });
+});

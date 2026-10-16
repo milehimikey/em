@@ -13,7 +13,12 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // `Em-Ledger-Waive: <slice-key>` commit trailer, each carrying `waivedBy: { source: "flag" } |
 // { source: "trailer", commit }`. A run with no waivers is byte-identical to the 1.0 shape
 // except for the new empty `waived: []` array — every other field is unchanged.
-export const LEDGER_SCHEMA_VERSION = "1.1";
+// 1.2 (GH #257): `findings[].code` / `waived[].code` gain `ledger-body-changed-without-reratification`
+// (signed body changed, `ratifiedHash` did not — independent of the version rule), and it is
+// waivable like `ledger-content-without-version-bump`. "Content" in the version rule now means the
+// signed body (`ratifiedBody`): a deferral `em slice defer` appends is not a content change.
+// Additive-only.
+export const LEDGER_SCHEMA_VERSION = "1.2";
 
 /** Build the `em ledger --json` document. Pretty-printed (2-space), no trailing newline — the
  *  caller adds it, same convention as buildDiffJson/buildGlossaryJson. */

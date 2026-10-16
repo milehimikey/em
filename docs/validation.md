@@ -330,6 +330,20 @@ link, but `conformedVersion` absent or not matching the current `version`) is th
 not a defect" shape as `unpropagated-delta`: this rule never flags it either — it's the normal
 post-ship-before-first-conform state, not incoherence.
 
+### Signed bodies
+
+`em validate --check-signed-bodies` (GH #257, 1.17.0) is opt-in and status-independent: every
+slice doc that records a `ratifiedHash:` is compared to its body, whatever its `status`. It
+closes the gap `--slice-ready` leaves open — that check runs for one named slice and only while
+it is `ready-to-implement`; after `em slice mark-implemented` nothing compared the hash to the
+body again, so a shipped doc's signed content could drift with no diagnostic anywhere (`em
+ledger` watches `version:` against content, not the hash). The history-aware twin is `em ledger`'s
+`ledger-body-changed-without-reratification` ([cli.md](cli.md#em-ledger-file)).
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `slice-body-changed-since-ratification` | error | A doc with a `ratifiedHash` whose body no longer matches it, in either scope — the message names the doc's `status` and `version`. Compared through `ratifiedHashScope` (GH #253): a pre-1.17 whole-body hash with an intact body is `legacy` and passes; a deferral written by `em slice defer` sits outside the hash and never trips this; a hand edit does. Docs with no hash are not reported — that is `--slice-ready --require-ratified-hash` (GH #256). Fix: revert the edit, or open the next version (`em slice revise`, review, `em slice ratify --by`) so the change is signed |
+
 ### Slice readiness
 
 `em validate --slice-ready <key>` (MIL-87) is the one rule family that never runs

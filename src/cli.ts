@@ -29,6 +29,7 @@ import { planDiffArgs, realGit, resolveRevision, resolveDocAtRevision } from "./
 import { readSliceDoc } from "./catalog/readSliceDoc.js";
 import { validateLineage } from "./catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "./catalog/frontmatterCoherenceValidate.js";
+import { validateSignedBodies } from "./catalog/signedBodyValidate.js";
 import { validateNoteBindings } from "./catalog/noteBindingValidate.js";
 import { validateDocModelConsistency } from "./catalog/docModelConsistencyValidate.js";
 import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js";
@@ -1960,6 +1961,13 @@ program
       "before em 1.15 keep passing; turn it on once legacy docs are re-ratified",
   )
   .option(
+    "--check-signed-bodies",
+    "opt-in (GH #257): compare every slice doc that records a `ratifiedHash:` — ready, implemented, any status — " +
+      "to its body; a mismatch is `slice-body-changed-since-ratification` (error). A pre-1.17 whole-body hash with an " +
+      "intact body passes; a deferral written by `em slice defer` is outside the hash. The one check that still " +
+      "watches a shipped doc's signed content",
+  )
+  .option(
     "--json",
     "print a JSON document instead of text — works on a model WITH errors, unlike `em export` " +
       "(MIL-128, see docs/cli.md); exit codes are unchanged",
@@ -1974,6 +1982,7 @@ program
         failOnIssues?: boolean;
         sliceReady?: string;
         requireRatifiedHash?: boolean;
+        checkSignedBodies?: boolean;
         json?: boolean;
       },
     ) => {
@@ -1982,7 +1991,12 @@ program
         process.exit(1);
       }
       const { model, diagnostics, refs, source } = compileFile(file);
-      const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
+      // GH #257: an opt-in addition to the unconditional set, so --json, the text report and the
+      // exit code all see it the same way every other diagnostic is seen.
+      const allDiagnostics = [
+        ...computeAllDiagnostics(file, model, refs, diagnostics, source),
+        ...(opts.checkSignedBodies ? validateSignedBodies(model, refs, dirname(file)) : []),
+      ];
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's

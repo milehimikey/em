@@ -13,14 +13,18 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { hasUsableFrontmatter, SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
+import { hasUsableFrontmatter, ratifiedBody, SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { GitRunner, realGit, listSliceKeysAtRevision, resolveDocAtRevision } from "./diff-inputs.js";
 
 export type LedgerFindingCode =
   | "ledger-content-without-version-bump"
   | "ledger-version-without-content-change"
-  | "ledger-version-regression";
+  | "ledger-version-regression"
+  /** GH #257: the signed body moved between the revisions while `ratifiedHash:` did not — an
+   *  edit with no re-ratification, whatever `version:` did. Reported beside (not instead of) the
+   *  version-rule finding, so a repo that waives the version rule still sees it. */
+  | "ledger-body-changed-without-reratification";
 
 export interface LedgerFinding {
   sliceKey: string;
@@ -159,7 +163,10 @@ export function checkLedger(anchorFile: string, from: string, to: string | null,
 
     const oldVersion = oldDoc.version;
     const newVersion = newDoc.version;
-    const bodyChanged = oldDoc.body.trim() !== newDoc.body.trim();
+    // GH #253/#257: "content" is the SIGNED content — `ratifiedBody()` leaves out the `## Open
+    // Questions` heading and its `deferred to v<n>` items, so a deferral `em slice defer` wrote
+    // into a ratified doc is not a content change here either (it describes a later version).
+    const bodyChanged = ratifiedBody(oldDoc.body).trim() !== ratifiedBody(newDoc.body).trim();
     const docsLineageChanged = lineageChanged(oldDoc, newDoc);
     const contentChanged = bodyChanged || docsLineageChanged;
 
@@ -171,23 +178,45 @@ export function checkLedger(anchorFile: string, from: string, to: string | null,
     } else if (!contentChanged && newVersion > oldVersion) {
       code = "ledger-version-without-content-change";
     }
-    if (!code) continue;
+    if (code) {
+      const message =
+        code === "ledger-version-regression"
+          ? `slice "${sliceKey}": version went backwards (v${oldVersion} -> v${newVersion})`
+          : code === "ledger-content-without-version-bump"
+            ? `slice "${sliceKey}": doc content changed but version: didn't bump (still v${oldVersion})`
+            : `slice "${sliceKey}": version: bumped (v${oldVersion} -> v${newVersion}) but doc content is unchanged`;
+      findings.push({ sliceKey, code, message, oldVersion, newVersion, bodyChanged, lineageChanged: docsLineageChanged });
+    }
 
-    const message =
-      code === "ledger-version-regression"
-        ? `slice "${sliceKey}": version went backwards (v${oldVersion} -> v${newVersion})`
-        : code === "ledger-content-without-version-bump"
-          ? `slice "${sliceKey}": doc content changed but version: didn't bump (still v${oldVersion})`
-          : `slice "${sliceKey}": version: bumped (v${oldVersion} -> v${newVersion}) but doc content is unchanged`;
-
-    findings.push({ sliceKey, code, message, oldVersion, newVersion, bodyChanged, lineageChanged: docsLineageChanged });
+    // GH #257: independent of the version rule. A re-ratification writes a fresh hash (and
+    // `revise` clears it first), so "same hash, different signed body" can only be an edit that
+    // bypassed both gates — including one that bumped `version:` by hand. Docs with no hash on
+    // the old side (ratified before 1.15) have nothing to hold them to.
+    if (bodyChanged && oldDoc.ratifiedHash !== null && oldDoc.ratifiedHash === newDoc.ratifiedHash) {
+      findings.push({
+        sliceKey,
+        code: "ledger-body-changed-without-reratification",
+        message: `slice "${sliceKey}": signed body changed but ratifiedHash did not (v${oldVersion} -> v${newVersion}) — edited without re-ratification`,
+        oldVersion,
+        newVersion,
+        bodyChanged,
+        lineageChanged: docsLineageChanged,
+      });
+    }
   }
 
   return { findings, waived: [], skipped, checkedCount: keys.length };
 }
 
 /** The only finding code a waiver may excuse (MIL-185, R9) — see `WaivedLedgerFinding`. */
-const WAIVABLE_LEDGER_CODE: LedgerFindingCode = "ledger-content-without-version-bump";
+/** The findings a waiver may excuse: the formatting-only false positive (MIL-185) and, since GH
+ *  #257, the hash finding — a repo baselining docs edited before it started enforcing the hash
+ *  needs a way to say so, auditably. A version regression or a bump with no content change
+ *  stays unwaivable. A waiver names a slice key and excuses every waivable finding on it. */
+const WAIVABLE_LEDGER_CODES: ReadonlySet<LedgerFindingCode> = new Set<LedgerFindingCode>([
+  "ledger-content-without-version-bump",
+  "ledger-body-changed-without-reratification",
+]);
 
 /** One `Em-Ledger-Waive: <slice-key>` trailer found on a commit in the checked range, paired
  *  with the commit that declared it. */
@@ -277,9 +306,10 @@ export function applyLedgerWaivers(
   flagWaivedKeys: string[],
   trailerWaivers: LedgerTrailerWaiver[],
 ): { result: LedgerCheckResult; unknownWaivers: UnknownLedgerWaiver[] } {
-  const waivableBySliceKey = new Map<string, LedgerFinding>();
+  const waivableBySliceKey = new Map<string, LedgerFinding[]>();
   for (const finding of result.findings) {
-    if (finding.code === WAIVABLE_LEDGER_CODE) waivableBySliceKey.set(finding.sliceKey, finding);
+    if (!WAIVABLE_LEDGER_CODES.has(finding.code)) continue;
+    waivableBySliceKey.set(finding.sliceKey, [...(waivableBySliceKey.get(finding.sliceKey) ?? []), finding]);
   }
 
   const waivedSliceKeys = new Set<string>();
@@ -290,10 +320,10 @@ export function applyLedgerWaivers(
   for (const sliceKey of flagWaivedKeys) {
     if (seenFlagKeys.has(sliceKey)) continue;
     seenFlagKeys.add(sliceKey);
-    const finding = waivableBySliceKey.get(sliceKey);
+    const found = waivableBySliceKey.get(sliceKey);
     const source: LedgerWaiveSource = { source: "flag" };
-    if (finding) {
-      waived.push({ ...finding, waivedBy: source });
+    if (found) {
+      for (const finding of found) waived.push({ ...finding, waivedBy: source });
       waivedSliceKeys.add(sliceKey);
     } else {
       unknownWaivers.push({ sliceKey, source });
@@ -302,10 +332,10 @@ export function applyLedgerWaivers(
 
   for (const trailer of trailerWaivers) {
     if (waivedSliceKeys.has(trailer.sliceKey)) continue; // already waived by a flag entry
-    const finding = waivableBySliceKey.get(trailer.sliceKey);
+    const found = waivableBySliceKey.get(trailer.sliceKey);
     const source: LedgerWaiveSource = { source: "trailer", commit: trailer.commit };
-    if (finding) {
-      waived.push({ ...finding, waivedBy: source });
+    if (found) {
+      for (const finding of found) waived.push({ ...finding, waivedBy: source });
       waivedSliceKeys.add(trailer.sliceKey);
     } else {
       unknownWaivers.push({ sliceKey: trailer.sliceKey, source });
@@ -313,7 +343,9 @@ export function applyLedgerWaivers(
   }
 
   waived.sort((a, b) => a.sliceKey.localeCompare(b.sliceKey));
-  const findings = result.findings.filter((f) => !waivedSliceKeys.has(f.sliceKey));
+  // Only the waivable findings on a waived key leave `findings`; an unwaivable one (a regression)
+  // on the same key stays and still fails the run.
+  const findings = result.findings.filter((f) => !(waivedSliceKeys.has(f.sliceKey) && WAIVABLE_LEDGER_CODES.has(f.code)));
 
   return { result: { ...result, findings, waived }, unknownWaivers };
 }

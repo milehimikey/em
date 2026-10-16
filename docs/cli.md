@@ -356,6 +356,7 @@ exists at all).
 | `--list-divergences` | Print only the `divergence "text"` annotations (slice, element, line, text) — for auditing, never affects the exit code |
 | `--list-public` | Print only events and views marked `public` (slice, kind, name, line) — an integration-surface audit, never affects the exit code. A `public` view with no `ui`/reaction reading it anywhere in this model gets a "(no in-model reader)" note (MIL-215) — an audit hint, not a warning: a genuinely cross-model `public` view's reader lives in another model, which `em validate` can't see (`em system <manifest>` checks that claim). |
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
+| `--check-signed-bodies` | (GH #257) Opt-in: compare every slice doc that records a `ratifiedHash:` — any status, `implemented` included — to its body; a mismatch is `slice-body-changed-since-ratification` (error, [validation.md](validation.md#signed-bodies)). Joins the normal diagnostic list, so `--json` and the exit code see it like any other finding |
 | `--slice-ready <key>` | Readiness gate for one slice ([slice key](#slice-keys)) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
 | `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
@@ -1237,8 +1238,21 @@ any mismatch, no separate `--exit-code`/`--fail-on-*` opt-in needed (unlike `em 
 `em glossary`, where "changed" or "conflicts" are neutral facts you may or may not want to
 gate on).
 
-**What counts as a content change, precisely.** Body text (`.trim()`-only comparison — leading/
-trailing whitespace is ignored, everything else is exact) and the three lineage refs. `status`
+**The hash finding (GH #257, 1.17.0).** `ledger-body-changed-without-reratification`: the signed
+body changed between the two revisions while `ratifiedHash:` stayed the same — independent of
+what `version:` did. A re-ratification writes a fresh hash (and `em slice revise` clears it
+first), so "same hash, different body" can only be an edit that bypassed both gates, including
+one that bumped `version:` by hand. Silent when the old side has no hash (ratified before 1.15),
+when the hash moved, or when it was cleared. This is the history-aware twin of
+[`em validate --check-signed-bodies`](#em-validate-file) and the one hash check a repo keeps when
+it suspends the version rule as a gate; waivable (below) so a baseline of known-bad docs can be
+excused auditably.
+
+**What counts as a content change, precisely.** The **signed** body (`ratifiedBody()`, the same
+text `ratifiedHash` covers since GH #253: the `## Open Questions` heading and its `deferred to
+v<n>` items are left out, then `.trim()` — leading/trailing whitespace ignored, everything else
+exact) and the three lineage refs. So a deferral `em slice defer` appends to a ratified or
+shipped doc is not a content change for any finding; a hand-added `- [ ]` is. `status`
 and `implementedIn` are **deliberately excluded**: those change independently by design during
 re-ratification (see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification))
@@ -1273,9 +1287,11 @@ checked together:
    **An uncommitted working-tree change has no commit to carry a trailer**, so comparing against
    the working tree (`--to` omitted) can only be waived with `--waive`.
 
-A waiver **only** excuses a `ledger-content-without-version-bump` finding — a version regression
-or a version bump with no real content change is never waivable, by either source: those two are
-never "just formatting," and hiding either would hide a real defect. A waiver naming a slice key
+A waiver excuses two findings only: `ledger-content-without-version-bump` and (GH #257)
+`ledger-body-changed-without-reratification` — a waiver names a slice key and excuses every
+waivable finding on it. A version regression or a version bump with no real content change is
+never waivable, by either source: those two are never "just formatting," and hiding either would
+hide a real defect; an unwaivable finding on a waived key stays reported and still fails the run. A waiver naming a slice key
 with no matching waivable finding (a typo, or a slice that's already clean) is not silently
 dropped: it's reported as `note: waiver for unknown slice "<key>" ignored` on stderr, so a stale
 or misspelled waiver doesn't quietly stop meaning anything. A waived finding is still fully
@@ -1316,7 +1332,7 @@ mix of active and waived findings still exits `1` — only the "everything is ei
 waived" case exits `0` — and the mismatch line grows the same `, N waived` suffix:
 `3 ledger mismatch(es), 1 waived`.
 
-**`--json` shape** (`ledgerSchemaVersion: "1.1"`, versioned independently of the npm package and
+**`--json` shape** (`ledgerSchemaVersion: "1.2"`, versioned independently of the npm package and
 every other command's own schema):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
@@ -1325,7 +1341,9 @@ every other command's own schema):
   including skipped ones.
 - `findings` — `{ sliceKey, code, message, oldVersion, newVersion, bodyChanged, lineageChanged }[]`,
   active (unwaived) findings only. `code` is one of `ledger-content-without-version-bump`,
-  `ledger-version-without-content-change`, `ledger-version-regression`.
+  `ledger-version-without-content-change`, `ledger-version-regression`, and (added in schema
+  `1.2`, GH #257) `ledger-body-changed-without-reratification`. A slice can carry two findings
+  at once — the hash finding is reported *beside* the version-rule finding, never instead of it.
 - `waived` — every waived finding (MIL-185, added in schema `1.1`): the same shape as a
   `findings` entry plus `waivedBy: { source: "flag" } | { source: "trailer", commit: "<full sha>" }`.
   `[]` when no waiver applied — the only difference from a `1.0` document with the same result.
