@@ -145,6 +145,11 @@ em validate <file> --check-signed-bodies                            # opt-in (GH
 em validate <file> --json                                           # print a JSON document instead of text — works on a model WITH errors, unlike `em export` (MIL-128, see docs/cli.md); exit codes are unchanged
 em migrate <file>                                                   # rewrite the old two-slice Automation/Translation shape into the merged single-slice shape MIL-120 made canonical (see docs/cli.md)
 em migrate <file> --write                                           # apply the rewrite to the file (default: dry run — report only, write nothing)
+em refs <file>                                                      # check that every commit a slice doc records — `ratifiedRef:`, `shippedRef:`, a bare `conformedAt:` — still resolves and is reachable from a branch (GH #258): per doc, per field, `ancestor` / `not-ancestor` / `unresolved` / `undecidable` (a shallow clone never passes). Squash and rebase merges orphan the PR-branch HEAD ratify recorded; nothing else in em resolves a ref. Opt-in CI check, like `em ledger` — never part of `em validate`. Local object store only, no network. Kinded `conformedAt` values (build:…) are skipped; docs with no ref fields are not reported
+em refs <file> --reachable-from <rev>                               # the branch or commit every ref must be an ancestor of (e.g. origin/main)
+em refs <file> --waive <slice-key>                                  # excuse this slice's non-ancestor/unresolved/undecidable results from the exit code (repeatable); still reported
+em refs <file> --waive-file <path>                                  # a baseline file of slice keys to waive, one per line (`#` comments allowed); missing file = no waivers
+em refs <file> --json                                               # print a JSON document instead of the text report (see docs/cli.md)
 em ledger <file>                                                    # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
 em ledger <file> --from <rev>                                       # baseline revision
 em ledger <file> --to <rev>                                         # compare revision (default: current working tree)

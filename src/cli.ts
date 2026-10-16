@@ -53,6 +53,8 @@ import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
+import { buildRefsJson } from "./emit/refsJson.js";
+import { applyRefWaivers, checkRefs, readWaiveFile } from "./cli/refsCheck.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
 import {
@@ -2142,6 +2144,60 @@ program
 function describeLedgerWaiveSource(source: LedgerWaiveSource): string {
   return source.source === "flag" ? "--waive" : `trailer ${source.commit.slice(0, 7)}`;
 }
+
+program
+  .command("refs")
+  .description(
+    "check that every commit a slice doc records — `ratifiedRef:`, `shippedRef:`, a bare `conformedAt:` — still " +
+      "resolves and is reachable from a branch (GH #258): per doc, per field, `ancestor` / `not-ancestor` / " +
+      "`unresolved` / `undecidable` (a shallow clone never passes). Squash and rebase merges orphan the PR-branch HEAD " +
+      "ratify recorded; nothing else in em resolves a ref. Opt-in CI check, like `em ledger` — never part of `em validate`. " +
+      "Local object store only, no network. Kinded `conformedAt` values (build:…) are skipped; docs with no ref fields are not reported",
+  )
+  .argument("<file>", "model .em file (compiled for its slice keys; its directory locates slices/ and the repository)")
+  .requiredOption("--reachable-from <rev>", "the branch or commit every ref must be an ancestor of (e.g. origin/main)")
+  .option(
+    "--waive <slice-key>",
+    "excuse this slice's non-ancestor/unresolved/undecidable results from the exit code (repeatable); still reported",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
+  .option("--waive-file <path>", "a baseline file of slice keys to waive, one per line (`#` comments allowed); missing file = no waivers")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { reachableFrom: string; waive: string[]; waiveFile?: string; json?: boolean }) => {
+    const { model, refs } = compileFile(file);
+    const outcome = checkRefs(model, refs, dirname(file), opts.reachableFrom);
+    if (!outcome.ok) {
+      console.error(`em refs: ${outcome.message}`);
+      process.exit(1);
+    }
+    const fileKeys = opts.waiveFile ? readWaiveFile(opts.waiveFile) : [];
+    const { result, unknownWaivers } = applyRefWaivers(outcome.result, opts.waive, fileKeys, opts.waiveFile ?? null);
+    for (const note of unknownWaivers) {
+      console.error(`note: waiver for slice "${note.sliceKey}" (${note.source.source === "flag" ? "--waive" : note.source.path}) has nothing to excuse — ignored`);
+    }
+    if (result.shallow) console.error("warn: shallow clone — every ref is undecidable; check out with fetch-depth: 0");
+
+    if (opts.json) {
+      process.stdout.write(buildRefsJson(result, file) + "\n");
+    } else {
+      for (const r of result.results) {
+        console.log(`  ${r.status.padEnd(12)} ${r.sliceKey} ${r.field}: ${r.ref}${r.detail ? ` — ${r.detail}` : ""}`);
+      }
+      for (const w of result.waived) {
+        console.log(`  waived       ${w.sliceKey} ${w.field}: ${w.ref} (${w.status}; waived by ${w.waivedBy.source === "flag" ? "--waive" : w.waivedBy.path})`);
+      }
+      const bad = result.results.filter((r) => r.status !== "ancestor").length;
+      const waivedNote = result.waived.length > 0 ? `, ${result.waived.length} waived` : "";
+      if (bad === 0) {
+        console.log(`ok — every recorded ref is reachable from ${opts.reachableFrom} (${result.checkedRefs} ref(s) on ${result.checkedDocs} doc(s)${waivedNote})`);
+      } else {
+        console.log(`${bad} ref(s) not reachable from ${opts.reachableFrom} (${result.checkedRefs} checked on ${result.checkedDocs} doc(s)${waivedNote})`);
+      }
+    }
+    // Set the code rather than process.exit(): stdout to a pipe shouldn't risk truncation.
+    if (!result.ok) process.exitCode = 1;
+  });
 
 program
   .command("ledger")

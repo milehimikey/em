@@ -13,6 +13,7 @@
 | `em typespec <file>` | **Deprecated** alias of `em api generate --stdout` |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
+| `em refs <file> --reachable-from <rev>` | Check that every commit a slice doc records (`ratifiedRef`, `shippedRef`, a bare `conformedAt`) still resolves and is reachable from a branch — the squash/rebase-merge check (opt-in CI check) |
 | `em coverage <file> --tests <dir>` | Check that every `INV-*` invariant ID in an implemented slice doc is cited by a test (advisory by default, `--strict` for CI; `--include-ready` also counts ready-to-implement; `--slice <key>` scopes to one slice for the pre-merge check) |
 | `em status <files...>` | Deterministic state-of-the-system rollup over one or more models: lifecycle status, driftSignal, invariant coverage, open issues, and conformance |
 | `em freshness <file>` | Standalone "last conformed `<rev>` — N commits/M slice-PRs behind HEAD" for one model |
@@ -1350,6 +1351,82 @@ every other command's own schema):
 - `skipped` — `{ sliceKey, reason }[]`, `reason` one of the three above.
 - `ok` — `true` when `findings` (the still-active list) is empty — a run with only waived
   findings is `ok: true`.
+
+## `em refs <file> --reachable-from <rev>`
+
+Checks that every commit a model's slice docs record still **resolves** and is still **reachable**
+from the branch the docs live on (GH #258, 1.17.0). `ratifiedRef:` (MIL-284) is `HEAD` of whatever
+branch `em slice ratify` ran on; `shippedRef:` is its copy taken at `mark-implemented`; a bare
+`conformedAt:` is the target-repo revision a conform sweep diffed against. Under **squash or
+rebase merges** each can name a commit that exists only on a deleted PR branch — unreachable from
+the target branch, then garbage-collected — while `em validate`, `--slice-ready` and `em ledger`
+all keep passing, because nothing else in `em` resolves a ref. **Opt-in and CI-recipe-tier**, like
+`em ledger`: it reads git, so it is deliberately not part of `em validate` (see
+[ci.md](ci.md#em-refs-opt-in)). Local object store only — no network; fetch first.
+
+`<file>` is compiled for its slice keys; its directory locates `slices/` and the repository
+(every git call runs `-C <model dir>`, never the process cwd).
+
+| Flag | Effect |
+|---|---|
+| `--reachable-from <rev>` | Required. The branch or commit every ref must be an ancestor of — `origin/main` in CI, after a full-depth fetch |
+| `--waive <slice-key>` | Excuse this slice's non-passing results from the exit code (repeatable); still reported under `waived` |
+| `--waive-file <path>` | A baseline file of slice keys to waive, one per line, `#` comments allowed; a missing file means no waivers — so a recipe can name it before anyone needs one |
+| `--json` | Print a JSON document instead of the text report |
+
+Per doc, per present field, one of four outcomes — the first three are the issue's "distinguishable
+in `--json`", the fourth is the shallow-clone rule:
+
+| Status | Meaning |
+|---|---|
+| `ancestor` | Resolves and is reachable from `<rev>` — healthy. Listed too, so a CI log shows what *was* verified |
+| `not-ancestor` | Resolves (still in the object store) but is **not** reachable — the squash/rebase-merge signature, seen before the orphaned commit is pruned |
+| `unresolved` | Does not resolve to a commit at all — pruned after its branch was deleted, never fetched, or mistyped |
+| `undecidable` | A **shallow clone** (`git rev-parse --is-shallow-repository`), or `git merge-base` failed in a way that is neither yes nor no. **Never a pass**: `ok: false`, exit `1`, plus `warn: shallow clone … fetch-depth: 0` on stderr |
+
+Kinded `conformedAt:` values (`build:1234`, GH #261 — see [`em slice conform`](#em-slice-conform-file-slice-key---at-rev))
+are not git revisions and are skipped; a doc with no ref fields at all is not reported. A
+`--reachable-from` that does not itself resolve, or a model directory outside a git work tree, is a
+hard error, not a finding.
+
+**Exit code and waivers.** Exits `1` when any active result is not `ancestor`. A waiver names a
+slice key and excuses every non-passing result on it — `--waive` for a one-off run, `--waive-file`
+for the baseline a repo keeps once it has adopted the check with history already containing
+squash-merged ratifications. A waived result is still fully reported (text: `waived … (not-ancestor;
+waived by refs-baseline.txt)`; JSON: under `waived` with `waivedBy`), just not counted. A waiver
+with nothing to excuse is reported as `note: waiver for slice "<key>" … has nothing to excuse —
+ignored` on stderr, never swallowed. `ancestor` results need no excuse and are never moved.
+
+```bash
+$ em refs model.em --reachable-from origin/main
+  ancestor     ship ratifiedRef: 7c1f0e2…
+  not-ancestor pay ratifiedRef: 3a9d41b… — resolves but is not an ancestor of 9e8c2d1 — reachable only from a branch that was squash/rebase-merged and deleted
+  not-ancestor pay shippedRef: 3a9d41b… — …
+2 ref(s) not reachable from origin/main (3 checked on 2 doc(s))
+$ echo "pay" >> refs-baseline.txt && em refs model.em --reachable-from origin/main --waive-file refs-baseline.txt
+  ...
+ok — every recorded ref is reachable from origin/main (3 ref(s) on 2 doc(s), 2 waived)
+```
+
+**What to do about a `not-ancestor`/`unresolved` ref.** The hash, not the ref, identifies the signed
+content: `ratifiedHash` still verifies the body (`--slice-ready`, `em validate --check-signed-bodies`),
+so a dangling ref is a lost *address*, not a lost signature. Going forward, ratify with
+[`--no-ref`](#em-slice-ratify-file-slice-key---by-name) in a squash/rebase repo and certify with
+`--at <kind>:<id>`; for the existing estate, baseline the keys with `--waive-file` and fail only on
+new ones.
+
+**`--json` shape** (`refsSchemaVersion: "1.0"`, versioned independently of the npm package):
+
+- `generator` — `{ name, version }`.
+- `file`, `reachableFrom`, `target` (the full sha `--reachable-from` resolved to), `shallow`.
+- `checked` — `{ docs, refs }`: docs that carried at least one ref field, and the (doc, field)
+  pairs examined, waived or not.
+- `results` — `{ sliceKey, path, field, ref, status, detail }[]`, active results (`ancestor`
+  included); `field` one of `ratifiedRef | shippedRef | conformedAt`, `status` one of the four
+  above, `detail` git's reason or `null`.
+- `waived` — the same shape plus `waivedBy: { source: "flag" } | { source: "file", path }`.
+- `ok` — `false` when any active result is not `ancestor` (so a shallow clone reads
+  `ok: false, shallow: true`).
 
 ## `em coverage <file> --tests <dir>`
 

@@ -322,6 +322,29 @@ way; only `ledger-content-without-version-bump` is. For a one-off manual run, `-
 <slice-key>` does the same thing without a commit trailer — see
 [cli.md](cli.md#em-ledger-file) for both forms.
 
+## `em refs` (opt-in)
+
+`em refs` (GH #258) checks that every commit a slice doc records — `ratifiedRef:`,
+`shippedRef:`, a bare `conformedAt:` — still resolves and is reachable from the target branch.
+Under squash or rebase merges the ratification's PR-branch `HEAD` is orphaned once the branch is
+deleted, and nothing else in `em` would notice (see
+[cli.md](cli.md#em-refs-file---reachable-from-rev) for the four outcomes). Like `em ledger` it
+reads git, so it is its own opt-in step, not part of `em validate`:
+
+```yaml
+      - name: Check recorded refs are reachable from the base branch
+        run: npx @milehimikey/em refs model.em --reachable-from "origin/${{ github.event.pull_request.base.ref }}" --waive-file refs-baseline.txt
+```
+
+Needs the same `fetch-depth: 0` checkout the ledger step needs — on a shallow clone every ref is
+`undecidable` and the job fails rather than passing vacuously. `--waive-file refs-baseline.txt` is
+optional: a missing file means no waivers, so the line is safe to add before anyone has needed a
+baseline. When a repo adopts the check with squash-merged ratifications already in its history,
+put those slice keys in the baseline (one per line, `#` comments allowed) so the job fails only on
+new dangling refs; waived results still print in the log. The lasting fix is upstream: ratify with
+`--no-ref` and certify with `--at <kind>:<id>` in a squash/rebase repo — the hash identifies the
+signed content, the ref was only ever an address.
+
 ## `em coverage` (opt-in)
 
 Same "opt-in unless you install the preset" story as `em ledger` above — `--strict` is on by
