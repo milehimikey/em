@@ -148,10 +148,17 @@ export function unquote(s: string): string {
  *  `scanUnquoted` above. Two independently-stray inch marks in a field list
  *  (`{ size24: 24", size32: 32" }`) must NOT pair with each other and swallow the comma between
  *  them; only a genuinely anchored `"` (e.g. right after `renamed from`, or after a from-list
- *  comma) opens a span at all. */
+ *  comma) opens a span at all.
+ *
+ *  Bracket-aware too (GH #249): a `sep` inside `<…>`, `[…]`, `(…)` or `{…}` does not split, so
+ *  `prices: Map<string, int>, currency: string` is two fields, not three — the same nesting rule
+ *  parser.ts's `maskQuotedAndBracketed` applies when it looks for a second field inside a type.
+ *  Depth never goes negative (a stray closer is ordinary text), and an unclosed opener swallows
+ *  the rest of the line — a type is never left half-split. */
 export function splitTopLevel(s: string, sep: string): string[] {
   const items: string[] = [];
   let cur = "";
+  let depth = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === '"' && isQuoteOpener(s, i)) {
@@ -159,10 +166,12 @@ export function splitTopLevel(s: string, sep: string): string[] {
       const end = close >= 0 ? close : s.length - 1;
       cur += s.slice(i, end + 1);
       i = end;
-    } else if (c === sep) {
+    } else if (c === sep && depth === 0) {
       items.push(cur);
       cur = "";
     } else {
+      if ("<[({".includes(c)) depth++;
+      else if (">])}".includes(c) && depth > 0) depth--;
       cur += c;
     }
   }

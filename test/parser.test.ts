@@ -1870,3 +1870,51 @@ describe("whitespace-separated inline fields (GH #245)", () => {
     expect(v.fields!.map((f) => f.derived)).toEqual([true, true]);
   });
 });
+
+// GH #249: the inline split is bracket-aware — a comma inside `<…>`, `[…]`, `(…)` or `{…}` belongs
+// to the type, the same nesting rule the #245 second-field check already applies.
+describe("commas inside generic / bracketed types in an inline field block (GH #249)", () => {
+  const model = (body: string) => `slice "S" {\n  event E @C ${body}\n}`;
+  const fieldsOf = (body: string) => parse(model(body)).slices[0].elements[0].fields!;
+
+  it("the issue's repro: `Map<string, int>` stays one field", () => {
+    expect(fieldsOf("{ prices: Map<string, int>, currency: string }")).toEqual([
+      { name: "prices", type: "Map<string, int>" },
+      { name: "currency", type: "string" },
+    ]);
+  });
+
+  it("nested generics, tuples and parenthesised types; a braced type works one-per-line (an inline block still ends at its first `}`)", () => {
+    expect(fieldsOf("{ a: Record<string, Array<[int, int]>>, b: (string, int), d: string }").map((f) => [f.name, f.type])).toEqual([
+      ["a", "Record<string, Array<[int, int]>>"],
+      ["b", "(string, int)"],
+      ["d", "string"],
+    ]);
+    expect(fieldsOf("{\n    c: { x: int, y: int }\n    d: string\n  }").map((f) => [f.name, f.type])).toEqual([
+      ["c", "{ x: int, y: int }"],
+      ["d", "string"],
+    ]);
+  });
+
+  it("a quoted, comma-bearing clause list after a generic type still splits correctly (quotes and brackets compose)", () => {
+    const fields = parse(`slice "S" {\n  event E @C { prices: Map<string, int> renamed from "Old Prices", "Older Prices", currency: string }\n}`).slices[0].elements[0].fields!;
+    expect(fields.map((f) => [f.name, f.type])).toEqual([
+      ["prices", "Map<string, int>"],
+      ["currency", "string"],
+    ]);
+    expect(fields[0].renamedFrom).toEqual(["Old Prices", "Older Prices"]);
+  });
+
+  it("a multi-line block is unaffected, and #245's whitespace slip is still caught beside a generic", () => {
+    expect(fieldsOf("{\n    prices: Map<string, int>\n    currency: string\n  }").map((f) => f.type)).toEqual(["Map<string, int>", "string"]);
+    expect(() => parse(model("{ prices: Map<string, int>  currency: string }"))).toThrow(/looks like two fields — inline fields are comma-separated: `\{ prices: Map<string, int>, currency: string \}`/);
+  });
+
+  it("a stray closer is ordinary text; an unclosed opener swallows the rest rather than half-splitting a type", () => {
+    expect(fieldsOf("{ a: int>, b: int }").map((f) => [f.name, f.type])).toEqual([
+      ["a", "int>"],
+      ["b", "int"],
+    ]);
+    expect(fieldsOf("{ a: Map<string, b: int }").map((f) => [f.name, f.type])).toEqual([["a", "Map<string, b: int"]]);
+  });
+});

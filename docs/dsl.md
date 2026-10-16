@@ -196,7 +196,11 @@ records, a read model projects, or a UI shows. Each field is a `name` with an op
 `: Type`. On internal elements types are free text with no semantic checking; on `public`
 elements they are strict (see [Strict public types](#strict-public-types)). Write fields one
 per line or inline, comma-separated (whitespace alone between inline fields is a parse error, not
-one field with a long type):
+one field with a long type). A comma *inside* a type's own brackets — `Map<string, int>`,
+`(string, int)`, `[int, int]`, `{ x: int, y: int }` — belongs to the type and does not split the
+field (GH #249; the split treats `<…>`, `[…]`, `(…)` and `{…}` as nesting, exactly as the
+two-fields check does). One limit: an *inline* block ends at its first `}`, so a type that
+itself uses braces (`{ x: int, y: int }`) goes on its own line in a multi-line block:
 
 ```
 command Place Order {            # one per line
