@@ -15,7 +15,7 @@
 // Determinism: units and every list derived from them are in model (slice) order; no sort by
 // anything but that order and plain string order for stable tie-breaks.
 
-import { NormalizedModel } from "../model/model.js";
+import { NormalizedModel, collectModelInvariants, collectTags } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceKey } from "../model/resolveSlice.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
@@ -23,6 +23,8 @@ import { semanticEdges } from "../model/edges.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { loadSliceDocsOnce, joinSliceDocFast } from "../model/sliceDocIndex.js";
 import { computeSliceReadiness, ContractCheckInput } from "../catalog/sliceReadyValidate.js";
+import { readSliceDoc } from "../catalog/readSliceDoc.js";
+import { extractInvariantIds } from "./coverage.js";
 import { buildModelIndex } from "../model/queryIndex.js";
 import { buildQuerySystem, resolveElement } from "../query/system.js";
 import {
@@ -383,6 +385,21 @@ export interface EngagementPlanLevel {
   slices: string[];
 }
 
+/** GH #239: a model-wide gap the engagement's slices share — the kind of thing every parallel
+ *  implementer would otherwise rediscover and report on its own. Advisory: never a hold, never
+ *  written to the Ledger; the lead puts the whole list to the human in ONE question round before
+ *  fan-out (skill §2). Each finding names the slices it spans so the answer lands once. */
+export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch";
+
+export interface PreflightFinding {
+  kind: PreflightKind;
+  /** What the finding is about: the invariant id, the event name, the `ui` name, or the slice key. */
+  subject: string;
+  /** Engagement slices involved, model order. */
+  slices: string[];
+  message: string;
+}
+
 export interface EngagementPlan {
   file: string;
   engagement: string;
@@ -392,6 +409,114 @@ export interface EngagementPlan {
   parallel: number;
   levels: EngagementPlanLevel[];
   slices: EngagementPlanSlice[];
+  /** GH #239 (plan schema 1.2). `[]` when the engagement's slices share no gap. */
+  preflight: PreflightFinding[];
+}
+
+/** The doc↔model diagnostics (MIL-124) a pre-flight rolls up per slice: an event table listing a
+ *  field or element the model lacks is the "events missing fields the slice tables list" gap. */
+const DOC_MODEL_CODES = new Set(["doc-model-element-not-in-doc", "doc-model-element-not-in-model", "doc-model-field-mismatch", "doc-model-pattern-mismatch"]);
+
+/**
+ * GH #239: the four gaps an engagement run surfaced seven times over (one per implementer).
+ * Pure over the model, the unit index and the caller's unconditional diagnostics:
+ *  - `repeated-invariant`: one `invariant INV-…` id declared in two or more of the engagement's
+ *    slices (MIL-265) — which slice enforces it is a single decision, not N.
+ *  - `event-without-tag`: an event owned by an engagement slice with no tag at all
+ *    (`collectTags` empty — no inline identity tag, no `tag` clause): the entity's consistency
+ *    boundary is undeclared, and the foundation PR (implement.md §8) is where it must be fixed.
+ *  - `shared-trigger`: one `ui` name in two or more engagement slices. em has no endpoint syntax;
+ *    under MIL-212 a `ui` IS the endpoint obligation, so a screen that triggers commands in two
+ *    slices is one endpoint with no single owner.
+ *  - `doc-model-mismatch`: the slice's doc↔model consistency warnings (MIL-124) — the tables an
+ *    implementer reads disagree with the model it builds against.
+ * Slices are the engagement's UNITS (continuations fold into their originator's key).
+ */
+export function computePreflight(input: EngagementModelInput, members: string[], idx: UnitIndex): PreflightFinding[] {
+  const memberSet = new Set(members);
+  const order = byOrder(idx);
+  const unitOf = (sliceIndex: number) => idx.unitOfSlice[sliceIndex];
+  const findings: PreflightFinding[] = [];
+  const sortKeys = (keys: Iterable<string>) => [...new Set(keys)].sort(order);
+
+  // repeated-invariant: an id the model declares on one slice's element OR a slice doc cites (its
+  // Invariants table, a scenario) — per unit, then counted across units. Declaring one id twice
+  // in the MODEL is already `invariants/duplicate-id` (an error, so those slices are `not-ready`
+  // too); the case nothing flagged before is the doc-side one — two slices' docs each listing
+  // "the order has at least one line" under the same id, each implementer deciding alone.
+  const byInvariant = new Map<string, Set<string>>();
+  const note = (id: string, unit: string) => byInvariant.set(id, (byInvariant.get(id) ?? new Set()).add(unit));
+  for (const inv of collectModelInvariants(input.model)) {
+    const unit = unitOf(inv.element.sliceIndex);
+    if (memberSet.has(unit)) note(inv.id, unit);
+  }
+  for (const unit of members) {
+    const doc = readSliceDoc(input.baseDir, unit);
+    if (!doc) continue;
+    for (const id of extractInvariantIds(doc.body)) note(id, unit);
+  }
+  for (const [id, units] of [...byInvariant].sort(([a], [b]) => a.localeCompare(b))) {
+    if (units.size < 2) continue;
+    const slices = sortKeys(units);
+    findings.push({
+      kind: "repeated-invariant",
+      subject: id,
+      slices,
+      message: `invariant ${id} appears in ${slices.length} of the engagement's slices (${slices.join(", ")}) — declared in the model or cited in the slice docs; decide once which slice enforces it and how it is verified`,
+    });
+  }
+
+  // event-without-tag
+  for (const el of input.model.elements) {
+    if (el.kind !== "event") continue;
+    const unit = unitOf(el.sliceIndex);
+    if (!memberSet.has(unit) || collectTags(el).length > 0) continue;
+    findings.push({
+      kind: "event-without-tag",
+      subject: el.name,
+      slices: [unit],
+      message: `event "${el.name}" (${unit}) carries no tag — its entity's consistency boundary is undeclared; fix it in the foundation (an inline \`tag\` field or an element-level \`tag\` clause) before any implementer needs it`,
+    });
+  }
+
+  // shared-trigger
+  const byUi = new Map<string, Set<string>>();
+  for (const el of input.model.elements) {
+    if (el.kind !== "ui") continue;
+    const unit = unitOf(el.sliceIndex);
+    if (!memberSet.has(unit)) continue;
+    byUi.set(el.name, (byUi.get(el.name) ?? new Set()).add(unit));
+  }
+  for (const [name, units] of [...byUi].sort(([a], [b]) => a.localeCompare(b))) {
+    if (units.size < 2) continue;
+    const slices = sortKeys(units);
+    findings.push({
+      kind: "shared-trigger",
+      subject: name,
+      slices,
+      message: `ui "${name}" triggers commands in ${slices.length} slices (${slices.join(", ")}) — one endpoint obligation with no single owner; name the owning slice (or split the screen) before fan-out`,
+    });
+  }
+
+  // doc-model-mismatch: one finding per slice, every mismatch message folded in
+  const byUnit = new Map<string, string[]>();
+  for (const d of input.allDiagnostics) {
+    if (!DOC_MODEL_CODES.has(d.code)) continue;
+    const unit = members.find((k) => d.refs?.some((r) => r === k || r.startsWith(`${k}/`)));
+    if (!unit) continue;
+    byUnit.set(unit, [...(byUnit.get(unit) ?? []), d.message]);
+  }
+  for (const unit of sortKeys(byUnit.keys())) {
+    const msgs = byUnit.get(unit)!;
+    findings.push({
+      kind: "doc-model-mismatch",
+      subject: unit,
+      slices: [unit],
+      message: `slice "${unit}": its doc and the model disagree (${msgs.length} doc↔model finding(s)) — ${msgs.join("; ")}`,
+    });
+  }
+
+  return findings;
 }
 
 export type PlanResult = { ok: true; plan: EngagementPlan } | { ok: false; message: string };
@@ -459,7 +584,8 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   }
   // Slices listed level by level, model order within a level.
   slices.sort((a, b) => a.level - b.level || order(a.key, b.key));
-  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, parallel: eng.parallel, levels, slices } };
+  const preflight = computePreflight(input, members, idx);
+  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, parallel: eng.parallel, levels, slices, preflight } };
 }
 
 /** Walk predecessors among the unlevelled nodes until one repeats: `a -> b -> a` (upstream
@@ -487,6 +613,11 @@ export function formatEngagementPlanText(p: EngagementPlan): string {
       const track = s.tracking ? ` · tracking: ${s.tracking}` : "";
       lines.push(`  ${s.key} [${s.pattern}] ${s.branch} on ${s.base} · state: ${s.state}${inferred}${held}${track}`);
     }
+  }
+  // GH #239: the one question round before fan-out. Advisory — nothing above is held by it.
+  if (p.preflight.length > 0) {
+    lines.push(`pre-flight: ${p.preflight.length} model-wide gap(s) the engagement's slices share — answer once, before dispatch`);
+    for (const f of p.preflight) lines.push(`  ${f.kind}: ${f.message}`);
   }
   return lines.join("\n");
 }

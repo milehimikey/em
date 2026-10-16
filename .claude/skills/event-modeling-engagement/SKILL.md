@@ -72,12 +72,21 @@ Run the shared preconditions first (tool check, bundle currency, locate the mode
 Run `em engagement plan <model>.em <slug>` (`--json` when you need the fields). Present it in
 plain terms: each level, its width against the ceiling (`parallel`), each slice's branch (every
 base is `main`), and every held slice with its reason (`not-ready`,
-`upstream-outside-engagement-unmerged`, or `human`). Then ask exactly one question:
+`upstream-outside-engagement-unmerged`, or `human`). Then the plan's **`pre-flight:` block** (GH
+#239): the model-wide gaps the engagement's slices share — a `repeated-invariant` with no single
+enforcing slice, an `event-without-tag` whose consistency boundary is undeclared, a
+`shared-trigger` (one `ui`, two slices, no endpoint owner), a `doc-model-mismatch`. These are
+exactly what every implementer would otherwise stop on and report separately. Put them to the
+human **in the same single question round** as the ceiling, one bullet each with the slices it
+spans, and ask for a ruling on each (the answer goes where it belongs: the model, the foundation
+PR, a slice doc, or `.event-modeling.md` for a deferral). Then ask exactly one question:
 
 > "Ceiling N from the plan; proceed?"
 
 Ask it once per engagement. If the human names a lower number, use it for this session. **Never
 ask "which slice first"**: the levels decide the order, and the ceiling decides how many at once.
+A pre-flight finding never holds a slice: if the human says "proceed anyway" on one, dispatch
+and make sure each implementer's brief carries the ruling, so no agent rediscovers it.
 A held slice is never started; the plan releases it when its hold clears.
 
 ## 3. Per level: cut the worktree, then dispatch the implementer

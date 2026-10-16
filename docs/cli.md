@@ -2172,8 +2172,27 @@ PR compiles, tests and merges on its own. Holds are recomputed on every run. Per
 In-engagement upstreams impose no hold: they set the level only. (Until 1.14.2 a slice with two
 or more unmerged in-engagement upstreams was held as `multiple-unmerged-upstreams`, because a
 stacked branch cannot be cut from two bases; with every base `main` the reason is gone.) A merged
-slice (recorded or inferred) is never held. The text form prints one block per level with its
-width against the ceiling:
+slice (recorded or inferred) is never held.
+
+**Pre-flight (GH #239, 1.17.0).** The plan also lists the **model-wide gaps the engagement's
+slices share** — the questions every parallel implementer would otherwise rediscover and report
+on its own, so the human answers them in *one* round before fan-out instead of one per
+implementer. Advisory: a pre-flight finding never holds a slice and is never written to the
+Ledger. Each names the slices it spans.
+
+| `preflight[].kind` | When |
+|---|---|
+| `repeated-invariant` | One `INV-…` id appears in two or more of the engagement's slices — declared in the model (MIL-265) on one slice's element, or cited in a slice doc (its Invariants table, a scenario). Which slice enforces it, and how it is verified, is one decision. (Declaring one id twice in the *model* is already the `invariants/duplicate-id` error and holds those slices as `not-ready`; the doc-side repeat is what nothing flagged before) |
+| `event-without-tag` | An event owned by an engagement slice carries no tag at all (no inline identity `tag` field, no element-level `tag` clause): the entity's consistency boundary is undeclared, and the foundation PR (implement.md §8) is where it has to be fixed |
+| `shared-trigger` | One `ui` name appears in two or more engagement slices. em has no endpoint syntax; under MIL-212 a `ui` *is* the endpoint obligation, so a screen triggering commands in two slices is one endpoint with no single owner |
+| `doc-model-mismatch` | The slice's doc↔model consistency findings (MIL-124: `doc-model-element-not-in-doc`, `doc-model-element-not-in-model`, `doc-model-field-mismatch`, `doc-model-pattern-mismatch`) — the tables an implementer reads disagree with the model it builds against; one finding per slice, every message folded in |
+
+Slices are the engagement's units (a continuation folds into its originator's key). The text
+form appends a `pre-flight:` block after the levels; `--json` carries
+`preflight: [{ kind, subject, slices, message }]` (`[]` when there is nothing to ask). The
+`event-modeling-engagement` skill puts the list to the human together with the ceiling question.
+
+The text form prints one block per level with its width against the ceiling:
 
 ```
 engagement "loans" (open) — 26 slice(s) in 3 level(s), parallel 3
@@ -2187,9 +2206,10 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.1"`, `generator`, `file`, `engagement` (the
-file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `parallel`, `levels: [{ level, width, ceiling, slices }]` and
-`slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level. The MCP
+`--json` prints `engagementPlanSchemaVersion: "1.2"`, `generator`, `file`, `engagement` (the
+file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
+`slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
+(added in `1.2`, GH #239 — see above). The MCP
 `engagement_plan` tool returns the same document. If a cycle survives the `loops-to` exclusion,
 `plan` refuses and names it: `em engagement plan: the engagement's dependency graph has a cycle
 (loops-to edges already excluded): a -> b -> a`. An engagement naming a slice the model no

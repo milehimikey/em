@@ -1576,7 +1576,7 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     const file = join(lendDir, "lending.em");
     const { result, doc } = await callJson(client, "engagement_plan", { file, slug: "loans" });
     expect(result.isError).toBeFalsy();
-    expect(doc.engagementPlanSchemaVersion).toBe("1.1");
+    expect(doc.engagementPlanSchemaVersion).toBe("1.2");
     // MIL-280: one upstream merged, one still open — base is main either way, and nothing is held.
     expect(doc.slices.find((s: { key: string }) => s.key === "reservations")).toMatchObject({ base: "main", held: null });
     const cli = em(["engagement", "plan", file, "loans", "--json"], lendDir);

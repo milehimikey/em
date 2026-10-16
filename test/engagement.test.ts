@@ -16,6 +16,8 @@ import {
   applyEngagementClose,
   applyEngagementSet,
   buildNewEngagement,
+  buildUnitIndex,
+  computePreflight,
   engagementPlanFor,
   engagementStatusFor,
   formatEngagementPlanText,
@@ -454,7 +456,7 @@ describe("engagement tracking key (GH #241)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "cli", "--slices", "order-list", "--tracking", "PROJ-7"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "cli"), "utf8")).toContain('tracking: "PROJ-7"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
-    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.2", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
     const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
     expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
   }, 60_000);
@@ -476,4 +478,104 @@ describe("engagement reads the shipped record, not the working status (MIL-283)"
     writeFileSync(own, readFileSync(own, "utf8").replace("status: ready-to-implement\nversion: 1", "status: draft\nversion: 2\nimplementedIn: https://example.test/pr/4\nshippedVersion: 1"));
     expect(plan(file, "loans").slices[0]).toMatchObject({ state: "merged", stateInferred: true, docStatus: "draft" });
   });
+});
+
+// GH #239: the plan's pre-flight — the model-wide gaps every parallel implementer would otherwise
+// rediscover on its own, put to the human in one round before fan-out. Advisory: never a hold.
+describe("plan pre-flight (GH #239)", () => {
+  const READY = "---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex\nratifiedOn: 2026-10-02\n---\n# Slice\n\n## Intent\n\nbody\n";
+  const MODEL = [
+    'slice "Place Order" {',
+    "  ui Checkout Screen @Customer",
+    '  command Place Order note "slices/place-order.md"',
+    '  invariant INV-ORD-1 "An order has at least one line"',
+    "  event Order Placed @Orders { orderId }", // no tag at all → event-without-tag
+    "}",
+    'slice "Cancel Order" {',
+    "  ui Checkout Screen @Customer", // same screen as Place Order → shared-trigger
+    '  command Cancel Order note "slices/cancel-order.md"',
+    "  event Order Cancelled @Orders { orderId tag }", // tagged: fine
+    "}",
+    'slice "Ship Order" {',
+    "  ui Warehouse Screen @Clerk",
+    '  command Ship Order note "slices/ship-order.md"',
+    '  invariant INV-SHP-1 "Only a placed order ships"',
+    "  event Order Shipped @Orders { orderId tag }",
+    "}",
+    'slice "Order List" {',
+    '  view Orders from "Order Placed", "Order Cancelled", "Order Shipped" note "slices/order-list.md"',
+    "  ui Orders Screen @Customer",
+    "}",
+    "",
+  ].join("\n");
+  function write(): string {
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    for (const k of ["place-order", "cancel-order", "ship-order", "order-list"]) writeFileSync(join(dir, "slices", `${k}.md`), READY);
+    // cancel-order's doc CITES place-order's invariant (the day-job shape: two docs, one rule, no owner) → repeated-invariant
+    // (the template's bullet form: only a structural line under `## Invariants` OWNS an id — a table row or prose merely mentions one)
+    writeFileSync(join(dir, "slices", "cancel-order.md"), READY + "\n## Invariants\n\n- INV-ORD-1 — An order has at least one line\n");
+    const file = join(dir, "orders.em");
+    writeFileSync(file, MODEL);
+    return file;
+  }
+
+  it("names the repeated invariant, the untagged event and the shared ui — scoped to the engagement's slices, model order, no hold", () => {
+    const file = write();
+    create(file, "all", { kind: "slices", keys: ["place-order", "cancel-order", "ship-order", "order-list"] });
+    const p = plan(file, "all");
+    expect(p.preflight.map((f) => [f.kind, f.subject, f.slices])).toEqual([
+      ["repeated-invariant", "INV-ORD-1", ["place-order", "cancel-order"]],
+      ["event-without-tag", "Order Placed", ["place-order"]],
+      ["shared-trigger", "Checkout Screen", ["place-order", "cancel-order"]],
+    ]);
+    expect(p.preflight[0].message).toContain("appears in 2 of the engagement's slices (place-order, cancel-order) — declared in the model or cited in the slice docs; decide once");
+    expect(p.preflight[1].message).toContain('event "Order Placed" (place-order) carries no tag');
+    expect(p.preflight[2].message).toContain('ui "Checkout Screen" triggers commands in 2 slices');
+    expect(p.slices.every((s) => s.planHeld === null)).toBe(true);
+    const text = formatEngagementPlanText(p);
+    expect(text).toContain("pre-flight: 3 model-wide gap(s) the engagement's slices share — answer once, before dispatch");
+    expect(text).toContain("  shared-trigger: ui \"Checkout Screen\"");
+  });
+
+  it("only counts what the engagement covers: an engagement of one slice sees the untagged event and nothing shared; a clean engagement has an empty list", () => {
+    const file = write();
+    create(file, "one", { kind: "slices", keys: ["place-order"] });
+    expect(plan(file, "one").preflight.map((f) => f.kind)).toEqual(["event-without-tag"]);
+    create(file, "clean", { kind: "slices", keys: ["ship-order", "order-list"] });
+    expect(plan(file, "clean").preflight).toEqual([]);
+    expect(formatEngagementPlanText(plan(file, "clean"))).not.toContain("pre-flight");
+  });
+
+  it("rolls a slice's doc↔model findings into one doc-model-mismatch per slice, from the caller's diagnostics", () => {
+    const file = write();
+    const inp = input(file);
+    const idx = buildUnitIndex(inp.model, inp.refs, inp.baseDir);
+    const withDiags = {
+      ...inp,
+      allDiagnostics: [
+        ...inp.allDiagnostics,
+        { severity: "warning" as const, code: "doc-model-field-mismatch", message: 'slice "ship-order": doc lists field "carrier" on event "Order Shipped" the model does not declare', refs: ["ship-order"] },
+        { severity: "warning" as const, code: "doc-model-element-not-in-model", message: 'slice "ship-order": doc names event "Label Printed" the model does not have', refs: ["ship-order/event.label-printed"] },
+        { severity: "warning" as const, code: "doc-model-field-mismatch", message: "unrelated slice", refs: ["order-list"] },
+      ],
+    } as EngagementModelInput;
+    const findings = computePreflight(withDiags, ["ship-order"], idx);
+    expect(findings).toEqual([
+      {
+        kind: "doc-model-mismatch",
+        subject: "ship-order",
+        slices: ["ship-order"],
+        message: expect.stringContaining('slice "ship-order": its doc and the model disagree (2 doc↔model finding(s)) — slice "ship-order": doc lists field "carrier"'),
+      },
+    ]);
+  });
+
+  it("--json carries preflight under plan schema 1.2 and the MCP-shared builder prints it", () => {
+    const file = write();
+    create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
+    const p = JSON.parse(em(["engagement", "plan", "orders.em", "cli", "--json"], dir).stdout);
+    expect(p.engagementPlanSchemaVersion).toBe("1.2");
+    expect(p.preflight.map((f: { kind: string }) => f.kind)).toEqual(["repeated-invariant", "event-without-tag", "shared-trigger"]);
+    expect(em(["engagement", "plan", "orders.em", "cli"], dir).stdout).toContain("pre-flight: 3 model-wide gap(s)");
+  }, 60_000);
 });

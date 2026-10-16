@@ -18,7 +18,10 @@ export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1"];
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
-export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.1";
+// 1.2 (GH #239): additive `preflight: [{ kind, subject, slices, message }]` — the model-wide gaps
+//   the engagement's slices share (repeated-invariant, event-without-tag, shared-trigger,
+//   doc-model-mismatch); advisory, never a hold. `[]` when there are none.
+export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.2";
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
@@ -36,6 +39,7 @@ export function buildEngagementPlanJson(plan: EngagementPlan): string {
     tracking: plan.tracking,
     levels: plan.levels,
     slices: plan.slices,
+    preflight: plan.preflight,
   };
   return JSON.stringify(doc, null, 2);
 }

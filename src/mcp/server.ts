@@ -1145,7 +1145,9 @@ export function createServer(): McpServer {
         "the engagement's slices in dependency levels over model.edges (loops-to excluded), each " +
         "with its --slice-ready verdict, branch impl/<key>, base (always main — every slice PR " +
         "targets main, MIL-280), and any computed hold (not-ready, " +
-        "upstream-outside-engagement-unmerged); level widths vs the parallel ceiling. Read-only. " +
+        "upstream-outside-engagement-unmerged); level widths vs the parallel ceiling; and `preflight` (GH #239) — " +
+        "the model-wide gaps the engagement's slices share (repeated-invariant, event-without-tag, shared-trigger, " +
+        "doc-model-mismatch), to put to the human in ONE question round before fan-out. Read-only. " +
         "Tool error when the engagement is missing or has a cycle.",
       inputSchema: { file: fileParam, slug: slugParam },
     },
