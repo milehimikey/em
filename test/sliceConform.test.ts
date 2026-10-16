@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { applyConformFrontmatter, findLatestFindingsForRevision, runSliceConform } from "../src/cli/sliceConform.js";
+import { parseConformedAt } from "../src/catalog/sliceDoc.js";
 import { serializeFindingsDoc } from "../src/cli/findings.js";
 
 const IMPLEMENTED_DOC =
@@ -151,6 +152,26 @@ describe("applyConformFrontmatter (pure text surgery)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toContain("must not contain control characters or whitespace");
+  });
+
+  it("GH #261: accepts an opaque `<kind>:<id>` --at verbatim; refuses a malformed kind", () => {
+    const ok = applyConformFrontmatter(IMPLEMENTED_DOC, "shipped-slice", "build:pr-57-1234", "2026-10-15");
+    expect(ok.ok && ok.content).toContain("conformedAt: build:pr-57-1234\n");
+    const deploy = applyConformFrontmatter(IMPLEMENTED_DOC, "shipped-slice", "deploy:eu-1-2026-10-15", "2026-10-15");
+    expect(deploy.ok && deploy.content).toContain("conformedAt: deploy:eu-1-2026-10-15\n");
+    for (const bad of [":abc", "Build:1", "build:", "a b:1", "1build:x"]) {
+      const r = applyConformFrontmatter(IMPLEMENTED_DOC, "shipped-slice", bad, "2026-10-15");
+      expect(r.ok, bad).toBe(false);
+    }
+    expect(applyConformFrontmatter(IMPLEMENTED_DOC, "shipped-slice", "Build:1", "2026-10-15")).toMatchObject({
+      ok: false,
+      message: expect.stringContaining("is neither a git revision nor `<kind>:<id>`"),
+    });
+    // Reading side: a bare value is git; a kinded value is not.
+    expect(parseConformedAt("8f12ed8")).toEqual({ kind: "git", id: "8f12ed8" });
+    expect(parseConformedAt("refs/tags/v1.2.0")).toEqual({ kind: "git", id: "refs/tags/v1.2.0" });
+    expect(parseConformedAt("build:pr-57-1234")).toEqual({ kind: "build", id: "pr-57-1234" });
+    expect(parseConformedAt("deploy:eu-1:2026")).toEqual({ kind: "deploy", id: "eu-1:2026" });
   });
 
   it("refuses a malformed --on date", () => {

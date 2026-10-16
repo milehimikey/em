@@ -67,6 +67,15 @@ export function applyConformFrontmatter(raw: string, sliceKey: string, at: strin
   if (/[\x00-\x1f\x7f\s]/.test(trimmedAt)) {
     return { ok: false, message: "revision (--at) must not contain control characters or whitespace" };
   }
+  // GH #261: a `<kind>:<id>` value is an opaque, non-git identifier (what the sweep exercised —
+  // a build, deployment or environment) recorded verbatim; `:` anywhere else is malformed, so a
+  // reader never has to guess whether a value is a revision. See `parseConformedAt`.
+  if (trimmedAt.includes(":") && !/^[a-z][a-z0-9-]*:.+$/.test(trimmedAt)) {
+    return {
+      ok: false,
+      message: `--at "${trimmedAt}" is neither a git revision nor \`<kind>:<id>\` (kind = lowercase letters, digits, dashes — e.g. build:1234, deploy:eu-1-2026-10-15)`,
+    };
+  }
   if (!isValidDateString(on)) {
     return { ok: false, message: `invalid date "${on}" — expected YYYY-MM-DD` };
   }

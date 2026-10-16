@@ -319,7 +319,14 @@ slice with no unruled findings left:
 
 ```
 em slice conform <model-name>.em <slice-key> --at <target-repo revision>
+em slice conform <model-name>.em <slice-key> --at <kind>:<id>      # e.g. build:1234 — what the sweep exercised, when its commit will not stay reachable (GH #261)
 ```
+
+If you certified from a pull-request branch and the repo squash- or rebase-merges, the branch
+HEAD will dangle once the branch is deleted. Either pass a commit the target branch will keep
+(the merge commit) or record the deployment/build you actually swept as `--at build:<id>` /
+`--at deploy:<id>` / `--at env:<id>` — and write the same string as the findings file's
+`revision`, so the findings-check gate still matches.
 
 — records `conformedVersion`/`conformedAt`/`conformedOn` on that slice's doc, so
 `driftSignal` reads `in-sync` again (it reads `uncertified` for an implemented slice that's never

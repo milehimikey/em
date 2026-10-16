@@ -3646,6 +3646,24 @@ conformedOn: <local date>
 | `--on <date>` | Certification date, `YYYY-MM-DD` (default: today, local date) |
 | `--skip-findings-check` | Certify even with unruled findings in scope — prints a loud notice on stderr |
 
+**Squash and rebase merges, and non-git identifiers (GH #261, 1.17.0).** The natural moment to
+certify is from the pull-request branch — the implementation is deployed to a per-PR environment,
+the sweep runs, the slice is certified before merge — and the obvious `--at` is that branch's
+`HEAD`. Under a merge-commit strategy that commit stays in the target branch's history; under
+**squash or rebase merges** it exists only on the PR branch and dangles once the branch is
+deleted, exactly like `ratifiedRef` ([`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)).
+Two ways out: pass the commit the sweep will still be able to reach (the merge commit, once it
+exists), or record **what was actually exercised** instead of a revision — `--at <kind>:<id>`, an
+opaque identifier with an explicit kind: `--at build:1234`, `--at deploy:eu-1-2026-10-15`,
+`--at env:pr-57`. `kind` is lowercase letters, digits and dashes; the id is anything without
+whitespace (it may itself contain `:`). A bare value is a git revision, as it always was — git
+refnames cannot contain `:` and SHAs are hex, so a reader never has to guess
+(`parseConformedAt()` in `src/catalog/sliceDoc.ts`; `kind: "git"` for a bare value). The value
+is recorded verbatim in `conformedAt:` and the findings-check gate matches it exactly, so the
+sweep's `conformance/<date>-findings.json` should carry the same string as its `revision`.
+Reachability checks (GH #258) act on git revisions only and skip a kinded value. There is no
+`<kind>:` registry — pick what your pipeline can look up later.
+
 Legal only for a **shipped** slice (MIL-283: `status: implemented`, or any status with a
 `shippedVersion:` — a draft of v<N+1> open over a shipped v<N> still has v<N>'s code to certify)
 with a non-empty `implementedIn:` link — refuses otherwise (there's no code to certify, or nothing

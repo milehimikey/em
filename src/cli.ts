@@ -1290,7 +1290,12 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
-  .requiredOption("--at <rev>", "the target-repo revision this certification sweep diffed against")
+  .requiredOption(
+    "--at <rev>",
+    "the target-repo revision this certification sweep diffed against — or, when what was exercised is not a commit " +
+      "that stays reachable (a per-PR environment under squash/rebase merges, a build or image), an opaque " +
+      "`<kind>:<id>` such as build:1234 or deploy:eu-1-2026-10-15 (GH #261); recorded verbatim, skipped by git-reachability checks",
+  )
   .option("--on <date>", "certification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-findings-check", "certify even with unruled findings in scope — prints a loud notice on stderr")
   .action((file: string, sliceKey: string, opts: { at: string; on?: string; skipFindingsCheck?: boolean }) => {

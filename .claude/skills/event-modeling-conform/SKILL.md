@@ -44,7 +44,8 @@ Ruling on a finding is a human gate, like ratifying a slice
 decides, and `em conform-supersede ... --locus <model|doc|code|none> --by <name>` records the
 ruling on the findings record (and stamps the report) — never rule on your own judgment. Once
 every finding touching a slice is ruled, `em slice conform <model-name>.em <key> --at <rev>`
-certifies that version of the slice.
+certifies that version of the slice (`--at build:<id>` / `deploy:<id>` when the swept commit
+will not stay reachable — a PR branch under squash/rebase merges; GH #261).
 
 End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance` —
 refuses while any `implemented` slice still has an unruled finding; `--partial` escapes with a

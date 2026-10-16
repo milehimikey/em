@@ -435,6 +435,28 @@ function sha256(text: string): string {
   return `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
 }
 
+/** GH #261: how a `conformedAt:` value (or an `em slice conform --at` argument) is read. A bare
+ *  value is a TARGET-repo git revision, as it always was. A `<kind>:<id>` value — `build:1234`,
+ *  `deploy:eu-1-2026-10-15`, `env:pr-57` — names the thing the sweep actually exercised when that
+ *  is not a commit reachable from the target branch (a per-PR environment whose branch HEAD a
+ *  squash or rebase merge will orphan, a build or image id). `kind` is lowercase
+ *  `[a-z][a-z0-9-]*`; git refnames cannot contain `:` and SHAs are hex, so the form is
+ *  unambiguous. Readers that resolve revisions (GH #258's reachability check) act on
+ *  `kind === "git"` only. */
+export interface ConformedAtRef {
+  /** `"git"` for a bare revision, else the declared kind. */
+  kind: string;
+  /** The revision, or the opaque identifier after the kind's `:`. */
+  id: string;
+}
+
+const CONFORMED_AT_KIND = /^([a-z][a-z0-9-]*):(.+)$/;
+
+export function parseConformedAt(value: string): ConformedAtRef {
+  const m = CONFORMED_AT_KIND.exec(value);
+  return m ? { kind: m[1], id: m[2] } : { kind: "git", id: value };
+}
+
 /** MIL-284 / GH #253: the identity `em slice ratify` records as `ratifiedHash:` and
  *  `--slice-ready` checks against: `sha256:<hex>` over `ratifiedBody()` of the doc BODY —
  *  everything after the closing frontmatter fence (or the whole doc when there is none), EOLs
