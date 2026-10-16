@@ -1954,6 +1954,12 @@ program
       "ready (MIL-87, MIL-259, MIL-238)",
   )
   .option(
+    "--require-ratified-hash",
+    "with --slice-ready (GH #256): strict mode — a ready-to-implement doc with no `ratifiedHash:` is NOT ready " +
+      "(`slice-ready-missing-ratified-hash`, error; `ready: false` in --json). Off by default so docs ratified " +
+      "before em 1.15 keep passing; turn it on once legacy docs are re-ratified",
+  )
+  .option(
     "--json",
     "print a JSON document instead of text — works on a model WITH errors, unlike `em export` " +
       "(MIL-128, see docs/cli.md); exit codes are unchanged",
@@ -1967,9 +1973,14 @@ program
         listPublic?: boolean;
         failOnIssues?: boolean;
         sliceReady?: string;
+        requireRatifiedHash?: boolean;
         json?: boolean;
       },
     ) => {
+      if (opts.requireRatifiedHash && !opts.sliceReady) {
+        console.error("em validate: --require-ratified-hash applies only with --slice-ready <key>");
+        process.exit(1);
+      }
       const { model, diagnostics, refs, source } = compileFile(file);
       const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
       if (opts.sliceReady) {
@@ -1996,7 +2007,9 @@ program
         // `slice-ready-unknown-slice` error (carrying the resolver's message).
         const resolved = resolveSliceKey(model, refs, opts.sliceReady);
         const key = resolved.ok ? resolved.key : opts.sliceReady;
-        const { scoped, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics);
+        const { scoped, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics, {
+          requireRatifiedHash: opts.requireRatifiedHash === true,
+        });
         printDiagnostics(scoped);
         if (opts.json) {
           // MIL-128: the named gates (see computeSliceReadyGates) plus the same `scoped`

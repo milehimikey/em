@@ -659,6 +659,14 @@ export const RULES = {
     docAnchor: "slice-readiness",
     optIn: true,
   },
+  "slice-ready-missing-ratified-hash": {
+    severity: "error",
+    title: "No ratifiedHash (strict mode)",
+    fix: "`--require-ratified-hash` is on and this ready-to-implement doc records no `ratifiedHash:` (ratified before em 1.15, grandfathered by `em upgrade`, or hand-edited). Re-ratify it so the signed body has an identity: `em slice revise --withdraw`, review, `em slice ratify --by`.",
+    usageCategory: "slice-ready ready doc has no ratifiedHash (strict)",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
   "slice-ready-contract-stale": {
     severity: "error",
     title: "Contract missing or stale",

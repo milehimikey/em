@@ -401,6 +401,13 @@ describe("slice_ready tool", () => {
     expect(doc.diagnostics).toEqual([]);
   });
 
+  it("GH #256: requireRatifiedHash flips the verdict for a ready doc with no ratifiedHash — same strict mode as the CLI flag; gates unchanged", async () => {
+    const { doc } = await callJson(client, "slice_ready", { file: join(dir, "ready.em"), sliceKey: "ready-slice", requireRatifiedHash: true });
+    expect(doc.ready).toBe(false);
+    expect(doc.gates.ratified).toBe(true);
+    expect(doc.diagnostics.map((d: { code: string }) => d.code)).toEqual(["slice-ready-missing-ratified-hash"]);
+  });
+
   it("verdict shape for an unknown slice key: gates null, ready false, not a tool error", async () => {
     const { result, doc } = await callJson(client, "slice_ready", { file: join(dir, "ready.em"), sliceKey: "no-such-key" });
     expect(result.isError).toBeFalsy();

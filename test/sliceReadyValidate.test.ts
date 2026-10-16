@@ -421,6 +421,37 @@ describe("slice-ready-body-changed-since-ratification (MIL-284)", () => {
     ]);
   });
 
+  it("GH #256: --require-ratified-hash fails a ready doc with no hash (error, stable code), leaves a hashed one and other statuses alone; default unchanged", () => {
+    const strict = (src: string, key: string) => {
+      const { model, refs, diagnostics } = compile(src);
+      return validateSliceReady(model, refs, dir, key, { file: join(dir, "model.em"), source: src, diagnostics }, { requireRatifiedHash: true });
+    };
+    writeDoc("strict-nohash", SIGNED);
+    const src = `slice "Strict Nohash" {\n  command Do Thing note "slices/strict-nohash.md"\n}`;
+    expect(readyDiagsOf(src, "strict-nohash")).toEqual([]); // default: a pre-1.15 doc is judged on ratifiedBy alone
+    expect(strict(src, "strict-nohash")).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        code: "slice-ready-missing-ratified-hash",
+        message:
+          'slice "strict-nohash"\'s doc slices/strict-nohash.md is ready-to-implement with no ratifiedHash — --require-ratified-hash is on: re-ratify it (`em slice revise --withdraw`, review, `em slice ratify --by`) so the signed body has an identity',
+        refs: ["strict-nohash"],
+      }),
+    ]);
+    writeDoc("strict-hashed", `${SIGNED}ratifiedHash: ${matchingHash}\n`);
+    expect(strict(`slice "Strict Hashed" {\n  command Do Thing note "slices/strict-hashed.md"\n}`, "strict-hashed")).toEqual([]);
+    writeDoc("strict-draft", "status: draft\nversion: 1\n");
+    expect(strict(`slice "Strict Draft" {\n  command Do Thing note "slices/strict-draft.md"\n}`, "strict-draft").map((d) => d.code)).toEqual(["slice-ready-status-not-ready"]);
+    // The one verdict helper threads the option through, so `ready` flips with it.
+    const { model, refs, diagnostics } = compile(src);
+    const contract = { file: join(dir, "model.em"), source: src, diagnostics };
+    expect(computeSliceReadiness(model, refs, dir, "strict-nohash", contract, []).ready).toBe(true);
+    const r = computeSliceReadiness(model, refs, dir, "strict-nohash", contract, [], { requireRatifiedHash: true });
+    expect(r.ready).toBe(false);
+    expect(r.scoped.map((d) => d.code)).toEqual(["slice-ready-missing-ratified-hash"]);
+    expect(r.result?.gates.ratified).toBe(true); // gates gain no boolean: the verdict is the diagnostic
+  });
+
   it("is silent on a doc with no ratifiedHash (ratified before em 1.15) and off the ready status", () => {
     writeDoc("pre-115", SIGNED, "anything\n");
     expect(readyDiagsOf(`slice "Pre 115" {\n  command Do Thing note "slices/pre-115.md"\n}`, "pre-115")).toEqual([]);

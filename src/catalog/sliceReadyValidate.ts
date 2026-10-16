@@ -78,12 +78,23 @@ function resolveSliceMessage(model: NormalizedModel, refs: RefsResult, sliceKey:
  * API-first gate — a public-touching slice whose model contract is missing or stale gets a
  * `slice-ready-contract-stale` error on every path past the unknown-key check.
  */
+/** GH #256: the opt-in strictness a host turns on once its legacy docs are re-ratified. */
+export interface SliceReadyOptions {
+  /** `--require-ratified-hash`: a `ready-to-implement` doc with no `ratifiedHash:` is NOT ready
+   *  (`slice-ready-missing-ratified-hash`, error). Off by default so docs ratified before em 1.15
+   *  — and `em upgrade`'s grandfathered sign-offs — keep passing; a hand-edited frontmatter that
+   *  fakes `ratifiedBy`/`ratifiedOn` without a hash passes readiness with no integrity check
+   *  otherwise, which is the hole this closes. */
+  requireRatifiedHash?: boolean;
+}
+
 export function validateSliceReady(
   model: NormalizedModel,
   refs: RefsResult,
   baseDir: string,
   sliceKey: string,
   contract: ContractCheckInput,
+  options: SliceReadyOptions = {},
 ): Diagnostic[] {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -162,6 +173,17 @@ export function validateSliceReady(
   if (doc.status === "ready-to-implement" && doc.ratifiedHash !== null && ratifiedHashScope(parsed.raw, doc.ratifiedHash) === "mismatch") {
     pushDiag(diags, "slice-ready-body-changed-since-ratification", {
       message: `slice "${sliceKey}"'s doc ${doc.path} was edited after ratification (body no longer matches ratifiedHash) — revert, or re-ratify the new content`,
+      line: slice.line,
+      refs: [sliceKey],
+    });
+  }
+
+  // GH #256: strict mode — the body-changed check above can only run when a hash exists, so
+  // without this a `ready-to-implement` doc whose frontmatter was hand-edited to carry
+  // `ratifiedBy`/`ratifiedOn` and no `ratifiedHash` passes with no integrity check at all.
+  if (options.requireRatifiedHash && doc.status === "ready-to-implement" && doc.ratifiedHash === null) {
+    pushDiag(diags, "slice-ready-missing-ratified-hash", {
+      message: `slice "${sliceKey}"'s doc ${doc.path} is ready-to-implement with no ratifiedHash — --require-ratified-hash is on: re-ratify it (\`em slice revise --withdraw\`, review, \`em slice ratify --by\`) so the signed body has an identity`,
       line: slice.line,
       refs: [sliceKey],
     });
@@ -284,8 +306,9 @@ export function computeSliceReadiness(
   sliceKey: string,
   contract: ContractCheckInput,
   allDiagnostics: Diagnostic[],
+  options: SliceReadyOptions = {},
 ): SliceReadiness {
-  const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey, contract);
+  const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey, contract, options);
   const combined = [...allDiagnostics, ...readyDiagnostics];
   const scoped = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
   const result = computeSliceReadyGates(model, refs, baseDir, sliceKey, contract);

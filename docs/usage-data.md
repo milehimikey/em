@@ -153,6 +153,7 @@ affected lines written by hand.
 | slice-ready body changed since ratification |
 | slice-ready key does not exist |
 | slice-ready public slice contract not current |
+| slice-ready ready doc has no ratifiedHash (strict) |
 | slice-ready slice not ratified |
 | slice-ready structured section malformed |
 | type cycle |

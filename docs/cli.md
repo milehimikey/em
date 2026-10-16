@@ -500,6 +500,17 @@ unless **all** of the following hold, printing which ones don't and why
   `public` element are unaffected
 - no version/status/link incoherence is flagged for the slice (folds in the frontmatter-
   coherence check, MIL-85, for free — see [validation.md#frontmatter-coherence](validation.md#frontmatter-coherence))
+- **strict mode, `--require-ratified-hash` (GH #256, 1.17.0):** the doc also records a
+  `ratifiedHash:`. The body-changed check above can only run when a hash exists, so by default
+  a `ready-to-implement` doc whose frontmatter was hand-edited to carry `ratifiedBy`/`ratifiedOn`
+  and no hash passes with no integrity check at all — and a host CI gate that only tests those
+  two keys for presence has the same hole. With the flag such a doc gets
+  `slice-ready-missing-ratified-hash` (error) and `ready: false` in `--json`; `gates` gain no
+  boolean (the verdict is the diagnostic, like `slice-ready-not-ratified`). Off by default so
+  docs ratified before 1.15 — and sign-offs grandfathered by `em upgrade`'s `ratified-signoff`
+  step — keep passing; turn it on once those are re-ratified. The flag is refused without
+  `--slice-ready`. The MCP `slice_ready` tool takes the same switch as `requireRatifiedHash`.
+  `em engagement plan` runs the default verdict.
 
 ```bash
 $ em validate model.em --slice-ready checkout

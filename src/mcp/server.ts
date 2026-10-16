@@ -277,15 +277,22 @@ export function createServer(): McpServer {
         "contract current for a public-touching slice), the " +
         "overall `ready` boolean, and the scoped diagnostics behind it. Call this before " +
         "implementing a slice — never infer readiness yourself from `export_slice`'s content.",
-      inputSchema: { file: fileParam, sliceKey: sliceKeyParam },
+      inputSchema: {
+        file: fileParam,
+        sliceKey: sliceKeyParam,
+        requireRatifiedHash: z
+          .boolean()
+          .default(false)
+          .describe("GH #256 strict mode (`em validate --slice-ready --require-ratified-hash`): a ready-to-implement doc with no `ratifiedHash:` is not ready"),
+      },
     },
-    async ({ file, sliceKey }) => {
+    async ({ file, sliceKey, requireRatifiedHash }) => {
       const compiled = compileWithValidation(file);
       if ("error" in compiled) return errorResult(compiled.error);
       const { model, refs, allDiagnostics, source, diagnostics } = compiled;
       const baseDir = dirname(file);
       const contractInput = { file, source, diagnostics };
-      const { scoped, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics);
+      const { scoped, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash });
       return textResult(
         buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null),
       );
