@@ -1,5 +1,5 @@
 ---
-description: Release a new version of em — version bump, GitHub release + notes, npm publish via CI, Linear release
+description: Release a new version of em — version bump, GitHub release + notes, npm publish via CI, GitHub issues + milestone stamped
 ---
 
 Release a new version of `em`. The human-readable version of this process lives in
@@ -12,14 +12,17 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
 
 - On `main` with a clean working tree; `git pull` to be current with origin.
 - Latest CI run on main is green: `gh run list --branch main --workflow CI --limit 1`.
-- The Linear MCP is connected (the Linear steps below need it).
+- `gh auth status` is green (the stamping step needs issue and milestone write access).
 
 ## 2. Determine scope and version
 
 - Last release: `git describe --tags --abbrev=0`. Collect everything since:
   `git log <last-tag>..HEAD --oneline` and the merged PRs it references.
-- Collect the Linear issues shipped in this range: the `MIL-*` ids in those
-  commit/PR titles (they are the source of truth for the Linear step).
+- Collect the GitHub issues shipped in this range: the `#n` / `GH #n` references in
+  those commit/PR titles and bodies, plus every issue on the release's GitHub
+  milestone (`gh issue list --milestone X.Y.Z --state all`). They are the source of
+  truth for the stamping step; an issue on the milestone with no merged PR is
+  flagged, not stamped.
 - If there is nothing to ship, say so and stop.
 - Propose a semver bump — features → minor, fixes/docs only → patch, breaking
   DSL or CLI changes → major — and confirm the version with the user unless it
@@ -47,8 +50,8 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
   "1.7.0: the lifecycle & lineage release — slice docs become machine-read
   contracts"). Lowercase theme, names the release's through-line.
 - Body: one short paragraph on the theme, then sections as applicable
-  (Features / Fixes / Docs), each bullet referencing its PR number and `MIL-*`
-  id. Write for a user of `em` deciding whether to upgrade, not a changelog robot.
+  (Features / Fixes / Docs), each bullet referencing its PR number and `GH #n`
+  issue. Write for a user of `em` deciding whether to upgrade, not a changelog robot.
 - Write the notes to a scratch file and show them to the user for approval
   before shipping. Do not proceed without approval.
 
@@ -78,24 +81,33 @@ If given, skip the version proposal in step 2 and use it. Arguments: $ARGUMENTS
 ## 7. Watch the publish
 
 - Watch the Release workflow: `gh run watch` (or poll `gh run list --workflow Release`).
-- If it fails, diagnose and fix before touching Linear — the release isn't real
+- If it fails, diagnose and fix before stamping issues — the release isn't real
   until npm has it. A failed run after a fix can be re-triggered by deleting and
   re-pushing the tag, or `gh run rerun`.
 - Verify: `npm view @milehimikey/em version` returns the new version.
 
-## 8. Update Linear
+## 8. Stamp the GitHub issues and close the milestone
 
-(Linear's Releases feature is Business-plan only; this workspace is on the free
-plan, so releases are stamped onto the issues themselves.)
+(The tracker is GitHub Issues since 2026-10-18; the Linear MIL workspace is a frozen,
+read-only archive — never write to it.)
 
 For every shipped issue from step 2:
 
-- Attach the GitHub release as a link: `save_issue` with `links`:
-  `[{url: <GitHub release URL>, title: "Shipped in vX.Y.Z"}]`.
-- Confirm the issue is in state Done; flag any that aren't rather than
-  silently closing them.
+- Comment `Shipped in vX.Y.Z — <GitHub release URL>` on the issue
+  (`gh issue comment <n> --body ...`).
+- Confirm the issue is closed (a merged PR with `Fixes #n` closes it; otherwise
+  `gh issue close <n> --reason completed`). Flag anything on the milestone that has
+  no merged PR rather than silently closing it; move it to the next milestone with
+  a comment saying so.
+- Close the milestone once every issue on it is closed:
+  `gh api -X PATCH repos/milehimikey/em/milestones/<number> -f state=closed`
+  (`gh` has no `milestone` subcommand; find the number with
+  `gh api repos/milehimikey/em/milestones --jq '.[] | "\(.number) \(.title)"'`).
+- If a pinned "X.Y.Z slate" issue exists, tick its checklist / sub-issues and close it
+  last with the release link.
 
 ## 9. Report
 
-Give the user: the GitHub release URL, the npm version confirmation, and the
-list of Linear issues stamped. Note any shipped issues that weren't Done.
+Give the user: the GitHub release URL, the npm version confirmation, the list of
+issues stamped, and the milestone's closed state. Note any issues moved to the next
+milestone.

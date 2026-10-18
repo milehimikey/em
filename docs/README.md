@@ -35,7 +35,7 @@ agent can carry with human review.
 | Know what's bundled vs. what needs a system install | [dependencies.md](dependencies.md) |
 | See what usage data em captures, and how to roll it up for a retro | [usage-data.md](usage-data.md) |
 | Understand how rendering works under the hood | [architecture.md](architecture.md) |
-| Cut a release (version, notes, npm, Linear) | [release.md](release.md) |
+| Cut a release (version, notes, npm, issue stamping) | [release.md](release.md) |
 | See what's planned | [roadmap.md](roadmap.md) |
 
 Worked models live in [examples/](../examples/) — most are single `.em` files, but

@@ -1,8 +1,8 @@
 # Releasing em
 
 One release = one version everywhere: a `release: vX.Y.Z` commit on main, a git tag,
-a GitHub release with narrative notes, the package on npm, and every shipped Linear
-issue stamped with the release that delivered it. The `/release` command
+a GitHub release with narrative notes, the package on npm, and every shipped GitHub
+issue stamped with the release that delivered it, its milestone closed. The `/release` command
 (.claude/commands/release.md) drives the whole flow; this doc is the human-readable
 record of it and of the one-time setup it depends on.
 
@@ -19,7 +19,7 @@ record of it and of the one-time setup it depends on.
    `version` and MCP pin, and the `.claude-plugin/marketplace.json` name
    `em-<version with dots as dashes>`); run build + typecheck + tests.
 4. **Notes** — title `X.Y.Z: <short narrative theme>`; body: theme paragraph, then
-   Features / Fixes / Docs bullets with PR numbers and MIL-* ids.
+   Features / Fixes / Docs bullets with PR numbers and `#n` issue references.
 5. **Upgrading doc** — add this release's row to
    [docs/upgrading.md](upgrading.md): what changed for a model repo, and whether
    `em upgrade` handles it (a step id, a `human: <item>`, or "no action needed"),
@@ -34,14 +34,16 @@ record of it and of the one-time setup it depends on.
    verifies the tag matches package.json and runs `npm publish`. The existing
    `prepublishOnly` script (build + typecheck + test) gates the publish itself.
    Verify with `npm view @milehimikey/em version`.
-8. **Linear** — stamp every shipped MIL-* issue with the release: the GitHub
-   release URL attached as a link titled "Shipped in vX.Y.Z", and a check that
-   the issue is actually Done. (Linear's first-class Releases feature is
-   Business-plan only; on the free plan the issues themselves carry the record.)
+8. **Stamp** — comment "Shipped in vX.Y.Z <release URL>" on every shipped GitHub
+   issue, confirm each is closed (merged PRs with `Fixes #n` close them), and close
+   the release's GitHub milestone. Anything on the milestone without a merged PR
+   moves to the next milestone with a comment. (The tracker has been GitHub Issues
+   since 2026-10-18; the Linear `MIL-*` workspace is a frozen read-only archive —
+   historical `MIL-nnn` references still resolve there, nothing new is written.)
 
 npm publishing is deliberately CI-only: no local `npm publish`, no token on any
 laptop. If the workflow fails, the release isn't done — fix and re-run before
-updating Linear.
+stamping issues.
 
 ## One-time setup
 
@@ -59,5 +61,11 @@ re-configuring to match.
   "1.7.0: the lifecycle & lineage release".
 - The release commit is `release: vX.Y.Z` and contains only the version bumps and
   regenerated docs.
-- Every shipped Linear issue links back to the GitHub release that delivered it,
-  so an issue's page answers "when did this actually ship?"
+- Every shipped issue carries a "Shipped in vX.Y.Z" comment linking the GitHub
+  release that delivered it, so an issue's page answers "when did this actually
+  ship?", and the closed milestone answers it for the release as a whole.
+- Issue conventions: labels `type:feature` / `type:improvement` / `bug`,
+  `priority:high|medium|low`, `needs-ruling` for an owner decision pending,
+  `was-linear` for issues migrated from the archive. One GitHub milestone per
+  release; its description is a pointer, the pinned "X.Y.Z slate" issue (when one
+  exists) is the slate of record.
