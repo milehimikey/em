@@ -88,8 +88,9 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         pushDiag(diags, "ui-shares-slice-with-automation", {
           message:
             `ui "${ui.name}" shares slice "${slice.name}" with ${auto.kind} "${auto.name}"; ` +
-            `a \`ui\` only wires to a \`command\` a person issues and renders disconnected here — ` +
-            `move it to the slice that displays the read model, or drop it`,
+            `a \`ui\` only wires to a \`command\` a person issues and renders disconnected here ` +
+            `(and it sits between the ${auto.kind} and the row below it, so the ${auto.kind}'s inbound ` +
+            `edge has to be routed around it) — move it to the slice that displays the read model, or drop it`,
           line: ui.line,
           refs: [refOf(ui.id), refOf(auto.id)],
         });

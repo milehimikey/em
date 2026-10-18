@@ -210,4 +210,78 @@ describe("edge routing never crosses an unrelated box", () => {
     const between = semanticEdges(model).filter((e) => ids.has(e.from) && ids.has(e.to));
     expect(between).toEqual([]);
   });
+
+  // GH #254 — a `ui` sharing a processor's slice blocks the processor's bottom face (the
+  // ui sits directly below it in the same column), so the inbound edge used to loop far
+  // above the canvas or fall back to a straight line through the ui box.
+  const PROC_WITH_UI = `model "Processor with ui in same slice"
+persona Operator
+context Item
+slice "Create Item" {
+  ui Create Item @Operator
+  command CreateItem
+  event ItemCreated @Item
+}
+slice "Pending Items" {
+  view PendingItems from "ItemCreated"
+  ui Read Pending Items @Operator
+}
+slice "Complete Item" {
+  ui Complete Item @Operator
+  processor ItemScheduler from "PendingItems"
+  command CompleteItem
+  event ItemCompleted @Item
+}
+arrow "Complete Item" -> CompleteItem
+`;
+
+  /** 25 slices over 7 contexts; every fifth slice is a processor slice that also holds a ui. */
+  function largeProcWithUi(): string {
+    const ctx = ["A", "B", "C", "D", "E", "F", "G"];
+    let s = `model "Large"\npersona Agent\n${ctx.map((c) => `context ${c}`).join("\n")}\n`;
+    for (let i = 0; i < 25; i++) {
+      const c = ctx[i % ctx.length];
+      if (i % 5 === 4) {
+        s +=
+          `slice "S${i}" {\n  processor P${i} from "V${i - 1}"\n  ui U${i} @Agent\n` +
+          `  command C${i}\n  event E${i} @${c}\n}\n`;
+      } else if (i % 5 === 3) {
+        s += `slice "S${i}" {\n  view V${i} from "E${i - 1}"\n  ui R${i} @Agent\n}\n`;
+      } else {
+        s += `slice "S${i}" {\n  ui U${i} @Agent\n  command C${i}\n  event E${i} @${c}\n}\n`;
+      }
+    }
+    return s;
+  }
+
+  function outsideViewBox(svg: string): number {
+    const vb = /viewBox="([\d.eE+-]+) ([\d.eE+-]+) ([\d.eE+-]+) ([\d.eE+-]+)"/.exec(svg)!;
+    const [minX, minY, vw, vh] = vb.slice(1).map(Number);
+    const tr = /<g\b[^>]*class="graph"[^>]*transform="[^"]*translate\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(svg)!;
+    const [tx, ty] = [+tr[1], +tr[2]];
+    const group = /<g class="em-edges">([\s\S]*?)<\/g>/.exec(svg)![1];
+    let bad = 0;
+    for (const d of [...group.matchAll(/ d="([^"]+)"/g)].map((m) => m[1])) {
+      // control points too: they bound the curve, and a far-off control point is the bug
+      for (const m of d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)) {
+        const x = +m[1] + tx;
+        const y = +m[2] + ty;
+        if (x < minX || x > minX + vw || y < minY || y > minY + vh) bad++;
+      }
+    }
+    return bad;
+  }
+
+  it("routes the inbound edge of a processor that shares its slice with a ui clear of that ui", async () => {
+    const svg = await renderSource(PROC_WITH_UI);
+    expect(crossingsIn(svg, PROC_WITH_UI)).toEqual([]);
+    expect(outsideViewBox(svg)).toBe(0);
+  });
+
+  it("keeps the same inbound edge short and in-canvas in a 25-slice, 7-context model", async () => {
+    const src = largeProcWithUi();
+    const svg = await renderSource(src);
+    expect(crossingsIn(svg, src)).toEqual([]);
+    expect(outsideViewBox(svg)).toBe(0);
+  });
 });
