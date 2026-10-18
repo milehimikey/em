@@ -190,6 +190,17 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(ratify()).toMatchObject({ status: 0, stdout: expect.stringContaining("already ratified") });
   });
 
+  it("on a draft doc the parking lot and Decisions log carry the matched item's full text, not the substring (GH #283)", () => {
+    writeFileSync(docPath(), REVIEWED + BODY.replace("## Open Questions\n", "## Open Questions\n\n- [ ] What is the retry policy for failed charges?\n"));
+    const d = defer();
+    expect(d.stderr).toBe("");
+    expect(d.status).toBe(0);
+    const state = read(statePath());
+    expect(state).toContain("- What is the retry policy for failed charges? (from slice pay, deferred to v2)");
+    expect(state).toContain('- 2026-10-12: deferred "What is the retry policy for failed charges?" on pay to v2 — v1: fail fast (no retries) — by Alex');
+    expect(state).not.toContain("- retry policy (from slice");
+  });
+
   it("a second identical run is a no-op", () => {
     defer();
     const before = [read(docPath()), read(statePath())];

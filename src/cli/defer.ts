@@ -156,6 +156,29 @@ export function applyDefer(raw: string, input: DeferInput): ApplyDeferResult {
   return { ok: true, content: lines.join(""), changed: true };
 }
 
+/**
+ * Pure (GH #283): the full text of the Open Question that `question` (a case-sensitive substring)
+ * matches — the bold title when the item opens with `**Title**`, else the whole item line, with
+ * any `— v<n>: …; deferred to v<m> (…)` suffix of an already-deferred item dropped. The state
+ * file records this, not the CLI's match substring. No single match → the substring itself.
+ */
+export function resolveQuestionText(raw: string, question: string): string {
+  const lines = splitKeepEol(raw);
+  const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(stripEol(l).body));
+  if (start === -1) return question;
+  const texts: string[] = [];
+  for (let j = start + 1; j < lines.length; j++) {
+    const body = stripEol(lines[j]).body;
+    if (ANY_H1_H2.test(body)) break;
+    const m = TASK_ITEM.exec(body);
+    if (m && m[3].includes(question)) texts.push(m[3].trim());
+  }
+  if (texts.length !== 1) return question;
+  const original = /^(.*?) — v\d+: .*; deferred to v\d+ \(.*\)$/.exec(texts[0])?.[1] ?? texts[0];
+  const bold = /^\*\*(.+?)\*\*/.exec(original);
+  return (bold ? bold[1] : original).trim() || question;
+}
+
 /** Appends `bullet` at the end of the section under `heading` (before the next `## ` heading or
  *  EOF, after the section's last non-blank line) unless an identical bullet line exists. */
 export function appendBullet(
@@ -560,7 +583,7 @@ export function runDefer(
     signed && edited.changed ? finishSignedDocEdit(docRaw, edited.content) : { ok: true as const, content: edited.content, restamped: false };
   if (!finished.ok) return { ok: false, message: `${doc.path}: ${finished.message}` };
 
-  const state = mirrorIntoStateFile(baseDir, sliceKey, input.question, input, doc.version);
+  const state = mirrorIntoStateFile(baseDir, sliceKey, resolveQuestionText(docRaw, input.question), input, doc.version);
   if (!state.ok) return state;
   if (edited.changed) writeFileSync(absDoc, finished.content, "utf8");
   if (state.changed) writeFileSync(state.path, state.content, "utf8");

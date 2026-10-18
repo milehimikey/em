@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyDefer, applyDeferOrAppend, applyDeferStateFile, removeIssueClause, reopenDeferred, DeferInput } from "../src/cli/defer.js";
+import { applyDefer, applyDeferOrAppend, applyDeferStateFile, resolveQuestionText, removeIssueClause, reopenDeferred, DeferInput } from "../src/cli/defer.js";
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -181,8 +181,8 @@ describe("em slice defer (CLI acceptance, MIL-275)", () => {
     );
     expect(openQuestionsErr()).toBe(false);
     const state = readFileSync(join(dir, ".event-modeling.md"), "utf8");
-    expect(state).toContain("- retry policy (from slice pay, deferred to v2)");
-    expect(state).toContain('- 2026-10-08: deferred "retry policy" on pay to v2 — v1: fail fast — by Alex');
+    expect(state).toContain("- What is the retry policy? (from slice pay, deferred to v2)");
+    expect(state).toContain('- 2026-10-08: deferred "What is the retry policy?" on pay to v2 — v1: fail fast — by Alex');
   });
   it("a second identical run is a no-op", () => {
     const before = [readFileSync(slicePath(), "utf8"), readFileSync(join(dir, ".event-modeling.md"), "utf8")];
@@ -418,5 +418,23 @@ describe("skills carry the deferral sentence (MIL-275 grep gate)", () => {
     for (const s of ["**Answered in the room**", "**Raised in the room, not for this version**", "**Already on the doc, not for this version**", "nothing left `- [ ]` and no open `issue`"]) {
       expect(review, s).toContain(s);
     }
+  });
+});
+
+describe("resolveQuestionText (GH #283)", () => {
+  const doc = (item: string) => `# Slice\n\n## Open Questions\n\n${item}\n- [ ] Who owns billing?\n\n## Notes\n`;
+  it("returns the whole item, not the match substring", () => {
+    expect(resolveQuestionText(doc("- [ ] What is the retry policy?"), "retry policy")).toBe("What is the retry policy?");
+  });
+  it("returns the bold title when the item opens with one", () => {
+    expect(resolveQuestionText(doc("- [ ] **Retry policy** — how many attempts before we give up?"), "attempts")).toBe("Retry policy");
+  });
+  it("drops the deferral suffix of an already-deferred item", () => {
+    expect(resolveQuestionText(doc("- [x] What is the retry policy? — v1: fail fast; deferred to v2 (2026-10-08, Alex)"), "retry")).toBe("What is the retry policy?");
+  });
+  it("falls back to the substring on no match, ambiguity or no section", () => {
+    expect(resolveQuestionText(doc("- [ ] x"), "nothing")).toBe("nothing");
+    expect(resolveQuestionText(doc("- [ ] Who owns billing too?"), "billing")).toBe("billing");
+    expect(resolveQuestionText("# Slice\n", "q")).toBe("q");
   });
 });
