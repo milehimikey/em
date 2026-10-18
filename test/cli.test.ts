@@ -3791,10 +3791,22 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
   it("a ratified, unshipped doc is revised too: ratification withdrawn, draft v3; a second revise refuses (already open)", () => {
     const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn (never shipped); v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
     const again = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(again.status).not.toBe(0);
     expect(again.stderr).toContain("the next version is already open");
+  });
+
+  it("GH #284: a ratified v2 over a shipped v1 says v1 stays shipped, not 'never shipped'", () => {
+    writeFileSync(
+      join(dir, "slices", "over.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 2\nshippedVersion: 1\nratifiedBy: A B\nratifiedOn: 2026-08-01\n---\nbody\n",
+    );
+    writeFileSync(join(dir, "over.em"), 'slice "Over" {\n  ui Screen @Customer\n  command Do Thing note "slices/over.md"\n  event Thing Done\n}\n');
+    const r = em(["slice", "revise", "over.em", "over"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).not.toContain("never shipped");
   });
 
   it("the pre-1.15 unsigned ready-to-implement leftover reopens as a draft at the SAME version", () => {

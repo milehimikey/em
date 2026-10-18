@@ -1147,9 +1147,13 @@ function reviseAction(commandName: "revise" | "reratify") {
       result.kind === "shipped"
         ? `v${result.newVersion - 1} stays shipped; v${result.newVersion} opened as draft`
         : result.kind === "unshipped"
-          ? `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
+          ? result.shippedVersion !== null
+            ? `ratification of v${result.newVersion - 1} withdrawn; v${result.shippedVersion} stays shipped; v${result.newVersion} opened as draft`
+            : `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
           : result.kind === "unshipped-kept"
-            ? `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version (--keep-version)`
+            ? result.shippedVersion !== null
+              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version (--keep-version)`
+              : `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version (--keep-version)`
             : `v${result.newVersion} was never signed; reopened as draft at the same version`;
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);

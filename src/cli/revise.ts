@@ -75,7 +75,7 @@ export const SIGN_OFF_KEYS: readonly string[] = [
 export type ReviseKind = "shipped" | "unshipped" | "unshipped-kept" | "unsigned";
 
 export type ApplyReviseResult =
-  | { ok: true; content: string; newVersion: number; kind: ReviseKind; reopened: number; injected: number }
+  | { ok: true; content: string; newVersion: number; kind: ReviseKind; shippedVersion: number | null; reopened: number; injected: number }
   | { ok: false; message: string };
 
 /** GH #236 inputs to the pure transitions: `withdraw` confirms ending the ratification of an
@@ -232,7 +232,12 @@ function applyRevise(raw: string, kind: ReviseKind, opts: ReviseOptions = {}): A
     keepsNumber || !opts.queuedFor
       ? { content: reopened.content, count: 0 }
       : injectQueuedQuestions(reopened.content, opts.queuedFor(newVersion));
-  return { ok: true, content: injected.content, newVersion, kind, reopened: reopened.count, injected: injected.count };
+  // GH #284: the version that stays shipped, when the doc carries one (the message must not say
+  // "never shipped" over a doc that has a shipped version).
+  const shippedRaw = fieldLineRegex("shippedVersion").exec(inner);
+  const shippedNum = shippedRaw ? Number(normalizeFieldValue(shippedRaw[2])) : NaN;
+  const shippedVersion = Number.isInteger(shippedNum) && shippedNum >= 1 ? shippedNum : kind === "shipped" ? currentVersion : null;
+  return { ok: true, content: injected.content, newVersion, kind, shippedVersion, reopened: reopened.count, injected: injected.count };
 }
 
 /** MIL-214: the certification-aware advisory `runRevise` computes about the shipped version being
@@ -256,7 +261,7 @@ export function reviseAdvisory(baseDir: string, sliceKey: string, shippedVersion
 }
 
 export type RunReviseResult =
-  | { ok: true; path: string; newVersion: number; kind: ReviseKind; advisory: ReviseAdvisory | null; reopened: number; injected: number }
+  | { ok: true; path: string; newVersion: number; kind: ReviseKind; shippedVersion: number | null; advisory: ReviseAdvisory | null; reopened: number; injected: number }
   | { ok: false; message: string };
 
 /**
@@ -308,5 +313,5 @@ export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: str
   const advisory = result.kind === "shipped" ? reviseAdvisory(baseDir, sliceKey, doc.shipped?.version ?? doc.version, doc.conformedVersion) : null;
   writeFileSync(absPath, result.content, "utf8");
   if (result.injected > 0) clearQueue(baseDir, sliceKey, result.newVersion);
-  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, advisory, reopened: result.reopened, injected: result.injected };
+  return { ok: true, path: doc.path, newVersion: result.newVersion, kind: result.kind, shippedVersion: result.shippedVersion, advisory, reopened: result.reopened, injected: result.injected };
 }

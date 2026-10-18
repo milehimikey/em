@@ -119,6 +119,14 @@ describe("applyReviseFrontmatter (pure, MIL-283)", () => {
     expect(applyReviseFrontmatter(v2)).toMatchObject({ ok: true, kind: "unshipped", newVersion: 3 });
   });
 
+  it("GH #284: shippedVersion is reported only when the doc has a shipped version (drives the CLI message)", () => {
+    const v2 = SHIPPED_115.replace("status: implemented\n", "status: ready-to-implement\n").replace("version: 1\n", "version: 2\n");
+    expect(applyReviseFrontmatter(v2)).toMatchObject({ ok: true, kind: "unshipped", newVersion: 3, shippedVersion: 1 });
+    expect(applyReviseFrontmatter(v2, { keepVersion: true })).toMatchObject({ ok: true, kind: "unshipped-kept", newVersion: 2, shippedVersion: 1 });
+    expect(applyReviseFrontmatter(SHIPPED_115)).toMatchObject({ ok: true, kind: "shipped", shippedVersion: 1 });
+    expect(applyReviseFrontmatter(RATIFIED_UNSHIPPED, { withdraw: true })).toMatchObject({ ok: true, kind: "unshipped", shippedVersion: null });
+  });
+
   it("GH #236: queued questions for the new version are injected into Open Questions (unchecked; checked when --until is further out)", () => {
     const doc = SHIPPED_115 + "\n## Open Questions\n\n- [x] old — v1: a; deferred to v2 (2026-01-01)\n";
     const q = (question: string, until: number) => ({ question, sliceKey: "k", targetVersion: 2, until, on: "2026-10-12", by: "Sam", decision: "ship without" });
