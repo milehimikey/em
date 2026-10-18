@@ -23,7 +23,7 @@ import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
 import { loadSliceDocsOnce, joinSliceDocFast } from "../model/sliceDocIndex.js";
-import { extractDeclaredInvariantLabels, extractInvariantIds, INV_TOKEN_RE } from "../cli/coverage.js";
+import { extractDeclaredInvariantLabels, extractDeclaredInvariantRules, extractInvariantIds, INV_TOKEN_RE } from "../cli/coverage.js";
 
 interface DocEntry {
   path: string;
@@ -31,6 +31,28 @@ interface DocEntry {
    *  first slice (in model order) whose join reaches it. */
   sliceKey: string;
   body: string;
+}
+
+/** The conditional openers `command-second-intent` recognises (GH #286): a rule whose text
+ *  begins "If/When <field> is set|present|...", "Only if <field> ..." or "Unless <field> ...".
+ *  The field is a bare identifier/path or backticked. Add a pattern here to extend the list. */
+const FIELD = "(`[^`]+`|[A-Za-z_][\\w.]*)";
+const SET_WORDS = "(?:set|present|provided|non-null|not null|given|supplied)";
+const CONDITIONAL_PATTERNS: RegExp[] = [
+  new RegExp(`^(?:if|when)\\s+(?:the\\s+)?${FIELD}\\s+(?:is|are)\\s+${SET_WORDS}\\b`, "i"),
+  new RegExp(`^only\\s+if\\s+(?:the\\s+)?${FIELD}`, "i"),
+  new RegExp(`^unless\\s+(?:the\\s+)?${FIELD}`, "i"),
+];
+
+/** The field a rule text opens a conditional on, lowercased and unticked; null if none. */
+export function conditionalField(text: string | null): string | null {
+  if (!text) return null;
+  const t = text.trim().replace(/^["'“]+/, "");
+  for (const re of CONDITIONAL_PATTERNS) {
+    const m = re.exec(t);
+    if (m) return m[1].replace(/`/g, "").toLowerCase();
+  }
+  return null;
 }
 
 export function validateInvariants(model: NormalizedModel, refs: RefsResult, baseDir: string): Diagnostic[] {
@@ -102,6 +124,41 @@ export function validateInvariants(model: NormalizedModel, refs: RefsResult, bas
           `invariant "${id}" is declared in the model (${inv.element.kind} "${inv.element.name}") and ` +
           `restated as a rule in ${entry.path} — keep the model line; in the doc, cite the ID and elaborate`,
         line: inv.line,
+      });
+    }
+  }
+
+  // GH #286: command-second-intent. Per command: its model invariants, plus (when the slice has
+  // exactly one command) the bound doc's labelled rules. The model wins on a repeated ID.
+  const commandsPerSlice = new Map<number, number>();
+  for (const el of model.elements) {
+    if (el.kind === "command") commandsPerSlice.set(el.sliceIndex, (commandsPerSlice.get(el.sliceIndex) ?? 0) + 1);
+  }
+  for (const el of model.elements) {
+    if (el.kind !== "command") continue;
+    const rules = new Map<string, string | null>();
+    for (const inv of el.invariants ?? []) rules.set(inv.id, inv.rule);
+    const doc = docBySliceIndex.get(el.sliceIndex);
+    if (doc && commandsPerSlice.get(el.sliceIndex) === 1) {
+      for (const r of extractDeclaredInvariantRules(doc.body)) if (!rules.has(r.id)) rules.set(r.id, r.text);
+    }
+    const byField = new Map<string, string[]>();
+    for (const [id, text] of rules) {
+      const field = conditionalField(text);
+      if (!field) continue;
+      const bucket = byField.get(field);
+      if (bucket) bucket.push(id);
+      else byField.set(field, [id]);
+    }
+    for (const [field, ids] of byField) {
+      if (ids.length < 2) continue;
+      pushDiag(diags, "command-second-intent", {
+        message:
+          `command "${el.name}" has ${ids.length} invariants conditional on \`${field}\` (${ids.join(", ")}) — ` +
+          `a second intent hiding in one command; consider a separate command for the ${field} case ` +
+          `(it may record the same event — a bare repeat of the event is legal)`,
+        line: el.line,
+        refs: [refs.refById.get(el.id)!, ...ids],
       });
     }
   }

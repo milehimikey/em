@@ -823,6 +823,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `both-ends-of-a-flow/ui-unbacked` | warning | `ui` with no read model or command | Add a `view` it displays, or the command it triggers. |
 | `both-ends-of-a-flow/view-unconsumed` | warning | Read model with no consumer | Add a `ui` or reaction that consumes it, or drop this instance. |
 | `code-spans-seam` | warning | Code change spans a seam | Keep one code module per model and change the two sides of a seam in separate change sets. |
+| `command-second-intent` | warning | Command carries a second intent | Split the conditional rule set into its own command; both commands may record the same event (a bare repeat of the event is legal). |
 | `connection-legality/illegal-pair` | error | Illegal connection | Only ui→command→event→view→ui and view→reaction→command are legal — the message names the missing step. |
 | `consumer-not-adapted` | error | Consuming translation no longer matches the producer's public element | Update the translation's field block to the producer's current fields (a renamed field names its new name in the message). Additive producer changes never raise this — consumers tolerate unknown fields. |
 | `consumes-unknown-element` | error | `consumes` names no public element of that model | Point the ref at an element the producer marks `public` (`em export` lists them), or ask the producer to publish it. |

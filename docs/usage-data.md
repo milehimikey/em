@@ -66,6 +66,7 @@ affected lines written by hand.
 |---|
 | code spans seam |
 | colliding slice doc path across models |
+| command carries second intent |
 | command nothing triggers |
 | command produces no event |
 | consecutive same-context state changes |

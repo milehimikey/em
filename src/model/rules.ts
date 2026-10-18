@@ -654,6 +654,15 @@ export const RULES = {
     usageCategory: "invariant declared in model and doc",
     docAnchor: "invariants",
   },
+  // GH #286: advisory shape lint over a command's invariants (model-declared, plus its bound
+  // doc's when the slice has one command). Emitted by catalog/invariantsValidate.ts.
+  "command-second-intent": {
+    severity: "warning",
+    title: "Command carries a second intent",
+    fix: "Split the conditional rule set into its own command; both commands may record the same event (a bare repeat of the event is legal).",
+    usageCategory: "command carries second intent",
+    docAnchor: "invariants",
+  },
   "slice-ready-unknown-slice": {
     severity: "error",
     title: "Unknown --slice-ready key",

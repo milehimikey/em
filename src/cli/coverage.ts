@@ -161,6 +161,24 @@ export function extractDeclaredInvariantLabels(body: string): string[] {
   return ids;
 }
 
+/**
+ * GH #286: like `extractDeclaredInvariantLabels`, but also returns the rule text after the label
+ * (`- **INV-X:** If `parentId` is set, ...`), trimmed. Used only by the advisory
+ * `command-second-intent` lint (catalog/invariantsValidate.ts).
+ */
+export function extractDeclaredInvariantRules(body: string): { id: string; text: string }[] {
+  const seen = new Set<string>();
+  const out: { id: string; text: string }[] = [];
+  for (const line of ownershipStructuralLines(body)) {
+    for (const m of line.matchAll(/\*\*(INV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?::\*\*|\*\*:)\s*([^\n]*)/g)) {
+      if (seen.has(m[1])) continue;
+      seen.add(m[1]);
+      out.push({ id: m[1], text: m[2].trim() });
+    }
+  }
+  return out;
+}
+
 export interface Citation {
   /** Path relative to the `--tests <dir>` root, POSIX forward slashes — same convention
    *  walkDir() already returns. */
