@@ -3234,7 +3234,7 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote README.md");
     const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
-    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | — | — | [slices/place.md](slices/place.md) |");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | — | — | — |");
     expect(readme).toContain("Open Orders");
   });
 
