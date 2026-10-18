@@ -17,6 +17,49 @@ interface StorylineIndex {
   /** storyline name -> the storylines it comes after, root first, nearest last. Empty when it
    *  declares no `after`, names an unknown storyline, or sits on a cycle (validate reports it). */
   chain: Map<string, Storyline[]>;
+  /** composed rank per slice index — see `composedRanks`. */
+  rank: number[];
+}
+
+/**
+ * The composed timeline as a real total order (GH #277): a deterministic topological sort of the
+ * slices in which the ONLY hard constraints are the `after` relations — every slice of the
+ * referenced storyline (all its blocks) precedes every slice of the storyline that comes after
+ * it, transitively — and file order is the tiebreak (Kahn's algorithm, always taking the ready
+ * slice with the lowest file index). `after` cycles and unknown targets contribute no constraint
+ * (validate reports them), so this never cycles. A model without `after` ranks every slice at
+ * its file index. Returns `rank[sliceIndex]`.
+ */
+function composedRanks(
+  model: NormalizedModel,
+  byKey: Map<string, Storyline>,
+  chain: Map<string, Storyline[]>,
+): number[] {
+  const n = model.slices.length;
+  const preds: Set<number>[] = Array.from({ length: n }, () => new Set<number>());
+  for (const st of model.storylines ?? []) {
+    if (st.after === undefined || (chain.get(st.name) ?? []).length === 0) continue;
+    const target = byKey.get(normalizeName(st.after));
+    if (!target) continue;
+    for (const dep of st.sliceIndexes) for (const ref of target.sliceIndexes) preds[dep].add(ref);
+  }
+  const rank = new Array<number>(n).fill(-1);
+  const done = new Array<boolean>(n).fill(false);
+  for (let next = 0; next < n; next++) {
+    let pick = -1;
+    for (let i = 0; i < n && pick < 0; i++) {
+      if (!done[i] && [...preds[i]].every((p) => done[p])) pick = i;
+    }
+    if (pick < 0) pick = done.indexOf(false); // unreachable: constraints are acyclic
+    done[pick] = true;
+    rank[pick] = next;
+  }
+  return rank;
+}
+
+/** A slice's position in the composed total order (see `composedRanks`). */
+export function composedRank(model: NormalizedModel, sliceIndex: number): number {
+  return indexOf(model).rank[sliceIndex] ?? sliceIndex;
 }
 
 const cache = new WeakMap<NormalizedModel, StorylineIndex>();
@@ -49,7 +92,7 @@ function indexOf(model: NormalizedModel): StorylineIndex {
     }
     chain.set(st.name, cyclic ? [] : preds);
   }
-  const index = { byKey, chain };
+  const index = { byKey, chain, rank: composedRanks(model, byKey, chain) };
   cache.set(model, index);
   return index;
 }
@@ -71,30 +114,15 @@ export function afterChain(model: NormalizedModel, storyline: Storyline): Storyl
   return indexOf(model).chain.get(storyline.name) ?? [];
 }
 
-/** Whether `a` and `b` are in an `after` relationship, and which way. */
-function storylineRelation(model: NormalizedModel, a: Storyline, b: Storyline): TimelineRelation | undefined {
-  if (a === b) return "same";
-  if (afterChain(model, a).includes(b)) return "after"; // a comes after b
-  if (afterChain(model, b).includes(a)) return "before";
-  return undefined;
-}
-
 /**
  * Where slice `target` sits on the timeline relative to slice `viewer`: "before" (strictly
- * earlier), "same" (the same slice) or "after" (strictly later). Two slices of storylines in an
- * `after` relationship are ordered by that relationship, whatever their file positions; every
- * other pair is ordered by file order (slice index).
+ * earlier), "same" (the same slice) or "after" (strictly later) — a comparison of the two slices'
+ * composed ranks (`composedRanks`), so it is a strict total order: every pair is comparable and
+ * the answer is antisymmetric.
  */
 export function relationOnTimeline(model: NormalizedModel, target: number, viewer: number): TimelineRelation {
   if (target === viewer) return "same";
-  const st = storylineOfSlice(model, target);
-  const sv = storylineOfSlice(model, viewer);
-  if (st && sv) {
-    const rel = storylineRelation(model, st, sv);
-    if (rel === "after") return "after";
-    if (rel === "before") return "before";
-  }
-  return target < viewer ? "before" : "after";
+  return composedRank(model, target) < composedRank(model, viewer) ? "before" : "after";
 }
 
 /** True when `target` is strictly later than `viewer` on the timeline. */
@@ -129,12 +157,13 @@ export function latestOnTimeline<T extends { sliceIndex: number }>(
   const own = storylineOfSlice(model, viewer);
   const chain = own ? afterChain(model, own) : [];
   const rank = (c: T): [number, number, number] => {
-    if (chain.length === 0) return [0, 0, c.sliceIndex];
+    const r = composedRank(model, c.sliceIndex);
+    if (chain.length === 0) return [0, 0, r];
     const st = storylineOfSlice(model, c.sliceIndex);
-    if (st === own) return [2, 0, c.sliceIndex];
+    if (st === own) return [2, 0, r];
     const pos = st ? chain.indexOf(st) : -1;
-    if (pos >= 0) return [1, pos, c.sliceIndex];
-    return [0, 0, c.sliceIndex];
+    if (pos >= 0) return [1, pos, r];
+    return [0, 0, r];
   };
   return visible.reduce((best, c) => {
     const a = rank(best);

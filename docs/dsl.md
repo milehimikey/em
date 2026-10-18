@@ -597,6 +597,13 @@ as if its slices came after the referenced storyline's last slice:
   `view X again` or a reaction's `from "X"` resolves to the latest instance of `X` on the composed timeline
   **referenced storyline → this storyline**, never to a view a sibling storyline happened to leave between
   them in file order. `after` chains (`C after B`, `B after A`) compose.
+- **The composed timeline is one total order.** em computes a *composed rank* for every slice: a
+  deterministic topological sort in which the only hard constraints are the `after` relations (every slice
+  of the referenced storyline — all its blocks — comes before every slice of the storyline that follows it,
+  transitively) and file order is the tiebreak (always the lowest-numbered ready slice next). A model with
+  no `after` ranks every slice at its file position. Every question about "earlier" or "later" — the checks
+  below, `from`/`again` resolution, and the column order of `em render --storyline` — compares these ranks,
+  so they always agree.
 - **Forward-only checks** (`view-from-future-event`, `reaction-from-future-view`, `arrow-backward`,
   `loops-to-forward`) are evaluated on that composed timeline for slices of storylines related by `after`;
   every other pair still compares file order.

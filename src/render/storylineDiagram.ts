@@ -14,7 +14,7 @@
 import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { Element, NormalizedModel, Slice, Storyline, normalizeName } from "../model/model.js";
 import { semanticEdges } from "../model/edges.js";
-import { findStoryline, latestOnTimeline, relationOnTimeline } from "../model/storylines.js";
+import { findStoryline, latestOnTimeline, composedRank } from "../model/storylines.js";
 import { Grid, LayoutOptions, layout } from "../layout/grid.js";
 import { emitDot } from "../emit/dot.js";
 
@@ -60,8 +60,7 @@ export function buildStorylineDiagram(
     ...own.map((i) => ({ i, stub: false })),
     ...[...stubs.keys()].map((i) => ({ i, stub: true })),
   ].sort((x, y) => {
-    const rel = relationOnTimeline(model, x.i, y.i);
-    return rel === "before" ? -1 : rel === "after" ? 1 : x.i - y.i;
+    return composedRank(model, x.i) - composedRank(model, y.i);
   });
 
   const slices: Slice[] = [];

@@ -23,7 +23,7 @@ import { buildStorylineDiagram, resolveStorylineArg } from "../src/render/storyl
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { storylineRuns } from "../src/model/storylines.js";
+import { relationOnTimeline, storylineRuns } from "../src/model/storylines.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
 const diagsFor = (src: string) => {
@@ -516,6 +516,41 @@ storyline "C" after "A" {
       const from = sub.model.byId.get(e.from)!;
       const to = sub.model.byId.get(e.to)!;
       expect(from.sliceIndex, `${from.name} -> ${to.name}`).toBeLessThanOrEqual(to.sliceIndex);
+    }
+  });
+
+  describe("the composed rank is a real total order (cyclic file-order vs after constraints)", () => {
+    const files = ["test/fixtures/storyline-cyc.em", "test/fixtures/storyline-cyc2.em"];
+    for (const file of files) {
+      it(`${file}: strict total order, end-state stub left of the \`again\` that continues it, stable under input permutations`, () => {
+        const { model, diagnostics } = compile(readFileSync(file, "utf8"));
+        expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+        const n = model.slices.length;
+        for (let a = 0; a < n; a++) {
+          for (let b = 0; b < n; b++) {
+            const ab = relationOnTimeline(model, a, b);
+            const ba = relationOnTimeline(model, b, a);
+            if (a === b) expect(ab).toBe("same");
+            else expect(`${ab}/${ba}`).toMatch(/^(before\/after|after\/before)$/);
+          }
+        }
+        const found = resolveStorylineArg(model, "C");
+        if ("error" in found) throw new Error(found.error);
+        const order = () => buildStorylineDiagram(model, found.storyline).model.slices.map((sl) => sl.name);
+        const base = order();
+        expect(base.indexOf("a2")).toBeLessThan(base.indexOf("c0b"));
+        const original = [...model.elements];
+        const perms = [
+          [...original].reverse(),
+          [...original.slice(3), ...original.slice(0, 3)],
+          [...original.slice(5), ...original.slice(0, 5)].reverse(),
+        ];
+        for (const perm of perms) {
+          model.elements.splice(0, model.elements.length, ...perm);
+          expect(order()).toEqual(base);
+        }
+        model.elements.splice(0, model.elements.length, ...original);
+      });
     }
   });
 
