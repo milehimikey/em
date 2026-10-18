@@ -59,7 +59,7 @@ _This slice has no read model in the model._
 - **Given:**
   - a basket with a positive total
 - **When:**
-  - the customer submits the order
+  - the customer issues `Submit Order`
 - **Then:**
   - `Order Submitted` is recorded with a fresh `orderId`
   - the Order Confirmation shows the order
@@ -68,7 +68,7 @@ _This slice has no read model in the model._
 - **Given:**
   - a basket whose total is 0
 - **When:**
-  - the customer submits the order
+  - the customer issues `Submit Order`
 - **Then:**
   - the command is rejected with a validation error
   - no event is recorded

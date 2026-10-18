@@ -32,6 +32,7 @@ const KNOWN_DOC_ANCHORS = new Set([
   "strict-public-types",
   "invariants",
   "structured-sections",
+  "scenario-quality",
   "signed-bodies",
   "shape",
 ]);

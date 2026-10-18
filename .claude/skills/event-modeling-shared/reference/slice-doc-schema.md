@@ -442,11 +442,21 @@ case is a block:
 - **Given:**
   - a basket whose total is 0
 - **When:**
-  - the customer submits the order
+  - the customer issues PlaceOrder
 - **Then:**
   - the command is rejected with a validation error
   - no event is recorded
 ```
+
+**Scenario quality (citation convention).** A scenario is tied to exactly one command: its When
+names the slice's command (a reaction slice: the command it triggers), its Then names an event
+the slice records or a rejection/error, and it **cites the `INV-…` ids it exercises** anywhere in
+the block (the title above, or a Given/When/Then bullet). Every invariant declared for the slice
+(an `invariant` line in the model, or the doc's Invariants section) should be cited by at least one
+scenario. `em validate` advises on all three — `scenario-when-not-command`,
+`scenario-then-not-outcome`, `invariant-without-scenario` — see
+[validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md#scenario-quality). A doc with no `### Scenario:` blocks is never
+flagged.
 
 A `### Scenario: <title>` heading, then the three column-0 bullets `- **Given:**`, `- **When:**`,
 `- **Then:**`, each with nested `  - ` items (text after the label on the same line counts as a

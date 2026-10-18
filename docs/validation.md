@@ -604,6 +604,25 @@ no region markers and no `### Scenario:` heading — every doc written before 1.
 flagged. A stale region (the model changed, the doc didn't) is not malformed: `em slice sync
 --check` reports that.
 
+### Scenario quality
+
+Three advisory warnings (GH #293) over a bound slice doc's authored `### Scenario:` blocks
+([grammar](slice-doc-schema.md#generated-regions-and-authored-sections)), checked against the
+model alongside the doc-model consistency rules (a cross-covered doc is checked once, against the
+union of its slices). They follow the canon that each specification is tied to exactly one command
+(or view) and has the Given-events / When-command / Then-events-or-error shape.
+
+| Code | Meaning |
+|---|---|
+| `scenario-when-not-command` | A scenario's When names none of the slice's commands (for a reaction slice, the command it triggers). Names compare ignoring case, spacing and punctuation (`PlaceOrder` matches `Place Order`). Not checked on a slice with no command (State View). |
+| `scenario-then-not-outcome` | A scenario's Then names none of the slice's events (any alternative or shared event counts) and no rejection/error phrase (`rejected`, `error`, `fails`, `invalid`, `denied`, `no event`, …). |
+| `invariant-without-scenario` | An `INV-…` declared for the slice (a model `invariant` line, or the doc's Invariants section) is cited by no scenario. **Convention:** a scenario cites the ids it exercises, anywhere in its block (title, Given, When or Then). |
+
+Silent on a doc with no `### Scenario:` blocks (every doc written before 1.14). Each diagnostic
+names the doc line of the scenario and refs the slice plus its command (or the invariant's
+element), so `--slice-ready` folds them in like the other doc checks; `--strict` promotes them to
+errors. `em coverage` is unchanged — tests to invariants is a different axis.
+
 ### Orphaned slice doc
 
 `em validate`'s fifth fs-aware rule (MIL-183, the fragility half of

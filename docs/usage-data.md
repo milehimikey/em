@@ -94,6 +94,7 @@ affected lines written by hand.
 | implemented without link |
 | invalid or missing frontmatter |
 | invariant declared in model and doc |
+| invariant has no scenario |
 | model element missing from doc |
 | model version stale |
 | multi-model change set |
@@ -105,6 +106,8 @@ affected lines written by hand.
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |
+| scenario Then names no outcome |
+| scenario When names no command |
 | seam crossing greenfield |
 | seam manifest outdated |
 | slice doc cites undeclared invariant |

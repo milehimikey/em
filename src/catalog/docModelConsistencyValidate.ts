@@ -66,6 +66,7 @@ import { classifySlicePattern, slicePatternLabel } from "./classify.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { SliceDoc } from "./sliceDoc.js";
+import { checkScenarioQuality } from "./scenarioQualityValidate.js";
 import { findStructuredSectionProblems, splitCells } from "./sliceSections.js";
 
 /** The three element kinds this rule's doc markers can name — the DSL has more (`ui`,
@@ -268,6 +269,9 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
         message: `slice doc "${docPath}" (slice "${ownerKey}"): ${problem}`,
       });
     }
+
+    // GH #293: scenario-quality advisories (catalog/scenarioQualityValidate.ts).
+    checkScenarioQuality(diags, parsed.body, docPath, sliceIndices, ownerKey, model, refs, baseDir);
 
     const markers = parseDocMarkers(parsed.body);
     const coveredNames = sliceIndices.map((i) => model.slices[i].name);

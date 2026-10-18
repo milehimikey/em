@@ -404,6 +404,27 @@ export const RULES = {
     usageCategory: "doc field table disagrees with model",
     docAnchor: "doc-model-consistency",
   },
+  "scenario-when-not-command": {
+    severity: "warning",
+    title: "Scenario's When does not name the slice's command",
+    fix: "Make the When bullet name the slice's command (for a reaction slice, the command it triggers) — each scenario exercises exactly one command.",
+    usageCategory: "scenario When names no command",
+    docAnchor: "scenario-quality",
+  },
+  "scenario-then-not-outcome": {
+    severity: "warning",
+    title: "Scenario's Then names no event or rejection",
+    fix: "Make the Then bullets name the event(s) the command records, or the rejection/error it returns.",
+    usageCategory: "scenario Then names no outcome",
+    docAnchor: "scenario-quality",
+  },
+  "invariant-without-scenario": {
+    severity: "warning",
+    title: "Invariant cited by no scenario",
+    fix: "Cite the INV id in the Given/When/Then (or title) of the scenario that exercises it, or add one.",
+    usageCategory: "invariant has no scenario",
+    docAnchor: "scenario-quality",
+  },
   "slice-doc/structured-section-malformed": {
     severity: "warning",
     title: "Malformed structured section",

@@ -857,6 +857,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `frontmatter-coherence-implemented-without-link` | warning | Implemented without a link | Add `implementedIn` once the slice ships. |
 | `frontmatter-invalid` | warning | Invalid or missing frontmatter | Add the required frontmatter keys, or add a frontmatter block. |
 | `grid-collision` | error | Band collision | Split the colliding elements into separate slices. |
+| `invariant-without-scenario` | warning | Invariant cited by no scenario | Cite the INV id in the Given/When/Then (or title) of the scenario that exercises it, or add one. |
 | `invariants/declared-in-both` | warning | Invariant declared in the model and in a slice doc | Keep the model's `invariant` line; in the doc, cite the ID and elaborate instead of restating it as a `**INV-…:**` rule. |
 | `invariants/doc-cites-undeclared` | warning | Slice doc cites an undeclared invariant | Declare the ID in the model (or in a slice doc's Invariants section), or fix the citation. |
 | `invariants/duplicate-id` | error | Duplicate invariant ID | Give each model-declared invariant its own ID — a rule is declared once, on the element it guards. |
@@ -881,6 +882,8 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `public-name-not-unique` | error | Two public elements of one kind share a name | Rename one of them (or drop `public` from one): a consumer's `consumes <model>:<kind>.<slug>` must name exactly one element. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
+| `scenario-then-not-outcome` | warning | Scenario's Then names no event or rejection | Make the Then bullets name the event(s) the command records, or the rejection/error it returns. |
+| `scenario-when-not-command` | warning | Scenario's When does not name the slice's command | Make the When bullet name the slice's command (for a reaction slice, the command it triggers) — each scenario exercises exactly one command. |
 | `seam-consumer-not-reaction` | error | Seam consumer is not a reaction | Point `to` at a translation/automation element (or a slice containing exactly one). |
 | `seam-crossing` | error | Change set alters a contract and its consumer together | Split the change set: land the producer's public-surface change first, then adapt the consuming model in a later change. Review on the contract file is the only override. |
 | `seam-crossing-greenfield` | warning | New public surface lands with its first consumer | Nothing to fix: a public element no consumer was bound to at the base revision is new surface, not a crossing. Later changes to it are crossings. |
