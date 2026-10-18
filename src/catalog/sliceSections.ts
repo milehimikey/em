@@ -25,6 +25,7 @@
 // out. The CLI (`em slice new`, cli/sliceSync.ts) owns every read and write.
 
 import { Element, NormalizedModel, normalizeName } from "../model/model.js";
+import { viewSourceNames } from "../model/continuation.js";
 import { kebabSlug } from "../util/slug.js";
 import { parseScenarios } from "./scenarios.js";
 
@@ -117,7 +118,8 @@ function eventBody(model: NormalizedModel, el: Element): string[] {
 }
 
 function viewBody(model: NormalizedModel, el: Element): string[] {
-  const sources = el.from ?? [];
+  // The union across every `again` instance (GH #280): each instance lists only the NEW events.
+  const sources = viewSourceNames(model, el);
   const built = sources.length > 0 ? sources.map((s) => `"${s}"`).join(", ") : "—";
   const out = [`- **View:** \`${el.name}\` built from events: ${built}`, ""];
   if (!el.fields || el.fields.length === 0) return [...out, NO_FIELDS];

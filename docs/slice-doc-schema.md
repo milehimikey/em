@@ -255,6 +255,12 @@ the union of events every later `again` instance of that view reads via `from`, 
 order — so implementing the read model from one export never means walking every `again`
 slice's doc by hand to assemble the full event list.
 
+The generated `em-slice-view` region follows the same rule (GH #280, 1.18.0): its `built from
+events:` line lists the union of `from` across the originating instance and every `again`
+instance (originating first, then timeline order, deduped), and each field's `from event` note
+resolves against that union — whichever instance's slice the doc is bound to. `em slice sync`
+rewrites existing view regions accordingly.
+
 **Authoring convention:** a continuation's behavior belongs in the originating doc's own
 `## Scenarios (Given / When / Then)` section — one scenario per event a later `again` instance
 feeds — rather than in a doc of its own; no new frontmatter is needed to record it.
