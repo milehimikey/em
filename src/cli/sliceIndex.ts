@@ -77,7 +77,8 @@ export interface SliceIndexRow {
   implementedIn: string;
   /** MIL-214: `v<N> @ <rev>`, or `—` — see `conformedCell`. */
   conformed: string;
-  docPath: string;
+  /** Null when the slice has no doc bound (nothing to link to) — rendered as `—`. */
+  docPath: string | null;
 }
 
 export interface SliceIndexTable {
@@ -112,13 +113,17 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       name: slice.name,
       pattern: slicePatternLabel(pattern),
       status: statusCell(doc, continuationOf),
-      reviewedBy: doc.reviewedBy ?? "—",
-      ratifiedBy: doc.ratifiedBy ?? "—",
+      // GH #275: a continuation row borrows its parent's doc, but the parent's review /
+      // ratify / tracking / implemented / conformed facts belong to the parent, not to this
+      // row — show `—` and keep only the `continuation of …` status.
+      reviewedBy: continuationOf ? "—" : (doc.reviewedBy ?? "—"),
+      ratifiedBy: continuationOf ? "—" : (doc.ratifiedBy ?? "—"),
       owner: doc.owner ?? "—",
-      tracking: doc.tracking ?? "—",
-      implementedIn: doc.implementedIn ?? "—",
-      conformed: conformedCell(doc),
-      docPath: doc.path,
+      tracking: continuationOf ? "—" : (doc.tracking ?? "—"),
+      implementedIn: continuationOf ? "—" : (doc.implementedIn ?? "—"),
+      conformed: continuationOf ? "—" : conformedCell(doc),
+      // GH #275: `no-doc-bound` carries a made-up `slices/<key>.md` path that nothing backs.
+      docPath: !doc.found && doc.reason === "no-doc-bound" ? null : doc.path,
     };
   });
 
@@ -126,7 +131,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
     (r) =>
       `| ${r.index} | ${escapeCell(r.name)} | ${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
       `${escapeCell(r.reviewedBy)} | ${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ` +
-      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | ${escapeCell(r.conformed)} | [${r.docPath}](${r.docPath}) |`,
+      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | ${escapeCell(r.conformed)} | ${r.docPath ? `[${r.docPath}](${r.docPath})` : "—"} |`,
   );
 
   return { markdown: [TABLE_HEADER, ...lines].join("\n"), rows, diagnostics };

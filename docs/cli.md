@@ -3167,14 +3167,14 @@ pair around an empty table.
 | `#` | Row position (declaration order) |
 | `Slice` | Slice name |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
-| `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" — or, for a continuation slice (MIL-208, no legacy doc of its own), `` continuation of `<originating-key>` `` with the Design doc column pointing at the originating slice's doc |
+| `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" — or, for a continuation slice (MIL-208, no legacy doc of its own), `` continuation of `<originating-key>` `` with the Design doc column pointing at the originating slice's doc. A continuation row's `Reviewed by`, `Ratified by`, `Tracking`, `Implemented in` and `Conformed` cells are `—` (GH #275): those facts belong to the originating slice's own row |
 | `Reviewed by` | The doc's `reviewedBy` (MIL-201), or `—` |
 | `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
 | `Owner` | The doc's `owner` (MIL-171), or `—` |
 | `Tracking` | The doc's `tracking` (MIL-171), or `—` |
 | `Implemented in` | The doc's `implementedIn`, or `—` |
 | `Conformed` | (MIL-214) `v<N> @ <rev>` from the doc's `conformedVersion`/`conformedAt`, or `—` when never certified. Reports the recorded certification verbatim, even when stale (`conformedVersion` no longer matches the current `version` — `driftSignal: uncertified`); `em status`/`em export`'s `driftSignal` is where "is this still current" is judged |
-| `Design doc` | Always a link to the conventional `slices/<slice-key>.md` path, whether or not that file exists yet |
+| `Design doc` | A link to the bound doc's `slices/<key>.md` path; `—` (no link) when the slice has no `note` binding at all (GH #275). A `note` binding whose file is missing still links, and `em validate` reports `binding-missing-file` |
 
 | Flag | Effect |
 |---|---|

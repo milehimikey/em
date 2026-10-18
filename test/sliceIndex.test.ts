@@ -116,7 +116,39 @@ describe("buildSliceIndexTable", () => {
       tracking: "—",
       implementedIn: "—",
       conformed: "—",
-      docPath: "slices/open-orders.md",
+      docPath: null,
+    });
+  });
+
+  it("GH #275: a doc-less slice gets an em-dash in the Design doc cell, not a link to a file that does not exist", () => {
+    const { model, refs } = compile(MODEL);
+    const { markdown } = buildSliceIndexTable(model, refs, dir);
+    const row = markdown.split("\n").find((l) => l.includes("Open Orders"))!;
+    expect(row.endsWith("| — | — | — | — | — | — |")).toBe(true);
+    expect(row).not.toContain("slices/open-orders.md");
+  });
+
+  it("GH #275: a view-again continuation row keeps only 'continuation of' and does not inherit the parent's gate facts", () => {
+    const { model, refs } = compile(`slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order note "slices/place-order.md"
+  event Order Placed
+  view Order Summary from "Order Placed"
+}
+slice "Show Again" {
+  view Order Summary again from "Order Placed"
+  ui Summary Page @Customer
+}
+`);
+    const { rows } = buildSliceIndexTable(model, refs, dir);
+    expect(rows[0].ratifiedBy).toBe("Alex Rivera");
+    expect(rows[1]).toMatchObject({
+      status: "continuation of `place-order`",
+      reviewedBy: "—",
+      ratifiedBy: "—",
+      tracking: "—",
+      implementedIn: "—",
+      conformed: "—",
     });
   });
 
