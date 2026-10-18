@@ -1242,11 +1242,17 @@ slice "Done" {
   it("lists it under slices.nextOpen and names it `implemented (v2) · draft v3 open` in the detail text", () => {
     const { model, refs } = compile(SRC);
     const { facts } = resolveSliceStatusFacts("model.em", model, refs, dir);
-    const report = buildStatusReport(["model.em"], facts, 0, null, [], []);
+    const entry: ConformanceEntry = {
+      file: "model.em", modelDir: ".", hasStateFile: true, lastConformance: { date: "2026-08-01", revision: "abc123f", partial: false },
+      unruledFindings: null, repo: ".", commitsBehindHead: 0, slicePRsBehindHead: 0, constitution: { present: false, path: "constitution.md" }, error: null,
+    };
+    const report = buildStatusReport(["model.em"], facts, 0, null, [entry], []);
     expect(report.slices.byStatus).toMatchObject({ draft: 1, implemented: 1, shipped: 2 });
     expect(report.slices.nextOpen).toEqual([{ file: "model.em", key: "pim", shippedVersion: 2, version: 3, status: "draft" }]);
     const detail = formatStatusDetail(report);
     expect(detail).toContain("  pim: implemented (v2) · draft v3 open");
     expect(detail).not.toContain("done: implemented");
+    expect(formatStatusSummary(report)).toContain("1/2 implemented (+1 shipped, next draft open) · ");
+    expect(formatStatusMarkdown(report)).toContain("| Next versions open | pim: implemented (v2) · draft v3 open |");
   });
 });

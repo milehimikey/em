@@ -909,7 +909,10 @@ export function formatStatusSummary(report: StatusReport): string {
     (report.issues.openQuestionsUnchecked > 0 ? `, ${pluralize(report.issues.openQuestionsUnchecked, "unchecked open question")}` : "") +
     (report.issues.queuedQuestions > 0 ? `, ${report.issues.queuedQuestions} deferred to a later version` : "");
   const conformancePart = formatConformancePart(report.conformance[0]);
-  return `${implemented}/${total} implemented · ${invPart} · ${issuesPart}${oqPart} · ${conformancePart}`;
+  // GH #285: slices whose next version is open count under `draft`, not `implemented` — say so.
+  const k = report.slices.nextOpen.length;
+  const nextPart = k > 0 ? ` (+${k} shipped, next draft open)` : "";
+  return `${implemented}/${total} implemented${nextPart} · ${invPart} · ${issuesPart}${oqPart} · ${conformancePart}`;
 }
 
 /** The detail block below the summary line: one line per rollup dimension, plus one line per
@@ -1010,6 +1013,9 @@ export function formatStatusMarkdown(report: StatusReport): string {
   const { byStatus } = report.slices;
   const rows: Array<[string, string]> = [
     ["Slices", `${byStatus.shipped}/${report.slices.total} shipped (${byStatus.implemented} implemented, ${byStatus.readyToImplement} ready-to-implement, ${byStatus.reviewed} reviewed, ${byStatus.draft} draft)`],
+    ...(report.slices.nextOpen.length > 0
+      ? [["Next versions open", report.slices.nextOpen.map((n) => `${n.key}: implemented (v${n.shippedVersion}) · ${n.status} v${n.version} open`).join("; ")] as [string, string]]
+      : []),
     ["Continuations", `${report.continuations}`],
     ["Invariants", report.invariants ? `${report.invariants.cited}/${report.invariants.total} covered` : "not checked"],
     ["Open issues", `${report.issues.openIssues}`],
