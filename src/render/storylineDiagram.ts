@@ -14,7 +14,7 @@
 import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { Element, NormalizedModel, Slice, Storyline, normalizeName } from "../model/model.js";
 import { semanticEdges } from "../model/edges.js";
-import { afterChain, findStoryline, latestOnTimeline } from "../model/storylines.js";
+import { findStoryline, latestOnTimeline, relationOnTimeline } from "../model/storylines.js";
 import { Grid, LayoutOptions, layout } from "../layout/grid.js";
 import { emitDot } from "../emit/dot.js";
 
@@ -50,24 +50,19 @@ export function buildStorylineDiagram(
   const ownSet = new Set(own);
   const stubs = collectStubs(model, storyline, ownSet);
 
-  // Left to right: stubs from the storylines this one comes after (root first), then any other
-  // outside source in file order, then the storyline's own slices.
-  const chain = afterChain(model, storyline);
-  const chainPos = (sliceIndex: number): number => {
-    const name = model.slices[sliceIndex].storyline;
-    const pos = chain.findIndex((s) => s.name === name);
-    return pos; // -1 for a source outside the `after` chain
-  };
-  // Stubs from the storylines this one comes `after` (their end state) sit on the left, root
-  // first. Every other stub keeps its timeline position: a slice between two blocks of this
-  // storyline is interleaved with the storyline's own columns in file order, so no arrow in the
+  // Left to right: the storyline's own slices and every stub column in ONE sequence ordered on
+  // the composed timeline (model/storylines.ts's relationOnTimeline — the ordering validation
+  // uses), file order as the fallback. The storylines this one comes `after` precede it on that
+  // timeline, so their end-state stubs land on the left naturally, while a stub from a slice
+  // between two blocks of this storyline is interleaved with its own columns: no arrow in the
   // subset points right-to-left.
-  const leftStubs = [...stubs.keys()].filter((i) => chainPos(i) >= 0).sort((a, b) => chainPos(a) - chainPos(b) || a - b);
-  const inlineStubs = [...stubs.keys()].filter((i) => chainPos(i) < 0);
-  const inline = [
+  const columns = [
     ...own.map((i) => ({ i, stub: false })),
-    ...inlineStubs.map((i) => ({ i, stub: true })),
-  ].sort((a, b) => a.i - b.i);
+    ...[...stubs.keys()].map((i) => ({ i, stub: true })),
+  ].sort((x, y) => {
+    const rel = relationOnTimeline(model, x.i, y.i);
+    return rel === "before" ? -1 : rel === "after" ? 1 : x.i - y.i;
+  });
 
   const slices: Slice[] = [];
   const elements: Element[] = [];
@@ -94,8 +89,7 @@ export function buildStorylineDiagram(
       else byName.set(key, [el]);
     }
   };
-  for (const i of leftStubs) addColumn(model.slices[i], [...stubs.get(i)!.values()], true);
-  for (const { i, stub } of inline) {
+  for (const { i, stub } of columns) {
     addColumn(model.slices[i], stub ? [...stubs.get(i)!.values()] : model.slices[i].elements, stub);
   }
 

@@ -477,6 +477,48 @@ storyline "A" {
     expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(2); // a1 | (stubs) | a2
   });
 
+  it("--storyline orders after-chain stubs and unrelated stubs together on the composed timeline", () => {
+    const { model, diagnostics } = compile(`storyline "S" {
+  slice "s1" {
+    ui U1 @P
+    command CS
+    event ES
+  }
+}
+storyline "A" {
+  slice "a1" {
+    view V from "ES"
+    ui W1 @P
+  }
+}
+storyline "C" after "A" {
+  slice "c1" {
+    ui U2 @P
+    command CC
+    event EC
+  }
+  slice "c2" {
+    view V again from "EC"
+    ui W2 @P
+  }
+  slice "c3" {
+    view T from "ES"
+    ui W3 @P
+  }
+}
+`);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const found = resolveStorylineArg(model, "C");
+    if ("error" in found) throw new Error(found.error);
+    const sub = buildStorylineDiagram(model, found.storyline);
+    expect(sub.model.slices.map((sl) => sl.name)).toEqual(["s1", "a1", "c1", "c2", "c3"]);
+    for (const e of semanticEdges(sub.model)) {
+      const from = sub.model.byId.get(e.from)!;
+      const to = sub.model.byId.get(e.to)!;
+      expect(from.sliceIndex, `${from.name} -> ${to.name}`).toBeLessThanOrEqual(to.sliceIndex);
+    }
+  });
+
   it("storyline-after-out-of-order names the slice the storyline is declared above", () => {
     const src = `storyline "Follow" after "Main" {
   slice "Watch" {
