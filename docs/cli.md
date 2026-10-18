@@ -3719,8 +3719,10 @@ to v<n> — v<current>: <decision>[ — by <by>]` under `## Decisions log` (the 
 changelog` sees it). The file is required and never created; both edits are computed before
 either is written. `<question>` is a match substring: both bullets carry the matched item's full
 text (its `**bold title**` when it opens with one, else the whole item line), not the substring;
-when no single item matches (a signed doc, where the deferral is appended) the substring is
-written as given. `--on` defaults to today's local date. `--until` must be `v<n>` with `<n>`
+when no item matches (the deferral is appended to a signed doc) the substring is written as
+given. Re-running a deferral first made under 1.17.x leaves the doc unchanged but appends a second
+full-text parking-lot bullet and Decisions line beside the old substring ones (only identical
+lines are deduplicated). `--on` defaults to today's local date. `--until` must be `v<n>` with `<n>`
 greater than the doc's current `version:`. Prints `deferred: <doc path> (<question> → v<n>)`;
 a repeat run prints `already deferred (no-op): <doc path>`. [`em slice reratify`](#em-slice-reratify-file-slice-key)
 re-opens the item when it bumps to `v<n>`. A continuation key refuses like ratify does. No MCP
