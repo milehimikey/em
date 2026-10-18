@@ -259,6 +259,34 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(read(docPath())).toContain("- [ ] retry policy\n");
   });
 
+  it("GH #284: a v2 ratified over a shipped v1 says v1 stays shipped on revise and on revise --withdraw --keep-version", () => {
+    const m = em(["slice", "mark-implemented", "model.em", "pay", "https://github.com/org/repo/pull/7", "--on", "2026-10-13"], dir);
+    expect(m.status).toBe(0);
+    expect(read(docPath())).toContain("shippedVersion: 1\n");
+    expect(em(["slice", "revise", "model.em", "pay"], dir).status).toBe(0); // opens the v2 draft over the shipped v1
+    // Hand-write the review (as the fixture does), commit it, then ratify v2 over the shipped v1.
+    writeFileSync(
+      docPath(),
+      read(docPath()).replace("status: draft\n", "status: reviewed\nreviewedBy: Sam\nreviewedOn: 2026-10-14\n"),
+    );
+    git(dir, "add", "slices/pay.md");
+    git(dir, "commit", "-q", "-m", "v2 reviewed");
+    const r2 = em(["slice", "ratify", "model.em", "pay", "--by", "Alex", "--on", "2026-10-15"], dir);
+    expect(r2.status).toBe(0);
+    const ratifiedV2 = read(docPath());
+    expect(ratifiedV2).toContain("version: 2\n");
+    const plain = em(["slice", "revise", "model.em", "pay"], dir);
+    expect(plain.status).toBe(0);
+    expect(plain.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(plain.stdout).not.toContain("never shipped");
+    // Same ratified v2 again, now with --keep-version.
+    writeFileSync(docPath(), ratifiedV2);
+    const kept = em(["slice", "revise", "model.em", "pay", "--withdraw", "--keep-version"], dir);
+    expect(kept.status).toBe(0);
+    expect(kept.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version (--keep-version)");
+    expect(kept.stdout).not.toContain("never shipped");
+  });
+
   it("a shipped doc (status: implemented, nothing deferred) takes a deferral in its body, outside the hash", () => {
     em(["slice", "mark-implemented", "model.em", "pay", "https://github.com/org/repo/pull/7"], dir);
     expect(read(docPath())).toContain("status: implemented\n");
