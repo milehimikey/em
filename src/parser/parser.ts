@@ -84,6 +84,7 @@ export function parse(source: string): ModelNode {
   let currentElement: ElementNode | null = null; // open `{ … }` field block
   let currentTypeDecl: TypeDeclNode | null = null; // open `type Name { … }` block
   let currentStoryline: StorylineNode | null = null; // open `storyline "Name" { … }` block
+  let storylineIsContinuation = false; // the open block reopens an already-declared storyline
 
   for (let i = 0; i < rawLines.length; i++) {
     const lineNo = i + 1;
@@ -141,8 +142,9 @@ export function parse(source: string): ModelNode {
             lineNo,
           );
         }
-        model.storylines.push(currentStoryline);
+        if (!storylineIsContinuation) model.storylines.push(currentStoryline);
         currentStoryline = null;
+        storylineIsContinuation = false;
         continue;
       }
       throw new ParseError("unexpected '}'", lineNo);
@@ -301,9 +303,26 @@ export function parse(source: string): ModelNode {
         const node = parseStorylineHeader(remainder.slice(0, open).trim(), lineNo);
         const dup = model.storylines.find((s) => s.name.trim().toLowerCase() === node.name.trim().toLowerCase());
         if (dup) {
-          throw new ParseError(`duplicate storyline "${node.name}" (first declared at line ${dup.line})`, lineNo);
+          // A second block with an already-declared name CONTINUES that storyline (its slices
+          // join it, file order preserved). `source`/`after` belong to the first block: a later
+          // block may repeat the same value but never change it.
+          for (const clause of ["source", "after"] as const) {
+            const again = node[clause];
+            if (again !== undefined && again.trim() !== (dup[clause] ?? "").trim()) {
+              throw new ParseError(
+                `storyline-clause-on-continuation: storyline "${dup.name}" (first declared at line ${dup.line}) ` +
+                  (dup[clause] === undefined
+                    ? `declares no \`${clause}\`; a continuation block cannot add one — put it on the first block`
+                    : `declares ${clause} "${dup[clause]}"; a continuation block cannot change it`),
+                lineNo,
+              );
+            }
+          }
+          currentStoryline = dup;
+          storylineIsContinuation = true;
+        } else {
+          currentStoryline = node;
         }
-        currentStoryline = node;
         break;
       }
       case "model": {

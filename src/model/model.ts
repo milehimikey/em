@@ -4,6 +4,7 @@
 
 import { AUTOMATION_KINDS, ElementKind, Field, InvariantDecl, ModelNode, TagClause } from "../parser/ast.js";
 import { dedupe, slug } from "../util/slug.js";
+import { relationOnTimeline } from "./storylines.js";
 
 /** A declared named type (`type Name { … }`) — its own top-level namespace, separate from
  *  elements (a type and an element may share a name without colliding). */
@@ -309,7 +310,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
     line: st.line,
   }));
 
-  return {
+  const result: NormalizedModel = {
     name: ast.name,
     nameDeclared: ast.nameDeclared,
     owner: [...ast.owner],
@@ -325,6 +326,28 @@ export function normalize(ast: ModelNode): NormalizedModel {
     types,
     typesByName,
   };
+
+  // `view X again` continues the instance that is first on the COMPOSED timeline (GH #277): when a
+  // storyline declared `after` another sits above it in the file, the referenced storyline's
+  // instance still precedes it. Only models with an `after` clause can differ from file order.
+  if (storylines.some((st) => st.after !== undefined)) {
+    const groups = new Map<string, Element[]>();
+    for (const el of elements) {
+      if (el.kind !== "view") continue;
+      const key = normalizeName(el.name);
+      const g = groups.get(key);
+      if (g) g.push(el);
+      else groups.set(key, [el]);
+    }
+    for (const group of groups.values()) {
+      let first = group[0];
+      for (const c of group) {
+        if (relationOnTimeline(result, c.sliceIndex, first.sliceIndex) === "before") first = c;
+      }
+      for (const el of group) el.logicalId = first.id;
+    }
+  }
+  return result;
 }
 
 /**

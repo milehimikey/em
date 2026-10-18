@@ -573,14 +573,16 @@ storyline "Retire a product" after "Bring a product to market" {
   storylines don't nest.
 - **File order is still the timeline.** A storyline is a label over its slices, not a second timeline: a
   slice keeps its column, a slice outside any storyline is allowed, and the storylines need not be
-  contiguous. Storyline names are unique (case-insensitive); a duplicate is a parse error.
+  contiguous: a second `storyline "Name" { … }` block with an already-declared name (case-insensitive)
+  **continues** that storyline — its slices join it, file order preserved. `source` and `after` belong to
+  the first block; a continuation may repeat the same value but adding or changing one is a parse error
+  (`storyline-clause-on-continuation`).
 - **Render:** the full-model diagram draws a labelled band above the slice-header row spanning each run of
   a storyline's columns (a storyline interrupted by another gets one band segment per run). A model with
   no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone
   — see [cli.md](cli.md#em-render-file).
 - **Validation:** once any storyline exists, a slice outside every storyline is the advisory warning
-  `slice-outside-storyline` (so a model can adopt storylines incrementally). Duplicate names are a parse
-  error; `after` is checked as below. See [validation.md](validation.md#storylines).
+  `slice-outside-storyline` (so a model can adopt storylines incrementally). `after` is checked as below. See [validation.md](validation.md#storylines).
 - **Export/query:** `em export` carries `slice.storyline` and `model.storylines[]` (schema `1.19`);
   `em query slices --storyline "Name"` lists one story's slices; `em slice index` adds a Storyline column.
 

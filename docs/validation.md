@@ -130,8 +130,9 @@ doesn't exist.
 ### Storylines
 
 `storyline "Name" [source "url"] [after "Other"] { slice … }` blocks (GH #277, [dsl.md](dsl.md#storylines))
-group slices. Duplicate storyline names are a parse error (`em validate` reports it as a syntax
-error, with no diagnostic `code`).
+group slices. A repeated storyline name continues the storyline; a continuation block that adds or
+changes `source`/`after` is a parse error (`storyline-clause-on-continuation`, reported as a syntax
+error with no diagnostic `code`).
 
 - `slice-outside-storyline` (warning) fires once for every slice declared outside all storylines, as soon as
   the model declares at least one. A model with no storyline never sees it.

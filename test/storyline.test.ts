@@ -108,9 +108,16 @@ describe("parser: storyline blocks", () => {
     expect(ast.slices.map((s) => s.storyline)).toEqual(["S", undefined]);
   });
 
-  it("rejects a duplicate storyline name (case-insensitively)", () => {
-    expect(() => parse(`storyline "S" {\n}\nstoryline "s" {\n}\n`)).toThrow(/duplicate storyline "s"/);
-    expect(() => parse(`storyline "S" {\n}\nstoryline "s" {\n}\n`)).toThrow(ParseError);
+  it("a second block with a declared name (case-insensitively) CONTINUES that storyline", () => {
+    const ast = parse(`storyline "S" source "u" after "T" {\n slice "a" {\n }\n}\nstoryline "T" {\n slice "t" {\n }\n}\nstoryline "s" source "u" {\n slice "b" {\n }\n}\n`);
+    expect(ast.storylines.map((s) => [s.name, s.sliceNames])).toEqual([["S", ["a", "b"]], ["T", ["t"]]]);
+    expect(ast.slices.map((s) => s.storyline)).toEqual(["S", "T", "S"]);
+  });
+
+  it("a continuation block may not add or change source/after (storyline-clause-on-continuation)", () => {
+    expect(() => parse(`storyline "S" source "u" {\n}\nstoryline "S" source "other" {\n}\n`)).toThrow(/storyline-clause-on-continuation/);
+    expect(() => parse(`storyline "S" {\n}\nstoryline "S" after "T" {\n}\n`)).toThrow(/cannot add one/);
+    expect(() => parse(`storyline "S" {\n}\nstoryline "S" source "x" {\n}\n`)).toThrow(ParseError);
   });
 
   it("rejects nesting, foreign declarations inside the block, and a missing close", () => {
@@ -326,8 +333,8 @@ describe("render: bands and the --storyline subset", () => {
     expect(svg).toContain("docs/stock.md#one"); // the source rides the band's tooltip
   });
 
-  it("splits a storyline whose slices are not contiguous into one band segment per run", () => {
-    const { model } = compile(`storyline "A" {
+  it("an interleaved storyline written in the DSL gets one band segment per run", async () => {
+    const { model, dot, grid } = compile(`storyline "A" {
   slice "a1" {
     ui U1 @P
     command C1
@@ -340,15 +347,62 @@ storyline "B" {
     ui W1 @P
   }
 }
+storyline "A" {
+  slice "a2" {
+    ui U2 @P
+    command C2
+    event E2
+  }
+  slice "a3" {
+    view V2 from "E2"
+    ui W2 @P
+  }
+}
 `);
-    // Re-tag a third slice as "A"'s: its slices are now 0 and 2, separated by "B".
-    model.slices.push({ ...model.slices[0], index: 2, name: "a2", elements: [] });
-    model.storylines![0].sliceIndexes.push(2);
+    expect(model.storylines!.map((s) => [s.name, s.sliceIndexes])).toEqual([["A", [0, 2, 3]], ["B", [1]]]);
     expect(storylineRuns(model).map((r) => [r.storyline.name, r.fromCol, r.toCol])).toEqual([
       ["A", 0, 0],
       ["B", 1, 1],
-      ["A", 2, 2],
+      ["A", 2, 3],
     ]);
+    const svg = composeSvg(await layoutDot(dot), model, grid, ".", ".");
+    expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(3);
+    expect(svg).toContain(">A (cont.)</text>");
+  });
+
+  it("`again` resolves on the composed timeline: B above A, B after A", () => {
+    const src = `storyline "B" after "A" {
+  slice "Later" {
+    ui Later Form @Clerk
+    command Later Do
+    event Later Done
+  }
+  slice "Later View" {
+    view Board again from "Later Done"
+    ui Later Screen @Clerk
+  }
+}
+storyline "A" {
+  slice "First" {
+    ui First Form @Clerk
+    command First Do
+    event First Done
+  }
+  slice "First View" {
+    view Board from "First Done"
+    ui First Screen @Clerk
+  }
+}
+`;
+    const model = modelFrom(src);
+    const first = model.elements.find((e) => e.name === "Board" && !e.again)!;
+    const again = model.elements.find((e) => e.name === "Board" && e.again)!;
+    expect(again.logicalId).toBe(first.id);
+    expect(first.logicalId).toBe(first.id);
+    const c = codes(src);
+    expect(c).not.toContain("view-again-without-earlier");
+    // Plain file order (no `after`): the B instance is first, so its `again` has no earlier one.
+    expect(codes(src.replace(' after "A"', ""))).toContain("view-again-without-earlier");
   });
 
   it("a model without storylines gets no band row and no band markup", async () => {

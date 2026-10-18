@@ -1349,6 +1349,19 @@ describe("query tool", () => {
     expect(cli.stdout).toBe(mcpText + "\n");
   });
 
+  it("slices: storyline filter (GH #277), byte-identical to the CLI, unknown name is a tool error", async () => {
+    const modelFile = join(dir, "story.em");
+    writeFileSync(modelFile, `storyline "Main" {\n  slice "Place" {\n    ui U @P\n    command Do It\n    event It Done\n  }\n  slice "Show" {\n    view Things from "It Done"\n    ui V @P\n  }\n}\n`);
+    const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "slices", storyline: "main" });
+    expect(doc.results.map((r: { storyline: string }) => r.storyline)).toEqual(["Main", "Main"]);
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["query", "slices", modelFile, "--storyline", "main", "--json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+    const bad = await callJson(client, "query", { files: [modelFile], verb: "slices", storyline: "nope" });
+    expect(bad.result.isError).toBe(true);
+  });
+
   it("slices: filters AND-combine, byte-identical to the CLI", async () => {
     const modelFile = join(dir, "ready.em");
     const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "slices", status: "ready-to-implement" });

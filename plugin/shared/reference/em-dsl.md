@@ -482,7 +482,8 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
 - **`storyline "Name" [source "url"] [after "Other"] { slice … }`** (GH #277) groups slices into a
   named chapter — the main journey, and secondary stories (retire a product, extend an attribute).
   Slices keep their file-order timeline position; a slice outside any storyline is allowed;
-  storylines don't nest and names are unique (a duplicate is a parse error). The full render draws a
+  storylines don't nest and a repeated name continues that storyline (its slices join it; a continuation may not add or change
+  `source`/`after` — parse error). The full render draws a
   labelled band above the slice headers; `em render --storyline "Name"` draws one story alone, with the
   elements it reads from outside as dimmed stub columns. `em export` carries `slice.storyline` and
   `model.storylines[]`; `em query slices --storyline`; `em slice index` adds a Storyline column. Once
