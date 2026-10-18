@@ -25,7 +25,7 @@
 // out. The CLI (`em slice new`, cli/sliceSync.ts) owns every read and write.
 
 import { Element, NormalizedModel, normalizeName } from "../model/model.js";
-import { viewSourceNames } from "../model/continuation.js";
+import { againInstancesOf, viewSourceNames } from "../model/continuation.js";
 import { kebabSlug } from "../util/slug.js";
 import { parseScenarios } from "./scenarios.js";
 
@@ -120,7 +120,26 @@ function eventBody(model: NormalizedModel, el: Element): string[] {
 function viewBody(model: NormalizedModel, el: Element): string[] {
   // The union across every `again` instance (GH #280): each instance lists only the NEW events.
   const sources = viewSourceNames(model, el);
-  const built = sources.length > 0 ? sources.map((s) => `"${s}"`).join(", ") : "—";
+  // Each later event is annotated with the slice of the `again` instance that adds it; the
+  // originating instance's events carry no annotation.
+  const origin = model.byId.get(el.logicalId) ?? el;
+  const via = new Map<string, string>();
+  const originNames = new Set((origin.from ?? []).map(normalizeName));
+  for (const inst of againInstancesOf(model, origin)) {
+    for (const n of inst.from ?? []) {
+      const k = normalizeName(n);
+      if (!originNames.has(k) && !via.has(k)) via.set(k, model.slices[inst.sliceIndex].name);
+    }
+  }
+  const built =
+    sources.length > 0
+      ? sources
+          .map((s) => {
+            const slice = via.get(normalizeName(s));
+            return slice === undefined ? `"${s}"` : `"${s}" (via "${slice}")`;
+          })
+          .join(", ")
+      : "—";
   const out = [`- **View:** \`${el.name}\` built from events: ${built}`, ""];
   if (!el.fields || el.fields.length === 0) return [...out, NO_FIELDS];
   out.push(...tableHeader("view"));
@@ -151,8 +170,9 @@ function noneBody(kind: "command" | "event" | "view"): string[] {
  * The generated regions a doc bound to `sliceIndices` (one slice, or the union a MIL-121
  * cross-covered doc / a MIL-208 continuation resolves to) should carry, in template order:
  * commands, events, views, invariants. Elements are taken in slice order then declaration
- * order; a repeated view (`again`) contributes only its first instance, and two elements of one
- * kind with the same slug only the first.
+ * order; the first instance of a repeated view (`again`) owns the row (its sources are the
+ * union across instances, GH #280), and two elements of one kind with the same slug only the
+ * first.
  */
 export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]): GeneratedRegion[] {
   const ordered = [...sliceIndices].sort((a, b) => a - b);

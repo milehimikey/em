@@ -29,7 +29,7 @@ slice "Orders" {
 }
 
 slice "Orders manual" {
-  view Orders again from "Order Placed Manually"
+  view Orders again from "Order Placed Manually" { approvedBy: string }
   ui Order List @Clerk
 }
 `;
@@ -44,7 +44,7 @@ describe("view region unions `from` across again instances (GH #280)", () => {
 
   it("the originating slice's built-from line lists every instance's events", () => {
     const body = viewRegion(model, origin);
-    expect(body[0]).toBe('- **View:** `Orders` built from events: "Order Placed", "Order Placed Manually"');
+    expect(body[0]).toBe('- **View:** `Orders` built from events: "Order Placed", "Order Placed Manually" (via "Orders manual")');
   });
 
   it("a field fed only by a later instance's event is attributed to it, not left blank", () => {
@@ -54,9 +54,11 @@ describe("view region unions `from` across again instances (GH #280)", () => {
   });
 
   it("a legacy own-doc again slice lists the same union", () => {
-    expect(viewRegion(model, again)[0]).toBe(
-      '- **View:** `Orders` built from events: "Order Placed", "Order Placed Manually"',
+    const body = viewRegion(model, again);
+    expect(body[0]).toBe(
+      '- **View:** `Orders` built from events: "Order Placed", "Order Placed Manually" (via "Orders manual")',
     );
+    expect(body.join("\n")).toContain("| approvedBy | string | from event `Order Placed Manually` |");
   });
 
   it("control: a view with no again instance lists only its own from", () => {

@@ -258,7 +258,7 @@ slice's doc by hand to assemble the full event list.
 The generated `em-slice-view` region follows the same rule (GH #280, 1.18.0): its `built from
 events:` line lists the union of `from` across the originating instance and every `again`
 instance (originating first, then timeline order, deduped), and each field's `from event` note
-resolves against that union — whichever instance's slice the doc is bound to. `em slice sync`
+resolves against that union (each later event annotated `(via "<slice>")` with its instance's slice) — whichever instance's slice the doc is bound to. `em slice sync`
 rewrites existing view regions accordingly.
 
 **Authoring convention:** a continuation's behavior belongs in the originating doc's own
@@ -397,7 +397,7 @@ re-run `em slice sync`.
 |---|---|---|
 | `em-slice-command` | `## Command / Input` | `**Command:** \`Name\`` + `\| Field \| Type \| Required \| Rules / Validation \|` (Required is `no` for a `name?: Type` field) |
 | `em-slice-event` | `## Event(s) Emitted` | `**Event:** \`Name\` → context \`Ctx\`` + `\| Field \| Type \| Immutable Fact? \| Source / Notes \|` (Source: the same-slice command field it is copied from, `assigned` for a system-assigned field, else `{{ }}`) |
-| `em-slice-view` | `## Read Model / View` | `- **View:** \`Name\` built from events: …` + `\| Field \| Type \| Source / Notes \|` (Source: the source event carrying the field, `Derived` for a `derived` field, else `{{ }}`) |
+| `em-slice-view` | `## Read Model / View` | `- **View:** \`Name\` built from events: …` (the union across the originating and every `again` instance; each later event is annotated `(via "<slice>")` with the slice of the instance that adds it) + `\| Field \| Type \| Source / Notes \|` (Source: the source event, from that union, carrying the field, `Derived` for a `derived` field, else `{{ }}`) |
 | `em-slice-invariants` | `## Invariants / Business Rules` | one `- **INV-X** — rule` line per model-declared invariant of the slice's commands and events |
 
 A slice with several elements of one kind gets one region per element, the name suffixed with
