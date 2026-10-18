@@ -608,9 +608,10 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       pushDiag(diags, "storyline-after-out-of-order", {
         message:
           `time flows left to right: "${from.name}" (storyline "${fromStory}") feeds "${to.name}" ` +
-          `(storyline "${toStory}"), which the \`after\` clause reads as forward, but "${toStory}" is ` +
-          `declared above the storyline it comes after, so the full-model render would draw this ` +
-          `right-to-left; move the storyline blocks into timeline order`,
+          `(storyline "${toStory}"), which the \`after\` clause reads as forward, but slice "${model.slices[to.sliceIndex].name}" ` +
+          `(storyline "${toStory}") is declared above slice "${model.slices[from.sliceIndex].name}" of ` +
+          `"${fromStory}", so the full-model render would draw this right-to-left; move this ` +
+          `storyline block below slice "${model.slices[from.sliceIndex].name}"`,
         line: to.line,
         refs: [refOf(from.id), refOf(to.id)],
       });

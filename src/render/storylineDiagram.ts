@@ -58,7 +58,16 @@ export function buildStorylineDiagram(
     const pos = chain.findIndex((s) => s.name === name);
     return pos; // -1 for a source outside the `after` chain
   };
-  const stubOrder = [...stubs.keys()].sort((a, b) => chainPos(a) - chainPos(b) || a - b);
+  // Stubs from the storylines this one comes `after` (their end state) sit on the left, root
+  // first. Every other stub keeps its timeline position: a slice between two blocks of this
+  // storyline is interleaved with the storyline's own columns in file order, so no arrow in the
+  // subset points right-to-left.
+  const leftStubs = [...stubs.keys()].filter((i) => chainPos(i) >= 0).sort((a, b) => chainPos(a) - chainPos(b) || a - b);
+  const inlineStubs = [...stubs.keys()].filter((i) => chainPos(i) < 0);
+  const inline = [
+    ...own.map((i) => ({ i, stub: false })),
+    ...inlineStubs.map((i) => ({ i, stub: true })),
+  ].sort((a, b) => a.i - b.i);
 
   const slices: Slice[] = [];
   const elements: Element[] = [];
@@ -85,8 +94,10 @@ export function buildStorylineDiagram(
       else byName.set(key, [el]);
     }
   };
-  for (const i of stubOrder) addColumn(model.slices[i], [...stubs.get(i)!.values()], true);
-  for (const i of own) addColumn(model.slices[i], model.slices[i].elements, false);
+  for (const i of leftStubs) addColumn(model.slices[i], [...stubs.get(i)!.values()], true);
+  for (const { i, stub } of inline) {
+    addColumn(model.slices[i], stub ? [...stubs.get(i)!.values()] : model.slices[i].elements, stub);
+  }
 
   const dedupe = (values: (string | undefined)[]): string[] => [...new Set(values.filter((v): v is string => !!v))];
   const synthetic: NormalizedModel = {

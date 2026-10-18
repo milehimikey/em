@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse, ParseError } from "../src/parser/parser.js";
 import { normalize } from "../src/model/model.js";
-import { resolveFromSource } from "../src/model/edges.js";
+import { resolveFromSource, semanticEdges } from "../src/model/edges.js";
 import { validate } from "../src/model/validate.js";
 import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
@@ -430,6 +430,76 @@ storyline "A" {
     expect(svg).toContain('opacity="0.4"');
     expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(1);
     expect(svg).toContain(">Follow</text>");
+  });
+
+  it("--storyline keeps stubs from between a storyline's blocks in timeline position (no right-to-left edge)", async () => {
+    const src = `storyline "A" {
+  slice "a1" {
+    ui U1 @P
+    command CA
+    event EA
+  }
+}
+storyline "B" {
+  slice "b1" {
+    view V from "EA"
+    ui W1 @P
+  }
+  slice "b2" {
+    ui U2 @P
+    command CB
+    event EB
+  }
+}
+storyline "A" {
+  slice "a2" {
+    view V again from "EB"
+    ui W2 @P
+  }
+}
+`;
+    const { model } = compile(src);
+    const found = resolveStorylineArg(model, "A");
+    if ("error" in found) throw new Error(found.error);
+    const sub = buildStorylineDiagram(model, found.storyline);
+    expect(sub.model.slices.map((sl) => [sl.name, sl.stub === true])).toEqual([
+      ["a1", false],
+      ["b1", true],
+      ["b2", true],
+      ["a2", false],
+    ]);
+    for (const e of semanticEdges(sub.model)) {
+      const from = sub.model.byId.get(e.from)!;
+      const to = sub.model.byId.get(e.to)!;
+      expect(from.sliceIndex, `${from.name} -> ${to.name}`).toBeLessThanOrEqual(to.sliceIndex);
+    }
+    const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, ".", ".");
+    expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(2); // a1 | (stubs) | a2
+  });
+
+  it("storyline-after-out-of-order names the slice the storyline is declared above", () => {
+    const src = `storyline "Follow" after "Main" {
+  slice "Watch" {
+    automation Low Alert from "Availability"
+    command Raise Alert
+    event Alert Raised
+  }
+}
+storyline "Main" {
+  slice "Catalog" {
+    ui Goods In @Clerk
+    command Receive Stock
+    event Stock Received
+  }
+  slice "Board" {
+    view Availability from "Stock Received"
+    ui Stock Screen @Clerk
+  }
+}
+`;
+    const d = diagsFor(src).find((x) => x.code === "storyline-after-out-of-order")!;
+    expect(d.message).toContain('declared above slice "Board" of "Main"');
+    expect(d.message).toContain('move this storyline block below slice "Board"');
   });
 
   it("--storyline for a storyline with no outside reads has no stub columns", () => {
