@@ -28,6 +28,12 @@ slice "Close Account" {
 Arrows never point right-to-left. Time flows one way, so a `from` source or an `arrow` that
 would reach backward is a validation error, not a rendering choice.
 
+File order is the timeline. The one extension is a storyline's `after "<other>"` clause
+([dsl.md](dsl.md#after-storyline--a-storys-own-timeline), GH #277): a secondary storyline can declare which
+story it follows, and its slices are then read as if they came after that storyline's last slice — Law 2 is a
+rule about the *story*, so the story's own order is what the forward-only checks use. A backward feed into
+the referenced storyline, or an `after` cycle, is still an error.
+
 The interesting case is a read model that keeps evolving. Suppose Open Orders should also
 reflect shipments, and shipping happens after the view first appears:
 

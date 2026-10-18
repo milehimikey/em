@@ -171,7 +171,12 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // 1.18 (GH #260): `slice.doc.reviewSkipped: string | null` — the status `em slice ratify
 // --skip-review` ratified from, when that bypass is what let the ratification through; null for a
 // ratification that passed the review gate, a doc predating 1.17, or no doc. Additive-only.
-export const SCHEMA_VERSION = "1.18";
+// 1.19 (GH #277): `storyline "Name" [source "url"] [after "Other"] { slice … }` blocks.
+// `slice.storyline: string | null` — the name of the storyline block the slice is declared in
+// (null for a slice outside any); `model.storylines: { name, source, after, sliceKeys }[]` — the
+// blocks in document order (`source`/`after` null when absent, `sliceKeys` the member slices'
+// export keys in order). Additive-only.
+export const SCHEMA_VERSION = "1.19";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -253,11 +258,22 @@ export interface AlsoReadsExport {
  *  (`unknown`/`string`) here — no current consumer of this type reads either field through it,
  *  and giving `doc` its full doc-join shape would mean re-declaring `resolveSliceDocJoin`'s
  *  return type a second time for no reader. */
+/** One `storyline` block of the export (GH #277, schema 1.19). */
+export interface StorylineExport {
+  name: string;
+  source: string | null;
+  /** The storyline this one is declared `after`, as written; null when it declares none. */
+  after: string | null;
+  sliceKeys: string[];
+}
+
 export interface SliceExport {
   key: string;
   name: string;
   index: number;
   source: string | null;
+  /** GH #277, schema 1.19: the `storyline` block this slice is declared in, or null. */
+  storyline: string | null;
   line: number;
   pattern: string;
   doc: unknown;
@@ -302,6 +318,8 @@ export interface ExportDoc {
     version: { design: number | null; certified: { version: number; at: string; on: string } | null };
     types: TypeExport[];
     slices: SliceExport[];
+    /** GH #277, schema 1.19: the `storyline` blocks in document order. */
+    storylines: StorylineExport[];
     arrows: unknown[];
     edges: EdgeExport[];
   };
@@ -558,6 +576,7 @@ export function buildExportDoc(
       // Distinct from the document's top-level `source` (the .em file's own
       // path/sha256 provenance) — same key name, different scope.
       source: slice.source ?? null,
+      storyline: slice.storyline ?? null,
       line: slice.line,
       // Model-derived (MIL-91) — same classifySlicePattern() `em catalog` already uses.
       // The frontmatter's own authored `pattern:` stays unread (informational only, per
@@ -631,6 +650,12 @@ export function buildExportDoc(
         fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId)),
       })),
       slices,
+      storylines: (model.storylines ?? []).map((st) => ({
+        name: st.name,
+        source: st.source ?? null,
+        after: st.after ?? null,
+        sliceKeys: st.sliceIndexes.map((i) => sliceKeys[i]),
+      })),
       arrows: model.arrows.map((a) => ({
         from: a.from,
         to: a.to,

@@ -10,6 +10,7 @@
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Element, NormalizedModel, normalizeName } from "./model.js";
+import { latestOnTimeline } from "./storylines.js";
 
 /** Where an edge came from: inferred from a slice's pattern shape, resolved from an explicit
  *  `from "Name"` clause, declared by an `arrow`, or resolved from an event's `loops-to "View"`
@@ -152,14 +153,13 @@ export function resolveFromSource(model: NormalizedModel, el: Element, name: str
   if (!bucket) return undefined;
   return el.kind === "view"
     ? bucket.find((x) => x.kind === "event") ?? bucket[0]
-    : nearestViewAtOrBefore(bucket, el.sliceIndex) ?? bucket.find((x) => x.kind === "view") ?? bucket[0];
+    : nearestViewAtOrBefore(model, bucket, el.sliceIndex) ?? bucket.find((x) => x.kind === "view") ?? bucket[0];
 }
 
-/** Latest view instance declared at-or-before the given slice (reactions read what exists). */
-function nearestViewAtOrBefore(bucket: Element[], sliceIndex: number): Element | undefined {
-  return bucket
-    .filter((x) => x.kind === "view" && x.sliceIndex <= sliceIndex)
-    .sort((a, b) => b.sliceIndex - a.sliceIndex)[0];
+/** Latest view instance at-or-before the given slice on the model's timeline (reactions read
+ *  what exists) — file order, composed with any storyline `after` (see model/storylines.ts). */
+function nearestViewAtOrBefore(model: NormalizedModel, bucket: Element[], sliceIndex: number): Element | undefined {
+  return latestOnTimeline(model, bucket.filter((x) => x.kind === "view"), sliceIndex);
 }
 
 /**
@@ -176,7 +176,5 @@ function nearestViewAtOrBefore(bucket: Element[], sliceIndex: number): Element |
 export function resolveLoopsToTarget(model: NormalizedModel, event: Element, name: string): Element | undefined {
   const bucket = model.byName.get(normalizeName(name));
   if (!bucket) return undefined;
-  return bucket
-    .filter((x) => x.kind === "view" && x.sliceIndex < event.sliceIndex)
-    .sort((a, b) => b.sliceIndex - a.sliceIndex)[0];
+  return latestOnTimeline(model, bucket.filter((x) => x.kind === "view"), event.sliceIndex, true);
 }

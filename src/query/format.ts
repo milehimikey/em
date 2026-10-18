@@ -44,6 +44,7 @@ export function formatSlices(results: SliceQueryEntry[]): string {
     .map(
       (r) =>
         `${r.ref}  "${r.name}"  pattern=${r.pattern} status=${r.status ?? "no-doc"}` +
+        (r.storyline === null ? "" : ` storyline="${r.storyline}"`) +
         tagList("personas", r.personas) +
         tagList("contexts", r.contexts) +
         tagList("tags", r.tags),

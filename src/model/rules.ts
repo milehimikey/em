@@ -110,6 +110,30 @@ export const RULES = {
     fix: "Declare the view in or before the reaction's slice.",
     usageCategory: "reaction reads view before it exists",
   },
+  "slice-outside-storyline": {
+    severity: "warning",
+    title: "Slice outside every storyline",
+    fix: "Move the slice inside one of the model's `storyline` blocks (advisory: storylines can be adopted incrementally).",
+    usageCategory: "slice outside storyline",
+  },
+  "storyline-after-unknown": {
+    severity: "error",
+    title: "`after` names an unknown storyline",
+    fix: "Name a storyline declared in this model, or drop the `after` clause.",
+    usageCategory: "storyline after names unknown storyline",
+  },
+  "storyline-after-cycle": {
+    severity: "error",
+    title: "Storyline `after` cycle",
+    fix: "Remove an `after` clause so no storyline comes after itself.",
+    usageCategory: "storyline after cycle",
+  },
+  "storyline-after-out-of-order": {
+    severity: "error",
+    title: "Backward timeline (storyline declared above the one it comes after)",
+    fix: "Move the storyline block below the storyline it comes `after`, or restructure the feed.",
+    usageCategory: "storyline declared before its after target",
+  },
   "view-again-without-earlier": {
     severity: "error",
     title: "`again` without an earlier declaration",

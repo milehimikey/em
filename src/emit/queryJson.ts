@@ -20,7 +20,9 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 //    doc-declared id) and `declaredIn` (`"model"` | `"doc"`) — model-declared ids are found
 //    first, doc-body extraction is the fallback.
 // Additive-only.
-export const QUERY_SCHEMA_VERSION = "1.2";
+// 1.3 (GH #277): `slices` results gain `storyline` (the `storyline` block the slice is declared
+// in, null when none) and `slices` accepts a `storyline` filter. Additive-only.
+export const QUERY_SCHEMA_VERSION = "1.3";
 
 /** Build the `em query <verb> ... --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as every other `em` JSON surface. No

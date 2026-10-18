@@ -500,7 +500,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.18");
+    expect(doc.schemaVersion).toBe("1.19");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -1299,7 +1299,7 @@ describe("query tool", () => {
     const modelFile = join(dir, "ready.em");
     const { result, doc } = await callJson(client, "query", { files: [modelFile], verb: "consumers", event: "Thing Done" });
     expect(result.isError).toBeFalsy();
-    expect(doc.querySchemaVersion).toBe("1.2"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind; MIL-265: +invariant rule/declaredIn
+    expect(doc.querySchemaVersion).toBe("1.3"); // MIL-237: +field optional; MIL-199: +loops-to QueryEdgeKind; MIL-265: +invariant rule/declaredIn
     expect(doc.verb).toBe("consumers");
     expect(doc.results.map((r: { ref: string }) => r.ref)).toEqual(["read-model/view.thing-list"]);
 

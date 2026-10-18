@@ -14,7 +14,8 @@ import { continuationOf } from "./model/continuation.js";
 import { ParseError } from "./parser/parser.js";
 import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from "./render/render.js";
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
-import { resolveSliceArg, defaultSliceOut } from "./cli/render-inputs.js";
+import { resolveSliceArg, defaultSliceOut, defaultStorylineOut } from "./cli/render-inputs.js";
+import { buildStorylineDiagram, resolveStorylineArg } from "./render/storylineDiagram.js";
 import { resolveSliceKey } from "./model/resolveSlice.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
@@ -313,11 +314,21 @@ program
     "render only this slice, redrawn in its own canonical pattern shape " +
       "(default out: slices/<kebab-slug>.svg)",
   )
+  .option(
+    "--storyline <name>",
+    "render only this storyline: its slices in order, preceded by dimmed stub columns for what " +
+      "they read from outside it (and the end state of a storyline it comes `after`) " +
+      "(default out: storylines/<kebab-slug>.svg)",
+  )
   .option("--emit-dot", "print the generated DOT instead of rendering")
   .option("--keep-empty-lanes", "keep the API lane even when empty")
   .action(async (file: string, opts) => {
     if (opts.slice !== undefined && opts.emitDot) {
       console.error("em render: --slice cannot be combined with --emit-dot");
+      process.exit(1);
+    }
+    if (opts.storyline !== undefined && (opts.slice !== undefined || opts.emitDot)) {
+      console.error(`em render: --storyline cannot be combined with ${opts.slice !== undefined ? "--slice" : "--emit-dot"}`);
       process.exit(1);
     }
 
@@ -345,6 +356,23 @@ program
     if (hasErrors(allDiagnostics)) {
       console.error("not rendering: fix the errors above");
       process.exit(1);
+    }
+
+    if (opts.storyline !== undefined) {
+      const found = resolveStorylineArg(model, opts.storyline);
+      if ("error" in found) {
+        console.error(found.error);
+        process.exit(1);
+      }
+      const out = opts.out ?? defaultStorylineOut(file, found.storyline.name);
+      const fmt = opts.format ?? formatFromPath(out);
+      await mkdir(dirname(out), { recursive: true }); // storylines/ may not exist yet
+      const sub = buildStorylineDiagram(model, found.storyline, { keepEmptyLanes: opts.keepEmptyLanes });
+      const raw = await layoutDot(sub.dot);
+      const svg = composeSvg(raw, sub.model, sub.grid, dirname(file), dirname(out));
+      await writeRendered(svg, out, fmt);
+      console.log(`rendered ${out}`);
+      return;
     }
 
     if (opts.slice !== undefined) {
@@ -2692,9 +2720,10 @@ query
   .option("--context <c>", "match a slice with an event in this @Context")
   .option("--persona <p>", "match a slice with a ui in this @Persona")
   .option("--tag <t>", "match a slice with an event carrying this tag key")
+  .option("--storyline <name>", "match a slice declared in this `storyline` block")
   .option("--json", "print a JSON document instead of the text report")
-  .action((files: string[], opts: { pattern?: string; status?: string; context?: string; persona?: string; tag?: string; json?: boolean }) => {
-    const filters = { pattern: opts.pattern, status: opts.status, context: opts.context, persona: opts.persona, tag: opts.tag };
+  .action((files: string[], opts: { pattern?: string; status?: string; context?: string; persona?: string; tag?: string; storyline?: string; json?: boolean }) => {
+    const filters = { pattern: opts.pattern, status: opts.status, context: opts.context, persona: opts.persona, tag: opts.tag, storyline: opts.storyline };
     runQueryVerb(files, "slices", filters, opts.json, (s) => querySlices(s, filters), formatSlices);
   });
 

@@ -227,7 +227,7 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(statusJson().issues.queuedQuestions).toBe(1);
     expect(em(["status", "model.em"], dir).stdout).toContain("1 deferred to a later version");
     const full = JSON.parse(em(["export", "model.em"], dir).stdout);
-    expect(full.schemaVersion).toBe("1.18");
+    expect(full.schemaVersion).toBe("1.19");
     expect(full.model.slices[0].doc.queuedForNext).toBe(1);
   });
 

@@ -13,7 +13,8 @@
 
 import { Element, NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId, nodeIdAt, placeholderId } from "../layout/grid.js";
-import { styleFor } from "./theme.js";
+import { styleFor, storylineStyle } from "./theme.js";
+import { storylineIndexOfSlice } from "../model/storylines.js";
 
 // Exported: src/render/statusOverlay.ts matches/replaces these exact strings
 // to recolor a header cell post-layout based on its slice's doc status.
@@ -25,6 +26,8 @@ export const HEADER_FONT = "#1F2933";
 const CELL_W = 2.0; // inches
 const CELL_H = 0.62;
 const HEADER_H = 0.46;
+/** Height of the storyline band row's cells (GH #277); the band overlay reads it back. */
+export const STORYLINE_H = 0.34;
 
 export function emitDot(model: NormalizedModel, grid: Grid): string {
   const L: string[] = [];
@@ -61,9 +64,16 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
     // by Graphviz during layout, not something computable here before that pass runs,
     // so they keep their existing independent auto-grow behavior (docs/dsl.md already
     // documents this as acceptable — "tops drift slightly when field counts differ").
-    const rowHeight = row.band === "header" ? HEADER_H : rowBoxHeight(grid, r);
+    const rowHeight =
+      row.band === "header" ? HEADER_H : row.band === "storyline" ? STORYLINE_H : rowBoxHeight(grid, r);
     for (let c = 0; c < grid.cols; c++) {
-      if (row.band === "header") {
+      if (row.band === "storyline") {
+        // A real (filled) node in a storyline's column so Graphviz reports its rectangle; every
+        // other column is an invisible spacer. The renderer bridges the inter-column gaps and
+        // writes the label (render/storylineBands.ts).
+        const si = storylineIndexOfSlice(model, c);
+        L.push("  " + (si >= 0 ? storylineCell(r, c, si) : emptyCell(r, c, rowHeight)));
+      } else if (row.band === "header") {
         L.push("  " + headerCell(c, grid.sliceNames[c]));
       } else {
         const el = grid.cells[r][c];
@@ -171,6 +181,15 @@ function esc(s: string): string {
 /** Empty cells are invisible spacers that hold the column width and row height. */
 function emptyCell(r: number, c: number, rowHeight: number): string {
   return `${placeholderId(r, c)} [label="", style=invis, fixedsize=true, width=${CELL_W}, height=${rowHeight}];`;
+}
+
+/** One column of a storyline band: a plain filled box in the storyline's colour. */
+function storylineCell(r: number, c: number, storylineIndex: number): string {
+  const s = storylineStyle(storylineIndex);
+  return (
+    `${placeholderId(r, c)} [label="", shape=box, style=filled, fillcolor="${s.fill}", ` +
+    `color="${s.stroke}", fixedsize=true, width=${CELL_W}, height=${STORYLINE_H}, penwidth=1];`
+  );
 }
 
 /** Fixed-size title cell per slice (same width as cells, so columns line up). */

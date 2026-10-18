@@ -35,6 +35,9 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 | A lineage ref naming a version higher than the target slice's own current `version:` (`lineage-version-impossible`) | Fix the version number, or ratify the pending delta on the target slice first (bumping its `version:`) |
 | A view field's traced `derived from "Event A", "Event B"` naming an event that isn't among the view's actual sources (`derived-from-unresolved`) | Name one of the view's actual sources — the `from` events of any of its instances (including `view X again`), or the same-slice events for a `from`-less view — or drop the traced event |
 | Two `public` elements of the same kind whose names slug alike (`Order Placed` / `Order-Placed`) — a consumer's `consumes <model>:<kind>.<slug>` names no slice, so it couldn't tell them apart (`public-name-not-unique`, MIL-235). A `view … again` instance is the same read model, not a second name | Rename one, or drop `public` from one — see [dsl.md](dsl.md#consuming-another-models-public-surface) |
+| A storyline declared `after` a storyline that doesn't exist (`storyline-after-unknown`, GH #277) | Fix the name, or drop the `after` clause — see [Storylines](#storylines) |
+| Two storylines declared `after` each other, directly or through a chain, or a storyline `after` itself (`storyline-after-cycle`) | Remove an `after` clause — a story cannot follow itself |
+| A flow between two storylines related by `after` that the composed timeline reads forward but the full-model render would draw right-to-left, because the storyline is declared above the one it comes after (`storyline-after-out-of-order`) | Move the storyline blocks into timeline order (the referenced storyline first) |
 | A field of a `public` command/event/view (or of a declared `type` reachable from one) whose type is not in the public type table, not `X[]`, and not a declared `type` — including an untyped one (`public-field-type-unresolved`) | Use a table type, `X[]`, or a declared `type` — see [Strict public types](#strict-public-types) |
 
 The timeline rules ("time flows left to right") are the Two Laws in action;
@@ -115,6 +118,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A view marked `public` with no consumer (unconditional variant of "A read model nothing consumes") | Mark it `public` only if its consumer is outside this model; otherwise add the screen or reaction |
 | A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
 | A model `owner` that is not a CODEOWNERS handle (`owner-not-a-handle`, MIL-234): not `@user`, `@org/team` or an email, e.g. the free text `"Storefront team"` | Write `owner "@org/team"`; `em system codeowners` skips a non-handle owner |
+| A slice outside every storyline, once the model declares any `storyline` block (`slice-outside-storyline`, GH #277 — advisory so a model can adopt storylines incrementally) | Move the slice inside one of the storylines — see [Storylines](#storylines) |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event, and not marked `derived` | Add the field to the event, drop it from the view, or mark it `derived` if it's genuinely computed from which events have landed |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
@@ -122,6 +126,26 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
+
+### Storylines
+
+`storyline "Name" [source "url"] [after "Other"] { slice … }` blocks (GH #277, [dsl.md](dsl.md#storylines))
+group slices. Duplicate storyline names are a parse error (`em validate` reports it as a syntax
+error, with no diagnostic `code`).
+
+- `slice-outside-storyline` (warning) fires once for every slice declared outside all storylines, as soon as
+  the model declares at least one. A model with no storyline never sees it.
+- `after "<storyline>"` composes the timeline of the storyline that declares it: its slices are read as if
+  they followed the referenced storyline's last slice. The forward-only rules — `view-from-future-event`,
+  `reaction-from-future-view`, `arrow-backward` and `loops-to-forward` — and `from`/`again` resolution use
+  that composed timeline (referenced storyline → this storyline) for slices of storylines related by
+  `after`; every other pair keeps comparing file order. A view of the referenced storyline reading an event
+  of the storyline that comes after it is therefore still `view-from-future-event`.
+- `storyline-after-unknown` and `storyline-after-cycle` (errors) reject an `after` that names no storyline
+  or that closes a loop.
+- `storyline-after-out-of-order` (error): the composed timeline would let an arrow point left in the
+  full-model render (file order), which is an error rather than a special render. Declare the referenced
+  storyline above the one that comes after it.
 
 ### Both ends of a flow
 

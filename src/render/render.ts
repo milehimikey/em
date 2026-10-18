@@ -33,6 +33,7 @@ import {
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
 import { readSliceDocs } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
+import { buildStorylineBands, dimStubColumns, storylineBandIds } from "./storylineBands.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -223,12 +224,16 @@ function withOverlays(
   hrefOf: (el: Element) => string,
   docs: (SliceDoc | null)[],
 ): string {
-  const rects = parseNodeRects(svg, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
+  const rects = parseNodeRects(
+    svg,
+    new Set([...model.byId.keys(), ...sliceOverlayIds(grid), ...storylineBandIds(grid)]),
+  );
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
   const divergences = buildDivergenceMarkers(model, rects);
   const loopsTo = buildLoopsToMarkers(model, rects);
+  const bands = buildStorylineBands(model, grid, rects);
   const statuses = docs.map((doc) => doc?.status ?? null);
 
   // an edge detour can run outside the box grid Graphviz sized the canvas for, so make
@@ -252,7 +257,8 @@ function withOverlays(
   // note/issue/divergence/loops-to markers go on top of the boxes — inside the graph
   // transform group (so they share the box coordinate space) but after every node, as the
   // last children of that group, making them the topmost clickable layer.
-  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${notes}${issues}${divergences}${loopsTo}$1$2`);
+  out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${bands}${notes}${issues}${divergences}${loopsTo}$1$2`);
+  out = dimStubColumns(out, model);
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
   out = appendStatusLegend(out, grid, statuses);

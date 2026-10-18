@@ -2,6 +2,8 @@
 // Turns a normalized model into a rigid R x C grid.
 //
 // Rows (bands), top -> bottom:
+//   -. storyline     (only when the model declares `storyline` blocks, GH #277: a labelled band
+//                     per run of a storyline's columns, drawn in render/storylineBands.ts)
 //   0. header        (slice names — one visible cell per column)
 //   1. automation    (single row, only if the model uses automation elements)
 //   2. ui            (one row per persona)
@@ -15,9 +17,10 @@
 
 import { Element, NormalizedModel } from "../model/model.js";
 
-export type Band = "header" | "automation" | "ui" | "api" | "event";
+export type Band = "storyline" | "header" | "automation" | "ui" | "api" | "event";
 
 export const HEADER_KEY = "__header";
+export const STORYLINE_KEY = "__storyline";
 
 export interface GridRow {
   key: string;
@@ -83,6 +86,9 @@ function rowKeyForElement(el: Element): string {
 export function layout(model: NormalizedModel, opts: LayoutOptions = {}): Grid {
   const rows: GridRow[] = [];
 
+  if ((model.storylines ?? []).length > 0) {
+    rows.push({ key: STORYLINE_KEY, label: "Storyline", band: "storyline" });
+  }
   rows.push({ key: HEADER_KEY, label: "", band: "header" });
   if (model.hasAutomation) {
     rows.push({ key: "automation", label: "Automation", band: "automation" });

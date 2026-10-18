@@ -45,7 +45,7 @@ describe("em slice ratify --skip-review persists reviewSkipped (GH #260, CLI)", 
     expect(r.stderr).toContain('notice: --skip-review — ratifying "pay" without a recorded review (status was draft)');
     expect(read()).toContain("status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-15\nreviewSkipped: draft\nratifiedHash: sha256:");
     const exported = exportDoc();
-    expect(exported.schemaVersion).toBe("1.18");
+    expect(exported.schemaVersion).toBe("1.19");
     expect(exported.slice.doc.reviewSkipped).toBe("draft");
     const ready = readyJson();
     expect(ready.validateSliceReadySchemaVersion).toBe("1.3");

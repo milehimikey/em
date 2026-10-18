@@ -66,7 +66,13 @@ evidence"). In short:
 
 Goal: a structurally complete, **validated** model with correct patterns and swimlanes.
 
-1. **Swimlanes & patterns (step 5).** Group events into **contexts** (bounded contexts /
+1. **Swimlanes & patterns (step 5).** **Name the storylines first**: the one main storyline (the
+   end-to-end journey) and the secondary ones (retire a thing, extend an attribute, reorganize).
+   Wrap each one's slices in a `storyline "Name" [source "url"] { slice … }` block (grammar and the
+   optional `after "<storyline>"` timeline clause: `em-dsl.md`) so the diagram gets a band per
+   story and `em render --storyline "Name"` can show one alone; slices keep their file order, and
+   a model can adopt storylines incrementally (`slice-outside-storyline` is only an advisory
+   warning) — but name them before you slice, not after. Then group events into **contexts** (bounded contexts /
    aggregates) — ask which events share a consistency boundary and who owns them. Classify each
    slice as one of the 4 patterns. **Share the slice between every automation or translation and
    the command it triggers** (the reaction — processor/translation — together with the command

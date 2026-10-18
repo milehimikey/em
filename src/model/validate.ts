@@ -19,7 +19,14 @@ import type { Field } from "../parser/ast.js";
 import { pushDiag } from "./rules.js";
 import type { RefsResult } from "./refs.js";
 import { viewSourceNames } from "./continuation.js";
-import { connectionKind,resolveLoopsToTarget } from "./edges.js";
+import { connectionKind, resolveLoopsToTarget, semanticEdges } from "./edges.js";
+import {
+  composedButRenderedBackward,
+  findStoryline,
+  isEarlierOnTimeline,
+  isLaterOnTimeline,
+  latestOnTimeline,
+} from "./storylines.js";
 import { kebabSlug } from "../util/slug.js";
 
 export type Severity = "error" | "warning";
@@ -132,7 +139,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
             line: view.line,
             refs: other ? [refOf(view.id), refOf(other.id)] : [refOf(view.id)],
           });
-        } else if (evt.sliceIndex > view.sliceIndex) {
+        } else if (isLaterOnTimeline(model, evt.sliceIndex, view.sliceIndex)) {
           pushDiag(diags, "view-from-future-event", {
             message:
               `time flows left to right: event "${evt.name}" (slice ${evt.sliceIndex + 1}) happens ` +
@@ -268,7 +275,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           line: el.line,
           refs: asEvent ? [refOf(el.id), refOf(asEvent.id)] : [refOf(el.id)],
         });
-      } else if (!views.some((v) => v.sliceIndex <= el.sliceIndex)) {
+      } else if (!views.some((v) => !isLaterOnTimeline(model, v.sliceIndex, el.sliceIndex))) {
         pushDiag(diags, "reaction-from-future-view", {
           message:
             `time flows left to right: ${el.kind} "${el.name}" (slice ${el.sliceIndex + 1}) reads ` +
@@ -306,7 +313,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       const target = resolveLoopsToTarget(model, el, name);
       if (!target) {
         const nearest = views
-          .filter((v) => v.sliceIndex >= el.sliceIndex)
+          .filter((v) => !isEarlierOnTimeline(model, v.sliceIndex, el.sliceIndex))
           .sort((a, b) => a.sliceIndex - b.sliceIndex)[0];
         pushDiag(diags, "loops-to-forward", {
           message:
@@ -510,7 +517,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     if (a.fromId && a.toId) {
       const fromEl = model.byId.get(a.fromId);
       const toEl = model.byId.get(a.toId);
-      if (fromEl && toEl && toEl.sliceIndex < fromEl.sliceIndex) {
+      if (fromEl && toEl && isEarlierOnTimeline(model, toEl.sliceIndex, fromEl.sliceIndex)) {
         pushDiag(diags, "arrow-backward", {
           message:
             `time flows left to right: arrow "${a.from}" -> "${a.to}" points backward ` +
@@ -543,6 +550,71 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         line: a.line,
         ...(a.fromId ? { refs: [refOf(a.fromId)] } : {}),
       });
+  }
+
+  // Storylines (GH #277). Advisory grouping, plus the `after "<storyline>"` clause that composes
+  // the timeline (model/storylines.ts) — whose misuse (unknown/cyclic reference, or a reference
+  // that would draw right-to-left in the full-model render) is an error.
+  const storylines = model.storylines ?? [];
+  if (storylines.length > 0) {
+    for (const slice of model.slices) {
+      if (slice.storyline !== undefined) continue;
+      pushDiag(diags, "slice-outside-storyline", {
+        message:
+          `slice "${slice.name}" belongs to no storyline, but this model declares ` +
+          `${storylines.length} (${storylines.map((s) => `"${s.name}"`).join(", ")}); move it inside one`,
+        line: slice.line,
+        refs: [refs.sliceKeys[slice.index]],
+      });
+    }
+    for (const st of storylines) {
+      if (st.after === undefined) continue;
+      const target = findStoryline(model, st.after);
+      if (!target) {
+        pushDiag(diags, "storyline-after-unknown", {
+          message: `storyline "${st.name}" is declared \`after\` unknown storyline "${st.after}"`,
+          line: st.line,
+        });
+        continue;
+      }
+      // A cycle (including `after` itself) leaves the storyline with no usable chain.
+      let cur: typeof st | undefined = target;
+      const seen = new Set<typeof st>();
+      let cyclic = target === st;
+      while (!cyclic && cur && cur.after !== undefined && !seen.has(cur)) {
+        seen.add(cur);
+        cur = findStoryline(model, cur.after);
+        if (cur === st) cyclic = true;
+      }
+      if (cyclic) {
+        pushDiag(diags, "storyline-after-cycle", {
+          message:
+            `storyline "${st.name}" is declared \`after\` "${st.after}", which (transitively) comes after ` +
+            `"${st.name}" — a story cannot follow itself; remove one \`after\` clause`,
+          line: st.line,
+        });
+      }
+    }
+    // The composed timeline may read a flow forward that the full-model render (file order)
+    // draws right-to-left; that is an error, never a special render.
+    for (const edge of semanticEdges(model)) {
+      if (edge.source === "loops-to") continue;
+      const from = model.byId.get(edge.from);
+      const to = model.byId.get(edge.to);
+      if (!from || !to || from.sliceIndex === to.sliceIndex) continue;
+      if (!composedButRenderedBackward(model, from.sliceIndex, to.sliceIndex)) continue;
+      const fromStory = model.slices[from.sliceIndex].storyline;
+      const toStory = model.slices[to.sliceIndex].storyline;
+      pushDiag(diags, "storyline-after-out-of-order", {
+        message:
+          `time flows left to right: "${from.name}" (storyline "${fromStory}") feeds "${to.name}" ` +
+          `(storyline "${toStory}"), which the \`after\` clause reads as forward, but "${toStory}" is ` +
+          `declared above the storyline it comes after, so the full-model render would draw this ` +
+          `right-to-left; move the storyline blocks into timeline order`,
+        line: to.line,
+        refs: [refOf(from.id), refOf(to.id)],
+      });
+    }
   }
 
   // Open issues (`issue "text"`) are always surfaced as a warning — the red-note
@@ -872,15 +944,13 @@ function computeViewReaders(model: NormalizedModel): {
       const bucket = model.byName.get(normalizeName(name));
       if (!bucket) continue;
       const views = bucket.filter((x) => x.kind === "view");
-      const atOrBefore = views
-        .filter((x) => x.sliceIndex <= el.sliceIndex)
-        .sort((a, b) => b.sliceIndex - a.sliceIndex);
+      const atOrBefore = views.filter((x) => !isLaterOnTimeline(model, x.sliceIndex, el.sliceIndex));
       if (atOrBefore.length === 0) {
         if (views[0]) readByArrowOrFrom.add(views[0].id);
       } else if (AUTOMATION_KINDS.has(el.kind)) {
         for (const v of atOrBefore) readByArrowOrFrom.add(v.id);
       } else {
-        readByArrowOrFrom.add(atOrBefore[0].id);
+        readByArrowOrFrom.add(latestOnTimeline(model, atOrBefore, el.sliceIndex)!.id);
       }
     }
   }

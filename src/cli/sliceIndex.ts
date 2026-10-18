@@ -66,6 +66,10 @@ function statusCell(doc: SliceDocExport, continuationOf: string | null): string 
 export interface SliceIndexRow {
   index: number;
   name: string;
+  /** GH #277: the `storyline` block the slice is declared in, or `—`. The column is only
+   *  rendered when the model declares at least one storyline (see `buildSliceIndexTable`), so a
+   *  model without storylines keeps its README table byte-identical. */
+  storyline: string;
   pattern: string;
   status: string;
   /** MIL-201: the doc's `reviewedBy`, or `—`. Sits between Status and Ratified by so the two
@@ -111,6 +115,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
     return {
       index: i + 1,
       name: slice.name,
+      storyline: slice.storyline ?? "—",
       pattern: slicePatternLabel(pattern),
       status: statusCell(doc, continuationOf),
       // GH #275: a continuation row borrows its parent's doc, but the parent's review /
@@ -127,14 +132,19 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
     };
   });
 
+  // GH #277: a Storyline column right after Slice, only for a model that declares storylines.
+  const withStoryline = (model.storylines ?? []).length > 0;
+  const header = withStoryline
+    ? TABLE_HEADER.split("\n").map((l, n) => (n === 0 ? l.replace("| Slice |", "| Slice | Storyline |") : l.replace("|-------|", "|-------|-----------|"))).join("\n")
+    : TABLE_HEADER;
   const lines = rows.map(
     (r) =>
-      `| ${r.index} | ${escapeCell(r.name)} | ${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
+      `| ${r.index} | ${escapeCell(r.name)} | ${withStoryline ? `${escapeCell(r.storyline)} | ` : ""}${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
       `${escapeCell(r.reviewedBy)} | ${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ` +
       `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | ${escapeCell(r.conformed)} | ${r.docPath ? `[${r.docPath}](${r.docPath})` : "—"} |`,
   );
 
-  return { markdown: [TABLE_HEADER, ...lines].join("\n"), rows, diagnostics };
+  return { markdown: [header, ...lines].join("\n"), rows, diagnostics };
 }
 
 export type SliceIndexResult =

@@ -106,6 +106,7 @@ affected lines written by hand.
 | seam manifest outdated |
 | slice doc cites undeclared invariant |
 | slice doc structured section malformed |
+| slice outside storyline |
 | slice-ready slice has no doc bound |
 | slice-ready slice has unchecked open questions |
 | slice-ready slice not ready-to-implement |
@@ -157,6 +158,9 @@ affected lines written by hand.
 | slice-ready ready doc has no ratifiedHash (strict) |
 | slice-ready slice not ratified |
 | slice-ready structured section malformed |
+| storyline after cycle |
+| storyline after names unknown storyline |
+| storyline declared before its after target |
 | type cycle |
 | view again with no earlier declaration |
 | view references unknown event |

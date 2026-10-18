@@ -40,6 +40,11 @@ export function resolveSliceArg(name: string, slices: Slice[]): SliceLookup {
  * .em file — the same slices/ + kebabSlug convention em catalog's sibling-file
  * lookup and the event-modeling skill's slice-doc path already use.
  */
+/** `em render --storyline`'s default output: `<dir of the .em file>/storylines/<kebab-slug>.svg`. */
+export function defaultStorylineOut(file: string, storylineName: string): string {
+  return join(dirname(file), "storylines", `${kebabSlug(storylineName)}.svg`);
+}
+
 export function defaultSliceOut(file: string, sliceName: string): string {
   return join(dirname(file), "slices", `${kebabSlug(sliceName)}.svg`);
 }

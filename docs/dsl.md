@@ -11,6 +11,10 @@ model "Name" [owner "@org/team"] # diagram title; optional owning team(s), as CO
 persona Name                     # a UI swimlane row (one per actor)
 context Name                     # an event swimlane row (one per bounded context)
 
+storyline "Name" [source "url"] [after "Other"] {   # optional chapter grouping slices (see Storylines)
+  slice "Name" { ... }
+}
+
 slice "Name" [source "url"] {    # one column; time runs left -> right; source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row
   command Free Text              # state-changing request
@@ -545,6 +549,65 @@ in slice docs. It's purely metadata: no visual marker, no legend entry, and `em 
 doesn't require or check it. Optional — omit it and the field exports as `null`.
 
 Don't confuse this with an element's `note "path.md"`, which links a markdown file, not a URL.
+
+## Storylines
+
+A model usually holds one **main storyline** (the end-to-end journey) and several **secondary** ones
+(retire a product, extend an attribute, reorganize the hierarchy). A `storyline` block names the
+slices that belong to one of them (GH #277):
+
+```
+storyline "Bring a product to market" source "docs/pim.md#walkthrough-1" {
+  slice "Create Product Class" { ... }
+  slice "Product Classes" { ... }
+}
+
+storyline "Retire a product" after "Bring a product to market" {
+  slice "Archive Product" { ... }
+}
+```
+
+- **Grammar:** `storyline "Name" [source "url"] [after "Other"] {`, then `slice` blocks, then `}`. `source`
+  reuses the slice header's `source "url"` clause (a link to the document or ticket the story traces to);
+  `source` and `after` may come in either order after the name. A storyline holds only slices, and
+  storylines don't nest.
+- **File order is still the timeline.** A storyline is a label over its slices, not a second timeline: a
+  slice keeps its column, a slice outside any storyline is allowed, and the storylines need not be
+  contiguous. Storyline names are unique (case-insensitive); a duplicate is a parse error.
+- **Render:** the full-model diagram draws a labelled band above the slice-header row spanning each run of
+  a storyline's columns (a storyline interrupted by another gets one band segment per run). A model with
+  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone
+  — see [cli.md](cli.md#em-render-file).
+- **Validation:** once any storyline exists, a slice outside every storyline is the advisory warning
+  `slice-outside-storyline` (so a model can adopt storylines incrementally). Duplicate names are a parse
+  error; `after` is checked as below. See [validation.md](validation.md#storylines).
+- **Export/query:** `em export` carries `slice.storyline` and `model.storylines[]` (schema `1.19`);
+  `em query slices --storyline "Name"` lists one story's slices; `em slice index` adds a Storyline column.
+
+### `after "<storyline>"` — a story's own timeline
+
+Law 2 (arrows never point right-to-left, [timeline.md](timeline.md)) is a rule about the *story*: you
+cannot go backward in a story. So a secondary storyline may declare which story it follows, and is then read
+as if its slices came after the referenced storyline's last slice:
+
+- **Resolution.** Inside a storyline with `after`, `from`, `again` and a reaction's `from` may name events
+  and views of the referenced storyline — its end state — whatever the file position of either block. A
+  `view X again` or a reaction's `from "X"` resolves to the latest instance of `X` on the composed timeline
+  **referenced storyline → this storyline**, never to a view a sibling storyline happened to leave between
+  them in file order. `after` chains (`C after B`, `B after A`) compose.
+- **Forward-only checks** (`view-from-future-event`, `reaction-from-future-view`, `arrow-backward`,
+  `loops-to-forward`) are evaluated on that composed timeline for slices of storylines related by `after`;
+  every other pair still compares file order.
+- **Still errors:** an event of a storyline feeding a view of the storyline it comes `after` (a backward
+  feed — `view-from-future-event`); two storylines `after` each other, or one `after` itself
+  (`storyline-after-cycle`); an `after` naming no storyline (`storyline-after-unknown`); and a flow the
+  composed timeline reads forward but the full-model render would draw right-to-left because the storyline
+  is declared *above* the one it comes after (`storyline-after-out-of-order`) — move the blocks into
+  timeline order. There is no special render for that case; it is an error.
+- **Render:** the full-model render keeps file order (one timeline on the page).
+  `em render --storyline "<secondary>"` draws the referenced storyline's end state as dimmed stub columns on
+  the left, so the story reads left to right on its own.
+- `after` is optional. Without it, file order is the only timeline, exactly as before.
 
 ## Invariants
 

@@ -24,6 +24,21 @@ export function styleFor(kind: ElementKind): NodeStyle {
   return STYLES[kind];
 }
 
+/** Storyline band colours (GH #277), cycled by the storyline's declaration index. Light fills
+ *  with dark text so the band reads as a chapter marker, never as an element. */
+const STORYLINE_STYLES: NodeStyle[] = [
+  { fill: "#D6E4F7", stroke: "#4A78B5", fontColor: "#14304F" },
+  { fill: "#F3DDF0", stroke: "#A0589A", fontColor: "#4A1F46" },
+  { fill: "#DDF0E0", stroke: "#4E9A63", fontColor: "#16401F" },
+  { fill: "#FBE9C8", stroke: "#C58A25", fontColor: "#4A3208" },
+  { fill: "#F7D9D9", stroke: "#B5524E", fontColor: "#4F1714" },
+  { fill: "#DDE9EE", stroke: "#4C8CA3", fontColor: "#143742" },
+];
+
+export function storylineStyle(index: number): NodeStyle {
+  return STORYLINE_STYLES[index % STORYLINE_STYLES.length];
+}
+
 // Slice-status colors — recognized values from the slice.md template's
 // `- **Status:** {{draft | reviewed | ready-to-implement | implemented}}`
 // (see src/catalog/sliceDoc.ts / .claude/skills/event-modeling/templates/slice.md).

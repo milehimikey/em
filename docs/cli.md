@@ -254,6 +254,7 @@ renders.
 | `-o, --out <path>` | Output path; the extension picks the format |
 | `-T, --format <fmt>` | Output format (`svg`, `png`, `pdf`, …); takes precedence over the `-o` extension |
 | `--slice <name>` | Render only this slice, redrawn in its own canonical pattern shape (default out: `slices/<kebab-slug>.svg`) |
+| `--storyline <name>` | Render only this storyline (GH #277): its slices in order, preceded by dimmed stub columns for what they read from outside it (default out: `storylines/<kebab-slug>.svg`) |
 | `--emit-dot` | Print the generated Graphviz DOT instead of rendering (or write it with `-o`) |
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 
@@ -262,7 +263,20 @@ em render model.em                 # -> model.svg
 em render model.em -o out/model.png
 em render model.em --emit-dot      # inspect the DOT
 em render model.em --slice "Place Order"   # -> slices/place-order.svg
+em render model.em --storyline "Retire a product"   # -> storylines/retire-a-product.svg
 ```
+
+**Storylines (GH #277).** When the model declares `storyline` blocks ([dsl.md](dsl.md#storylines)),
+the full diagram gains a labelled band above the slice-header row spanning each run of a storyline's
+columns (one segment per run when a storyline is interrupted by another). A model without storylines
+renders exactly as before. `--storyline <name>` is not `--slice`: it keeps the normal timeline's columns
+but only a subset of them — the storyline's own slices, in order, plus **stub columns** on the left drawn
+dimmed: every element a slice of the storyline reads from outside it (so each arrow still has a source),
+and, for a storyline declared `after "<other>"`, the end state of the storyline it follows (the latest
+instance of each read model it continues with `again`). A stub column holds only the referenced elements
+of its origin slice. The name is matched case-insensitively (an unknown name lists every storyline);
+`--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch --serve` does not take a
+storyline filter yet (the live viewer shows the whole model, bands included).
 
 `--slice` doesn't crop the full diagram — it classifies the slice into one of the 4 Event
 Modeling patterns (State Change, State View, Automation, Translation) and redraws just its
@@ -583,6 +597,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
 - `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `slices`, `arrows`, `edges`.
+  - `storylines` (added in schema `1.19`, GH #277) is the model's `storyline` blocks in document
+    order: `{ name, source, after, sliceKeys }` — `source`/`after` are `null` when the block gives
+    none, `sliceKeys` the member slices' export keys in order. Every slice also carries
+    `storyline` (`string | null`, the block it is declared in).
   - `key` (added in schema `1.10`, MIL-193) is the model's own key in em's one cross-model
     addressing scheme — see **Model-qualified refs** below for how it's derived and used. The
     `--slice` envelope carries the same value as top-level `modelKey`.
@@ -2405,6 +2423,7 @@ em query producers model.em --event "Order Placed"           # commands that emi
 em query downstream model.em --of "Place Order" --depth 2     # impact analysis, 2 hops
 em query upstream model.em --of "Order Shipped"                # what feeds this event
 em query slices model.em --status ready-to-implement --context Payment
+em query slices model.em --storyline "Retire a product"        # one story's slices (GH #277)
 em query invariant model.em --id INV-CHK-3 --tests test/       # + who cites it
 em query field model.em --of "Order Placed" --name total       # type/tag/renamed-from facts
 em query path model.em --from "Checkout Screen" --to "Order Shipped"
@@ -2422,14 +2441,14 @@ $ echo $?
 0
 ```
 
-**`--json` shape** (`querySchemaVersion: "1.2"`, versioned independently of the npm package and
+**`--json` shape** (`querySchemaVersion: "1.3"`, versioned independently of the npm package and
 every other command's own schema — also the exact document the MCP `query` tool returns, see
 [mcp.md](mcp.md)): one envelope for every verb, with a `verb` discriminator and a `results` array
 whose entries are verb-shaped:
 
 ```json
 {
-  "querySchemaVersion": "1.2",
+  "querySchemaVersion": "1.3",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "verb": "consumers",
   "files": ["model.em"],
@@ -2446,7 +2465,10 @@ whose entries are verb-shaped:
   `producers` additionally carries `uiTriggers: [...]` (the same shape, for each `ui` wired to
   that producing command).
 - `downstream`/`upstream` results add `depth` (hop count from `--of`) to the same shape.
-- `slices` results carry `{ ref, name, index, pattern, status, personas, contexts, tags }`.
+- `slices` results carry `{ ref, name, index, pattern, status, storyline, personas, contexts, tags }`
+  (`storyline` since query schema `1.3`, GH #277: the `storyline` block the slice is declared in, or
+  `null`). `em query slices --storyline <name>` keeps only that storyline's slices; an unknown name is an
+  error listing the declared ones.
 - `invariant` results carry `{ id, sliceRef, sliceName, docPath, status, citations, rule, declaredIn }` —
   `citations` is `null` when `--tests` wasn't given, else `{ file, line }[]` (possibly empty).
   `declaredIn` (query schema 1.2, MIL-265) is `"model"` for an id declared by an `invariant`
@@ -3173,6 +3195,7 @@ pair around an empty table.
 |---|---|
 | `#` | Row position (declaration order) |
 | `Slice` | Slice name |
+| `Storyline` | (GH #277) the `storyline` block the slice is declared in, or `—`. **Only present when the model declares at least one `storyline`** — a model without storylines keeps its table, and so its `--check`, byte-identical. Sits right after `Slice` |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
 | `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" — or, for a continuation slice (MIL-208, no legacy doc of its own), `` continuation of `<originating-key>` `` with the Design doc column pointing at the originating slice's doc. A continuation row's `Reviewed by`, `Ratified by`, `Tracking`, `Implemented in` and `Conformed` cells are `—` (GH #275): those facts belong to the originating slice's own row |
 | `Reviewed by` | The doc's `reviewedBy` (MIL-201), or `—` |

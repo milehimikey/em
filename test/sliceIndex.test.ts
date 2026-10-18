@@ -84,6 +84,7 @@ describe("buildSliceIndexTable", () => {
     expect(rows[0]).toEqual({
       index: 1,
       name: "Place Order",
+      storyline: "—",
       pattern: "State Change",
       status: "implemented",
       reviewedBy: "Sam Okafor",
@@ -108,6 +109,7 @@ describe("buildSliceIndexTable", () => {
     expect(rows[1]).toEqual({
       index: 2,
       name: "Open Orders",
+      storyline: "—",
       pattern: "State View",
       status: "no doc yet",
       reviewedBy: "—",

@@ -23,6 +23,7 @@ em render <file>                                                    # transpile 
 em render <file> -o, --out <path>                                   # output path (extension picks the format)
 em render <file> -T, --format <fmt>                                 # output format (svg, png, pdf, ...)
 em render <file> --slice <name>                                     # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
+em render <file> --storyline <name>                                 # render only this storyline: its slices in order, preceded by dimmed stub columns for what they read from outside it (and the end state of a storyline it comes `after`) (default out: storylines/<kebab-slug>.svg)
 em render <file> --emit-dot                                         # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes                                 # keep the API lane even when empty
 em export <file>                                                    # export a versioned JSON snapshot of the normalized model
@@ -197,6 +198,7 @@ em query slices <files> --status <s>                                # the slice'
 em query slices <files> --context <c>                               # match a slice with an event in this @Context
 em query slices <files> --persona <p>                               # match a slice with a ui in this @Persona
 em query slices <files> --tag <t>                                   # match a slice with an event carrying this tag key
+em query slices <files> --storyline <name>                          # match a slice declared in this `storyline` block
 em query slices <files> --json                                      # print a JSON document instead of the text report
 em query invariant <files>                                          # declaring slice + doc facts for one INV-* id, and (with --tests) its test citations
 em query invariant <files> --id <inv-id>                            # the INV-* id to look up
@@ -274,6 +276,10 @@ model "Name" [owner "Team"]      # diagram title; optional owning team(s), quote
 
 persona Name                     # a UI swimlane row (actor)
 context Name                     # an event swimlane row (bounded context / aggregate)
+
+storyline "Name" [source "url"] [after "Other"] {   # optional chapter grouping slices (see Storylines)
+  slice "Name" { ... }
+}
 
 slice "Name" [source "url"] {    # one vertical time step (a column); source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row (defaults to first/"User")
@@ -472,6 +478,21 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   `model.slices[].source` via `em export`, so an intake loop stays machine-traversable instead
   of relying on prose. Purely metadata — no visual marker, not validated. Don't confuse it with
   an element's `note "path.md"` (a markdown file link, not a URL).
+
+- **`storyline "Name" [source "url"] [after "Other"] { slice … }`** (GH #277) groups slices into a
+  named chapter — the main journey, and secondary stories (retire a product, extend an attribute).
+  Slices keep their file-order timeline position; a slice outside any storyline is allowed;
+  storylines don't nest and names are unique (a duplicate is a parse error). The full render draws a
+  labelled band above the slice headers; `em render --storyline "Name"` draws one story alone, with the
+  elements it reads from outside as dimmed stub columns. `em export` carries `slice.storyline` and
+  `model.storylines[]`; `em query slices --storyline`; `em slice index` adds a Storyline column. Once
+  any storyline exists a slice outside every one is the advisory warning `slice-outside-storyline`.
+  `after "<other>"` reads the storyline as if its slices followed the referenced storyline's last
+  slice: `from`/`again`/reaction `from` resolve against the composed timeline (referenced → this), the
+  forward-only checks use it, a backward feed into the referenced storyline, an `after` cycle
+  (`storyline-after-cycle`), an unknown target (`storyline-after-unknown`) or a storyline declared above
+  the one it comes after when a flow would draw right-to-left (`storyline-after-out-of-order`) is an
+  error. Without `after`, file order is the only timeline.
 
 ### Named types
 
@@ -841,6 +862,10 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `seam-endpoint-unresolved` | error | Seam endpoint does not resolve | Fix the ref to an element the named model actually exports (`em export` lists every ref), or re-declare the seam after a rename. |
 | `seam-source-not-public` | error | Seam source is not `public` | Mark the event/view `public` in its model, or point the seam at the element that is. |
 | `slice-doc/structured-section-malformed` | warning | Malformed structured section | Balance the `<!-- GENERATED:em-slice-…:start -->`/`:end -->` markers (re-create the doc with `em slice new --force` if they are lost), restore the template's table header and run `em slice sync`, and give every `### Scenario:` block a Given, When and Then bullet. |
+| `slice-outside-storyline` | warning | Slice outside every storyline | Move the slice inside one of the model's `storyline` blocks (advisory: storylines can be adopted incrementally). |
+| `storyline-after-cycle` | error | Storyline `after` cycle | Remove an `after` clause so no storyline comes after itself. |
+| `storyline-after-out-of-order` | error | Backward timeline (storyline declared above the one it comes after) | Move the storyline block below the storyline it comes `after`, or restructure the feed. |
+| `storyline-after-unknown` | error | `after` names an unknown storyline | Name a storyline declared in this model, or drop the `after` clause. |
 | `system-manifest-invalid` | error | Seam manifest invalid | Fix the manifest: `systemSchemaVersion: "2.0"`, `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`). |
 | `system-manifest-outdated` | warning | Seam manifest is schema 1.0 | Run `em upgrade <model>.em --apply` once: it moves `seams:` into `consumes` clauses and `owner:` onto each model header, and rewrites the manifest to 2.0. |
 | `system-model-key-mismatch` | error | Manifest model key differs from the export's `model.key` | Rename the manifest's `models:` key to the computed key the message prints. |

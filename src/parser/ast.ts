@@ -153,7 +153,26 @@ export interface SliceNode {
   name: string;
   /** `source "url"` — link to the ticket/conversation this slice traces back to. */
   source?: string;
+  /** The enclosing `storyline "Name" { … }` block's name, when the slice is declared inside one
+   *  (GH #277); `undefined` for a slice outside any storyline. */
+  storyline?: string;
   elements: ElementNode[];
+  line: number;
+}
+
+/** A `storyline "Name" [source "url"] [after "Other"] { slice … }` block (GH #277): a named
+ *  chapter grouping slices. Slices keep their file-order timeline position; a storyline is a
+ *  label over them, never a second timeline — except through the optional `after` clause. */
+export interface StorylineNode {
+  name: string;
+  /** `source "url"` — the document/ticket this storyline traces back to. */
+  source?: string;
+  /** `after "Other"` — read as if this storyline's slices followed the named storyline's last
+   *  slice on the timeline. The name is as written; unknown/cyclic references are `em validate`
+   *  errors, not parse errors. */
+  after?: string;
+  /** Names of the slices declared inside the block, in order. */
+  sliceNames: string[];
   line: number;
 }
 
@@ -188,6 +207,8 @@ export interface ModelNode {
   /** Declared context/concept lanes, in order. */
   contexts: string[];
   slices: SliceNode[];
+  /** `storyline` blocks, in document order (GH #277). */
+  storylines: StorylineNode[];
   /** Explicit top-level arrows (e.g. read-model feedback to a UI). */
   arrows: ArrowNode[];
   /** Named structured type declarations, in document order. */

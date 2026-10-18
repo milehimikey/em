@@ -165,6 +165,8 @@ export interface SliceQueryEntry {
   index: number;
   pattern: string;
   status: string | null;
+  /** GH #277 (query schema 1.3): the `storyline` block the slice is declared in, or null. */
+  storyline: string | null;
   personas: string[];
   contexts: string[];
   tags: string[];
@@ -176,12 +178,25 @@ export interface SliceFilters {
   context?: string;
   persona?: string;
   tag?: string;
+  /** GH #277: match a slice declared in this `storyline` block (case-insensitive). */
+  storyline?: string;
 }
 
 /** The filtered slice list — every filter AND-combines. `pattern`/`status` match the slice's
  *  own single value exactly (case-insensitive); `context`/`persona`/`tag` match when ANY
  *  element in the slice carries that context/persona/tag key. */
 export function querySlices(system: QuerySystem, filters: SliceFilters): VerbResult<SliceQueryEntry> {
+  if (filters.storyline !== undefined) {
+    const wanted = filters.storyline.trim().toLowerCase();
+    const declared = system.entries.flatMap((e) => (e.model.storylines ?? []).map((s) => s.name));
+    if (!declared.some((n) => n.trim().toLowerCase() === wanted)) {
+      return err(
+        declared.length === 0
+          ? `em query slices: --storyline "${filters.storyline}": no storylines are declared in these models`
+          : `em query slices: no storyline "${filters.storyline}" (declared: ${[...new Set(declared)].map((n) => `"${n}"`).join(", ")})`,
+      );
+    }
+  }
   const results: SliceQueryEntry[] = [];
   for (const entry of system.entries) {
     entry.model.slices.forEach((slice, i) => {
@@ -196,9 +211,10 @@ export function querySlices(system: QuerySystem, filters: SliceFilters): VerbRes
       if (filters.status && (status ?? "").toLowerCase() !== filters.status.toLowerCase()) return;
       if (filters.context && !contexts.some((c) => c.toLowerCase() === filters.context!.toLowerCase())) return;
       if (filters.persona && !personas.some((p) => p.toLowerCase() === filters.persona!.toLowerCase())) return;
+      if (filters.storyline && (slice.storyline ?? "").trim().toLowerCase() !== filters.storyline.trim().toLowerCase()) return;
       if (filters.tag && !tags.some((t) => t.toLowerCase() === filters.tag!.toLowerCase())) return;
 
-      results.push({ ref: qualifyRef(system, entry.modelKey, key), name: slice.name, index: i, pattern, status, personas, contexts, tags });
+      results.push({ ref: qualifyRef(system, entry.modelKey, key), name: slice.name, index: i, pattern, status, storyline: slice.storyline ?? null, personas, contexts, tags });
     });
   }
   return { ok: true, results };
