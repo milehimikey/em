@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { applyImplementedFrontmatter, nextDraftIfDeferred, runMarkImplemented } from "../src/cli/markImplemented.js";
+import { applyImplementedFrontmatter, formatNextDraftNotice, nextDraftIfDeferred, runMarkImplemented } from "../src/cli/markImplemented.js";
 import { parseSliceDoc } from "../src/catalog/sliceDoc.js";
 
 const READY_DOC =
@@ -433,7 +433,7 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
     const implemented = applyImplementedFrontmatter(DEFERRED, URL, "2026-10-12");
     if (!implemented.ok) throw new Error("setup");
     const next = nextDraftIfDeferred(implemented.content);
-    expect(next.openedDraft).toEqual({ version: 2, reopened: 1, injected: 0 });
+    expect(next.openedDraft).toEqual({ version: 2, reopened: 1, injected: 0, titles: ["Retry policy?"] });
     const parsed = parseSliceDoc(next.content);
     expect(parsed).toMatchObject({ status: "draft", version: 2, shippedVersion: 1, implementedIn: URL, ratifiedBy: null, ratifiedHash: null });
     expect(next.content).toContain("\n- [ ] Retry policy?\n- [x] Audit? — v1: later; deferred to v3 (2026-10-08)\n");
@@ -448,7 +448,7 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
       writeFileSync(join(dir, "m.em"), 'slice "Ready Slice" {\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Plain" {\n  command Do Plain note "slices/plain.md"\n  event Plain Done\n}\n');
       const { model, refs } = compile(readFileSync(join(dir, "m.em"), "utf8"));
       const opened = runMarkImplemented(model, refs, dir, "ready-slice", URL, "2026-10-12");
-      expect(opened).toEqual({ ok: true, path: "slices/ready-slice.md", changed: true, openedDraft: { version: 2, reopened: 1, injected: 0 } });
+      expect(opened).toEqual({ ok: true, path: "slices/ready-slice.md", changed: true, openedDraft: { version: 2, reopened: 1, injected: 0, titles: ["Retry policy?"] } });
       expect(parseSliceDoc(readFileSync(join(dir, "slices", "ready-slice.md"), "utf8"))).toMatchObject({ status: "draft", version: 2, shippedVersion: 1 });
       // Re-running on the now-draft doc with the same URL is still the idempotent no-op: the shipped
       // record already names it, and the working status is not what mark-implemented keys on.
@@ -466,5 +466,20 @@ describe("mark-implemented opens the next draft when work is deferred to it (MIL
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("GH #285: formatNextDraftNotice spells out what shipped, what opened, which questions, and why status says draft", () => {
+    expect(
+      formatNextDraftNotice("slices/ready-slice.md", { version: 2, reopened: 2, injected: 0, titles: ["Retry policy?", "Audit trail?"] }, URL),
+    ).toMatchInlineSnapshot(`
+      "opened draft v2: slices/ready-slice.md — v1 stays shipped
+        shipped:  v1 (implementedIn: https://github.com/org/repo/pull/42)
+        status:   draft v2 — the NEXT version, opened because 2 question(s) were deferred to it
+        reopened questions:
+          - Retry policy?
+          - Audit trail?
+        \`shipped:\` (\`shippedVersion:\`) is the record of implementation; \`status:\` is the next version's state.
+        A \`status: draft\` on this PR's slice doc does not mean the slice was not marked implemented."
+    `);
   });
 });

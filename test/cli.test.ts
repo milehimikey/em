@@ -2758,12 +2758,13 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.10");
+    expect(doc.statusSchemaVersion).toBe("1.11");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
       total: 2,
       byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, shipped: 1, noDoc: 0, frontmatterInvalid: 0, unknown: 0 },
+      nextOpen: [],
     });
     expect(doc.continuations).toBe(0);
     expect(doc.driftSignal).toEqual({
@@ -3381,6 +3382,53 @@ describe("em slice mark-implemented (CLI, MIL-103)", () => {
     const r = em(["slice", "mark-implemented", "scoped.em", "bad", "https://x/1"], dir);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('slice "bad" has errors');
+  });
+
+  describe("GH #285: the next-draft notice and --json", () => {
+    const DEFERRED_DOC =
+      READY_DOC + "\n## Open Questions\n\n- [x] Retry policy? — v1: fail fast; deferred to v2 (2026-10-08, Alex)\n";
+    const url = "https://github.com/org/repo/pull/7";
+    const setup = (): string => {
+      const d = mkdtempSync(join(tmpdir(), "em-cli-mark-implemented-notice-"));
+      mkdirSync(join(d, "slices"), { recursive: true });
+      writeFileSync(join(d, "slices", "ready-slice.md"), DEFERRED_DOC);
+      writeFileSync(join(d, "ready.em"), 'slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\n');
+      return d;
+    };
+
+    it("prints a multi-line notice naming what shipped, what opened, and the reopened questions", () => {
+      const d = setup();
+      try {
+        const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", url], d);
+        expect(r.status).toBe(0);
+        expect(r.stdout).toContain("marked implemented: slices/ready-slice.md");
+        expect(r.stdout).toContain("opened draft v2: slices/ready-slice.md — v1 stays shipped");
+        expect(r.stdout).toContain("shipped:  v1");
+        expect(r.stdout).toContain("    - Retry policy?");
+        expect(r.stdout).toContain("`shipped:` (`shippedVersion:`) is the record of implementation; `status:` is the next version's state.");
+      } finally {
+        rmSync(d, { recursive: true, force: true });
+      }
+    });
+
+    it("--json emits { path, changed, implementedIn, nextDraft: { version, reopened[] } }, and nextDraft null when nothing opened", () => {
+      const d = setup();
+      try {
+        const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", url, "--json"], d);
+        expect(r.status).toBe(0);
+        expect(JSON.parse(r.stdout)).toEqual({
+          path: "slices/ready-slice.md",
+          changed: true,
+          implementedIn: url,
+          nextDraft: { version: 2, reopened: ["Retry policy?"] },
+        });
+        // Idempotent re-run: no-op, no draft reported.
+        const again = em(["slice", "mark-implemented", "ready.em", "ready-slice", url, "--json"], d);
+        expect(JSON.parse(again.stdout)).toEqual({ path: "slices/ready-slice.md", changed: false, implementedIn: url, nextDraft: null });
+      } finally {
+        rmSync(d, { recursive: true, force: true });
+      }
+    });
   });
 });
 
@@ -4706,7 +4754,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.10");
+    expect(doc.statusSchemaVersion).toBe("1.11");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);

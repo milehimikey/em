@@ -78,6 +78,11 @@ export interface SliceStatusFact {
   /** MIL-283: a version of this slice has shipped (`doc.shipped`, the shipped record) — the fact
    *  conformance scope and `byStatus.shipped` read; `rawStatus`/`bucket` stay the WORKING status. */
   shipped: boolean;
+  /** GH #285: the shipped version number and the doc's current `version:` — what lets `em status`
+   *  say "implemented (v1) · draft v2 open" for a slice whose next version is open over a shipped
+   *  one. Null when nothing shipped / no usable doc. */
+  shippedVersion?: number | null;
+  version?: number | null;
   /** The doc's own `implementedIn:` value verbatim (or null) — carried through from the same
    *  `resolveSliceDocJoin` call this fact set already makes, so `resolveSlicePRsBehindHead`
    *  (MIL-164) can build its `SliceDocFacts[]` input from these facts directly rather than
@@ -159,6 +164,8 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       docPath,
       rawStatus: doc.status,
       shipped: doc.shipped !== null,
+      shippedVersion: doc.shipped?.version ?? null,
+      version: doc.version,
       implementedIn: doc.implementedIn,
       owner: doc.owner,
       bucket: classifyStatusBucket(doc.found, doc.reason, doc.status),
@@ -547,6 +554,11 @@ export interface StatusSliceCounts {
     frontmatterInvalid: number;
     unknown: number;
   };
+  /** GH #285 (status schema 1.11): slices whose next version is open (working status `draft`/
+   *  `reviewed`/`ready-to-implement`) over a shipped one — `em slice mark-implemented`/`revise`
+   *  leave a doc like this, and a bare `draft` count would read as "never implemented". In model
+   *  order; `shippedVersion` < `version`. */
+  nextOpen: Array<{ file: string; key: string; shippedVersion: number; version: number; status: string }>;
 }
 
 export interface StatusDriftCounts {
@@ -668,6 +680,7 @@ export function buildStatusReport(
   engagements: StatusReport["engagements"] = { open: 0, slugs: [] },
 ): StatusReport {
   const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, shipped: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
+  const nextOpen: StatusSliceCounts["nextOpen"] = [];
   const drift: StatusDriftCounts = {
     inSync: 0,
     neverImplemented: 0,
@@ -699,6 +712,14 @@ export function buildStatusReport(
       continue;
     }
     if (f.shipped) byStatus.shipped++;
+    if (
+      f.shippedVersion != null &&
+      f.version != null &&
+      f.version > f.shippedVersion &&
+      (f.bucket === "draft" || f.bucket === "reviewed" || f.bucket === "ready-to-implement")
+    ) {
+      nextOpen.push({ file: f.file, key: f.key, shippedVersion: f.shippedVersion, version: f.version, status: f.bucket });
+    }
     switch (f.bucket) {
       case "draft":
         byStatus.draft++;
@@ -761,7 +782,7 @@ export function buildStatusReport(
 
   return {
     files,
-    slices: { total: sliceFacts.length, byStatus },
+    slices: { total: sliceFacts.length, byStatus, nextOpen },
     continuations,
     driftSignal: drift,
     invariants,
@@ -901,6 +922,11 @@ export function formatStatusDetail(report: StatusReport): string {
       `${byStatus.reviewed} reviewed, ${byStatus.draft} draft, ${byStatus.noDoc} no doc, ${byStatus.frontmatterInvalid} frontmatter invalid, ` +
       `${byStatus.unknown} unknown status`,
   );
+  // GH #285: a slice whose next version is open over a shipped one counts under `draft` above;
+  // name each so it is not read as "never implemented".
+  for (const n of report.slices.nextOpen) {
+    lines.push(`  ${n.key}: implemented (v${n.shippedVersion}) · ${n.status} v${n.version} open`);
+  }
   // MIL-208: continuation slices (again-view-only, no doc of their own) are excluded from
   // `byStatus`/`driftSignal` above (the originating slice's own status/drift already counts
   // once) — named on their own line rather than silently missing from the total.

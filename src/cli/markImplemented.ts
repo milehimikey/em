@@ -201,7 +201,7 @@ export type RunMarkImplementedResult =
       changed: boolean;
       /** MIL-283: set when the merge opened the next version as a `draft` because at least one
        *  Open Question was deferred to it — `version` is the new draft's, `reopened` the count. */
-      openedDraft: { version: number; reopened: number; injected: number } | null;
+      openedDraft: OpenedDraft | null;
     }
   | { ok: false; message: string };
 
@@ -292,8 +292,66 @@ export function runMarkImplemented(
 export function nextDraftIfDeferred(
   content: string,
   queuedFor?: (version: number) => QueuedItem[],
-): { content: string; openedDraft: { version: number; reopened: number; injected: number } | null } {
+): { content: string; openedDraft: OpenedDraft | null } {
   const opened = openNextDraft(content, { queuedFor });
   if (!opened.ok || opened.reopened + opened.injected === 0) return { content, openedDraft: null };
-  return { content: opened.content, openedDraft: { version: opened.newVersion, reopened: opened.reopened, injected: opened.injected } };
+  return {
+    content: opened.content,
+    openedDraft: {
+      version: opened.newVersion,
+      reopened: opened.reopened,
+      injected: opened.injected,
+      titles: newlyOpenQuestions(content, opened.content),
+    },
+  };
+}
+
+/** GH #285: what `mark-implemented` opened — the version, the counts, and the titles of the
+ *  questions now unchecked that were not before (re-opened deferrals and injected queue items). */
+export interface OpenedDraft {
+  version: number;
+  reopened: number;
+  injected: number;
+  titles: string[];
+}
+
+/** Pure: the unchecked `- [ ]` items present in `after` but not in `before`, as bare titles (the
+ *  text before a ` — ` decision trail), in document order. */
+function newlyOpenQuestions(before: string, after: string): string[] {
+  const unchecked = (raw: string): string[] =>
+    raw.split(/\r?\n/).flatMap((l) => {
+      const m = /^\s*[-*]\s+\[ \]\s+(.*?)\s*$/.exec(l);
+      return m ? [m[1]] : [];
+    });
+  const seen = new Map<string, number>();
+  for (const l of unchecked(before)) seen.set(l, (seen.get(l) ?? 0) + 1);
+  const out: string[] = [];
+  for (const l of unchecked(after)) {
+    const n = seen.get(l) ?? 0;
+    if (n > 0) seen.set(l, n - 1);
+    else out.push(l.split(" — ")[0]);
+  }
+  return out;
+}
+
+/** GH #285: the multi-line block `em slice mark-implemented` prints after its summary line when it
+ *  opened the next draft — a reader of the PR sees `status: draft` and must not conclude the slice
+ *  was never marked implemented. Pure; no trailing newline. */
+export function formatNextDraftNotice(path: string, draft: OpenedDraft, prUrl: string): string {
+  const shipped = draft.version - 1;
+  const lines = [
+    `opened draft v${draft.version}: ${path} — v${shipped} stays shipped`,
+    `  shipped:  v${shipped} (implementedIn: ${prUrl})`,
+    `  status:   draft v${draft.version} — the NEXT version, opened because ${draft.reopened + draft.injected} question(s) were deferred to it`,
+  ];
+  if (draft.titles.length > 0) {
+    lines.push("  reopened questions:");
+    for (const t of draft.titles) lines.push(`    - ${t}`);
+  }
+  if (draft.injected > 0) lines.push(`  (${draft.injected} of them injected from the queue, GH #236)`);
+  lines.push(
+    "  `shipped:` (`shippedVersion:`) is the record of implementation; `status:` is the next version's state.",
+    "  A `status: draft` on this PR's slice doc does not mean the slice was not marked implemented.",
+  );
+  return lines.join("\n");
 }

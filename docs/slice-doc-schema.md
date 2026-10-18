@@ -514,6 +514,13 @@ one it is asking about:
   slice shipped, and which" is `shippedRecordOf()` (`src/catalog/sliceDoc.ts`); `em export`
   publishes its answer as `slice.doc.shipped`.
 
+**Reading a PR that shows `status: draft`.** When `mark-implemented` opened the next version
+(`status: draft`, `version: <N+1>`), the diff of that slice doc does not say "never marked": the
+`shippedVersion: <N>` / `implementedIn:` lines **are** the record that v<N> was implemented, and
+`status:` is the state of v<N+1>. The command prints a notice naming both
+([cli.md](cli.md#em-slice-mark-implemented-file-slice-key-pr-url)), and `em status` lists the slice
+as `implemented (v<N>) · draft v<N+1> open` rather than a bare `draft`.
+
 So a shipped slice can be a `draft` again. `em slice revise <key>`
 ([cli.md](cli.md#em-slice-revise-file-slice-key)) opens v<N+1> as `status: draft`, bumps
 `version:`, clears the prior version's review and sign-off, and leaves `implementedIn`/`shipped*`

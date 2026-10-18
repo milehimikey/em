@@ -1728,13 +1728,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.8"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.11"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.8",
+  "statusSchemaVersion": "1.11",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -1742,7 +1742,8 @@ see [mcp.md](mcp.md)):
     "byStatus": {
       "draft": 0, "reviewed": 0, "readyToImplement": 0, "implemented": 8, "shipped": 8,
       "noDoc": 0, "frontmatterInvalid": 0, "unknown": 0
-    }
+    },
+    "nextOpen": []
   },
   "continuations": 0,
   "driftSignal": {
@@ -1803,6 +1804,12 @@ via `em state set-conformance --partial` — findings were still outstanding whe
 written (see [`em state set-conformance`](#em-state-set-conformance-revision-dir) below).
 `unruledFindings` (added in schema `1.5`, MIL-214) is the count described above — `null` when no
 findings JSON exists beside the recorded report.
+
+`slices.nextOpen` (added in schema `1.11`, GH #285) lists each slice whose next version is open
+(`draft`/`reviewed`/`ready-to-implement`, `version` above `shippedVersion`) over a shipped one:
+`{ file, key, shippedVersion, version, status }`. Those slices still count once in `byStatus.draft`
+(their working status); the text report adds a line `  <key>: implemented (v<N>) · draft v<N+1>
+open` under the `slices:` line for each, so they are not read as never implemented.
 
 `issues.queuedQuestions` (added in schema `1.10`, GH #236; re-sourced in 1.17.0, GH #253) is the
 number of questions `em slice defer` has deferred to a later version across the model's docs (each
@@ -3530,7 +3537,17 @@ is written, if any `## Open Questions` item is `deferred to v<N+1>` (the marker
 [`em slice defer`](#em-slice-defer-file-slice-key-question) writes), the command also runs the
 [`em slice revise`](#em-slice-revise-file-slice-key) transition on the same write: `status: draft`,
 `version: <N+1>`, sign-off cleared, those questions back to `- [ ]` — and prints `opened draft v<N+1>:
-<doc> — re-opened <n> deferred question(s)[, injected <m> queued question(s)]; v<N> stays shipped`.
+<doc> — v<N> stays shipped` followed by an indented notice block (GH #285): `shipped:  v<N>
+(implementedIn: <url>)`, `status:   draft v<N+1> — the NEXT version, opened because <n>
+question(s) were deferred to it`, the reopened question titles, and the line `` `shipped:`
+(`shippedVersion:`) is the record of implementation; `status:` is the next version's state``. A
+reviewer who sees `status: draft` on the merge PR's slice doc should read it as "v<N> shipped, v<N+1>
+open", not "never marked implemented"; `em status` says the same
+(`implemented (v<N>) · draft v<N+1> open`).
+
+`--json` (GH #285) prints `{ "path", "changed", "implementedIn", "nextDraft" }` instead of text, where
+`nextDraft` is `null` or `{ "version": <N+1>, "reopened": ["<question title>", …] }` (the unchecked
+questions the draft opened with, re-opened deferrals and injected queue items alike).
 Questions **queued** by `em slice defer` while the doc was ratified (GH #236) count as waiting work
 too: the command injects them into the new draft's `## Open Questions` and clears them from
 `.event-modeling.md` (see [`em slice defer`](#em-slice-defer-file-slice-key-question)). The shipped record keeps v<N> shipped

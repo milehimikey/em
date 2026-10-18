@@ -55,7 +55,10 @@ three specific points:
    version as a `draft` — `version:` bumped, the prior sign-off cleared, the shipped version kept
    in the shipped record ([slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification))
    — and `em slice mark-implemented` does it automatically at merge when a question was deferred
-   to the next version. Record the hop in the `## Delta` section, then the new version takes both
+   to the next version. (A reviewer reading `status: draft` on that slice's merge PR should look
+   at `shippedVersion:`/`implementedIn:` — that is the record of implementation; `status:` is the
+   next version's state. The command prints a notice saying so, and `em status` shows the slice as
+   `implemented (v<n>) · draft v<n+1> open`.) Record the hop in the `## Delta` section, then the new version takes both
    gates again: review, then `em slice ratify --by <name>`. The same command revises a ratified
    doc that **never shipped** (a gap answered mid-build): the ratification is withdrawn and the
    draft of the next version opens.

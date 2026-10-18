@@ -172,7 +172,10 @@ You never merge.
    `main`: `git switch -c engagement/<slug>-level-<n> main`, run
    `em slice mark-implemented <model>.em <key> <pr-url>` for each slice merged in the level,
    then `em slice index <model>.em`, commit, and `gh pr create --base main`. The human merges it
-   like any other PR.
+   like any other PR. If `mark-implemented` printed `opened draft v<n+1>` for a slice, its doc in
+   this PR reads `status: draft`: say so in the hand-back and paste the command's notice into the PR
+   body — `shippedVersion:`/`implementedIn:` are the record that v<n> was implemented, `status:` is
+   the next version's state, so the reviewer does not read it as a slice that was never marked.
 4. Recompute: `em engagement plan <model>.em <slug>`. A merge can release an
    `upstream-outside-engagement-unmerged` hold once that upstream's doc reads `implemented`.
    Continue with step 3 for anything newly startable.

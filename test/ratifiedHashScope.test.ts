@@ -265,7 +265,7 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     defer();
     const m = em(["slice", "mark-implemented", "model.em", "pay", "https://github.com/org/repo/pull/7", "--on", "2026-10-13"], dir);
     expect(m.status).toBe(0);
-    expect(m.stdout).toContain("opened draft v2: slices/pay.md — re-opened 1 deferred question(s)");
+    expect(m.stdout).toContain("opened draft v2: slices/pay.md — v1 stays shipped");
     expect(read(docPath())).toContain("shippedVersion: 1\n");
     expect(read(docPath())).toContain("- [ ] retry policy\n");
   });

@@ -676,6 +676,7 @@ describe("buildStatusReport", () => {
     expect(report.slices).toEqual({
       total: 3,
       byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 1, shipped: 1, noDoc: 1, frontmatterInvalid: 0, unknown: 0 },
+      nextOpen: [],
     });
     expect(report.driftSignal).toEqual({
       inSync: 1,
@@ -786,7 +787,7 @@ describe("text/markdown/badge formatting", () => {
   function makeReport(overrides: Partial<StatusReport> = {}): StatusReport {
     return {
       files: ["model.em"],
-      slices: { total: 8, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, shipped: 8, noDoc: 0, frontmatterInvalid: 0, unknown: 0 } },
+      slices: { total: 8, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, shipped: 8, noDoc: 0, frontmatterInvalid: 0, unknown: 0 }, nextOpen: [] },
       continuations: 0,
       driftSignal: { inSync: 8, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, uncertified: 0, notApplicable: 0, frontmatterInvalid: 0 },
       invariants: { testsDir: "test/", total: 20, cited: 20, uncovered: 0 },
@@ -924,7 +925,7 @@ describe("text/markdown/badge formatting", () => {
 
   it("formatStatusDetail surfaces frontmatterInvalid counts in both the slices and driftSignal lines", () => {
     const report = makeReport({
-      slices: { total: 9, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, shipped: 8, noDoc: 0, frontmatterInvalid: 1, unknown: 0 } },
+      slices: { total: 9, byStatus: { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 8, shipped: 8, noDoc: 0, frontmatterInvalid: 1, unknown: 0 }, nextOpen: [] },
       driftSignal: { inSync: 8, neverImplemented: 0, unpropagatedDelta: 0, implementedWithoutLink: 0, uncertified: 0, notApplicable: 0, frontmatterInvalid: 1 },
     });
     const detail = formatStatusDetail(report);
@@ -1085,7 +1086,7 @@ describe("text/markdown/badge formatting", () => {
 
   it("buildStatusBadge is yellow (not red) when merely not fully implemented yet", () => {
     const svg = buildStatusBadge(
-      makeReport({ slices: { total: 8, byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 7, shipped: 7, noDoc: 0, frontmatterInvalid: 0, unknown: 0 } } }),
+      makeReport({ slices: { total: 8, byStatus: { draft: 1, reviewed: 0, readyToImplement: 0, implemented: 7, shipped: 7, noDoc: 0, frontmatterInvalid: 0, unknown: 0 }, nextOpen: [] } }),
     );
     expect(svg).toContain("#dfb317");
   });
@@ -1209,5 +1210,43 @@ describe("aggregateInvariantTotals against a real buildCoverageReport", () => {
     const report = buildCoverageReport(model, refs, ".", ".");
     const totals = aggregateInvariantTotals("test/", [report]);
     expect(totals).toEqual({ testsDir: "test/", total: 0, cited: 0, uncovered: 0 });
+  });
+});
+
+describe("GH #285: a slice whose next version is open over a shipped one", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-status-nextopen-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    writeFileSync(
+      join(dir, "slices", "pim.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 3\nimplementedIn: https://github.com/o/r/pull/9\nshippedVersion: 2\n---\n## Open Questions\n- [ ] Retry policy?\n",
+    );
+    writeFileSync(
+      join(dir, "slices", "done.md"),
+      "---\nschemaVersion: 1\npattern: state-view\nswimlane: billing\nstatus: implemented\nversion: 1\nimplementedIn: https://github.com/o/r/pull/8\nshippedVersion: 1\n---\n",
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const SRC = `
+slice "Pim" {
+  command Do Pim note "slices/pim.md"
+  event Pim Done
+}
+slice "Done" {
+  ui Invoice @Customer note "slices/done.md"
+}
+`;
+
+  it("lists it under slices.nextOpen and names it `implemented (v2) · draft v3 open` in the detail text", () => {
+    const { model, refs } = compile(SRC);
+    const { facts } = resolveSliceStatusFacts("model.em", model, refs, dir);
+    const report = buildStatusReport(["model.em"], facts, 0, null, [], []);
+    expect(report.slices.byStatus).toMatchObject({ draft: 1, implemented: 1, shipped: 2 });
+    expect(report.slices.nextOpen).toEqual([{ file: "model.em", key: "pim", shippedVersion: 2, version: 3, status: "draft" }]);
+    const detail = formatStatusDetail(report);
+    expect(detail).toContain("  pim: implemented (v2) · draft v3 open");
+    expect(detail).not.toContain("done: implemented");
   });
 });

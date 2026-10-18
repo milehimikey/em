@@ -54,7 +54,9 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // count. Conformance scope (`unruledFindings`) and `slicePRsBehindHead` key on the shipped record.
 // 1.10 (GH #236): `issues.queuedQuestions` — questions `em slice defer` queued in
 // `.event-modeling.md` for a ratified/shipped slice's next version (docs/cli.md#em-slice-defer).
-export const STATUS_SCHEMA_VERSION = "1.10";
+// 1.11 (GH #285): `slices.nextOpen` — slices whose next version is open (`draft`/`reviewed`/
+// `ready-to-implement`) over a shipped one: `{ file, key, shippedVersion, version, status }`.
+export const STATUS_SCHEMA_VERSION = "1.11";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No

@@ -105,7 +105,7 @@ import { planGlossaryArgs } from "./cli/glossary-inputs.js";
 import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
-import { runMarkImplemented } from "./cli/markImplemented.js";
+import { formatNextDraftNotice, runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
 import { runConformSupersede } from "./cli/conformSupersede.js";
@@ -889,7 +889,8 @@ slice
   .argument("<slice-key>", "slice export key (kebab-case)")
   .argument("<pr-url>", "merged PR (or commit) URL")
   .option("--on <date>", "merge date recorded as `shippedOn:`, YYYY-MM-DD (default: today, local date; MIL-284)")
-  .action((file: string, sliceKey: string, prUrl: string, opts: { on?: string }) => {
+  .option("--json", "print a JSON document instead of text: { path, changed, implementedIn, nextDraft: { version, reopened[] } | null } (GH #285)")
+  .action((file: string, sliceKey: string, prUrl: string, opts: { on?: string; json?: boolean }) => {
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em slice mark-implemented: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
       process.exit(1);
@@ -915,17 +916,29 @@ slice
       console.error(`em slice mark-implemented: ${result.message}`);
       process.exit(1);
     }
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          {
+            path: result.path,
+            changed: result.changed,
+            implementedIn: prUrl,
+            nextDraft: result.openedDraft ? { version: result.openedDraft.version, reopened: result.openedDraft.titles } : null,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     console.log(
       result.changed
         ? `marked implemented: ${result.path} (implementedIn: ${prUrl})`
         : `already implemented (no-op): ${result.path}`,
     );
-    if (result.ok && result.openedDraft) {
-      console.log(
-        `opened draft v${result.openedDraft.version}: ${result.path} — re-opened ${result.openedDraft.reopened} deferred question(s)` +
-          (result.openedDraft.injected > 0 ? `, injected ${result.openedDraft.injected} queued question(s) (GH #236)` : "") +
-          `; v${result.openedDraft.version - 1} stays shipped`,
-      );
+    if (result.openedDraft) {
+      console.log("");
+      console.log(formatNextDraftNotice(result.path, result.openedDraft, prUrl));
     }
   });
 

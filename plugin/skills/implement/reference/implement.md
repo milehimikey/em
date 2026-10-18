@@ -255,6 +255,14 @@ the question back to `- [ ]`; the version you built stays shipped) — a questio
 slice defer` while the doc was ratified (GH #253) is one of those. If it prints `opened draft
 v<N+1>`, say so in your report: the slice has known work, and a design session, not you, decides it.
 
+**What the PR will show.** In that case the slice doc in your PR reads `status: draft` with
+`version: <N+1>` — not `implemented`. That is correct, not a failed flip: `shippedVersion: <N>` and
+`implementedIn:` are the record that v<N> was implemented, and `status:` is the next version's
+state. The command prints a multi-line notice (what shipped, what opened, the reopened question
+titles; `--json` gives `nextDraft: { version, reopened[] }`) — paste it into the PR description so a
+reviewer who sees `status: draft` knows where to look. `em status` lists the slice as `implemented
+(v<N>) · draft v<N+1> open`.
+
 Then, if the project keeps a model README (from `../../../shared/templates/model-readme.md`), run
 `em slice index <model-name>.em` so its generated Slices table reflects the new status and
 link — never hand-edit that table. The `implementedIn` link is what the `conform` phase later
