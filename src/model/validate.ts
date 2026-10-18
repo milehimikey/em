@@ -605,13 +605,15 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       if (!composedButRenderedBackward(model, from.sliceIndex, to.sliceIndex)) continue;
       const fromStory = model.slices[from.sliceIndex].storyline;
       const toStory = model.slices[to.sliceIndex].storyline;
+      const toAfter = findStoryline(model, toStory ?? "")?.after;
+      const fromSlice = model.slices[from.sliceIndex].name;
       pushDiag(diags, "storyline-after-out-of-order", {
         message:
-          `time flows left to right: "${from.name}" (storyline "${fromStory}") feeds "${to.name}" ` +
-          `(storyline "${toStory}"), which the \`after\` clause reads as forward, but slice "${model.slices[to.sliceIndex].name}" ` +
-          `(storyline "${toStory}") is declared above slice "${model.slices[from.sliceIndex].name}" of ` +
-          `"${fromStory}", so the full-model render would draw this right-to-left; move this ` +
-          `storyline block below slice "${model.slices[from.sliceIndex].name}"`,
+          `time flows left to right: "${from.name}" (slice "${fromSlice}", storyline "${fromStory}") feeds ` +
+          `"${to.name}" (slice "${model.slices[to.sliceIndex].name}", storyline "${toStory}"), but ` +
+          (toAfter !== undefined ? `\`after "${toAfter}"\` ` : "the storyline's `after` clause ") +
+          `places "${toStory}" later on the composed timeline than slice "${fromSlice}", while the file declares it above, ` +
+          `so the full-model render would draw this arrow right-to-left; move this storyline block below slice "${fromSlice}"`,
         line: to.line,
         refs: [refOf(from.id), refOf(to.id)],
       });

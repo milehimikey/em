@@ -554,6 +554,15 @@ storyline "C" after "A" {
     }
   });
 
+  it("storyline-after-out-of-order wording for a pair not related by `after` (cyc3 fixture)", () => {
+    const d = diagsFor(readFileSync("test/fixtures/storyline-cyc3.em", "utf8")).filter((x) => x.code === "storyline-after-out-of-order");
+    expect(d.length).toBeGreaterThan(0);
+    const m = d.find((x) => x.message.includes('"EX"'))!;
+    expect(m.message).toContain('`after "A"` places "C" later on the composed timeline than slice "x1"');
+    expect(m.message).toContain('move this storyline block below slice "x1"');
+    expect(m.message).not.toContain("reads as forward");
+  });
+
   it("storyline-after-out-of-order names the slice the storyline is declared above", () => {
     const src = `storyline "Follow" after "Main" {
   slice "Watch" {
@@ -575,7 +584,7 @@ storyline "Main" {
 }
 `;
     const d = diagsFor(src).find((x) => x.code === "storyline-after-out-of-order")!;
-    expect(d.message).toContain('declared above slice "Board" of "Main"');
+    expect(d.message).toContain('`after "Main"` places "Follow" later on the composed timeline than slice "Board"');
     expect(d.message).toContain('move this storyline block below slice "Board"');
   });
 
