@@ -37,6 +37,9 @@ export interface RuleDef {
   /** True for a flag-gated code: the `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts,
    *  MIL-87) and `--check-signed-bodies`' (src/catalog/signedBodyValidate.ts, GH #257). */
   optIn?: true;
+  /** Rule family for selectors such as a future `em validate --shape` (GH #282). Only the
+   *  advisory storyline-shape lints carry one today. */
+  family?: "shape";
 }
 
 export const RULES = {
@@ -58,6 +61,14 @@ export const RULES = {
     fix: "Add the event this command records.",
     usageCategory: "command produces no event",
     docAnchor: "both-ends-of-a-flow",
+  },
+  "timeline-entity-clustered": {
+    severity: "warning",
+    title: "Lifecycle-per-entity shape (storyline order)",
+    fix: "Order the slices by the business journey, interleaving contexts as the story does — see docs/storyline.md.",
+    usageCategory: "consecutive same-context state changes",
+    docAnchor: "shape",
+    family: "shape",
   },
   "view-no-source": {
     severity: "warning",

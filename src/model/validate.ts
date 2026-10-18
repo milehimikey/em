@@ -27,6 +27,7 @@ import {
   isLaterOnTimeline,
   latestOnTimeline,
 } from "./storylines.js";
+import { classifySlicePattern } from "../catalog/classify.js";
 import { kebabSlug } from "../util/slug.js";
 
 export type Severity = "error" | "warning";
@@ -858,6 +859,68 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     });
   }
 
+  diags.push(...timelineEntityClustered(model, refs.sliceKeys));
+
+  return diags;
+}
+
+/** Minimum run length for `timeline-entity-clustered` (GH #281). A future config knob; the
+ *  value is set by measurement (see the PR): no shipped example, skill em block or real model
+ *  has a qualifying run even at 2, so 3 is conservative. */
+export const TIMELINE_ENTITY_CLUSTER_MIN_RUN = 3;
+
+/** `timeline-entity-clustered` (GH #281): a run of >= N consecutive State Change slices whose
+ *  events all sit on ONE context, where the first view-bearing slice from the run onward reads
+ *  only that context and no view fed by another context sits inside the run — the
+ *  lifecycle-per-entity (CRUD-on-a-timeline) shape. Fires once per maximal run, with `refs`
+ *  naming every slice key in the run. */
+function timelineEntityClustered(model: NormalizedModel, sliceKeys: string[]): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const sliceInfo = model.slices.map((slice) => {
+    const events = slice.elements.filter((e) => e.kind === "event");
+    const views = slice.elements.filter((e) => e.kind === "view");
+    const eventContexts = new Set<string | undefined>(events.map((e) => e.context));
+    const viewCtx = new Set<string | undefined>();
+    for (const v of views) {
+      const names = viewSourceNames(model, v);
+      if (names.length === 0) for (const c of eventContexts) viewCtx.add(c);
+      for (const n of names) viewCtx.add(model.byName.get(normalizeName(n))?.find((e) => e.kind === "event")?.context);
+    }
+    const isStateChange = classifySlicePattern(slice) === "state-change" && events.length > 0;
+    return {
+      slice,
+      views: views.length,
+      viewCtx,
+      // The single context this slice writes, or null when it is not a single-context State Change slice.
+      context: isStateChange && eventContexts.size === 1 ? ([...eventContexts][0] ?? null) : null,
+    };
+  });
+
+  let i = 0;
+  while (i < sliceInfo.length) {
+    const ctx = sliceInfo[i].context;
+    if (ctx === null || ![...sliceInfo[i].viewCtx].every((c) => c === ctx)) { i++; continue; }
+    let j = i;
+    // Extend while the slice writes ctx and any view it carries reads only ctx.
+    while (j < sliceInfo.length && sliceInfo[j].context === ctx && [...sliceInfo[j].viewCtx].every((c) => c === ctx)) j++;
+    const run = sliceInfo.slice(i, j);
+    if (run.length >= TIMELINE_ENTITY_CLUSTER_MIN_RUN) {
+      const trailing = sliceInfo.slice(i).find((s) => s.views > 0);
+      if (trailing && [...trailing.viewCtx].every((c) => c === ctx)) {
+        const first = run[0].slice;
+        const last = run[run.length - 1].slice;
+        pushDiag(diags, "timeline-entity-clustered", {
+          message:
+            `${run.length} consecutive State Change slices ("${first.name}" through "${last.name}") all write ` +
+            `context "${ctx}" and only that context is read next — this is the lifecycle-per-entity shape; ` +
+            `order slices by the business journey (see docs/storyline.md)`,
+          line: first.line,
+          refs: run.map((s) => sliceKeys[s.slice.index]),
+        });
+      }
+    }
+    i = j;
+  }
   return diags;
 }
 

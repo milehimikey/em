@@ -32,6 +32,7 @@ const KNOWN_DOC_ANCHORS = new Set([
   "invariants",
   "structured-sections",
   "signed-bodies",
+  "shape",
 ]);
 
 const SLICE_READY_CODES = [

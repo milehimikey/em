@@ -872,6 +872,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `system-model-key-mismatch` | error | Manifest model key differs from the export's `model.key` | Rename the manifest's `models:` key to the computed key the message prints. |
 | `tag-composite-unknown-field` | error | Composite tag names an unknown field | Fix the field name, or add it to the event's fields. |
 | `tag-duplicate-key` | error | Duplicate tag key | Rename one of the tags so every key on the event is unique. |
+| `timeline-entity-clustered` | warning | Lifecycle-per-entity shape (storyline order) | Order the slices by the business journey, interleaving contexts as the story does — see docs/storyline.md. |
 | `translation-name-collision` | warning | Translation name reused for different producers | Use a distinct name per producer to avoid confusion. |
 | `type-cycle` | error | Cyclic type reference | Break the cycle, or route the self/mutual reference through an array. |
 | `ui-shares-slice-with-automation` | warning | `ui` shares slice with a reaction | Move the `ui` to the slice that displays the read model, or drop it. |
