@@ -39,7 +39,7 @@ The timeline is one business journey per process, ending in an outcome. The **ma
 end-to-end happy path; retire, extend and reorganize are **secondary storylines** (chapters). Never one
 lifecycle block per entity. A `storyline "Name" { ... }` block names the slices that belong to one story
 ([dsl.md](dsl.md#storylines)); name the main storyline and every secondary one even when the model uses no
-`storyline` blocks yet.
+`storyline` blocks yet. Reference-only PRD groups (#327) sit outside storylines.
 
 ### 2. The story already exists: build from walkthroughs first
 
@@ -51,7 +51,7 @@ that caller's journey is the story.
 ### 3. The CRUD shape, named
 
 N entities, each with create / update / archive, one trailing view per entity, and no read across contexts.
-Both models below validate. The first reads as a schema, the second as a story.
+Both models below validate. The first reads as a schema (and trips the `timeline-entity-clustered` lint), the second as a story.
 
 ```em
 model "Catalog (CRUD shape)"

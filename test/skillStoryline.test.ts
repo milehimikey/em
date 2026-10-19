@@ -125,14 +125,16 @@ describe("GH #276: docs/storyline.md and docs/patterns.md", () => {
     expect(view).toContain("(storyline.md");
   });
 
-  it("the before/after pair both validate with no diagnostics", () => {
+  it("the before shape trips only timeline-entity-clustered; the after shape is clean", () => {
     const blocks = [...readFileSync(STORYLINE_DOC, "utf8").matchAll(/```em\n([\s\S]*?)```/g)].map((m) => m[1]);
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toContain("CRUD shape");
     expect(blocks[1]).toContain("storyline shape");
-    for (const block of blocks) {
+    const codes = blocks.map((block) => {
       const model = normalize(parse(block));
-      expect(validate(model, layout(model), computeRefs(model)).map((d) => d.code)).toEqual([]);
-    }
+      return validate(model, layout(model), computeRefs(model)).map((d) => d.code);
+    });
+    expect(new Set(codes[0])).toEqual(new Set(["timeline-entity-clustered"]));
+    expect(codes[1]).toEqual([]);
   });
 });

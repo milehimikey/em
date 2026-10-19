@@ -326,7 +326,112 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   (`event A | B @Ctx`, GH #278), failure as a scenario first, a chapter only when core (it changes what the user does next, or has
   its own actor/SLA). Stated once for
   automations in the Automation pattern (`docs/patterns.md#automation`); `automation-split-by-outcome`
-  is the mechanical half.
+  is the mechanical half. Two forms, alternatives always on one context: inline `event A | B @Ctx`
+  (shared clauses and fields) and `oneof { … }` (each alternative keeps its own fields and clauses):
+  ```em
+  model "Payments"
+
+  persona Customer
+
+  context Payment
+
+  slice "Settle Payment" {
+    ui Pay Screen @Customer
+    command Settle Payment
+    event Payment Issued | Payment Failed @Payment { paymentId: UUID }
+  }
+
+  slice "Payment Status" {
+    view Payment Status from "Payment Issued", "Payment Failed"
+    ui Payment Result @Customer
+  }
+
+  slice "Refund Payment" {
+    ui Refund Screen @Customer
+    command Refund Payment
+    oneof {
+      event Refund Issued @Payment { paymentId: UUID, amount: Decimal }
+      event Refund Declined @Payment { paymentId: UUID, reason: String }
+    }
+  }
+
+  slice "Refund Status" {
+    view Refund Status from "Refund Issued", "Refund Declined"
+    ui Refund Result @Customer
+  }
+  ```
+- **One event, two commands.** When two commands record the same fact, repeat the event bare
+  (`event X @Ctx`, same name and context) in the second slice: it inherits the first declaration, no
+  marker needed. Declaring different fields is `shared-event-field-mismatch`:
+  ```em
+  model "Ordering"
+
+  persona Customer
+
+  context Sales
+
+  slice "Place Order" {
+    ui Checkout @Customer
+    command Place Order
+    event Order Placed @Sales { orderId: UUID }
+  }
+
+  slice "Order Status" {
+    view Order Status from "Order Placed"
+    ui Track Order @Customer
+  }
+
+  slice "Reorder" {
+    ui Reorder Button @Customer
+    command Reorder
+    event Order Placed @Sales
+  }
+
+  slice "Order Status after Reorder" {
+    view Order Status again from "Order Placed"
+    ui Track Order @Customer
+  }
+  ```
+  Combined with alternatives: when one alternative is a shared repeat, use `oneof` and write that
+  alternative bare so it inherits its fields (an inline line's fields would be copied onto every
+  alternative and mismatch):
+  ```em
+  model "Payments"
+
+  persona Customer
+
+  context Payment
+
+  slice "Settle Payment" {
+    ui Pay Screen @Customer
+    command Settle Payment
+    oneof {
+      event Payment Issued @Payment { paymentId: UUID }
+      event Payment Failed @Payment { paymentId: UUID, reason: String }
+    }
+  }
+
+  slice "Payment Status" {
+    view Payment Status from "Payment Issued", "Payment Failed"
+    ui Payment Result @Customer
+  }
+
+  slice "Retry Payment" {
+    ui Retry Screen @Customer
+    command Retry Payment
+    oneof {
+      event Payment Issued @Payment
+      event Payment Retry Declined @Payment { paymentId: UUID }
+    }
+  }
+
+  slice "Payment Status after Retry" {
+    view Payment Status again from "Payment Issued", "Payment Retry Declined"
+    ui Payment Result @Customer
+  }
+  ```
+- **Reference-only PRD groups sit outside storylines.** A group that only carries reference material
+  (#327) is not a journey; leave it out of every `storyline` block.
 - **Business terms in the events.** "If your Event Model doesn't reflect terms used by business experts —
   especially in the recorded Events — that's a red flag." (Dilger, *Seven insights*.)
 

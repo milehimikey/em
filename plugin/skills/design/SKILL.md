@@ -145,7 +145,7 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    session and stage `contracts/<model key>.tsp` with the model edit — the one derived artifact
    a design session produces, always by the command, never by hand.
 
-4. **Shape exit gate (GH #282).** The model phase ends on the shape lints, not on your judgement
+5. **Shape exit gate (GH #282).** The model phase ends on the shape lints, not on your judgement
    of the storyline: run `em validate <model>.em --shape` (add `--json` to read it; exit code is
    always 0, so read the output). Every finding is either **fixed** in the model, or **accepted**
    as one bullet in `.event-modeling.md` `## Decisions log`:
