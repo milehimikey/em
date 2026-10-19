@@ -62,7 +62,7 @@ function asQuestion(s: any) {
 
 describe("GH #295: the shipped fixtures pass their own checker", () => {
   it("Meridian Goods (the eval input) triage is valid, quotes verbatim, no reference-only groups", () => {
-    expect(checkPrdTriage(MERIDIAN)).toMatchObject({ ok: true, storylines: 4, groups: 6, statements: 15, referenceOnlyGroups: [] });
+    expect(checkPrdTriage(MERIDIAN)).toMatchObject({ ok: true, storylines: 2, groups: 6, statements: 15, referenceOnlyGroups: [] });
   });
 
   it("the Meridian main storyline quote is the full walkthrough, not its first sentence", () => {
@@ -318,21 +318,57 @@ describe("GH #295: low confidence and disagreement are questions", () => {
 });
 
 describe("GH #295: walkthrough-first provenance", () => {
-  it("fails a group with no walkthrough statement inside its storyline's span when it is not reference-only", () => {
+  it("fails an anchored group with no walkthrough statement inside its storyline's span", () => {
     // main storyline quote cut to its first sentence: G2/G3's walkthrough statements fall outside the span
     const e = errorsOf(mer((d) => (d.storylines[0].quote = "A Customer places an order from the storefront (items, quantities, prices, total).")));
-    expect(e).toContain("group G2: no walkthrough statement lies inside its storyline's span");
-    expect(e).toContain("group G3: no walkthrough statement lies inside its storyline's span");
+    expect(e).toContain("group G2: no walkthrough statement lies inside storyline L1's span");
+    expect(e).toContain("group G3: no walkthrough statement lies inside storyline L1's span");
   });
 
-  it("a mixed group whose walkthrough statements are all outside the span fails (reference statements do not anchor)", () => {
+  it("a reference-only group that names a storyline is rejected (group and statements)", () => {
     const e = errorsOf(
       lib((d) => {
-        d.statements[6].provenance = "walkthrough"; // S7 PATCH quote is not inside L2's span
+        d.groups[4].storyline = "L2";
+        d.statements[6].storyline = "L2";
       }),
     );
-    expect(e).toContain("group G5: no walkthrough statement lies inside");
+    expect(e).toContain("group G5: every statement is reference, so it is a reference-only group and must have storyline null");
   });
+
+  it("a reference-only group's statements must also have storyline null", () => {
+    expect(errorsOf(lib((d) => (d.statements[6].storyline = "L2")))).toContain("S7: its group G5 is reference-only (storyline null), so the statement's storyline must be null");
+  });
+
+  it("a group with walkthrough statements and storyline null is rejected", () => {
+    expect(errorsOf(lib((d) => ((d.groups[0].storyline = null), (d.statements[0].storyline = null))))).toContain("group G1: storyline is null but it has walkthrough statements");
+  });
+
+  it("a walkthrough statement quoting text outside every storyline span is rejected", () => {
+    const e = errorsOf(lib((d) => (d.statements[6].provenance = "walkthrough")));
+    expect(e).toContain("S7: provenance is walkthrough but its quote lies inside no storyline's span");
+  });
+
+  it("a reference statement quoting text inside a storyline span is rejected", () => {
+    const e = errorsOf(lib((d) => (d.statements[0].provenance = "reference")));
+    expect(e).toContain("S1: provenance is reference but its quote lies inside storyline L1's span");
+  });
+
+  it("two statements may not share a quote; the error names both", () => {
+    const e = errorsOf(lib((d) => (d.statements[3].quote = "A member reserves a book.")));
+    expect(e).toContain("S4: quote duplicates statement S1's");
+  });
+
+  it("a question may name the group it would join (S7 in the reference-only group)", () => {
+    const s7 = load(LIBRARY).statements[6];
+    expect(s7).toMatchObject({ confidence: "low", outcome: "question", group: "G5", storyline: null });
+  });
+
+  it("nfr and external-system both expect `either`", () => {
+    for (const id of ["nfr", "external-system"]) expect(PRD_RUBRIC.categories.find((c) => c.id === id)?.aboutBusiness).toBe("either");
+    expect(mer(() => {}).ok).toBe(true);
+    expect(lib((d) => (d.statements[8].aboutBusiness = true)).ok).toBe(true);
+  });
+
 
   it("a group of only reference statements passes and is listed as reference-only", () => {
     const r = lib(() => {});
@@ -373,12 +409,12 @@ describe("GH #295: em discover triage-check (CLI)", () => {
   it("prints ok, with the source relative to the working directory, and exits 0", () => {
     const r = em(["discover", "triage-check", "prd-triage.json"], MERIDIAN_DIR);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ok — prd-triage.json: 4 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md");
+    expect(r.stdout).toContain("ok — prd-triage.json: 2 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md");
   });
 
   it("the docs/cli.md example prints exactly that line", () => {
     expect(readFileSync(join(ROOT, "docs", "cli.md"), "utf8")).toContain(
-      "# -> ok — prd-triage.json: 4 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md",
+      "# -> ok — prd-triage.json: 2 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md",
     );
   });
 
@@ -501,6 +537,8 @@ describe("GH #295: skill text gates and the eval protocol's arm C", () => {
     expect(path).toContain("Is this a business fact? proposed:");
     expect(path).toContain("Decisions log");
     expect(path).toContain("unchecked");
+    expect(path).toContain("discovery/walkthroughs.md");
+    expect(path).toContain("storyline: null");
     expect(path).toContain("reference-only groups");
     expect(path).toContain("Questions, never inventions");
     expect(path).toContain("discovery/prd-triage.json");

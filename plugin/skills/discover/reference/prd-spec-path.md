@@ -29,8 +29,10 @@ journeys, an API spec's Walkthroughs / use-case / "getting started" section.
   storyline** (retire, extend, reorganize...). Exactly one is main.
 - The timeline is built from these. The resource/endpoint reference is consulted **last**, only to
   fill operations no walkthrough touches.
-- No walkthrough at all? Ask: *"what does success look like, start to finish?"* and quote the
-  user's answer into the state file; do not synthesize a journey from the endpoint list.
+- No walkthrough at all? Ask: *"what does success look like, start to finish?"* and have the
+  human first add the answer to the source document (or to a `discovery/walkthroughs.md` companion
+  that then becomes the triage `source`); a quote that is not in the source is rejected by design.
+  Do not synthesize a journey from the endpoint list.
 - Record each storyline in `storylines[]` with its `id`, `name`, `main`, and `quote` — the **full**
   walkthrough span, start to finish success story, verbatim (not its first sentence: the checker
   anchors every group to this span). These become the design phase's `storyline` blocks, so the provenance travels
@@ -78,6 +80,12 @@ event share one slice.
   entity it mentions. A "Product" sentence in the retire walkthrough belongs to "Retire a
   product", not to a Product lifecycle.
 - One group per trigger-and-actor; never one group per entity or per endpoint.
+- **A group is anchored or reference-only, never both.** An anchored group names a storyline and
+  holds at least one `walkthrough` statement quoted from inside that storyline's span. A group
+  built only from `reference` statements (operations no walkthrough touches) is reference-only:
+  `storyline: null` on the group and on its statements. It never joins a walkthrough storyline,
+  and the report lists it outside every storyline for the human to inspect.
+- A claim is quoted once: no two statements may share a quote.
 
 ## Step 4 — Rewrite, don't drop
 
@@ -125,9 +133,11 @@ Per statement: `id`, `quote`, `category`, `aboutBusiness`, `confidence`, `proven
 `scenarioOf` where the outcome needs them. **Every statement has a category and an outcome;
 every modeled or rewritten statement has a group.** The rules the checker enforces are listed in
 `prd-rubric.md` ("Rules the checker enforces"): disagreement and low confidence are questions, an
-endpoint is never modeled, group and storyline only for modeled/rewritten (otherwise `null`), and
-every group anchored by a walkthrough statement inside its storyline's span or reported as
-reference-only.
+endpoint is never modeled, group and storyline only for modeled/rewritten (otherwise `null`),
+provenance verified against the storyline spans (a `walkthrough` quote lies inside one, a
+`reference` quote outside all), no shared quotes, and every group either anchored by a walkthrough
+statement inside its storyline's span or reference-only (`"storyline": null` on the group and its
+statements, listed in the report outside every storyline).
 
 Then run, and fix until it passes:
 

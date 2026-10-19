@@ -47,7 +47,7 @@ export const PRD_RUBRIC = {
     { id: "business-rule", aboutBusiness: true, outcomes: ["modeled", "rewritten", "parked", "question"], meaning: "A constraint the business imposes; candidate invariant or scenario." },
     { id: "external-system", aboutBusiness: "either", outcomes: ["modeled", "rewritten", "constraint", "parked", "question"], meaning: "A system outside the boundary; candidate translation slice or constraint." },
     { id: "implementation-detail", aboutBusiness: false, outcomes: ["rewritten", "constraint", "parked", "question"], meaning: "How it is built. Rewritten in business language when it implies a business fact; a real tech choice goes to the constraints list." },
-    { id: "nfr", aboutBusiness: false, outcomes: ["constraint", "parked", "question"], meaning: "Performance, availability, security, compliance: feeds the constitution, never a slice." },
+    { id: "nfr", aboutBusiness: "either", outcomes: ["constraint", "parked", "question"], meaning: "Performance, availability, security, compliance: feeds the constitution, never a slice." },
     { id: "goal-background", aboutBusiness: true, outcomes: ["parked", "rewritten", "question"], meaning: "Why the product exists; context for the main storyline, not a slice." },
     { id: "question", aboutBusiness: "either", outcomes: ["question", "parked"], meaning: "An open question in the source; becomes a Socratic question, never an invented answer." },
     { id: "resource-or-endpoint", aboutBusiness: false, outcomes: ["rewritten", "parked", "question"], meaning: "Describes an API resource or endpoint. Rewritten to the intent it serves (one endpoint may carry several); never promoted to a command as-is." },
@@ -70,7 +70,8 @@ export interface TriageGroup {
   trigger: string;
   /** The acting system or actor. */
   actor: string;
-  storyline: string;
+  /** null = a reference-only group, outside every storyline. */
+  storyline: string | null;
 }
 
 export interface TriageStatement {
@@ -193,22 +194,26 @@ export function validatePrdTriage(
   else if (mains !== 1) err(`exactly one storyline must be main (found ${mains})`);
 
   const groupIds = new Set<string>();
-  const groupStoryline = new Map<string, string>();
+  const groupStoryline = new Map<string, string | null>();
   const groupName = new Map<string, string>();
   (input.groups as unknown[]).forEach((raw, i) => {
     const w = `groups[${i}]`;
     if (!isObj(raw)) return err(`${w}: must be an object`);
     if (!seen(w, groupIds, raw.id)) return;
-    if (typeof raw.storyline === "string") groupStoryline.set(raw.id as string, raw.storyline);
+    groupStoryline.set(raw.id as string, typeof raw.storyline === "string" ? raw.storyline : null);
     groupName.set(raw.id as string, typeof raw.name === "string" ? raw.name : (raw.id as string));
     for (const k of ["name", "trigger", "actor"]) if (!nonEmpty(raw[k])) err(`${w} ${raw.id}: ${k} required`);
-    if (!nonEmpty(raw.storyline) || !storylineIds.has(raw.storyline)) err(`${w} ${raw.id}: storyline must name a declared storyline`);
+    // null = a reference-only group (outside every storyline); verified against its statements below.
+    if (raw.storyline !== null && (!nonEmpty(raw.storyline) || !storylineIds.has(raw.storyline))) {
+      err(`${w} ${raw.id}: storyline must name a declared storyline, or be null for a reference-only group`);
+    }
   });
 
   const statementIds = new Set<string>();
   const byId = new Map<string, Record<string, unknown>>();
   const usedGroups = new Set<string>();
   const groupMembers = new Map<string, Record<string, unknown>[]>();
+  const quoteOwner = new Map<string, string>();
   (input.statements as unknown[]).forEach((raw, i) => {
     const w = `statements[${i}]`;
     if (!isObj(raw)) return err(`${w}: must be an object`);
@@ -217,7 +222,22 @@ export function validatePrdTriage(
     byId.set(id, raw);
     const at = `${w} ${id}`;
     if (!nonEmpty(raw.quote)) err(`${at}: quote required`);
-    else quoteIn(at, raw.quote);
+    else {
+      quoteIn(at, raw.quote);
+      const nq = normQuote(raw.quote);
+      const prior = quoteOwner.get(nq);
+      if (prior !== undefined) err(`${at}: quote duplicates statement ${prior}'s; one statement per claim`);
+      else quoteOwner.set(nq, id);
+      // Provenance is checked, not declared: walkthrough quotes lie inside a storyline span,
+      // reference quotes lie outside every span.
+      const inside = [...storylineSpan].filter(([, span]) => span.includes(nq)).map(([sid]) => sid);
+      if (raw.provenance === "walkthrough" && inside.length === 0) {
+        err(`${at}: provenance is walkthrough but its quote lies inside no storyline's span (a walkthrough statement must quote a storyline's span)`);
+      }
+      if (raw.provenance === "reference" && inside.length > 0) {
+        err(`${at}: provenance is reference but its quote lies inside storyline ${inside[0]}'s span (a reference statement must quote text outside every storyline span)`);
+      }
+    }
 
     const cat = PRD_RUBRIC.categories.find((c) => c.id === raw.category);
     if (!cat) err(`${at}: category must be one of ${RUBRIC_CATEGORY_IDS.join(", ")} (got ${JSON.stringify(raw.category)})`);
@@ -236,7 +256,7 @@ export function validatePrdTriage(
     }
 
     const needsGroup = outcome === "modeled" || outcome === "rewritten";
-    if (needsGroup) {
+    if (needsGroup || (outcome === "question" && raw.group !== null && raw.group !== undefined)) {
       if (!nonEmpty(raw.group) || !groupIds.has(raw.group)) err(`${at}: outcome ${outcome} needs a group naming a declared group`);
       else {
         usedGroups.add(raw.group);
@@ -244,12 +264,16 @@ export function validatePrdTriage(
         members.push(raw);
         groupMembers.set(raw.group, members);
       }
-      if (!nonEmpty(raw.storyline) || !storylineIds.has(raw.storyline)) err(`${at}: outcome ${outcome} needs a storyline naming a declared storyline`);
-      else if (nonEmpty(raw.group) && groupStoryline.has(raw.group) && groupStoryline.get(raw.group) !== raw.storyline) {
-        err(`${at}: storyline ${raw.storyline} differs from its group ${raw.group}'s storyline ${groupStoryline.get(raw.group)}`);
+      const gs = nonEmpty(raw.group) && groupStoryline.has(raw.group) ? groupStoryline.get(raw.group) : undefined;
+      if (gs === null) {
+        if (raw.storyline !== null && raw.storyline !== undefined) err(`${at}: its group ${String(raw.group)} is reference-only (storyline null), so the statement's storyline must be null`);
+      } else if (!nonEmpty(raw.storyline) || !storylineIds.has(raw.storyline)) {
+        err(`${at}: outcome ${outcome} needs a storyline naming a declared storyline`);
+      } else if (gs !== undefined && gs !== raw.storyline) {
+        err(`${at}: storyline ${raw.storyline} differs from its group ${String(raw.group)}'s storyline ${gs}`);
       }
     } else if (raw.group !== null && raw.group !== undefined) {
-      err(`${at}: outcome ${outcome} must have group null (only modeled/rewritten statements join a slice group)`);
+      err(`${at}: outcome ${outcome} must have group null (only modeled/rewritten statements join a slice group; a question may name the group it would join)`);
     }
     if (outcome === "rewritten" && !nonEmpty(raw.rewrite)) err(`${at}: outcome rewritten needs a rewrite (business-language text)`);
     if (outcome === "parked" && !nonEmpty(raw.reason)) err(`${at}: outcome parked needs a reason (it also goes in the Decisions log)`);
@@ -283,17 +307,27 @@ export function validatePrdTriage(
   }
   for (const g of groupIds) if (!usedGroups.has(g)) err(`group ${g}: no statement joins it`);
 
-  // Walkthrough-first: a group is anchored by a walkthrough statement whose quote lies inside its
-  // storyline's span, or it is a reference-only group (listed for the human to inspect).
+  // Walkthrough-first: a group is EITHER anchored (a walkthrough statement whose quote lies inside
+  // its named storyline's span) OR reference-only (every statement `reference`, the group and its
+  // statements outside every storyline: storyline null). Reference-only groups are listed in the
+  // report for the human to inspect.
   const referenceOnlyGroups: string[] = [];
-  for (const [g, members] of groupMembers) {
-    const span = storylineSpan.get(groupStoryline.get(g) ?? "");
-    const anchored = members.some(
-      (m) => m.provenance === "walkthrough" && span !== undefined && typeof m.quote === "string" && span.includes(normQuote(m.quote)),
-    );
-    if (anchored) continue;
-    if (members.every((m) => m.provenance === "reference")) referenceOnlyGroups.push(groupName.get(g) ?? g);
-    else err(`group ${g}: no walkthrough statement lies inside its storyline's span (and it is not reference-only); anchor it in the walkthrough or mark all its statements reference`);
+  for (const g of groupIds) {
+    const members = groupMembers.get(g);
+    if (!members) continue;
+    const named = groupStoryline.get(g) ?? null;
+    if (members.every((m) => m.provenance === "reference")) {
+      if (named !== null) err(`group ${g}: every statement is reference, so it is a reference-only group and must have storyline null (it joins no walkthrough storyline), not ${named}`);
+      else referenceOnlyGroups.push(groupName.get(g) ?? g);
+      continue;
+    }
+    if (named === null) {
+      err(`group ${g}: storyline is null but it has walkthrough statements; name the storyline they advance`);
+      continue;
+    }
+    const span = storylineSpan.get(named);
+    const anchored = members.some((m) => m.provenance === "walkthrough" && span !== undefined && typeof m.quote === "string" && span.includes(normQuote(m.quote)));
+    if (!anchored) err(`group ${g}: no walkthrough statement lies inside storyline ${named}'s span; anchor it in that walkthrough, or move it to a reference-only group`);
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true, doc: input as unknown as PrdTriageDoc, referenceOnlyGroups };
@@ -353,7 +387,7 @@ export function renderPrdTriageMarkdown(doc: PrdTriageDoc, referenceOnlyGroups: 
   for (const s of doc.storylines) L.push(`- **${s.name}**${s.main ? " (main)" : ""} — "${norm(s.quote)}"`);
   L.push("", "## Slice groups", "");
   for (const g of doc.groups) {
-    L.push(`### ${g.name}`, "", `Storyline: ${g.storyline} · trigger: ${g.trigger} · acting: ${g.actor}`, "");
+    L.push(`### ${g.name}`, "", `Storyline: ${g.storyline ?? "none (reference-only)"} · trigger: ${g.trigger} · acting: ${g.actor}`, "");
     for (const s of doc.statements.filter((x) => x.group === g.id)) {
       const body = s.outcome === "rewritten" ? `${s.rewrite} _(from: "${norm(s.quote)}")_` : `"${norm(s.quote)}"`;
       L.push(`- \`${s.id}\` [${s.category}] ${body}${s.scenarioOf ? ` — scenario of ${s.scenarioOf}` : ""}`);

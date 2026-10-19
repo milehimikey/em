@@ -4019,10 +4019,14 @@ checks what must not be judged. Checks:
 - **Disagreement is a question.** The rubric records the `aboutBusiness` answer each category
   expects (`true`, `false` or `either`); a statement whose `aboutBusiness` contradicts it must have
   outcome `question` (the question text carries the proposed rewrite).
-- **Walkthrough-first.** Each group needs at least one `walkthrough` statement whose quote lies
-  inside its storyline's quote, or every statement in it is `reference`; such **reference-only
-  groups** pass but are listed in the report (operations no walkthrough touches; check these are
-  not CRUD fill).
+- **Walkthrough-first, checked not declared.** A `walkthrough` statement's quote must lie inside
+  some storyline's quote; a `reference` statement's quote must lie outside all of them. A group is
+  either *anchored* (names a storyline and has at least one `walkthrough` statement inside that
+  storyline's span) or *reference-only* (every statement `reference`; `storyline: null` on the
+  group and its statements, and a reference-only group that names a storyline is rejected).
+  Reference-only groups pass but are listed in the report, outside every storyline (operations no
+  walkthrough touches; check these are not CRUD fill). A `question` may name the group it would
+  join once answered. No two statements may share a (normalised) quote.
 
 It cannot judge whether a classification is right, whether every walkthrough claim has a
 statement, or whether the Decisions-log entry for each parked or rejected statement was written:
@@ -4036,7 +4040,7 @@ that entry is prose in the state file and is unchecked.
 
 ```bash
 cd examples/prd-triage && em discover triage-check prd-triage.json
-# -> ok — prd-triage.json: 4 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md
+# -> ok — prd-triage.json: 2 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md
 ```
 
 The text report prints the source relative to the working directory. Exit 1 (each error printed,

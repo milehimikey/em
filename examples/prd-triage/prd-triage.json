@@ -5,24 +5,12 @@
   "storylines": [
     {
       "id": "L1",
-      "name": "Place and pay for an order",
+      "name": "Order to paid, and who sees it",
       "main": true,
-      "quote": "A Customer places an order from the storefront (items, quantities, prices, total). Placing an order records who ordered, what, and when.\n2. Once an order is placed, a payment is requested for its total. This happens automatically; nobody clicks anything.\n3. The payment provider calls us back when a payment is captured. We record the capture (amount, provider reference, time). This is not initiated by anyone in the company."
+      "quote": "A Customer places an order from the storefront (items, quantities, prices, total). Placing an order records who ordered, what, and when.\n2. Once an order is placed, a payment is requested for its total. This happens automatically; nobody clicks anything.\n3. The payment provider calls us back when a payment is captured. We record the capture (amount, provider reference, time). This is not initiated by anyone in the company.\n4. Fulfillment Staff see a dashboard of open orders: placed orders, with the capture time once paid.\n5. A Customer sees their order's status on their account page: placed, payment requested, paid."
     },
     {
       "id": "L2",
-      "name": "Staff work the open orders",
-      "main": false,
-      "quote": "Fulfillment Staff see a dashboard of open orders: placed orders, with the capture time once paid."
-    },
-    {
-      "id": "L3",
-      "name": "Customer follows their order",
-      "main": false,
-      "quote": "A Customer sees their order's status on their account page: placed, payment requested, paid."
-    },
-    {
-      "id": "L4",
       "name": "Customer cancels an order",
       "main": false,
       "quote": "A Customer can cancel an order from their account page. Cancelled orders drop off the staff dashboard."
@@ -32,9 +20,9 @@
     { "id": "G1", "name": "Place Order", "trigger": "customer submits the order from the storefront", "actor": "Customer", "storyline": "L1" },
     { "id": "G2", "name": "Request Payment", "trigger": "order placed", "actor": "Payment system (automatic)", "storyline": "L1" },
     { "id": "G3", "name": "Record Payment Capture", "trigger": "payment provider calls back", "actor": "Payment provider", "storyline": "L1" },
-    { "id": "G4", "name": "Open Orders Dashboard", "trigger": "staff open the dashboard", "actor": "Fulfillment Staff", "storyline": "L2" },
-    { "id": "G5", "name": "Order Status", "trigger": "customer opens their account page", "actor": "Customer", "storyline": "L3" },
-    { "id": "G6", "name": "Cancel Order", "trigger": "customer cancels from their account page", "actor": "Customer", "storyline": "L4" }
+    { "id": "G4", "name": "Open Orders Dashboard", "trigger": "staff open the dashboard", "actor": "Fulfillment Staff", "storyline": "L1" },
+    { "id": "G5", "name": "Order Status", "trigger": "customer opens their account page", "actor": "Customer", "storyline": "L1" },
+    { "id": "G6", "name": "Cancel Order", "trigger": "customer cancels from their account page", "actor": "Customer", "storyline": "L2" }
   ],
   "statements": [
     { "id": "S1", "quote": "A Customer places an order from the storefront", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G1", "storyline": "L1" },
@@ -45,10 +33,10 @@
     { "id": "S6", "quote": "The payment provider calls us back when a payment is captured.", "category": "external-system", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
     { "id": "S7", "quote": "We record the capture (amount, provider reference, time).", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
     { "id": "S8", "quote": "This is not initiated by anyone in the company.", "category": "actor", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
-    { "id": "S9", "quote": "Fulfillment Staff see a dashboard of open orders: placed orders, with the capture time once paid.", "category": "information-need", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G4", "storyline": "L2" },
-    { "id": "S10", "quote": "A Customer sees their order's status on their account page: placed, payment requested, paid.", "category": "information-need", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G5", "storyline": "L3" },
-    { "id": "S11", "quote": "A Customer can cancel an order from their account page.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G6", "storyline": "L4" },
-    { "id": "S12", "quote": "Cancelled orders drop off the staff dashboard.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G6", "storyline": "L4" },
+    { "id": "S9", "quote": "Fulfillment Staff see a dashboard of open orders: placed orders, with the capture time once paid.", "category": "information-need", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G4", "storyline": "L1" },
+    { "id": "S10", "quote": "A Customer sees their order's status on their account page: placed, payment requested, paid.", "category": "information-need", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G5", "storyline": "L1" },
+    { "id": "S11", "quote": "A Customer can cancel an order from their account page.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G6", "storyline": "L2" },
+    { "id": "S12", "quote": "Cancelled orders drop off the staff dashboard.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G6", "storyline": "L2" },
     { "id": "S13", "quote": "Meridian Goods sells household goods online.", "category": "goal-background", "aboutBusiness": true, "confidence": "high", "provenance": "reference", "outcome": "parked", "group": null, "storyline": null, "reason": "Background to the main storyline; context, not a slice." },
     { "id": "S14", "quote": "Two audiences: Customers and Fulfillment Staff.", "category": "actor", "aboutBusiness": true, "confidence": "high", "provenance": "reference", "outcome": "parked", "group": null, "storyline": null, "reason": "Declared as personas in the model from the walkthroughs; no slice of its own." },
     { "id": "S15", "quote": "Out of scope: shipping, refunds, inventory.", "category": "goal-background", "aboutBusiness": true, "confidence": "high", "provenance": "reference", "outcome": "parked", "group": null, "storyline": null, "reason": "Scope line; recorded in the state file's Session inputs. Nothing modeled for shipping, refunds or inventory." }
