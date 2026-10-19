@@ -20,6 +20,11 @@ function exportOf(path: string, source: string) {
   return JSON.parse(buildExport(model, refs, diagnostics, source, path).text);
 }
 
+/** Whether main's own `timeline-entity-clustered` lint fires on this source. */
+function lintFires(source: string) {
+  return compile(source).diagnostics.some((d) => d.code === "timeline-entity-clustered");
+}
+
 const names = readdirSync(INPUTS, { withFileTypes: true })
   .filter((d) => d.isDirectory())
   .map((d) => d.name);
@@ -75,7 +80,8 @@ describe("eval/score.mjs on the public input set", () => {
     expect(() => score(exported, reference, { "reopen-ticket": "resolve-ticket" })).toThrow(/already has/);
     const renamed = exportOf(emPath, readFileSync(emPath, "utf8").replace(/Reopen Ticket/g, "Reactivate Ticket"));
     const rename = score(renamed, reference, { "reactivate-ticket": "reopen-ticket" });
-    expect(rename.slicesPerReaction).toBe(1.8);
+    expect(rename.slicesPerReaction).toBe(rename.referenceSlicesPerReaction);
+    expect(rename.slicesPerReaction).toBe(10 / 5);
     expect(() =>
       score(renamed, reference, { "reactivate-ticket": "reopen-ticket", "merge-ticket": "reopen-ticket" }),
     ).toThrow(/many-to-one/);
@@ -85,6 +91,46 @@ describe("eval/score.mjs on the public input set", () => {
     const path = join(INPUTS, "library-lending", "reference.em");
     const reference = JSON.parse(readFileSync(join(INPUTS, "library-lending", "reference.json"), "utf8"));
     const clustered = `model "Clustered"
+persona Member
+context Lending
+context Billing
+
+slice "Open Account" {
+  ui Account Form @Member
+  command Open Account { accountId: UUID }
+  event Account Opened @Billing { accountId: UUID }
+}
+slice "Add Title" {
+  ui Title Form @Member
+  command Add Title { titleId: UUID }
+  event Title Added @Lending { titleId: UUID }
+}
+slice "Rename Title" {
+  ui Title Form @Member
+  command Rename Title { titleId: UUID }
+  event Title Renamed @Lending { titleId: UUID }
+}
+slice "Retire Title" {
+  ui Title Form @Member
+  command Retire Title { titleId: UUID }
+  event Title Retired @Lending { titleId: UUID }
+}
+slice "Titles" {
+  view Titles from "Title Added", "Title Renamed", "Title Retired" { titleId: UUID }
+  ui Titles Page @Member
+}
+`;
+    const exported = exportOf(path, clustered);
+    expect(entityClustered(exported.model.slices).clustered).toBe(3);
+    const result = score(exported, reference);
+    expect(result.entityClusteredRate).toBe(0.75);
+    expect(lintFires(clustered)).toBe(true);
+    expect(result.businessEventRecall).toBeLessThan(1);
+    expect(result.missingSlices.length).toBeGreaterThan(0);
+  });
+
+  it("a single-context model is exempt (score 0), like the lint", () => {
+    const single = `model "Single"
 persona Member
 context Lending
 
@@ -108,11 +154,16 @@ slice "Titles" {
   ui Titles Page @Member
 }
 `;
-    const exported = exportOf(path, clustered);
-    expect(entityClustered(exported.model.slices).rate).toBe(1);
-    const result = score(exported, reference);
-    expect(result.entityClusteredRate).toBe(1);
-    expect(result.businessEventRecall).toBeLessThan(1);
-    expect(result.missingSlices.length).toBeGreaterThan(0);
+    const exported = exportOf("single.em", single);
+    expect(entityClustered(exported.model.slices).rate).toBe(0);
+    expect(lintFires(single)).toBe(false);
   });
+
+  for (const name of names) {
+    it(`${name}: score.mjs and the lint agree on whether the reference clusters`, () => {
+      const emPath = join(INPUTS, name, "reference.em");
+      const source = readFileSync(emPath, "utf8");
+      expect(lintFires(source)).toBe(entityClustered(exportOf(emPath, source).model.slices).rate > 0);
+    });
+  }
 });

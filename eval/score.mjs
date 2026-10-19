@@ -21,36 +21,59 @@ import { pathToFileURL } from "node:url";
 
 const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-function sliceContext(slice) {
-  const ev = slice.elements.find((e) => e.kind === "event");
-  return ev ? (ev.context ?? "") : null;
-}
+const MIN_RUN = 3;
 
-/** Share of State Change slices that sit in an entity-clustered run. */
+/** Entity-clustered share of State Change slices; mirrors the `timeline-entity-clustered` lint
+ *  (src/model/validate.ts) computed from the export: exempt below 2 distinct write contexts; a run
+ *  slice has ALL its events on one context and any view it carries reads only that context; the
+ *  trailing view is the first view-bearing slice from the run's start onward. Differences from the
+ *  lint: `again` views are judged per instance's own sources (the lint uses the logical view's union),
+ *  and the lint reports once per maximal run while this counts the run's slices. */
 export function entityClustered(slices) {
   const ordered = [...slices].sort((a, b) => a.index - b.index);
-  const stateChanges = ordered.filter((s) => s.pattern === "state-change");
+  const eventContext = new Map();
+  const writeContexts = new Set();
+  for (const s of ordered)
+    for (const e of s.elements)
+      if (e.kind === "event") {
+        eventContext.set(norm(e.name), e.context ?? null);
+        writeContexts.add(e.context ?? null);
+      }
+  const stateChanges = ordered.filter((s) => s.pattern === "state-change").length;
+  if (writeContexts.size < 2) return { clustered: 0, stateChanges, rate: 0 };
+
+  const info = ordered.map((s) => {
+    const events = s.elements.filter((e) => e.kind === "event");
+    const views = s.elements.filter((e) => e.kind === "view");
+    const evCtx = new Set(events.map((e) => e.context ?? null));
+    const viewCtx = new Set();
+    for (const v of views) {
+      const names = (v.from ?? []).map((f) => f.name);
+      if (names.length === 0) for (const c of evCtx) viewCtx.add(c);
+      for (const n of names) viewCtx.add(eventContext.get(norm(n)) ?? null);
+    }
+    const context = s.pattern === "state-change" && events.length > 0 && evCtx.size === 1 ? [...evCtx][0] : undefined;
+    return { views: views.length, viewCtx, context };
+  });
+  const only = (set, ctx) => [...set].every((c) => c === ctx);
+
   let clustered = 0;
   let i = 0;
-  while (i < ordered.length) {
-    if (ordered[i].pattern !== "state-change") {
+  while (i < info.length) {
+    const ctx = info[i].context;
+    if (ctx === undefined || !only(info[i].viewCtx, ctx)) {
       i++;
       continue;
     }
-    const ctx = sliceContext(ordered[i]);
     let j = i;
-    while (j < ordered.length && ordered[j].pattern === "state-change" && sliceContext(ordered[j]) === ctx) j++;
-    const run = ordered.slice(i, j);
-    const next = ordered[j];
-    if (run.length >= 3 && next && next.pattern === "state-view") {
-      const keys = new Set(run.map((s) => s.key));
-      const reads = next.elements.filter((e) => e.kind === "view").flatMap((e) => e.from ?? []);
-      // no cross-context read: every source event belongs to a slice in the run
-      if (reads.every((r) => keys.has(String(r.ref).split("/")[0]))) clustered += run.length;
+    while (j < info.length && info[j].context === ctx && only(info[j].viewCtx, ctx)) j++;
+    if (j - i >= MIN_RUN) {
+      const trailing = info.slice(i).find((x) => x.views > 0);
+      if (trailing && only(trailing.viewCtx, ctx)) clustered += j - i;
     }
     i = j;
   }
-  return { clustered, stateChanges: stateChanges.length, rate: stateChanges.length ? clustered / stateChanges.length : 0 };
+  return { clustered, stateChanges, rate: stateChanges ? clustered / stateChanges : 0 };
 }
 
 export function score(exported, reference, aliases = {}) {
