@@ -157,6 +157,14 @@ events already being settled, so working out of order means re-litigating an ear
 contract mid-spec. Check `README.md`'s Slices table for what's already done (run `em slice index
 <model-name>.em` first if it looks stale).
 
+**Outcomes stay in the slice.** When the deep dive surfaces failure, retry or timeout, add the
+outcome events (`Fulfilment Failed`, `Fulfilment Retry Scheduled`, ...) and their Given/When/Then
+scenarios to the SAME slice, with retry policy and failure handling as invariants in its doc —
+never a sibling slice per control-flow branch (lint `automation-split-by-outcome`). A new slice
+only when a different actor or a different trigger is involved. Canon: Dilger, "one business
+action… two different possible outcomes" and "Linearize it!"; Dymitruk, "a few of these stories
+to show how a command can and cannot succeed".
+
 This is also where **branch / unhappy-path events** are discovered and added to the model — as a
 slice's alternate/error flows surface (a rejection, removal, cancellation, decline, expiry), add
 the corresponding event/slice to the `.em` and re-render. The happy-path spine from earlier

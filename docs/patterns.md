@@ -74,6 +74,38 @@ see. A State Change slice is only finished once both hold, which in practice mea
 with the State View slice that consumes its event — and that State View needs its own consumer
 in turn. [`em validate` warns](validation.md#both-ends-of-a-flow) on any of those gaps.
 
+### One command, several outcomes: one slice
+
+When a command can end in more than one outcome, the outcomes are **events of the same slice**,
+not sibling slices per branch. Dilger's framing: a single business action has "two different
+possible outcomes" — `PaymentIssued` or `PaymentFailed` — and both belong to the one command
+that decided between them. The rejection rules, and the scenarios that show the command both
+succeeding and not succeeding, are invariants and Given/When/Then scenarios in that slice's doc
+(Dymitruk: "a few of these stories to show how a command can and cannot succeed" — write them as
+scenarios first). If the failure then has its own continuation, Dilger's "Linearize it!" applies:
+it becomes a *later* chapter linked to the originating event, never a parallel branch of the
+same story.
+
+```em
+slice "Issue Payment" {
+  ui Payout Screen @Finance
+  command Issue Payment
+  event Payment Issued @Payment
+  event Payment Failed @Billing
+}
+
+slice "Payment Outcomes" {
+  view Payment Outcomes from "Payment Issued", "Payment Failed"
+  ui Payout History @Finance
+}
+```
+
+Today two events on the *same* context in one slice are a `grid-collision` error, so the example
+puts the outcomes on different contexts; when the outcomes are alternatives on one context, write
+them as `event A | B @Ctx` (1.18.0). Splitting this into an "Issue Payment" slice and a
+"Payment Failed" slice is the anti-pattern; the lint `automation-split-by-outcome` flags the
+Automation form of it. See also [storyline.md](storyline.md).
+
 ## State View
 
 Past events are projected into a read model that a screen displays. Read-only; nothing
@@ -142,6 +174,50 @@ instead. A `ui` left in the reaction's slice renders disconnected, with no edge,
 
 The third slice is the State View that reads `Payment Captured` — here it's the same to-do
 list, one payment shorter. Without it the event is unread and `em validate` warns.
+
+### Outcomes of one reaction: one slice
+
+A reaction that can succeed, fail, or schedule a retry is still **one** business reaction, so it
+is one Automation slice. `Fulfilment Succeeded`, `Fulfilment Failed` and `Fulfilment Retry
+Scheduled` are the *outcome events* of that slice's command (Dilger: "one business action… two
+different possible outcomes"). The retry policy (how many attempts, what backoff) and the
+failure handling (what happens at the limit) are **invariants and scenarios in that slice's
+doc**, not new slices. Splitting the processor into a happy-path slice, a failure slice and a
+retry slice along control flow is the anti-pattern — the lint `automation-split-by-outcome`
+flags it.
+
+```em
+slice "Pay Order" {
+  ui Checkout @Customer
+  command Pay Order
+  event Order Paid @Order
+}
+
+slice "Orders To Fulfil" {
+  view Orders To Fulfil from "Order Paid"
+}
+
+slice "Fulfil Order" {
+  processor Fulfilment Worker from "Orders To Fulfil"
+  command Fulfil Order
+  event Fulfilment Succeeded @Shipment
+  event Fulfilment Failed @Fulfilment
+  event Fulfilment Retry Scheduled @Scheduling
+}
+
+slice "Fulfilment Status" {
+  view Fulfilment Status from "Fulfilment Succeeded", "Fulfilment Failed", "Fulfilment Retry Scheduled"
+  ui Fulfilment Board @Ops
+}
+```
+
+Add a new slice only when a **different actor or a different trigger** is involved: a human
+override of a failed fulfilment, or a timer that wakes the retry, has its own trigger and so its
+own slice. Outcomes on different contexts fan out from the command as above (two events on the
+same context are a `grid-collision` today); when the outcomes are alternatives on one context,
+write them as `event A | B @Ctx` (1.18.0). A failure that continues the story is "Linearized"
+(Dilger) as a later chapter linked to the originating event, never a branch. See
+[storyline.md](storyline.md).
 
 ## Translation
 

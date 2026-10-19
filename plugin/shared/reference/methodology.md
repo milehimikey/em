@@ -145,6 +145,15 @@ command** — it never records an event directly.
   duplicated name.
 - Socratic prompts: *"What should happen without a human? What condition triggers it? What work
   list does the processor watch? What command does it fire? What if it fails or retries?"*
+- **Outcomes are events of the SAME slice.** Success, failure, retry-scheduled and timeout are
+  outcome events of the one command (`Fulfilment Succeeded` / `Fulfilment Failed` / `Fulfilment
+  Retry Scheduled`), not sibling slices per control-flow branch (lint
+  `automation-split-by-outcome`). Retry policy and failure handling are invariants and scenarios
+  in that slice's doc. A new slice only when a different actor or a different trigger is
+  involved. Canon: Dilger, "one business action… two different possible outcomes"
+  (`PaymentIssued` / `PaymentFailed`); a failure that continues the story is "Linearized" as a
+  later chapter linked to the originating event, never a branch. Same rule for State Change: one
+  command, several outcome events, one slice.
 
 ### 4. Translation
 **Boundary crossing → command → event, the reaction and what it triggers together in one slice.**
@@ -257,6 +266,9 @@ dedicated `slice` phase writes the full rich spec (see `../templates/slice.md`).
 - Prompts: *"Given what starting state, when this command/trigger fires, then what event(s)
   result? What must always be true? What are the failure paths? Which fields are essential and
   what are their rules?"*
+- **Failure, retry, timeout surface here?** Add the outcome events and the scenarios to the
+  SAME slice, never a new slice per branch (Dymitruk: "a few of these stories to show how a
+  command can and cannot succeed" — Given/When/Then scenarios first).
 - **Existing codebase:** before finalizing field names/types, check adjacent real sources
   (OpenAPI specs, DB migrations, existing DTOs/event classes in sibling contexts) rather than
   guessing — mirrors `extract.md`'s whole-system grounding, applied per-slice.
