@@ -69,6 +69,7 @@ describe("command-second-intent (GH #286)", () => {
     const guard = (a: string, b: string) =>
       MODEL.replace(/ {2}invariant INV-PIM-[1-4].*\n/g, `  invariant INV-PIM-1 "${a}"\n  invariant INV-PIM-2 "${b}"\n`);
     expect(run(guard("Unless quantity is positive, reject", "Unless quantity exceeds stock, accept"))).toEqual([]);
+    expect(run(guard("Only if `status` is confirmed can it ship", "Only if `status` is paid can it be fulfilled"))).toEqual([]);
     expect(run(guard("Only if the order is confirmed may it ship", "Only if the order is paid may it ship"))).toEqual([]);
   });
 

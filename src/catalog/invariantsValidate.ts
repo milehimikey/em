@@ -35,7 +35,7 @@ interface DocEntry {
 
 /** The conditional openers `command-second-intent` recognises (GH #286): a rule whose text
  *  begins "If/When/Only if/Unless <field> is set|present|provided|non-null|not null|given|
- *  supplied"; "Only if" also accepts a backticked field without the tail. The field is a bare
+ *  supplied" (the tail is required for every opener). The field is a bare
  *  identifier/path or backticked. A constant list (a rules-config knob is Backlog). */
 const BARE = "[A-Za-z_][\\w.]*";
 const TICKED = "`[^`]+`";
@@ -43,7 +43,6 @@ const SET_WORDS = "(?:set|present|provided|non-null|not null|given|supplied)";
 const TAIL = `\\s+(?:is|are)\\s+${SET_WORDS}\\b`;
 const CONDITIONAL_PATTERNS: RegExp[] = [
   new RegExp(`^(?:if|when|only\\s+if|unless)\\s+(?:the\\s+)?(${TICKED}|${BARE})${TAIL}`, "i"),
-  new RegExp(`^only\\s+if\\s+(?:the\\s+)?(${TICKED})`, "i"),
 ];
 
 /** The field a rule text opens a conditional on, as written and unticked; null if none. */
