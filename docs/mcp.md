@@ -84,13 +84,13 @@ working directory — the same working-directory convention every `em` CLI comma
 | Tool | Input | Returns |
 |---|---|---|
 | `validate` | `{ file }` | The `em validate --json` document — works even on a model with errors |
-| `slice_ready` | `{ file, sliceKey }` | The `em validate --slice-ready --json` machine verdict for one slice |
+| `slice_ready` | `{ file, sliceKey, requireRatifiedHash?, roster? }` | The `em validate --slice-ready --json` machine verdict for one slice |
 | `slice_sync` | `{ file, sliceKey? }` | The `em slice sync <file> [<key>] --check --json` document (MIL-266): per bound slice doc, whether its generated regions match the model. Read-only: never writes |
 | `list_markers` | `{ file, issues?, divergences?, public? }` (booleans, default `true`) | The `--list-issues`/`--list-divergences`/`--list-public --json` marker document |
 | `export_model` | `{ file }` | The full `em export` document — refuses (tool error) if the model has errors |
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
 | `coverage` | `{ file, testsDir, includeReady?, slice? }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
-| `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models; when a `system.yaml` sits above the first file, the `system` block carries the consumer-adaptation count (MIL-239); `engagements` counts the open engagements beside the models (MIL-268) |
+| `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models; when a `system.yaml` sits above the first file, the `system` block carries the consumer-adaptation count (MIL-239); `engagements` counts the open engagements beside the models (MIL-268); `roster` (status schema 1.12, GH #259) is `present`/`absent`/`invalid` for the first model |
 | `query` | `{ files, verb, event?, of?, depth?, pattern?, status?, context?, persona?, tag?, storyline?, id?, testsDir?, name?, from?, to? }` | The `em query <verb> <files...> --json` document: deterministic graph queries (consumers/producers/downstream/upstream/slices/invariant/field/path) over the compiled model |
 | `system` | `{ manifest? }` | The `em system [<manifest>] --json` document: the 2.0 membership manifest (`system.yaml`, file or directory; omitted = discovery from the server's working directory) with every `consumes` binding resolved against the producer's export — every `public` event/view consumed by another model's translation — plus the org-level context map |
 | `system_codeowners` | `{ manifest?, output? }` | The `em system codeowners [<manifest>] [-o <path>] --check --json` document (MIL-234): the CODEOWNERS entries generated from each model's `owner` and each translation's `consumes`, and whether the file already carries them (`status`). Read-only: never writes |
@@ -139,6 +139,10 @@ error here — it's represented in the document itself (`gates: null`, `ready: f
 `continuationOf` (MIL-208) is non-null when `sliceKey` names a continuation slice (an
 again-view-only slice with no legacy doc of its own) — the originating slice's export key;
 `gates` themselves already resolve straight through to that slice's own doc/status.
+`roster` (GH #259) is the path of a [ratifier roster](slice-doc-schema.md#who-may-ratify) to check
+`ratifiedBy` against - the CLI's `--roster`; omitted, the nearest `ratifiers.yaml` above the model
+is used, and with none nothing changes. A signer it does not permit is a
+`ratified-by-not-in-roster` diagnostic (and `ready: false`).
 
 ### `slice_sync`
 

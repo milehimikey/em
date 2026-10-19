@@ -26,6 +26,7 @@
 
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { findRosterAbove } from "../roster/roster.js";
 import { parseManifest } from "../system/manifest.js";
 import { pluginInstallCommands } from "./pluginPin.js";
 import { applyMarker, markerPair, markerRegex } from "../util/markers.js";
@@ -168,7 +169,25 @@ function glossaryJob(em: string): string {
  *  `--check` from a different em version reports the block as stale — the same
  *  upgrade-visibility `em skill check` gets from its version stamp — and a file scaffolded
  *  by a pre-pin em shows stale the same way. */
-export function ciManagedBody(model: string, testsDir: string, emVersion: string): string {
+/** GH #259: the `roster` job, emitted only when a `ratifiers.yaml` governs the model (the roster
+ *  is opt-in; a repo without one gets no extra job). `suffix`/`label` are empty for a single model. */
+function rosterJob(em: string, modelPath: string, suffix = "", label = ""): string {
+  return `  roster${suffix}:
+    name: "em roster check (recorded signers are on ratifiers.yaml)${label}"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check every recorded ratifiedBy/reviewedBy against the roster
+        # Whole-model gate (GH #259): ratifiedBy on ready-to-implement and implemented docs,
+        # reviewedBy on any doc. The grandfathered placeholder is exempt. See docs/ci.md.
+        run: ${em} roster check "${modelPath}"`;
+}
+
+export function ciManagedBody(model: string, testsDir: string, emVersion: string, withRoster = false): string {
   const em = `npx @milehimikey/em@${emVersion}`;
   return `  validate:
     name: em validate (changed .em files)
@@ -258,7 +277,7 @@ export function ciManagedBody(model: string, testsDir: string, emVersion: string
           node-version: 20
       - name: Check slice doc version/content agreement
         run: ${em} ledger "${model}" --from "\${{ github.event.pull_request.base.sha }}"
-
+${withRoster ? "\n" + rosterJob(em, model) + "\n" : ""}
 ${skillCheckJob(em, emVersion)}
 
   upgrade-check:
@@ -337,9 +356,9 @@ jobs:
 // it on the same line — a fixed indent here would get silently swallowed into the discarded
 // middle capture group on the very first re-patch (was a real bug during development: the
 // closing marker's leading spaces vanished on a second `em ci init` run).
-export function buildCiWorkflowFile(model: string, testsDir: string, emVersion: string): string {
+export function buildCiWorkflowFile(model: string, testsDir: string, emVersion: string, withRoster = false): string {
   const { start, end } = markerPair(CI_WORKFLOW_MARKER, "hash");
-  return `${ciWorkflowHeader(model, emVersion)}${start}\n${ciManagedBody(model, testsDir, emVersion)}\n${end}\n`;
+  return `${ciWorkflowHeader(model, emVersion)}${start}\n${ciManagedBody(model, testsDir, emVersion, withRoster)}\n${end}\n`;
 }
 
 // ---- em-ci.yml, multi-model (MIL-233, #174) ----
@@ -349,6 +368,8 @@ export function buildCiWorkflowFile(model: string, testsDir: string, emVersion: 
 export interface CiModel {
   key: string;
   path: string;
+  /** GH #259: a `ratifiers.yaml` governs this model, so it gets a `roster-<id>` job. */
+  roster?: boolean;
 }
 
 /** Deterministic, valid GitHub Actions job-id suffix per model key. Keys are kebab-case with an
@@ -477,7 +498,7 @@ function modelJobs(m: CiModel, id: string, testsDir: string, em: string): string
           node-version: 20
       - name: Check slice doc version/content agreement
         run: ${em} ledger "${m.path}" --from "\${{ github.event.pull_request.base.sha }}"
-
+${m.roster ? "\n" + rosterJob(em, m.path, "-" + id, ` [${m.key}]`) + "\n" : ""}
   upgrade-check-${id}:
     name: "em upgrade --check (advisory - hard incompatibilities only, MIL-219) [${m.key}]"
     if: github.event_name == 'pull_request'
@@ -843,7 +864,7 @@ export function ciModelsFromManifest(target: string, baseDir: string): CiModelsR
     if (unsafe) {
       return { ok: false, message: `${manifestPath}: model "${entry.key}" path must not contain '"', '\`', '$', or a newline: ${unsafe}` };
     }
-    models.push({ key: entry.key, path: rel });
+    models.push({ key: entry.key, path: rel, roster: findRosterAbove(dirname(resolve(baseDir, rel))) !== null });
   }
   return { ok: true, models, manifestPath };
 }

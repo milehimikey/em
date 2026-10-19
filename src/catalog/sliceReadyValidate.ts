@@ -35,7 +35,9 @@ import { readSliceDoc } from "./readSliceDoc.js";
 import { ratifiedHashScope } from "./sliceDoc.js";
 import { findStructuredSectionProblems } from "./sliceSections.js";
 import { ContractCheckInput, contractStatus, slicePublicTouching } from "./apiFirst.js";
-import { loadRoster, rosterRefusal, sliceContexts } from "../roster/roster.js";
+import { isGrandfatheredSignoff, loadRoster, rosterRefusal, sliceContexts } from "../roster/roster.js";
+import { rosterContextFor } from "../roster/context.js";
+import { computeModelKey } from "../model/qualifiedRef.js";
 
 export type { ContractCheckInput } from "./apiFirst.js";
 
@@ -183,19 +185,19 @@ export function validateSliceReady(
     });
   }
 
-  // GH #256: strict mode — the body-changed check above can only run when a hash exists, so
-  // without this a `ready-to-implement` doc whose frontmatter was hand-edited to carry
-  // `ratifiedBy`/`ratifiedOn` and no `ratifiedHash` passes with no integrity check at all.
   // GH #259: with a ratifier roster present, a `ratifiedBy` it does not permit for this slice's
   // context — the hand-edited-frontmatter case `em slice ratify`'s own refusal cannot see.
-  if (doc.status === "ready-to-implement" && doc.ratifiedBy) {
-    const roster = loadRoster(baseDir, options.rosterPath);
+  // `grandfathered ...` is em's own migration marker, not a signer, so it is exempt (it stays a
+  // finding of --require-ratified-hash and a human re-ratify item). Only `ready-to-implement`
+  // docs are checked here; `em roster check` also covers shipped docs.
+  if (doc.status === "ready-to-implement" && doc.ratifiedBy && !isGrandfatheredSignoff(doc.ratifiedBy)) {
+    const roster = loadRoster(baseDir, options.rosterPath, rosterContextFor(model, contract.file));
     if (roster.state === "invalid") {
       for (const d of roster.diagnostics) {
         pushDiag(diags, "roster-invalid", { message: `${roster.path}: ${d.message}`, line: slice.line, refs: [sliceKey] });
       }
     } else if (roster.state === "present") {
-      const why = rosterRefusal(roster.roster, "ratifiers", doc.ratifiedBy, sliceContexts(model, sliceIndex));
+      const why = rosterRefusal(roster.roster, "ratifiers", doc.ratifiedBy, sliceContexts(model, sliceIndex), computeModelKey(model, contract.file));
       if (why !== null) {
         pushDiag(diags, "ratified-by-not-in-roster", {
           message: `slice "${sliceKey}": ratifiedBy ${why} (${roster.path}) — re-ratify with a permitted name, or update the roster`,
@@ -206,6 +208,9 @@ export function validateSliceReady(
     }
   }
 
+  // GH #256: strict mode — the body-changed check above can only run when a hash exists, so
+  // without this a `ready-to-implement` doc whose frontmatter was hand-edited to carry
+  // `ratifiedBy`/`ratifiedOn` and no `ratifiedHash` passes with no integrity check at all.
   if (options.requireRatifiedHash && doc.status === "ready-to-implement" && doc.ratifiedHash === null) {
     pushDiag(diags, "slice-ready-missing-ratified-hash", {
       message: `slice "${sliceKey}"'s doc ${doc.path} is ready-to-implement with no ratifiedHash — --require-ratified-hash is on: re-ratify it (\`em slice revise --withdraw\`, review, \`em slice ratify --by\`) so the signed body has an identity`,

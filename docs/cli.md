@@ -569,7 +569,8 @@ unless **all** of the following hold, printing which ones don't and why
   step — keep passing; turn it on once those are re-ratified. The flag is refused without
   `--slice-ready`. The MCP `slice_ready` tool takes the same switch as `requireRatifiedHash`.
   `em engagement plan` runs the default verdict.
-- **ratifier roster, `--roster <path>` (GH #259, 1.18.0):** when a
+- **ratifier roster, `--roster <path>` (GH #259, 1.18.0):** (one `ready-to-implement` slice, ratifier
+  only - `em roster check` is the whole-model gate; the `grandfathered ...` placeholder is exempt) when a
   [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) exists (the nearest one above the model,
   or the given path), a `ready-to-implement` doc whose `ratifiedBy` is not permitted for the
   slice's context gets `ratified-by-not-in-roster` (error, `refs: [<slice key>]`, in `--json`
@@ -3290,14 +3291,30 @@ as every other command. A `binding-missing-file`/`frontmatter-invalid` doc-join 
 notes a doc that's missing or malformed) prints the same way `em export` prints it — the table
 still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` accordingly.
 
+## `em roster check <file>`
+
+The whole-model CI gate for the [ratifier roster](slice-doc-schema.md#who-may-ratify) (GH #259).
+Tests every bound slice doc's recorded signers against the roster: `ratifiedBy` on
+`ready-to-implement` **and** `implemented` docs, `reviewedBy` on any doc that has one - which
+`--slice-ready <key>` (one ready slice) does not. Exit 1 on any violation
+(`ratified-by-not-in-roster` / `reviewed-by-not-in-roster`, error, `refs: [<slice key>]`) or an
+invalid roster (`roster-invalid`); no roster file means "nothing to check", exit 0. Docs whose
+signer is the `grandfathered (unsigned before em 1.14)` placeholder are exempt and counted
+(`N docs carry the grandfathered placeholder and are exempt until re-ratified`).
+`--roster <path>` overrides discovery. `--json` prints `{ rosterCheckSchemaVersion: "1.0", file,
+roster: { state, path }, ok, grandfathered, results[], diagnostics[] }`; each result is
+`{ sliceKey, doc, role, name, status, contexts, ok, message }`. `em ci init` wires this into the
+generated workflow when a roster is discovered ([ci.md](ci.md#ratifier-roster-gate)).
+
 ## `em roster init <file>`
 
 Writes a starting [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) beside the model (GH #259)
 from the names the slice docs already record: every distinct `ratifiedBy:` becomes a `ratifiers:`
 entry and every distinct `reviewedBy:` a `reviewers:` entry, each covering the whole model (narrow
 them with `contexts:` by hand). The placeholder `em upgrade`'s `ratified-signoff` step writes
-(`grandfathered (unsigned before em 1.14)`) is not a person and is skipped. Exits 1 and writes
-nothing when no name is found, or when the file already exists (`--force` overwrites).
+(`grandfathered (unsigned before em 1.14)`) is not a person and is skipped (the count is printed).
+Exits 1 and writes nothing when no name is found, when the file already exists, or when a roster
+already discovered higher up would be shadowed by the nearer one (`--force` overrides both).
 `--roster <path>` writes somewhere else, e.g. one roster shared by several models. This is the
 upgrade path for a repo adopting the roster: seed it from history so nobody who has already signed
 is locked out, then trim.
@@ -3402,8 +3419,8 @@ tolerates an unknown/absent field.
 
 **Ratifier roster (GH #259, 1.18.0).** When a [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify)
 exists (beside the model, or the nearest one above it up to the repo root; `--roster <path>`
-overrides), `--by` must be a name the roster permits for the slice's context: a name that is not
-listed is refused (non-zero exit, file untouched) and the message lists who is permitted. No
+overrides), `--by` must be a name the roster permits for the slice's context(s) - all of them, for
+a cross-context slice: a name that is not listed is refused (non-zero exit, file untouched) and the message lists who is permitted. No
 roster file means today's behaviour. An unreadable or schema-invalid roster refuses too
 (`roster-invalid`) rather than silently opening the gate.
 

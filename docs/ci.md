@@ -518,15 +518,25 @@ Ground rules, matching the phase's own stance (see
 
 ## Ratifier roster gate
 
-`ratifiedBy:` is free text, so a PR can type any name into the frontmatter and the structural
-`--slice-ready` check only sees that it is non-empty. With a
-[`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) in the repo, the same
-`em validate <model> --slice-ready <key> --json` the PR job already runs also fails
-(`ratified-by-not-in-roster`, error, `refs: [<key>]`) when the recorded ratifier is not permitted
-for the slice's context. No new job is needed; a repo with no roster file sees no change. The
-roster itself is reviewed like any other file, so pair it with the CODEOWNERS rule below (own
-`ratifiers.yaml` as well as `slices/**`) — otherwise whoever can edit the doc can edit the list.
-Adopt it with `em roster init <model>`.
+`ratifiedBy:` and `reviewedBy:` are free text, so a PR can type any name into the frontmatter.
+With a [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) in the repo, **`em roster check
+<model>`** is the CI gate: it walks every slice doc and fails (exit 1) when a recorded signer is
+not permitted for the slice's contexts - `ratifiedBy` on `ready-to-implement` **and**
+`implemented` docs, `reviewedBy` on any doc - or when the roster itself is invalid. `--json`
+gives per-doc `results` and `diagnostics` carrying `refs: [<slice key>]`
+(`ratified-by-not-in-roster` / `reviewed-by-not-in-roster`); the `grandfathered ...` placeholder is
+exempt and counted. With no roster file it prints "nothing to check" and exits 0.
+
+`em ci init` (and `em upgrade`'s regeneration of the block) emits a `roster` job - `roster-<id>`
+per model in the `em ci init <system.yaml>` form - **only when a `ratifiers.yaml` is discovered
+for the model**; a repo without one gets no extra job. Run `em ci init` again after adding the
+roster to pick the job up.
+
+`em validate <model> --slice-ready <key>` also reports `ratified-by-not-in-roster`, but only for
+the one slice it is asked about and only while it is `ready-to-implement`; it is the handoff
+check, not the repo-wide gate. The roster itself is reviewed like any other file, so pair it with
+the CODEOWNERS rule below (own `ratifiers.yaml` as well as `slices/**`) - otherwise whoever can
+edit the doc can edit the list. Adopt it with `em roster init <model>`.
 
 ## CODEOWNERS: routing ratification review
 

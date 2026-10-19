@@ -24,6 +24,7 @@
 
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { findRosterAbove } from "../roster/roster.js";
 import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES } from "../model/model.js";
 import { findUnresolvedPublicFieldTypes } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -346,7 +347,10 @@ function ciBlockFiles(args: CiInitArgs, ctx: UpgradeContext): { ci: [string, str
     };
   }
   return {
-    ci: [buildCiWorkflowFile(args.model, args.testsDir, ctx.installedVersion), ciManagedBody(args.model, args.testsDir, ctx.installedVersion)],
+    ci: [
+      buildCiWorkflowFile(args.model, args.testsDir, ctx.installedVersion, findRosterAbove(dirname(resolve(ctx.repoRoot, args.model))) !== null),
+      ciManagedBody(args.model, args.testsDir, ctx.installedVersion, findRosterAbove(dirname(resolve(ctx.repoRoot, args.model))) !== null),
+    ],
     conform: [buildConformWorkflowFile(args.model, ctx.installedVersion, usePlugin), conformManagedBody(args.model, ctx.installedVersion, usePlugin)],
   };
 }

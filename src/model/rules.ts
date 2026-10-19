@@ -772,6 +772,14 @@ export const RULES = {
     docAnchor: "slice-readiness",
     optIn: true,
   },
+  "reviewed-by-not-in-roster": {
+    severity: "error",
+    title: "reviewedBy is not on the reviewer roster",
+    fix: "The doc's `reviewedBy:` names someone `ratifiers.yaml`'s `reviewers:` does not permit for this slice's context -- re-review it with a permitted name, or update the roster.",
+    usageCategory: "reviewedBy not in roster",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
   "roster-invalid": {
     severity: "error",
     title: "Ratifier roster invalid",

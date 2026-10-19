@@ -155,6 +155,7 @@ affected lines written by hand.
 | ratifier roster invalid |
 | reaction reads view before it exists |
 | reaction references unknown read model |
+| reviewedBy not in roster |
 | same-band collision |
 | seam consumer not a reaction |
 | seam crossing |

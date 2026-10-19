@@ -7,28 +7,32 @@
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
-import { ROSTER_SCHEMA_VERSION } from "./roster.js";
+import { ROSTER_SCHEMA_VERSION, isGrandfatheredSignoff } from "./roster.js";
 
 /** `em upgrade`'s ratified-signoff step writes this placeholder; it is not a person. */
-const GRANDFATHERED = /^grandfathered\b/i;
-
 export interface ObservedSigners {
   ratifiers: string[];
   reviewers: string[];
+  /** Docs carrying the grandfathered placeholder (skipped; counted so the exemption is visible). */
+  grandfathered: number;
 }
 
 /** Distinct, sorted signer names across every slice doc bound in the model. */
 export function observeSigners(model: NormalizedModel, refs: RefsResult, baseDir: string): ObservedSigners {
   const ratifiers = new Set<string>();
   const reviewers = new Set<string>();
+  let grandfathered = 0;
+  const seen = new Set<string>();
   refs.sliceKeys.forEach((sliceKey, i) => {
     const { doc } = resolveSliceDocJoin(model, refs, model.slices[i], sliceKey, baseDir, (id) => refs.refById.get(id)!);
-    if (doc.reason !== null) return;
-    if (doc.ratifiedBy && !GRANDFATHERED.test(doc.ratifiedBy.trim())) ratifiers.add(doc.ratifiedBy.trim());
-    if (doc.reviewedBy && !GRANDFATHERED.test(doc.reviewedBy.trim())) reviewers.add(doc.reviewedBy.trim());
+    if (doc.reason !== null || seen.has(doc.path)) return;
+    seen.add(doc.path);
+    if (isGrandfatheredSignoff(doc.ratifiedBy) || isGrandfatheredSignoff(doc.reviewedBy)) grandfathered++;
+    if (doc.ratifiedBy && !isGrandfatheredSignoff(doc.ratifiedBy)) ratifiers.add(doc.ratifiedBy.trim());
+    if (doc.reviewedBy && !isGrandfatheredSignoff(doc.reviewedBy)) reviewers.add(doc.reviewedBy.trim());
   });
   const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
-  return { ratifiers: sorted(ratifiers), reviewers: sorted(reviewers) };
+  return { ratifiers: sorted(ratifiers), reviewers: sorted(reviewers), grandfathered };
 }
 
 const yamlName = (n: string) => JSON.stringify(n);
