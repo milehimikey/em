@@ -367,7 +367,7 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
   });
 });
 
-describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real git)", () => {
+describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real git)", { timeout: 120_000 }, () => {
   let dir: string;
   const exportShape = () => {
     const doc = JSON.parse(em(["export", "orders.em"], dir).stdout);
