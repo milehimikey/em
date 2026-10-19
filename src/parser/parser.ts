@@ -13,7 +13,7 @@
 //     ui    <free text> [@Persona]
 //     command <free text>
 //     view  <free text> [from "Event"[, "Event2" ...]]
-//     event <free text> [@Context] [public] [loops-to "View"[ loops-to "View2" ...]]
+//     event <free text>[ | <free text>…] [@Context] [public] [loops-to "View"[ loops-to "View2" ...]]
 //     automation|processor|saga|translation <free text>
 //     translation <free text> [consumes <modelKey>:<event|view>.<slug>[, ...]]
 //     invariant INV-<MNEMONIC>-<n> ["rule"]   # standalone line after a command or event
@@ -85,6 +85,8 @@ export function parse(source: string): ModelNode {
   let currentTypeDecl: TypeDeclNode | null = null; // open `type Name { … }` block
   let currentStoryline: StorylineNode | null = null; // open `storyline "Name" { … }` block
   let storylineIsContinuation = false; // the open block reopens an already-declared storyline
+  let oneofStart: number | null = null; // GH #278: index in currentSlice.elements where the open `oneof {` began
+  let oneofLine = 0;
 
   for (let i = 0; i < rawLines.length; i++) {
     const lineNo = i + 1;
@@ -128,7 +130,13 @@ export function parse(source: string): ModelNode {
         currentTypeDecl = null;
         continue;
       }
+      if (currentSlice && oneofStart !== null) {
+        closeOneof(currentSlice, oneofStart, oneofLine);
+        oneofStart = null;
+        continue;
+      }
       if (currentSlice) {
+        expandAlternativeEvents(currentSlice);
         model.slices.push(currentSlice);
         if (currentStoryline) currentStoryline.sliceNames.push(currentSlice.name);
         currentSlice = null;
@@ -234,8 +242,31 @@ export function parse(source: string): ModelNode {
             lineNo,
           );
         }
-        (target.invariants ??= []).push(parseInvariantLine(remainder, lineNo));
+        const inv = parseInvariantLine(remainder, lineNo);
+        // GH #278: after a closed `oneof { … }` the rule binds to EVERY alternative (one rule set,
+        // only the fact differs); inside the block it binds to the alternative above it. An inline
+        // `A | B` lead carries it into every clone when the slice closes (expandAlternativeEvents).
+        const group =
+          oneofStart === null && target.alternativeGroup !== undefined
+            ? currentSlice.elements.filter((e) => e.alternativeGroup === target.alternativeGroup)
+            : [target];
+        for (const e of group) (e.invariants ??= []).push(structuredClone(inv));
         continue;
+      }
+      if (keyword === "oneof") {
+        if (oneofStart !== null) throw new ParseError("`oneof` blocks do not nest", lineNo);
+        if (remainder !== "{") {
+          throw new ParseError("`oneof` must be written `oneof {` on its own line, with the alternative `event` lines below", lineNo);
+        }
+        oneofStart = currentSlice.elements.length;
+        oneofLine = lineNo;
+        continue;
+      }
+      if (oneofStart !== null && keyword !== "event") {
+        throw new ParseError(
+          `'${keyword}' is not valid inside a oneof block — it lists alternative \`event\`s of one command (close it with '}')`,
+          lineNo,
+        );
       }
       if (!ELEMENT_KEYWORDS.has(keyword as ElementKind)) {
         throw new ParseError(
@@ -396,6 +427,9 @@ export function parse(source: string): ModelNode {
     }
   }
 
+  if (oneofStart !== null) {
+    throw new ParseError("`oneof` block is missing a closing '}'", oneofLine);
+  }
   if (currentElement) {
     throw new ParseError(
       `field block for "${currentElement.name}" is missing a closing '}'`,
@@ -514,6 +548,58 @@ const CONSUMES_RE = new RegExp(`(?:^|\\s)consumes\\s+(${CONSUMES_REF}(?:\\s*,\\s
  *  text name (`automation Billing consumes credits`) has no colon and stays part of the name. */
 const CONSUMES_LEFTOVER_RE = /(?:^|\s)consumes\s+([^\s"]*:[^\s"]*)/;
 
+/** GH #278: expand each `event A | B @Ctx` lead into one full event per alternative, in
+ *  declaration order, all sharing the lead's clauses and field block (cloned) and tagged with
+ *  the same `alternativeGroup` (the lead's name; model/model.ts turns it into the lead's id).
+ *  Standalone `invariant` lines were attached to the lead and are cloned to every alternative. */
+function expandAlternativeEvents(slice: SliceNode): void {
+  if (!slice.elements.some((e) => e.alternativeNames)) return;
+  const out: ElementNode[] = [];
+  for (const el of slice.elements) {
+    const names = el.alternativeNames;
+    if (!names) {
+      out.push(el);
+      continue;
+    }
+    delete el.alternativeNames;
+    el.alternativeGroup = el.name;
+    out.push(el);
+    for (const name of names) {
+      out.push({
+        ...structuredClone(el),
+        name,
+        alternativeGroup: el.name,
+      });
+    }
+  }
+  slice.elements = out;
+}
+
+/** GH #278: close a `oneof { event A @Ctx { … } event B @Ctx { … } }` block — its elements are the
+ *  alternatives: each keeps its own clauses and fields, all must share one context. */
+function closeOneof(slice: SliceNode, start: number, openLine: number): void {
+  const alts = slice.elements.slice(start);
+  if (alts.length < 2) {
+    throw new ParseError("a `oneof` block needs at least two alternative `event`s", openLine);
+  }
+  for (const a of alts) {
+    if (a.alternativeNames) {
+      throw new ParseError("`event A | B` is the inline form — inside `oneof { … }` write one `event` per line", a.line);
+    }
+  }
+  const ctx = alts[0].context ?? "";
+  for (const a of alts) {
+    if ((a.context ?? "") !== ctx) {
+      throw new ParseError(
+        `alternatives share one context ("${a.name}" is on @${a.context ?? "(default)"}, "${alts[0].name}" on @${alts[0].context ?? "(default)"}) — ` +
+          "for outcomes on different contexts use separate `event` lines (a fan, docs/timeline.md Law 1)",
+        a.line,
+      );
+    }
+  }
+  for (const a of alts) a.alternativeGroup = alts[0].name;
+}
+
 function parseElement(
   kind: ElementKind,
   raw: string,
@@ -521,6 +607,29 @@ function parseElement(
 ): ElementNode {
   const node: ElementNode = { kind, name: "", line };
   const rest = extractClauses(node, raw, line);
+  // GH #278: `event A | B @Ctx` — alternative events of one command on one context. `|` is
+  // never part of a name in the unquoted form; a quoted name (`"A | B"`) keeps it literally.
+  const SHARED_CTX =
+    "alternatives share one context — write `event A | B @Context`; for outcomes on different contexts use " +
+    "separate `event` lines (a fan, docs/timeline.md Law 1)";
+  if (kind === "event" && (node.context ?? "").includes("|")) throw new ParseError(SHARED_CTX, line);
+  if (kind === "event" && indexOfUnquoted(rest, "|") >= 0) {
+    const names: string[] = [];
+    let tail = rest;
+    for (;;) {
+      const at = indexOfUnquoted(tail, "|");
+      names.push(unquote(at < 0 ? tail : tail.slice(0, at)));
+      if (at < 0) break;
+      tail = tail.slice(at + 1);
+    }
+    if (rest.split("|").slice(0, -1).some((part) => /(^|\s)@\S/.test(part))) throw new ParseError(SHARED_CTX, line);
+    if (names.some((n) => !n)) {
+      throw new ParseError("an alternative-events line needs a name on both sides of every '|'", line);
+    }
+    node.name = names[0];
+    node.alternativeNames = names.slice(1);
+    return node;
+  }
   node.name = unquote(rest);
   if (!node.name) throw new ParseError(`${kind} requires a name`, line);
   return node;

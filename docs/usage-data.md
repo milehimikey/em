@@ -69,6 +69,7 @@ affected lines written by hand.
 | command carries second intent |
 | command nothing triggers |
 | command produces no event |
+| command repeated across slices |
 | consecutive same-context state changes |
 | continuation slice has its own doc |
 | cross-slice note not ratified by target doc |
@@ -124,6 +125,7 @@ affected lines written by hand.
 <!-- GENERATED:usage-categories-errors:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Category |
 |---|
+| alternative events without command |
 | arrow endpoint unresolved |
 | arrow points backward |
 | composite tag references unknown field |

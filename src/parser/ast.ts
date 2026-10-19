@@ -86,6 +86,13 @@ export interface TagClause {
 export interface ElementNode {
   kind: ElementKind;
   name: string;
+  /** `event A | B @Ctx` (GH #278), parse-time only: the names after the first alternative,
+   *  until the slice closes and the parser expands them into sibling events. Never present in
+   *  a finished AST. */
+  alternativeNames?: string[];
+  /** Alternative events (GH #278): the lead alternative's name, shared by every alternative of
+   *  one `event A | B @Ctx` line — one command, one of several facts. */
+  alternativeGroup?: string;
   /** @Persona tag — only meaningful for `ui`. */
   persona?: string;
   /** @Context tag — only meaningful for `event`. */

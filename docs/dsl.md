@@ -63,7 +63,7 @@ same element kind.
 | `ui` | persona rows | screen / interface | `@Persona` | `note`, `issue`, `divergence`, `{ fields }` |
 | `command` | API | state-changing request (imperative name) | — | `note`, `issue`, `divergence`, `{ fields }` |
 | `view` | API | read model / projection | — | `from`, `again`, `public`, `note`, `issue`, `divergence`, `{ fields }` |
-| `event` | context rows | recorded fact (past-tense name) | `@Context` | `note`, `issue`, `divergence`, `public`, `loops-to`, `{ fields }` |
+| `event` | context rows | recorded fact (past-tense name); `A \| B` lists alternatives | `@Context` | `note`, `issue`, `divergence`, `public`, `loops-to`, `{ fields }` |
 | `processor` / `automation` / `saga` / `translation` | automation | system reaction / boundary adapter | — | `from`, `note`, `issue`, `divergence`, `{ fields }` |
 
 ### Swimlane bands, top to bottom
@@ -83,6 +83,65 @@ captures everything after `@` to the end of the line (`ui Ticket Queue @Customer
 matches `persona Customer Service`), since every other trailing clause is stripped before
 the tag is read. Tagging an event into an external vendor's own context row is how an
 external-system call is modeled — see [patterns.md](patterns.md#calling-an-external-system).
+
+### Alternative events — `event A | B @Context`
+
+One command under one rule set may record **one of several facts**. Write them as alternatives in
+one slice instead of repeating the command in a slice per event. There are two forms.
+
+**Inline shorthand — identical payloads.** One `event` line, names separated by `|`; the line's `@Context`,
+clauses and `{ fields }` are copied to every alternative:
+
+```em
+slice "Create External ID" {
+  ui Create External ID @API
+  command CreateExternalId note "slices/pim-0040-create-external-id.md"
+  event ProductExternalIdCreated | VariantExternalIdCreated @Product public { externalId: String }
+}
+```
+
+**Block form — each alternative keeps its own payload and clauses.** Use it when the facts differ in fields,
+`public`, `loops-to` or `note`:
+
+```em
+slice "Create External ID" {
+  command CreateExternalId
+  oneof {
+    event ProductExternalIdCreated @Product public { productId: UUID, externalId: String }
+    event VariantExternalIdCreated @Product { variantId: UUID, externalId: String }
+  }
+  invariant INV-PIM-1 "an external id is unique per system"
+}
+```
+
+Rules for both forms:
+
+- Each alternative is a **full event**: `from`, `again`, `loops-to`, `arrow`, tags, `public` and `note`
+  reference it by its own name. In the block form each alternative carries its own clauses and field list;
+  a standalone `tag` line applies to the alternative above it.
+- **All alternatives share one context.** Alternatives on different contexts are a parse error — use
+  separate `event` lines instead (a fan, [timeline.md](timeline.md) Law 1). `event A @Alpha | B @Beta` is
+  therefore also a parse error.
+- A standalone `invariant` line after an alternatives line or a closed `oneof { … }` binds to **every**
+  alternative (one rule set, only the fact differs) and is declared once. Inside a `oneof` it binds to the
+  alternative above it.
+- The alternatives **share one cell** in the context's event lane — no `grid-collision`. `em render` draws them
+  as one box, the names separated by an *or* line, with one arrow from the command.
+- `model.edges` is unchanged: the command has an edge to each alternative. `em export` marks them with
+  `alternativeGroup` (schema `1.19`).
+- `em slice sync` writes **one** event region headed `**Records one of:**` with an `**Event:**` marker and field
+  table per alternative; `em slice new --wire` seeds one Given/When/Then scenario per alternative.
+- A slice with alternatives but no `command` is the error `alternative-events-no-command`. The same command
+  name declared in several slices is the warning `command-repeated-across-slices` — the old one-column-per-
+  event shape this form replaces.
+- **Shared repeats (#279):** when an alternative is also recorded by another command elsewhere, write it
+  bare (`event A @Ctx`) so it inherits the first declaration's fields. An inline line's `{ fields }` are
+  copied onto every alternative and would trip `shared-event-field-mismatch`, so use a `oneof` when only one
+  alternative is a shared repeat.
+- A quoted name keeps a literal `|` (`event "A | B"`). A `oneof` needs at least two `event`s and holds
+  nothing else.
+- In the render the alternatives are one box, so every arrow into a later read model leaves it from one point:
+  the diagram does not show which alternative feeds which view (the model's `from` clauses do).
 
 ## Wiring data flow
 

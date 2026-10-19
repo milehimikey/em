@@ -64,10 +64,14 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
 
   // Grid collisions: two elements of the same band landed in one slice cell.
   for (const c of grid.collisions) {
+    const bothEvents = c.dropped.kind === "event" && c.kept.kind === "event";
     pushDiag(diags, "grid-collision", {
       message:
         `"${c.dropped.name}" collides with "${c.kept.name}" in the same ` +
-        `slice/lane (${c.rowKey}); split them into separate slices`,
+        `slice/lane (${c.rowKey}); split them into separate slices` +
+        (bothEvents
+          ? ` — or, if they are two outcomes of one command on one context, write \`event A | B @Context\``
+          : ""),
       line: c.dropped.line,
       refs: [refOf(c.dropped.id), refOf(c.kept.id)],
     });
@@ -105,6 +109,20 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
             ` — move it to the slice that displays the read model, or drop it`,
           line: ui.line,
           refs: [refOf(ui.id), refOf(auto.id)],
+        });
+      }
+    }
+
+    // GH #278: `event A | B @Ctx` alternatives are the outcomes of ONE command's decision.
+    if (!command) {
+      const alt = events.find((e) => e.alternativeGroup !== undefined);
+      if (alt) {
+        pushDiag(diags, "alternative-events-no-command", {
+          message:
+            `alternative events ${events.filter((e) => e.alternativeGroup === alt.alternativeGroup).map((e) => `"${e.name}"`).join(" | ")} share no command in slice "${slice.name}"; ` +
+            `alternatives are the possible outcomes of one command — add the command that records one of them`,
+          line: alt.line,
+          refs: events.filter((e) => e.alternativeGroup === alt.alternativeGroup).map((e) => refOf(e.id)),
         });
       }
     }
@@ -798,6 +816,29 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
         `to inherit its fields, tags and public, or make them identical`,
       line: el.line,
       refs: [refOf(el.id), refOf(first.id)],
+    });
+  }
+
+  // GH #278: one command repeated across slices — a column per outcome. Continuation slices
+  // (every non-`ui` element an `again` view) declare no command, so none can contribute here.
+  const commandSlices = new Map<string, Element[]>();
+  for (const el of model.elements) {
+    if (el.kind !== "command") continue;
+    const k = normalizeName(el.name);
+    const bucket = commandSlices.get(k);
+    if (bucket) bucket.push(el);
+    else commandSlices.set(k, [el]);
+  }
+  for (const els of commandSlices.values()) {
+    const slices = [...new Set(els.map((e) => e.sliceIndex))];
+    if (slices.length < 2) continue;
+    pushDiag(diags, "command-repeated-across-slices", {
+      message:
+        `command "${els[0].name}" is declared in ${slices.length} slices (${slices.map((i) => `"${model.slices[i].name}"`).join(", ")}); ` +
+        `one command with several possible outcomes is ONE slice — record them as ` +
+        `\`event A | B @Context\` alternatives instead of one column per event`,
+      line: els[1].line,
+      refs: els.map((e) => refOf(e.id)),
     });
   }
 

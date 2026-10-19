@@ -49,6 +49,20 @@ export const RULES = {
     fix: "Split the colliding elements into separate slices.",
     usageCategory: "same-band collision",
   },
+  "command-repeated-across-slices": {
+    severity: "warning",
+    title: "Command repeated across slices",
+    fix: "Merge the slices: one command with several outcomes is one slice — `event A | B @Context`.",
+    usageCategory: "command repeated across slices",
+    docAnchor: "shape",
+    family: "shape",
+  },
+  "alternative-events-no-command": {
+    severity: "error",
+    title: "Alternative events without a command",
+    fix: "Add the command whose decision records one of the alternatives, in the same slice.",
+    usageCategory: "alternative events without command",
+  },
   "ui-shares-slice-with-automation": {
     severity: "warning",
     title: "`ui` shares slice with a reaction",

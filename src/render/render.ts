@@ -228,6 +228,19 @@ function withOverlays(
     svg,
     new Set([...model.byId.keys(), ...sliceOverlayIds(grid), ...storylineBandIds(grid)]),
   );
+  // GH #278: non-lead alternatives share the lead's box, so they share its rectangle.
+  const leadByGroup = new Map<string, string>();
+  for (const el of model.elements) {
+    if (el.alternativeGroup !== undefined && !leadByGroup.has(`${el.sliceIndex}:${el.alternativeGroup}`)) {
+      leadByGroup.set(`${el.sliceIndex}:${el.alternativeGroup}`, el.id);
+    }
+  }
+  for (const el of model.elements) {
+    if (el.alternativeGroup === undefined) continue;
+    const lead = leadByGroup.get(`${el.sliceIndex}:${el.alternativeGroup}`);
+    const r = lead ? rects.get(lead) : undefined;
+    if (lead && lead !== el.id && r) rects.set(el.id, r);
+  }
   const { defs, group, bbox } = buildEdgeOverlay(model, rects);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);

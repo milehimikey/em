@@ -181,6 +181,9 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // false elsewhere. Additive-only.
 // Also 1.19 (GH #279): `element.logicalRef` is also set on an event recorded again in a later slice
 // (same name and context) — it points at the first declaration. Additive-only; this one 1.19 bump covers every 1.18.0 export change.
+// 1.19 (GH #278), same schema version: `element.alternativeGroup: string | null` — for the events
+// of one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (shared by all of them,
+// so a consumer groups by equal value); null on every other element. Additive-only.
 export const SCHEMA_VERSION = "1.19";
 
 export interface ExportResult {
@@ -221,6 +224,10 @@ export interface ElementExport {
   tags: TagExport[] | null;
   renamedFrom: string[] | null;
   logicalRef: string | null;
+  /** Alternative events (GH #278, schema 1.19): the ref of the first alternative of the
+   *  `event A | B @Ctx` line or `oneof { … }` block this event belongs to — identical on every alternative; `null` on
+   *  any other element. */
+  alternativeGroup: string | null;
   /** `loops-to "View"` clause(s) (MIL-199, schema 1.11) — event only, `null` on every other
    *  kind and on an event with none. Same shape as `from`: each target's declared `name` plus
    *  its resolved `ref` (the earlier `view` instance it re-feeds). `ref` is `null` only when
@@ -621,6 +628,7 @@ export function buildExportDoc(
           (el.kind === "view" && el.again === true) || (el.kind === "event" && el.logicalId !== el.id)
             ? refOf(el.logicalId)
             : null,
+        alternativeGroup: el.alternativeGroup !== undefined ? refOf(el.alternativeGroup) : null,
         loopsTo: loopsToOf(el),
         consumes: el.consumes && el.consumes.length > 0 ? [...el.consumes] : null,
         invariants:

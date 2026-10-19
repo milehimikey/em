@@ -745,6 +745,7 @@ slice
     // MIL-266: with a model in hand (--wire), the doc's generated regions are filled from it;
     // without one they carry the template's placeholders until `em slice sync` fills them.
     let regions: GeneratedRegion[] | undefined;
+    let alternatives: string[] = [];
     if (opts.wire) {
       const { model, refs, diagnostics, source } = compileFile(opts.wire);
       printDiagnostics(diagnostics);
@@ -759,12 +760,14 @@ slice
       }
       wired = result;
       regions = buildSliceRegions(model, [refs.sliceKeys.indexOf(key)]);
+      const sliceEvents = model.slices[refs.sliceKeys.indexOf(key)].elements.filter((e) => e.kind === "event");
+      alternatives = sliceEvents.filter((e) => e.alternativeGroup !== undefined).map((e) => e.name);
     }
 
     mkdirSync(dir, { recursive: true });
     const content = opts.stub
       ? buildStubDocContent(name, opts.pattern, opts.swimlane)
-      : buildSliceDocContent(name, key, opts.pattern, opts.swimlane, regions);
+      : buildSliceDocContent(name, key, opts.pattern, opts.swimlane, regions, alternatives);
     writeFileSync(path, content);
     console.log(`wrote ${path}`);
 

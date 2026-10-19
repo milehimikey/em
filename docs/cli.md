@@ -635,6 +635,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     order: `{ name, source, after, sliceKeys }` — `source`/`after` are `null` when the block gives
     none, `sliceKeys` the member slices' export keys in order. Every slice also carries
     `storyline` (`string | null`, the block it is declared in).
+  - Each element carries `alternativeGroup` (added in schema `1.19`, GH #278): for the events of
+    one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (equal on every
+    alternative, so group by value); `null` on every other element. `model.edges` is unchanged —
+    the command has one edge to each alternative.
   - `key` (added in schema `1.10`, MIL-193) is the model's own key in em's one cross-model
     addressing scheme — see **Model-qualified refs** below for how it's derived and used. The
     `--slice` envelope carries the same value as top-level `modelKey`.

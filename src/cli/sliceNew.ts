@@ -63,6 +63,9 @@ export function buildSliceDocContent(
   pattern: SlicePattern,
   swimlane: string,
   regions: GeneratedRegion[] = placeholderRegions(),
+  /** GH #278: the alternatives of an `event A | B @Ctx` line the slice records, in order —
+   *  the scenario template gets one Then-case (one scenario) per alternative. */
+  alternatives: string[] = [],
 ): string {
   const block = (kind: RegionKind): string[] => {
     const out: string[] = [];
@@ -115,14 +118,28 @@ export function buildSliceDocContent(
     INVARIANTS_ELABORATE_COMMENT,
     ``,
     `## Scenarios (Given / When / Then)`,
-    `### Scenario: Happy path`,
-    `- **Given:**`,
-    `  - {{starting state / prior events}}`,
-    `- **When:**`,
-    `  - {{command/trigger}}`,
-    `- **Then:**`,
-    `  - {{event(s) recorded}}`,
-    `  - {{resulting read-model change}}`,
+    ...(alternatives.length > 1
+      ? alternatives.flatMap((alt, i) => [
+          `### Scenario: Records ${alt}`,
+          `- **Given:**`,
+          `  - {{starting state / prior events that make this the outcome}}`,
+          `- **When:**`,
+          `  - {{command/trigger}}`,
+          `- **Then:**`,
+          `  - ${alt} is recorded`,
+          `  - {{resulting read-model change}}`,
+          ...(i < alternatives.length - 1 ? [``] : []),
+        ])
+      : [
+          `### Scenario: Happy path`,
+          `- **Given:**`,
+          `  - {{starting state / prior events}}`,
+          `- **When:**`,
+          `  - {{command/trigger}}`,
+          `- **Then:**`,
+          `  - {{event(s) recorded}}`,
+          `  - {{resulting read-model change}}`,
+        ]),
     ``,
     `## Alternate & Error Flows`,
     `- {{e.g. external call fails → retry policy / compensating event}}`,

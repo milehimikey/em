@@ -23,6 +23,17 @@ slice "Close Account" {
 }
 ```
 
+Alternatives are a fan too, not a chain. When the events are *outcomes of one decision* — the command
+records **one of** them — write `event A | B @Context`: the alternatives share one box with an *or* marker and
+the command has one arrow, still never event to event.
+
+```em
+slice "Create External ID" {
+  command CreateExternalId
+  event ProductExternalIdCreated | VariantExternalIdCreated @Product
+}
+```
+
 ## Law 2 — forward-only
 
 Arrows never point right-to-left. Time flows one way, so a `from` source or an `arrow` that

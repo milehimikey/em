@@ -26,6 +26,7 @@
 
 import { Element, NormalizedModel, normalizeName, resolveTypeRef } from "../model/model.js";
 import { againInstancesOf, viewSourceNames } from "../model/continuation.js";
+import { alternativesOf } from "../layout/grid.js";
 import { kebabSlug } from "../util/slug.js";
 import { parseScenarios } from "./scenarios.js";
 
@@ -128,6 +129,17 @@ function collectionVerb(eventName: string): string | undefined {
   return COLLECTION_VERBS[(words[words.length - 1] ?? "").toLowerCase()];
 }
 
+/** An `event A | B @Ctx` line's event region (GH #278): one "records one of" heading, then each
+ *  alternative as its own `**Event:**` marker with its own field table. */
+function alternativesBody(model: NormalizedModel, lead: Element): string[] {
+  const out = ["**Records one of:**", ""];
+  alternativesOf(model, lead).forEach((alt, i) => {
+    if (i > 0) out.push("");
+    out.push(...eventBody(model, alt));
+  });
+  return out;
+}
+
 function viewBody(model: NormalizedModel, el: Element): string[] {
   // The union across every `again` instance (GH #280): each instance lists only the NEW events.
   const sources = viewSourceNames(model, el);
@@ -220,6 +232,8 @@ export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]
     const els: Element[] = [];
     for (const el of elements) {
       if (el.kind !== kind) continue;
+      // A non-first alternative is rendered inside its lead's region (alternativesBody).
+      if (el.alternativeGroup !== undefined && el.alternativeGroup !== el.id) continue;
       if (seenLogical.has(el.logicalId)) continue;
       seenLogical.add(el.logicalId);
       const s = kebabSlug(el.name);
@@ -227,7 +241,9 @@ export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]
       seenSlug.add(s);
       els.push(el);
     }
-    const build = kind === "command" ? commandBody : kind === "event" ? eventBody : viewBody;
+    const eventRegion = (m: NormalizedModel, e: Element): string[] =>
+      e.alternativeGroup !== undefined ? alternativesBody(m, e) : eventBody(m, e);
+    const build = kind === "command" ? commandBody : kind === "event" ? eventRegion : viewBody;
     if (els.length === 0) {
       regions.push({ name: `${SLICE_REGION_PREFIX}${kind}`, kind, body: noneBody(kind) });
     } else if (els.length === 1) {
@@ -237,15 +253,37 @@ export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]
     }
   }
 
-  const invLines: string[] = [];
+  const invEntries: { slice: number; line: number; text: string }[] = [];
+  const seenAltInv = new Set<string>();
   for (const el of elements) {
     if (el.kind !== "command" && el.kind !== "event") continue;
     for (const inv of el.invariants ?? []) {
+      let suffix = "";
+      if (el.alternativeGroup !== undefined) {
+        // GH #278: a rule every alternative carries is one rule (listed once); one declared inside
+        // a `oneof` binds to its own alternative only, and the list says so.
+        const alts = elements.filter((e) => e.sliceIndex === el.sliceIndex && e.alternativeGroup === el.alternativeGroup);
+        if (alts.every((e) => (e.invariants ?? []).some((i) => i.id === inv.id))) {
+          const k = `${el.sliceIndex}|${el.alternativeGroup}|${inv.id}`;
+          if (seenAltInv.has(k)) continue;
+          seenAltInv.add(k);
+        } else {
+          suffix = ` — binds to \`${el.name}\` only`;
+        }
+      }
       // `**INV-X**` + an em-dash — deliberately NOT the `**INV-X:**` declaring label
       // (invariants/declared-in-both): the model declares the ID, this list only restates it.
-      invLines.push(inv.rule ? `- **${inv.id}** — ${inv.rule}` : `- **${inv.id}**`);
+      invEntries.push({
+        slice: el.sliceIndex,
+        line: inv.line,
+        text: (inv.rule ? `- **${inv.id}** — ${inv.rule}` : `- **${inv.id}**`) + suffix,
+      });
     }
   }
+  // Source order (the alternatives' shared rules are cloned onto each alternative, so element
+  // order alone would put them out of place).
+  invEntries.sort((x, y) => x.slice - y.slice || x.line - y.line);
+  const invLines = invEntries.map((e) => e.text);
   regions.push({
     name: `${SLICE_REGION_PREFIX}invariants`,
     kind: "invariants",

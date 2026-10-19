@@ -37,6 +37,8 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
   const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 
   const sideLaneBySource = new Map<string, number>();
+  const drawn = new Set<string>();
+  const rectKey = new Map<Rect, string>();
   for (const e of semanticEdges(model)) {
     // A `loops-to` edge (MIL-199) is never drawn as an arrow — the timeline's forward-only
     // laws stay intact; the loop is a numbered marker + legend entry instead
@@ -47,6 +49,11 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
     const f = rects.get(e.from);
     const t = rects.get(e.to);
     if (!f || !t) continue;
+    // GH #278: alternatives share one box (one rect object), so an edge to a second
+    // alternative from the same source would repeat the first's path — draw it once.
+    const drawnKey = `${e.from}>${rectKey.get(t) ?? (rectKey.set(t, e.to), e.to)}`;
+    if (drawn.has(drawnKey)) continue;
+    drawn.add(drawnKey);
     const color = edgeColorFor(model.byId.get(e.from)?.kind);
     const fSlice = model.byId.get(e.from)?.sliceIndex;
     const tSlice = model.byId.get(e.to)?.sliceIndex;
@@ -140,7 +147,7 @@ function isObstructed(
   for (const el of model.slices[sliceIndex]?.elements ?? []) {
     if (el.id === fromId || el.id === toId) continue;
     const r = rects.get(el.id);
-    if (!r) continue;
+    if (!r || r === f || r === t) continue;
     if (r.left < x && r.right > x && r.top < bottom && r.bottom > top) return true;
   }
   return false;

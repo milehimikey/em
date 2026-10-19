@@ -51,6 +51,13 @@ export interface LayoutOptions {
   keepEmptyLanes?: boolean;
 }
 
+/** Every alternative of the given event's `event A | B @Ctx` line, in declaration order
+ *  (just the event itself when it has no alternatives). The first one is the grid cell's element. */
+export function alternativesOf(model: NormalizedModel, el: Element): Element[] {
+  if (el.alternativeGroup === undefined) return [el];
+  return model.elements.filter((e) => e.alternativeGroup === el.alternativeGroup && e.sliceIndex === el.sliceIndex);
+}
+
 export function placeholderId(row: number, col: number): string {
   return `__ph_${row}_${col}`;
 }
@@ -114,7 +121,11 @@ export function layout(model: NormalizedModel, opts: LayoutOptions = {}): Grid {
     const r = indexOf.get(rowKeyForElement(el));
     if (r === undefined) continue; // unreachable, rows cover all kinds
     const c = el.sliceIndex;
-    if (cells[r][c]) {
+    const occupant = cells[r][c];
+    // GH #278: alternatives of one `event A | B @Ctx` line share their context's cell — the
+    // first is the cell's element, the rest are drawn inside its box (emit/dot.ts).
+    if (occupant && el.alternativeGroup !== undefined && occupant.alternativeGroup === el.alternativeGroup) continue;
+    if (occupant) {
       collisions.push({ rowKey: rows[r].key, col: c, kept: cells[r][c]!, dropped: el });
       continue;
     }

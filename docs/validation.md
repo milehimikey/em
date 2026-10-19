@@ -14,7 +14,8 @@ findings without parsing message text. See [cli.md](cli.md#em-export-file).
 
 | Rule | Fix |
 |---|---|
-| Two elements of the same band in one slice (a collision — e.g. two commands, or two `ui`s in the same persona row) | Split them into separate slices |
+| Two elements of the same band in one slice (a collision — e.g. two commands, or two `ui`s in the same persona row) | Split them into separate slices — or, when both are `event`s that are two outcomes of one command on one context, write `event A \| B @Context` (or a `oneof { … }` block, [dsl.md](dsl.md#alternative-events--event-a--b-context)) |
+| `event A \| B @Context` alternatives in a slice with no command (`alternative-events-no-command`, GH #278) | Add the command whose decision records one of them, in the same slice |
 | `view X from "Event"` where no such event exists | Fix the name, or add the missing event |
 | An event feeding a view instance that sits earlier on the timeline | Add `view X again` at the point where the event lands, and move the source there (see [timeline.md](timeline.md)) |
 | A reaction's `from "View"` where no such read model exists | Fix the name, or add the missing view |
@@ -246,6 +247,13 @@ The lint is exempt for a model with fewer than 2 distinct event contexts (no `@C
 or every event on one): there is nothing to interleave. A trailing `view ... again` instance is
 judged by its logical view's union of sources across all instances, consistent with the
 `slice sync` view region.
+
+`command-repeated-across-slices` (GH #278) is an advisory lint for the one-column-per-outcome shape: the
+same command name declared in several slices. One command with several possible outcomes is **one** slice —
+merge them and write the outcomes as alternatives, `event A | B @Context` or a `oneof { … }` block
+([dsl.md](dsl.md#alternative-events--event-a--b-context)). It fires once per command name; `refs` point at
+every declaration. (`alternative-events-no-command`, an error, fires on a slice with alternatives but no
+command.)
 
 Reorder by the story ("create a class, then its attributes, then a product that uses them") and
 the run breaks up; the lint goes quiet without any suppression. It is a warning like every other

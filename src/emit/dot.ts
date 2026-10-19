@@ -12,7 +12,7 @@
 // lines instead of fighting Graphviz's global edge router.
 
 import { Element, NormalizedModel } from "../model/model.js";
-import { Grid, headerCellId, nodeIdAt, placeholderId } from "../layout/grid.js";
+import { Grid, alternativesOf, headerCellId, nodeIdAt, placeholderId } from "../layout/grid.js";
 import { styleFor, storylineStyle } from "./theme.js";
 import { storylineIndexOfSlice } from "../model/storylines.js";
 
@@ -65,7 +65,7 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
     // so they keep their existing independent auto-grow behavior (docs/dsl.md already
     // documents this as acceptable — "tops drift slightly when field counts differ").
     const rowHeight =
-      row.band === "header" ? HEADER_H : row.band === "storyline" ? STORYLINE_H : rowBoxHeight(grid, r);
+      row.band === "header" ? HEADER_H : row.band === "storyline" ? STORYLINE_H : rowBoxHeight(model, grid, r);
     for (let c = 0; c < grid.cols; c++) {
       if (row.band === "storyline") {
         // A real (filled) node in a storyline's column so Graphviz reports its rectangle; every
@@ -77,7 +77,7 @@ export function emitDot(model: NormalizedModel, grid: Grid): string {
         L.push("  " + headerCell(c, grid.sliceNames[c]));
       } else {
         const el = grid.cells[r][c];
-        L.push("  " + (el ? elementCell(el, rowHeight) : emptyCell(r, c, rowHeight)));
+        L.push("  " + (el ? elementCell(el, rowHeight, alternativesOf(model, el)) : emptyCell(r, c, rowHeight)));
       }
     }
   });
@@ -122,20 +122,42 @@ function naturalBoxHeight(name: string): number {
  *  row has none. Fields-bearing elements don't contribute: their real rendered
  *  height is decided by Graphviz's HTML-table layout, not known at DOT-emission
  *  time, so they're excluded from this max (see the call site's comment). */
-function rowBoxHeight(grid: Grid, r: number): number {
+function rowBoxHeight(model: NormalizedModel, grid: Grid, r: number): number {
   let max = CELL_H;
   for (let c = 0; c < grid.cols; c++) {
     const el = grid.cells[r][c];
     if (el && !(el.fields && el.fields.length > 0)) {
-      max = Math.max(max, naturalBoxHeight(el.name));
+      max = Math.max(max, naturalBoxHeight(boxText(alternativesOf(model, el))));
     }
   }
   return max;
 }
 
-function elementCell(el: Element, rowHeight: number): string {
+/** The text of a box that lists alternatives (GH #278): the names joined by an "or" line. */
+function boxText(alts: Element[]): string {
+  return alts.map((a) => a.name).join("\nor\n");
+}
+
+function elementCell(el: Element, rowHeight: number, alts: Element[]): string {
   const s = styleFor(el.kind);
   const shape = el.kind === "ui" ? `"filled"` : `"filled,rounded"`;
+  if (alts.length > 1) {
+    // One box listing every alternative, each with its own field table, between "or" markers.
+    const rows: string[] = [];
+    alts.forEach((a, i) => {
+      if (i > 0) rows.push(`<TR><TD><FONT POINT-SIZE="9" COLOR="#5F6368"><I>or</I></FONT></TD></TR>`);
+      rows.push(`<TR><TD><B>${esc(a.name)}</B></TD></TR>`);
+      for (const f of a.fields ?? []) {
+        const ftype = f.type ? ` : <FONT COLOR="#5F6368">${esc(f.type)}</FONT>` : "";
+        rows.push(`<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9">${esc(f.name)}${ftype}</FONT></TD></TR>`);
+      }
+    });
+    return (
+      `${el.id} [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1">${rows.join("")}</TABLE>>, ` +
+      `fillcolor="${s.fill}", color="${s.stroke}", fontcolor="${s.fontColor}", style=${shape}, ` +
+      `shape=box, fixedsize=false, width=${CELL_W}, margin="0.04,0.03"];`
+    );
+  }
   if (el.fields && el.fields.length > 0) {
     // UML-style box: title, a divider rule, then the fields. The HTML table
     // auto-sizes the box (height grows with the field count); width stays at

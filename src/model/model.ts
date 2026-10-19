@@ -68,6 +68,9 @@ export interface Element {
   /** Model-declared `invariant INV-… "rule"` lines — command or event only (MIL-265).
    *  `undefined` when absent. See `collectModelInvariants` for the model-wide list. */
   invariants?: InvariantDecl[];
+  /** event-only (GH #278): shared by every alternative of one `event A | B @Ctx` line — the id
+   *  of the group's first alternative. The alternatives share one event-lane cell. */
+  alternativeGroup?: string;
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -187,8 +190,18 @@ export const MODEL_INVARIANT_ID_RE = /^INV-[A-Z0-9]{2,4}-[0-9]+$/;
 /** Every model-declared invariant, in document order (slice, element, line). */
 export function collectModelInvariants(model: NormalizedModel): ModelInvariant[] {
   const out: ModelInvariant[] = [];
+  // GH #278: a standalone `invariant` after an alternatives line binds to every alternative — one
+  // declaration, so it is collected once per alternative group, not once per alternative.
+  const seenInGroup = new Set<string>();
   for (const element of model.elements) {
-    for (const inv of element.invariants ?? []) out.push({ id: inv.id, rule: inv.rule, line: inv.line, element });
+    for (const inv of element.invariants ?? []) {
+      if (element.alternativeGroup !== undefined) {
+        const k = `${element.sliceIndex}|${element.alternativeGroup}|${inv.id}`;
+        if (seenInGroup.has(k)) continue;
+        seenInGroup.add(k);
+      }
+      out.push({ id: inv.id, rule: inv.rule, line: inv.line, element });
+    }
   }
   return out;
 }
@@ -208,6 +221,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
   const firstViewIdByName = new Map<string, string>();
   const firstEventByNameContext = new Map<string, Element>();
   let hasAutomation = false;
+  const altLead = new Map<string, string>();
 
   const makeId = (name: string): string => dedupe(slug(name), usedIds, "_");
 
@@ -259,6 +273,11 @@ export function normalize(ast: ModelNode): NormalizedModel {
         consumes: el.consumes,
         invariants: el.invariants,
       };
+      if (el.alternativeGroup !== undefined) {
+        const gk = `${sliceIndex}:${el.alternativeGroup}`;
+        element.alternativeGroup = altLead.get(gk) ?? element.id;
+        altLead.set(gk, element.alternativeGroup);
+      }
 
       if (el.kind === "ui") {
         const persona = el.persona ?? personas[0] ?? DEFAULT_PERSONA;
