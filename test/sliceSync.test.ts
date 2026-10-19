@@ -240,10 +240,12 @@ describe("em slice sync (CLI)", () => {
     const gate = em(["validate", "m.em", "--slice-ready", "pay"], dir);
     expect(gate.status).toBe(1);
     expect(gate.stdout).toBe('slice "pay" is NOT ready-to-implement\n');
-    // Only the optIn twin (error, refs [key]) is scoped to the slice; the plain warning carries no ref.
-    expect(gate.stderr).toBe(
+    // The optIn twin (error, refs [key]) is the blocker; the plain structured-section warning carries no ref.
+    // GH #293: advisory scenario-quality warnings on this slice are printed too (never gating).
+    expect(gate.stderr).toContain(
       '  error:1 slice "pay"\'s doc slices/pay.md: scenario "Happy path" has no **Then:** — every `### Scenario:` block needs Given, When and Then bullets\n',
     );
+    expect(gate.stderr).not.toContain("slice doc \"slices/pay.md\" (slice \"pay\"):");
   });
 
   it("regenerating every example slice doc produces no diff at all", () => {
