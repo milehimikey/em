@@ -201,6 +201,16 @@ clean six-directory layout. Nothing in your model files, slice docs, or `.event-
 state changes; only the skill's own vendored layout does. `em skill check` flags a stale or
 partially-upgraded layout as drifted if you skip both.
 
+## Evaluating model quality
+
+To measure how well a PRD or spec turns into a model (over-decomposition against a reference
+slicing, entity-clustered slicing, event recall, rerun agreement across fresh sessions, and when
+a heavier classifier such as Jev would be worth adding), follow the protocol in
+[`eval/README.md`](../eval/README.md) in the em repository. It defines the arms (today's skill,
+plus the outcome rule, plus the storyline rules, plus the PRD/spec path), the metrics, recording
+and results-summary templates that can come back without the inputs, and a public input set.
+`eval/score.mjs` computes the mechanical metrics from `em export` output.
+
 ## Implementing outside Claude Code
 
 The facilitation phases (`discover`/`extract` → `model` → `slice`) are Claude Code sessions,

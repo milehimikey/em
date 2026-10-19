@@ -1,0 +1,9 @@
+{
+  "input": "support-desk",
+  "reactions": [
+    { "name": "A customer opens a ticket", "slices": ["open-ticket"], "events": ["Ticket Opened"] },
+    { "name": "An agent sees the queue", "slices": ["ticket-queue"], "events": [] },
+    { "name": "An agent resolves a ticket", "slices": ["resolve-ticket", "ticket-queue-after-resolve"], "events": ["Ticket Resolved"] },
+    { "name": "A stale ticket is escalated", "slices": ["stale-tickets", "escalate-stale-ticket", "escalated-tickets"], "events": ["Ticket Escalated"] }
+  ]
+}

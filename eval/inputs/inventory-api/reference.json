@@ -1,0 +1,9 @@
+{
+  "input": "inventory-api",
+  "reactions": [
+    { "name": "A SKU is registered", "slices": ["register-sku"], "events": ["SKU Registered"] },
+    { "name": "Stock arrives", "slices": ["receive-stock"], "events": ["Stock Received"] },
+    { "name": "A client reads stock levels", "slices": ["stock-levels"], "events": [] },
+    { "name": "A client reserves stock", "slices": ["reserve-stock", "stock-levels-after-reservation"], "events": ["Stock Reserved"] }
+  ]
+}
