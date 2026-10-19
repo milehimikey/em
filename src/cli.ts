@@ -3819,6 +3819,7 @@ program
       if (result.emVersionCommit) console.log(`recorded: ${result.emVersionCommit}`);
       else console.log("Em version: already up to date — no commit needed");
       for (const h of result.report.human) console.log(`human: ${h.id}: ${h.reason}`);
+      printUpgradeShapeSection(file);
       return;
     }
 
@@ -3838,7 +3839,24 @@ program
     for (const h of report.human) console.log(`  ${h.id}: ${h.reason}`);
     const applicableCount = report.steps.filter((s) => s.applicable).length;
     console.log(`${applicableCount} step(s) applicable, ${report.human.length} human item(s) — re-run with --apply to apply mechanical steps`);
+    printUpgradeShapeSection(file);
   });
+
+/** GH #290: the closing section of `em upgrade`'s text report — `em validate --shape` over the model as it
+ *  stands, so an estate sees how many advisory shape findings it carries. Never writes a waive file:
+ *  baselining shapes you accept is a decision (`--waive-file`, and a `shape-accepted:` Decisions-log bullet). */
+function printUpgradeShapeSection(file: string): void {
+  const { model, diagnostics, refs, source } = compileFile(file);
+  const all = computeAllDiagnostics(file, model, refs, diagnostics, source);
+  const report = buildShapeReport(all, []);
+  console.log("");
+  console.log("Shape (em validate --shape, advisory):");
+  console.log(formatShapeText(report, all.filter((d) => d.severity === "error").length));
+  console.log(
+    "Record each shape you accept as `shape-accepted: <rule> <refs> — <reason>` in `.event-modeling.md` `## Decisions log`; " +
+      "to baseline an estate, run `em validate " + file + " --shape --waive-file <path>` (em upgrade writes no waive file).",
+  );
+}
 
 // Exported so dev tooling (e.g. scripts/generate-skill-docs.ts) can introspect the registered
 // commands/options without triggering a real CLI run. Guarded the same way Node's CJS

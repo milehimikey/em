@@ -4987,28 +4987,49 @@ The mechanical steps, in this fixed order:
    matches its hash in either scope is reported and left alone; so is a queued question whose doc
    has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
    would not match its hash afterwards.
-9. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
+9. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
+   command (identical command text, identical `ui`, no `note` or `issue` on the later slices) and
+   differ only in the event they record on one context become ONE slice recording `event A | B
+   @Ctx` (when the events' declarations are identical but for the name) or `oneof { … }` (when
+   fields or clauses differ). The first slice's name and key are kept; each later slice's
+   `slices/<key>.md`, if present, moves to `slices/superseded/<key>.md` with `superseded-by:
+   <first-key>@v<N>`; the kept doc's generated event region is synced unless the doc is signed.
+   A run with a declaration between its slices, a different storyline or an event name repeated is
+   skipped. The rewrite is verified by recompiling (no new error, same event names, same view
+   sources) before anything is written. The dry-run reason names each run before and after.
+10. **`fold-continuations`** (1.18.0, GH #290 / #287) — a hand-named continuation slice (only `view …
+   again` lines plus one `ui`, no notes) that directly follows its host command slice moves into the
+   host as `view X again from "E" [shown on "Screen"]` lines; consecutive continuations fold
+   together into the host's one synthesized `<host-key>--again` column. `shown on` is added only
+   when the old column's screen is not the host's first `ui`, and only if that screen is declared in
+   another slice. A continuation whose views are not fed by an event the host records, or that has
+   several screens it cannot reproduce, is left alone. `continuationOf` and `alsoReads` do not
+   change; a stray own doc of a folded slice stays (`continuation-has-own-doc`). Verified by
+   recompiling like the step above.
+11. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
    bound doc's generated view region (the read model's "built from" line now lists the union of
    `from` across its `again` instances): runs `em slice sync` on those docs, one commit. A ratified
    (`ready-to-implement` with `ratifiedBy:`) or shipped (`implemented`) doc is listed in the step's
    reason and left alone — regenerating its region would move its `ratifiedHash`; `em slice revise`
    it, then sync. Nothing else in a doc moves but the text between region markers.
-10. **`slice-index-stale`** (1.18.0, GH #290 / #275) — `em slice index --check` reports the README
+12. **`slice-index-stale`** (1.18.0, GH #290 / #275) — `em slice index --check` reports the README
     Slices table stale: regenerates it, one commit. Not applicable without a `README.md` carrying the
     `GENERATED:slices` markers.
-11. **`parking-lot-fragments`** (1.18.0, GH #290 / #283) — a `.event-modeling.md` parking-lot bullet
+13. **`parking-lot-fragments`** (1.18.0, GH #290 / #283) — a `.event-modeling.md` parking-lot bullet
     `- <text> (from slice <key>, deferred to v<n>)` whose `<text>` is a strict substring of exactly
     one Open Questions item of that slice's doc (the shape pre-1.18 `em slice defer` wrote) is
     rewritten to the item's label — the bold title, else the whole item, as `defer` writes it now.
     Bullets that already equal an item or its label, name an unbound slice, or match several items
     are left alone.
-12. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
+14. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
    to 2.0 (see [upgrading.md](upgrading.md#running-it)).
 
 Deliberately does **not** refuse when the model has validation errors: the old two-slice reaction
 shape `reaction-shape` migrates is itself such an error under the current `em validate` rules, so
 refusing up front would make that step (and the `predates-1.6` human item below) unreachable for
 exactly the repos that need them.
+
+The text report (dry-run and `--apply`) ends with a **Shape** section: `em validate --shape`'s table over the model as it stands and the `shape-accepted:` sentence (advisory, no waive file is written; `--check` and `--json` do not print it). Steps run in order and each re-reads the model the previous one wrote, so a dry-run's view of the later doc/index steps is approximate until `--apply`.
 
 `--apply` makes **one git commit per applicable step** (`em upgrade: <step-id> (<from> →
 <to>)`), so a reviewer can inspect or cherry-pick each one individually; refuses outright on a
@@ -5030,7 +5051,8 @@ The human list — detect-only, never applied, printed by every mode:
 | `unratified-constitution` | `constitution.md` (or `.specify/memory/constitution.md`) exists with an empty `ratifiedBy:` |
 | `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
 | `view-doc-sources-stale-signed` | (1.18.0, GH #290) `view-doc-sources-stale` found a stale view region in a ratified or shipped doc and left it alone — `em slice revise <key>`, then `em slice sync` |
-| `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only: an event is recorded by more than one command — legal now, one logical event, nothing to change |
+| `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only, shown while upgrading from before 1.18.0: an event is recorded by more than one command — legal now, one logical event, nothing to change |
+| `roster-not-initialised` | (1.18.0, GH #290 / #259) slice docs carry `ratifiedBy` / `reviewedBy` names and no `ratifiers.yaml` exists above the model — run `em roster init <model>.em` and review it; never generated by `em upgrade` |
 | `plugin-install-locally` | The `skill-plugin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
 
 `--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a

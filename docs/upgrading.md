@@ -42,8 +42,9 @@ cherry-pick each one individually:
    `deferred to v<n>` items are outside the hash now (GH #253, see [1.17.0](#1170)) — and move
    any question 1.16's `em slice defer` queued in `.event-modeling.md` into its doc as a deferred
    item. A doc whose body no longer matches its hash is reported and left alone.
-9. `view-doc-sources-stale`, `slice-index-stale`, `parking-lot-fragments` — three 1.18.0 steps (see
-   [1.18.0](#1180-unreleased)); they run just before `system-manifest`, which stays last.
+9. `collapse-alternative-events`, `fold-continuations`, `view-doc-sources-stale`, `slice-index-stale`,
+   `parking-lot-fragments` — five 1.18.0 steps (see [1.18.0](#1180-unreleased)); they run just before
+   `system-manifest`, which stays last. The first two rewrite the `.em`; the steps after them see the rewritten model.
 10. `system-manifest` — migrate the nearest `system.yaml` (found by walking up from the model to
    the repository root) from schema 1.0 to 2.0. Each 1.0 seam becomes a
    `consumes <model>:<kind>.<slug>` clause on the consuming translation, and each model's
@@ -460,10 +461,21 @@ rebase merges and are checkable in CI.
 | `slice-index-stale` (GH #275, since 1.18.0): detect = `em slice index --check` reports the README Slices table stale; apply = regenerate it, one commit. No README or no markers = not applicable | mechanical |
 | `parking-lot-fragments` (GH #283, since 1.18.0): detect = a `.event-modeling.md` parking-lot bullet `- <text> (from slice <key>, deferred to v<n>)` whose `<text>` is a strict substring of exactly one of that slice doc's Open Questions items (what pre-1.18 `em slice defer` wrote); apply = rewrite it to the item's label (the bold title, else the whole item — what `defer` writes now) | mechanical |
 | `em storyline suggest <model>.em` (GH #277, advisory): proposes `storyline` blocks — one per distinct slice `source "url"`, the remaining slices grouped by the `view … again` chains they feed — as a unified diff on stdout; never writes the model. Apply with `git apply` / `patch -p1` after review. Not an `em upgrade` step (choosing the main story needs judgment) — see [cli.md](cli.md#em-storyline-suggest-file) | human, assisted |
-| `collapse-alternative-events` (GH #278): arrives with PR #321 (stage 2) | mechanical, with a dry-run diff |
-| `shared-event-now-legal` (GH #279, since 1.18.0): information only, a human item — listed when an event is recorded by more than one command; `duplicate-name` no longer fires and nothing needs to change | none |
-| `fold-continuations` (GH #287, opt-in `--to-sugar`): arrives with PR #323 (stage 2) | mechanical, opt-in |
-| `em roster init` (GH #259): writes `ratifiers.yaml` from the names already in `ratifiedBy` / `reviewedBy`; arrives with PR #320 (stage 2) | mechanical, opt-in |
-| `em validate --shape` and `--waive-file` (GH #281 / #286 / MIL-243 lints): per-model lint count and a baseline file, as `em refs` has; arrives with PR #325 (stage 2) | mechanical baseline |
-| Reshaping an existing model (GH #276): the "Reshaping an existing model" checklist in `docs/storyline.md` and the design skill's `reshape` entry point; arrives with PR #318 | human, skill-driven |
+| `collapse-alternative-events` (GH #278, since 1.18.0, shipped): detect = adjacent slices that repeat ONE command (same text, no `note` beyond the first slice) and differ only in the recorded event on one context; apply = one slice recording `event A \| B @Ctx` (identical payloads) or `oneof { … }` (payloads or clauses differ); the first slice's key is kept, the others' docs move to `slices/superseded/` with `superseded-by: <first-key>@v<N>`, the kept doc's event region is synced (unless it is signed). Dry-run lists the before/after slice names. A run is skipped, never guessed, when a declaration sits between the slices or a later slice carries a `note` | mechanical, with a dry-run listing |
+| `shared-event-now-legal` (GH #279, since 1.18.0, shipped): information only, a human item — listed when an event is recorded by more than one command and the repo is being upgraded from before 1.18.0 (a 1.18.0-stamped repo does not see it again); `duplicate-name` no longer fires and nothing needs to change | none |
+| `fold-continuations` (GH #287, since 1.18.0, shipped): detect = a hand-named continuation slice (only `view … again` lines plus its `ui`) directly after its host command slice, whose views are fed by an event the host records; apply = the views move into the host as `view X again from "E" [shown on "Screen"]` lines (`shown on` only when the old column's screen is not the host's first `ui`, and only if that screen is declared elsewhere), the synthesized column is `<host-key>--again` and `continuationOf` / `alsoReads` are unchanged. A continuation has no doc by definition; a stray own doc is left in place (`continuation-has-own-doc`). `slice-index-stale` then drops the old row | mechanical |
+| `em roster init` (GH #259, shipped): `em upgrade` lists the human item `roster-not-initialised` when slice docs carry `ratifiedBy` / `reviewedBy` names and no `ratifiers.yaml` exists above the model; run `em roster init <model>.em` yourself — signatures are a human decision, so `em upgrade` never writes the roster | human, assisted |
+| `em validate --shape` and `--waive-file` (GH #281 / #286 / MIL-243 lints, #282, shipped): the text report of `em upgrade` (dry-run and `--apply`) ends with the `em validate --shape` table and the sentence on recording accepted shapes as `shape-accepted: <rule> <refs> — <reason>` bullets in the Decisions log; no waive file is generated — baseline an estate with `em validate <model>.em --shape --waive-file <path>` once you have decided which shapes to keep | mechanical baseline (opt-in) |
+| Reshaping an existing model (GH #276, PR #318 — lands separately with `docs/storyline.md`): the "Reshaping an existing model" checklist and the design skill's `reshape` entry point; `em storyline suggest` (above) is the assisted first step | human, skill-driven |
 | Export schema bump (`1.19`, status `1.11`, query `1.3`): consumers (portal, em-sdd-bridge, tracker-bridge) accept the new versions; the rows above carry each field | docs |
+
+### Upgrading to 1.18.0
+
+Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-18-0` / `v1.18.0` on plugin repos), then in each consumer repo:
+
+```bash
+em upgrade <model>.em            # dry-run: lists every step below and the human items
+em upgrade <model>.em --apply    # one git commit per step, then the final `Em version:` commit
+```
+
+The 1.18.0 steps, in order: `collapse-alternative-events`, `fold-continuations` (these two rewrite the `.em`), `view-doc-sources-stale`, `slice-index-stale`, `parking-lot-fragments`. Human items: `view-doc-sources-stale-signed`, `shared-event-now-legal` (information only), `roster-not-initialised`. The report ends with `em validate --shape` so you see the advisory shape findings of the upgraded model. Then run `em storyline suggest <model>.em` if you want storylines, and review the result: the `.em` rewrites are text edits verified by recompiling, but the dry-run listing is the place to catch a grouping you disagree with. Dry-run detection of the doc/index steps reads the model as it is now, so after the two rewriting steps run `--apply` for the final word (each step re-reads the model the previous one wrote).

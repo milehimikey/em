@@ -88,6 +88,10 @@ describe("view-doc-sources-stale (GH #280)", () => {
     const item = detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "shared-event-now-legal")!;
     expect(item.reason).toContain("Order Placed");
     expect(item.reason).toContain("information only");
+    // The note is for the transition only: a 1.18.0-stamped model does not print it.
+    const state = join(dir, ".event-modeling.md");
+    writeFileSync(state, readFileSync(state, "utf8").replace(/(\*\*Em version:\*\*\s*)\S+/, "$11.18.0"));
+    expect(detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "shared-event-now-legal")).toBeUndefined();
   });
 });
 

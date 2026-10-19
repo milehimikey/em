@@ -8,7 +8,7 @@
 // repository, because `em slice ratify` records the HEAD it signs.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -367,7 +367,7 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
   });
 });
 
-describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290 stage 1, CLI, real git)", () => {
+describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real git)", () => {
   let dir: string;
   const exportShape = () => {
     const doc = JSON.parse(em(["export", "orders.em"], dir).stdout);
@@ -377,7 +377,7 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290 stage 1, CL
   const upgradeCommits = () => git(dir, "log", "--format=%s").split("\n").filter((l) => l.startsWith("em upgrade:"));
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "em-gh290-e2e-"));
-    writeModel117(dir);
+    writeModel117(dir, { stage2: true });
     git(dir, "init", "-q", "-b", "main");
     git(dir, "config", "user.name", "em test"); // CI runners have no global identity; `em upgrade --apply` commits
     git(dir, "config", "user.email", "em-test@example.com");
@@ -386,21 +386,34 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290 stage 1, CL
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it("em upgrade --apply takes the stage-1 steps, one commit each, and the model validates clean with the same export shape", () => {
+  it("em upgrade --apply takes every step, one commit each, and the model validates clean with the same read-model facts", () => {
     const before = exportShape();
-    expect(before.count).toBe(4);
-    expect(before.shape.find((s) => s.continuationOf !== null)).toBeDefined();
+    expect(before.count).toBe(10);
+    const facts = (e: ReturnType<typeof exportShape>) => ({
+      continuationOf: e.shape.map((s) => s.continuationOf).filter((c) => c !== null).sort(),
+      // the events each read model also reads (the instance's slice, `atSlice`, is what the rewrite moves)
+      alsoReads: e.shape.filter((s) => JSON.stringify(s.alsoReads) !== "[]").map((s) => [s.key, (s.alsoReads as Array<{ event: string }>).map((r) => r.event)]),
+    });
+    expect(facts(before).continuationOf).toEqual(["orders", "shipments"]);
+    const ALL = ["collapse-alternative-events", "fold-continuations", "view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"];
     const dry = em(["upgrade", "orders.em"], dir);
-    for (const id of ["view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"]) expect(dry.stdout).toContain(`[x] ${id}`);
+    for (const id of ALL) expect(dry.stdout).toContain(`[x] ${id}`);
 
     const applied = em(["upgrade", "orders.em", "--apply"], dir);
     expect(applied.status, applied.stderr).toBe(0);
-    for (const id of ["view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"]) {
+    for (const id of ALL) {
       expect(upgradeCommits().filter((l) => l.startsWith(`em upgrade: ${id}`))).toHaveLength(1);
     }
+    expect(applied.stdout).toContain("Shape (em validate --shape, advisory):");
+    expect(applied.stdout).toContain("shape-accepted:");
+    expect(existsSync(join(dir, "shape.waive"))).toBe(false);
     const v = em(["validate", "orders.em"], dir);
     expect(v.status, v.stdout + v.stderr).toBe(0);
-    expect(exportShape()).toEqual(before);
+    const after = exportShape();
+    expect(after.count).toBe(before.count - 1); // the two cancel columns became one slice; the hand-named continuation became the synthesized column
+    expect(facts(after)).toEqual(facts(before)); // identical continuationOf targets and alsoReads
+    expect(after.shape.map((s) => s.key)).toContain("ship-order--again");
+    expect(readFileSync(join(dir, "orders.em"), "utf8")).toContain("event Order Cancelled By Customer | Order Cancelled By Timeout @Sales");
     expect(readFileSync(join(dir, "slices", "orders.md"), "utf8")).toContain('"Order Placed Manually" (via "Orders manual")');
     expect(readFileSync(join(dir, ".event-modeling.md"), "utf8")).toContain("- Retry policy (from slice place-order, deferred to v2)");
     const sync = em(["slice", "sync", "orders.em", "--check"], dir);

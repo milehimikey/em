@@ -128,7 +128,7 @@ export function suggestStorylines(model: NormalizedModel): { storylines: Suggest
 }
 
 /** Index (0-based) of the line holding the `}` that closes the block opened on `start`. */
-function blockEnd(lines: string[], start: number): number {
+export function blockEnd(lines: string[], start: number): number {
   let depth = 0;
   let opened = false;
   for (let i = start; i < lines.length; i++) {

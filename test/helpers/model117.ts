@@ -38,11 +38,11 @@ slice "Orders manual" {
 }
 `;
 
-const PATTERN: Record<string, string> = { "place-order": "state-change", "place-order-manually": "state-change", orders: "state-view" };
+const PATTERN: Record<string, string> = { "place-order": "state-change", "place-order-manually": "state-change", orders: "state-view", "cancel-order-customer": "state-change", "cancel-order-timeout": "state-change" };
 
 /** Doc text for slice `key`; `staleViewRegion` rewrites the "built from" line to the 1.17 origin-only form. */
-export function sliceDocText(key: string, opts: { staleViewRegion?: boolean; status?: string; extraBody?: string } = {}): string {
-  const { model } = compile(MODEL_117);
+export function sliceDocText(key: string, opts: { staleViewRegion?: boolean; status?: string; extraBody?: string; stage2?: boolean } = {}): string {
+  const { model } = compile(opts.stage2 === true ? MODEL_117_STAGE2 : MODEL_117);
   const idx = model.slices.findIndex((s) => s.name.toLowerCase().replace(/\s+/g, "-") === key);
   const regions = buildSliceRegions(model, [idx]);
   const body = regions
@@ -68,9 +68,13 @@ export function stateFile117(): string {
 }
 
 /** Writes the repo content (no git) into `dir`. */
-export function writeModel117(dir: string, opts: { signedOrders?: boolean } = {}): void {
+export function writeModel117(dir: string, opts: { signedOrders?: boolean; stage2?: boolean } = {}): void {
   mkdirSync(join(dir, "slices"), { recursive: true });
-  writeFileSync(join(dir, "orders.em"), MODEL_117);
+  writeFileSync(join(dir, "orders.em"), opts.stage2 === true ? MODEL_117_STAGE2 : MODEL_117);
+  if (opts.stage2 === true) {
+    writeFileSync(join(dir, "slices", "cancel-order-customer.md"), sliceDocText("cancel-order-customer", { stage2: true }));
+    writeFileSync(join(dir, "slices", "cancel-order-timeout.md"), sliceDocText("cancel-order-timeout", { stage2: true }));
+  }
   writeFileSync(join(dir, "README.md"), README_117);
   writeFileSync(join(dir, ".event-modeling.md"), stateFile117());
   writeFileSync(join(dir, "slices", "place-order.md"), sliceDocText("place-order"));
@@ -83,3 +87,45 @@ export function writeModel117(dir: string, opts: { signedOrders?: boolean } = {}
     ),
   );
 }
+
+// ---- GH #290 stage 2: the PIM shape (repeated-command columns) and a hand-named continuation ----
+
+/** `MODEL_117` plus: two columns that repeat ONE command and differ only in the recorded event (the
+ *  PIM shape, collapses to `event A | B @Sales`), and a hand-named continuation slice that directly
+ *  follows its host command slice (folds into `view Shipments again … shown on "Shipment List"`). */
+export const MODEL_117_STAGE2 =
+  MODEL_117 +
+  `
+slice "Cancel Order Customer" {
+  ui Cancel Form @Clerk
+  command Cancel Order note "slices/cancel-order-customer.md"
+  event Order Cancelled By Customer @Sales { orderId: string, reason: string }
+}
+
+slice "Cancel Order Timeout" {
+  ui Cancel Form @Clerk
+  command Cancel Order
+  event Order Cancelled By Timeout @Sales { orderId: string, reason: string }
+}
+
+slice "Cancellations" {
+  view Cancellations from "Order Cancelled By Customer", "Order Cancelled By Timeout" { orderId: string, reason: string }
+  ui Cancellation List @Clerk
+}
+
+slice "Shipments" {
+  view Shipments from "Order Placed" { orderId: string }
+  ui Shipment List @Clerk
+}
+
+slice "Ship Order" {
+  ui Ship Form @Clerk
+  command Ship Order
+  event Order Shipped @Sales { orderId: string }
+}
+
+slice "Shipments after ship" {
+  view Shipments again from "Order Shipped" { orderId: string }
+  ui Shipment List @Clerk
+}
+`;
