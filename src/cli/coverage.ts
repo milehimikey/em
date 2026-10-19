@@ -170,7 +170,7 @@ export function extractDeclaredInvariantRules(body: string): { id: string; text:
   const seen = new Set<string>();
   const out: { id: string; text: string }[] = [];
   for (const line of ownershipStructuralLines(body)) {
-    for (const m of line.matchAll(/\*\*(INV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?::\*\*|\*\*:)\s*([^\n]*)/g)) {
+    for (const m of line.matchAll(/\*\*(INV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?:\s+\([^)]*\))?(?::\*\*|\*\*:)\s*([^\n]*)/g)) {
       if (seen.has(m[1])) continue;
       seen.add(m[1]);
       out.push({ id: m[1], text: m[2].trim() });

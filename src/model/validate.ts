@@ -44,7 +44,8 @@ export interface Diagnostic {
   /** Export-stable refs/keys (from `computeRefs()`) of every entity this diagnostic concerns —
    *  0, 1, or more (e.g. a duplicate-name collision concerns two elements). Omitted, not `[]`,
    *  at sites with no specific entity to point at. Never a second identifier scheme — always
-   *  sourced from the same `RefsResult` `em export`/`em diff` use. */
+   *  sourced from the same `RefsResult` `em export`/`em diff` use, except that invariant-scoped
+   *  rules (`command-second-intent`) also list the bare `INV-…` ids they concern. */
   refs?: string[];
 }
 

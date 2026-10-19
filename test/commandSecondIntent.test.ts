@@ -40,7 +40,7 @@ describe("command-second-intent (GH #286)", () => {
     expect(d[0].severity).toBe("warning");
     expect(d[0].refs).toEqual(["create-product/command.create-product", "INV-PIM-1", "INV-PIM-2", "INV-PIM-3"]);
     expect(d[0].message).toContain('command "Create Product"');
-    expect(d[0].message).toContain("`parentid`");
+    expect(d[0].message).toContain("`parentId`");
     expect(d[0].message).toContain("bare repeat of the event is legal");
   });
 
@@ -65,10 +65,30 @@ describe("command-second-intent (GH #286)", () => {
     expect(d[0].refs).toEqual(["create-product/command.create-product", "INV-1", "INV-2"]);
   });
 
+  it("plain guard clauses are not a second intent (Unless / Only if without the set-words tail)", () => {
+    const guard = (a: string, b: string) =>
+      MODEL.replace(/ {2}invariant INV-PIM-[1-4].*\n/g, `  invariant INV-PIM-1 "${a}"\n  invariant INV-PIM-2 "${b}"\n`);
+    expect(run(guard("Unless quantity is positive, reject", "Unless quantity exceeds stock, accept"))).toEqual([]);
+    expect(run(guard("Only if the order is confirmed may it ship", "Only if the order is paid may it ship"))).toEqual([]);
+  });
+
+  it("accepts the **INV-X (note):** label form in docs", () => {
+    const src = MODEL.replace(/ {2}invariant INV-PIM-.*\n/g, "");
+    writeFileSync(
+      join(dir, "slices", "create-product.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: Catalog\nstatus: implemented\nversion: 1\nimplementedIn: https://example.invalid/pr/1\n" +
+        "ratifiedBy: Ada\nratifiedOn: 2026-10-01\n---\n# Slice: Create Product\n\n" +
+        "## Invariants / Business Rules\n- **INV-1 (variant):** If variantOf is set, the parent must exist\n- **INV-2:** When VariantOf is present, SKU is unique\n",
+    );
+    const d = run(src);
+    expect(d).toHaveLength(1);
+    expect(d[0].message).toContain("`variantOf`");
+  });
+
   it("conditionalField recognises the pattern list", () => {
     expect(conditionalField("If `a` is not null, x")).toBe("a");
     expect(conditionalField("When the b is supplied, x")).toBe("b");
-    expect(conditionalField("Unless c")).toBe("c");
+    expect(conditionalField("Unless c is given")).toBe("c");
     expect(conditionalField("A total must be positive")).toBeNull();
     expect(conditionalField(null)).toBeNull();
   });

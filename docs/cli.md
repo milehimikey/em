@@ -413,7 +413,8 @@ from) — dedupe that field yourself rather than reaching for a separate flag; t
 
 `ok` mirrors the exit code (`true` exactly when there are no errors — warnings never flip it).
 Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff --json`:
-`severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`.
+`severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`. `refs` are export refs;
+invariant-scoped rules (`command-second-intent`) also list the bare `INV-…` ids they concern.
 
 **`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.3"`) — see the
 `--slice-ready` section below for what each gate means:

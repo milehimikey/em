@@ -34,23 +34,25 @@ interface DocEntry {
 }
 
 /** The conditional openers `command-second-intent` recognises (GH #286): a rule whose text
- *  begins "If/When <field> is set|present|...", "Only if <field> ..." or "Unless <field> ...".
- *  The field is a bare identifier/path or backticked. Add a pattern here to extend the list. */
-const FIELD = "(`[^`]+`|[A-Za-z_][\\w.]*)";
+ *  begins "If/When/Only if/Unless <field> is set|present|provided|non-null|not null|given|
+ *  supplied"; "Only if" also accepts a backticked field without the tail. The field is a bare
+ *  identifier/path or backticked. A constant list (a rules-config knob is Backlog). */
+const BARE = "[A-Za-z_][\\w.]*";
+const TICKED = "`[^`]+`";
 const SET_WORDS = "(?:set|present|provided|non-null|not null|given|supplied)";
+const TAIL = `\\s+(?:is|are)\\s+${SET_WORDS}\\b`;
 const CONDITIONAL_PATTERNS: RegExp[] = [
-  new RegExp(`^(?:if|when)\\s+(?:the\\s+)?${FIELD}\\s+(?:is|are)\\s+${SET_WORDS}\\b`, "i"),
-  new RegExp(`^only\\s+if\\s+(?:the\\s+)?${FIELD}`, "i"),
-  new RegExp(`^unless\\s+(?:the\\s+)?${FIELD}`, "i"),
+  new RegExp(`^(?:if|when|only\\s+if|unless)\\s+(?:the\\s+)?(${TICKED}|${BARE})${TAIL}`, "i"),
+  new RegExp(`^only\\s+if\\s+(?:the\\s+)?(${TICKED})`, "i"),
 ];
 
-/** The field a rule text opens a conditional on, lowercased and unticked; null if none. */
+/** The field a rule text opens a conditional on, as written and unticked; null if none. */
 export function conditionalField(text: string | null): string | null {
   if (!text) return null;
   const t = text.trim().replace(/^["'“]+/, "");
   for (const re of CONDITIONAL_PATTERNS) {
     const m = re.exec(t);
-    if (m) return m[1].replace(/`/g, "").toLowerCase();
+    if (m) return m[1].replace(/`/g, "");
   }
   return null;
 }
@@ -142,15 +144,16 @@ export function validateInvariants(model: NormalizedModel, refs: RefsResult, bas
     if (doc && commandsPerSlice.get(el.sliceIndex) === 1) {
       for (const r of extractDeclaredInvariantRules(doc.body)) if (!rules.has(r.id)) rules.set(r.id, r.text);
     }
-    const byField = new Map<string, string[]>();
+    const byField = new Map<string, { field: string; ids: string[] }>();
     for (const [id, text] of rules) {
-      const field = conditionalField(text);
-      if (!field) continue;
-      const bucket = byField.get(field);
-      if (bucket) bucket.push(id);
-      else byField.set(field, [id]);
+      const written = conditionalField(text);
+      if (!written) continue;
+      const k = written.toLowerCase();
+      const bucket = byField.get(k);
+      if (bucket) bucket.ids.push(id);
+      else byField.set(k, { field: written, ids: [id] });
     }
-    for (const [field, ids] of byField) {
+    for (const { field, ids } of byField.values()) {
       if (ids.length < 2) continue;
       pushDiag(diags, "command-second-intent", {
         message:
