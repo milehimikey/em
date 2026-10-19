@@ -1316,7 +1316,7 @@ slice "Orders To Contract - Subscription Action Added" {
 slice "Executed Orders To Contract" {
   command Execute Order
   event Order Executed @Orders
-  view Orders To Contract again from "Order Executed"
+  view Orders To Contract again from "CreateSubscription Action Added"
   processor Create Contract On Order Executed from "Orders To Contract"
   command Create Contract
 }
@@ -1340,7 +1340,7 @@ slice "Orders To Contract - Subscription Action Added" {
 slice "Executed Orders To Contract" {
   command Execute Order
   event Order Executed @Orders
-  view Orders To Contract again from "Order Executed"
+  view Orders To Contract again from "CreateSubscription Action Added"
   processor Create Contract On Order Executed from "Orders To Contract"
   command Create Contract
 }

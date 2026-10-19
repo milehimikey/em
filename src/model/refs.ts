@@ -43,18 +43,21 @@ export function computeRefs(model: NormalizedModel): RefsResult {
   // refs and cross-references in separate passes means a `from` or arrow
   // can point at any element regardless of declaration order within a slice.
   const usedSliceKeys = new Set<string>();
-  const sliceKeys: string[] = model.slices.map((slice) => {
-    const base = kebabSlug(slice.name);
+  const sliceKeys: string[] = [];
+  for (const slice of model.slices) {
+    // GH #287: a synthesized continuation column's key derives from the slice it was written
+    // inside plus the view it repeats, so it is stable under edits elsewhere in the model.
+    const base = slice.synthesized ? `${sliceKeys[slice.synthesized.host]}--again` : kebabSlug(slice.name);
     const key = dedupe(base, usedSliceKeys, "~");
-    if (key !== base) {
+    sliceKeys.push(key);
+    if (key !== base && !slice.synthesized) {
       pushDiag(diagnostics, "duplicate-slice-name", {
         message: `duplicate slice name "${slice.name}" (export key "${base}" already used); rename slices uniquely for stable export refs`,
         line: slice.line,
         refs: [key, base],
       });
     }
-    return key;
-  });
+  }
 
   const usedElementRefs = new Set<string>();
   const refById = new Map<string, string>();

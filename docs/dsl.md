@@ -216,6 +216,28 @@ originating slice's doc carries its behavior, and `em export`'s `alsoReads` fiel
 union of events read across every instance. See
 [slice-doc-schema.md](slice-doc-schema.md#continuations).
 
+#### Continuations without ceremony (GH #287)
+
+Three conveniences remove the ceremony of repeating a view after every command that feeds it.
+They change no rule: instances still never connect, every instance still needs both ends of a
+flow, and the forward-only law still reads the composed timeline.
+
+- **Several `again` lines in one continuation slice.** A slice whose non-`ui` elements are all
+  `view … again` lines may hold more than one of them; the views stack in the slice's `api`
+  cell (the api lane grows by one row for the stack) instead of colliding. Each instance keeps its
+  own `from`, and the slice's `ui` is the consumer of each. With several views over several `ui`s, every view must say which screen shows it with `view X again from "E" shown on "Screen"` (naming a `ui` of that slice; a parse error otherwise) — the view then wires only to that screen. A single-`ui` continuation needs nothing.
+- **`view X again` inside a command's own slice is sugar.** Written in a slice that also holds a
+  `command` or a plain `view` (the cases where the line would otherwise collide in the api cell), the line is lifted out into ONE **synthesized
+  continuation column** immediately after that slice — all the slice's lifted lines stack in it — with the stable key
+  `<slice-key>--again` (e.g. `rename-class--again`). It is a continuation of
+  the view's originating slice (`continuationOf`, `alsoReads` exactly as for a hand-written one), has
+  no doc, and is **not listed by `em slice index`**. Each line's consumer is, per line, a copy of the host slice's first
+  `ui` (same name and persona) — or, with `view X again from "E" shown on "Screen"`, that screen: it must be declared as a `ui` somewhere in the model (its own declaration supplies the persona, so screens on different personas stack in their own ui lanes; omitting it is a parse error) and the view wires only to it. A line without `shown on` keeps the host ui default even when another line names a screen. Screens of one persona in a continuation column stack in that persona's ui lane (extra rows), exactly as its views stack in the api lane. `shown on` is the only way to give the column a consumer when the host slice has no `ui`. In a reaction slice (a `processor`/`automation`/`saga`/`translation` and no `ui`) `shown on` is **required**: omitting it is a parse error naming the clause. A line is lifted when its `from` names an event the slice records (the follow-on update of a to-do-list view); a view a reaction in the slice reads that is NOT fed by this slice's events is that reaction's input and stays in place. A slice holding neither a `command` nor a view (an event-only webhook slice, say) keeps its shape — nothing is lifted.
+- **An unnamed continuation slice is auto-named.** `slice { view X again from "E" … }` (no
+  name) is called `"X View: E"` (several events joined with `, `; several stacked views joined with
+  ` + `); the slice key derives from it, so it is stable. A slice that is not a continuation still
+  needs a name, and a stack of more than two views is named `"<n> views after <Event>"` (events joined with `, `) so the column header stays short; two unnamed continuations for the same view + event are a parse error (`two unnamed continuations for `View` after `Event` — name one`).
+
 A `ui` only ever wires to a `command` (the State Change pattern) — no pattern has a `ui`
 triggering a `processor`/`automation`/`saga`/`translation`; reactions are triggered by reading a
 read model, or by an external input, never by a person on a screen. A `ui` sharing a reaction's

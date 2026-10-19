@@ -727,7 +727,7 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     [slice-doc-schema.md#continuations](slice-doc-schema.md#continuations)). When
     `continuationOf` is non-null, `doc` above is **byte-identical** to the originating slice's
     own `doc` object — `em export --slice <again-key>` reports the real status while
-    `continuationOf` says why. `alsoReads` is `[{ event, atSlice }]` — for the slice holding a
+    `continuationOf` says why. A stacked continuation slice that continues several views exports the FIRST view's origin as `continuationOf`; the other views' origins list this slice in their `alsoReads`. `alsoReads` is `[{ event, atSlice }]` — for the slice holding a
     view's ORIGINATING declaration, the union of events every later `again` instance of that
     view reads via `from`, in timeline order, deduped by `(event, atSlice)`; `[]` for every
     other slice, including an `again` instance's own entry (only the origin carries the union).
@@ -844,6 +844,8 @@ model's key, colon-separated (MIL-193):
 | `<modelKey>:<sliceKey>/<kind>.<slug>` | an element |
 | `<modelKey>:<sliceKey>` | a slice |
 | `<modelKey>:types/<slug>` | a declared type |
+
+A slice key never contains `/` (a synthesized continuation's key is `<host-slice-key>--again`), so the first `/` in a ref always separates the slice key from the element part.
 
 **Where `modelKey` comes from.** The kebab-slug of the declared `model "Name"` — the same
 slugging every slice key and element ref uses, so identity always derives from a declared

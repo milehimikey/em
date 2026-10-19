@@ -100,7 +100,11 @@ export interface SliceIndexTable {
 export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, baseDir: string): SliceIndexTable {
   const diagnostics: Diagnostic[] = [];
 
-  const rows: SliceIndexRow[] = model.slices.map((slice, i) => {
+  // GH #287: a continuation column synthesized from `view X again` inside another slice has no
+  // source slice block of its own, so it gets no row (and does not consume a row number).
+  const rows: SliceIndexRow[] = [];
+  model.slices.forEach((slice, i) => {
+    if (slice.synthesized) return;
     const sliceKey = refs.sliceKeys[i];
     const pattern = classifySlicePattern(slice);
     const { doc, diagnostics: docDiags, continuationOf } = resolveSliceDocJoin(
@@ -112,8 +116,8 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       (id) => refs.refById.get(id)!,
     );
     diagnostics.push(...docDiags);
-    return {
-      index: i + 1,
+    rows.push({
+      index: rows.length + 1,
       name: slice.name,
       storyline: slice.storyline ?? "—",
       pattern: slicePatternLabel(pattern),
@@ -129,7 +133,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       conformed: continuationOf ? "—" : conformedCell(doc),
       // GH #275: `no-doc-bound` carries a made-up `slices/<key>.md` path that nothing backs.
       docPath: !doc.found && doc.reason === "no-doc-bound" ? null : doc.path,
-    };
+    });
   });
 
   // GH #277: a Storyline column right after Slice, only for a model that declares storylines.

@@ -5,6 +5,7 @@
 import { AUTOMATION_KINDS, ElementKind, Field, InvariantDecl, ModelNode, TagClause } from "../parser/ast.js";
 import { dedupe, slug } from "../util/slug.js";
 import { relationOnTimeline } from "./storylines.js";
+import { expandAgainSugar } from "../parser/againSugar.js";
 
 /** A declared named type (`type Name { … }`) — its own top-level namespace, separate from
  *  elements (a type and an element may share a name without colliding). */
@@ -71,6 +72,9 @@ export interface Element {
   /** event-only (GH #278): shared by every alternative of one `event A | B @Ctx` line — the id
    *  of the group's first alternative. The alternatives share one event-lane cell. */
   alternativeGroup?: string;
+  /** GH #287: for a view in a synthesized continuation column, the id of the one `ui` in that
+   *  column that displays it (edges wire only to it). Absent everywhere else. */
+  consumerId?: string;
   /** id of the first instance of this logical element (== id for everything except later view instances). */
   logicalId: string;
 }
@@ -122,6 +126,10 @@ export interface Slice {
    *  storylineDiagram.ts): an element the storyline reads from outside it, drawn dimmed so its
    *  arrows still have a source. Never set on a compiled model's slices. */
   stub?: boolean;
+  /** GH #287: set on a continuation column synthesized from a `view X again` line written inside
+   *  another slice (`host` = index of that slice). Such a slice has no source text of its own, no
+   *  doc, and is not listed by `em slice index`; its export key is `<host-key>--again`. */
+  synthesized?: { host: number };
   elements: Element[];
   line: number;
 }
@@ -242,12 +250,13 @@ export function normalize(ast: ModelNode): NormalizedModel {
     if (!typesByName.has(key)) typesByName.set(key, t); // first declaration wins
   }
 
-  ast.slices.forEach((sliceNode, sliceIndex) => {
+  expandAgainSugar(ast.slices).forEach((sliceNode, sliceIndex) => {
     const slice: Slice = {
       name: sliceNode.name,
       index: sliceIndex,
       source: sliceNode.source,
       storyline: sliceNode.storyline,
+      synthesized: sliceNode.synthesizedFrom !== undefined ? { host: sliceNode.synthesizedFrom } : undefined,
       elements: [],
       line: sliceNode.line,
     };
@@ -324,6 +333,13 @@ export function normalize(ast: ModelNode): NormalizedModel {
       const bucket = byName.get(key);
       if (bucket) bucket.push(element);
       else byName.set(key, [element]);
+    }
+
+    // GH #287: resolve each synthesized view's consumer name to the ui element of this slice.
+    for (const el of slice.elements) {
+      const want = sliceNode.elements.find((n) => n.kind === "view" && n.name === el.name)?.consumer;
+      if (el.kind === "view" && want !== undefined)
+        el.consumerId = slice.elements.find((u) => u.kind === "ui" && u.name === want)?.id;
     }
 
     slices.push(slice);

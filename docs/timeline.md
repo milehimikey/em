@@ -100,6 +100,25 @@ Instances declared with `again` are one logical read model. The first declaratio
 `again` on a view with no earlier declaration is an error — declare it plainly the first
 time.
 
+Repeating a view after every command that feeds it needs no ceremony (GH #287). Write the line in
+the command's own slice and `em` lifts it into a continuation column right after it, named and
+keyed for you; the same slice may carry as many `again` lines as the command feeds views:
+
+```em
+slice "Ship Order" {
+  ui Shipping Desk @Ops
+  command Ship Order
+  event Order Shipped @Order
+  view Open Orders again from "Order Shipped" shown on "Order List"
+}
+```
+
+renders the same as a hand-written continuation slice after "Ship Order". The synthesized column (one per host slice, all its lifted lines stacked)
+has the stable key `ship-order--again`, is a continuation of the view's first slice, and
+is not listed by `em slice index`. A hand-written continuation slice may hold several `again`
+views (they stack in the `api` cell) and may omit its name (auto-named `"Open Orders View: Order
+Shipped"`). See [dsl.md](dsl.md#view--again).
+
 Instances are **never** connected to one another. Repeating a view is an ergonomic device
 for showing the same read model at successive points in time: the continuity is implied by
 the shared name, and the events arriving at each instance are what show how the view

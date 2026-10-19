@@ -237,3 +237,21 @@ slice "Covering Slice" {
     expect(coveringPage).toContain("Body content that must not leak onto a different slice page.");
   });
 });
+
+describe("buildCatalog with a synthesized continuation (GH #287)", () => {
+  it("renders the synthesized slice like any other, under a flat file name", async () => {
+    const src = `${MODEL}slice "Cancel Order" {
+  ui Cancel Form @Customer
+  command Cancel Order
+  event Order Cancelled @Order
+  view Open Orders again from "Order Cancelled"
+}
+`;
+    const { model, grid, dot, refs } = compile(src);
+    const outDir = join(dir, "out-sugar");
+    const result = await buildCatalog([{ file: modelFile, model, grid, dot, refs }], { outDir });
+    expect(result.diagnostics).toEqual([]);
+    expect(existsSync(join(outDir, "model", "slices", "cancel-order--again.svg"))).toBe(true);
+    expect(existsSync(join(outDir, "model", "slices", "cancel-order--again.html"))).toBe(true);
+  });
+});

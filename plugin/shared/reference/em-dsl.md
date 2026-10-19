@@ -695,6 +695,13 @@ consumer is an obligation to ship an endpoint, no `ui` means internal-only, and 
 the published integration surface — see `reference/implement.md`'s "Interface obligations"
 paragraph in the `event-modeling-implement` skill (§2).
 
+- **Continuations without ceremony (GH #287).** Several `view X again` lines may share one
+  continuation slice (they stack in the `api` cell); `view X again from "E"` written inside a
+  command's own slice is sugar for a synthesized continuation column right after it (one column per host slice, lines stacked; key
+  `<slice-key>--again`, no doc, not in `em slice index`; consumer = the slice's first `ui`,
+  or `shown on "Screen"` — required in a reaction slice with no `ui`); and a continuation slice may omit its name — it is auto-named
+  `"<View> View: <Event>"`. Instances still never connect.
+
 ### Reaction wiring — no positional gotcha
 
 A reaction's command is inferred from **same-slice presence**, exactly like `ui -> command`: put

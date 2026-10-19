@@ -111,6 +111,12 @@ export interface ElementNode {
   fields?: Field[];
   /** view-only: a later timeline instance of an already-declared read model. */
   again?: boolean;
+  /** `shown on "Screen"` — `view … again` only (GH #287): the consumer screen of the continuation
+   *  column synthesized from an `again` line written inside an ordinary slice. */
+  shownOn?: string;
+  /** Set by the again-sugar expansion on a view of a synthesized continuation column: the NAME of
+   *  the `ui` in that column that displays it (GH #287). Never written by the parser. */
+  consumer?: string;
   /** `public` — command, event or view: marks this element as part of the published
    *  integration surface (a command as the write API — MIL-237 — an event as a contract, a
    *  view as a public read API's response shape), as opposed to an internal-only element. */

@@ -261,6 +261,15 @@ instance (originating first, then timeline order, deduped), and each field's `fr
 resolves against that union (each later event annotated `(via "<slice>")` with its instance's slice) — whichever instance's slice the doc is bound to. `em slice sync`
 rewrites existing view regions accordingly.
 
+**Synthesized continuations (GH #287).** A `view X again` line written inside a command's own slice
+is lifted into a continuation column right after it. That column is a continuation like any other
+(`continuationOf` names the view's originating slice, `alsoReads` counts its events) but exists
+only as sugar over the host slice's text: its export key is `<host-slice-key>--again` (one column per host slice, its lifted lines stacked),
+it never has a doc, and `em slice index` lists no row for it. A slice key never contains `/` (the slug generator emits single dashes only, so `--` cannot occur in a hand-written key); the `/` in an element ref `<slice-key>/<kind>.<slug>` is always the first and only one. A hand-written continuation slice
+may also hold several `again` views, and may omit its name (auto-named `"<View> View: <Event>"`).
+When one slice stacks views of different read models, `continuationOf` names the originating
+slice of the FIRST view; the others are listed in their originating slices' `alsoReads` (with this slice's key as `atSlice`).
+
 **Authoring convention:** a continuation's behavior belongs in the originating doc's own
 `## Scenarios (Given / When / Then)` section — one scenario per event a later `again` instance
 feeds — rather than in a doc of its own; no new frontmatter is needed to record it.

@@ -67,7 +67,8 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   for (const slice of model.slices) {
     const uis = slice.elements.filter((e) => e.kind === "ui");
     const command = slice.elements.find((e) => e.kind === "command");
-    const view = slice.elements.find((e) => e.kind === "view");
+    const views = slice.elements.filter((e) => e.kind === "view");
+    const view = views[0];
     const events = slice.elements.filter((e) => e.kind === "event");
     const auto = slice.elements.find((e) => AUTOMATION_KINDS.has(e.kind));
 
@@ -88,10 +89,12 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
     if (auto && view) add(view.id, auto.id, "pattern");
 
     // Output pattern: view -> UI (read model feeds the screen)
-    if (view) {
-      for (const ui of uis) add(view.id, ui.id, "pattern");
-      if ((view.from ?? []).length === 0) {
-        for (const ev of events) add(ev.id, view.id, "pattern");
+    // GH #287: a continuation slice may stack several `again` views — each feeds the ui(s).
+    for (const v of views) {
+      // A view of a synthesized continuation column is displayed only by its own screen (GH #287).
+      for (const ui of uis) if (v.consumerId === undefined || v.consumerId === ui.id) add(v.id, ui.id, "pattern");
+      if ((v.from ?? []).length === 0) {
+        for (const ev of events) add(ev.id, v.id, "pattern");
       }
     }
   }

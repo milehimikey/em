@@ -73,6 +73,46 @@ export function nodeIdAt(grid: Grid, row: number, col: number): string {
   return el ? el.id : placeholderId(row, col);
 }
 
+/** A `view … again` instance may share an api cell with other `again` instances (GH #287). */
+function isStackable(el: Element): boolean {
+  return el.kind === "view" && el.again === true;
+}
+
+/** The deepest api-cell stack any column needs: the largest count of `again` views in one slice
+ *  whose api cell holds nothing but `again` views. 1 when nothing stacks. */
+function apiStackDepth(model: NormalizedModel): number {
+  let depth = 1;
+  for (const slice of model.slices) {
+    const api = slice.elements.filter((e) => e.kind === "command" || e.kind === "view");
+    if (api.length > 1 && api.every(isStackable)) depth = Math.max(depth, api.length);
+  }
+  return depth;
+}
+
+/** Slice indexes that are continuation-shaped: every non-`ui` element is an `again` view (at
+ *  least one). Only these slices stack their `ui` boxes (GH #287). */
+function continuationSlices(model: NormalizedModel): Set<number> {
+  const out = new Set<number>();
+  for (const slice of model.slices) {
+    const nonUi = slice.elements.filter((e) => e.kind !== "ui");
+    if (nonUi.length > 0 && nonUi.every(isStackable)) out.add(slice.index);
+  }
+  return out;
+}
+
+/** Per persona, the deepest ui-cell stack any continuation column needs (screens of one persona
+ *  stack like the views do in the api lane). */
+function uiStackDepths(model: NormalizedModel, continuation: Set<number>): Map<string, number> {
+  const depths = new Map<string, number>();
+  for (const slice of model.slices) {
+    if (!continuation.has(slice.index)) continue;
+    const counts = new Map<string, number>();
+    for (const e of slice.elements) if (e.kind === "ui") counts.set(e.persona!, (counts.get(e.persona!) ?? 0) + 1);
+    for (const [persona, n] of counts) depths.set(persona, Math.max(depths.get(persona) ?? 1, n));
+  }
+  return depths;
+}
+
 function rowKeyForElement(el: Element): string {
   switch (el.kind) {
     case "ui":
@@ -100,12 +140,27 @@ export function layout(model: NormalizedModel, opts: LayoutOptions = {}): Grid {
   if (model.hasAutomation) {
     rows.push({ key: "automation", label: "Automation", band: "automation" });
   }
+  const continuation = continuationSlices(model);
+  const uiDepths = uiStackDepths(model, continuation);
   for (const persona of model.personas) {
     rows.push({ key: `ui:${persona}`, label: persona, band: "ui" });
+    // GH #287: extra rows (`ui:<persona>:2`, …) for screens stacked in one continuation column.
+    for (let n = 2; n <= (uiDepths.get(persona) ?? 1); n++) rows.push({ key: `ui:${persona}:${n}`, label: "", band: "ui" });
   }
   rows.push({ key: "api", label: "API", band: "api" });
   for (const context of model.contexts) {
     rows.push({ key: `event:${context}`, label: context, band: "event" });
+  }
+
+  // GH #287: several `again` views of one continuation slice stack in its api cell, so the api
+  // lane grows by one extra row per additional stacked view (`api:2`, `api:3`, …) — only the
+  // columns that stack use them, every other cell there is an invisible spacer.
+  const stackDepth = apiStackDepth(model);
+  if (stackDepth > 1) {
+    const apiAt = rows.findIndex((r) => r.key === "api");
+    const extra: GridRow[] = [];
+    for (let n = 2; n <= stackDepth; n++) extra.push({ key: `api:${n}`, label: "", band: "api" });
+    rows.splice(apiAt + 1, 0, ...extra);
   }
 
   const indexOf = new Map<string, number>();
@@ -117,10 +172,25 @@ export function layout(model: NormalizedModel, opts: LayoutOptions = {}): Grid {
   );
   const collisions: Collision[] = [];
 
+  const stacked = new Map<number, number>(); // col -> views already in its api cell
+  const uiStacked = new Map<string, number>(); // `${persona}|${col}` -> screens already in that ui cell
   for (const el of model.elements) {
-    const r = indexOf.get(rowKeyForElement(el));
+    let r = indexOf.get(rowKeyForElement(el));
     if (r === undefined) continue; // unreachable, rows cover all kinds
     const c = el.sliceIndex;
+    // GH #287: `again` views stack in the api lane, and screens of one persona stack in its ui
+    // lane, inside a continuation column.
+    if (isStackable(el) && cells[r][c] && isStackable(cells[r][c]!)) {
+      const depth = (stacked.get(c) ?? 1) + 1;
+      stacked.set(c, depth);
+      r = indexOf.get(`api:${depth}`)!;
+    }
+    if (el.kind === "ui" && cells[r][c] && continuation.has(c)) {
+      const k = `${el.persona}|${c}`;
+      const depth = (uiStacked.get(k) ?? 1) + 1;
+      uiStacked.set(k, depth);
+      r = indexOf.get(`ui:${el.persona}:${depth}`)!;
+    }
     const occupant = cells[r][c];
     // GH #278: alternatives of one `event A | B @Ctx` line share their context's cell — the
     // first is the cell's element, the rest are drawn inside its box (emit/dot.ts).

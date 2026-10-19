@@ -33,6 +33,7 @@ import {
   StorylineNode,
   TypeDeclNode,
 } from "./ast.js";
+import { autoContinuationName, isContinuationShaped, liftedAgainViews } from "./againSugar.js";
 import {
   decodeQuoted,
   hasUnterminatedQuote,
@@ -67,6 +68,7 @@ const ELEMENT_KEYWORDS = new Set<ElementKind>([
 export const DEFAULT_MODEL_NAME = "Event Model";
 
 export function parse(source: string): ModelNode {
+  const autoNamed = new Set<string>(); // auto-named continuation slices seen so far (GH #287)
   const model: ModelNode = {
     name: "",
     nameDeclared: false,
@@ -137,6 +139,7 @@ export function parse(source: string): ModelNode {
       }
       if (currentSlice) {
         expandAlternativeEvents(currentSlice);
+        finishSlice(currentSlice, autoNamed);
         model.slices.push(currentSlice);
         if (currentStoryline) currentStoryline.sliceNames.push(currentSlice.name);
         currentSlice = null;
@@ -389,8 +392,9 @@ export function parse(source: string): ModelNode {
           header = sourceClause.rest;
         }
 
+        // GH #287: the name may be omitted on a continuation slice (auto-named at the closing
+        // brace, once the elements are known); `finishSlice` rejects it on any other slice.
         node.name = unquote(header);
-        if (!node.name) throw new ParseError("slice requires a name", lineNo);
         if (currentStoryline) node.storyline = currentStoryline.name;
         currentSlice = node;
         break;
@@ -459,6 +463,16 @@ export function parse(source: string): ModelNode {
     model.nameDeclared = false;
   }
 
+  // GH #287: a `shown on "Screen"` takes its persona from the screen's own declaration, so the
+  // screen must be declared (as a `ui`) somewhere in the model.
+  const screens = new Set(model.slices.flatMap((sl) => sl.elements.filter((e) => e.kind === "ui").map((e) => e.name)));
+  for (const sl of model.slices)
+    for (const el of sl.elements)
+      if (el.shownOn !== undefined && !screens.has(el.shownOn))
+        throw new ParseError(
+          `\`shown on "${el.shownOn}"\` names a screen declared nowhere in the model — declare \`ui ${el.shownOn} @Persona\` in a slice (it supplies the persona)`,
+          el.line,
+        );
   return model;
 }
 
@@ -818,6 +832,17 @@ function extractClauses(
     );
   }
 
+  // `shown on "Screen"` (view … again only, GH #287): names the consumer screen of the
+  // continuation column synthesized from an `again` line inside an ordinary slice. Quote-anchored
+  // like `from`, and extracted before it (whose operand runs to end of line).
+  const shownOnClause = extractQuotedClause(rest, "shown\\s+on", line);
+  if (shownOnClause) {
+    if (node.kind !== "view")
+      throw new ParseError("`shown on` is only valid on `view … again` written inside an ordinary slice", line);
+    node.shownOn = shownOnClause.value;
+    rest = shownOnClause.rest;
+  }
+
   // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive
   // and its operand must open with a quote, so a capitalized `From` — or a bare
   // lowercase `from` — inside an element name (`event Widget Removed From
@@ -893,8 +918,71 @@ function extractClauses(
     node.again = true;
     rest = rest.slice(0, againMatch.index).trim();
   }
+  if (node.shownOn !== undefined && node.again !== true)
+    throw new ParseError("`shown on` is only valid on `view … again` — it names the screen of the synthesized continuation", line);
 
   return rest;
+}
+
+/** Slice close (GH #287): an unnamed slice is only legal as a continuation, which is auto-named
+ *  `"<View> View: <Event>"` (two unnamed continuations for the same view + event are an error);
+ *  a hand-written continuation slice takes no `shown on` (it already carries its own `ui`); a
+ *  `view … again` line lifted out of a reaction slice must name its consumer with `shown on`. */
+function finishSlice(slice: SliceNode, autoNamed: Set<string>): void {
+  const continuation = isContinuationShaped(slice.elements);
+  if (!slice.name) {
+    if (!continuation) throw new ParseError("slice requires a name", slice.line);
+    slice.name = autoContinuationName(slice.elements);
+    if (autoNamed.has(slice.name)) {
+      const v = slice.elements.find((el) => el.kind === "view")!;
+      throw new ParseError(
+        `two unnamed continuations for \`${v.name}\` after \`${(v.from ?? []).join(", ")}\` — name one`,
+        slice.line,
+      );
+    }
+    autoNamed.add(slice.name);
+  }
+  if (continuation) {
+    // A hand-written continuation: `shown on "Screen"` names which of THIS slice's screens
+    // displays the view; several views over several screens must say so on every view.
+    const uis = slice.elements.filter((el) => el.kind === "ui");
+    const views = slice.elements.filter((el) => el.kind === "view");
+    for (const v of views) {
+      if (v.shownOn === undefined) continue;
+      if (!uis.some((u) => u.name === v.shownOn))
+        throw new ParseError(
+          `\`shown on "${v.shownOn}"\` names no \`ui\` of this continuation slice — declare \`ui ${v.shownOn}\` in it`,
+          v.line,
+        );
+      v.consumer = v.shownOn;
+    }
+    if (views.length > 1 && uis.length > 1) {
+      const bare = views.find((v) => v.shownOn === undefined);
+      if (bare)
+        throw new ParseError(
+          `\`view ${bare.name} again\` in a continuation stacking several views over several screens needs \`shown on "Screen"\` — otherwise every view would be wired to every screen`,
+          bare.line,
+        );
+    }
+    return;
+  }
+  const lifted = liftedAgainViews(slice.elements);
+  const stray = slice.elements.find((el) => el.shownOn !== undefined && !lifted.includes(el));
+  if (stray)
+    throw new ParseError(
+      "`shown on` has no effect here — it names the consumer of a `view … again` line lifted into its own continuation column, and this line stays in its slice",
+      stray.line,
+    );
+  const reaction = slice.elements.some((el) => AUTOMATION_KINDS.has(el.kind));
+  const hasUi = slice.elements.some((el) => el.kind === "ui");
+  if (reaction && !hasUi) {
+    const bare = lifted.find((el) => el.shownOn === undefined && el.public !== true);
+    if (bare)
+      throw new ParseError(
+        `\`view ${bare.name} again\` inside a reaction slice with no \`ui\` needs \`shown on "Screen"\` — the continuation column it becomes has no consumer otherwise`,
+        bare.line,
+      );
+  }
 }
 
 function consumesKindError(line: number): ParseError {
