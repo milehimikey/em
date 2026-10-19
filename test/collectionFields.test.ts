@@ -76,12 +76,93 @@ describe("collection fields (GH #288)", () => {
     expect((view.fields as { name: string; collection: boolean }[]).find((f) => f.name === "values")!.collection).toBe(false);
   });
 
-  it("slice sync writes the Collection note and add/remove scenario stubs", () => {
+  it("slice sync writes the Collection note and a stub per named event", () => {
     const { model: m } = compile(ok);
     const view = buildSliceRegions(m, [2]).find((r) => r.kind === "view")!;
     const text = view.body.join("\n");
     expect(text).toContain("Collection of `AttributeValue`, fed by `Attribute Value Created`, `Attribute Value Deleted`");
     expect(text).toContain("- Given `Attribute Value Created` {{ }} Then `values` contains {{ }}");
     expect(text).toContain("- Given `Attribute Value Deleted` {{ }} Then `values` omits {{ }}");
+    expect(text).toContain("copy into `## Scenarios` and complete them there");
+  });
+
+  it("three events: Renamed pre-fills updates, an unknown suffix keeps the placeholder", () => {
+    const { model: m } = compile(manyEvents(false));
+    const text = buildSliceRegions(m, [4]).find((r) => r.kind === "view")!.body.join("\n");
+    expect(text).toContain("Given `Attribute Value Renamed` {{ }} Then `values` updates {{ }}");
+    expect(text).toContain("Given `Attribute Value Deleted` {{ }} Then `values` omits {{ }}");
+    expect(text).toContain("Given `Attribute Value Archived` {{ }} Then `values` {{ contains / omits / updates }} {{ }}");
+  });
+
+  it("accepts an event supplied only by an `again` instance", () => {
+    const src = manyEvents(true);
+    expect(sourceWarnings(src)).toEqual([]);
+    expect(compile(src).diagnostics.some((d) => d.code === "derived-from-unresolved")).toBe(false);
+  });
+
+  it("skips the element check when a named event declares no fields", () => {
+    const src = ok
+      .replace("Attribute Value Deleted @Catalog { attributeId: string, valueId: string }", "Attribute Value Deleted @Catalog")
+      .replace("value: string }", "value: string, label: string }");
+    expect(sourceWarnings(src)).toEqual([]);
+  });
+
+  it("checks only the element type's own fields, not a nested declared type's", () => {
+    const src = ok.replace(
+      "type AttributeValue { valueId: string, value: string }",
+      "type Meta { x: string }\ntype AttributeValue { valueId: string, value: string, meta: Meta }",
+    );
+    const w = sourceWarnings(src);
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('"meta"');
   });
 });
+
+function manyEvents(again: boolean): string {
+  const all = ["Created", "Renamed", "Deleted", "Archived"].map((s) => `"Attribute Value ${s}"`);
+  const fromList = again ? all[0] : all.join(", ");
+  return `
+model "Attrs"
+context Catalog
+persona Admin
+
+type AttributeValue { valueId: string, value: string }
+
+slice "Add Value" {
+  ui Value Form @Admin
+  command Add Value
+  event Attribute Value Created @Catalog { attributeId: string, valueId: string, value: string }
+}
+
+slice "Rename Value" {
+  ui Rename Form @Admin
+  command Rename Value
+  event Attribute Value Renamed @Catalog { attributeId: string, valueId: string, value: string }
+}
+
+slice "Remove Value" {
+  ui Value List @Admin
+  command Remove Value
+  event Attribute Value Deleted @Catalog { attributeId: string, valueId: string }
+}
+
+slice "Archive Value" {
+  ui Archive Form @Admin
+  command Archive Value
+  event Attribute Value Archived @Catalog { attributeId: string, valueId: string }
+}
+
+slice "Attributes" {
+  view Attributes from ${fromList} {
+    attributeId: string
+    values: AttributeValue[] derived from ${all.join(", ")}
+  }
+  ui Attribute Screen @Admin
+}
+${again ? `
+slice "More Attributes" {
+  view Attributes again from ${all.slice(1).join(", ")}
+  ui Attribute Screen Again @Admin
+}
+` : ""}`;
+}

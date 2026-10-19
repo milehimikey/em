@@ -453,7 +453,7 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   declared `type T`, with `derived from "Child Created", "Child Deleted"`, embeds a child entity:
   each field of `T` must trace to a named event (`fields-completeness/view-field-no-source`
   otherwise). No add/remove/key clauses — `em slice sync` writes a `Collection of` note plus
-  add/remove Given/Then scenario stubs in the view region, and `em export` sets `collection: true`.
+  one Given/Then scenario stub per named event in the view region (copy into `## Scenarios`), and `em export` sets `collection: true`.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured

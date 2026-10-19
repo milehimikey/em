@@ -117,6 +117,17 @@ function eventBody(model: NormalizedModel, el: Element): string[] {
   return out;
 }
 
+const COLLECTION_VERBS: Record<string, string> = {
+  created: "contains", added: "contains", attached: "contains",
+  deleted: "omits", removed: "omits", detached: "omits",
+  updated: "updates", renamed: "updates", changed: "updates",
+};
+/** The verb a collection event's trailing word implies, or undefined when it is not in the list. */
+function collectionVerb(eventName: string): string | undefined {
+  const words = eventName.trim().split(/[\s_-]+|(?=[A-Z])/).filter(Boolean);
+  return COLLECTION_VERBS[(words[words.length - 1] ?? "").toLowerCase()];
+}
+
 function viewBody(model: NormalizedModel, el: Element): string[] {
   // The union across every `again` instance (GH #280): each instance lists only the NEW events.
   const sources = viewSourceNames(model, el);
@@ -164,14 +175,16 @@ function viewBody(model: NormalizedModel, el: Element): string[] {
     }
     out.push(`| ${cell(f.name)} | ${cell(f.type ?? "—")} | ${cell(note)} |`);
   }
-  // Behaviour of a collection lives in scenarios, not the model (GH #288): one add and one remove
-  // stub per collection field, for the author to complete. The first named event adds, the rest
-  // remove, when only two are named; otherwise the first adds and every later one removes.
+  // Behaviour of a collection lives in scenarios, not the model (GH #288): one NEUTRAL stub per
+  // named event (order is not significant). The verb is pre-filled only when the event name ends
+  // in a known word; otherwise the placeholder stays. The region is generated and read-only, so
+  // the author copies the stubs into `## Scenarios` and completes them there.
   for (const c of collections) {
-    out.push("", `Scenario stubs for \`${c.field}\` (complete the {{ }}):`, "");
-    const [add, ...removes] = c.events;
-    out.push(`- Given \`${add}\` {{ }} Then \`${c.field}\` contains {{ }}`);
-    for (const r of removes) out.push(`- Given \`${r}\` {{ }} Then \`${c.field}\` omits {{ }}`);
+    out.push("", `Scenario stubs for \`${c.field}\` (copy into \`## Scenarios\` and complete them there):`, "");
+    for (const e of c.events) {
+      const verb = collectionVerb(e) ?? "{{ contains / omits / updates }}";
+      out.push(`- Given \`${e}\` {{ }} Then \`${c.field}\` ${verb} {{ }}`);
+    }
   }
   return out;
 }
