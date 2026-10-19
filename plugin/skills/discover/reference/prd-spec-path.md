@@ -107,7 +107,7 @@ Write `discovery/prd-triage.json` (UTF-8, 2-space indent):
 {
   "prdTriageSchemaVersion": "1.0",
   "rubricVersion": "1.0",
-  "source": "../requirements/prd.md",
+  "source": "prd.md",
   "storylines": [{ "id": "L1", "name": "Order to delivery", "main": true, "quote": "A customer places an order. We pick and ship it, and they get a tracking link." }],
   "groups": [{ "id": "G1", "name": "Place Order", "trigger": "customer submits checkout", "actor": "Storefront", "storyline": "L1" }],
   "statements": [
