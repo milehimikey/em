@@ -244,8 +244,23 @@ judged by its logical view's union of sources across all instances, consistent w
 
 Reorder by the story ("create a class, then its attributes, then a product that uses them") and
 the run breaks up; the lint goes quiet without any suppression. It is a warning like every other
-here — it never blocks a render — and it carries the `shape` family so a shape-only selector can
-pick it out. See [storyline.md](storyline.md) for the ordering method.
+here — it never blocks a render — and it carries the `shape` family, which `em validate --shape` selects. See [storyline.md](storyline.md) for the ordering method.
+
+### The shape exit gate
+
+`em validate <model>.em --shape` ([cli.md](cli.md#--shape-gh-282)) runs only the shape-family lints and
+exits 0. The design skill's **model phase ends on it** (GH #282): every finding is either fixed in the
+model or accepted by one bullet in the model README's Decisions log,
+
+```
+- 2026-10-18: shape-accepted: <rule> <refs> — <reason>
+```
+
+(and/or waived in a baseline file given as `--waive-file <path>`, one slice key per line, for an estate
+that carries shapes it has decided to keep). The skill refuses to move to the slice phase while a finding
+is neither. `em engagement plan` lists the same findings on the engagement's slices in its pre-flight.
+A rule joins the family by registering `family: "shape"`; today that is `timeline-entity-clustered` and
+`slice-outside-storyline`.
 
 ### Translation naming
 

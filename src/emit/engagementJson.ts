@@ -22,7 +22,9 @@ export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1"];
 // 1.2 (GH #239): additive `preflight: [{ kind, subject, slices, message }]` — the model-wide gaps
 //   the engagement's slices share (repeated-invariant, event-without-tag, shared-trigger,
 //   doc-model-mismatch); advisory, never a hold. `[]` when there are none.
-export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.2";
+// 1.3 (GH #282): additive `preflight[].kind: "shape"` — one entry per shape-family lint
+//   (`em validate --shape`) that fires on the engagement's slices; `subject` is the rule code.
+export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.3";
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.

@@ -370,6 +370,26 @@ describe("validate tool", () => {
     expect(cli.stdout).toBe(mcpText + "\n");
   });
 
+  it("shape: true is byte-identical to `em validate --shape --json`; waiveFile baselines; waiveFile alone is an error (GH #282)", async () => {
+    const crud = join(dir, "crud-shape.em");
+    writeFileSync(
+      crud,
+      ["Create", "Rename", "Retire"].map((n) => `slice "${n} Class" {\n  command ${n} Class\n  event Class ${n}d @Catalog\n}\n`).join("") +
+        'slice "Class List" {\n  view Class List from "Class Created", "Class Renamed", "Class Retired"\n  ui Class Screen\n}\n' +
+        'slice "Set Price" {\n  command Set Price\n  event Price Set @Pricing\n}\n',
+    );
+    const { result } = await callJson(client, "validate", { file: crud, shape: true });
+    expect((result.content[0] as { text: string }).text + "\n").toBe(em(["validate", crud, "--shape", "--json"], dir).stdout);
+    const doc = JSON.parse((result.content[0] as { text: string }).text);
+    expect(doc.shapeSchemaVersion).toBe("1.0");
+    expect(doc.summary.findings).toBe(1);
+    const waive = join(dir, "shape.waive");
+    writeFileSync(waive, "create-class\nrename-class\nretire-class\n");
+    const waived = await callJson(client, "validate", { file: crud, shape: true, waiveFile: waive });
+    expect(waived.doc.summary).toMatchObject({ findings: 0, waived: 1 });
+    expect((await callJson(client, "validate", { file: crud, waiveFile: waive })).result.isError).toBe(true);
+  });
+
   it("a missing file is a tool error, not a crash", async () => {
     const { result } = await callJson(client, "validate", { file: join(dir, "no-such-file.em") });
     expect(result.isError).toBe(true);
@@ -1590,7 +1610,7 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     const file = join(lendDir, "lending.em");
     const { result, doc } = await callJson(client, "engagement_plan", { file, slug: "loans" });
     expect(result.isError).toBeFalsy();
-    expect(doc.engagementPlanSchemaVersion).toBe("1.2");
+    expect(doc.engagementPlanSchemaVersion).toBe("1.3");
     // MIL-280: one upstream merged, one still open — base is main either way, and nothing is held.
     expect(doc.slices.find((s: { key: string }) => s.key === "reservations")).toMatchObject({ base: "main", held: null });
     const cli = em(["engagement", "plan", file, "loans", "--json"], lendDir);

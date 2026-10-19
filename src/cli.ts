@@ -23,7 +23,7 @@ import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReade
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
 import { generateContract, runApiCheck, formatApiCheckText } from "./cli/api.js";
 import { buildApiCheckJson } from "./emit/apiCheckJson.js";
-import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
+import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
 import { planDiffArgs, realGit, resolveRevision, resolveDocAtRevision } from "./cli/diff-inputs.js";
@@ -57,6 +57,7 @@ import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveS
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { buildRefsJson } from "./emit/refsJson.js";
+import { buildShapeReport, formatShapeText } from "./cli/shape.js";
 import { applyRefWaivers, checkRefs, readWaiveFile } from "./cli/refsCheck.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
@@ -2022,6 +2023,16 @@ program
       "watches a shipped doc's signed content",
   )
   .option(
+    "--shape",
+    "GH #282: run only the advisory shape-family lints (storyline shape) and print rule / count / first ref / docs " +
+      "anchor; exit 0 always. With --json: `shapeSchemaVersion` 1.0 with per-rule finding arrays",
+  )
+  .option(
+    "--waive-file <path>",
+    "with --shape: a baseline file of slice keys (the `em refs --waive-file` format) whose shape findings are listed " +
+      "as waived and not counted; missing file = no waivers",
+  )
+  .option(
     "--json",
     "print a JSON document instead of text — works on a model WITH errors, unlike `em export` " +
       "(MIL-128, see docs/cli.md); exit codes are unchanged",
@@ -2030,6 +2041,8 @@ program
     (
       file: string,
       opts: {
+        shape?: boolean;
+        waiveFile?: string;
         listIssues?: boolean;
         listDivergences?: boolean;
         listPublic?: boolean;
@@ -2044,7 +2057,24 @@ program
         console.error("em validate: --require-ratified-hash applies only with --slice-ready <key>");
         process.exit(1);
       }
+      if (opts.waiveFile && !opts.shape) {
+        console.error("em validate: --waive-file applies only with --shape");
+        process.exit(1);
+      }
+      if (opts.shape && (opts.sliceReady || opts.listIssues || opts.listDivergences || opts.listPublic || opts.failOnIssues || opts.checkSignedBodies)) {
+        console.error("em validate: --shape cannot be combined with --slice-ready, --list-*, --fail-on-issues or --check-signed-bodies");
+        process.exit(1);
+      }
       const { model, diagnostics, refs, source } = compileFile(file);
+      if (opts.shape) {
+        const all = computeAllDiagnostics(file, model, refs, diagnostics, source);
+        const report = buildShapeReport(all, opts.waiveFile ? readWaiveFile(opts.waiveFile) : []);
+        const modelErrors = all.filter((d) => d.severity === "error").length;
+        for (const k of report.unknownWaivers) console.error(`note: waiver for "${k}" (${opts.waiveFile}) excuses no shape finding — ignored`);
+        if (opts.json) process.stdout.write(buildShapeJson(file, report, modelErrors) + "\n");
+        else console.log(formatShapeText(report, modelErrors));
+        return;
+      }
       // GH #257: an opt-in addition to the unconditional set, so --json, the text report and the
       // exit code all see it the same way every other diagnostic is seen.
       const allDiagnostics = [

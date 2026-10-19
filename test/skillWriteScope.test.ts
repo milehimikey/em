@@ -111,6 +111,17 @@ describe("MIL-236 (a): required write-scope text in each design entry point", ()
     }
   });
 
+  it("the design skill's model phase ends on the shape exit gate (GH #282)", () => {
+    const text = flat(DESIGN);
+    expect(text).toContain("**Shape exit gate (GH #282).**");
+    expect(text).toContain("`em validate <model>.em --shape`");
+    expect(text).toContain("`- YYYY-MM-DD: shape-accepted: <rule> <refs> — <reason>`");
+    expect(text).toContain("`--waive-file <path>`");
+    expect(text).toContain("**Refuse to move to the slice phase otherwise**");
+    // The gate sits in the model phase, before the end-of-phase state change.
+    expect(text.indexOf("**Shape exit gate (GH #282).**")).toBeLessThan(text.indexOf("End of phase: render, update state"));
+  });
+
   it("the design skill teaches the MIL-238 ratify flags and keeps ratification a human gate", () => {
     const text = flat(DESIGN);
     expect(text).toContain(

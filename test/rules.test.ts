@@ -17,6 +17,7 @@ const RULE_ENTRIES = Object.entries(RULES) as Array<[RuleCode, RuleDef]>;
 
 const KNOWN_DOC_ANCHORS = new Set([
   "connection-legality",
+  "storylines",
   "lineage",
   "both-ends-of-a-flow",
   "fields-completeness",

@@ -122,6 +122,11 @@ Same document as `em validate <file> --json`: a pass/fail summary plus every dia
 message, line, refs, `usageCategory`). This is the tool to reach for first — it's the only one
 that still returns a useful document when the model has errors.
 
+With `shape: true` (GH #282) the same tool returns the document `em validate <file> --shape --json`
+prints instead: `shapeSchemaVersion` `1.0`, one entry per shape-family lint with its `findings` (message,
+line, refs) and `waived` arrays, never a failure. `waiveFile` (a path; only with `shape`) baselines
+accepted slice keys, as `--waive-file` does. See [cli.md](cli.md#--shape-gh-282).
+
 ### `slice_ready`
 
 Same document as `em validate <file> --slice-ready <sliceKey> --json`: the 6 named gates (doc

@@ -46,6 +46,7 @@ import {
   spliceSliceEntry,
   spliceStatus,
 } from "./engagementFile.js";
+import { shapeRuleCodes } from "./shape.js";
 import { ENGAGEMENT_SCHEMA_VERSION } from "../emit/engagementJson.js";
 
 /** Everything a plan/status needs about one compiled model — what both the CLI action and the
@@ -389,7 +390,7 @@ export interface EngagementPlanLevel {
  *  implementer would otherwise rediscover and report on its own. Advisory: never a hold, never
  *  written to the Ledger; the lead puts the whole list to the human in ONE question round before
  *  fan-out (skill §2). Each finding names the slices it spans so the answer lands once. */
-export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch";
+export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch" | "shape";
 
 export interface PreflightFinding {
   kind: PreflightKind;
@@ -409,7 +410,7 @@ export interface EngagementPlan {
   parallel: number;
   levels: EngagementPlanLevel[];
   slices: EngagementPlanSlice[];
-  /** GH #239 (plan schema 1.2). `[]` when the engagement's slices share no gap. */
+  /** GH #239 (plan schema 1.2; `shape` kind added in 1.3, GH #282). `[]` when the engagement's slices share no gap. */
   preflight: PreflightFinding[];
 }
 
@@ -513,6 +514,27 @@ export function computePreflight(input: EngagementModelInput, members: string[],
       subject: unit,
       slices: [unit],
       message: `slice "${unit}": its doc and the model disagree (${msgs.length} doc↔model finding(s)) — ${msgs.join("; ")}`,
+    });
+  }
+
+  // shape (GH #282): the advisory shape-family lints (RULES `family: "shape"`) whose refs touch an
+  // engagement slice — one finding per rule, naming the engagement slices it spans. A run that
+  // straddles the engagement boundary still counts for the member slices it names.
+  for (const code of shapeRuleCodes()) {
+    const spanned = new Set<string>();
+    for (const d of input.allDiagnostics.filter((x) => x.code === code)) {
+      for (const r of d.refs ?? []) {
+        const unit = members.find((k) => r === k || r.startsWith(`${k}/`));
+        if (unit) spanned.add(unit);
+      }
+    }
+    if (spanned.size === 0) continue;
+    const slices = sortKeys(spanned);
+    findings.push({
+      kind: "shape",
+      subject: code,
+      slices,
+      message: `shape lint ${code} fires on ${slices.length} of the engagement's slices (${slices.join(", ")}) — fix the model, or record \`shape-accepted: ${code} <refs> — <reason>\` in the model README's Decisions log, before fan-out`,
     });
   }
 

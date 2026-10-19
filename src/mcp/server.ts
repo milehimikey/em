@@ -34,10 +34,11 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { diffModels, LineageResolvers } from "../model/diff.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "../emit/json.js";
-import { buildValidateJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "../emit/validateJson.js";
+import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "../emit/validateJson.js";
 import { buildDiffJson } from "../emit/diffJson.js";
 import { runApiCheck } from "../cli/api.js";
 import { buildApiCheckJson } from "../emit/apiCheckJson.js";
+import { buildShapeReport, readWaiveFile } from "../cli/shape.js";
 import { validateLineage } from "../catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceValidate.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
@@ -257,12 +258,24 @@ export function createServer(): McpServer {
         "`em validate <file> --json` prints: a pass/fail summary plus every diagnostic (code, " +
         "message, line, refs, usageCategory). Works even when the model has errors — this is " +
         "the tool to call first when you just need to know what's wrong, or to confirm a model " +
-        "is clean before exporting it.",
-      inputSchema: { file: fileParam },
+        "is clean before exporting it. With `shape: true` (GH #282) it returns the " +
+        "`em validate <file> --shape --json` document instead: only the advisory shape-family " +
+        "lints, per-rule finding arrays with refs (`shapeSchemaVersion`), never a failure; " +
+        "`waiveFile` (a path, only with `shape`) baselines accepted slice keys.",
+      inputSchema: {
+        file: fileParam,
+        shape: z.boolean().default(false).describe("GH #282: return the shape-lint view (`em validate --shape --json`) instead of the full diagnostics"),
+        waiveFile: z.string().optional().describe("with `shape`: path of a waive file (one slice key per line, `#` comments) whose shape findings are listed as waived, not counted"),
+      },
     },
-    async ({ file }) => {
+    async ({ file, shape, waiveFile }) => {
       const compiled = compileWithValidation(file);
       if ("error" in compiled) return errorResult(compiled.error);
+      if (waiveFile && !shape) return errorResult("waiveFile applies only with shape: true");
+      if (shape) {
+        const report = buildShapeReport(compiled.allDiagnostics, waiveFile ? readWaiveFile(waiveFile) : []);
+        return textResult(buildShapeJson(file, report, compiled.allDiagnostics.filter((d) => d.severity === "error").length));
+      }
       return textResult(buildValidateJson(file, compiled.allDiagnostics));
     },
   );

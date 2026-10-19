@@ -21,6 +21,7 @@ import { RULES, RuleCode } from "../model/rules.js";
 import { Element, NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { SliceReadyGates } from "../catalog/sliceReadyValidate.js";
+import type { ShapeReport } from "../cli/shape.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 /** `serializeDiagnostic()`'s shape plus `usageCategory`, looked up from `RULES` — every
@@ -184,6 +185,35 @@ export function buildValidateListJson(file: string, markers: MarkerEntry[], diag
     file,
     markers,
     diagnostics: diagnostics.map(serializeDiagnosticWithUsage),
+  };
+  return JSON.stringify(doc, null, 2);
+}
+
+// 1.0 (GH #282): initial shape — `em validate --shape --json`. `rules[]` carries every shape-family
+// rule (zero-count ones too, so a consumer sees what was checked), each with its `findings` (the
+// diagnostics that count: message, line, refs) and `waived` (excused by `--waive-file`, never
+// counted). `summary.findings` / `summary.waived` total them; `clean` is `summary.findings === 0`.
+// `modelErrors` is the count of error diagnostics elsewhere in the model (shape output is
+// incomplete while it is non-zero). Advisory: the exit code is 0 whatever the content.
+export const VALIDATE_SHAPE_SCHEMA_VERSION = "1.0";
+
+export function buildShapeJson(file: string, report: ShapeReport, modelErrors: number): string {
+  const ser = (d: Diagnostic) => ({ message: d.message, line: d.line ?? null, refs: d.refs ?? [] });
+  const doc = {
+    shapeSchemaVersion: VALIDATE_SHAPE_SCHEMA_VERSION,
+    generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
+    file,
+    clean: report.findings === 0,
+    modelErrors,
+    summary: { findings: report.findings, waived: report.waived, rules: report.rules.length },
+    rules: report.rules.map((r) => ({
+      code: r.code,
+      title: r.title,
+      docAnchor: r.docAnchor,
+      count: r.findings.length,
+      findings: r.findings.map(ser),
+      waived: r.waived.map(ser),
+    })),
   };
   return JSON.stringify(doc, null, 2);
 }

@@ -37,8 +37,8 @@ export interface RuleDef {
   /** True for a flag-gated code: the `--slice-ready`-only codes (src/catalog/sliceReadyValidate.ts,
    *  MIL-87) and `--check-signed-bodies`' (src/catalog/signedBodyValidate.ts, GH #257). */
   optIn?: true;
-  /** Rule family for selectors such as a future `em validate --shape` (GH #282). Only the
-   *  advisory storyline-shape lints carry one today. */
+  /** Rule family selected by `em validate --shape` (GH #282): the advisory storyline-shape lints.
+   *  Registering `family: "shape"` is all a new shape lint needs to join that view. */
   family?: "shape";
 }
 
@@ -126,6 +126,8 @@ export const RULES = {
     title: "Slice outside every storyline",
     fix: "Move the slice inside one of the model's `storyline` blocks (advisory: storylines can be adopted incrementally).",
     usageCategory: "slice outside storyline",
+    docAnchor: "storylines",
+    family: "shape",
   },
   "storyline-after-unknown": {
     severity: "error",
