@@ -482,19 +482,25 @@ function sourceColumnCells(lines: string[], start: number, end: number): Array<{
  *  for the item's opening text. */
 function scenarioGivenThenLines(body: string, lines: string[]): Array<{ text: string; idx: number }> {
   const out: Array<{ text: string; idx: number }> = [];
-  for (const sc of parseScenariosLenient(body)) {
+  const scenarios = parseScenariosLenient(body);
+  scenarios.forEach((sc, k) => {
+    // search only inside this block: from its heading to the next scenario's heading
+    const from = sc.line - 1;
+    const to = k + 1 < scenarios.length ? scenarios[k + 1].line - 1 : lines.length;
     for (const item of [...sc.given, ...sc.then]) {
-      const probe = item.slice(0, 24);
-      let idx = sc.line - 1;
-      for (let j = sc.line - 1; j < lines.length; j++) {
-        if (lines[j].includes(probe)) {
+      let idx = from;
+      for (let j = from; j < to; j++) {
+        // a wrapped item is joined with spaces by the reader, so compare against the item's
+        // opening: the physical line's own text (label and bullet stripped) must begin it
+        const seg = lines[j].replace(/^\s*[-*]\s+(\*\*(?:Given|When|Then):\*\*\s*)?/, "").trim();
+        if (seg !== "" && item.startsWith(seg.slice(0, 24))) {
           idx = j;
           break;
         }
       }
       out.push({ text: item, idx });
     }
-  }
+  });
   return out;
 }
 

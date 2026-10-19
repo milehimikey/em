@@ -742,3 +742,40 @@ describe("GH #294 wrapped scenario lines", () => {
     expect(msgs[0]).toContain('"Tool Delisted"');
   });
 });
+
+describe("GH #294 scenario item line numbers", () => {
+  it("reports the wrapped item's own line, not a later scenario that opens with the same phrase", () => {
+    writeDoc("open-orders-lines", {
+      pattern: "state-view",
+      body: [
+        "# Slice",
+        "## Read Model / View",
+        '- **View:** `Line Orders` built from events: "Order Paid"',
+        "## Scenarios",
+        "### Scenario: A walk-in order",
+        "- **Given:** `Order Placed`",
+        "  O1 for the walk-in customer",
+        "- **When:** customer opens Orders",
+        "- **Then:** one row O1",
+        "",
+        "### Scenario: B same opening phrase",
+        "- **Given:** `Order Placed` O1 for the walk-in customer, again",
+        "- **When:** customer opens Orders",
+        "- **Then:** one row O1",
+        "",
+      ].join("\n"),
+    });
+    const src = [
+      'slice "Open Orders Lines" {',
+      '  view Line Orders from "Order Paid" note "slices/open-orders-lines.md"',
+      "}",
+      'slice "Pay" {\n  command Pay\n  event Order Paid @Order\n  event Order Placed @Order\n}',
+    ].join("\n");
+    const msgs = diagsOf(src)
+      .filter((d) => d.code === "doc-names-unfed-event")
+      .map((d) => d.message);
+    expect(msgs).toHaveLength(1);
+    // body line 6 + 7 frontmatter lines = 13 (scenario A), not 18 (scenario B)
+    expect(msgs[0]).toMatch(/line 13\)/);
+  });
+});
