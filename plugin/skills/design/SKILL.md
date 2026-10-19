@@ -102,7 +102,20 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    the one-command fast path: a near-free stub per undocumented slice, wired, in slice order
    (MIL-184) — skip the per-slice `em slice new` calls above and deepen individual docs later
    when the team is ready.
-3. **Evaluate completeness (step 7).** Walk the model: every slice is a **complete** pattern, not a
+3. **Storyline review — before completeness.** Read the timeline as a story, not a schema
+   (`${CLAUDE_PLUGIN_ROOT}/shared/reference/methodology.md`, "The story, not the schema"; em repo
+   `docs/storyline.md`). Name the **main storyline** (end-to-end happy path) and every
+   **secondary storyline** (retire, extend, reorganize), and group the slices under them; one
+   lifecycle block per entity (N × create/update/archive, one trailing view each) is the CRUD
+   shape — reshape it with the "Reshaping an existing model" checklist. Then the **intent test**
+   per command (would a business person say this name at this step in the story? an endpoint-shaped
+   name fails), the **question test** per view (write the question it answers; no question, no
+   read model; a child view only when its query needs what the parent view lacks), and the
+   **conditional-invariant signal** (invariants or fields that apply only "if `<field>` is set"
+   mean two intents in one command: split it). The `timeline-entity-clustered`,
+   `command-second-intent` and `automation-split-by-outcome` lints are the mechanical half; the
+   1.18.0 design exit gate is `em validate --shape`. The `slice` phase is unchanged (timeline order).
+4. **Evaluate completeness (step 7).** Walk the model: every slice is a **complete** pattern, not a
    half-slice — **every command has something that triggers it**, every command emits an event,
    **every event is read by a read model**, **every read model has a consumer**, every view has a
    source, every UI is reachable, every connection is

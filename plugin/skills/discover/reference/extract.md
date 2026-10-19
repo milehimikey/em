@@ -77,7 +77,12 @@ it is fine to finish a round with `# TBD`s still parked.
 
 - **R1 — Candidate events.** Extract (event-driven) or synthesize (procedural) the past-tense
   facts; apply the event test; user confirms/renames/rejects. Ambiguous candidates → `# TBD`.
-- **R2 — Timeline order.** Order the confirmed events into the as-is narrative. Identify the
+- **R2 — Timeline order.** First **name the as-is process(es)** — which business journey does the
+  system run today, and what is its outcome? Take it from the system's walkthroughs, user journeys
+  and docs, and from the people who use it — not from the OpenAPI/migrations/DTO grep, which fills
+  operations no journey touches and comes **after** (`methodology.md`, "The story, not the
+  schema"). Name the main storyline and each secondary one, then order the confirmed events into
+  that as-is narrative, never one block per entity. Identify the
   *actual* actors/callers and the *real* UI or API surfaces (headless systems: still `ui`/`persona`
   — one persona per caller/role, its `ui` boxes are the API calls, per `em-dsl.md`). **First
   `em render` here.**

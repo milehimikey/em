@@ -205,6 +205,144 @@ The `em` shape only tracks the second question — trigger source doesn't change
 
 ---
 
+## The story, not the schema
+
+A model is a story of what success looks like, not a data model (Dymitruk, *What is Event Modeling*: a
+story "on a time line and with no branching"; commands capture intent, "as opposed to simply saving form
+data to a table"; "all information has to have an origin and a destination"). Models drafted from a spec
+drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are the canon; rulings marked
+*(em ruling)* are em's own — neither Dymitruk nor Dilger states a child-entity rule or bans "Update" or
+"Set" by name. Full write-up with the canon quotes: `docs/storyline.md`.
+
+- **One journey per process, start to finish.** The timeline holds one business journey per process,
+  ending in an outcome. The **main storyline** is the end-to-end happy path; retire, extend and
+  reorganize are **secondary storylines** (chapters; Dilger: "one linear flow from left to right. No
+  exceptions… Linearize it!", "Model one process at a time, each with its own clear ending"). Never one
+  lifecycle block per entity. Name the main and every secondary storyline; a `storyline "Name" { … }`
+  block groups the slices (`dsl.md`, Storylines).
+- **Build from walkthroughs first.** The story already lives in the spec's walkthroughs, use cases and
+  user journeys. Build the timeline from those; the resource/API reference (OpenAPI, endpoint tables,
+  migrations) fills only the operations no walkthrough touches, and is read last. Headless: a persona
+  per API caller, and that caller's journey is the story.
+- **The CRUD shape.** N entities × (create, update, archive), one trailing view per entity, no read
+  across contexts. Recognise it in your own output. Both models below validate; only the second is a
+  story:
+  ```em
+  model "Catalog (CRUD shape)"
+
+  persona Merchandiser
+
+  context Product
+
+  slice "Create Product" {
+    ui Product Form @Merchandiser
+    command Create Product
+    event Product Created @Product
+  }
+
+  slice "Update Product" {
+    ui Product Form @Merchandiser
+    command Update Product
+    event Product Updated @Product
+  }
+
+  slice "Archive Product" {
+    ui Product Form @Merchandiser
+    command Archive Product
+    event Product Archived @Product
+  }
+
+  slice "Products" {
+    view Products from "Product Created", "Product Updated", "Product Archived"
+    ui Product List @Merchandiser
+  }
+  ```
+  ```em
+  model "Catalog (storyline shape)"
+
+  persona Merchandiser
+
+  context Product
+
+  # Main storyline: "Bring a product to market"
+  slice "Create Product" {
+    ui Product Form @Merchandiser
+    command Create Product
+    event Product Created @Product
+  }
+
+  slice "Catalog" {
+    view Catalog from "Product Created"
+    ui Browse Catalog @Merchandiser
+  }
+
+  slice "Set Price" {
+    ui Pricing Panel @Merchandiser
+    command Set Price
+    event Price Set @Product
+  }
+
+  slice "Catalog with Price" {
+    view Catalog again from "Price Set"
+    ui Browse Catalog @Merchandiser
+  }
+
+  # Secondary storyline: "Retire a product"
+  slice "Retire Product" {
+    ui Pricing Panel @Merchandiser
+    command Retire Product
+    event Product Retired @Product
+  }
+
+  slice "Catalog without Product" {
+    view Catalog again from "Product Retired"
+    ui Browse Catalog @Merchandiser
+  }
+  ```
+  The `timeline-entity-clustered` lint is the mechanical half.
+- **Commands name intent, not endpoints** (Dilger: "Name by intent", "Every command has a reason"). One
+  endpoint may carry several intents. Signal of two intents in one command: invariants or field rules
+  that apply only "if `<field>` is set" — split it, and both commands may record the same event
+  (`CreateProduct` / `CreateProductVariant`, same `POST /products`, same `ProductCreated`). **Intent
+  test:** if a storyline step reads awkwardly with the command's name, the command is named after the
+  endpoint. `command-second-intent` is the mechanical half.
+- **A read model is one information need** (Dilger: "Every Read Model answers a question. No question,
+  no Read Model."). **Question test:** write the question each view answers; add a view only when no
+  existing one answers it. A nested route hints the child belongs in the parent's view; the real test
+  is whether the query needs information the parent view lacks. Child with references only → the parent
+  view carries ids; child with its own data → embedded in the parent view; child queried without the
+  parent id → its own view. Aggregate rules decide write-side consistency, never read models. *(em
+  ruling)*
+- **Write side: children belong in the parent's context** when the child's invariants are checks against
+  the parent. A sub-resource schema shared across parent types is one event per parent on the parent's
+  context, not a shared aggregate — check the spec's event reference, not its resource section. Where
+  two slices record the same fact, repeat the event bare (same name, same context). *(em ruling)*
+- **Repeat the view after every command that changes it** (`again`, span-1 — see State View above), so
+  the reader sees the information arrive rather than a view at the end.
+- **Outcomes are events of one slice** (Dilger: "One decision. One event. One state change."; one
+  action with two outcomes is the legitimate exception): alternative events on one context in one slice
+  (`event A | B @Ctx`, GH #278), failure as a scenario first, a chapter only when core. Stated once for
+  automations in the Automation pattern (`docs/patterns.md#automation`); `automation-split-by-outcome`
+  is the mechanical half.
+- **Business terms in the events.** "If your Event Model doesn't reflect terms used by business experts —
+  especially in the recorded Events — that's a red flag." (Dilger, *Seven insights*.)
+
+### Reshaping an existing model
+
+The upgrade path for a CRUD-shaped model. After each step run `em validate`.
+
+1. Name the processes (from walkthroughs, not endpoints): the main storyline and each secondary one.
+2. Reorder the slices into those stories and wrap each in a `storyline` block (`after "…"` where one
+   follows another); a slice that fits no story is a deletion candidate.
+3. Intent test per command: rename to the business intent; split any command with "if X is set" rules.
+4. Question test per view: merge views answering the same question; add one only for an unanswered one.
+5. Move child-entity events onto the parent's context when the child's invariants check the parent.
+6. Repeat each view (`again`, span-1) after every command that changes it; drop the lone trailing view.
+7. Fold success/failure slice pairs into one slice with alternative events.
+8. Re-run `em validate`, and `em validate --shape` — the 1.18.0 design exit gate — once available.
+
+---
+
 ## The 7 steps
 
 Run them in order. The skill groups them into phases: **discover = 1–4**, **model = 5–7**,

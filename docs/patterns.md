@@ -74,6 +74,10 @@ see. A State Change slice is only finished once both hold, which in practice mea
 with the State View slice that consumes its event — and that State View needs its own consumer
 in turn. [`em validate` warns](validation.md#both-ends-of-a-flow) on any of those gaps.
 
+Name the command for the business intent, not the endpoint, and order State Change slices as one journey
+per process rather than one create/update/archive block per entity: see
+[The story, not the schema](storyline.md).
+
 ### One command, several outcomes: one slice
 
 When a command can end in more than one outcome, the outcomes are **events of the same slice**,
@@ -130,6 +134,10 @@ When a read model keeps evolving as later events land, it reappears on the timel
 instance is its own State View slice and needs its own consumer.** If you repeat a view next to
 an event purely to keep the arrow short, bring its screen along; if there is nothing to bring,
 the instance shouldn't be there.
+
+A read model is one information need: it answers a question no existing view answers, and
+it is repeated after every command that changes it so the reader sees the information arrive. See
+[The story, not the schema](storyline.md#5-a-read-model-is-one-information-need).
 
 ## Automation
 

@@ -21,10 +21,11 @@ layout, the Socratic/validation discipline every phase follows) and
 work — they are the source of truth. Run the preconditions there first.
 
 **Existing system?** Use the `extract` phase below. **New feature inside an existing codebase,
-not a whole-system extraction?** Stay in `discover`, but before locking in command/event names,
-Grep/Read adjacent real sources (OpenAPI specs, DB migrations, existing DTOs/event classes in
-sibling contexts) rather than guessing conventions — same check the `slice` phase applies to
-field tables (`event-modeling-design`).
+not a whole-system extraction?** Stay in `discover`, but **only after the storyboard exists**
+(step 2) and before locking in command/event names, Grep/Read adjacent real sources (OpenAPI
+specs, DB migrations, existing DTOs/event classes in sibling contexts) rather than guessing
+conventions — same check the `slice` phase applies to field tables (`event-modeling-design`).
+Those sources fill operations no walkthrough touches; they never supply the story.
 
 ## Phase: `discover` — steps 1-4
 
@@ -36,7 +37,13 @@ Goal: a draft model of events, storyboard, commands, and views. Loose is OK; str
    reject derived values (belong in a read model) and telemetry/activity (not business state).
    Don't silently drop rejections — park them in the state file's Decisions log with why, so
    they aren't re-proposed later. Capture the survivors as a flat list.
-2. **Plot / storyboard (step 2).** Order the events into the narrative. Identify **personas**
+2. **Plot / storyboard (step 2).** Start from the story, not the schema: ask for the spec's
+   **walkthroughs**, use cases and user journeys — or *"what does success look like, start to
+   finish?"* — and build the timeline from those (`methodology.md`, "The story, not the schema").
+   Name the **main storyline** (the end-to-end happy path) and each **secondary storyline**
+   (retire, extend, reorganize) before ordering anything; never one lifecycle block per entity
+   (the CRUD shape). The OpenAPI/migrations/resource reference comes **after** the storyboard,
+   only to fill operations no walkthrough touches. Order the events into the narrative. Identify **personas**
    (actors) and the **UI** screens at each step. Add `persona` declarations and `ui` elements.
    In a **headless/API** model there are no human personas or screens — identify the external
    **callers** at each step instead; declare one persona per caller/role, and its `ui` boxes are

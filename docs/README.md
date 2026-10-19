@@ -20,6 +20,7 @@ agent can carry with human review.
 | Know which steps need humans, and which an agent can do | [process.md](process.md) |
 | Hand a ratified slice to an agent to implement | [process.md](process.md#handing-a-slice-to-an-agent), and the [agent guide](../.claude/skills/event-modeling-implement/reference/implement.md) it points to |
 | Understand the four Event Modeling patterns | [patterns.md](patterns.md) |
+| Keep a model a story, not a CRUD schema | [storyline.md](storyline.md) |
 | Look up DSL syntax (keywords, `from`, `again`, fields, notes, issues) | [dsl.md](dsl.md) |
 | Look up the slice-doc frontmatter schema (version, lineage, required-vs-optional keys) | [slice-doc-schema.md](slice-doc-schema.md) |
 | Look up a command or flag | [cli.md](cli.md) |
