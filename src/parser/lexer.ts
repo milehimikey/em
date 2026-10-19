@@ -95,6 +95,11 @@ export function decodeQuoted(s: string): string {
   return s.replace(/\\(["\\])/g, "$1");
 }
 
+/** The inverse of `decodeQuoted`: escapes `\` first, then `"`, so the result is safe inside `"…"` in em source. */
+export function encodeQuoted(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 /** True if `s` contains a `"` whose string never closes (accounting for escapes). */
 export function hasUnterminatedQuote(s: string): boolean {
   for (let i = 0; i < s.length; i++) {

@@ -16,6 +16,7 @@ import { NormalizedModel, Element, normalizeName } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { againInstancesOf, continuationOf } from "../model/continuation.js";
 import { blockEnd } from "./storylineSuggest.js";
+import { encodeQuoted } from "../parser/lexer.js";
 
 interface SliceBlock {
   index: number;
@@ -275,7 +276,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
           const sameAsHost = hostUi !== undefined && normalizeName(hostUi.name) === normalizeName(u.name) && hostUi.persona === u.persona;
           if (!sameAsHost) {
             if (!uiDeclaredElsewhere(u.name, u.persona, trial)) ok = false;
-            else span[0] = span[0].replace(FROM_LIST, (m) => `${m} shown on "${u.name.replace(/"/g, '\\"')}"`);
+            else span[0] = span[0].replace(FROM_LIST, (m) => `${m} shown on "${encodeQuoted(u.name)}"`);
           }
         } else ok = false; // no consumer, or several screens the old wiring cannot be reproduced for
         if (!ok) break;

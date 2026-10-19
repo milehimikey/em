@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { UpgradeContext, UPGRADE_STEPS, applyUpgrade, detectUpgrade, resolveRepoRoot } from "../src/cli/upgrade.js";
+import { decodeQuoted, encodeQuoted } from "../src/parser/lexer.js";
 import { rewriteParkingLotFragments } from "../src/cli/defer.js";
 import { buildStorylineSuggestion } from "../src/cli/storylineSuggest.js";
 import { MODEL_117, sliceDocText, writeModel117 } from "./helpers/model117.js";
@@ -230,6 +231,22 @@ describe("em storyline suggest (GH #290)", () => {
     expect(hdr("x.em")).toBe("--- a/x.em");
     expect(hdr(join(process.cwd(), "x.em"))).toBe("--- a/x.em");
     expect(hdr(join(tmpdir(), "elsewhere", "x.em"))).toBe("--- a/x.em");
+  });
+
+  it("quotes a source URL containing a backslash and a quote so it round-trips through the parser", () => {
+    expect(decodeQuoted(encodeQuoted('a\\b"c\\"d\\'))).toBe('a\\b"c\\"d\\');
+    const url = 'docs\\x.md#a"b';
+    const src =
+      'model "M"\ncontext C\npersona P\n' +
+      `slice "A" source "${encodeQuoted(url)}" {\n  ui U @P\n  command Do A\n  event A Done @C\n}\n`;
+    const s = suggest(src);
+    expect(s.storylines[0].source).toBe(url);
+    const patched = s.patch
+      .split("\n")
+      .filter((l) => !l.startsWith("-") && !l.startsWith("@@") && !l.startsWith("+++"))
+      .map((l) => l.slice(1))
+      .join("\n");
+    expect((compile(patched).model.storylines ?? [])[0].source).toBe(url);
   });
 
   it("proposes nothing for a model with no source and no again chain, and never writes the model", () => {

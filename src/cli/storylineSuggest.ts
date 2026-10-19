@@ -16,6 +16,7 @@
 
 import { isAbsolute, relative, resolve, basename, sep } from "node:path";
 import { NormalizedModel, normalizeName } from "../model/model.js";
+import { encodeQuoted } from "../parser/lexer.js";
 
 export interface SuggestedStoryline {
   name: string;
@@ -229,7 +230,7 @@ export function buildStorylineSuggestion(model: NormalizedModel, text: string, f
   }
   runs.sort((a, b) => a.first - b.first);
 
-  const quote = (s: string): string => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const quote = (s: string): string => `"${encodeQuoted(s)}"`;
   const ops: Op[] = [];
   let cursor = 0;
   for (const run of runs) {
