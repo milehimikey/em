@@ -844,6 +844,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `arrow-backward` | error | Backward arrow | Restructure so the target comes later. |
 | `arrow-unresolved-source` | error | Arrow source unresolved | Fix the arrow's source name. |
 | `arrow-unresolved-target` | error | Arrow target unresolved | Fix the arrow's target name. |
+| `automation-split-by-outcome` | warning | Reaction split into one slice per outcome | Model one Automation slice recording the outcomes as alternative events — `event A | B @Context` (docs/patterns.md#automation). |
 | `binding-missing-file` | warning | Doc binding points at a missing file | Create the slice doc, or fix the `note` path. |
 | `both-ends-of-a-flow/command-no-event` | warning | Command without event | Add the event this command records. |
 | `both-ends-of-a-flow/command-untriggered` | warning | Command with no trigger | Add a `ui` or the reaction that issues it, both in this slice. |
@@ -905,6 +906,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `public-name-not-unique` | error | Two public elements of one kind share a name | Rename one of them (or drop `public` from one): a consumer's `consumes <model>:<kind>.<slug>` must name exactly one element. |
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
+| `retry-slice-of` | warning | Slice only retries another command | Re-fire the same reaction via `view … again from` the retry-scheduled event; a different actor's override is its own slice with its own command (docs/patterns.md#automation). |
 | `scenario-then-not-outcome` | warning | Scenario's Then names no event or rejection | Make the Then bullets name the event(s) the command records, or the rejection/error it returns. |
 | `scenario-when-not-command` | warning | Scenario's When does not name the slice's command | Make the When bullet name the slice's command (for a reaction slice: the command, the reaction element, or a view of the slice) — each scenario exercises exactly one command. For a Translation, naming the translation element satisfies it. |
 | `seam-consumer-not-reaction` | error | Seam consumer is not a reaction | Point `to` at a translation/automation element (or a slice containing exactly one). |

@@ -105,9 +105,11 @@ affected lines written by hand.
 | owner not a handle |
 | public command without invariants |
 | public event not consumed by any seam |
+| reaction split by outcome |
 | reaction triggers no command |
 | read model has no consumer |
 | read model has no source |
+| retry slice of another command |
 | scenario Then names no outcome |
 | scenario When names no command |
 | seam crossing greenfield |
