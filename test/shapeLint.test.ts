@@ -95,6 +95,13 @@ slice "Fail Payment" {
     expect(one.rules.find((r) => r.code === SPLIT)!.findings).toHaveLength(0);
   });
 
+  it("every quiet fixture validates with zero errors, so quiet is the lint's doing", () => {
+    for (const f of ["domain-verbs-quiet.em", "translation-quiet.em", "one-slice-quiet.em"]) {
+      const errors = diagsFor(fixture(f)).filter((d) => d.severity === "error");
+      expect(errors.map((e) => e.message), f).toEqual([]);
+    }
+  });
+
   it("stays quiet when the reactions read different views", () => {
     const src = `
 slice "A" {

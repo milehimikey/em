@@ -15,8 +15,3 @@ slice "Ledger" {
   view Ledger from "Payment Capture Succeeded", "Payment Capture Failed"
   ui Ledger Screen @Ops
 }
-slice "Payments To Process — direct" {
-  processor Direct Gateway from "Payment Requested"
-  command Capture Payment Directly
-  event Payment Capture Expired
-}

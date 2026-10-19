@@ -11,12 +11,12 @@ slice "Capture Payment" {
   command Capture Payment
   event Payment Captured
 }
-slice "Fail Payment" {
-  translation Gateway Failure from "Payment Requested"
-  command Fail Payment Capture
-  event Payment Capture Failed
-  event Payment Capture Succeeded
+slice "Notify Ledger" {
+  translation Ledger Push from "Payments To Process"
+  command Notify Ledger Gateway
+  event Ledger Notified
 }
 slice "Ledger" {
-  view Ledger from "Payment Captured", "Payment Capture Failed", "Payment Capture Succeeded"
+  view Ledger from "Payment Captured", "Ledger Notified"
+  ui Ledger Screen @Ops
 }

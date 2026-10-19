@@ -270,7 +270,7 @@ every sibling slice key plus each reaction and command. Fix: one Automation slic
 outcomes as alternative events, `event A | B @Context`, see [patterns.md](patterns.md#automation). The
 outcome vocabulary is a constant list. `retry-slice-of` is its milder companion: a State Change
 slice (no reaction) whose only command is `Retry <X>`, where `<X>` is another slice's command;
-`refs` are both commands. Fix: drop the slice, a retry is another trigger of `<X>`. Both carry the
+`refs` are both commands. Fix: re-fire the same reaction via `view … again from` the retry-scheduled event; a different actor's override is its own slice with its own command. Both carry the
 `shape` family and may appear on existing models.
 
 Reorder by the story ("create a class, then its attributes, then a product that uses them") and

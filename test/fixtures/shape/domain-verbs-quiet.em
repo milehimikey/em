@@ -2,6 +2,10 @@ slice "Place Order" {
   ui Checkout @Shopper
   command Place Order
   event Order Placed
+}
+slice "Receive Payment" {
+  ui Payment Form @Shopper
+  command Receive Payment
   event Payment Received
 }
 slice "Orders Awaiting Payment" {

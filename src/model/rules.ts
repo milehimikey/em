@@ -72,7 +72,7 @@ export const RULES = {
   "retry-slice-of": {
     severity: "warning",
     title: "Slice only retries another command",
-    fix: "Drop the `Retry <X>` slice; model the retry as another trigger of `<X>` (docs/patterns.md#automation).",
+    fix: "Re-fire the same reaction via `view … again from` the retry-scheduled event; a different actor's override is its own slice with its own command (docs/patterns.md#automation).",
     usageCategory: "retry slice of another command",
     docAnchor: "shape",
     family: "shape",
