@@ -160,4 +160,4 @@ Two separate questions, answered separately:
 
 ## Smoke test
 
-`test/evalScore.test.ts` runs `score.mjs` over the public set in CI: each reference model scored against its own `reference.json` must give a slice ratio of 1.0 (and a slices-per-reaction equal to the reference's), full event recall, no aliases and an entity-clustered rate of 0. The `support-desk` reference deliberately contains a three-slice same-context run followed by a view with a cross-context read, so the clustered metric's negative case is exercised on a real reference.
+`test/evalScore.test.ts` runs `score.mjs` over the public set in CI: each reference model scored against its own `reference.json` must give a slice ratio of 1.0 (and a slices-per-reaction equal to the reference's), full event recall, no aliases and an entity-clustered rate of 0. The `support-desk` reference deliberately contains a three-slice same-context run followed by a board view that also reads `Ticket Opened`, which comes from a slice outside the run, so the clustered metric's negative case is exercised on a real reference.
