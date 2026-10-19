@@ -222,7 +222,9 @@ reappears with `view Orders To Fulfil again from "Fulfilment Retry Scheduled"`, 
 reaction picks the order up again. Add a new slice only when a **different actor or a different
 trigger** is involved: a human override of a failed fulfilment, or a scheduled timer that is
 itself modelled as a reaction on a different view, has its own trigger and so its own slice
-(that is what `retry-slice-of` in #311 distinguishes). The outcomes are alternatives on one context (`event A | B @Ctx`, see [dsl.md](dsl.md)): one run of
+(a slice that only retries another command is flagged by the lint `retry-slice-of`, 1.18.0).
+
+The outcomes are alternatives on one context (`event A | B @Ctx`, see [dsl.md](dsl.md)): one run of
 the command records exactly one of them, which is why a Law 1 fan across invented contexts is the
 wrong picture. A failure that continues the story is "Linearized"
 (Dilger) as a later chapter linked to the originating event, never a branch; that later chapter
