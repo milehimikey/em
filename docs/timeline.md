@@ -101,3 +101,11 @@ look.
 
 Reactions obey the same law: a processor or translation may only read a view that already
 exists on the timeline at its slice.
+
+### One event recorded in several slices
+
+When two commands record the same event (same name, same context — see
+[dsl.md](dsl.md#one-event-recorded-by-several-commands)), each recording site is a separate
+box on the timeline and the same forward rule applies to each: a read model only reads a
+recording at or before its own slice, and every recording site needs a reader at or after it.
+A site placed after the last reader warns `event-unread`; add `view V again from "Event"` after it.

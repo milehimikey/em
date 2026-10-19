@@ -56,6 +56,25 @@ function err<T>(message: string): VerbResult<T> {
 
 // ---- consumers / producers ----
 
+/** Edges of an event across EVERY recording site of its logical event (GH #279: one event
+ *  recorded by several commands), de-duplicated by endpoint ref. */
+function logicalEdges<E extends { ref: string }>(
+  adjacency: Map<string, E[]>,
+  instances: Map<string, string[]>,
+  ref: string,
+): E[] {
+  const seen = new Set<string>();
+  const out: E[] = [];
+  for (const r of [ref, ...(instances.get(ref) ?? [])]) {
+    for (const e of adjacency.get(r) ?? []) {
+      if (seen.has(e.ref)) continue;
+      seen.add(e.ref);
+      out.push(e);
+    }
+  }
+  return out;
+}
+
 export interface ConsumerEntry extends ElementSummary {
   via: string;
 }
@@ -67,7 +86,7 @@ export function queryConsumers(system: QuerySystem, eventRef: string): VerbResul
   if (!resolved.ok) return err(resolved.error);
   const { entry, ref, elementKind } = resolved.match;
   if (elementKind !== "event") return err(`em query consumers: "${eventRef}" resolved to a ${elementKind}, not an event`);
-  const edges = entry.index.out.get(ref) ?? [];
+  const edges = logicalEdges(entry.index.out, entry.index.instances, ref);
   return { ok: true, results: edges.map((e) => ({ ...summarize(system, entry, elementByEdgeRef(entry, e)), via: e.kind })) };
 }
 
@@ -83,7 +102,7 @@ export function queryProducers(system: QuerySystem, eventRef: string): VerbResul
   if (!resolved.ok) return err(resolved.error);
   const { entry, ref, elementKind } = resolved.match;
   if (elementKind !== "event") return err(`em query producers: "${eventRef}" resolved to a ${elementKind}, not an event`);
-  const edges = entry.index.in.get(ref) ?? [];
+  const edges = logicalEdges(entry.index.in, entry.index.instances, ref);
   const results = edges.map((e) => {
     const producer = elementByEdgeRef(entry, e);
     const producerRef = entry.refs.refById.get(producer.id)!;

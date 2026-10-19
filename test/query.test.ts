@@ -1101,3 +1101,37 @@ describe("invariant — model-declared first (MIL-265)", () => {
     writeFileSync(join(dir, "slices", "place-order.md"), PLACE_ORDER_DOC);
   });
 });
+
+describe("shared events in em query (GH #279)", () => {
+  const SHARED = `model "Shared"
+persona Clerk
+context Sales
+slice "Create Product" {
+  ui Product Form @Clerk
+  command Create Product
+  event Product Created @Sales
+}
+slice "Create Variant" {
+  ui Variant Form @Clerk
+  command Create Product Variant
+  event Product Created @Sales
+}
+slice "Products" {
+  view Products from "Product Created"
+  ui Product List @Clerk
+}
+`;
+  it("producers by name unions the commands of every recording site; consumers dedupe", () => {
+    const compiled = compileForQuery(SHARED, tmpdir());
+    const system = buildQuerySystem([{ file: "s.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+    const producers = queryProducers(system, "Product Created");
+    expect(producers.ok).toBe(true);
+    if (!producers.ok) return;
+    expect(producers.results.map((r) => r.ref).sort()).toEqual([
+      "create-product/command.create-product",
+      "create-variant/command.create-product-variant",
+    ]);
+    const consumers = queryConsumers(system, "Product Created");
+    expect(consumers.ok && consumers.results.map((r) => r.ref)).toEqual(["products/view.products"]);
+  });
+});

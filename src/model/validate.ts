@@ -144,7 +144,13 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
             line: view.line,
             refs: other ? [refOf(view.id), refOf(other.id)] : [refOf(view.id)],
           });
-        } else if (isLaterOnTimeline(model, evt.sliceIndex, view.sliceIndex)) {
+        } else if (
+          isLaterOnTimeline(model, evt.sliceIndex, view.sliceIndex) &&
+          // GH #279: any recording site of the logical event on or before the view suffices.
+          !(bucket ?? []).some(
+            (e) => e.kind === "event" && e.logicalId === evt.logicalId && !isLaterOnTimeline(model, e.sliceIndex, view.sliceIndex),
+          )
+        ) {
           pushDiag(diags, "view-from-future-event", {
             message:
               `time flows left to right: event "${evt.name}" (slice ${evt.sliceIndex + 1}) happens ` +
@@ -533,11 +539,24 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
   }
   for (const el of model.elements) {
     if (el.kind !== "event") continue;
-    if (readEvents.has(normalizeName(el.name))) continue;
+    if (readEvents.has(normalizeName(el.name)) && !isSharedEventSite(model, el)) continue;
     // A `public` event is part of the published integration surface — its reader is
     // outside this model, possibly outside this system entirely, so there's nothing local
     // to project it into.
     if (el.public) continue;
+    if (isSharedEventSite(model, el) && readEvents.has(normalizeName(el.name))) {
+      // GH #279: every recording site of a shared event needs a reader at or after it.
+      if (sharedSiteHasReader(model, el)) continue;
+      const slice = model.slices[el.sliceIndex];
+      pushDiag(diags, "both-ends-of-a-flow/event-unread", {
+        message:
+          `this recording of "${el.name}" (slice "${slice?.name ?? el.sliceIndex + 1}") has no reader after it; ` +
+          `add \`view V again from "${el.name}"\` after it`,
+        line: el.line,
+        refs: [refOf(el.id)],
+      });
+      continue;
+    }
     pushDiag(diags, "both-ends-of-a-flow/event-unread", {
       message:
         `event "${el.name}" is not read by any read model; project it into a view ` +
@@ -756,11 +775,40 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     }
   }
 
+  // GH #279: a logical event recorded at several sites must agree on its declaration. Later
+  // sites with no fields / tags / `public` inherited the first's (model.ts); one that declares
+  // a different one is an error.
+  const tagSig = (t?: { key: string; kind: string; fields?: string[]; description?: string }[]) =>
+    JSON.stringify((t ?? []).map((x) => [x.key, x.kind, x.fields ?? null, x.description ?? null]));
+  for (const el of model.elements) {
+    if (el.kind !== "event" || el.logicalId === el.id) continue;
+    const first = model.byId.get(el.logicalId);
+    if (!first) continue;
+    const differs: string[] = [];
+    if (el.fields !== first.fields && JSON.stringify(el.fields ?? []) !== JSON.stringify(first.fields ?? []))
+      differs.push("different fields");
+    if (el.tags !== first.tags && tagSig(el.tags) !== tagSig(first.tags)) differs.push("different tags");
+    if ((el.public === true) !== (first.public === true)) differs.push("a different public marker");
+    if (differs.length === 0) continue;
+    pushDiag(diags, "shared-event-field-mismatch", {
+      message:
+        `event "${el.name}" is recorded again in slice ${el.sliceIndex + 1} with ${differs.join(" and ")} ` +
+        `than its first declaration (slice ${first.sliceIndex + 1}); repeat the event bare ` +
+        `to inherit its fields, tags and public, or make them identical`,
+      line: el.line,
+      refs: [refOf(el.id), refOf(first.id)],
+    });
+  }
+
   // Ambiguous names (used by arrows / view sources) get a heads-up.
   for (const [key, els] of model.byName) {
     // Later \`again\` instances of a view are the SAME logical read model reappearing on the
     // timeline — deliberate, not an ambiguity. Only warn when a duplicate is NOT an instance.
-    const nonInstances = els.filter((e, i) => i === 0 || !(e.kind === "view" && e.again));
+    // Likewise an event recorded again in the same context is one logical event (GH #279), so
+    // only a same-name event in a DIFFERENT context (or a non-event) counts as a collision.
+    const nonInstances = els.filter(
+      (e, i) => i === 0 || !((e.kind === "view" && e.again) || (e.kind === "event" && e.logicalId !== e.id)),
+    );
     if (nonInstances.length > 1 && isReferenced(model, key)) {
       pushDiag(diags, "duplicate-name", {
         message:
@@ -1201,6 +1249,33 @@ function kindLabel(kind: ElementKind): string {
 function withArticle(kind: ElementKind): string {
   const label = kindLabel(kind);
   return `${/^[aeiou]/.test(label) ? "an" : "a"} ${label}`;
+}
+
+/** True when the event is one of several recording sites of one logical event (GH #279). */
+function isSharedEventSite(model: NormalizedModel, el: Element): boolean {
+  if (el.kind !== "event") return false;
+  return (model.byName.get(normalizeName(el.name)) ?? []).some(
+    (x) => x.id !== el.id && x.kind === "event" && x.logicalId === el.logicalId,
+  );
+}
+
+/** A recording site is read when a view at or after its slice names the event (`from`, or a
+ *  `from`-less view in the same slice), a resolved `loops-to` leaves it, or an explicit arrow
+ *  leads from the event to a view at or after it. */
+function sharedSiteHasReader(model: NormalizedModel, site: Element): boolean {
+  const key = normalizeName(site.name);
+  for (const v of model.elements) {
+    if (v.kind !== "view" || isEarlierOnTimeline(model, v.sliceIndex, site.sliceIndex)) continue;
+    const from = v.from ?? [];
+    if (from.length ? from.some((n) => normalizeName(n) === key) : v.sliceIndex === site.sliceIndex) return true;
+  }
+  for (const name of site.loopsTo ?? []) if (resolveLoopsToTarget(model, site, name)) return true;
+  for (const a of model.arrows) {
+    if (normalizeName(a.from) !== key) continue;
+    const to = a.toId ? model.byId.get(a.toId) : undefined;
+    if (to?.kind === "view" && !isEarlierOnTimeline(model, to.sliceIndex, site.sliceIndex)) return true;
+  }
+  return false;
 }
 
 function isReferenced(model: NormalizedModel, key: string): boolean {

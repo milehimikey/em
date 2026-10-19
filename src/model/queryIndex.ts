@@ -125,7 +125,7 @@ export function buildModelIndex(model: NormalizedModel, refs: RefsResult, baseDi
 
   const byLogical = new Map<string, string[]>();
   for (const el of model.elements) {
-    if (el.kind !== "view") continue;
+    if (el.kind !== "view" && el.kind !== "event") continue; // events: shared recording sites (GH #279)
     const ref = refs.refById.get(el.id);
     if (!ref) continue;
     const bucket = byLogical.get(el.logicalId);

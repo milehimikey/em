@@ -152,6 +152,7 @@ affected lines written by hand.
 | seam manifest invalid |
 | seam manifest model key mismatch |
 | seam source not public |
+| shared event field mismatch |
 | signed body changed since ratification |
 | slice-ready body changed since ratification |
 | slice-ready key does not exist |

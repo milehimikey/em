@@ -206,6 +206,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
   const byName = new Map<string, Element[]>();
   const usedIds = new Set<string>();
   const firstViewIdByName = new Map<string, string>();
+  const firstEventByNameContext = new Map<string, Element>();
   let hasAutomation = false;
 
   const makeId = (name: string): string => dedupe(slug(name), usedIds, "_");
@@ -276,6 +277,24 @@ export function normalize(ast: ModelNode): NormalizedModel {
         const first = firstViewIdByName.get(lkey);
         element.logicalId = first ?? element.id;
         if (!first) firstViewIdByName.set(lkey, element.id);
+      } else if (element.kind === "event") {
+        // GH #279: the same event recorded by more than one command (same normalised name AND
+        // same context) is ONE logical event. Later bare repeats with no field block inherit
+        // the first declaration's fields; a differing block stays as declared so validate can
+        // report `shared-event-field-mismatch`.
+        const ekey = `${element.context ?? ""}\u0000${normalizeName(element.name)}`;
+        const first = firstEventByNameContext.get(ekey);
+        if (first) {
+          element.logicalId = first.id;
+          // Inherit the whole declaration (fields, element-level tags, `public`): same fact =
+          // same consistency boundary = same publication status.
+          if (!element.fields || element.fields.length === 0) element.fields = first.fields;
+          if (!element.tags || element.tags.length === 0) element.tags = first.tags;
+          if (element.public === undefined) element.public = first.public;
+        } else {
+          element.logicalId = element.id;
+          firstEventByNameContext.set(ekey, element);
+        }
       } else {
         element.logicalId = element.id;
       }

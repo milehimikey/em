@@ -179,6 +179,8 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // Also 1.19 (GH #288): `field.collection: boolean` — true on a view field typed `Type[]` (a declared
 // type) traced with `derived from "E1", "E2"` (a collection fed by child events); always present,
 // false elsewhere. Additive-only.
+// Also 1.19 (GH #279): `element.logicalRef` is also set on an event recorded again in a later slice
+// (same name and context) — it points at the first declaration. Additive-only; this one 1.19 bump covers every 1.18.0 export change.
 export const SCHEMA_VERSION = "1.19";
 
 export interface ExportResult {
@@ -616,7 +618,9 @@ export function buildExportDoc(
         tags: tagsOf(el),
         renamedFrom: el.renamedFrom ?? null,
         logicalRef:
-          el.kind === "view" && el.again === true ? refOf(el.logicalId) : null,
+          (el.kind === "view" && el.again === true) || (el.kind === "event" && el.logicalId !== el.id)
+            ? refOf(el.logicalId)
+            : null,
         loopsTo: loopsToOf(el),
         consumes: el.consumes && el.consumes.length > 0 ? [...el.consumes] : null,
         invariants:

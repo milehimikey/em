@@ -10,7 +10,7 @@
 
 import { AUTOMATION_KINDS, ElementKind } from "../parser/ast.js";
 import { Element, NormalizedModel, normalizeName } from "./model.js";
-import { latestOnTimeline } from "./storylines.js";
+import { isLaterOnTimeline, latestOnTimeline } from "./storylines.js";
 
 /** Where an edge came from: inferred from a slice's pattern shape, resolved from an explicit
  *  `from "Name"` clause, declared by an `arrow`, or resolved from an event's `loops-to "View"`
@@ -101,8 +101,7 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   //   automation from read model(s) -> view  -> automation
   for (const el of model.elements) {
     for (const name of el.from ?? []) {
-      const src = resolveFromSource(model, el, name);
-      if (src) add(src.id, el.id, "from");
+      for (const src of resolveFromSources(model, el, name)) add(src.id, el.id, "from");
     }
   }
 
@@ -154,6 +153,23 @@ export function resolveFromSource(model: NormalizedModel, el: Element, name: str
   return el.kind === "view"
     ? bucket.find((x) => x.kind === "event") ?? bucket[0]
     : nearestViewAtOrBefore(model, bucket, el.sliceIndex) ?? bucket.find((x) => x.kind === "view") ?? bucket[0];
+}
+
+/**
+ * Like `resolveFromSource`, but a `view`'s event source resolves to EVERY recording site of
+ * that logical event (GH #279: one event recorded by several commands) at or before the view's
+ * slice — Law 2 (forward-only) still applies per occurrence. When no occurrence is at or
+ * before the view (a `view-from-future-event` error), falls back to the first occurrence.
+ */
+export function resolveFromSources(model: NormalizedModel, el: Element, name: string): Element[] {
+  const first = resolveFromSource(model, el, name);
+  if (!first) return [];
+  if (el.kind !== "view" || first.kind !== "event") return [first];
+  const sites = (model.byName.get(normalizeName(name)) ?? []).filter(
+    (x) => x.kind === "event" && x.logicalId === first.logicalId,
+  );
+  const reachable = sites.filter((x) => !isLaterOnTimeline(model, x.sliceIndex, el.sliceIndex));
+  return reachable.length > 0 ? reachable : [first];
 }
 
 /** Latest view instance at-or-before the given slice on the model's timeline (reactions read

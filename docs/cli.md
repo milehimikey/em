@@ -721,7 +721,9 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     Fields that don't apply to a given element are emitted as explicit `null` (not omitted),
     so a typed consumer (e.g. Pydantic) doesn't have to sniff for key presence. `from` is
     resolved to both the referenced name and its `ref`. `logicalRef` points at the first
-    timeline instance of a `view … again` read model; `null` for everything else. `loopsTo`
+    timeline instance of a `view … again` read model, and (added in schema `1.19`, GH #279) at the
+    first declaration of an event recorded again in a later slice with the same name and
+    context; `null` for everything else, including that first declaration. `em query` groups the recording sites of a shared event as `instances` of one another, like the instances of a repeated read model. `loopsTo`
     (added in schema `1.11`, MIL-199) is `{ name, ref }[] | null` — same shape as `from` — the
     event's `loops-to "View"` target(s), each resolved to the earlier `view` instance it names;
     `null` when the event carries none (events only in practice; the clause is a parse error on
@@ -2325,8 +2327,8 @@ just to answer one structural question. Eight verbs, each its own subcommand:
 
 | Verb | Answers |
 |---|---|
-| `em query consumers <files...> --event <ref-or-name>` | Views/reactions consuming an event, plus their slices |
-| `em query producers <files...> --event <ref-or-name>` | Commands producing an event, plus their slices and `ui` triggers |
+| `em query consumers <files...> --event <ref-or-name>` | Views/reactions consuming an event, plus their slices; `--event` resolves every recording site of a shared event (GH #279), even when given one site's export ref |
+| `em query producers <files...> --event <ref-or-name>` | Commands producing an event, plus their slices and `ui` triggers; `--event` resolves every recording site of a shared event (GH #279), even when given one site's export ref |
 | `em query downstream <files...> --of <ref-or-name> [--depth <n>]` | Transitive closure along legal edges from an element — impact analysis |
 | `em query upstream <files...> --of <ref-or-name> [--depth <n>]` | Transitive closure against legal-edge direction — "what feeds this" |
 | `em query slices <files...> [--pattern p] [--status s] [--context c] [--persona p] [--tag t]` | Filtered slice list — every given filter AND-combines |

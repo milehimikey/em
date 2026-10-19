@@ -319,6 +319,15 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   "to-do list") and pointing the reaction at that view. Name that view after the pending work
   (`Payments To Process`), never after the triggering event — a view reusing the event's name
   collides in the shared namespace and draws a duplicate-name warning.
+- **One event recorded by several commands** (two intents, one fact — `Create Product` and
+  `Create Product Variant` both ending in `Product Created`): repeat the event BARE in the later
+  slice with the same name and context. A bare repeat of an event with the same name and context is
+  ONE logical event — no `duplicate-name`, no marker (`again` stays view-only). The repeat inherits
+  the first declaration's fields, element-level `tag` clauses and `public`; declaring different ones
+  is the error `shared-event-field-mismatch`. A view's `from "E"` draws an arrow from every recording
+  site at or before it, and EVERY site needs a reader at or after it (add `view V again from "E"`
+  after the last site, or `event-unread` warns for that site). The same name in a different context
+  is still a `duplicate-name` warning.
 - **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an
   already-declared read model — the forward-only device for a view that evolves as later events
   land. Instances are ONE logical view: the first declaration owns the `note` binding; each
@@ -661,8 +670,9 @@ slice "Read Quote — created" {
   **prefer `view X again`** for every instance after the first (see Clauses) — **each instance
   carries its own consumer** (the `ui` that reads it, or a reaction), not just the last one. `again`
   instances are exempt from the duplicate-name warning even when referenced, and each reference
-  resolves to the right instance — a plain repeat only stays warning-free while nothing references it by name, and
-  resolves to the *first* declaration when something does. **Wire each event to a read model exactly
+  resolves to the right instance — a plain repeat of a view only stays warning-free while nothing references it by name, and
+  resolves to the *first* declaration when something does (the exception is a same-context event
+  repeat, which is one logical event — see above). **Wire each event to a read model exactly
   once:** a repeated instance's `from` lists only the **new** events since the previous instance
   (not cumulative), or the event draws a duplicate arrow to the same read model at every repeat. (An
   event may still feed several *different* read models, once each.)
@@ -866,6 +876,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `seam-duplicate` | warning | Duplicate seam | Remove the repeated `from`/`to` pair. |
 | `seam-endpoint-unresolved` | error | Seam endpoint does not resolve | Fix the ref to an element the named model actually exports (`em export` lists every ref), or re-declare the seam after a rename. |
 | `seam-source-not-public` | error | Seam source is not `public` | Mark the event/view `public` in its model, or point the seam at the element that is. |
+| `shared-event-field-mismatch` | error | Shared event declared with different fields, tags or public | Repeat the event bare to inherit the first declaration's fields, tags and public, or make them identical. |
 | `slice-doc/structured-section-malformed` | warning | Malformed structured section | Balance the `<!-- GENERATED:em-slice-…:start -->`/`:end -->` markers (re-create the doc with `em slice new --force` if they are lost), restore the template's table header and run `em slice sync`, and give every `### Scenario:` block a Given, When and Then bullet. |
 | `slice-outside-storyline` | warning | Slice outside every storyline | Move the slice inside one of the model's `storyline` blocks (advisory: storylines can be adopted incrementally). |
 | `storyline-after-cycle` | error | Storyline `after` cycle | Remove an `after` clause so no storyline comes after itself. |

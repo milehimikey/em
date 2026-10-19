@@ -107,6 +107,31 @@ the view is the automation's to-do list, and it lives in the slice *before* the 
 — the reaction shares its slice with the command it triggers instead (see the Automation
 pattern in [patterns.md](patterns.md)).
 
+### One event recorded by several commands
+
+Two commands may record the same event. Declare the event in each slice, bare, with the same
+name and context: the repeats are one logical event (`em export` sets `logicalRef` on each
+repeat, pointing at the first). No marker is needed — `again` stays view-only. A later
+declaration with no `{ fields }` block, `tag` clauses or `public` inherits the first
+declaration's; one that declares different ones is the error `shared-event-field-mismatch`.
+Every recording site needs a reader at or after it (`event-unread`, per site). A view reading the event
+(`from "Event"`) gets an arrow from every recording site at or before it. The same name in a
+different context is still a `duplicate-name` warning when referenced.
+
+```
+slice "Place order" {
+  ui Checkout
+  command Place Order
+  event Order Placed @Sales { orderId: string }
+}
+
+slice "Reorder" {
+  ui Reorder Button
+  command Reorder
+  event Order Placed @Sales      # bare repeat: same logical event, inherits { orderId }
+}
+```
+
 ### `view … again`
 
 `view <Name> again [from "Event", …]` declares a later instance of an already-declared read

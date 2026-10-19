@@ -113,7 +113,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A read model nothing consumes | Add the screen that displays it or the reaction that watches it, or drop the instance |
 | A `ui` with no read model backing it and no command it issues | Add a `view` it displays, or the command it triggers, or reconsider the screen |
 | Two `translation`s sharing a name but reading from different producers | Rename one; a shared name for two unrelated external messages reads as one and confuses whoever reads the model next |
-| A name defined more than once and referenced by a `from` or `arrow` | Rename; references resolve to the first occurrence |
+| A name defined more than once and referenced by a `from` or `arrow` (not a same-context event repeat — see [Shared events](#shared-events)) | Rename; references resolve to the first occurrence |
 | An event marked `public` that no read model reads (unconditional variant of "An event no read model reads") | Mark it `public` only if its consumer is outside this model; otherwise add the view |
 | A view marked `public` with no consumer (unconditional variant of "A read model nothing consumes") | Mark it `public` only if its consumer is outside this model; otherwise add the screen or reaction |
 | A declared `type` name defined more than once — unconditional, unlike the element check above (there's no legitimate unreferenced-duplicate case for a named type) | Rename; references resolve to the first occurrence |
@@ -177,6 +177,11 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   fact nothing projects. It counts as read when a `view` names it in `from`, when a `view` with
   no `from` sits in its slice, or when an explicit `arrow` points from it to a read model. Any
   instance of a repeated read model counts, so `view X again from "Event"` satisfies it.
+  **Shared events (one event recorded by several commands) are checked per recording site:** each
+  site needs a reader at or after it — a `view` (an `again` instance counts) whose `from` names
+  the event, a `loops-to`, or an explicit `arrow` to a read model — so a site placed after every
+  reader warns (`this recording of "X" (slice "S") has no reader after it`). Time flows forward
+  for reading as it does for `from` (see [timeline.md](timeline.md#law-2--forward-only)).
   A reaction consuming it does **not** count — reactions read read models, not events.
   **Exemption:** An event marked `public` is part of the published integration surface — its
   reader is outside this model, possibly outside this system. The warning is suppressed; record
@@ -258,6 +263,21 @@ different sources would otherwise pass silently — this check fires uncondition
 the confusion is in reading the model, not in resolving a reference. Two translations that
 read from the *same* producer (e.g. repeated next to it for clarity) are not a collision and
 stay quiet.
+
+### Shared events
+
+An event declared in more than one slice with the same name **and** the same context is one
+logical event — two commands recording the same fact — and draws no `duplicate-name` warning.
+Declare it bare in the later slice; it inherits the first declaration's fields, element-level
+`tag` clauses and `public` (same fact, same consistency boundary, same publication status). A
+view's `from "Event"` draws an arrow from every recording site at or before the view. Same name
+in a different context still warns `duplicate-name`. `public-name-not-unique` skips the repeats
+(they are the same public event, not a second one).
+
+| Check | Fix |
+|---|---|
+| `shared-event-field-mismatch` (error): a later declaration of a shared event declares fields, tags or `public` that differ from the first declaration's | Drop them to inherit the first's, or make them identical |
+| `both-ends-of-a-flow/event-unread` (warning), per site: a recording site of a shared event has no reader at or after it | Add `view V again from "Event"` after it (see [both-ends-of-a-flow](#both-ends-of-a-flow)) |
 
 ### Fields completeness
 

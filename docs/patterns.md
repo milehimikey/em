@@ -37,6 +37,35 @@ slice "Place Order" {
 A command may record several events in one slice; the renderer draws a fan from the command
 to each (never an event-to-event chain).
 
+**Two intents record one fact.** `Create Product` and `Create Product Variant` can both end in
+`Product Created`. Declare the event in each slice, bare, with the same name and context — the
+repeats are one logical event (they inherit the first declaration's fields, tags and `public`),
+a view reading it gets an arrow from every recording site, and each site needs a reader after it:
+
+```em
+slice "Create Product" {
+  ui Product Form @Clerk
+  command Create Product
+  event Product Created @Catalog { productId: string, name: string }
+}
+
+slice "Products" {
+  view Products from "Product Created" { productId: string, name: string }
+  ui Product List @Clerk
+}
+
+slice "Create Variant" {
+  ui Variant Form @Clerk
+  command Create Product Variant
+  event Product Created @Catalog      # bare repeat: same logical event
+}
+
+slice "Products with variants" {
+  view Products again from "Product Created"
+  ui Product List With Variants @Clerk
+}
+```
+
 Both ends of the slice have to be joined up. Something must **trigger** the command — the `ui`
 it's issued from, or (in the Automation and Translation patterns) the reaction that triggers
 it, also in this slice; a command nothing points at is a write nobody can start. And the event

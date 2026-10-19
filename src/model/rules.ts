@@ -242,6 +242,12 @@ export const RULES = {
     fix: "Rename one of the duplicates.",
     usageCategory: "duplicate name referenced",
   },
+  "shared-event-field-mismatch": {
+    severity: "error",
+    title: "Shared event declared with different fields, tags or public",
+    fix: "Repeat the event bare to inherit the first declaration's fields, tags and public, or make them identical.",
+    usageCategory: "shared event field mismatch",
+  },
   "translation-name-collision": {
     severity: "warning",
     title: "Translation name reused for different producers",

@@ -27,7 +27,7 @@
 
 import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { Element, NormalizedModel, Slice, normalizeName } from "../model/model.js";
-import { resolveFromSource } from "../model/edges.js";
+import { resolveFromSources } from "../model/edges.js";
 import { Grid, LayoutOptions, layout } from "../layout/grid.js";
 import { emitDot } from "../emit/dot.js";
 import { classifySlicePattern } from "../catalog/classify.js";
@@ -95,8 +95,9 @@ function columnsForStateView(model: NormalizedModel, i: number): SyntheticColumn
   const cols: SyntheticColumn[] = [];
   for (const view of slice.elements.filter((e) => e.kind === "view")) {
     for (const name of view.from ?? []) {
-      const src = resolveFromSource(model, view, name);
-      if (src) cols.push({ sourceSliceIndex: src.sliceIndex, elements: [src] });
+      for (const src of resolveFromSources(model, view, name)) {
+        cols.push({ sourceSliceIndex: src.sliceIndex, elements: [src] });
+      }
     }
   }
   cols.push({ sourceSliceIndex: i, elements: slice.elements });
@@ -114,8 +115,9 @@ function columnsForReaction(model: NormalizedModel, i: number): SyntheticColumn[
   const cols: SyntheticColumn[] = [];
   for (const auto of slice.elements.filter((e) => AUTOMATION_KINDS.has(e.kind))) {
     for (const name of auto.from ?? []) {
-      const src = resolveFromSource(model, auto, name);
-      if (src) cols.push({ sourceSliceIndex: src.sliceIndex, elements: [src] });
+      for (const src of resolveFromSources(model, auto, name)) {
+        cols.push({ sourceSliceIndex: src.sliceIndex, elements: [src] });
+      }
     }
   }
   cols.push({ sourceSliceIndex: i, elements: slice.elements });
