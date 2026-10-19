@@ -207,6 +207,7 @@ slice "Fulfil Order" {
 
 slice "Orders To Fulfil — retry" {
   view Orders To Fulfil again from "Fulfilment Retry Scheduled"
+  ui Retry Queue @Ops
 }
 
 slice "Fulfilment Status" {
