@@ -449,7 +449,11 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   into doc-only prose** — the marker keeps `em export`/the model aware the field exists (the
   `doc-model-field-mismatch` doc↔model check does not compare view field tables at all today —
   see the slice template's field-table guidance — so this is an export-side win specifically,
-  not yet a doc-drift check).
+  not yet a doc-drift check). **Collection fields (GH #288):** a view field typed `T[]` for a
+  declared `type T`, with `derived from "Child Created", "Child Deleted"`, embeds a child entity:
+  each field of `T` must trace to a named event (`fields-completeness/view-field-no-source`
+  otherwise). No add/remove/key clauses — `em slice sync` writes a `Collection of` note plus
+  add/remove Given/Then scenario stubs in the view region, and `em export` sets `collection: true`.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
   declared `type` (see Named types below), in which case it resolves to a structured

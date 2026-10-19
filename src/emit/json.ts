@@ -176,6 +176,9 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // (null for a slice outside any); `model.storylines: { name, source, after, sliceKeys }[]` — the
 // blocks in document order (`source`/`after` null when absent, `sliceKeys` the member slices'
 // export keys in order). Additive-only.
+// Also 1.19 (GH #288): `field.collection: boolean` — true on a view field typed `Type[]` (a declared
+// type) traced with `derived from "E1", "E2"` (a collection fed by child events); always present,
+// false elsewhere. Additive-only.
 export const SCHEMA_VERSION = "1.19";
 
 export interface ExportResult {
@@ -366,6 +369,10 @@ export interface FieldExport {
    *  convention. `null` on a bare `derived` field, a non-derived field, and every field of a
    *  declared type (the clause can't parse there). */
   derivedFrom: string[] | null;
+  /** `true` when the field is a collection fed by child events (GH #288): its type is `T[]` for a
+   *  declared `type T` and it carries a traced `derived from "E1", ...` clause. Always present;
+   *  `false` on every other field. The element type is `typeRef`. */
+  collection: boolean;
   /** `true` when the field is written `name?: Type` (MIL-237) — it may be absent. Same
    *  `=== true` convention as `tag`; always present, `false` on every required field. */
   optional: boolean;
@@ -403,6 +410,7 @@ function fieldExport(
     assigned: f.assigned === true,
     derived: f.derived === true,
     derivedFrom: f.derivedFrom ?? null,
+    collection: resolved?.array === true && f.derived === true && (f.derivedFrom ?? []).length > 0,
     optional: f.optional === true,
   };
 }

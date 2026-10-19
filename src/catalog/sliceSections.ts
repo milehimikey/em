@@ -24,7 +24,7 @@
 // Pure: model in, region bodies (as line arrays, EOL-free) out; doc text in, regions/problems
 // out. The CLI (`em slice new`, cli/sliceSync.ts) owns every read and write.
 
-import { Element, NormalizedModel, normalizeName } from "../model/model.js";
+import { Element, NormalizedModel, normalizeName, resolveTypeRef } from "../model/model.js";
 import { againInstancesOf, viewSourceNames } from "../model/continuation.js";
 import { kebabSlug } from "../util/slug.js";
 import { parseScenarios } from "./scenarios.js";
@@ -148,15 +148,30 @@ function viewBody(model: NormalizedModel, el: Element): string[] {
     const ev = (model.byName.get(normalizeName(s)) ?? []).find((e) => e.kind === "event");
     if (ev) sourceEvents.push(ev);
   }
+  const collections: { field: string; events: string[] }[] = [];
   for (const f of el.fields) {
     let note: string;
-    if (f.derived === true) {
+    const resolved = resolveTypeRef(f.type, model.typesByName);
+    if (f.derived === true && resolved?.array === true && f.derivedFrom && f.derivedFrom.length > 0) {
+      // Collection of a declared type, fed by child events (GH #288).
+      note = `Collection of \`${resolved.typeDecl.name}\`, fed by ${f.derivedFrom.map((n) => `\`${n}\``).join(", ")}`;
+      collections.push({ field: f.name, events: f.derivedFrom });
+    } else if (f.derived === true) {
       note = f.derivedFrom && f.derivedFrom.length > 0 ? `Derived from ${f.derivedFrom.map((n) => `"${n}"`).join(", ")}` : "Derived";
     } else {
       const src = sourceEvents.find((ev) => (ev.fields ?? []).some((ef) => normalizeName(ef.name) === normalizeName(f.name)));
       note = src ? `from event \`${src.name}\`` : "{{ }}";
     }
     out.push(`| ${cell(f.name)} | ${cell(f.type ?? "—")} | ${cell(note)} |`);
+  }
+  // Behaviour of a collection lives in scenarios, not the model (GH #288): one add and one remove
+  // stub per collection field, for the author to complete. The first named event adds, the rest
+  // remove, when only two are named; otherwise the first adds and every later one removes.
+  for (const c of collections) {
+    out.push("", `Scenario stubs for \`${c.field}\` (complete the {{ }}):`, "");
+    const [add, ...removes] = c.events;
+    out.push(`- Given \`${add}\` {{ }} Then \`${c.field}\` contains {{ }}`);
+    for (const r of removes) out.push(`- Given \`${r}\` {{ }} Then \`${c.field}\` omits {{ }}`);
   }
   return out;
 }

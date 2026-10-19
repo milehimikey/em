@@ -120,7 +120,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A model `owner` that is not a CODEOWNERS handle (`owner-not-a-handle`, MIL-234): not `@user`, `@org/team` or an email, e.g. the free text `"Storefront team"` | Write `owner "@org/team"`; `em system codeowners` skips a non-handle owner |
 | A slice outside every storyline, once the model declares any `storyline` block (`slice-outside-storyline`, GH #277 — advisory so a model can adopt storylines incrementally) | Move the slice inside one of the storylines — see [Storylines](#storylines) |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
-| A `view` field with no matching field on any source event, and not marked `derived` | Add the field to the event, drop it from the view, or mark it `derived` if it's genuinely computed from which events have landed |
+| A `view` field with no matching field on any source event, and not marked `derived` — or, for a collection field `T[] derived from "E1", …`, an element-type field of `T` that no named event carries | Add the field to the event, drop it from the view, or mark it `derived` if it's genuinely computed from which events have landed |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
 | A slice doc's `status: implemented` with no `implementedIn` link (`frontmatter-coherence-implemented-without-link`) | Add the `implementedIn` link, or move `status` back if it hasn't actually shipped |
 

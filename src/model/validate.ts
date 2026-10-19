@@ -219,6 +219,36 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
             }
           }
         }
+
+        // Collection fields (GH #288): `values: AttributeValue[] derived from "E1", "E2"` embeds a
+        // child entity in the view. The field itself is exempt (derived), but each field of the
+        // element type must trace to a field on at least one NAMED child event. Only checked when
+        // every resolvable named event declares `{ fields }` (a fieldless one may be the provider),
+        // and unresolved names are left to `derived-from-unresolved` above.
+        for (const f of view.fields) {
+          if (!f.derived || !f.derivedFrom || f.derivedFrom.length === 0) continue;
+          const resolved = resolveTypeRef(f.type, model.typesByName);
+          if (!resolved || !resolved.array) continue;
+          const named: Element[] = [];
+          for (const name of f.derivedFrom) {
+            const evt = (model.byName.get(normalizeName(name)) ?? []).find((e) => e.kind === "event");
+            if (evt) named.push(evt);
+          }
+          if (named.length === 0 || !named.every((e) => (e.fields ?? []).length > 0)) continue;
+          const union = new Set<string>();
+          for (const e of named) for (const ef of e.fields ?? []) union.add(normalizeName(ef.name));
+          const list = named.map((e) => `"${e.name}"`).join(", ");
+          for (const tf of resolved.typeDecl.fields) {
+            if (union.has(normalizeName(tf.name))) continue;
+            pushDiag(diags, "fields-completeness/view-field-no-source", {
+              message:
+                `view "${view.name}" collection field "${f.name}" (${f.type}) element field ` +
+                `"${tf.name}" of type "${resolved.typeDecl.name}" has no source in ${list}`,
+              line: view.line,
+              refs: [refOf(view.id), ...named.map((e) => refOf(e.id))],
+            });
+          }
+        }
       }
     }
 
