@@ -51,7 +51,7 @@ that caller's journey is the story.
 ### 3. The CRUD shape, named
 
 N entities, each with create / update / archive, one trailing view per entity, and no read across contexts.
-Below, the same business told two ways; both validate. The first reads as a schema, the second as a story.
+Both models below validate. The first reads as a schema, the second as a story.
 
 ```em
 model "Catalog (CRUD shape)"
@@ -109,8 +109,8 @@ slice "Products" {
 ```
 
 Storyline-ordered: the main story first, the secondary story after it, each command an intent, and each
-view repeated right after the command that changes it. It tells the same business as the first model, told
-as two journeys; it demonstrates rules 1, 3 and 7.
+view repeated right after the command that changes it. This model demonstrates rules 1, 3 and 7; rules 4-6
+and 8 have no worked example here.
 
 ```em
 model "Catalog (storyline shape)"
@@ -227,8 +227,9 @@ lint is its mechanical half.
   Secondary storylines follow the main one (file order or `after`).
 - **Failure: chapter or scenario?** A failure is core, and gets its own chapter, when it changes what the
   user does next or has its own actor or SLA. Otherwise it is a scenario of the slice.
-- **A generic update endpoint with no conditional invariants:** rename it to the intent if a business person
-  would say it ("Reprice Product", "Correct Address"); otherwise keep the name.
+- **A generic update endpoint with no conditional invariants:** look for the intent in each walkthrough
+  step that calls the endpoint, and name or split the command per step ("Reprice Product", "Correct
+  Description"). Keep the generic name only when no walkthrough calls it.
 
 ## Reshaping an existing model
 
