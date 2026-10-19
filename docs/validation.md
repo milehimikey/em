@@ -179,10 +179,10 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   `view` sits in its slice (State View), it issues a command when one sits in its slice (State
   Change), or via an explicit `arrow` in either direction. A `ui` sharing a reaction's slice
   with no view present gets the more specific "renders disconnected here" warning instead
-  (above), not this one — whether or not that slice also has the reaction's own command. The
-  stacked `ui` also blocks the reaction's usual bottom entry, so the renderer enters that
-  reaction from the side facing its source column (a short path through the gutters between
-  columns) rather than looping over the whole diagram.
+  (above), not this one — whether or not that slice also has the reaction's own command. When the
+  reaction has a `from`, the stacked `ui` also blocks its usual bottom entry, so the renderer
+  enters a reaction that shares a slice with a `ui` from the side facing its source column (a
+  short path through the gutters between columns) rather than looping over the whole diagram.
 
 **Loop-backs.** A resolved [`loops-to "View"`](dsl.md#loops-to) clause also counts as an
 event being read — the loop re-feeds an earlier read model instead of projecting into a new

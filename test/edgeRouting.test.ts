@@ -18,6 +18,9 @@ import { semanticEdges } from "../src/model/edges.js";
 const EXAMPLE = "examples/timeline-rules.em";
 const exampleSrc = () => readFileSync(EXAMPLE, "utf8");
 
+// OBSTRUCTED's event -> view path as drawn by main before side entry existed.
+const BASE_PATH = "M151,0 C151,14 1334,14 1334,-161.28";
+
 // A deliberately awkward layout, which the shipped example is not: the read model sits six
 // slices from the event that feeds it, in a different context lane, so the direct curve
 // between them runs straight through the Ticket lane. Real models should keep arrows span-1
@@ -254,34 +257,57 @@ arrow "Complete Item" -> CompleteItem
     return s;
   }
 
-  function outsideViewBox(svg: string): number {
-    const vb = /viewBox="([\d.eE+-]+) ([\d.eE+-]+) ([\d.eE+-]+) ([\d.eE+-]+)"/.exec(svg)!;
-    const [minX, minY, vw, vh] = vb.slice(1).map(Number);
-    const tr = /<g\b[^>]*class="graph"[^>]*transform="[^"]*translate\(([\d.eE+-]+)[\s,]+([\d.eE+-]+)\)/.exec(svg)!;
-    const [tx, ty] = [+tr[1], +tr[2]];
+  /** For each edge into a processor: where it ends, and how far its path strays. */
+  function processorEdges(svg: string, src: string) {
+    const model = normalize(parse(src));
+    const rects = parseNodeRects(svg, new Set(model.byId.keys()));
     const group = /<g class="em-edges">([\s\S]*?)<\/g>/.exec(svg)![1];
-    let bad = 0;
-    for (const d of [...group.matchAll(/ d="([^"]+)"/g)].map((m) => m[1])) {
-      // control points too: they bound the curve, and a far-off control point is the bug
-      for (const m of d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)) {
-        const x = +m[1] + tx;
-        const y = +m[2] + ty;
-        if (x < minX || x > minX + vw || y < minY || y > minY + vh) bad++;
-      }
-    }
-    return bad;
+    const ds = [...group.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+    const edges = semanticEdges(model);
+    const out: { endOnSide: boolean; withinRows: boolean }[] = [];
+    edges.forEach((e, i) => {
+      if (model.byId.get(e.to)?.kind !== "processor") return;
+      const f = rects.get(e.from)!;
+      const t = rects.get(e.to)!;
+      const nums = [...ds[i].matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+      const [ex, ey] = nums[nums.length - 1];
+      const ys = nums.map((q) => q[1]);
+      out.push({
+        endOnSide: (Math.abs(ex - t.left) < 1 || Math.abs(ex - t.right) < 1) && ey > t.top && ey < t.bottom,
+        // never strays beyond the rows the two boxes span, plus one gutter
+        withinRows:
+          Math.min(...ys) >= Math.min(f.top, t.top) - 14 && Math.max(...ys) <= Math.max(f.bottom, t.bottom) + 14,
+      });
+    });
+    return out;
   }
 
   it("routes the inbound edge of a processor that shares its slice with a ui clear of that ui", async () => {
     const svg = await renderSource(PROC_WITH_UI);
     expect(crossingsIn(svg, PROC_WITH_UI)).toEqual([]);
-    expect(outsideViewBox(svg)).toBe(0);
+    const edges = processorEdges(svg, PROC_WITH_UI);
+    expect(edges.length).toBe(1);
+    expect(edges.every((e) => e.endOnSide && e.withinRows)).toBe(true);
   });
 
   it("keeps the same inbound edge short and in-canvas in a 25-slice, 7-context model", async () => {
     const src = largeProcWithUi();
     const svg = await renderSource(src);
     expect(crossingsIn(svg, src)).toEqual([]);
-    expect(outsideViewBox(svg)).toBe(0);
+    const edges = processorEdges(svg, src);
+    expect(edges.length).toBeGreaterThan(3);
+    expect(edges.every((e) => e.endOnSide && e.withinRows)).toBe(true);
+  });
+
+  it("leaves an event -> view edge on the established route (no side entry into a view)", async () => {
+    const svg = await renderSource(OBSTRUCTED);
+    const model = normalize(parse(OBSTRUCTED));
+    const from = model.byName.get("refund requested")![0];
+    const to = model.byName.get("refund backlog")![0];
+    const group = /<g class="em-edges">([\s\S]*?)<\/g>/.exec(svg)![1];
+    const ds = [...group.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+    const i = semanticEdges(model).findIndex((e) => e.from === from.id && e.to === to.id);
+    // BASE_PATH was captured from main before side entry existed.
+    expect(ds[i]).toBe(BASE_PATH);
   });
 });

@@ -13,6 +13,7 @@
 
 import { NormalizedModel } from "../model/model.js";
 import { semanticEdges } from "../model/edges.js";
+import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { edgeColorFor } from "../emit/theme.js";
 import { Box, Rect } from "./svgGeometry.js";
 
@@ -71,7 +72,12 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
       const direct = curvePoints(f, t);
       let pts: Cubic | string = direct;
       if (hits(direct, blockers).length) {
-        const routed = detour(f, t, blockers);
+        // Side entry is for exactly one shape (GH #254): a reaction whose bottom face has a
+        // box stacked right under it (a `ui` sharing its slice). Everything else keeps the
+        // established corridor / over / under routing.
+        const kind = model.byId.get(e.to)?.kind;
+        const sideOk = kind !== undefined && AUTOMATION_KINDS.has(kind) && bottomBlocked(t, blockers);
+        const routed = detour(f, t, blockers, sideOk);
         if (routed) {
           pts = routed;
         } else {
@@ -198,10 +204,10 @@ function flatRoute(f: Rect, t: Rect, y: number): Cubic {
 
 /** First clear route: through the corridor between the two rows if one fits, else arcing
  *  over everything, else under. Null when nothing clears within the try budget. */
-function detour(f: Rect, t: Rect, boxes: Rect[]): Cubic | string | null {
+function detour(f: Rect, t: Rect, boxes: Rect[], sideOk: boolean): Cubic | string | null {
   return (
     corridorRoute(f, t, boxes) ??
-    sideEntryRoute(f, t, boxes) ??
+    (sideOk ? sideEntryRoute(f, t, boxes) : null) ??
     routeAround(f, t, boxes, -1) ??
     routeAround(f, t, boxes, 1)
   );
@@ -227,6 +233,13 @@ function corridorRoute(f: Rect, t: Rect, boxes: Rect[]): Cubic | null {
 const SIDE_STUB = 10; // how far a side-entry route runs out of / into a box before turning
 const SIDE_RADIUS = 6; // corner rounding for the polyline routes
 
+/** True when a box sits within a few gutters directly beneath `t` — in the same column. */
+function bottomBlocked(t: Rect, boxes: Rect[]): boolean {
+  return boxes.some(
+    (b) => b.left < t.cx && b.right > t.cx && b.top >= t.bottom && b.top - t.bottom <= 4 * GUTTER,
+  );
+}
+
 /** Leave `f` and enter `t` through their facing SIDES, travelling in the narrow gutters beside
  *  the columns and crossing between them along the gap between two box rows. The vertical faces
  *  are no use when another box sits right against them — a `ui` stacked above a view, or
@@ -235,9 +248,14 @@ const SIDE_RADIUS = 6; // corner rounding for the polyline routes
  *  so this is the short path that never crosses a box it doesn't connect. */
 function sideEntryRoute(f: Rect, t: Rect, boxes: Rect[]): string | null {
   const dir = t.cx >= f.cx ? 1 : -1;
-  const sx = dir > 0 ? f.right + SIDE_STUB : f.left - SIDE_STUB;
-  const tx = dir > 0 ? t.left - SIDE_STUB : t.right + SIDE_STUB;
+  let sx = dir > 0 ? f.right + SIDE_STUB : f.left - SIDE_STUB;
+  let tx = dir > 0 ? t.left - SIDE_STUB : t.right + SIDE_STUB;
   if ((tx - sx) * dir < 0) return null; // columns too close to leave a gutter each
+  // Adjacent columns share one gutter: a single vertical in its middle, not an S-wiggle.
+  if (Math.abs(tx - sx) < GUTTER) sx = tx = (sx + tx) / 2;
+  // Leave the source off its centre line, toward the target, so the stub doesn't read as an
+  // arrow to whatever sits beside it in the next column.
+  const fy = f.cy + (t.cy < f.cy ? -1 : 1) * Math.min(10, (f.bottom - f.top) / 4);
   const a = dir > 0 ? f.right : f.left;
   const b = dir > 0 ? t.left : t.right;
 
@@ -251,7 +269,7 @@ function sideEntryRoute(f: Rect, t: Rect, boxes: Rect[]): string | null {
   ys.sort((p, q) => Math.abs(p - f.cy) + Math.abs(p - t.cy) - (Math.abs(q - f.cy) + Math.abs(q - t.cy)) || Math.abs(p - mid) - Math.abs(q - mid));
 
   for (const y of ys) {
-    const verts: [number, number][] = [[a, f.cy], [sx, f.cy], [sx, y], [tx, y], [tx, t.cy], [b, t.cy]];
+    const verts: [number, number][] = [[a, fy], [sx, fy], [sx, y], [tx, y], [tx, t.cy], [b, t.cy]];
     if (!polyHits(verts, boxes)) return roundedPath(verts);
   }
   return null;

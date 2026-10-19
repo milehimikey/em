@@ -930,10 +930,26 @@ slice "Weird" {
     expect(diags[0]).toMatchObject({ severity: "warning", line: 4 });
     expect(diags[0].message).toBe(
       'ui "Something" shares slice "Weird" with translation "Carrier Adapter"; a `ui` only ' +
-        "wires to a `command` a person issues and renders disconnected here (and it sits between " +
-        "the translation and the row below it, so the translation's inbound edge has to be routed " +
-        "around it) — move it to the slice that displays the read model, or drop it",
+        "wires to a `command` a person issues and renders disconnected here — move it to the " +
+        "slice that displays the read model, or drop it",
     );
+  });
+
+  it("adds the routing clause only when the reaction has an inbound `from` edge", () => {
+    const diags = disconnected(`
+context Shipping
+slice "Todo" {
+  view Parcels To Send from "Parcel Packed"
+}
+slice "Weird" {
+  ui Something @Ops
+  processor Carrier Adapter from "Parcels To Send"
+  command Confirm Delivery
+  event Delivery Confirmed @Shipping
+}
+`);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain("inbound edge has to be routed around it");
   });
 
   it("warns for any automation alias (processor), not just translation", () => {
