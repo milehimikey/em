@@ -9,8 +9,9 @@ import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
 import { UpgradeContext, UPGRADE_STEPS, applyUpgrade, detectUpgrade, resolveRepoRoot } from "../src/cli/upgrade.js";
-import { planCollapseAlternativeEvents, planFoldContinuations } from "../src/cli/upgradeReshape.js";
-import { MODEL_117_STAGE2, writeModel117 } from "./helpers/model117.js";
+import { planCollapseAlternativeEvents, planFoldContinuations, planStackContinuations } from "../src/cli/upgradeReshape.js";
+import { continuationOf } from "../src/model/continuation.js";
+import { MODEL_117_STAGE2, sliceDocText, writeModel117 } from "./helpers/model117.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -70,7 +71,8 @@ describe("collapse-alternative-events (GH #278)", () => {
     expect(after.model.slices.length).toBe(before.slices.length - 1); // -1 collapsed; the fold swaps a slice for a synthesized column
     expect(after.diagnostics.filter((x) => x.severity === "error")).toEqual([]);
     expect(existsSync(join(dir, "slices", "cancel-order-timeout.md"))).toBe(false);
-    expect(readFileSync(join(dir, "slices", "superseded", "cancel-order-timeout.md"), "utf8")).toContain("superseded-by: cancel-order-customer@v1");
+    expect(readFileSync(join(dir, "archive", "slices", "cancel-order-timeout.md"), "utf8")).toContain("superseded-by: cancel-order-customer@v1");
+    expect(readFileSync(join(dir, "slices", "cancel-order-customer.md"), "utf8")).toMatch(/^merged-from: cancel-order-timeout@v1$/m);
     expect(readFileSync(join(dir, "slices", "cancel-order-customer.md"), "utf8")).toContain("Records one of");
     expect(commits(dir, "collapse-alternative-events")).toHaveLength(1);
     expect(step(dir, "collapse-alternative-events").applicable).toBe(false);
@@ -81,17 +83,17 @@ describe("collapse-alternative-events (GH #278)", () => {
   it("lists authored content in a retired doc (fold these into the kept doc) and bannerises the archived copy", () => {
     const dir = repo();
     const d = step(dir, "collapse-alternative-events");
-    expect(d.reason).toContain("slices/superseded/cancel-order-timeout.md holds Open Questions — fold these into slices/cancel-order-customer.md");
+    expect(d.reason).toContain("archive/slices/cancel-order-timeout.md holds Open Questions — fold these into slices/cancel-order-customer.md");
     const result = applyUpgrade(ctxOf(dir));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const notes = result.applied.find((a) => a.id === "collapse-alternative-events")!.notes!;
     expect(notes.join("\n")).toContain("fold these into slices/cancel-order-customer.md");
-    const archived = readFileSync(join(dir, "slices", "superseded", "cancel-order-timeout.md"), "utf8");
+    const archived = readFileSync(join(dir, "archive", "slices", "cancel-order-timeout.md"), "utf8");
     expect(archived).toMatch(/superseded-by: cancel-order-customer@v1\n---\n\n> \*\*SUPERSEDED\*\* by `cancel-order-customer`/);
   });
 
-  it("a signed kept doc is left byte-identical and becomes the human item event-region-stale-signed", () => {
+  it("a signed kept doc is left byte-identical and becomes the human item slice-doc-stale-signed", () => {
     const dir = repo();
     const doc = join(dir, "slices", "cancel-order-customer.md");
     const plain = readFileSync(doc, "utf8");
@@ -99,15 +101,33 @@ describe("collapse-alternative-events (GH #278)", () => {
     git(dir, "add", "slices/cancel-order-customer.md");
     git(dir, "commit", "-q", "-m", "ratify");
     const signedBytes = readFileSync(doc, "utf8");
-    expect(step(dir, "collapse-alternative-events").reason).toContain("are signed and will not be synced");
+    expect(step(dir, "collapse-alternative-events").reason).toContain("will not be synced and go stale");
     const result = applyUpgrade(ctxOf(dir));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(readFileSync(doc, "utf8")).toBe(signedBytes);
-    const item = result.report.human.find((h) => h.id === "event-region-stale-signed")!;
+    const item = result.report.human.find((h) => h.id === "slice-doc-stale-signed")!;
     expect(item.reason).toContain("slices/cancel-order-customer.md");
+    expect(item.reason).toContain("em-slice-event");
     expect(item.reason).toContain("em slice revise cancel-order-customer");
+    // the signed kept doc cannot take the back-link: a human item says what to add
+    expect(readFileSync(doc, "utf8")).not.toMatch(/merged-from/);
+    expect(result.report.human.find((h) => h.id === "lineage-backlink-missing")!.reason).toContain("merged-from: cancel-order-timeout@v1");
     expect(item.reason).toContain("em slice sync");
+  });
+
+  it("takes the kept doc and its version from the slice's actual (covers) binding, not slices/<key>.md", () => {
+    const dir = repo();
+    const model = readFileSync(join(dir, "orders.em"), "utf8").replace('note "slices/cancel-order-customer.md"', 'note "slices/place-order.md"');
+    writeFileSync(join(dir, "orders.em"), model);
+    rmSync(join(dir, "slices", "cancel-order-customer.md"));
+    const host = join(dir, "slices", "place-order.md");
+    writeFileSync(host, readFileSync(host, "utf8").replace("version: 1", "version: 3\ncovers: cancel-order-customer"));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "cancel is covered by the place-order doc");
+    expect(applyUpgrade(ctxOf(dir)).ok).toBe(true);
+    expect(readFileSync(join(dir, "archive", "slices", "cancel-order-timeout.md"), "utf8")).toContain("superseded-by: place-order@v3");
+    expect(readFileSync(host, "utf8")).toMatch(/^merged-from: cancel-order-timeout@v1$/m);
   });
 
   it("uses oneof when the alternatives' payloads differ; leaves differing-command and noted runs alone", () => {
@@ -128,38 +148,82 @@ describe("collapse-alternative-events (GH #278)", () => {
   });
 });
 
-describe("fold-continuations (GH #287)", () => {
-  it("detects a hand-named continuation directly after its host command slice", () => {
-    const d = step(repo(), "fold-continuations");
+describe("fold-continuations (GH #287) — opt-in", () => {
+  const readsOf = (src: string) => {
+    const { model } = compile(src);
+    const out: Record<string, string[]> = {};
+    for (const origin of model.elements.filter((e) => e.kind === "view" && !e.again)) {
+      out[origin.name] = [origin.from, ...model.elements.filter((e) => e.again && e.logicalId === origin.id).map((e) => e.from)].flat().sort() as string[];
+    }
+    return out;
+  };
+
+  it("is listed by a dry run and as a human item, but a plain --apply does not apply it", () => {
+    const dir = repo();
+    const d = step(dir, "fold-continuations");
     expect(d.applicable).toBe(true);
-    expect(d.reason).toContain('"Shipments after ship"');
-    expect(d.reason).toContain("ship-order--again");
+    expect(d.reason).toContain("OPT-IN");
+    expect(d.reason).toContain("em upgrade --apply --fold-continuations");
+    expect(d.reason).toContain('"Shipments after ship" + "Shipments after ship, again"');
+    expect(d.reason).toContain("dropped keys: shipments-after-ship-again");
+    expect(d.reason).toContain("orders-after-ship (continues a different view)");
+    expect(detectUpgrade(ctxOf(dir)).human.some((h) => h.id === "fold-continuations-opt-in")).toBe(true);
+    expect(applyUpgrade(ctxOf(dir)).ok).toBe(true);
+    expect(readFileSync(join(dir, "orders.em"), "utf8")).toContain('slice "Shipments after ship, again"');
+    expect(commits(dir, "fold-continuations")).toHaveLength(0);
   });
 
-  it("--apply folds it into the host as a `shown on` line, keeps the read model's sources, one commit, idempotent", () => {
+  it("--fold-continuations stacks consecutive continuations of ONE view into the first; continuationOf, doc join and the kept index row are unchanged", () => {
     const dir = repo();
-    const reads = (src: string) => {
-      const { model } = compile(src);
-      const origin = model.elements.find((e) => e.kind === "view" && e.name === "Shipments" && !e.again)!;
-      return [origin.from, ...model.elements.filter((e) => e.again && e.logicalId === origin.id).map((e) => e.from)].flat().sort();
-    };
-    const beforeReads = reads(readFileSync(join(dir, "orders.em"), "utf8"));
-    expect(applyUpgrade(ctxOf(dir)).ok).toBe(true);
+    const before = readFileSync(join(dir, "orders.em"), "utf8");
+    const cBefore = compile(before);
+    const idx = (c: typeof cBefore, key: string) => c.refs.sliceKeys.indexOf(key);
+    expect(applyUpgrade({ ...ctxOf(dir), foldContinuations: true }).ok).toBe(true);
     const text = readFileSync(join(dir, "orders.em"), "utf8");
-    expect(text).not.toContain('slice "Shipments after ship"');
-    expect(text).toMatch(/slice "Ship Order" \{[\s\S]*view Shipments again from "Order Shipped" shown on "Shipment List"[\s\S]*\n\}/);
+    expect(text).not.toContain('slice "Shipments after ship, again"');
+    expect(text).toMatch(/slice "Shipments after ship" \{[\s\S]*view Shipments again[\s\S]*view Shipments again[\s\S]*\n\}/);
+    expect(text).toContain('slice "Orders after ship"'); // the different-view continuation is left alone
     const c = compile(text);
-    expect(c.refs.sliceKeys).toContain("ship-order--again");
-    expect(reads(text)).toEqual(beforeReads);
     expect(c.diagnostics.filter((x) => x.severity === "error")).toEqual([]);
+    expect(c.refs.sliceKeys).toContain("shipments-after-ship");
+    expect(c.refs.sliceKeys).not.toContain("shipments-after-ship-again");
+    for (const key of ["shipments-after-ship", "orders-after-ship", "orders-manual"]) {
+      const was = continuationOf(cBefore.model, cBefore.refs, idx(cBefore, key));
+      const now = continuationOf(c.model, c.refs, idx(c, key));
+      expect(now?.sliceKey).toBe(was?.sliceKey);
+    }
+    expect(readsOf(text)).toEqual(readsOf(before));
+    const readme = readFileSync(join(dir, "README.md"), "utf8");
+    expect(readme).toContain("Shipments after ship");
+    expect(readme).not.toContain("Shipments after ship, again");
     expect(commits(dir, "fold-continuations")).toHaveLength(1);
     expect(step(dir, "fold-continuations").applicable).toBe(false);
   });
 
-  it("does not fold a continuation whose ui is declared nowhere else, or whose host records none of its events", () => {
-    const lonelyUi = MODEL_117_STAGE2.replace('  ui Shipment List @Clerk\n}\n\nslice "Ship Order"', '}\n\nslice "Ship Order"');
-    const a = compile(lonelyUi);
-    expect(planFoldContinuations(a.model, a.refs, lonelyUi)).toBeNull();
+  it("--to-sugar moves them into the host and says plainly that continuationOf and the doc join change", () => {
+    const dir = repo();
+    const d = detectUpgrade({ ...ctxOf(dir), toSugar: true }).steps.find((x) => x.id === "fold-continuations")!;
+    expect(d.reason).toContain("CHANGES continuationOf and the doc join to the host (ship-order--again)");
+    expect(d.reason).toContain("removes the folded slices' index rows");
+    expect(applyUpgrade({ ...ctxOf(dir), toSugar: true }).ok).toBe(true);
+    const text = readFileSync(join(dir, "orders.em"), "utf8");
+    expect(text).toMatch(/slice "Ship Order" \{[\s\S]*view Shipments again from "Order Shipped" shown on "Shipment List"[\s\S]*\n\}/);
+    expect(compile(text).refs.sliceKeys).toContain("ship-order--again");
+  });
+
+  it("names a signed doc whose generated regions the fold would make stale", () => {
+    const dir = repo();
+    const doc = join(dir, "slices", "orders.md");
+    const plain = sliceDocText("orders", { stage2: true }); // current against the model, so only the fold can make it stale
+    writeFileSync(doc, plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${sliceDocBodyHash(plain)}`));
+    const sugar = detectUpgrade({ ...ctxOf(dir), toSugar: true }).steps.find((x) => x.id === "fold-continuations")!;
+    expect(sugar.reason).toMatch(/signed doc\(s\)[^;]*slices\/orders\.md/);
+  });
+
+  it("does not stack across different ui, nor fold a continuation whose host records none of its events", () => {
+    const ui = MODEL_117_STAGE2.replace('slice "Shipments after ship, again" {\n  view Shipments again from "Order Shipped" { orderId: string }\n  ui Shipment List @Clerk', 'slice "Shipments after ship, again" {\n  view Shipments again from "Order Shipped" { orderId: string }\n  ui Ship Form @Clerk');
+    const a = compile(ui);
+    expect(planStackContinuations(a.model, a.refs, ui)).toBeNull();
     const unrelated = MODEL_117_STAGE2.replace('view Shipments again from "Order Shipped"', 'view Shipments again from "Order Placed Manually"');
     const b = compile(unrelated);
     expect(planFoldContinuations(b.model, b.refs, unrelated)).toBeNull();

@@ -4933,6 +4933,8 @@ upgrade` handles it.
 | `--apply` | Apply every applicable mechanical step, one git commit each, then a final `Em version:` commit |
 | `--check` | Exit non-zero only on a hard incompatibility (unparseable state file, an un-migratable `.em` shape) — writes nothing; what CI runs |
 | `--json` | Print a JSON document instead of text (dry-run/`--check` only, never with `--apply`) |
+| `--fold-continuations` | With `--apply`: also run the opt-in `fold-continuations` step (stack consecutive continuations of one view into the first slice) |
+| `--to-sugar` | With `--apply`, implies `--fold-continuations`: fold into the host command slice instead; changes `continuationOf` and the doc join, removes index rows |
 
 Determines `from` = the state file's recorded `Em version:` bullet, or — when absent — inferred
 from whatever evidence is on disk (an old two-slice reaction shape, the vendored skill bundle's
@@ -4991,21 +4993,33 @@ The mechanical steps, in this fixed order:
    command (identical command text, identical `ui`, no `note` or `issue` on the later slices) and
    differ only in the event they record on one context become ONE slice recording `event A | B
    @Ctx` (when the events' declarations are identical but for the name) or `oneof { … }` (when
-   fields or clauses differ). The first slice's name and key are kept; each later slice's
-   `slices/<key>.md`, if present, moves to `slices/superseded/<key>.md` with `superseded-by:
-   <first-key>@v<N>` and a SUPERSEDED banner under its frontmatter (authored Scenarios, Invariants, Open Questions or Decisions in it are listed in the dry-run reason and the `--apply` output as "fold these into <kept doc>"); the kept doc's generated event region is synced unless the doc is signed (human item `event-region-stale-signed`).
-   A run with a declaration between its slices, a different storyline or an event name repeated is
-   skipped. The rewrite is verified by recompiling (no new error, same event names, same view
-   sources) before anything is written. The dry-run reason names each run before and after.
-10. **`fold-continuations`** (1.18.0, GH #290 / #287) — a hand-named continuation slice (only `view …
-   again` lines plus one `ui`, no notes) that directly follows its host command slice moves into the
-   host as `view X again from "E" [shown on "Screen"]` lines; consecutive continuations fold
-   together into the host's one synthesized `<host-key>--again` column. `shown on` is added only
-   when the old column's screen is not the host's first `ui`, and only if that screen is declared in
-   another slice. A continuation whose views are not fed by an event the host records, or that has
-   several screens it cannot reproduce, is left alone. `continuationOf` and `alsoReads` do not
-   change; a stray own doc of a folded slice stays (`continuation-has-own-doc`). Verified by
-   recompiling like the step above.
+   fields or clauses differ). The first slice's name and key are kept. Lineage follows
+   [slice-doc-schema.md](slice-doc-schema.md#lineage-grammar-and-cardinality): the kept slice's bound
+   doc (found through the doc join, so a `covers:` cross-binding is honoured) gains `merged-from:
+   <retired-key>@v<N>`; each later slice's doc (bound, else `slices/<key>.md`) moves to
+   `archive/slices/<file>.md` with `superseded-by: <kept-doc>@v<N>` and a SUPERSEDED banner under its
+   frontmatter. Authored Scenarios, Invariants, Open Questions or Decisions in an archived doc are
+   listed in the dry-run reason and the `--apply` output as "fold these into <kept doc>". The kept
+   doc's generated event region is synced unless the doc is signed: a signed kept doc is left
+   byte-identical (not even `merged-from`) and raised as the human items `slice-doc-stale-signed` and
+   `lineage-backlink-missing`. A run with a declaration between its slices, a different storyline or
+   an event name repeated is skipped. The rewrite is verified by recompiling (no new error, same
+   event names, same view sources) before anything is written.
+10. **`fold-continuations`** (1.18.0, GH #290 / #287) — **opt-in**: every run detects and lists it
+   (and raises the human item `fold-continuations-opt-in`), but a plain `--apply` does not apply it;
+   run `em upgrade <model>.em --apply --fold-continuations`. Default form: consecutive hand-named
+   continuation slices that continue the SAME read model and show the same `ui`s are stacked into
+   ONE continuation slice (several `view X again` lines, GH #287) keeping the FIRST slice's name and
+   key, so `continuationOf`, the doc join and the kept key's index row are exact; the dropped keys are
+   listed; continuations of a different view are left alone (stacking them would change which view
+   the slice continues). The reason names any signed doc whose generated regions (for example the
+   view's `via "<slice>"` annotations) the rewrite makes stale — `em slice revise <key>`, then `em
+   slice sync`. **`--to-sugar`** (further opt-in, implies `--fold-continuations`) moves a continuation
+   into its host command slice as `view X again from "E" [shown on "Screen"]` lines instead; that
+   **changes `continuationOf` and the doc join to the host (the synthesized `<host-key>--again`
+   column) and removes the folded slices' index rows**; `shown on` is added only when the old
+   column's screen is not the host's first `ui` and is declared in another slice. Both forms are
+   verified by recompiling like the step above.
 11. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
    bound doc's generated view region (the read model's "built from" line now lists the union of
    `from` across its `again` instances): runs `em slice sync` on those docs, one commit. A ratified
@@ -5050,9 +5064,10 @@ The human list — detect-only, never applied, printed by every mode:
 | `coverage-scope-default` | `em-ci.yml` runs `em coverage --strict` and no doc is `implemented` yet (MIL-207 scopes `--strict` to `implemented` docs only — the gate is trivially green until then) |
 | `unratified-constitution` | `constitution.md` (or `.specify/memory/constitution.md`) exists with an empty `ratifiedBy:` |
 | `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
-| `view-doc-sources-stale-signed` | (1.18.0, GH #290) `view-doc-sources-stale` found a stale view region in a ratified or shipped doc and left it alone — `em slice revise <key>`, then `em slice sync` |
+| `slice-doc-stale-signed` | (1.18.0, GH #290) a ratified or shipped doc has a generated region (view, event, …) stale against the model, which `view-doc-sources-stale` / `collapse-alternative-events` leave alone — `em slice revise <key>`, then `em slice sync` |
+| `lineage-backlink-missing` | (1.18.0, GH #290 / #278) an archived doc under `archive/slices/` names a signed successor in `superseded-by` that lacks `merged-from` — add the line (frontmatter is outside the hash) |
+| `fold-continuations-opt-in` | (1.18.0, GH #290 / #287) the opt-in `fold-continuations` step has a proposal — run `em upgrade --apply --fold-continuations` (or `--to-sugar`) |
 | `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only, shown while upgrading from before 1.18.0: an event is recorded by more than one command — legal now, one logical event, nothing to change |
-| `event-region-stale-signed` | (1.18.0, GH #290 / #278) the kept doc of a collapsed run is ratified or shipped, so its generated event region was not synced — `em slice revise <key>`, then `em slice sync` |
 | `roster-not-initialised` | (1.18.0, GH #290 / #259) slice docs carry `ratifiedBy` / `reviewedBy` names and no `ratifiers.yaml` exists above the model — run `em roster init <model>.em` and review it; never generated by `em upgrade` |
 | `plugin-install-locally` | The `skill-plugin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
 

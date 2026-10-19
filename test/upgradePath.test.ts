@@ -76,7 +76,7 @@ describe("view-doc-sources-stale (GH #280)", () => {
     expect(d.applicable).toBe(false);
     expect(d.reason).toContain("left alone");
     expect(d.reason).toContain("slices/orders.md");
-    const item = detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "view-doc-sources-stale-signed")!;
+    const item = detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "slice-doc-stale-signed")!;
     expect(item.reason).toContain("em slice revise orders");
     expect(item.reason).toContain("em slice sync");
   });

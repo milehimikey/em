@@ -317,3 +317,101 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
   if (!viewSourcesEqual(model, nm)) return null;
   return { groups, next };
 }
+
+// ---- fold-continuations, default form (a): stack consecutive continuations of ONE view ----------
+
+export interface StackGroup {
+  /** The kept slice (first of the run): its name and export key stay. */
+  kept: string;
+  keptKey: string;
+  /** The slices whose `view … again` lines moved into the kept slice, and their (now dropped) keys. */
+  dropped: string[];
+  droppedKeys: string[];
+}
+
+export interface StackPlan {
+  groups: StackGroup[];
+  /** Consecutive continuations left alone because they continue a different view (stacking them
+   *  would change which view the slice is a continuation of, i.e. `continuationOf` and the doc join). */
+  skipped: Array<{ key: string; reason: string }>;
+  next: string;
+}
+
+/**
+ * Consecutive hand-named continuation slices that continue the SAME read model (the first `view …
+ * again` of each names one originating view, and so do all their lines) and show the same `ui`s
+ * become ONE continuation slice with stacked `again` lines (GH #287, "several `again` lines in one
+ * continuation slice"), keeping the FIRST slice's name and key. Nothing about which view the slice
+ * continues changes, so `continuationOf`, the doc join and the kept key's index row are exact;
+ * the dropped keys are reported. Continuations of different views are never stacked.
+ */
+export function planStackContinuations(model: NormalizedModel, refs: RefsResult, text: string): StackPlan | null {
+  const { lines, eol, trailing } = splitLines(text);
+  const blocks = model.slices.map((_, i) => blockOf(model, lines, i));
+  const groups: StackGroup[] = [];
+  const skipped: StackPlan["skipped"] = [];
+  const removals: Array<{ from: number; to: number }> = [];
+  const insertions = new Map<number, string[]>();
+  const uiSig = (b: SliceBlock): string => b.elements.filter((s) => s.el.kind === "ui").map((s) => `${normalizeName(s.el.name)}@${s.el.persona}`).sort().join(",");
+  const viewIds = (b: SliceBlock): string[] => b.elements.filter((s) => s.el.kind === "view").map((s) => s.el.logicalId);
+  const isCont = (i: number): boolean => !model.slices[i].synthesized && blocks[i] !== null && continuationOf(model, refs, i) !== null && !hasNote(blocks[i]!);
+
+  for (let c = 0; c < model.slices.length; c++) {
+    if (!isCont(c)) continue;
+    const head = blocks[c]!;
+    const origin = viewIds(head)[0];
+    const run = [c];
+    for (let n = c + 1; n < model.slices.length && isCont(n); n++) {
+      const b = blocks[n]!;
+      if (model.slices[n].storyline !== model.slices[c].storyline) break;
+      if (viewIds(head).some((v) => v !== origin) || viewIds(b).some((v) => v !== origin)) {
+        skipped.push({ key: refs.sliceKeys[n], reason: "continues a different view" });
+        break;
+      }
+      if (uiSig(b) !== uiSig(head)) break;
+      let gapClean = true;
+      for (let k = blocks[run[run.length - 1]]!.end + 1; k < b.start; k++) if (lines[k].trim() !== "" && !lines[k].trim().startsWith("#")) gapClean = false;
+      if (!gapClean) break;
+      run.push(n);
+    }
+    if (run.length < 2) {
+      // a different-view neighbour is reported once, and is not the start of another run
+      continue;
+    }
+    const added: string[] = [];
+    for (const n of run.slice(1)) {
+      for (const v of blocks[n]!.elements.filter((s) => s.el.kind === "view")) added.push(...lines.slice(v.first, v.last + 1));
+      removals.push({ from: blocks[n]!.start > 0 && lines[blocks[n]!.start - 1].trim() === "" ? blocks[n]!.start - 1 : blocks[n]!.start, to: blocks[n]!.end });
+    }
+    insertions.set(head.end, added);
+    groups.push({
+      kept: model.slices[c].name,
+      keptKey: refs.sliceKeys[c],
+      dropped: run.slice(1).map((n) => model.slices[n].name),
+      droppedKeys: run.slice(1).map((n) => refs.sliceKeys[n]),
+    });
+    c = run[run.length - 1];
+  }
+  if (groups.length === 0) return null;
+  const drop = new Set<number>();
+  for (const r of removals) for (let i = r.from; i <= r.to; i++) drop.add(i);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const ins = insertions.get(i);
+    if (ins) out.push(...ins);
+    if (!drop.has(i)) out.push(lines[i]);
+  }
+  const next = joinLines(out, eol, trailing);
+  if (!noNewErrors(text, next)) return null;
+  const after = compile(next);
+  if (!viewSourcesEqual(model, after.model)) return null;
+  // The kept slices must still be continuations of the same originating slice.
+  for (const g of groups) {
+    const before = model.slices.findIndex((_, i) => refs.sliceKeys[i] === g.keptKey);
+    const idx = after.refs.sliceKeys.indexOf(g.keptKey);
+    const was = continuationOf(model, refs, before);
+    const now = idx === -1 ? null : continuationOf(after.model, after.refs, idx);
+    if (!was || !now || was.sliceKey !== now.sliceKey) return null;
+  }
+  return { groups, skipped, next };
+}

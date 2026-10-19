@@ -388,40 +388,63 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
 
   it("em upgrade --apply takes every step, one commit each, and the model validates clean with the same read-model facts", () => {
     const before = exportShape();
-    expect(before.count).toBe(10);
+    expect(before.count).toBe(12);
     const facts = (e: ReturnType<typeof exportShape>) => ({
-      continuationOf: e.shape.map((s) => s.continuationOf).filter((c) => c !== null).sort(),
-      // the events each read model also reads (the instance's slice, `atSlice`, is what the rewrite moves)
-      alsoReads: e.shape.filter((s) => JSON.stringify(s.alsoReads) !== "[]").map((s) => [s.key, (s.alsoReads as Array<{ event: string }>).map((r) => r.event)]),
+      // the events each read model also reads (the instance's slice, `atSlice`, is what a rewrite may move)
+      alsoReads: e.shape.filter((s) => JSON.stringify(s.alsoReads) !== "[]").map((s) => [s.key, [...new Set((s.alsoReads as Array<{ event: string }>).map((r) => r.event))].sort()]), // the set of events: two stacked instances of one event list it once
     });
-    expect(facts(before).continuationOf).toEqual(["orders", "shipments"]);
-    const ALL = ["collapse-alternative-events", "fold-continuations", "view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"];
+    const contOf = (e: ReturnType<typeof exportShape>) => Object.fromEntries(e.shape.map((s) => [s.key, s.continuationOf]));
+    expect(before.shape.filter((s) => s.continuationOf !== null).map((s) => s.key).sort()).toEqual(["orders-after-ship", "orders-manual", "shipments-after-ship", "shipments-after-ship-again"]);
+    const DEFAULT = ["collapse-alternative-events", "view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"];
     const dry = em(["upgrade", "orders.em"], dir);
-    for (const id of ALL) expect(dry.stdout).toContain(`[x] ${id}`);
+    for (const id of [...DEFAULT, "fold-continuations"]) expect(dry.stdout).toContain(`[x] ${id}`);
+    expect(dry.stdout).toContain("OPT-IN");
+    expect(dry.stdout).toContain("fold-continuations-opt-in");
 
+    // Plain --apply: every default step, one commit each; fold-continuations is NOT applied.
     const applied = em(["upgrade", "orders.em", "--apply"], dir);
     expect(applied.status, applied.stderr).toBe(0);
-    for (const id of ALL) {
-      expect(upgradeCommits().filter((l) => l.startsWith(`em upgrade: ${id}`))).toHaveLength(1);
-    }
+    for (const id of DEFAULT) expect(upgradeCommits().filter((l) => l.startsWith(`em upgrade: ${id}`))).toHaveLength(1);
+    expect(upgradeCommits().some((l) => l.startsWith("em upgrade: fold-continuations"))).toBe(false);
     expect(applied.stdout).toContain("Shape (em validate --shape, advisory):");
     expect(applied.stdout).toContain("shape-accepted:");
+    expect(applied.stdout).toContain("note: archive/slices/cancel-order-timeout.md holds Open Questions");
     expect(existsSync(join(dir, "shape.waive"))).toBe(false);
     const v = em(["validate", "orders.em"], dir);
     expect(v.status, v.stdout + v.stderr).toBe(0);
-    const after = exportShape();
-    expect(after.count).toBe(before.count - 1); // the two cancel columns became one slice; the hand-named continuation became the synthesized column
-    expect(facts(after)).toEqual(facts(before)); // identical continuationOf targets and alsoReads
-    expect(after.shape.map((s) => s.key)).toContain("ship-order--again");
+    const mid = exportShape();
+    expect(mid.count).toBe(before.count - 1); // the two cancel columns became one slice
+    expect(facts(mid)).toEqual(facts(before));
+    expect(contOf(mid)["shipments-after-ship"]).toBe("shipments");
+    // lineage: the kept doc names the retired one, the retired one names it back and is archived
+    const kept = JSON.parse(em(["export", "orders.em", "--slice", "cancel-order-customer"], dir).stdout).slice.doc;
+    expect(kept.mergedFrom.map((m: { raw: string }) => m.raw)).toEqual(["cancel-order-timeout@v1"]);
+    expect(readFileSync(join(dir, "archive", "slices", "cancel-order-timeout.md"), "utf8")).toContain("superseded-by: cancel-order-customer@v1");
     expect(readFileSync(join(dir, "orders.em"), "utf8")).toContain("event Order Cancelled By Customer | Order Cancelled By Timeout @Sales");
     expect(readFileSync(join(dir, "slices", "orders.md"), "utf8")).toContain('"Order Placed Manually" (via "Orders manual")');
     expect(readFileSync(join(dir, ".event-modeling.md"), "utf8")).toContain("- Retry policy (from slice place-order, deferred to v2)");
-    const sync = em(["slice", "sync", "orders.em", "--check"], dir);
-    expect(sync.status, sync.stdout).toBe(0);
+    expect(em(["slice", "sync", "orders.em", "--check"], dir).status).toBe(0);
+    expect(em(["slice", "index", "orders.em", "--check"], dir).status).toBe(0);
+
+    // Opt-in: --fold-continuations stacks the same-view continuations; per-slice continuationOf and the kept index row are unchanged.
+    const folded = em(["upgrade", "orders.em", "--apply", "--fold-continuations"], dir);
+    expect(folded.status, folded.stderr).toBe(0);
+    expect(upgradeCommits().filter((l) => l.startsWith("em upgrade: fold-continuations"))).toHaveLength(1);
+    expect(em(["validate", "orders.em"], dir).status).toBe(0);
+    const after = exportShape();
+    expect(after.count).toBe(mid.count - 1);
+    expect(facts(after)).toEqual(facts(mid));
+    const keptKeys = Object.keys(contOf(after));
+    expect(keptKeys).not.toContain("shipments-after-ship-again");
+    for (const key of keptKeys) expect(contOf(after)[key]).toBe(contOf(mid)[key]); // every surviving slice keeps its continuationOf
+    expect(contOf(after)["orders-after-ship"]).toBe("orders");
+    expect(readFileSync(join(dir, "README.md"), "utf8")).toContain("Shipments after ship");
+    expect(readFileSync(join(dir, "README.md"), "utf8")).not.toContain("Shipments after ship, again");
+    expect(em(["slice", "sync", "orders.em", "--check"], dir).status).toBe(0);
     expect(em(["slice", "index", "orders.em", "--check"], dir).status).toBe(0);
 
     const commits = upgradeCommits().length;
-    expect(em(["upgrade", "orders.em", "--apply"], dir).status).toBe(0);
+    expect(em(["upgrade", "orders.em", "--apply", "--fold-continuations"], dir).status).toBe(0);
     expect(upgradeCommits()).toHaveLength(commits);
   });
 
@@ -437,7 +460,7 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
 
     const dry = em(["upgrade", "orders.em"], dir);
     expect(dry.stdout).toContain("[ ] view-doc-sources-stale");
-    expect(dry.stdout).toContain("view-doc-sources-stale-signed");
+    expect(dry.stdout).toContain("slice-doc-stale-signed");
     const applied = em(["upgrade", "orders.em", "--apply"], dir);
     expect(applied.status, applied.stderr).toBe(0);
     expect(upgradeCommits().some((l) => l.startsWith("em upgrade: view-doc-sources-stale"))).toBe(false);

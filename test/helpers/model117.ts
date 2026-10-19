@@ -91,8 +91,8 @@ export function writeModel117(dir: string, opts: { signedOrders?: boolean; stage
 // ---- GH #290 stage 2: the PIM shape (repeated-command columns) and a hand-named continuation ----
 
 /** `MODEL_117` plus: two columns that repeat ONE command and differ only in the recorded event (the
- *  PIM shape, collapses to `event A | B @Sales`), and a hand-named continuation slice that directly
- *  follows its host command slice (folds into `view Shipments again … shown on "Shipment List"`). */
+ *  PIM shape, collapses to `event A | B @Sales`), and two consecutive hand-named continuations of ONE view after their host
+ *  command slice (stack into the first), then a third continuation of a DIFFERENT view (stays separate). */
 export const MODEL_117_STAGE2 =
   MODEL_117 +
   `
@@ -127,5 +127,15 @@ slice "Ship Order" {
 slice "Shipments after ship" {
   view Shipments again from "Order Shipped" { orderId: string }
   ui Shipment List @Clerk
+}
+
+slice "Shipments after ship, again" {
+  view Shipments again from "Order Shipped" { orderId: string }
+  ui Shipment List @Clerk
+}
+
+slice "Orders after ship" {
+  view Orders again from "Order Shipped" { orderId: string }
+  ui Order List @Clerk
 }
 `;

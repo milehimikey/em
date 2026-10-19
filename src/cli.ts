@@ -3755,7 +3755,13 @@ program
   .option("--apply", "apply every applicable mechanical step, one git commit each, then a final `Em version:` commit")
   .option("--check", "exit non-zero only on a hard incompatibility (an existing but unparseable state file, an un-migratable .em shape) — writes nothing; what CI runs; the final line says why")
   .option("--json", "print a JSON document instead of text (dry-run/--check only, never with --apply)")
-  .action((file: string, opts: { apply?: boolean; check?: boolean; json?: boolean }) => {
+  .option("--fold-continuations", "with --apply: also run the opt-in fold-continuations step (stack consecutive continuations of one view into the first; continuationOf, doc join and index rows unchanged)")
+  .option("--to-sugar", "with --apply (implies --fold-continuations): fold continuations into their host command slice as `view X again … shown on` lines — CHANGES continuationOf and the doc join to `<host>--again` and removes the folded slices' index rows")
+  .action((file: string, opts: { apply?: boolean; check?: boolean; json?: boolean; foldContinuations?: boolean; toSugar?: boolean }) => {
+    if ((opts.foldContinuations || opts.toSugar) && !opts.apply) {
+      console.error("em upgrade: --fold-continuations / --to-sugar apply only with --apply (a plain run already lists the proposal)");
+      process.exit(1);
+    }
     if (opts.apply && opts.check) {
       console.error("em upgrade: --apply and --check are mutually exclusive");
       process.exit(1);
@@ -3791,6 +3797,8 @@ program
       packagedAgentsRoot: packagedAgentsRoot(),
       model,
       refs,
+      ...(opts.foldContinuations ? { foldContinuations: true } : {}),
+      ...(opts.toSugar ? { toSugar: true } : {}),
     };
 
     if (opts.check) {
