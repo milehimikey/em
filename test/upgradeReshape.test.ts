@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
+import { sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
 import { UpgradeContext, UPGRADE_STEPS, applyUpgrade, detectUpgrade, resolveRepoRoot } from "../src/cli/upgrade.js";
 import { planCollapseAlternativeEvents, planFoldContinuations } from "../src/cli/upgradeReshape.js";
 import { MODEL_117_STAGE2, writeModel117 } from "./helpers/model117.js";
@@ -75,6 +76,38 @@ describe("collapse-alternative-events (GH #278)", () => {
     expect(step(dir, "collapse-alternative-events").applicable).toBe(false);
     expect(applyUpgrade(ctxOf(dir)).ok).toBe(true);
     expect(commits(dir, "collapse-alternative-events")).toHaveLength(1);
+  });
+
+  it("lists authored content in a retired doc (fold these into the kept doc) and bannerises the archived copy", () => {
+    const dir = repo();
+    const d = step(dir, "collapse-alternative-events");
+    expect(d.reason).toContain("slices/superseded/cancel-order-timeout.md holds Open Questions — fold these into slices/cancel-order-customer.md");
+    const result = applyUpgrade(ctxOf(dir));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const notes = result.applied.find((a) => a.id === "collapse-alternative-events")!.notes!;
+    expect(notes.join("\n")).toContain("fold these into slices/cancel-order-customer.md");
+    const archived = readFileSync(join(dir, "slices", "superseded", "cancel-order-timeout.md"), "utf8");
+    expect(archived).toMatch(/superseded-by: cancel-order-customer@v1\n---\n\n> \*\*SUPERSEDED\*\* by `cancel-order-customer`/);
+  });
+
+  it("a signed kept doc is left byte-identical and becomes the human item event-region-stale-signed", () => {
+    const dir = repo();
+    const doc = join(dir, "slices", "cancel-order-customer.md");
+    const plain = readFileSync(doc, "utf8");
+    writeFileSync(doc, plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${sliceDocBodyHash(plain)}`));
+    git(dir, "add", "slices/cancel-order-customer.md");
+    git(dir, "commit", "-q", "-m", "ratify");
+    const signedBytes = readFileSync(doc, "utf8");
+    expect(step(dir, "collapse-alternative-events").reason).toContain("are signed and will not be synced");
+    const result = applyUpgrade(ctxOf(dir));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(readFileSync(doc, "utf8")).toBe(signedBytes);
+    const item = result.report.human.find((h) => h.id === "event-region-stale-signed")!;
+    expect(item.reason).toContain("slices/cancel-order-customer.md");
+    expect(item.reason).toContain("em slice revise cancel-order-customer");
+    expect(item.reason).toContain("em slice sync");
   });
 
   it("uses oneof when the alternatives' payloads differ; leaves differing-command and noted runs alone", () => {

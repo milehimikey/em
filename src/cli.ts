@@ -3809,7 +3809,10 @@ program
     if (opts.apply) {
       const result = applyUpgrade(ctx);
       for (const s of result.applied) {
-        if (s.applied) console.log(`applied: ${s.id} — ${s.changedFiles.join(", ")} (${s.commit})`);
+        if (s.applied) {
+          console.log(`applied: ${s.id} — ${s.changedFiles.join(", ")} (${s.commit})`);
+          for (const n of s.notes ?? []) console.log(`  note: ${n}`);
+        }
         else console.log(`skipped: ${s.id}`);
       }
       if (!result.ok) {

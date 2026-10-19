@@ -97,7 +97,7 @@ export interface StepDetection {
   human?: boolean;
 }
 
-export type StepApplyOutcome = { ok: true; changedFiles: string[] } | { ok: false; message: string };
+export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
 export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
 
@@ -647,12 +647,76 @@ function freshCompile(ctx: UpgradeContext): { model: NormalizedModel; refs: Refs
   }
 }
 
+const CARRIED_SECTIONS = /^##\s+(Scenarios|Invariants|Open Questions|Decisions(?: log)?)\s*$/i;
+
+/** Sections of a retiring doc whose AUTHORED content a human must carry to the kept doc (generated
+ *  regions are rebuilt from the model, so they are not content). */
+function carriedSections(raw: string): string[] {
+  const body = raw.replace(/<!-- GENERATED:[^>]*:start[^>]*-->[\s\S]*?<!-- GENERATED:[^>]*:end -->/g, "");
+  const lines = body.split("\n");
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = CARRIED_SECTIONS.exec(lines[i]);
+    if (!m) continue;
+    let j = i + 1;
+    let content = false;
+    for (; j < lines.length && !/^#{1,2}\s/.test(lines[j]); j++) if (lines[j].trim() !== "" && !lines[j].includes("{{")) content = true;
+    if (content) found.push(m[1]);
+  }
+  return found;
+}
+
+interface RetiredDoc {
+  from: string;
+  to: string;
+  key: string;
+  keptKey: string;
+  text: string;
+  carried: string[];
+}
+
+function retiredDocs(ctx: UpgradeContext, groups: Array<{ keys: string[] }>): RetiredDoc[] {
+  const out: RetiredDoc[] = [];
+  for (const g of groups) {
+    const firstDoc = join(ctx.baseDir, "slices", `${g.keys[0]}.md`);
+    const firstVersion = existsSync(firstDoc) ? /^version:\s*(\d+)/m.exec(readFileSync(firstDoc, "utf8"))?.[1] ?? "1" : "1";
+    for (const key of g.keys.slice(1)) {
+      const from = join(ctx.baseDir, "slices", `${key}.md`);
+      if (!existsSync(from)) continue;
+      const raw = readFileSync(from, "utf8");
+      const range = locateFrontmatterInner(raw);
+      let next = raw;
+      if (range) {
+        const fenceEnd = raw.indexOf("\n", range.innerEnd) + 1 || raw.length;
+        const banner = `\n> **SUPERSEDED** by \`${g.keys[0]}\` (\`superseded-by\`): this slice was collapsed into one recording alternative events (GH #278). Kept for history; fold anything worth keeping into \`slices/${g.keys[0]}.md\`.\n`;
+        next = raw.slice(0, range.innerEnd) + `superseded-by: ${g.keys[0]}@v${firstVersion}\n` + raw.slice(range.innerEnd, fenceEnd) + banner + raw.slice(fenceEnd);
+      }
+      out.push({ from, to: join(ctx.baseDir, "slices", "superseded", `${key}.md`), key, keptKey: g.keys[0], text: next, carried: carriedSections(raw) });
+    }
+  }
+  return out;
+}
+
+function carriedNotes(retired: RetiredDoc[]): string[] {
+  return retired.filter((r) => r.carried.length > 0).map((r) => `slices/superseded/${r.key}.md holds ${r.carried.join(", ")} — fold these into slices/${r.keptKey}.md`);
+}
+
 function detectCollapseAlternativeEvents(ctx: UpgradeContext): StepDetection {
   const fresh = freshCompile(ctx);
   const plan = fresh ? planCollapseAlternativeEvents(fresh.model, fresh.refs, readModelText(ctx)) : null;
   if (plan === null) return { applicable: false, reason: "no run of adjacent slices repeats one command and differs only in the recorded event" };
   const desc = plan.groups.map((g) => `${g.slices.map((n) => `"${n}"`).join(" + ")} → "${g.slices[0]}" recording ${g.form === "inline" ? g.events.join(" | ") : `oneof { ${g.events.join(", ")} }`}`);
-  return { applicable: true, reason: `${plan.groups.length} run(s) of repeated-command slices collapse to alternative events: ${desc.join("; ")} — em upgrade will rewrite them (the first slice's key is kept; the others' docs move to slices/superseded/ with superseded-by)` };
+  const notes = carriedNotes(retiredDocs(ctx, plan.groups));
+  const signed = plan.groups
+    .map((g) => `slices/${g.keys[0]}.md`)
+    .filter((d) => existsSync(join(ctx.baseDir, d)) && isSignedDoc(readFileSync(join(ctx.baseDir, d), "utf8")));
+  return {
+    applicable: true,
+    reason:
+      `${plan.groups.length} run(s) of repeated-command slices collapse to alternative events: ${desc.join("; ")} — em upgrade will rewrite them (the first slice's key is kept; the others' docs move to slices/superseded/ with superseded-by and a SUPERSEDED banner)` +
+      (notes.length > 0 ? `; ${notes.join("; ")}` : "") +
+      (signed.length > 0 ? `; kept doc(s) ${signed.join(", ")} are signed and will not be synced — em slice revise <key>, then em slice sync` : ""),
+  };
 }
 
 function applyCollapseAlternativeEvents(ctx: UpgradeContext): StepApplyOutcome {
@@ -661,20 +725,7 @@ function applyCollapseAlternativeEvents(ctx: UpgradeContext): StepApplyOutcome {
   const plan = fresh ? planCollapseAlternativeEvents(fresh.model, fresh.refs, text) : null;
   if (plan === null) return { ok: false, message: "the model no longer collapses cleanly" };
   const changed = [ctx.modelFile];
-  const retired: Array<{ from: string; to: string; text: string }> = [];
-  for (const g of plan.groups) {
-    const firstDoc = join(ctx.baseDir, "slices", `${g.keys[0]}.md`);
-    const firstVersion = existsSync(firstDoc) ? /^version:\s*(\d+)/m.exec(readFileSync(firstDoc, "utf8"))?.[1] ?? "1" : "1";
-    for (const key of g.keys.slice(1)) {
-      const from = join(ctx.baseDir, "slices", `${key}.md`);
-      if (!existsSync(from)) continue;
-      const raw = readFileSync(from, "utf8");
-      const range = locateFrontmatterInner(raw);
-      const line = `superseded-by: ${g.keys[0]}@v${firstVersion}\n`;
-      const next = range ? raw.slice(0, range.innerEnd) + line + raw.slice(range.innerEnd) : raw;
-      retired.push({ from, to: join(ctx.baseDir, "slices", "superseded", `${key}.md`), text: next });
-    }
-  }
+  const retired = retiredDocs(ctx, plan.groups);
   writeFileSync(ctx.modelFile, plan.next, "utf8");
   for (const r of retired) {
     mkdirSync(dirname(r.to), { recursive: true });
@@ -682,7 +733,8 @@ function applyCollapseAlternativeEvents(ctx: UpgradeContext): StepApplyOutcome {
     rmSync(r.from);
     changed.push(r.from, r.to);
   }
-  // Regenerate the kept slice's event region (one `Records one of:` region now) unless its doc is signed.
+  // Regenerate the kept slice's event region (one `Records one of:` region now) unless its doc is signed
+  // (then `event-region-stale-signed` is the human item that says what to do).
   const after = freshCompile(ctx);
   if (after) {
     for (const g of plan.groups) {
@@ -693,7 +745,7 @@ function applyCollapseAlternativeEvents(ctx: UpgradeContext): StepApplyOutcome {
       }
     }
   }
-  return { ok: true, changedFiles: changed };
+  return { ok: true, changedFiles: changed, notes: carriedNotes(retired) };
 }
 
 function detectFoldContinuations(ctx: UpgradeContext): StepDetection {
@@ -916,7 +968,8 @@ export type HumanItemId =
   | "plugin-install-locally"
   | "view-doc-sources-stale-signed"
   | "shared-event-now-legal"
-  | "roster-not-initialised";
+  | "roster-not-initialised"
+  | "event-region-stale-signed";
 
 export interface HumanItem {
   id: HumanItemId;
@@ -1089,6 +1142,21 @@ function detectRosterNotInitialised(ctx: UpgradeContext): HumanItem | null {
   };
 }
 
+/** GH #290 / #278: after `collapse-alternative-events` a SIGNED kept doc still lists one event per
+ *  slice, so `em slice sync --check` fails. Sync would move its `ratifiedHash`: revise first. */
+function detectEventRegionStaleSigned(ctx: UpgradeContext): HumanItem | null {
+  const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, undefined, true);
+  if (!r.ok) return null;
+  const docs = r.docs.filter(
+    (d) => d.status === "stale" && d.regions.some((g) => g.status === "stale" && !g.name.startsWith("em-slice-view")) && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")),
+  );
+  if (docs.length === 0) return null;
+  return {
+    id: "event-region-stale-signed",
+    reason: `a generated region of ${docs.map((d) => d.path).join(", ")} is stale against the model but the doc is ratified or shipped — run \`em slice revise ${docs.map((d) => d.key).join(" / ")}\`, then \`em slice sync\``,
+  };
+}
+
 /** GH #290 / #279: information only. Since 1.18.0 the same event recorded by several commands (same
  *  name and context) is one logical event and `duplicate-name` no longer fires; nothing to change. */
 function detectSharedEventNowLegal(ctx: UpgradeContext): HumanItem | null {
@@ -1115,6 +1183,7 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectViewDocSourcesStaleSigned,
   detectSharedEventNowLegal,
   detectRosterNotInitialised,
+  detectEventRegionStaleSigned,
 ];
 
 export function detectHumanItems(ctx: UpgradeContext): HumanItem[] {
@@ -1256,6 +1325,8 @@ export interface ApplyStepResult {
   applied: boolean;
   changedFiles: string[];
   commit: string | null;
+  /** What a human must still do for this step (e.g. content of a retired doc to carry over). */
+  notes?: string[];
 }
 
 export type ApplyUpgradeResult =
@@ -1306,7 +1377,7 @@ export function applyUpgrade(ctx: UpgradeContext, runGit: GitRunner = realGit): 
     if (!commitResult.ok) {
       return { ok: false, message: `em upgrade: step "${step.id}" applied but failed to commit — ${commitResult.message}`, report, applied };
     }
-    applied.push({ id: step.id, applied: true, changedFiles: result.changedFiles, commit: message });
+    applied.push({ id: step.id, applied: true, changedFiles: result.changedFiles, commit: message, ...(result.notes && result.notes.length > 0 ? { notes: result.notes } : {}) });
     // A step may have rewritten the model (or its docs): later steps must see the new one.
     const fresh = freshCompile(ctx);
     if (fresh) {
@@ -1315,6 +1386,9 @@ export function applyUpgrade(ctx: UpgradeContext, runGit: GitRunner = realGit): 
     }
   }
 
+  // The pre-apply human list can be stale (a rewritten model, a doc now out of sync): report the upgraded
+  // repo's, computed before the `Em version:` stamp so transition-only notes still show.
+  report.human = detectHumanItems(ctx);
   const loaded = loadStateFile(ctx.baseDir);
   let emVersionCommit: string | null = null;
   if (loaded.ok) {
