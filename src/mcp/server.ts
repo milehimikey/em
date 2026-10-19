@@ -46,6 +46,7 @@ import { validateDocModelConsistency } from "../catalog/docModelConsistencyValid
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateInvariants } from "../catalog/invariantsValidate.js";
+import { loadRoster } from "../roster/roster.js";
 import { computeSliceReadiness } from "../catalog/sliceReadyValidate.js";
 import { engagementMembersFor, engagementPlanFor, engagementStatusFor } from "../cli/engagement.js";
 import { checkFoundation } from "../cli/engagementFoundation.js";
@@ -299,15 +300,19 @@ export function createServer(): McpServer {
           .boolean()
           .default(false)
           .describe("GH #256 strict mode (`em validate --slice-ready --require-ratified-hash`): a ready-to-implement doc with no `ratifiedHash:` is not ready"),
+        roster: z
+          .string()
+          .optional()
+          .describe("GH #259: path of the ratifier roster to check `ratifiedBy` against (`em validate --slice-ready --roster`); omitted = the nearest ratifiers.yaml above the model, none = unrestricted"),
       },
     },
-    async ({ file, sliceKey, requireRatifiedHash }) => {
+    async ({ file, sliceKey, requireRatifiedHash, roster }) => {
       const compiled = compileWithValidation(file);
       if ("error" in compiled) return errorResult(compiled.error);
       const { model, refs, allDiagnostics, source, diagnostics } = compiled;
       const baseDir = dirname(file);
       const contractInput = { file, source, diagnostics };
-      const { scoped, advisories, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash });
+      const { scoped, advisories, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash, rosterPath: roster });
       return textResult(
         buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories),
       );
@@ -589,7 +594,7 @@ export function createServer(): McpServer {
         .map(({ file }) => resolveEmVersionStatusEntry(file, GENERATOR_VERSION))
         .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]), readOpenEngagements(files));
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]), readOpenEngagements(files), loadRoster(dirname(files[0])).state);
       return textResult(buildStatusJson(report));
     },
   );

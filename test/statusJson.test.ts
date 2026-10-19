@@ -44,6 +44,7 @@ function sampleReport(): StatusReport {
     system: { manifest: "system.yaml", consumerNotAdapted: 2 },
     publicSlicesUnconfirmed: 2,
     engagements: { open: 2, slugs: ["account-views", "loans"] },
+    roster: "present",
   };
 }
 
@@ -52,7 +53,7 @@ describe("buildStatusJson", () => {
     const report = sampleReport();
     const doc = JSON.parse(buildStatusJson(report));
     expect(doc.statusSchemaVersion).toBe(STATUS_SCHEMA_VERSION);
-    expect(STATUS_SCHEMA_VERSION).toBe("1.11");
+    expect(STATUS_SCHEMA_VERSION).toBe("1.12");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
     expect(doc.files).toEqual(report.files);
     expect(doc.slices).toEqual(report.slices);
@@ -76,8 +77,11 @@ describe("buildStatusJson", () => {
     const keys = Object.keys(doc);
     // MIL-268: engagements appended after publicSlicesUnconfirmed (under 1.8, R21), before diagnostics.
     expect(doc.engagements).toEqual({ open: 2, slugs: ["account-views", "loans"] });
-    expect(keys.indexOf("publicSlicesUnconfirmed")).toBe(keys.indexOf("diagnostics") - 2);
-    expect(keys.indexOf("engagements")).toBe(keys.indexOf("diagnostics") - 1);
+    expect(keys.indexOf("publicSlicesUnconfirmed")).toBe(keys.indexOf("diagnostics") - 3);
+    expect(keys.indexOf("engagements")).toBe(keys.indexOf("diagnostics") - 2);
+    // GH #259 (1.12): roster after engagements.
+    expect(doc.roster).toBe("present");
+    expect(keys.indexOf("roster")).toBe(keys.indexOf("diagnostics") - 1);
     expect(doc.diagnostics).toEqual([{ file: "model.em", severity: "warning", code: "frontmatter-invalid", message: "broken doc", line: 3, refs: [] }]);
   });
 

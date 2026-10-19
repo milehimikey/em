@@ -56,7 +56,9 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // `.event-modeling.md` for a ratified/shipped slice's next version (docs/cli.md#em-slice-defer).
 // 1.11 (GH #285): `slices.nextOpen` — slices whose next version is open (`draft`/`reviewed`/
 // `ready-to-implement`) over a shipped one: `{ file, key, shippedVersion, version, status }`.
-export const STATUS_SCHEMA_VERSION = "1.11";
+// 1.12 (GH #259): a new top-level `roster` -- "present" | "absent" | "invalid": whether a ratifier
+// roster (`ratifiers.yaml`) governs `em slice ratify --by` / `review --by` for the first input model.
+export const STATUS_SCHEMA_VERSION = "1.12";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No
@@ -79,6 +81,7 @@ export function buildStatusJson(report: StatusReport): string {
     system: report.system,
     publicSlicesUnconfirmed: report.publicSlicesUnconfirmed,
     engagements: report.engagements,
+    roster: report.roster,
     // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
     // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,
     // message, line, refs), plus `file` since this is a multi-model surface.

@@ -516,6 +516,18 @@ Ground rules, matching the phase's own stance (see
 - If the model and code live in different repos, check both out and point the phase at the
   code path when it asks for the target repo (the state file's `Existing system refs`).
 
+## Ratifier roster gate
+
+`ratifiedBy:` is free text, so a PR can type any name into the frontmatter and the structural
+`--slice-ready` check only sees that it is non-empty. With a
+[`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) in the repo, the same
+`em validate <model> --slice-ready <key> --json` the PR job already runs also fails
+(`ratified-by-not-in-roster`, error, `refs: [<key>]`) when the recorded ratifier is not permitted
+for the slice's context. No new job is needed; a repo with no roster file sees no change. The
+roster itself is reviewed like any other file, so pair it with the CODEOWNERS rule below (own
+`ratifiers.yaml` as well as `slices/**`) — otherwise whoever can edit the doc can edit the list.
+Adopt it with `em roster init <model>`.
+
 ## CODEOWNERS: routing ratification review
 
 `em slice ratify` (MIL-165) mechanizes the *edit* — flipping `status` to `ready-to-implement`

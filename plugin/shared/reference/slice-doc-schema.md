@@ -89,6 +89,42 @@ over an omission — it reports). `implementedIn` and the lineage keys are the g
 optional ones; `implementedIn`'s required-once-implemented rule in the table below is
 convention, not parser-enforced.
 
+## Who may ratify
+
+The schema records *who* signed (`reviewedBy`, `ratifiedBy`) but, by default, accepts any
+non-empty name: who is allowed to sign is the host repo's decision. A host that wants em to
+enforce it supplies an optional **roster**, `ratifiers.yaml`, beside the model (the nearest one
+above the model up to the repo root is used, so one roster can serve several models; `--roster
+<path>` on `ratify`, `review` and `validate --slice-ready` overrides). See
+[examples/order-fulfillment/ratifiers.yaml](https://github.com/milehimikey/em/blob/main/examples/order-fulfillment/ratifiers.yaml).
+
+```yaml
+rosterSchemaVersion: "1.0"
+ratifiers:
+  - name: Aaron McKay
+    contexts: [Product, Attribute]   # omit = the whole model
+  - name: Mike Key
+reviewers:                           # optional; same shape, checked by `em slice review --by`
+  - name: Mike Key
+```
+
+- `rosterSchemaVersion` is required (`"1.0"`); at least one of `ratifiers:` / `reviewers:` is
+  required; each is a non-empty list of `{ name, contexts? }`. Unknown keys are errors
+  (`roster-invalid`).
+- A slice's context is the context lane of its **events**. A name is permitted when its entry has
+  no `contexts`, or any of the slice's contexts is listed (a leading `@` is tolerated). A slice
+  with no events has no context, so only whole-model entries permit it.
+- A key that is absent leaves that role unrestricted: no `reviewers:` means `review --by` accepts
+  anyone.
+- **File absent: today's behaviour**, no warning. **File present but invalid: fail closed** —
+  `ratify` and `review` refuse, `--slice-ready` reports `roster-invalid`.
+- Enforced at write time by `em slice ratify` / `em slice review` (refusal lists the permitted
+  names) and at check time by `em validate --slice-ready` (`ratified-by-not-in-roster`, error),
+  which is the only thing that catches a hand-edited `ratifiedBy:`; see
+  [ci.md](ci.md#ratifier-roster-gate). `em status` reports `roster: present|absent|invalid`.
+- `em roster init <model>` seeds the file from the names already in the docs
+  ([cli.md](https://github.com/milehimikey/em/blob/main/docs/cli.md#em-roster-init-file)).
+
 ## Required vs optional, by `status`
 
 | Key | draft | reviewed | ready-to-implement | implemented |

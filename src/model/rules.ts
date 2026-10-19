@@ -764,6 +764,22 @@ export const RULES = {
     docAnchor: "slice-readiness",
     optIn: true,
   },
+  "ratified-by-not-in-roster": {
+    severity: "error",
+    title: "ratifiedBy is not on the ratifier roster",
+    fix: "The doc's `ratifiedBy:` names someone `ratifiers.yaml` does not permit for this slice's context — re-ratify it with a permitted name (`em slice revise --withdraw`, review, `em slice ratify --by <name>`), or update the roster.",
+    usageCategory: "ratifiedBy not in roster",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
+  "roster-invalid": {
+    severity: "error",
+    title: "Ratifier roster invalid",
+    fix: "Fix `ratifiers.yaml`: `rosterSchemaVersion: \"1.0\"`, then `ratifiers:` and/or `reviewers:` as non-empty lists of `{ name, contexts? }`.",
+    usageCategory: "ratifier roster invalid",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
   "slice-ready-body-changed-since-ratification": {
     severity: "error",
     title: "Body changed since ratification",

@@ -662,6 +662,10 @@ export interface StatusReport {
   /** MIL-268: open engagements (`engagements/<slug>.md` with `status: open`) beside the input
    *  models — one scan per distinct model directory, slugs sorted. */
   engagements: { open: number; slugs: string[] };
+  /** GH #259 (status schema 1.12): the ratifier roster beside the first input model --
+   *  `present` (`ratifiers.yaml` found and valid), `invalid` (found but unusable: `ratify`/`review`
+   *  refuse), or `absent` (today's behaviour, any name accepted). */
+  roster: "present" | "absent" | "invalid";
 }
 
 /** Aggregate everything `em status` reports into one `StatusReport` — pure, no I/O. Callers
@@ -678,6 +682,7 @@ export function buildStatusReport(
   emVersion: EmVersionStatusEntry[] = [],
   system: StatusReport["system"] = null,
   engagements: StatusReport["engagements"] = { open: 0, slugs: [] },
+  roster: StatusReport["roster"] = "absent",
 ): StatusReport {
   const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, shipped: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
   const nextOpen: StatusSliceCounts["nextOpen"] = [];
@@ -795,6 +800,7 @@ export function buildStatusReport(
     system,
     publicSlicesUnconfirmed,
     engagements,
+    roster,
   };
 }
 
@@ -980,6 +986,7 @@ export function formatStatusDetail(report: StatusReport): string {
   }
   // MIL-268: the open engagements line (always present; slugs only when there are any).
   lines.push(`open engagements: ${report.engagements.open}${report.engagements.open > 0 ? ` (${report.engagements.slugs.join(", ")})` : ""}`);
+  lines.push(`roster: ${report.roster}`);
   if (report.system) lines.push(`consumer adaptation: ${report.system.consumerNotAdapted} not adapted (${report.system.manifest})`);
   if (report.diagnostics.length > 0) {
     lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);

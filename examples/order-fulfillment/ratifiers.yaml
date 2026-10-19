@@ -1,0 +1,10 @@
+# ratifiers.yaml -- who may sign slice docs for this model (optional; GH #259, docs/slice-doc-schema.md#who-may-ratify).
+# Delete this file and em accepts any name again. Entries without `contexts` cover the whole model.
+rosterSchemaVersion: "1.0"
+ratifiers:
+  - name: em examples
+  - name: Payments Lead
+    contexts: [Payment]       # may sign only slices whose events live in the Payment context
+reviewers:                    # optional; checked by `em slice review --by`
+  - name: em examples
+  - name: Facilitator

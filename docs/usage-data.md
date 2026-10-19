@@ -151,6 +151,8 @@ affected lines written by hand.
 | loops-to target unresolved |
 | public field type unresolved |
 | public name not unique |
+| ratifiedBy not in roster |
+| ratifier roster invalid |
 | reaction reads view before it exists |
 | reaction references unknown read model |
 | same-band collision |

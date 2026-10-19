@@ -430,6 +430,17 @@ describe("slice_ready tool", () => {
     expect(doc.diagnostics.map((d: { code: string }) => d.code)).toEqual(["slice-ready-missing-ratified-hash"]);
   });
 
+  it("GH #259: the roster param is honoured — a ratifiedBy off the roster is ratified-by-not-in-roster (same as the CLI --roster); absent roster = unchanged", async () => {
+    const roster = join(dir, "mcp-ratifiers.yaml");
+    writeFileSync(roster, 'rosterSchemaVersion: "1.0"\nratifiers:\n  - name: Someone Else\n');
+    const { doc } = await callJson(client, "slice_ready", { file: join(dir, "ready.em"), sliceKey: "ready-slice", roster });
+    expect(doc.ready).toBe(false);
+    expect(doc.diagnostics.map((d: { code: string }) => d.code)).toEqual(["ratified-by-not-in-roster"]);
+    expect(doc.diagnostics[0].refs).toEqual(["ready-slice"]);
+    writeFileSync(roster, 'rosterSchemaVersion: "1.0"\nratifiers:\n  - name: Alex Rivera\n');
+    expect((await callJson(client, "slice_ready", { file: join(dir, "ready.em"), sliceKey: "ready-slice", roster })).doc.ready).toBe(true);
+  });
+
   it("verdict shape for an unknown slice key: gates null, ready false, not a tool error", async () => {
     const { result, doc } = await callJson(client, "slice_ready", { file: join(dir, "ready.em"), sliceKey: "no-such-key" });
     expect(result.isError).toBeFalsy();
@@ -678,7 +689,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.11");
+    expect(doc.statusSchemaVersion).toBe("1.12");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
