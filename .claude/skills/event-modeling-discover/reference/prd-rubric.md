@@ -50,7 +50,7 @@ All of these are checked by `em discover triage-check`; write the record so they
 4. **Only modeled and rewritten statements join a slice group.** They carry a declared `group` and
    the `storyline` of that group. Every other outcome has `group: null` (and `storyline: null`),
    except that a `question` may name the group it would join once answered (with that group's
-   storyline).
+   storyline); that is a pointer only, never an anchor (rule 7).
 5. `rewritten` needs `rewrite`; `parked` needs `reason`; `question` needs `question`; every
    `constraint` appears in `constraints[]`.
 6. **Provenance is checked, not declared.** Every statement says whether it came from a
@@ -58,11 +58,11 @@ All of these are checked by `em discover triage-check`; write the record so they
    `walkthrough` statement's quote must lie inside some storyline's span; a `reference`
    statement's quote must lie outside every storyline span.
 7. **A group is either anchored or reference-only.** An anchored group names a storyline and has at
-   least one `walkthrough` statement whose quote lies inside that storyline's span. A **reference-only
+   least one `modeled` or `rewritten` `walkthrough` statement whose quote lies inside that storyline's span (a `question` never anchors: a group anchored by questions only is an error). A **reference-only
    group** has only `reference` statements and **no storyline**: `storyline: null` on the group and
    on its statements. It never joins a walkthrough storyline. The report lists reference-only
    groups outside every storyline — operations no walkthrough touches; check these are not CRUD fill.
-8. **One statement per claim.** A statement's quote (normalised) may appear in only one statement.
+8. **One statement per claim.** A statement's normalised quote may not equal, contain or be contained in another statement's quote; the error names both.
 9. **Quotes are verbatim** (Markdown emphasis marks, smart quotes and whitespace aside) and at
    least 12 characters. A storyline `quote` is the **full** walkthrough span, start to finish.
 

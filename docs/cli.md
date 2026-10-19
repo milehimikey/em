@@ -4026,7 +4026,7 @@ checks what must not be judged. Checks:
   group and its statements, and a reference-only group that names a storyline is rejected).
   Reference-only groups pass but are listed in the report, outside every storyline (operations no
   walkthrough touches; check these are not CRUD fill). A `question` may name the group it would
-  join once answered. No two statements may share a (normalised) quote.
+  join once answered. No two statements may share, contain or be contained in each other's (normalised) quote. Only `modeled`/`rewritten` walkthrough statements anchor a group; a group anchored by questions only is an error.
 
 It cannot judge whether a classification is right, whether every walkthrough claim has a
 statement, or whether the Decisions-log entry for each parked or rejected statement was written:

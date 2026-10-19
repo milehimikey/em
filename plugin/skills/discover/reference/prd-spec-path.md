@@ -85,7 +85,7 @@ event share one slice.
   built only from `reference` statements (operations no walkthrough touches) is reference-only:
   `storyline: null` on the group and on its statements. It never joins a walkthrough storyline,
   and the report lists it outside every storyline for the human to inspect.
-- A claim is quoted once: no two statements may share a quote.
+- A claim is quoted once: no statement's quote may equal, contain or be contained in another's. Only `modeled`/`rewritten` walkthrough statements anchor a group; a `question` never does.
 
 ## Step 4 — Rewrite, don't drop
 
@@ -152,7 +152,10 @@ version, verbatim quotes, and the outcome rules; **it cannot judge whether your 
 right**, whether every walkthrough claim has a statement, or whether the Decisions-log entry for
 each parked or rejected statement was actually written (that entry is prose-only and unchecked) —
 that is what the human review is for. Read the report's **reference-only groups** list: those
-are operations no walkthrough touches; check they are not CRUD fill.
+are operations no walkthrough touches; check they are not CRUD fill. Also confirm each
+**storyline quote really is a walkthrough span**: storyline spans are self-declared and the
+checker cannot know which sections of the document are walkthroughs. The `--markdown` view lists
+the storylines with their quotes for exactly this review.
 
 ## Step 6 — Questions, never inventions
 

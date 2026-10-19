@@ -225,9 +225,11 @@ export function validatePrdTriage(
     else {
       quoteIn(at, raw.quote);
       const nq = normQuote(raw.quote);
-      const prior = quoteOwner.get(nq);
-      if (prior !== undefined) err(`${at}: quote duplicates statement ${prior}'s; one statement per claim`);
-      else quoteOwner.set(nq, id);
+      for (const [pq, pid] of quoteOwner) {
+        if (pq === nq) err(`${at}: quote duplicates statement ${pid}'s; one statement per claim`);
+        else if (pq.includes(nq) || nq.includes(pq)) err(`${at}: quote overlaps statement ${pid}'s (one contains the other); one statement per claim`);
+      }
+      if (!quoteOwner.has(nq)) quoteOwner.set(nq, id);
       // Provenance is checked, not declared: walkthrough quotes lie inside a storyline span,
       // reference quotes lie outside every span.
       const inside = [...storylineSpan].filter(([, span]) => span.includes(nq)).map(([sid]) => sid);
@@ -326,8 +328,12 @@ export function validatePrdTriage(
       continue;
     }
     const span = storylineSpan.get(named);
-    const anchored = members.some((m) => m.provenance === "walkthrough" && span !== undefined && typeof m.quote === "string" && span.includes(normQuote(m.quote)));
-    if (!anchored) err(`group ${g}: no walkthrough statement lies inside storyline ${named}'s span; anchor it in that walkthrough, or move it to a reference-only group`);
+    // Only modeled/rewritten walkthrough statements anchor; a question is a pointer, never an anchor.
+    const inSpan = (m: Record<string, unknown>) => m.provenance === "walkthrough" && span !== undefined && typeof m.quote === "string" && span.includes(normQuote(m.quote));
+    const anchored = members.some((m) => (m.outcome === "modeled" || m.outcome === "rewritten") && inSpan(m));
+    if (!anchored && members.some((m) => m.outcome === "question" && inSpan(m))) {
+      err(`group ${g}: anchored by questions only — answer them or make the group reference-only`);
+    } else if (!anchored) err(`group ${g}: no walkthrough statement lies inside storyline ${named}'s span; anchor it in that walkthrough, or move it to a reference-only group`);
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true, doc: input as unknown as PrdTriageDoc, referenceOnlyGroups };

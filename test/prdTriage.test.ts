@@ -358,6 +358,36 @@ describe("GH #295: walkthrough-first provenance", () => {
     expect(e).toContain("S4: quote duplicates statement S1's");
   });
 
+  it("a question never anchors: a group whose only walkthrough members are questions fails", () => {
+    const e = errorsOf(
+      lib((d) => {
+        for (const i of [3, 4]) {
+          d.statements[i].confidence = "low";
+          Object.assign(d.statements[i], { outcome: "question", question: "Is this right? proposed: x" });
+        }
+      }),
+    );
+    expect(e).toContain("group G4: anchored by questions only — answer them or make the group reference-only");
+  });
+
+  it("the critic's probe fails: endpoint rewritten + a low-confidence question quoting a fresh walkthrough fragment", () => {
+    const e = errorsOf(
+      lib((d) => {
+        // G5 gets a rewritten endpoint (reference) and a question quoting walkthrough text, with a storyline
+        d.groups[4].storyline = "L2";
+        Object.assign(d.statements[6], { confidence: "high", outcome: "rewritten", rewrite: "A librarian corrects details.", storyline: "L2" });
+        d.statements.push({ id: "S10", quote: "it is removed", category: "business-fact", aboutBusiness: true, confidence: "low", provenance: "walkthrough", outcome: "question", group: "G5", storyline: "L2", question: "Is removal a correction?" });
+      }),
+    );
+    expect(e).toMatch(/group G5: (anchored by questions only|every statement is reference)/);
+    expect(e).not.toBe("");
+  });
+
+  it("overlapping quotes are rejected, naming both statements", () => {
+    const e = errorsOf(lib((d) => (d.statements[4].quote = "marks a damaged book")));
+    expect(e).toContain("S5: quote overlaps statement S4's");
+  });
+
   it("a question may name the group it would join (S7 in the reference-only group)", () => {
     const s7 = load(LIBRARY).statements[6];
     expect(s7).toMatchObject({ confidence: "low", outcome: "question", group: "G5", storyline: null });
