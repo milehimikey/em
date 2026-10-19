@@ -103,8 +103,8 @@ slice "Payment Outcomes" {
 Today two events on the *same* context in one slice are a `grid-collision` error, so the example
 puts the outcomes on different contexts; when the outcomes are alternatives on one context, write
 them as `event A | B @Ctx` (1.18.0). Splitting this into an "Issue Payment" slice and a
-"Payment Failed" slice is the anti-pattern; the lint `automation-split-by-outcome` flags the
-Automation form of it. See also [storyline.md](storyline.md).
+"Payment Failed" slice is the anti-pattern; 1.18.0 adds the lint `automation-split-by-outcome`,
+which flags the Automation form of it. See also [storyline.md](storyline.md).
 
 ## State View
 
@@ -183,8 +183,8 @@ Scheduled` are the *outcome events* of that slice's command (Dilger: "one busine
 different possible outcomes"). The retry policy (how many attempts, what backoff) and the
 failure handling (what happens at the limit) are **invariants and scenarios in that slice's
 doc**, not new slices. Splitting the processor into a happy-path slice, a failure slice and a
-retry slice along control flow is the anti-pattern — the lint `automation-split-by-outcome`
-flags it.
+retry slice along control flow is the anti-pattern — 1.18.0 adds the lint
+`automation-split-by-outcome`, which flags it.
 
 ```em
 slice "Pay Order" {
@@ -205,18 +205,26 @@ slice "Fulfil Order" {
   event Fulfilment Retry Scheduled @Scheduling
 }
 
+slice "Orders To Fulfil — retry" {
+  view Orders To Fulfil again from "Fulfilment Retry Scheduled"
+}
+
 slice "Fulfilment Status" {
   view Fulfilment Status from "Fulfilment Succeeded", "Fulfilment Failed", "Fulfilment Retry Scheduled"
   ui Fulfilment Board @Ops
 }
 ```
 
-Add a new slice only when a **different actor or a different trigger** is involved: a human
-override of a failed fulfilment, or a timer that wakes the retry, has its own trigger and so its
-own slice. Outcomes on different contexts fan out from the command as above (two events on the
+The retry fires because the processor's to-do list reads the retry-scheduled event: the view
+reappears with `view Orders To Fulfil again from "Fulfilment Retry Scheduled"`, so the **same**
+reaction picks the order up again. Add a new slice only when a **different actor or a different
+trigger** is involved: a human override of a failed fulfilment, or a scheduled timer that is
+itself modelled as a reaction on a different view, has its own trigger and so its own slice
+(that is what `retry-slice-of` in #311 distinguishes). Outcomes on different contexts fan out from the command as above (two events on the
 same context are a `grid-collision` today); when the outcomes are alternatives on one context,
 write them as `event A | B @Ctx` (1.18.0). A failure that continues the story is "Linearized"
-(Dilger) as a later chapter linked to the originating event, never a branch. See
+(Dilger) as a later chapter linked to the originating event, never a branch; that later chapter
+reads the failure event through a view or a reaction, since Law 1 forbids event-to-event arrows. See
 [storyline.md](storyline.md).
 
 ## Translation

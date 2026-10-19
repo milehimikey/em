@@ -147,12 +147,14 @@ command** — it never records an event directly.
   list does the processor watch? What command does it fire? What if it fails or retries?"*
 - **Outcomes are events of the SAME slice.** Success, failure, retry-scheduled and timeout are
   outcome events of the one command (`Fulfilment Succeeded` / `Fulfilment Failed` / `Fulfilment
-  Retry Scheduled`), not sibling slices per control-flow branch (lint
-  `automation-split-by-outcome`). Retry policy and failure handling are invariants and scenarios
+  Retry Scheduled`), not sibling slices per control-flow branch (1.18.0 adds the
+  lint `automation-split-by-outcome`). Retry policy and failure handling are invariants and scenarios
   in that slice's doc. A new slice only when a different actor or a different trigger is
   involved. Canon: Dilger, "one business action… two different possible outcomes"
   (`PaymentIssued` / `PaymentFailed`); a failure that continues the story is "Linearized" as a
-  later chapter linked to the originating event, never a branch. Same rule for State Change: one
+  later chapter linked to the originating event, never a branch; it reads the failure event
+  through a view or a reaction (Law 1 forbids event-to-event arrows). A retry is the processor's
+  to-do view reading the retry-scheduled event (`view X again`), so the same reaction re-fires. Same rule for State Change: one
   command, several outcome events, one slice.
 
 ### 4. Translation
