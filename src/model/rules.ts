@@ -432,6 +432,22 @@ export const RULES = {
     usageCategory: "invariant has no scenario",
     docAnchor: "scenario-quality",
   },
+  "doc-names-unfed-event": {
+    severity: "warning",
+    advisory: true,
+    title: "Doc names an event its view does not read",
+    fix: "Add the event to the view's `from` in the model (if the edge is real), or fix the doc's Source column / scenario.",
+    usageCategory: "doc names event view does not read",
+    docAnchor: "doc-model-consistency",
+  },
+  "doc-omits-fed-event": {
+    severity: "warning",
+    advisory: true,
+    title: "Doc omits an event its view reads",
+    fix: "Mention the event in the view's Source column (run `em slice sync`), or drop it from the view's `from`.",
+    usageCategory: "doc omits event view reads",
+    docAnchor: "doc-model-consistency",
+  },
   "slice-doc/structured-section-malformed": {
     severity: "warning",
     title: "Malformed structured section",

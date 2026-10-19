@@ -470,3 +470,275 @@ describe("table cells honour the \\| escape (MIL-285)", () => {
     expect(diags).toEqual([]);
   });
 });
+
+describe("GH #294 doc-names-unfed-event / doc-omits-fed-event", () => {
+  const viewDoc = (rows: string[], scenarioThen = "Owner Tools lists the tool") =>
+    [
+      "# Slice",
+      "## Read Model / View",
+      "<!-- GENERATED:em-slice-view:start -->",
+      '- **View:** `Owner Tools` built from events: "Tool Listed"',
+      "",
+      "| Field | Type | Source / Notes |",
+      "|-------|------|----------------|",
+      ...rows,
+      "<!-- GENERATED:em-slice-view:end -->",
+      "## Scenarios",
+      "### Scenario: Listed",
+      "- **Given:** Tool Listed",
+      "- **When:** the owner opens the page",
+      `- **Then:** ${scenarioThen}`,
+      "",
+    ].join("\n");
+  const toolshed = (from: string) =>
+    [
+      'slice "Owner Tools" {',
+      `  view Owner Tools from ${from} note "slices/owner-tools.md"`,
+      "}",
+      'slice "Return Tool" {',
+      "  command Return Tool",
+      "  event Tool Returned @Tool",
+      "  event Tool Listed @Tool",
+      "}",
+    ].join("\n");
+
+  it("toolshed case: Source column anticipates an event the view does not read", () => {
+    writeDoc("owner-tools", { pattern: "state-view", body: viewDoc(["| status | string | from event `Tool Returned` |"]) });
+    const diags = diagsOf(toolshed('"Tool Listed"')).filter((d) => d.code === "doc-names-unfed-event");
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ severity: "warning", refs: ["owner-tools", expect.any(String)] });
+    expect(diags[0].message).toContain("Tool Returned");
+  });
+
+  it("flags an unfed event named in a scenario Then", () => {
+    writeDoc("owner-tools", { pattern: "state-view", body: viewDoc(["| status | string | from event `Tool Listed` |"], "Tool Returned is reflected") });
+    const diags = diagsOf(toolshed('"Tool Listed"')).filter((d) => d.code === "doc-names-unfed-event");
+    expect(diags).toHaveLength(1);
+  });
+
+  it("is clean once the model feeds the view that event", () => {
+    writeDoc("owner-tools", {
+      pattern: "state-view",
+      body: viewDoc(["| status | string | from event `Tool Returned` |", "| listed | bool | from event `Tool Listed` |"]),
+    });
+    const diags = diagsOf(toolshed('"Tool Listed", "Tool Returned"'));
+    expect(diags.filter((d) => d.code === "doc-names-unfed-event" || d.code === "doc-omits-fed-event")).toEqual([]);
+  });
+
+  it("counts events fed through an again instance", () => {
+    writeDoc("owner-tools", { pattern: "state-view", body: viewDoc(["| status | string | from event `Tool Returned` |"]) });
+    const src = [
+      'slice "Owner Tools" {',
+      '  view Owner Tools from "Tool Listed" note "slices/owner-tools.md"',
+      "}",
+      'slice "Return Tool" {',
+      "  command Return Tool",
+      "  event Tool Returned @Tool",
+      "  event Tool Listed @Tool",
+      "}",
+      'slice "Owner Tools Again" {',
+      '  view Owner Tools again from "Tool Returned"',
+      "}",
+    ].join("\n");
+    expect(diagsOf(src).filter((d) => d.code === "doc-names-unfed-event")).toEqual([]);
+  });
+
+  it("hints when the model feeds an event the doc never mentions", () => {
+    writeDoc("owner-tools", { pattern: "state-view", body: "# Slice\n- **View:** `Owner Tools`\n" });
+    const diags = diagsOf(toolshed('"Tool Listed"')).filter((d) => d.code === "doc-omits-fed-event");
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain("Tool Listed");
+    expect(diags[0].refs).toEqual(["owner-tools", expect.any(String)]);
+  });
+
+  it("omits hint compares against the bound instance only: a doc bound to an again instance is not flagged for the other instances' events", () => {
+    writeDoc("tool-returned-view", {
+      pattern: "state-view",
+      body: "# Slice\n- **View:** `Owner Tools` built from events: \"Tool Returned\"\n",
+    });
+    const src = [
+      'slice "Owner Tools" {',
+      '  view Owner Tools from "Tool Listed"',
+      "}",
+      'slice "Return Tool" {',
+      "  command Return Tool",
+      "  event Tool Returned @Tool",
+      "  event Tool Listed @Tool",
+      "}",
+      'slice "Tool Returned View" {',
+      '  view Owner Tools again from "Tool Returned" note "slices/tool-returned-view.md"',
+      "}",
+    ].join("\n");
+    expect(diagsOf(src).filter((d) => d.code === "doc-omits-fed-event")).toEqual([]);
+  });
+});
+
+describe("GH #294 real-estate shapes (toolshed)", () => {
+  // Shape of toolshed's slices/see-my-loans.md: hand-written view marker, built-from prose with a
+  // "Later instances add" tail, a Source column that never names the event, scenarios in the older
+  // bullet format, and a `## Delta` with a `##### Scenario:` block.
+  const seeMyLoans = [
+    "# Slice: See My Loans",
+    "## Read Model / View",
+    '- **View:** `My Loans` built from events: "Tool Checked Out" (this instance). Later instances',
+    '  add "Loan Marked Overdue", "Tool Returned".',
+    "- **Consumed by:** screen `My Loans` @Borrower",
+    "",
+    "| Field | Type | Source / Notes |",
+    "|-------|------|----------------|",
+    "| loanId | UUID | `Tool Checked Out.loanId` |",
+    "| status | String | `open` after checkout; later instances set `overdue`, then remove the row on return. |",
+    "",
+    "## Scenarios (Given / When / Then)",
+    "- **Happy path**",
+    "  - **Given:** `Tool Checked Out` T1",
+    "  - **When:** the borrower opens My Loans",
+    "  - **Then:** one row.",
+    "",
+    "## Delta",
+    "##### Scenario: Borrower sees the loan leave",
+    "- **Given:** `Tool Checked Out` T1; `Tool Returned` T1",
+    "- **When:** the borrower opens My Loans",
+    "- **Then:** no row for T1.",
+    "",
+  ].join("\n");
+  const model = (extra: string) =>
+    [
+      'slice "See My Loans" {',
+      '  view My Loans from "Tool Checked Out" note "slices/see-my-loans.md"',
+      "}",
+      'slice "Loan Lifecycle" {',
+      "  command Check Out Tool",
+      "  event Tool Checked Out @Loan",
+      "  event Loan Marked Overdue @Loan",
+      "  event Tool Returned @Loan",
+      "}",
+      extra,
+    ].join("\n");
+
+  it("fires on the built-from prose and Delta text of the toolshed doc when the model lacks the edge", () => {
+    writeDoc("see-my-loans", { pattern: "state-view", body: seeMyLoans });
+    const diags = diagsOf(model("")).filter((d) => d.code === "doc-names-unfed-event");
+    const returned = diags.filter((d) => d.message.includes('"Tool Returned"'));
+    expect(returned).toHaveLength(1);
+    // reports the first mention (the prose, body line 4 + 7 frontmatter lines), not the marker
+    expect(returned[0].message).toMatch(/line 11\)/);
+  });
+
+  it("is clean once an again instance feeds Tool Returned and Loan Marked Overdue", () => {
+    writeDoc("see-my-loans", { pattern: "state-view", body: seeMyLoans });
+    const src = model('slice "Loan Leaves" {\n  view My Loans again from "Loan Marked Overdue", "Tool Returned"\n}');
+    expect(diagsOf(src).filter((d) => d.code === "doc-names-unfed-event")).toEqual([]);
+  });
+
+  it("does not attribute a Delta/Then event to a longer-named event it is a substring of", () => {
+    writeDoc("see-my-loans", {
+      pattern: "state-view",
+      body: seeMyLoans.replace('"Tool Returned".', '"Tool Returned Late".'),
+    });
+    const src = [
+      model(""),
+      'slice "Late" {',
+      "  event Tool Returned Late @Loan",
+      "}",
+    ].join("\n");
+    const msgs = diagsOf(src)
+      .filter((d) => d.code === "doc-names-unfed-event")
+      .map((d) => d.message);
+    expect(msgs.some((m) => m.includes('names event "Tool Returned Late"'))).toBe(true);
+  });
+
+  it("automation doc with a to-do view: its command's Given/Then events are not attributed to the view", () => {
+    writeDoc("fulfil-order", {
+      pattern: "automation",
+      body: [
+        "# Slice",
+        "## Read Model / View",
+        '- **View:** `Orders To Fulfil` built from events: "Order Paid"',
+        "## Scenarios",
+        "### Scenario: paid order is fulfilled",
+        "- **Given:** `Order Placed` O1; `Order Paid` O1",
+        "- **When:** the fulfiller runs",
+        "- **Then:** `Order Fulfilled` O1",
+        "",
+      ].join("\n"),
+    });
+    const src = [
+      'slice "Place Order" {\n  command Place Order\n  event Order Placed @Order\n}',
+      'slice "Pay" {\n  command Pay\n  event Order Paid @Order\n}',
+      'slice "Fulfil Order" {',
+      '  view Orders To Fulfil from "Order Paid" note "slices/fulfil-order.md"',
+      "  processor Fulfiller",
+      "  command Fulfil Order",
+      "  event Order Fulfilled @Order",
+      "}",
+    ].join("\n");
+    expect(diagsOf(src).filter((d) => d.code === "doc-names-unfed-event")).toEqual([]);
+  });
+
+  it("state-change doc that covers a view slice: its command scenarios are not attributed to the view", () => {
+    writeDoc("place-order-covers", {
+      pattern: "state-change",
+      extraFrontmatter: "covers: order-list\n",
+      body: [
+        "# Slice",
+        "## Command / Input",
+        "**Command:** `Place Order`",
+        "## Read Model / View",
+        '- **View:** `Order List` built from events: "Order Placed"',
+        "## Scenarios",
+        "### Scenario: registered customer places an order",
+        "- **Given:** `Customer Registered` C1",
+        "- **When:** `Place Order` by C1",
+        "- **Then:** `Order Placed` O1",
+        "",
+      ].join("\n"),
+    });
+    const src = [
+      'slice "Register Customer" {\n  command Register Customer\n  event Customer Registered @Customer\n}',
+      'slice "Place Order Covers" {',
+      '  command Place Order note "slices/place-order-covers.md"',
+      "  event Order Placed @Order",
+      "}",
+      'slice "Order List" {',
+      '  view Order List from "Order Placed" note "slices/place-order-covers.md"',
+      "}",
+    ].join("\n");
+    expect(diagsOf(src).filter((d) => d.code === "doc-names-unfed-event")).toEqual([]);
+  });
+});
+
+describe("GH #294 wrapped scenario lines", () => {
+  it("reads an event named on a wrapped (indented, non-bullet) Given continuation line", () => {
+    writeDoc("wrapped-page", {
+      pattern: "state-view",
+      body: [
+        "# Slice",
+        "## Read Model / View",
+        '- **View:** `Wrapped Tools` built from events: "Tool Listed"',
+        "## Scenarios",
+        "- **After a withdrawal**",
+        "  - **Given:** `Tool Listed` T1; plenty of",
+        "    context, then `Tool Delisted` T1",
+        "  - **When:** the owner opens the page",
+        "  - **Then:** empty.",
+        "",
+      ].join("\n"),
+    });
+    const src = [
+      'slice "Wrapped Page" {',
+      '  view Wrapped Tools from "Tool Listed" note "slices/wrapped-page.md"',
+      "}",
+      'slice "Lifecycle" {',
+      "  command Delist Tool",
+      "  event Tool Listed @Tool",
+      "  event Tool Delisted @Tool",
+      "}",
+    ].join("\n");
+    const msgs = diagsOf(src)
+      .filter((d) => d.code === "doc-names-unfed-event")
+      .map((d) => d.message);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toContain('"Tool Delisted"');
+  });
+});

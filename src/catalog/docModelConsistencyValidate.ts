@@ -68,6 +68,8 @@ import { readSliceDoc } from "./readSliceDoc.js";
 import { SliceDoc } from "./sliceDoc.js";
 import { checkScenarioQuality } from "./scenarioQualityValidate.js";
 import { findStructuredSectionProblems, splitCells } from "./sliceSections.js";
+import { parseScenariosLenient } from "./scenarios.js";
+import { viewSourceNames } from "../model/continuation.js";
 
 /** The three element kinds this rule's doc markers can name — the DSL has more (`ui`,
  *  `automation`/`processor`/`saga`/`translation`), but the slice.md template only gives
@@ -293,6 +295,8 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
       checkRosterDirections(diags, kind, docPath, docByName, modelByName, ownerSlice, ownerKey, coveredNames, model, refs);
       checkFields(diags, kind, docPath, docByName, modelByName, model, refs);
     }
+
+    checkViewFeeds(diags, parsed, docPath, markers, sliceIndices, ownerSlice, model, refs);
   }
 
   return diags;
@@ -420,6 +424,159 @@ function checkFields(
           refs: elRefs,
         });
       }
+    }
+  }
+}
+
+// GH #294 (MIL-245): a State View doc's claims about WHICH EVENTS feed the view, against the
+// model's `from` union (`viewSourceNames`, across `again` instances). Two advisory warnings:
+//   doc-names-unfed-event — the doc's field-table Source column (or, when the doc has exactly one
+//     view, a scenario Given/Then item) names an event that exists in the model but is not among
+//     the view's sources (the toolshed case: prose anticipated an edge the model never drew).
+//   doc-omits-fed-event — the model feeds the view an event the doc body never mentions.
+// Event names are found by scanning text for the model's own event names (longest first, word-
+// bounded, case-insensitive), so a name embedded in a longer event name is not double-counted.
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Normalized names of the model events mentioned in `text`. */
+function mentionedEvents(text: string, eventNames: string[]): Set<string> {
+  const found = new Set<string>();
+  let rest = text;
+  for (const name of [...eventNames].sort((a, b) => b.length - a.length)) {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(name).replace(/\s+/g, "\\s+")}(?![\\p{L}\\p{N}])`, "giu");
+    if (re.test(rest)) {
+      found.add(normalizeName(name));
+      re.lastIndex = 0;
+      rest = rest.replace(re, " ");
+    }
+  }
+  return found;
+}
+
+/** The text of every cell in the Source column of the first field table in lines[start, end). */
+function sourceColumnCells(lines: string[], start: number, end: number): Array<{ text: string; idx: number }> {
+  for (let i = start; i < end - 1; i++) {
+    if (!TABLE_ROW.test(lines[i]) || !TABLE_ROW.test(lines[i + 1])) continue;
+    const sep = splitCells(lines[i + 1]);
+    if (sep.length === 0 || !sep.every((c) => TABLE_SEPARATOR_CELL.test(c))) continue;
+    const header = splitCells(lines[i]);
+    if (normalizeName(header[0] ?? "") !== "field") continue;
+    const col = header.findIndex((c) => normalizeName(c).startsWith("source"));
+    if (col < 0) return [];
+    const cells: Array<{ text: string; idx: number }> = [];
+    for (let j = i + 2; j < end && TABLE_ROW.test(lines[j]); j++) {
+      const c = splitCells(lines[j])[col];
+      if (c && !PLACEHOLDER.test(c)) cells.push({ text: c, idx: j });
+    }
+    return cells;
+  }
+  return [];
+}
+
+/** Given/Then items (with a body line index) of every scenario, via the shared lenient reader
+ *  (`### Scenario:` blocks, the older bullet format, `## Delta` blocks, wrapped lines). The reader
+ *  carries only a block's heading line, so an item's line is found by searching forward from it
+ *  for the item's opening text. */
+function scenarioGivenThenLines(body: string, lines: string[]): Array<{ text: string; idx: number }> {
+  const out: Array<{ text: string; idx: number }> = [];
+  for (const sc of parseScenariosLenient(body)) {
+    for (const item of [...sc.given, ...sc.then]) {
+      const probe = item.slice(0, 24);
+      let idx = sc.line - 1;
+      for (let j = sc.line - 1; j < lines.length; j++) {
+        if (lines[j].includes(probe)) {
+          idx = j;
+          break;
+        }
+      }
+      out.push({ text: item, idx });
+    }
+  }
+  return out;
+}
+
+function checkViewFeeds(
+  diags: Diagnostic[],
+  doc: SliceDoc,
+  docPath: string,
+  markers: DocMarker[],
+  sliceIndices: number[],
+  ownerSlice: Slice,
+  model: NormalizedModel,
+  refs: RefsResult,
+): void {
+  const docViews = markers.filter((m) => m.kind === "view");
+  if (docViews.length === 0) return;
+  const lines = doc.body.split(/\r?\n/);
+  const lineOffset = doc.raw.split(/\r?\n/).length - lines.length;
+  const eventNames = model.elements.filter((e) => e.kind === "event").map((e) => e.name);
+  if (eventNames.length === 0) return;
+
+  const modelViews = new Map<string, Element>();
+  for (const i of sliceIndices) {
+    for (const el of model.slices[i].elements) {
+      if (el.kind !== "view") continue;
+      const key = normalizeName(el.name);
+      if (!modelViews.has(key)) modelViews.set(key, el);
+    }
+  }
+  const matched = docViews.filter((m) => modelViews.has(normalizeName(m.name)));
+  const bodyMentions = mentionedEvents(doc.body, eventNames);
+
+  // Scenario text attaches to a view only when the doc has exactly one matched view AND the doc's
+  // own slice is the State View that holds it — a State Change doc that `covers:` a view slice, or
+  // a merged reaction doc with a to-do view, writes scenarios about its command, not the view.
+  const ownsView = (el: Element) => classifySlicePattern(ownerSlice) === "state-view" && model.slices[el.sliceIndex] === ownerSlice;
+  const scenarioLines =
+    matched.length === 1 && ownsView(modelViews.get(normalizeName(matched[0].name))!) ? scenarioGivenThenLines(doc.body, lines) : [];
+
+  for (const marker of matched) {
+    const view = modelViews.get(normalizeName(marker.name))!;
+    const sources = viewSourceNames(model, view);
+    const fed = new Set(sources.map(normalizeName));
+    const refsOut = [refs.sliceKeys[view.sliceIndex], refs.refById.get(view.id)!];
+
+    let end = lines.length;
+    for (let j = marker.bodyLine + 1; j < lines.length; j++) {
+      if (/^##\s/.test(lines[j]) || matchMarker(lines[j])) {
+        end = j;
+        break;
+      }
+    }
+    // event -> body line index of its first mention
+    const named = new Map<string, number>();
+    const note = (text: string, idx: number) => {
+      for (const e of mentionedEvents(text, eventNames)) if (!named.has(e)) named.set(e, idx);
+    };
+    // the view marker's own built-from prose (the marker line and its wrapped continuation) —
+    // only in the State View doc that owns the view; a reaction doc's to-do-view prose also
+    // describes what its rows drop on, which is not a claim about the view's feed.
+    if (ownsView(view)) {
+      for (let j = marker.bodyLine; j < end && (j === marker.bodyLine || lines[j].trim() !== ""); j++) note(lines[j], j);
+    }
+    for (const c of sourceColumnCells(lines, marker.bodyLine + 1, end)) note(c.text, c.idx);
+    for (const sl of scenarioLines) note(sl.text, sl.idx);
+
+    for (const [key, mentionIdx] of named) {
+      if (fed.has(key)) continue;
+      const ev = model.elements.find((e) => e.kind === "event" && normalizeName(e.name) === key)!;
+      pushDiag(diags, "doc-names-unfed-event", {
+        message: `slice doc "${docPath}" (view \`${marker.name}\`, line ${mentionIdx + 1 + lineOffset}) names event "${ev.name}", but view "${view.name}" does not read it (from: ${sources.map((n) => `"${n}"`).join(", ") || "—"}) — add \`from "${ev.name}"\` to the view if the edge is real, or fix the doc`,
+        line: view.line,
+        refs: refsOut,
+      });
+    }
+    const eventKeys = new Set(eventNames.map(normalizeName));
+    for (const name of view.from ?? []) {
+      if (!eventKeys.has(normalizeName(name)) || bodyMentions.has(normalizeName(name))) continue;
+      pushDiag(diags, "doc-omits-fed-event", {
+        message: `view "${view.name}" reads event "${name}", but slice doc "${docPath}" never mentions it — list it in the view's Source column (run \`em slice sync\`) or drop it from the view's from`,
+        line: view.line,
+        refs: refsOut,
+      });
     }
   }
 }

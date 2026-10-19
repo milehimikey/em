@@ -416,7 +416,7 @@ export interface EngagementPlan {
 
 /** The doc↔model diagnostics (MIL-124) a pre-flight rolls up per slice: an event table listing a
  *  field or element the model lacks is the "events missing fields the slice tables list" gap. */
-const DOC_MODEL_CODES = new Set(["doc-model-element-not-in-doc", "doc-model-element-not-in-model", "doc-model-field-mismatch", "doc-model-pattern-mismatch"]);
+const DOC_MODEL_CODES = new Set(["doc-model-element-not-in-doc", "doc-model-element-not-in-model", "doc-model-field-mismatch", "doc-model-pattern-mismatch", "doc-names-unfed-event"]);
 
 /**
  * GH #239: the four gaps an engagement run surfaced seven times over (one per implementer).

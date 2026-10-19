@@ -78,6 +78,8 @@ affected lines written by hand.
 | doc binding points at missing file |
 | doc element missing from model |
 | doc field table disagrees with model |
+| doc names event view does not read |
+| doc omits event view reads |
 | doc pattern disagrees with model |
 | duplicate element ref |
 | duplicate model key |

@@ -857,6 +857,8 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `doc-model-element-not-in-model` | warning | Doc names an element the model doesn't have | Add the element to the model, or fix/remove it in the doc. |
 | `doc-model-field-mismatch` | warning | Doc/model field mismatch | Reconcile the field table with the model's fields — names and types. |
 | `doc-model-pattern-mismatch` | warning | Doc/model pattern mismatch | Fix the doc's `pattern:` frontmatter to match the model, or restructure the slice to match the doc. |
+| `doc-names-unfed-event` | warning | Doc names an event its view does not read | Add the event to the view's `from` in the model (if the edge is real), or fix the doc's Source column / scenario. |
+| `doc-omits-fed-event` | warning | Doc omits an event its view reads | Mention the event in the view's Source column (run `em slice sync`), or drop it from the view's `from`. |
 | `duplicate-element-ref` | warning | Duplicate element ref | Rename the element so its export ref is unique. |
 | `duplicate-model-key` | warning | Duplicate model key | Give each model a unique `model "Name"` so its key (and every cross-model ref) is stable. |
 | `duplicate-name` | warning | Duplicate name | Rename one of the duplicates. |

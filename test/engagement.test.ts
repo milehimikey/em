@@ -570,6 +570,24 @@ describe("plan pre-flight (GH #239)", () => {
     ]);
   });
 
+  it("GH #294: rolls doc-names-unfed-event into doc-model-mismatch but not the milder doc-omits-fed-event", () => {
+    const file = write();
+    const inp = input(file);
+    const idx = buildUnitIndex(inp.model, inp.refs, inp.baseDir);
+    const withDiags = {
+      ...inp,
+      allDiagnostics: [
+        ...inp.allDiagnostics,
+        { severity: "warning" as const, code: "doc-names-unfed-event", message: "doc names an unfed event", refs: ["ship-order", "ship-order/view.x"] },
+        { severity: "warning" as const, code: "doc-omits-fed-event", message: "doc omits a fed event", refs: ["ship-order"] },
+      ],
+    } as EngagementModelInput;
+    const findings = computePreflight(withDiags, ["ship-order"], idx);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].message).toContain("doc names an unfed event");
+    expect(findings[0].message).not.toContain("doc omits a fed event");
+  });
+
   it("--json carries preflight under plan schema 1.3 and the MCP-shared builder prints it", () => {
     const file = write();
     create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
