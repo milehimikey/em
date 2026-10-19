@@ -508,3 +508,45 @@ slice "C" {
     expect(() => parse(`slice {\n  view Orders again from "Order Placed" shown on "Screen"\n}`)).toThrow(/names no `ui` of this continuation slice/);
   });
 });
+
+describe("with alternative events (GH #278 x GH #287)", () => {
+  const src = `model "Alt"
+context Catalog
+persona Admin
+slice "Create" {
+  command Create Class
+  event Class Created @Catalog
+}
+slice "Classes" {
+  view Product Classes from "Class Created"
+  ui Class List @Admin
+}
+slice "Counts" {
+  view Class Counts from "Class Created"
+  ui Storefront @Admin
+}
+slice "Rename" {
+  ui Rename Form @Admin
+  command Rename Class
+  event Class Renamed | Class Archived @Catalog
+  view Product Classes again from "Class Renamed" shown on "Class List"
+  view Class Counts again from "Class Archived" shown on "Storefront"
+}
+`;
+
+  it("a continuation's from may name either alternative; stacked views and the alternatives cell coexist", () => {
+    const c = compile(src);
+    expect(errors(src)).toEqual([]);
+    expect(c.grid.collisions).toEqual([]);
+    const rename = c.model.slices.findIndex((s) => s.name === "Rename");
+    const cont = rename + 1;
+    // the two alternatives share ONE event-lane cell in the command's column ...
+    const evCells = c.grid.cells.map((row) => row[rename]).filter((e) => e?.kind === "event");
+    expect(evCells).toHaveLength(1);
+    // ... while the continuation column stacks two views in the api lane and two screens in the ui lane
+    expect(c.grid.cells.map((row) => row[cont]).filter((e) => e?.kind === "view")).toHaveLength(2);
+    expect(c.grid.cells.map((row) => row[cont]).filter((e) => e?.kind === "ui")).toHaveLength(2);
+    const sources = c.model.slices[cont].elements.filter((e) => e.kind === "view").map((e) => e.from![0]);
+    expect(sources).toEqual(["Class Renamed", "Class Archived"]);
+  });
+});
