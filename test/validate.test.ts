@@ -508,8 +508,14 @@ slice "S" {
     expect(diags[0].message).toContain('its actual sources are "Room Booked"');
   });
 
-  it("R12 fixture: the shared room-catalog/waitlist derived-field model compiles warning-free", () => {
-    expect(diagsFor(DERIVED_FIXTURE)).toHaveLength(0);
+  it("R12 fixture: the shared room-catalog/waitlist derived-field model compiles with exactly one advisory warning", () => {
+    // The fixture's Waitlist context is genuinely the lifecycle-per-entity shape (GH #281): four
+    // consecutive Waitlist-only State Change slices (Join, Notify, Expire, Withdraw — one entry's
+    // whole lifecycle) followed by one Waitlist-only view, and no Waitlist view earlier. The
+    // fixture exists to exercise `derived`, not storyline order, so the advisory is expected.
+    const diags = diagsFor(DERIVED_FIXTURE);
+    expect(diags.map((d) => d.code)).toEqual(["timeline-entity-clustered"]);
+    expect(diags[0].refs).toEqual(["join-waitlist", "notify-waitlist-entry", "expire-waitlist-entry", "withdraw-waitlist-entry"]);
   });
 });
 
