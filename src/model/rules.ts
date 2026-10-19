@@ -61,6 +61,22 @@ export const RULES = {
     docAnchor: "shape",
     family: "shape",
   },
+  "automation-split-by-outcome": {
+    severity: "warning",
+    title: "Reaction split into one slice per outcome",
+    fix: "Model one Automation slice recording the outcomes as alternative events — `event A | B @Context` (docs/patterns.md#automation).",
+    usageCategory: "reaction split by outcome",
+    docAnchor: "shape",
+    family: "shape",
+  },
+  "retry-slice-of": {
+    severity: "warning",
+    title: "Slice only retries another command",
+    fix: "Drop the `Retry <X>` slice; model the retry as another trigger of `<X>` (docs/patterns.md#automation).",
+    usageCategory: "retry slice of another command",
+    docAnchor: "shape",
+    family: "shape",
+  },
   "alternative-events-no-command": {
     severity: "error",
     title: "Alternative events without a command",

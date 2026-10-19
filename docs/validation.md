@@ -106,6 +106,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 |---|---|
 | A `processor`/`translation` triggers no command | Add the command it issues, in this same slice, or an explicit `arrow` to one elsewhere |
 | A `ui` shares a slice with a `processor`/`translation` | `ui` only wires to a `command` a person issues; move it to the slice that displays the read model, or drop it |
+| Reaction slices split by outcome (`automation-split-by-outcome`) or a `Retry <X>` slice (`retry-slice-of`) — see [Shape](#shape) | Merge the outcomes into one slice; model a retry as another trigger of `<X>` |
 | A command nothing triggers | Add the screen it's issued from, or the reaction that issues it, both in this slice |
 | A command that records no event | Add the event, or reconsider the command |
 | An event with no producing command | Add the command that records it, or an explicit `arrow` from one |
@@ -255,6 +256,23 @@ merge them and write the outcomes as alternatives, `event A | B @Context` or a `
 every declaration. (`alternative-events-no-command`, an error, fires on a slice with alternatives but no
 command.)
 
+`automation-split-by-outcome` (GH #292) is an advisory lint for a reaction split into one slice per
+outcome. It fires once per group when two or more `automation`/`processor`/`saga`/`translation`
+slices in one context are fed by the same read model (or the same source event through it), their
+commands share a stem (verb included, outcome words removed), and their events differ only by an
+outcome word: `Fulfil Order` / `Order Fulfilled` beside `Fail Order Fulfilment` / `Order Fulfilment
+Failed`. The plain past-tense success sibling joins the group once another sibling carries an
+unambiguous outcome word (`Succeeded`, `Failed`, `Rejected`, `Retried`, `Timed Out`, `Declined`);
+verb forms match loosely (fulfilled, fulfilment, fulfil). `Completed`, `Cancelled` and `Expired` are
+domain verbs and never form a group alone (`Cancel Order` beside `Complete Order` is quiet), and a
+`translation` that merely shares a view with processors has no matching command stem. `refs` are
+every sibling slice key plus each reaction and command. Fix: one Automation slice recording the
+outcomes as alternative events, `event A | B @Context`, see [patterns.md](patterns.md#automation). The
+outcome vocabulary is a constant list. `retry-slice-of` is its milder companion: a State Change
+slice (no reaction) whose only command is `Retry <X>`, where `<X>` is another slice's command;
+`refs` are both commands. Fix: drop the slice, a retry is another trigger of `<X>`. Both carry the
+`shape` family and may appear on existing models.
+
 Reorder by the story ("create a class, then its attributes, then a product that uses them") and
 the run breaks up; the lint goes quiet without any suppression. It is a warning like every other
 here — it never blocks a render — and it carries the `shape` family, which `em validate --shape` selects. See [storyline.md](storyline.md) for the ordering method.
@@ -273,8 +291,8 @@ The gate passes only when **every remaining finding, waived or not,** has such a
 `--waive-file <path>` baseline (lines `<rule-code> <slice-key>`, or a bare `<slice-key>` for all shape rules
 on that key) only silences the CLI count for an estate that carries shapes it has decided to keep; it is
 never a substitute for the record. The skill refuses to move to the slice phase otherwise. `em engagement plan` lists the same findings on the engagement's slices in its pre-flight.
-A rule joins the family by registering `family: "shape"`; today that is `timeline-entity-clustered` and
-`slice-outside-storyline`.
+A rule joins the family by registering `family: "shape"`; today that includes `timeline-entity-clustered`,
+`slice-outside-storyline`, `automation-split-by-outcome` and `retry-slice-of`.
 
 `command-second-intent` (GH #286) is an advisory lint for a command carrying a second intent:
 it fires when a command has at least 2 invariants (model-declared, or from its bound slice doc

@@ -28,6 +28,7 @@ import {
   latestOnTimeline,
 } from "./storylines.js";
 import { classifySlicePattern } from "../catalog/classify.js";
+import { shapeDiagnostics } from "./shapeLint.js";
 import { kebabSlug } from "../util/slug.js";
 
 export type Severity = "error" | "warning";
@@ -692,6 +693,9 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
       });
     }
   }
+
+  // Advisory shape lints (GH #292): outcome-split reactions, retry slices.
+  shapeDiagnostics(model, refs, diags);
 
   // Open issues (`issue "text"`) are always surfaced as a warning — the red-note
   // device for a question that hasn't been resolved yet.
