@@ -131,6 +131,10 @@ em conform-supersede <file> <report-path> --locus <locus>           # who/what t
 em conform-supersede <file> <report-path> --by <name>               # who ruled on the named finding(s) (requires --locus)
 em conform-findings check <path>                                    # shape-validate a conformance/<date>-findings.json file (findingsSchemaVersion, required fields, enum values, ids sorted+unique, a ruled finding carries resolvedBy+resolvedOn) — exit 1 on shape errors. The conform skill writes this file directly alongside its report; this is how a headless run verifies what it just wrote.
 em conform-findings check <path> --json                             # print a JSON document instead of the text report
+em discover triage-check <file>                                     # validate a discovery/prd-triage.json (prdTriageSchemaVersion 1.0): shape, the shipped rubric version, every statement/storyline quote appearing verbatim in the input document, and every statement carrying a category, an outcome and (modeled/rewritten) a group + storyline — exit 1 on errors. The discover skill writes this file directly; this is how a headless run verifies it.
+em discover triage-check <file> --source <path>                     # the input PRD/spec to check quotes against (default: the file's own `source`, relative to it)
+em discover triage-check <file> --markdown                          # after a passing check, print the Markdown view of the record instead of the summary
+em discover triage-check <file> --json                              # print a JSON document instead of the text report
 em watch <file>                                                     # re-render on every save
 em watch <file> -o, --out <path>                                    # output path (extension picks the format)
 em watch <file> -T, --format <fmt>                                  # output format (svg, png, pdf, ...)

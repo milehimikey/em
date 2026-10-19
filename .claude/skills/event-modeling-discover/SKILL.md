@@ -65,6 +65,29 @@ slice already reads "no doc yet" — no slice docs exist until the `slice` phase
 Tell the user they can stop here and resume with `/event-modeling` (or invoke
 `event-modeling-design` directly).
 
+## Path: PRD or spec in (a document is the input)
+
+Use this path when the user hands you a **PRD, requirements document or API spec** instead of
+starting from a blank page. **Entry:** `/event-modeling discover`, opening message
+**`Discover from this PRD/spec: <path to the document>`**. **Read `reference/prd-spec-path.md`
+and `reference/prd-rubric.md` before doing any work on it** — the path is a triage, not a
+transcription: a document describes the system its authors imagined (resources, endpoints,
+stack, quality targets), and a model copied from it comes out as CRUD-per-entity.
+
+The steps, in order (detail in the reference): **0** pull the walkthroughs and name the main and
+secondary **storylines** (the resource/endpoint reference is consulted last); **1** split into
+single-claim statements, each quoting the source verbatim; **2** classify each against the
+shipped rubric, plus the independent *"is this about the business, independent of how it's
+built?"* check; **3** group by reaction (shared trigger + acting system = one slice; failure,
+retry and timeout become outcome events and scenarios of that slice, never new slices); **4**
+rewrite, don't drop (implementation details become business language linked to their source;
+real tech choices and NFRs go to a constraints list that feeds the constitution); **5** record
+`discovery/prd-triage.json` and run `em discover triage-check discovery/prd-triage.json`
+(MCP: `discover_triage_check`) until it passes; **6** every low-confidence or disagreeing
+statement becomes a Socratic question — never an invented answer. Rejections and parked
+statements go in the state file's Decisions log with why, as in step 1. Then continue with
+`discover` steps 1-4 on the surviving groups, with the storylines as the timeline's spine.
+
 ## Phase: `extract` — current-state model of an existing system
 
 Goal: a faithful **current-state** model extracted from an existing system — the as-is sibling

@@ -278,6 +278,43 @@ Each phase skill's own preconditions locate the model and, when invoked with no 
 to the `event-modeling` router skill — so `/event-modeling` alone is still all you need to
 remember, exactly as before the split.
 
+## PRD or spec in
+
+Handed a PRD, requirements document or API spec, an agent left to improvise over-decomposes along
+control flow, copies implementation flavour into the model, and shapes it like the spec's
+resource reference (CRUD per entity). The discover skill has a dedicated path for this. Start it
+with `/event-modeling discover` and the opening message:
+
+```
+Discover from this PRD/spec: <path>
+```
+
+The agent reads [prd-spec-path.md](../.claude/skills/event-modeling-discover/reference/prd-spec-path.md)
+and the shipped [rubric](../.claude/skills/event-modeling-discover/reference/prd-rubric.md), then:
+
+0. pulls the document's **walkthroughs** and names the **main storyline** (the end-to-end journey)
+   and the secondary ones, recorded with their source spans — the timeline is built from these, and
+   the resource/endpoint reference is consulted last, only for operations no walkthrough touches;
+1. splits the document into single-claim statements, each quoting the source verbatim;
+2. classifies each against the rubric (business fact, user intent, information need, actor, business
+   rule, external system, implementation detail, NFR, goal/background, question, resource-or-endpoint
+   description) plus the independent check "is this about the business, independent of how it is
+   built?";
+3. groups by reaction — a shared trigger and acting system is one slice; failure, retry and timeout
+   statements become outcome events and scenarios of that slice, never new slices;
+4. rewrites rather than drops: implementation details become business language linked to their
+   source, tech choices and NFRs go to a constraints list for the constitution, and anything parked
+   goes in the Decisions log;
+5. records `discovery/prd-triage.json` (and a Markdown view), which `em discover triage-check`
+   verifies — shape, rubric version, quotes appearing verbatim, every statement with a category and
+   outcome and every modeled one with a group;
+6. turns anything low-confidence or disputed into Socratic questions for you. Discovery never
+   invents the domain.
+
+The surviving groups and storylines then feed the normal `discover` steps 1-4 and the design
+phase's `storyline` blocks (see [dsl.md](dsl.md)). The checker is
+[`em discover triage-check`](cli.md#em-discover-triage-check-file) (MCP: `discover_triage_check`).
+
 ## What a session produces
 
 ```

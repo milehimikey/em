@@ -1,0 +1,43 @@
+{
+  "prdTriageSchemaVersion": "1.0",
+  "rubricVersion": "1.0",
+  "source": "meridian-prd.md",
+  "storylines": [
+    {
+      "id": "L1",
+      "name": "Order to delivery",
+      "main": true,
+      "quote": "A customer browses the catalog, places an order and pays."
+    },
+    {
+      "id": "L2",
+      "name": "Return an item",
+      "main": false,
+      "quote": "A customer requests a return within 30 days of delivery."
+    }
+  ],
+  "groups": [
+    { "id": "G1", "name": "Place Order", "trigger": "customer submits checkout", "actor": "Storefront", "storyline": "L1" },
+    { "id": "G2", "name": "Pick Order", "trigger": "payment succeeded", "actor": "Warehouse", "storyline": "L1" },
+    { "id": "G3", "name": "Track Order", "trigger": "customer opens order", "actor": "Customer", "storyline": "L1" },
+    { "id": "G4", "name": "Request Return", "trigger": "customer requests a return", "actor": "Customer", "storyline": "L2" }
+  ],
+  "statements": [
+    { "id": "S1", "quote": "A customer browses the catalog, places an order and pays.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S2", "quote": "When payment succeeds the warehouse picks and packs the order", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G2", "storyline": "L1" },
+    { "id": "S3", "quote": "the customer receives a tracking link by email", "category": "information-need", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G3", "storyline": "L1" },
+    { "id": "S4", "quote": "A customer requests a return within 30 days of delivery.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G4", "storyline": "L2" },
+    { "id": "S5", "quote": "If the card is declined the customer sees why and can try another card.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1", "scenarioOf": "G1" },
+    { "id": "S6", "quote": "If a payment provider call times out, we retry it up to three times before cancelling the order.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1", "scenarioOf": "G1" },
+    { "id": "S7", "quote": "Payments are taken through the Stripe API.", "category": "external-system", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null },
+    { "id": "S8", "quote": "The order service writes a row to the stock_levels table when a pick is confirmed.", "category": "implementation-detail", "aboutBusiness": false, "confidence": "high", "outcome": "rewritten", "group": "G2", "storyline": "L1", "rewrite": "Stock is decremented when a pick is confirmed." },
+    { "id": "S9", "quote": "The checkout page must respond within 300 ms at the 95th percentile.", "category": "nfr", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null },
+    { "id": "S10", "quote": "GET /orders/{id} returns the order with its status and tracking link.", "category": "resource-or-endpoint", "aboutBusiness": false, "confidence": "high", "outcome": "rewritten", "group": "G3", "storyline": "L1", "rewrite": "The customer can see an order's status and tracking link." },
+    { "id": "S11", "quote": "Should partial shipments be supported?", "category": "question", "aboutBusiness": true, "confidence": "low", "outcome": "question", "group": null, "storyline": null, "question": "When only part of an order is in stock, does the customer want it shipped in parts or held until complete?" },
+    { "id": "S12", "quote": "We want every order to reach the customer on time and visibly.", "category": "goal-background", "aboutBusiness": true, "confidence": "high", "outcome": "parked", "group": null, "storyline": null, "reason": "Goal of the main storyline; context, not a slice." }
+  ],
+  "constraints": [
+    { "id": "C1", "text": "Payments go through the Stripe API.", "statements": ["S7"] },
+    { "id": "C2", "text": "Checkout responds within 300 ms at p95.", "statements": ["S9"] }
+  ]
+}

@@ -122,6 +122,7 @@ import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runRevise } from "./cli/revise.js";
 import { runDefer, runDeferFromIssue } from "./cli/defer.js";
 import { runSliceConform } from "./cli/sliceConform.js";
+import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, validatePrdTriage } from "./cli/prdTriage.js";
 import { checkFindingsFile, buildCheckFindingsJson, lookupFindingsBesideReport, unruledFindingsInScope, Finding, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import {
   STATE_FILE_NAME,
@@ -1901,6 +1902,40 @@ conformFindings
       console.log(`ok — ${result.path}: ${result.findingsCount} finding(s), shape valid`);
     } else {
       console.error(`em conform-findings check: ${result.path} — shape errors:`);
+      for (const e of result.errors) console.error(`  - ${e}`);
+    }
+    if (!result.ok) process.exit(1);
+  });
+
+const discover = program.command("discover").description("checks for the discover skill's records (GH #295)");
+
+discover
+  .command("triage-check")
+  .description(
+    "validate a discovery/prd-triage.json (prdTriageSchemaVersion 1.0): shape, the shipped rubric " +
+      "version, every statement/storyline quote appearing verbatim in the input document, and every " +
+      "statement carrying a category, an outcome and (modeled/rewritten) a group + storyline — exit 1 " +
+      "on errors. The discover skill writes this file directly; this is how a headless run verifies it.",
+  )
+  .argument("<file>", "path to a discovery/prd-triage.json file")
+  .option("--source <path>", "the input PRD/spec to check quotes against (default: the file's own `source`, relative to it)")
+  .option("--markdown", "after a passing check, print the Markdown view of the record instead of the summary")
+  .option("--json", "print a JSON document instead of the text report")
+  .action((file: string, opts: { source?: string; markdown?: boolean; json?: boolean }) => {
+    const result = checkPrdTriage(file, { source: opts.source });
+    if (opts.json) {
+      console.log(buildCheckPrdTriageJson(result));
+    } else if (result.ok) {
+      if (opts.markdown) {
+        const shape = validatePrdTriage(JSON.parse(readFileSync(file, "utf8")));
+        if (shape.ok) process.stdout.write(renderPrdTriageMarkdown(shape.doc));
+      } else {
+        console.log(
+          `ok — ${result.path}: ${result.storylines} storyline(s), ${result.groups} group(s), ${result.statements} statement(s), quotes verbatim in ${result.source}`,
+        );
+      }
+    } else {
+      console.error(`em discover triage-check: ${result.path} — errors:`);
       for (const e of result.errors) console.error(`  - ${e}`);
     }
     if (!result.ok) process.exit(1);

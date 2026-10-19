@@ -105,6 +105,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
 | `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
 | `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
+| `discover_triage_check` | `{ path, source? }` | The `em discover triage-check <path> --json` document: validates a `discovery/prd-triage.json` PRD/spec triage record (GH #295) |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214) |
 | `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
 | `upgrade` | `{ file }` (git — see below) | The `em upgrade <file> --json` document (MIL-219): dry-run only, never applies anything |
@@ -331,6 +332,14 @@ sorted-unique ids/a ruled finding carrying `resolvedBy`+`resolvedOn` — and rep
 count when valid. Read-only; the file itself is written by the conform skill directly (there's no
 MCP write tool for it, same as every other write/mutate command). See
 [`em conform-findings check`](cli.md#em-conform-findings-check-path) for the full JSON shape.
+
+### `discover_triage_check`
+
+Same document as `em discover triage-check <path> --json` (GH #295): validates a
+`discovery/prd-triage.json` — schema/rubric version, quotes appearing verbatim in the input
+document (`source`, overridable), every statement carrying a category and outcome, modeled and
+rewritten ones a group and storyline. Read-only; the skill writes the file directly. See
+[`em discover triage-check`](cli.md#em-discover-triage-check-file) for the rules and JSON shape.
 
 ### `model_version_show`
 

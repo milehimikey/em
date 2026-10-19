@@ -3992,6 +3992,41 @@ em model version show model.em --json
 itself, since a later bump can outrun certification (the example above: v2 was bumped, but only
 v1 was ever certified). `null` for either field means "never bumped"/"never certified".
 
+## `em discover triage-check <file>`
+
+Deterministic checker for `discovery/prd-triage.json` (GH #295), the record the discover skill's
+[PRD/spec path](../.claude/skills/event-modeling-discover/reference/prd-spec-path.md) writes
+when it is handed a PRD or API spec. The LLM judges (classification, grouping, rewriting); this
+checks what must not be judged. Checks:
+
+- `prdTriageSchemaVersion` is `"1.0"` and `rubricVersion` is the shipped rubric's version (`"1.0"`,
+  `reference/prd-rubric.md` in the skill bundle).
+- `source` names the input document (relative to the triage file, or `--source`), and **every
+  `statements[].quote` and `storylines[].quote` appears verbatim in it** (whitespace runs are
+  normalised; the agent may reword in `rewrite`, never in `quote`).
+- Exactly one storyline is `main`; ids are unique; every group names a declared storyline and is
+  joined by at least one statement.
+- Every statement has a rubric `category`, an `aboutBusiness` check result, a `confidence`, and an
+  `outcome` (`modeled`/`rewritten`/`constraint`/`parked`/`question`) the category allows.
+  `modeled`/`rewritten` need a declared `group` and `storyline`; the others have `group: null`.
+  `rewritten` needs `rewrite`, `parked` a `reason`, `question` a `question`; a
+  `resource-or-endpoint` is never `modeled`; `aboutBusiness: false` is never `modeled`; `low`
+  confidence is always a `question`; every `constraint` appears in `constraints[]`.
+
+| Flag | Effect |
+|---|---|
+| `--source <path>` | Check quotes against this document instead of the file's own `source` |
+| `--markdown` | After a passing check, print the Markdown view of the record instead of the summary |
+| `--json` | Print `{ ok, path, source, storylines, groups, statements, errors }` (on failure `{ ok, path, errors }`) |
+
+```bash
+em discover triage-check discovery/prd-triage.json
+# -> ok — discovery/prd-triage.json: 2 storyline(s), 5 group(s), 14 statement(s), quotes verbatim in ../prd.md
+```
+
+Exit 1 (each error printed, one per line) on any problem. Also exposed as the MCP
+`discover_triage_check` tool (see [mcp.md](mcp.md)).
+
 ## `em conform-findings check <path>`
 
 Read-only shape validator for a `conformance/<date>-findings.json` file (MIL-214) — the

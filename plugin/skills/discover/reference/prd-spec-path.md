@@ -1,0 +1,137 @@
+<!-- GENERATED FILE from .claude/skills/event-modeling-discover/reference/prd-spec-path.md by scripts/build-plugin.ts — do not hand-edit; run npm run docs:generate -->
+# PRD/spec path — a document is the input
+
+Read this **before doing any work on a PRD, requirements document or API spec**, together with
+`prd-rubric.md` (the shipped classification rubric).
+
+**Entry:** `/em:event-modeling discover`, opening message **`Discover from this PRD/spec: <path>`**.
+This is the exact entry the eval protocol's arm C cites. The path is a **triage**: a document
+describes the system its authors imagined (resources, endpoints, stack, quality targets). Handed
+one cold, the failure modes are over-decomposition along control flow, implementation flavour,
+and CRUD-per-entity models shaped like the resource reference. The steps below prevent all three
+by making every claim in the document earn its place in the model, visibly.
+
+**Stance.** You are still extracting the domain from people, not inventing it. The document is
+evidence. Anything it does not say, or says ambiguously, is a question (step 6), never a guess.
+
+Setup: run the shared preconditions (`../../../shared/reference/operating-principles.md`),
+agree the input path with the user, and create `discovery/` next to the model. Record the input
+path in the state file's Session inputs.
+
+## Step 0 — Walkthroughs become storylines
+
+Before splitting anything, find the document's **walkthroughs**: a PRD's user stories and
+journeys, an API spec's Walkthroughs / use-case / "getting started" section.
+
+- The **end-to-end journey** is the **main storyline** — the happy path, on a timeline, with no
+  branching ("a story of what success looks like"). Every other walkthrough is a **secondary
+  storyline** (retire, extend, reorganize...). Exactly one is main.
+- The timeline is built from these. The resource/endpoint reference is consulted **last**, only to
+  fill operations no walkthrough touches.
+- No walkthrough at all? Ask: *"what does success look like, start to finish?"* and quote the
+  user's answer into the state file; do not synthesize a journey from the endpoint list.
+- Record each storyline in `storylines[]` with its `id`, `name`, `main`, and `quote` — the source
+  span, verbatim. These become the design phase's `storyline` blocks, so the provenance travels
+  (`../../em:design/SKILL.md`, step 5; syntax in `../../../shared/reference/em-dsl.md`).
+
+## Step 1 — Split into single-claim statements
+
+Split the input into **single-claim statements** — one fact, rule, need or description each. A
+sentence with "and" usually holds two. Number them `S1`, `S2`, ... in source order. Each carries a
+`quote` copied **verbatim** from the document (whitespace runs may differ; words may not). You may
+reword later (step 4) but never in `quote`: the checker searches the document for it, and a quote
+it cannot find is an invented claim.
+
+## Step 2 — Classify
+
+For each statement set:
+
+- `category` — one id from `prd-rubric.md`.
+- `aboutBusiness` — the independent check: *"is this about the business, independent of how it is
+  built?"* Answer it separately from the category, without looking at the category.
+- `confidence` — `high` or `low`. Disagreement between category and check, or any doubt: `low`.
+
+A `resource-or-endpoint` statement is **never promoted to a command as-is**: ask which intent(s)
+the resource serves (one endpoint may carry several intents) and rewrite to those (step 4).
+
+## Step 3 — Group by reaction
+
+A **group** is one future slice. Statements sharing a **trigger** and an **acting system** are one
+group (`groups[]`: `id`, `name`, `trigger`, `actor`, `storyline`). Follow the merged reaction
+shape (`../../../shared/reference/methodology.md`): a reaction, its command and its
+event share one slice.
+
+- **Failure, retry and timeout statements are not new slices.** They become outcome events and
+  Given/When/Then scenarios of the slice whose trigger they belong to; set `scenarioOf` to that
+  group's id.
+- **Storyline check.** A statement joins the storyline whose **journey it advances**, not the
+  entity it mentions. A "Product" sentence in the retire walkthrough belongs to "Retire a
+  product", not to a Product lifecycle.
+- One group per trigger-and-actor; never one group per entity or per endpoint.
+
+## Step 4 — Rewrite, don't drop
+
+Nothing is silently discarded.
+
+- An **implementation detail that implies a business fact** (*"the service writes a row to
+  `stock_levels` when a pick is confirmed"*) becomes `rewritten`: put the business-language form
+  in `rewrite` (*"Stock is decremented when a pick is confirmed"*) — the original stays in `quote`,
+  which is the link to its source.
+- A **real technology choice or NFR** (*"must run on Postgres"*, *"p95 under 300 ms"*) gets outcome
+  `constraint` and an entry in `constraints[]` listing its statement ids. That list feeds the
+  project's constitution: hand it to the constitution's owner (the skills read the constitution,
+  never write it); it never becomes a slice.
+- Anything else you set aside is `parked` with a `reason`, **and** recorded in the state file's
+  Decisions log with why (the same rule as rejected events in `discover` step 1), so it is not
+  re-proposed later.
+
+## Step 5 — Record
+
+Write `discovery/prd-triage.json` (UTF-8, 2-space indent):
+
+```json
+{
+  "prdTriageSchemaVersion": "1.0",
+  "rubricVersion": "1.0",
+  "source": "../requirements/prd.md",
+  "storylines": [{ "id": "L1", "name": "Order to delivery", "main": true, "quote": "A customer places an order, we pick and ship it, and they get a tracking link." }],
+  "groups": [{ "id": "G1", "name": "Place Order", "trigger": "customer submits checkout", "actor": "Storefront", "storyline": "L1" }],
+  "statements": [
+    { "id": "S1", "quote": "A customer places an order", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S2", "quote": "must respond within 300 ms", "category": "nfr", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null }
+  ],
+  "constraints": [{ "id": "C1", "text": "Checkout responds within 300 ms", "statements": ["S2"] }]
+}
+```
+
+Per statement: `id`, `quote`, `category`, `aboutBusiness`, `confidence`, `outcome`
+(`modeled | rewritten | constraint | parked | question`), `group` and `storyline` (set for
+`modeled`/`rewritten`, otherwise `null`), plus `rewrite` / `reason` / `question` /
+`scenarioOf` where the outcome needs them. **Every statement has a category and an outcome;
+every modeled or rewritten statement has a group.**
+
+Then run, and fix until it passes:
+
+```
+em discover triage-check discovery/prd-triage.json        # MCP: discover_triage_check
+em discover triage-check discovery/prd-triage.json --markdown > discovery/prd-triage.md
+```
+
+`--markdown` prints the human-readable view (storylines, slice groups with their statements,
+constraints, parked, questions); save it next to the JSON. The checker verifies shape, the rubric
+version, verbatim quotes, and the outcome rules; **it cannot judge whether your classification is
+right** — that is what the human review is for.
+
+## Step 6 — Questions, never inventions
+
+Every `low` confidence statement, every statement where the category and the independent check
+disagree, and every `question` category statement gets outcome `question` and a Socratic
+`question`. Ask them one concern at a time, in the story's words. Record each answer in the state
+file and update the record (the statement is re-classified; re-run the checker). If the document
+and the human disagree, the human wins and the disagreement is a Decisions-log entry.
+
+## Hand-off
+
+Continue with `discover` steps 1-4 (`../SKILL.md`) on the surviving groups: the storylines are the
+timeline's spine, each group seeds one slice, and the constraints list goes to the project
+constitution. `discovery/prd-triage.json` stays in the repo as provenance for the model.

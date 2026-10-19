@@ -314,6 +314,7 @@ describe("tools/list", () => {
         "contract",
         "coverage",
         "diff",
+        "discover_triage_check",
         "engagement_foundation",
       "engagement_plan",
         "engagement_status",

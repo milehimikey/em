@@ -85,6 +85,7 @@ import { buildMetricsJson } from "../emit/metricsJson.js";
 import { runSystemScope } from "../cli/scopeInputs.js";
 import { buildScopeJson } from "../emit/scopeJson.js";
 import { checkFindingsFile, buildCheckFindingsJson } from "../cli/findings.js";
+import { checkPrdTriage, buildCheckPrdTriageJson } from "../cli/prdTriage.js";
 import { compileForQuery } from "../query/pipeline.js";
 import type { ModelIndex } from "../model/queryIndex.js";
 import { buildQuerySystem, QuerySystem } from "../query/system.js";
@@ -927,6 +928,26 @@ export function createServer(): McpServer {
     },
     async ({ path }) => {
       return textResult(buildCheckFindingsJson(checkFindingsFile(path)));
+    },
+  );
+
+  server.registerTool(
+    "discover_triage_check",
+    {
+      title: "Check a PRD/spec discovery triage record",
+      description:
+        "Return the same JSON document `em discover triage-check <path> --json` prints (GH #295): " +
+        "whether a discovery/prd-triage.json is valid (prdTriageSchemaVersion 1.0, the shipped " +
+        "rubric version, every statement/storyline quote appearing verbatim in the input " +
+        "document, every statement carrying a category and outcome, modeled/rewritten ones a " +
+        "group and storyline). `source` overrides the file's own `source` path.",
+      inputSchema: {
+        path: z.string().describe("path to a discovery/prd-triage.json file"),
+        source: z.string().optional().describe("the input PRD/spec to check quotes against (default: the file's own `source`)"),
+      },
+    },
+    async ({ path, source }) => {
+      return textResult(buildCheckPrdTriageJson(checkPrdTriage(path, { source })));
     },
   );
 
