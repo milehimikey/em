@@ -30,8 +30,12 @@ export interface RosterEntry {
 }
 
 /** em's own migration marker (`em upgrade`'s `ratified-signoff`), not a signer: exempt from roster checks. */
-export function isGrandfatheredSignoff(name: string | null | undefined): boolean {
-  return !!name && /^grandfathered\b/i.test(name.trim());
+export const GRANDFATHERED_RATIFIER = "grandfathered (unsigned before em 1.14)";
+
+/** Exempt only the exact marker AND only on a doc with no `ratifiedHash` (the state `em upgrade`
+ *  leaves it in): a forged "grandfathered by X" or a marker on a hash-bearing doc is a signer and is checked. */
+export function isGrandfatheredSignoff(name: string | null | undefined, ratifiedHash: string | null | undefined): boolean {
+  return !!name && name === GRANDFATHERED_RATIFIER && !ratifiedHash;
 }
 
 export interface Roster {
@@ -256,9 +260,10 @@ function appliesToModel(e: RosterEntry, modelKey: string | undefined): boolean {
   return e.models === null || modelKey === undefined || e.models.includes(modelKey);
 }
 
-/** The contexts of a slice: those of its events, plus those of the events its views read (every
- *  instance of a read model -- `again` instances included -- contributes its `from`, so a
- *  continuation slice takes its originating view's events). A slice with neither has none. */
+/** The contexts of a slice: those of its events, plus those of the events ITS OWN views read (each
+ *  view instance's own `from`, not a union across the read model's instances - so adding a later
+ *  instance never changes an earlier slice's contexts). A continuation slice (only `again` views)
+ *  additionally takes the originating instance's own `from`. A slice with neither has none. */
 export function sliceContexts(model: NormalizedModel, sliceIndex: number): string[] {
   const out: string[] = [];
   const add = (c: string | undefined) => {
@@ -266,22 +271,24 @@ export function sliceContexts(model: NormalizedModel, sliceIndex: number): strin
   };
   const slice = model.slices[sliceIndex];
   for (const el of slice?.elements ?? []) if (el.kind === "event") add(el.context);
-  const views = new Set((slice?.elements ?? []).filter((e) => e.kind === "view").map((e) => e.logicalId));
-  if (views.size > 0) {
-    const byName = new Map<string, string[]>();
-    for (const s of model.slices) {
-      for (const el of s.elements) {
-        if (el.kind !== "event" || !el.context) continue;
-        const k = normalizeName(el.name);
-        byName.set(k, [...(byName.get(k) ?? []), el.context]);
-      }
+  const byName = new Map<string, string[]>();
+  for (const s of model.slices) {
+    for (const el of s.elements) {
+      if (el.kind !== "event" || !el.context) continue;
+      const k = normalizeName(el.name);
+      byName.set(k, [...(byName.get(k) ?? []), el.context]);
     }
-    for (const s of model.slices) {
-      for (const el of s.elements) {
-        if (el.kind !== "view" || !views.has(el.logicalId)) continue;
-        for (const from of el.from ?? []) for (const c of byName.get(normalizeName(from)) ?? []) add(c);
-      }
-    }
+  }
+  const addFrom = (from: string[] | undefined) => {
+    for (const f of from ?? []) for (const c of byName.get(normalizeName(f)) ?? []) add(c);
+  };
+  const elements = slice?.elements ?? [];
+  const nonUi = elements.filter((e) => e.kind !== "ui");
+  const isContinuation = nonUi.length > 0 && nonUi.every((e) => e.kind === "view" && e.again === true);
+  for (const el of elements) {
+    if (el.kind !== "view") continue;
+    addFrom(el.from);
+    if (isContinuation) addFrom(model.byId.get(el.logicalId)?.from);
   }
   return out;
 }

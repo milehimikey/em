@@ -190,7 +190,7 @@ export function validateSliceReady(
   // `grandfathered ...` is em's own migration marker, not a signer, so it is exempt (it stays a
   // finding of --require-ratified-hash and a human re-ratify item). Only `ready-to-implement`
   // docs are checked here; `em roster check` also covers shipped docs.
-  if (doc.status === "ready-to-implement" && doc.ratifiedBy && !isGrandfatheredSignoff(doc.ratifiedBy)) {
+  if (doc.status === "ready-to-implement" && doc.ratifiedBy && !isGrandfatheredSignoff(doc.ratifiedBy, doc.ratifiedHash)) {
     const roster = loadRoster(baseDir, options.rosterPath, rosterContextFor(model, contract.file));
     if (roster.state === "invalid") {
       for (const d of roster.diagnostics) {

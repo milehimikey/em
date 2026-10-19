@@ -118,9 +118,10 @@ reviewers:                           # optional; same shape, checked by `em slic
   `review`, `validate --slice-ready`, `roster check` overrides discovery; a path that does not
   exist is an error, never "no roster".
 - **A slice's contexts** are the contexts of its **events** plus the contexts of the events its
-  **views read** (every instance of a read model, `again` instances included, contributes its
-  `from`; a continuation slice takes its originating view's). A slice with neither has no context
-  and is permitted only by entries without `contexts`.
+  **views read** - each view instance's **own** `from`, never a union across the read model's
+  instances (adding a later `again` instance never changes an earlier slice's contexts). A
+  continuation slice also takes its originating instance's own `from`. A slice with neither has no
+  context and is permitted only by entries without `contexts`.
 - **An entry permits a slice** when it applies to the model and either has no `contexts` or lists
   **every** context of the slice: a cross-context slice needs a ratifier who may sign for all of
   them (a leading `@` is tolerated in `contexts`).
@@ -135,7 +136,9 @@ reviewers:                           # optional; same shape, checked by `em slic
   `ratify` and `review` refuse, `--slice-ready` and `roster check` report `roster-invalid`.
 - **`grandfathered (unsigned before em 1.14)`** is em's own migration marker (`em upgrade`'s
   `ratified-signoff`), not a signer: exempt from the `--slice-ready` check and from `roster check`
-  (which counts it), until the slice is re-ratified.
+  (which counts it) until the slice is re-ratified - but only the **exact** string, and only on a
+  doc with no `ratifiedHash` (the state `em upgrade` leaves). `grandfathered by X`, or the marker on
+  a doc that carries a hash, is a signer and is checked.
 - **Where it is enforced.** At write time by `em slice ratify` / `em slice review` (the refusal
   lists the permitted names); at check time by `em validate --slice-ready <key>`
   (`ratified-by-not-in-roster`, error - one `ready-to-implement` slice, ratifier only) and by

@@ -407,3 +407,66 @@ describe("roster, review round (GH #259)", () => {
     expect(readFileSync(join(dir, ".github", "workflows", "em-ci.yml"), "utf8")).toContain('roster check "model.em"');
   });
 });
+
+describe("roster, critic round 2 (GH #259)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-gh259c-"));
+    mkdirSync(join(dir, "slices"));
+    writeFileSync(join(dir, "model.em"), MODEL);
+    for (const k of ["pay", "list", "paid-view"]) writeFileSync(join(dir, "slices", `${k}.md`), draft + body(k));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("a forged 'grandfathered by X' prefix, or the marker on a hash-bearing doc, is checked by --slice-ready and roster check", () => {
+    writeFileSync(join(dir, "ratifiers.yaml"), ROSTER_CLI);
+    writeFileSync(join(dir, "slices", "pay.md"), hand("grandfathered by Mallory") + body("Pay"));
+    const ready = em(["validate", "model.em", "--slice-ready", "pay"], dir);
+    expect(ready.status).toBe(1);
+    expect(ready.stderr).toContain("grandfathered by Mallory");
+    const check = em(["roster", "check", "model.em", "--json"], dir);
+    expect(check.status).toBe(1);
+    expect(JSON.parse(check.stdout).grandfathered).toBe(0);
+    // The exact marker, but on a doc that carries a ratifiedHash: not what em upgrade leaves, so it is a signer.
+    writeFileSync(
+      join(dir, "slices", "pay.md"),
+      hand("grandfathered (unsigned before em 1.14)").replace("ratifiedOn:", "ratifiedHash: sha256:abc\nratifiedOn:") + body("Pay"),
+    );
+    expect(em(["roster", "check", "model.em"], dir).status).toBe(1);
+  });
+
+  it("a view slice's contexts are its OWN from; adding a later instance does not change them; a continuation takes its originating instance's from too", async () => {
+    const { compile } = await import("../src/pipeline.js");
+    const { sliceContexts } = await import("../src/roster/roster.js");
+    const src = `context Tool
+context Loan
+slice "Add Tool" {
+  ui Add Screen @Customer
+  command Add Tool
+  event Tool Added @Tool
+}
+slice "Lend" {
+  ui Lend Screen @Customer
+  command Lend Tool
+  event Tool Lent @Loan
+}
+slice "Browse Tools" {
+  view Tools from "Tool Added"
+  ui Browse @Customer
+}
+slice "Browse Lent" {
+  view Tools again from "Tool Lent"
+  ui Lent Browse @Customer
+}
+`;
+    const { model, refs } = compile(src);
+    const ctx = (key: string) => sliceContexts(model, refs.sliceKeys.indexOf(key));
+    expect(ctx("browse-tools")).toEqual(["Tool"]); // unchanged by the Loan-fed again instance
+    // The again instance has its own from (Loan) and, as a continuation, the originating one (Tool).
+    expect(ctx("browse-lent")).toEqual(["Loan", "Tool"]);
+    const r = parseRoster('rosterSchemaVersion: "1.0"\nratifiers:\n  - name: T\n    contexts: [Tool]\n');
+    if (!r.ok) throw new Error("fixture");
+    expect(rosterRefusal(r.roster, "ratifiers", "T", ctx("browse-tools"))).toBeNull();
+    expect(rosterRefusal(r.roster, "ratifiers", "T", ctx("browse-lent"))).not.toBeNull();
+  });
+});

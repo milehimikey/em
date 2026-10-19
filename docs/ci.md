@@ -525,7 +525,9 @@ not permitted for the slice's contexts - `ratifiedBy` on `ready-to-implement` **
 `implemented` docs, `reviewedBy` on any doc - or when the roster itself is invalid. `--json`
 gives per-doc `results` and `diagnostics` carrying `refs: [<slice key>]`
 (`ratified-by-not-in-roster` / `reviewed-by-not-in-roster`); the `grandfathered ...` placeholder is
-exempt and counted. With no roster file it prints "nothing to check" and exits 0.
+exempt and counted (exact marker string on a doc with no `ratifiedHash` only; anything else is
+checked). Once a repo has re-ratified its grandfathered docs, also run `em validate --slice-ready
+<key> --require-ratified-hash`, which closes the marker as a way around the roster. With no roster file it prints "nothing to check" and exits 0.
 
 `em ci init` (and `em upgrade`'s regeneration of the block) emits a `roster` job - `roster-<id>`
 per model in the `em ci init <system.yaml>` form - **only when a `ratifiers.yaml` is discovered

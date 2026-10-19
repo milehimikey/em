@@ -67,7 +67,7 @@ export function checkRoster(model: NormalizedModel, refs: RefsResult, baseDir: s
     let countedGrandfathered = false;
     for (const [role, name] of signers) {
       if (!name) continue;
-      if (isGrandfatheredSignoff(name)) {
+      if (isGrandfatheredSignoff(name, doc.ratifiedHash)) {
         if (!countedGrandfathered) grandfathered++;
         countedGrandfathered = true;
         continue;

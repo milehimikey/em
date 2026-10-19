@@ -27,9 +27,10 @@ export function observeSigners(model: NormalizedModel, refs: RefsResult, baseDir
     const { doc } = resolveSliceDocJoin(model, refs, model.slices[i], sliceKey, baseDir, (id) => refs.refById.get(id)!);
     if (doc.reason !== null || seen.has(doc.path)) return;
     seen.add(doc.path);
-    if (isGrandfatheredSignoff(doc.ratifiedBy) || isGrandfatheredSignoff(doc.reviewedBy)) grandfathered++;
-    if (doc.ratifiedBy && !isGrandfatheredSignoff(doc.ratifiedBy)) ratifiers.add(doc.ratifiedBy.trim());
-    if (doc.reviewedBy && !isGrandfatheredSignoff(doc.reviewedBy)) reviewers.add(doc.reviewedBy.trim());
+    const gf = (n: string | null) => isGrandfatheredSignoff(n, doc.ratifiedHash);
+    if (gf(doc.ratifiedBy) || gf(doc.reviewedBy)) grandfathered++;
+    if (doc.ratifiedBy && !gf(doc.ratifiedBy)) ratifiers.add(doc.ratifiedBy.trim());
+    if (doc.reviewedBy && !gf(doc.reviewedBy)) reviewers.add(doc.reviewedBy.trim());
   });
   const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
   return { ratifiers: sorted(ratifiers), reviewers: sorted(reviewers), grandfathered };
