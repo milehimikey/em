@@ -29,7 +29,7 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceKey } from "../model/resolveSlice.js";
 import { Diagnostic } from "../model/validate.js";
-import { makeDiag, pushDiag } from "../model/rules.js";
+import { makeDiag, pushDiag, RULES } from "../model/rules.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { ratifiedHashScope } from "./sliceDoc.js";
@@ -86,6 +86,8 @@ export interface SliceReadyOptions {
    *  fakes `ratifiedBy`/`ratifiedOn` without a hash passes readiness with no integrity check
    *  otherwise, which is the hole this closes. */
   requireRatifiedHash?: boolean;
+  /** `--strict` (GH #293): advisory-rule diagnostics (RuleDef.advisory) are promoted to errors and gate. */
+  strict?: boolean;
 }
 
 export function validateSliceReady(
@@ -294,7 +296,11 @@ export function computeSliceReadyGates(
  *  "no scoped diagnostics". `result` is `computeSliceReadyGates`' named gates (null for an
  *  unknown key). */
 export interface SliceReadiness {
+  /** Blocking diagnostics concerning this slice — what `ready` is derived from. */
   scoped: Diagnostic[];
+  /** GH #293: advisory-rule diagnostics concerning this slice (listed, never gating). Empty under
+   *  `strict`, which promotes them into `scoped` as errors. */
+  advisories: Diagnostic[];
   ready: boolean;
   result: SliceReadyResult | null;
 }
@@ -310,7 +316,13 @@ export function computeSliceReadiness(
 ): SliceReadiness {
   const readyDiagnostics = validateSliceReady(model, refs, baseDir, sliceKey, contract, options);
   const combined = [...allDiagnostics, ...readyDiagnostics];
-  const scoped = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
+  const concerning = combined.filter((d) => d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)));
+  const isAdvisory = (d: Diagnostic): boolean => (RULES as Record<string, { advisory?: true }>)[d.code]?.advisory === true;
+  const strict = options.strict === true;
+  const scoped = concerning
+    .filter((d) => strict || !isAdvisory(d))
+    .map((d) => (strict && isAdvisory(d) ? { ...d, severity: "error" as const } : d));
+  const advisories = strict ? [] : concerning.filter(isAdvisory);
   const result = computeSliceReadyGates(model, refs, baseDir, sliceKey, contract);
-  return { scoped, ready: scoped.length === 0, result };
+  return { scoped, advisories, ready: scoped.length === 0, result };
 }

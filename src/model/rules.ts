@@ -40,6 +40,10 @@ export interface RuleDef {
   /** Rule family selected by `em validate --shape` (GH #282): the advisory storyline-shape lints.
    *  Registering `family: "shape"` is all a new shape lint needs to join that view. */
   family?: "shape";
+  /** True for an advisory lint (GH #293): it never gates `--slice-ready` / `em engagement plan` /
+   *  the MCP `slice_ready` tool — it is listed under `advisories[]` instead — unless the run is
+   *  `--strict`, which promotes it to an error. */
+  advisory?: true;
 }
 
 export const RULES = {
@@ -406,6 +410,7 @@ export const RULES = {
   },
   "scenario-when-not-command": {
     severity: "warning",
+    advisory: true,
     title: "Scenario's When does not name the slice's command",
     fix: "Make the When bullet name the slice's command (for a reaction slice, the command it triggers) — each scenario exercises exactly one command.",
     usageCategory: "scenario When names no command",
@@ -413,6 +418,7 @@ export const RULES = {
   },
   "scenario-then-not-outcome": {
     severity: "warning",
+    advisory: true,
     title: "Scenario's Then names no event or rejection",
     fix: "Make the Then bullets name the event(s) the command records, or the rejection/error it returns.",
     usageCategory: "scenario Then names no outcome",
@@ -420,6 +426,7 @@ export const RULES = {
   },
   "invariant-without-scenario": {
     severity: "warning",
+    advisory: true,
     title: "Invariant cited by no scenario",
     fix: "Cite the INV id in the Given/When/Then (or title) of the scenario that exercises it, or add one.",
     usageCategory: "invariant has no scenario",

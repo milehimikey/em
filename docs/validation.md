@@ -620,8 +620,14 @@ union of its slices). They follow the canon that each specification is tied to e
 
 Silent on a doc with no `### Scenario:` blocks (every doc written before 1.14). Each diagnostic
 names the doc line of the scenario and refs the slice plus its command (or the invariant's
-element), so `--slice-ready` folds them in like the other doc checks; `--strict` promotes them to
-errors. `em coverage` is unchanged — tests to invariants is a different axis.
+element). On a doc cross-covering several commands, the When/Then diagnostics anchor to the
+first command.
+
+**Advisory.** These rules are marked `advisory` in the registry: they do not affect
+`--slice-ready` (nor `em engagement plan` and the MCP `slice_ready` tool) unless `--strict`. The
+`--slice-ready --json` output lists them under `advisories[]` (schema `1.4`). `em validate
+--strict` promotes them to errors: the run exits non-zero, and under `--slice-ready` they block
+readiness. `em coverage` is unchanged — tests to invariants is a different axis.
 
 ### Orphaned slice doc
 

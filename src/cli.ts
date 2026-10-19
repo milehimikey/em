@@ -2019,6 +2019,10 @@ program
       "before em 1.15 keep passing; turn it on once legacy docs are re-ratified",
   )
   .option(
+    "--strict",
+    "promote advisory lints (GH #293: scenario-quality warnings) to errors: they fail the run and, with --slice-ready, block readiness",
+  )
+  .option(
     "--check-signed-bodies",
     "opt-in (GH #257): compare every slice doc that records a `ratifiedHash:` — ready, implemented, any status — " +
       "to its body; a mismatch is `slice-body-changed-since-ratification` (error). A pre-1.17 whole-body hash with an " +
@@ -2052,6 +2056,7 @@ program
         failOnIssues?: boolean;
         sliceReady?: string;
         requireRatifiedHash?: boolean;
+        strict?: boolean;
         checkSignedBodies?: boolean;
         json?: boolean;
       },
@@ -2084,6 +2089,12 @@ program
         ...computeAllDiagnostics(file, model, refs, diagnostics, source),
         ...(opts.checkSignedBodies ? validateSignedBodies(model, refs, dirname(file)) : []),
       ];
+      // GH #293: --strict promotes advisory lints to errors (the --slice-ready branch below does
+      // its own promotion inside computeSliceReadiness, from the unpromoted set).
+      const reported = opts.strict && !opts.sliceReady
+        ? allDiagnostics.map((d) =>
+            (RULES as Record<string, { advisory?: true }>)[d.code]?.advisory ? { ...d, severity: "error" as const } : d)
+        : allDiagnostics;
       if (opts.sliceReady) {
         // MIL-87: a targeted, single-slice readiness gate, not part of the unconditional
         // diagnostic set above (see sliceReadyValidate.ts's header for why). Folds in MIL-85's
@@ -2108,16 +2119,17 @@ program
         // `slice-ready-unknown-slice` error (carrying the resolver's message).
         const resolved = resolveSliceKey(model, refs, opts.sliceReady);
         const key = resolved.ok ? resolved.key : opts.sliceReady;
-        const { scoped, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics, {
+        const { scoped, advisories, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics, {
           requireRatifiedHash: opts.requireRatifiedHash === true,
+          strict: opts.strict === true,
         });
-        printDiagnostics(scoped);
+        printDiagnostics([...scoped, ...advisories]);
         if (opts.json) {
           // MIL-128: the named gates (see computeSliceReadyGates) plus the same `scoped`
           // diagnostics and `ready` verdict driving the exit code below — replaces both the
           // scraped warning prose and the two hand-parsed English sentences.
           process.stdout.write(
-            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null) + "\n",
+            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories) + "\n",
           );
         } else {
           console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
@@ -2134,7 +2146,7 @@ program
       if (opts.listIssues || opts.listDivergences || opts.listPublic) {
         // Errors still fail the run below — surface them rather than exiting
         // non-zero with nothing but the list on screen.
-        const errorsOnly = allDiagnostics.filter((d) => d.severity === "error");
+        const errorsOnly = reported.filter((d) => d.severity === "error");
         if (opts.json) {
           const markers = collectMarkers(model, refs, {
             issues: opts.listIssues,
@@ -2150,13 +2162,13 @@ program
           printDiagnostics(errorsOnly);
         }
       } else if (opts.json) {
-        printDiagnostics(allDiagnostics);
-        process.stdout.write(buildValidateJson(file, allDiagnostics) + "\n");
+        printDiagnostics(reported);
+        process.stdout.write(buildValidateJson(file, reported) + "\n");
       } else {
-        printDiagnostics(allDiagnostics);
-        if (allDiagnostics.length === 0) console.log("ok — no issues");
+        printDiagnostics(reported);
+        if (reported.length === 0) console.log("ok — no issues");
       }
-      if (hasErrors(allDiagnostics)) process.exit(1);
+      if (hasErrors(reported)) process.exit(1);
       if (opts.failOnIssues && model.elements.some((el) => el.issue)) process.exit(1);
     },
   );

@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { validateDocModelConsistency } from "../src/catalog/docModelConsistencyValidate.js";
 import { RULES } from "../src/model/rules.js";
+import { computeSliceReadiness } from "../src/catalog/sliceReadyValidate.js";
+import { buildSliceReadyJson } from "../src/emit/validateJson.js";
 
 let dir: string;
 beforeAll(() => {
@@ -100,5 +102,42 @@ describe("scenario-quality rules", () => {
   it("is silent on a doc with no ### Scenario: blocks", () => {
     writeDoc("sq-none", "## Scenarios (Given / When / Then)\n- **Happy path**\n  - Given x\n");
     expect(codes(MODEL("sq-none", '  invariant INV-SQN-1 "r"'))).toEqual([]);
+  });
+
+  it("marks the three rules advisory", () => {
+    for (const c of ["scenario-when-not-command", "scenario-then-not-outcome", "invariant-without-scenario"] as const) {
+      expect((RULES[c] as { advisory?: true }).advisory).toBe(true);
+    }
+  });
+
+  describe("--slice-ready", () => {
+    const src = MODEL("sq-ready");
+    const readiness = (strict: boolean) => {
+      writeFileSync(
+        join(dir, "slices", "sq-ready.md"),
+        `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex\n---\n## Scenarios (Given / When / Then)\n${scenario("x", "the customer submits", "Order Placed")}`,
+      );
+      const { model, refs, diagnostics } = compile(src);
+      const all = validateDocModelConsistency(model, refs, dir);
+      return computeSliceReadiness(model, refs, dir, "sq-ready", { file: join(dir, "m.em"), source: src, diagnostics }, all, { strict });
+    };
+
+    it("an advisory warning does not block readiness, but is listed under advisories", () => {
+      const r = readiness(false);
+      expect(r.ready).toBe(true);
+      expect(r.scoped).toEqual([]);
+      expect(r.advisories.map((d) => d.code)).toEqual(["scenario-when-not-command"]);
+      const json = JSON.parse(buildSliceReadyJson("m.em", "sq-ready", r.result?.gates ?? null, r.scoped, r.ready, null, null, r.advisories));
+      expect(json.validateSliceReadySchemaVersion).toBe("1.4");
+      expect(json.advisories).toHaveLength(1);
+      expect(json.ready).toBe(true);
+    });
+
+    it("--strict promotes it to a blocking error", () => {
+      const r = readiness(true);
+      expect(r.ready).toBe(false);
+      expect(r.advisories).toEqual([]);
+      expect(r.scoped.map((d) => [d.code, d.severity])).toEqual([["scenario-when-not-command", "error"]]);
+    });
   });
 });

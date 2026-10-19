@@ -68,7 +68,11 @@ export function buildValidateJson(file: string, diagnostics: Diagnostic[]): stri
 // --skip-review` ratified from when that bypass is what let the ratification through; null for a
 // reviewed ratification, a doc predating 1.17, an unusable doc, or an unknown slice. Informational
 // (not a gate): a host decides whether an unreviewed ratification passes. Additive-only.
-export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.3";
+// 1.4 (GH #293, 1.18.0): top-level `advisories: Diagnostic[]` — diagnostics of advisory rules
+// (RuleDef.advisory, e.g. the scenario-quality warnings) concerning this slice. They are listed
+// but never gate `ready`; under `--strict` they are promoted into `diagnostics` as errors and
+// `advisories` is empty. Additive-only.
+export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.4";
 
 /** Build the `em validate <file> --slice-ready <key> --json` document — the machine verdict
  *  replacing the two hand-parsed English sentences ("is ready-to-implement" /
@@ -89,6 +93,7 @@ export function buildSliceReadyJson(
   ready: boolean,
   continuationOf: string | null,
   reviewSkipped: string | null = null,
+  advisories: Diagnostic[] = [],
 ): string {
   const doc = {
     validateSliceReadySchemaVersion: VALIDATE_SLICE_READY_SCHEMA_VERSION,
@@ -100,6 +105,7 @@ export function buildSliceReadyJson(
     reviewSkipped,
     ready,
     diagnostics: diagnostics.map(serializeDiagnosticWithUsage),
+    advisories: advisories.map(serializeDiagnosticWithUsage),
   };
   return JSON.stringify(doc, null, 2);
 }

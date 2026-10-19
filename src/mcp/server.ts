@@ -306,9 +306,9 @@ export function createServer(): McpServer {
       const { model, refs, allDiagnostics, source, diagnostics } = compiled;
       const baseDir = dirname(file);
       const contractInput = { file, source, diagnostics };
-      const { scoped, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash });
+      const { scoped, advisories, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash });
       return textResult(
-        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null),
+        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories),
       );
     },
   );

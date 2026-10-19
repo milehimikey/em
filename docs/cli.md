@@ -375,6 +375,7 @@ exists at all).
 | `--shape` | (GH #282) Run only the advisory **shape-family** lints and print a table (rule, count, first ref, docs anchor) — see [`--shape`](#--shape-gh-282). Exit 0 always; cannot be combined with `--slice-ready`, `--list-*`, `--fail-on-issues` or `--check-signed-bodies` |
 | `--waive-file <path>` | With `--shape` only: a baseline file (`#` comments, missing file = no waivers; lines are `<rule-code> <slice-key>`, or a bare `<slice-key>` that waives **all** shape rules on it) whose shape findings are listed as waived and not counted |
 | `--slice-ready <key>` | Readiness gate for one slice ([slice key](#slice-keys)) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
+| `--strict` | (GH #293) Promote advisory lints (rules marked advisory in [validation.md](validation.md#scenario-quality), today the scenario-quality warnings) to errors. Plain `em validate` exits non-zero on them; with `--slice-ready` they block readiness. Without `--strict` an advisory lint never gates `--slice-ready` |
 | `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
 ```bash
@@ -418,12 +419,12 @@ Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff
 `severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`. `refs` are export refs;
 invariant-scoped rules (`command-second-intent`) also list the bare `INV-…` ids they concern.
 
-**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.3"`) — see the
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.4"`) — see the
 `--slice-ready` section below for what each gate means:
 
 ```json
 {
-  "validateSliceReadySchemaVersion": "1.3",
+  "validateSliceReadySchemaVersion": "1.4",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "sliceKey": "checkout",
@@ -431,7 +432,8 @@ invariant-scoped rules (`command-second-intent`) also list the bare `INV-…` id
   "continuationOf": null,
   "reviewSkipped": null,
   "ready": false,
-  "diagnostics": [ … ]
+  "diagnostics": [ … ],
+  "advisories": [ … ]
 }
 ```
 
@@ -448,6 +450,12 @@ scoped list so a consumer sees exactly why, not just the 6 named gates.
 `gates.ratified` (added in schema `1.2`, MIL-259) is `true` when the doc carries a non-empty
 `ratifiedBy:`. It is informational like the other gates: the blocking verdict is the
 `slice-ready-not-ratified` error in `diagnostics`.
+
+`advisories` (top-level, added in schema `1.4`, GH #293) lists the diagnostics of *advisory* rules
+(`RuleDef.advisory`: the scenario-quality warnings) that concern this slice. They are shown but
+never affect `ready`, the exit code, `em engagement plan` or the MCP `slice_ready` tool. With
+`--strict` they are promoted to errors, move into `diagnostics`, and `ready` is `false`;
+`advisories` is then empty.
 
 `reviewSkipped` (top-level, added in schema `1.3`, GH #260) is the status
 `em slice ratify --skip-review` ratified the doc from when that bypass is what let the
