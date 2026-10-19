@@ -51,7 +51,7 @@ that caller's journey is the story.
 ### 3. The CRUD shape, named
 
 N entities, each with create / update / archive, one trailing view per entity, and no read across contexts.
-The two models below hold the same facts; both validate. The first reads as a schema, the second as a story.
+Below, the same business told two ways; both validate. The first reads as a schema, the second as a story.
 
 ```em
 model "Catalog (CRUD shape)"
@@ -108,8 +108,9 @@ slice "Products" {
 }
 ```
 
-Storyline-ordered: the main story first, the secondary story after it, each command an intent, and the
-shared catalog view repeated as the information arrives.
+Storyline-ordered: the main story first, the secondary story after it, each command an intent, and each
+view repeated right after the command that changes it. It tells the same business as the first model, told
+as two journeys; it demonstrates rules 1, 3 and 7.
 
 ```em
 model "Catalog (storyline shape)"
@@ -120,57 +121,61 @@ persona Shopper
 context Category
 context Product
 
-# Storyline "Bring a product to market" - the main story, start to finish.
-slice "Define Category" {
-  ui Category Form @Merchandiser
-  command Define Category
-  event Category Defined @Category
+storyline "Bring a product to market" {
+  slice "Define Category" {
+    ui Category Form @Merchandiser
+    command Define Category
+    event Category Defined @Category
+  }
+
+  slice "Catalog Tree" {
+    view Catalog Tree from "Category Defined"
+    ui Browse Catalog @Merchandiser
+  }
+
+  slice "Create Product" {
+    ui Product Form @Merchandiser
+    command Create Product
+    event Product Created @Product
+  }
+
+  slice "Catalog Tree with Product" {
+    view Catalog Tree again from "Product Created"
+    ui Browse Catalog @Merchandiser
+  }
+
+  slice "Product Page" {
+    view Product Page from "Product Created"
+    ui Read Product Page @Shopper
+  }
+
+  slice "Set Price" {
+    ui Pricing Panel @Merchandiser
+    command Set Price
+    event Price Set @Product
+  }
+
+  slice "Product Page with Price" {
+    view Product Page again from "Price Set"
+    ui Read Product Page @Shopper
+  }
 }
 
-slice "Catalog Tree" {
-  view Catalog Tree from "Category Defined"
-  ui Browse Catalog @Merchandiser
-}
+storyline "Retire a product" after "Bring a product to market" {
+  slice "Retire Product" {
+    ui Pricing Panel @Merchandiser
+    command Retire Product
+    event Product Retired @Product
+  }
 
-slice "Create Product" {
-  ui Product Form @Merchandiser
-  command Create Product
-  event Product Created @Product
-}
-
-slice "Catalog Tree with Product" {
-  view Catalog Tree again from "Product Created"
-  ui Browse Catalog @Merchandiser
-}
-
-slice "Set Price" {
-  ui Pricing Panel @Merchandiser
-  command Set Price
-  event Price Set @Product
-}
-
-slice "Product Page" {
-  view Product Page from "Product Created", "Price Set"
-  ui Read Product Page @Shopper
-}
-
-# Storyline "Retire a product" - a secondary story, after the main one.
-slice "Retire Product" {
-  ui Pricing Panel @Merchandiser
-  command Retire Product
-  event Product Retired @Product
-}
-
-slice "Catalog Tree without Product" {
-  view Catalog Tree again from "Product Retired"
-  ui Browse Catalog @Merchandiser
+  slice "Catalog Tree without Product" {
+    view Catalog Tree again from "Product Retired"
+    ui Browse Catalog @Merchandiser
+  }
 }
 ```
 
-In a model that uses `storyline` blocks, the first six slices sit in
-`storyline "Bring a product to market" { ... }` and the last two in
-`storyline "Retire a product" after "Bring a product to market" { ... }`. The mechanical half of this rule
-is the `timeline-entity-clustered` lint ([validation.md](validation.md)).
+The mechanical half of rule 1 is the `timeline-entity-clustered` lint ([validation.md](validation.md)).
 
 ### 4. Commands name intent, not endpoints
 
@@ -209,10 +214,21 @@ arrive instead of one view at the end. See [dsl.md](dsl.md) and the repeat-read-
 
 ### 8. Outcomes are events of one slice
 
-One decision, one event. A business action with two outcomes records both as alternative events of one slice
-(written `event A | B @Ctx`, GH #278); failure is a scenario first and becomes a chapter only when it is
-core. The rule is stated once for automations in [patterns.md](patterns.md#automation); the
-`automation-split-by-outcome` lint is its mechanical half.
+One decision, one event. Outcomes are events of one slice: a business action with two possible outcomes
+(PaymentIssued / PaymentFailed) records both as alternative events on one context in one slice, written
+`event A | B @Ctx` (GH #278), instead of splitting the action into one slice per outcome. Write the failure
+as a Given/When/Then scenario first; it becomes a chapter (a secondary storyline) only when it is core. The
+automation form of the rule is in [patterns.md](patterns.md#automation); the `automation-split-by-outcome`
+lint is its mechanical half.
+
+## Judgement calls
+
+- **Several processes:** one storyline per process, ordered by the sequence a customer first meets them.
+  Secondary storylines follow the main one (file order or `after`).
+- **Failure: chapter or scenario?** A failure is core, and gets its own chapter, when it changes what the
+  user does next or has its own actor or SLA. Otherwise it is a scenario of the slice.
+- **A generic update endpoint with no conditional invariants:** rename it to the intent if a business person
+  would say it ("Reprice Product", "Correct Address"); otherwise keep the name.
 
 ## Reshaping an existing model
 

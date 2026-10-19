@@ -32,7 +32,10 @@ Those sources fill operations no walkthrough touches; they never supply the stor
 
 Goal: a draft model of events, storyboard, commands, and views. Loose is OK; structure comes next.
 
-1. **Brainstorm events (step 1).** Ask the user to name everything that happens, as past-tense
+1. **Brainstorm events (step 1).** Draw the candidate events **from the walkthroughs and
+   journeys** (ask for them first; no walkthrough → *"what does success look like, start to
+   finish?"*): *"what happened, in the story's words?"* — business terms, never table or endpoint
+   vocabulary. Ask the user to name everything that happens, as past-tense
    facts. Probe for missed state changes. For each candidate, apply the **"is it an event?"
    test** (`methodology.md` step 1 — the "would this wake the CEO at 3am" heuristic):
    reject derived values (belong in a read model) and telemetry/activity (not business state).
@@ -50,7 +53,9 @@ Goal: a draft model of events, storyboard, commands, and views. Loose is OK; str
    **callers** at each step instead; declare one persona per caller/role, and its `ui` boxes are
    the API calls (see `methodology.md`).
 3. **Inputs (step 3).** For each event, find the **command** that causes it (imperative name).
-   Form `command → event` slices (State Change pattern). Every command needs a **trigger** in the
+   Form `command → event` slices (State Change pattern). Apply the **intent test**: name the
+   command for the intent a business person would say at this step of the story, not the
+   endpoint that carries it (`methodology.md`, "The story, not the schema"). Every command needs a **trigger** in the
    same breath: the screen the user issues it from (a `ui` in the slice), or — for the Automation
    and Translation patterns — the reaction that triggers it, also in this slice. A command
    nothing points at is a write nobody can start. *"Who does this, and where are they when they

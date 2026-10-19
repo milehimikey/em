@@ -264,39 +264,41 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
 
   context Product
 
-  # Main storyline: "Bring a product to market"
-  slice "Create Product" {
-    ui Product Form @Merchandiser
-    command Create Product
-    event Product Created @Product
+  storyline "Bring a product to market" {
+    slice "Create Product" {
+      ui Product Form @Merchandiser
+      command Create Product
+      event Product Created @Product
+    }
+
+    slice "Catalog" {
+      view Catalog from "Product Created"
+      ui Browse Catalog @Merchandiser
+    }
+
+    slice "Set Price" {
+      ui Pricing Panel @Merchandiser
+      command Set Price
+      event Price Set @Product
+    }
+
+    slice "Catalog with Price" {
+      view Catalog again from "Price Set"
+      ui Browse Catalog @Merchandiser
+    }
   }
 
-  slice "Catalog" {
-    view Catalog from "Product Created"
-    ui Browse Catalog @Merchandiser
-  }
+  storyline "Retire a product" after "Bring a product to market" {
+    slice "Retire Product" {
+      ui Pricing Panel @Merchandiser
+      command Retire Product
+      event Product Retired @Product
+    }
 
-  slice "Set Price" {
-    ui Pricing Panel @Merchandiser
-    command Set Price
-    event Price Set @Product
-  }
-
-  slice "Catalog with Price" {
-    view Catalog again from "Price Set"
-    ui Browse Catalog @Merchandiser
-  }
-
-  # Secondary storyline: "Retire a product"
-  slice "Retire Product" {
-    ui Pricing Panel @Merchandiser
-    command Retire Product
-    event Product Retired @Product
-  }
-
-  slice "Catalog without Product" {
-    view Catalog again from "Product Retired"
-    ui Browse Catalog @Merchandiser
+    slice "Catalog without Product" {
+      view Catalog again from "Product Retired"
+      ui Browse Catalog @Merchandiser
+    }
   }
   ```
   The `timeline-entity-clustered` lint is the mechanical half.
@@ -321,7 +323,8 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   the reader sees the information arrive rather than a view at the end.
 - **Outcomes are events of one slice** (Dilger: "One decision. One event. One state change."; one
   action with two outcomes is the legitimate exception): alternative events on one context in one slice
-  (`event A | B @Ctx`, GH #278), failure as a scenario first, a chapter only when core. Stated once for
+  (`event A | B @Ctx`, GH #278), failure as a scenario first, a chapter only when core (it changes what the user does next, or has
+  its own actor/SLA). Stated once for
   automations in the Automation pattern (`docs/patterns.md#automation`); `automation-split-by-outcome`
   is the mechanical half.
 - **Business terms in the events.** "If your Event Model doesn't reflect terms used by business experts —
