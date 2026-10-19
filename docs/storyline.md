@@ -193,7 +193,9 @@ answers the query. A nested route hints that the child belongs in the parent's v
 whether the query needs information the parent view lacks. **(em ruling)**
 
 - Child with references only: the parent view carries the ids.
-- Child with its own data: embedded in the parent view.
+- Child with its own data: embedded in the parent view. The embedded collection is written as
+  `values: ValueType[] derived from "Child Created", "Child Deleted"`; see
+  [dsl.md](dsl.md#collection-fields-fed-by-child-events).
 - Child queried without the parent id: its own view.
 
 Aggregate rules decide write-side consistency, never the shape of a read model.
