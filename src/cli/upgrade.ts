@@ -60,7 +60,9 @@ import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolve
 import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner, replaceFieldValue } from "./frontmatterSurgery.js";
 import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
-import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc, readQueue } from "./defer.js";
+import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc, readQueue, rewriteParkingLotFragments } from "./defer.js";
+import { runSliceSync } from "./sliceSync.js";
+import { runSliceIndex } from "./sliceIndex.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
 import { compile } from "../pipeline.js";
@@ -95,7 +97,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -625,6 +627,94 @@ function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles };
 }
 
+// ---- Step 8a: view-doc-sources-stale (GH #290 / #280) — view regions list the union of `from`. ----
+// 1.18.0's generated `em-slice-view` region lists the UNION of `from` across a read model's `again`
+// instances (GH #280), so a doc generated under 1.17 states an origin-only "built from" line. This
+// step is `em slice sync`'s own check/apply, narrowed to docs whose VIEW region is stale. A SIGNED
+// doc (ratified or shipped) is reported and left alone: regenerating its region would move its
+// `ratifiedHash` — open the next draft (`em slice revise`) and sync there.
+
+type StaleDoc = { key: string; path: string };
+
+function staleViewDocs(ctx: UpgradeContext): { open: StaleDoc[]; signed: StaleDoc[] } {
+  const open: StaleDoc[] = [];
+  const signed: StaleDoc[] = [];
+  const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, undefined, true);
+  if (!r.ok) return { open, signed };
+  for (const d of r.docs) {
+    if (d.status !== "stale" || !d.regions.some((g) => g.status === "stale" && g.name.startsWith("em-slice-view"))) continue;
+    (isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")) ? signed : open).push({ key: d.key, path: d.path });
+  }
+  return { open, signed };
+}
+
+function detectViewDocSourcesStale(ctx: UpgradeContext): StepDetection {
+  const { open, signed } = staleViewDocs(ctx);
+  const left = signed.length > 0 ? `; left alone (ratified or shipped — em slice revise, then em slice sync): ${signed.map((d) => d.path).join(", ")}` : "";
+  if (open.length === 0) {
+    return { applicable: false, reason: `no bound slice doc's view region is stale against the model${left}` };
+  }
+  return {
+    applicable: true,
+    reason: `em slice sync --check would change the view region of ${open.length} doc(s): ${open.map((d) => d.path).join(", ")} — em upgrade will run em slice sync on them${left}`,
+  };
+}
+
+function applyViewDocSourcesStale(ctx: UpgradeContext): StepApplyOutcome {
+  const { open } = staleViewDocs(ctx);
+  const changedFiles: string[] = [];
+  for (const d of open) {
+    const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, d.key, false);
+    if (!r.ok) return { ok: false, message: r.message };
+    changedFiles.push(join(ctx.baseDir, d.path));
+  }
+  return { ok: true, changedFiles };
+}
+
+// ---- Step 8b: slice-index-stale (GH #290 / #275) — the README Slices table. ----
+
+function detectSliceIndexStale(ctx: UpgradeContext): StepDetection {
+  const r = runSliceIndex(ctx.model, ctx.refs, ctx.modelFile, true);
+  if (r.ok) return { applicable: false, reason: "the README Slices table is current" };
+  if (r.kind === "stale") return { applicable: true, reason: `${join(ctx.baseDir, "README.md")}'s Slices table is stale (em slice index --check) — em upgrade will regenerate it` };
+  return { applicable: false, reason: r.kind === "missing-readme" ? "no README.md beside the model — nothing to index" : "README.md has no GENERATED:slices markers — nothing to index" };
+}
+
+function applySliceIndexStale(ctx: UpgradeContext): StepApplyOutcome {
+  const r = runSliceIndex(ctx.model, ctx.refs, ctx.modelFile, false);
+  if (!r.ok) return { ok: false, message: r.message };
+  return { ok: true, changedFiles: r.wrote ? [r.readmePath] : [] };
+}
+
+// ---- Step 8c: parking-lot-fragments (GH #290 / #283) — substring bullets become the item's label. ----
+
+function parkingLotDocs(ctx: UpgradeContext): Map<string, string> {
+  const docs = new Map<string, string>();
+  for (const d of nonContinuationDocs(ctx)) {
+    const file = join(ctx.baseDir, d.path);
+    if (d.path !== "" && existsSync(file)) docs.set(d.key, readFileSync(file, "utf8"));
+  }
+  return docs;
+}
+
+function detectParkingLotFragments(ctx: UpgradeContext): StepDetection {
+  const statePath = join(ctx.baseDir, STATE_FILE_NAME);
+  if (!existsSync(statePath)) return { applicable: false, reason: `no ${STATE_FILE_NAME} beside the model` };
+  const { rewrites } = rewriteParkingLotFragments(readFileSync(statePath, "utf8"), parkingLotDocs(ctx));
+  if (rewrites.length === 0) return { applicable: false, reason: "no parking-lot bullet is a fragment of an Open Questions item" };
+  return {
+    applicable: true,
+    reason: `${rewrites.length} parking-lot bullet(s) hold a fragment of an Open Questions item (the pre-1.18 em slice defer shape): ${rewrites.map((r) => `"${r.from}" → "${r.to}"`).join("; ")} — em upgrade will rewrite each to the item's label`,
+  };
+}
+
+function applyParkingLotFragments(ctx: UpgradeContext): StepApplyOutcome {
+  const statePath = join(ctx.baseDir, STATE_FILE_NAME);
+  const { content } = rewriteParkingLotFragments(readFileSync(statePath, "utf8"), parkingLotDocs(ctx));
+  writeFileSync(statePath, content, "utf8");
+  return { ok: true, changedFiles: [statePath] };
+}
+
 // ---- Step 8: system-manifest (MIL-235, R3) — system.yaml 1.0 -> 2.0. ----
 // The one mechanical step that writes OTHER models' files: the legacy manifest's seams become
 // `consumes` clauses on each consuming translation and its owners become `owner "…"` on each
@@ -720,6 +810,9 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
   { id: "ratified-hash-scope", sinceVersion: "1.17.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
+  { id: "view-doc-sources-stale", sinceVersion: "1.18.0", detect: detectViewDocSourcesStale, apply: applyViewDocSourcesStale },
+  { id: "slice-index-stale", sinceVersion: "1.18.0", detect: detectSliceIndexStale, apply: applySliceIndexStale },
+  { id: "parking-lot-fragments", sinceVersion: "1.18.0", detect: detectParkingLotFragments, apply: applyParkingLotFragments },
   { id: "system-manifest", sinceVersion: "1.14.0", detect: detectSystemManifest, apply: applySystemManifest },
 ];
 
@@ -733,7 +826,9 @@ export type HumanItemId =
   | "unratified-constitution"
   | "predates-1.6"
   | "public-field-types-unresolved"
-  | "plugin-install-locally";
+  | "plugin-install-locally"
+  | "view-doc-sources-stale-signed"
+  | "shared-event-now-legal";
 
 export interface HumanItem {
   id: HumanItemId;
@@ -866,6 +961,29 @@ function detectPluginInstallLocally(ctx: UpgradeContext): HumanItem | null {
   return null;
 }
 
+/** GH #290 / #280: the `view-doc-sources-stale` step leaves a ratified or shipped doc alone (its
+ *  `ratifiedHash` would move), so those docs are a human item. */
+function detectViewDocSourcesStaleSigned(ctx: UpgradeContext): HumanItem | null {
+  const { signed } = staleViewDocs(ctx);
+  if (signed.length === 0) return null;
+  return {
+    id: "view-doc-sources-stale-signed",
+    reason: `the view region of ${signed.map((d) => d.path).join(", ")} is stale but the doc is ratified or shipped — run \`em slice revise ${signed.map((d) => d.key).join(" / ")}\`, then \`em slice sync\``,
+  };
+}
+
+/** GH #290 / #279: information only. Since 1.18.0 the same event recorded by several commands (same
+ *  name and context) is one logical event and `duplicate-name` no longer fires; nothing to change. */
+function detectSharedEventNowLegal(ctx: UpgradeContext): HumanItem | null {
+  const shared = new Set<string>();
+  for (const el of ctx.model.elements) if (el.kind === "event" && el.logicalId !== el.id) shared.add(el.name);
+  if (shared.size === 0) return null;
+  return {
+    id: "shared-event-now-legal",
+    reason: `information only: ${[...shared].join(", ")} ${shared.size === 1 ? "is" : "are"} recorded by more than one command — legal since 1.18.0 (one logical event; duplicate-name no longer fires), no model change needed`,
+  };
+}
+
 const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> = [
   detectNoModelVersion,
   detectContinuationHasOwnDoc,
@@ -875,6 +993,8 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectPredates16,
   detectPublicFieldTypesUnresolved,
   detectPluginInstallLocally,
+  detectViewDocSourcesStaleSigned,
+  detectSharedEventNowLegal,
 ];
 
 export function detectHumanItems(ctx: UpgradeContext): HumanItem[] {

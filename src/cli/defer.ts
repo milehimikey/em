@@ -163,8 +163,12 @@ export function applyDefer(raw: string, input: DeferInput): ApplyDeferResult {
  * opens with `**Title**`, else the whole item line, with any `- v<n>: ...; deferred to v<m> (...)`
  * suffix of an already-deferred item dropped. `applyDefer` returns it for the item it matched.
  */
+export function stripDeferral(itemText: string): string {
+  return /^(.*?) — v\d+: .*; deferred to v\d+ \(.*\)$/.exec(itemText.trim())?.[1] ?? itemText.trim();
+}
+
 export function questionLabel(itemText: string): string {
-  const original = /^(.*?) — v\d+: .*; deferred to v\d+ \(.*\)$/.exec(itemText.trim())?.[1] ?? itemText.trim();
+  const original = stripDeferral(itemText);
   const bold = /^\*\*(.+?)\*\*/.exec(original);
   return (bold ? bold[1] : original).trim();
 }
@@ -221,6 +225,76 @@ export function applyDeferStateFile(raw: string, input: StateMirrorInput): Apply
   const b = appendBullet(lines, DECISIONS_HEADING, decision, eol);
   if (!b) return { ok: false, message: `${STATE_FILE_NAME} has no "## Decisions log" heading` };
   return { ok: true, content: b.lines.join(""), changed: a.changed || b.changed };
+}
+
+/** The `## Open Questions` items of a doc: each `- [ ]`/`- [x]` line's text. Pure. */
+export function openQuestionItems(raw: string): string[] {
+  const lines = splitKeepEol(raw);
+  const out: string[] = [];
+  let inSection = false;
+  for (const l of lines) {
+    const body = stripEol(l).body;
+    if (OPEN_QUESTIONS_HEADING.test(body)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && ANY_H1_H2.test(body)) break;
+    if (!inSection) continue;
+    const m = TASK_ITEM.exec(body);
+    if (m) out.push(m[3].trim());
+  }
+  return out;
+}
+
+const PARKING_BULLET = /^- (.+) \(from slice ([^\s,]+), deferred to v(\d+)\)\s*$/;
+
+export interface ParkingLotRewrite {
+  sliceKey: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Pure (GH #290): the pre-#305 parking-lot shape wrote the user's SUBSTRING (`retry`) into
+ * `.event-modeling.md`; `applyDeferStateFile` now writes the matched item's label
+ * (`questionLabel`). Rewrites each `- <fragment> (from slice <key>, deferred to v<n>)` bullet
+ * whose `<fragment>` is a strict substring of exactly one of the slice's Open Questions items
+ * (matched with the same case-sensitive substring rule `applyDefer` uses) to that item's label.
+ * A bullet already equal to an item or its label, with no matching item, or matching more than one
+ * item, is left alone. `docs` maps slice key -> doc text.
+ */
+export function rewriteParkingLotFragments(
+  stateRaw: string,
+  docs: Map<string, string>,
+): { content: string; rewrites: ParkingLotRewrite[] } {
+  const lines = splitKeepEol(stateRaw);
+  const rewrites: ParkingLotRewrite[] = [];
+  let inSection = false;
+  for (let j = 0; j < lines.length; j++) {
+    const { body, eol } = stripEol(lines[j]);
+    if (PARKING_LOT_HEADING.test(body)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && ANY_H2.test(body)) inSection = false;
+    if (!inSection) continue;
+    const m = PARKING_BULLET.exec(body);
+    if (!m) continue;
+    const [, text, sliceKey, until] = m;
+    const doc = docs.get(sliceKey);
+    if (doc === undefined) continue;
+    const items = openQuestionItems(doc);
+    if (items.some((it) => it === text || questionLabel(it) === text)) continue;
+    // The fragment is matched against the item text WITHOUT its deferral annotation (an answer or
+    // a ratifier name must not match), and must hit exactly ONE item.
+    const hits = items.filter((it) => stripDeferral(it).includes(text));
+    if (hits.length !== 1) continue;
+    const to = questionLabel(hits[0]);
+    if (to === "" || to === text) continue;
+    lines[j] = `- ${to} (from slice ${sliceKey}, deferred to v${until})${eol}`;
+    rewrites.push({ sliceKey, from: text, to });
+  }
+  return { content: lines.join(""), rewrites };
 }
 
 /** Pure (revise): re-opens every `- [x] … — v<old>: …; deferred to v<newVersion> (…)` item under

@@ -16,6 +16,7 @@ import { countDeferredBeyond, ratifiedBody, ratifiedHashScope, sliceDocBodyHash,
 import { parseQueuedBullet, queuedBullet, queuedItems } from "../src/catalog/deferQueue.js";
 import { drainQueueInState, finishSignedDocEdit, injectQueuedQuestions, isSignedDoc } from "../src/cli/defer.js";
 import { replaceFieldValue } from "../src/cli/frontmatterSurgery.js";
+import { writeModel117 } from "./helpers/model117.js";
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -363,5 +364,85 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     const d = defer("--until", "v3");
     expect(d.stdout).toBe("deferred: slices/pay.md (retry policy → v3)\n");
     expect(read(docPath())).toContain("- [x] retry policy? — v2: fail fast (no retries); deferred to v3");
+  });
+});
+
+describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290 stage 1, CLI, real git)", () => {
+  let dir: string;
+  const exportShape = () => {
+    const doc = JSON.parse(em(["export", "orders.em"], dir).stdout);
+    const slices = doc.model.slices as Array<{ key: string; continuationOf: string | null; alsoReads: unknown }>;
+    return { count: slices.length, shape: slices.map((s) => ({ key: s.key, continuationOf: s.continuationOf, alsoReads: s.alsoReads })) };
+  };
+  const upgradeCommits = () => git(dir, "log", "--format=%s").split("\n").filter((l) => l.startsWith("em upgrade:"));
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-gh290-e2e-"));
+    writeModel117(dir);
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.name", "em test"); // CI runners have no global identity; `em upgrade --apply` commits
+    git(dir, "config", "user.email", "em-test@example.com");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "1.17 model");
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("em upgrade --apply takes the stage-1 steps, one commit each, and the model validates clean with the same export shape", () => {
+    const before = exportShape();
+    expect(before.count).toBe(4);
+    expect(before.shape.find((s) => s.continuationOf !== null)).toBeDefined();
+    const dry = em(["upgrade", "orders.em"], dir);
+    for (const id of ["view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"]) expect(dry.stdout).toContain(`[x] ${id}`);
+
+    const applied = em(["upgrade", "orders.em", "--apply"], dir);
+    expect(applied.status, applied.stderr).toBe(0);
+    for (const id of ["view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"]) {
+      expect(upgradeCommits().filter((l) => l.startsWith(`em upgrade: ${id}`))).toHaveLength(1);
+    }
+    const v = em(["validate", "orders.em"], dir);
+    expect(v.status, v.stdout + v.stderr).toBe(0);
+    expect(exportShape()).toEqual(before);
+    expect(readFileSync(join(dir, "slices", "orders.md"), "utf8")).toContain('"Order Placed Manually" (via "Orders manual")');
+    expect(readFileSync(join(dir, ".event-modeling.md"), "utf8")).toContain("- Retry policy (from slice place-order, deferred to v2)");
+    const sync = em(["slice", "sync", "orders.em", "--check"], dir);
+    expect(sync.status, sync.stdout).toBe(0);
+    expect(em(["slice", "index", "orders.em", "--check"], dir).status).toBe(0);
+
+    const commits = upgradeCommits().length;
+    expect(em(["upgrade", "orders.em", "--apply"], dir).status).toBe(0);
+    expect(upgradeCommits()).toHaveLength(commits);
+  });
+
+  it("a ratified doc with a stale view region is left byte-for-byte alone and its hash still verifies after --apply", () => {
+    const docPath = join(dir, "slices", "orders.md");
+    const plain = readFileSync(docPath, "utf8");
+    const withHash = (h: string) => plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${h}`);
+    writeFileSync(docPath, withHash(sliceDocBodyHash(plain)));
+    git(dir, "add", "slices/orders.md");
+    git(dir, "commit", "-q", "-m", "ratify orders");
+    const signedBytes = readFileSync(docPath, "utf8");
+    expect(em(["validate", "orders.em", "--check-signed-bodies"], dir).status).toBe(0);
+
+    const dry = em(["upgrade", "orders.em"], dir);
+    expect(dry.stdout).toContain("[ ] view-doc-sources-stale");
+    expect(dry.stdout).toContain("view-doc-sources-stale-signed");
+    const applied = em(["upgrade", "orders.em", "--apply"], dir);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(upgradeCommits().some((l) => l.startsWith("em upgrade: view-doc-sources-stale"))).toBe(false);
+    expect(readFileSync(docPath, "utf8")).toBe(signedBytes);
+    const hash = /ratifiedHash: (\S+)/.exec(signedBytes)![1];
+    expect(ratifiedHashScope(signedBytes, hash)).toBe("current");
+    expect(em(["validate", "orders.em", "--check-signed-bodies"], dir).status).toBe(0);
+    expect(em(["validate", "orders.em", "--slice-ready", "orders"], dir).stdout).not.toContain("slice-ready-ratified-hash-mismatch");
+  });
+
+  it("em storyline suggest prints a patch that git apply accepts and never writes the model", () => {
+    const r = em(["storyline", "suggest", "orders.em"], dir);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain('+storyline "Place" source "docs/orders.md#place" {');
+    expect(git(dir, "status", "--porcelain")).toBe("");
+    writeFileSync(join(dir, "s.patch"), r.stdout);
+    git(dir, "apply", "s.patch");
+    expect(readFileSync(join(dir, "orders.em"), "utf8")).toContain('storyline "Place"');
+    expect(em(["validate", "orders.em"], dir).status).toBe(0);
   });
 });

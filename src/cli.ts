@@ -177,6 +177,7 @@ import {
   CiFileStatus,
 } from "./cli/ciInit.js";
 import { UpgradeContext, resolveRepoRoot, detectUpgrade, applyUpgrade, checkUpgrade } from "./cli/upgrade.js";
+import { buildStorylineSuggestion } from "./cli/storylineSuggest.js";
 import { buildUpgradeJson } from "./emit/upgradeJson.js";
 import { isOlder } from "./util/semver.js";
 import { RULES, RuleCode } from "./model/rules.js";
@@ -3711,6 +3712,34 @@ ci.command("init")
       else if (status.kind === "missing-markers") console.log(`${path} already exists — re-run with --force to overwrite`);
       else console.log(`${path} already up to date`);
     }
+  });
+
+const storylineCmd = program.command("storyline").description("storyline blocks (GH #277): advisory helpers for adopting them");
+
+storylineCmd
+  .command("suggest")
+  .description(
+    "advisory (GH #290): propose `storyline` blocks for a model that has none — one per distinct slice " +
+      "`source \"url\"`, the remaining slices grouped by the view-instance chains (`again`) they feed — " +
+      "printed as a unified diff on stdout (apply with `patch -p1` or `git apply`); never writes the model",
+  )
+  .argument("<file>", "input .em model file")
+  .action((file: string) => {
+    const { model, diagnostics, source: text } = compileFile(file);
+    printDiagnostics(diagnostics);
+    const s = buildStorylineSuggestion(model, text, file);
+    if (s.patch === "") {
+      console.error(`em storyline suggest: nothing to propose for ${file}`);
+      return;
+    }
+    for (const st of s.storylines) {
+      console.error(`storyline "${st.name}" — ${st.sliceIndexes.length} slice(s), from ${st.basis === "source" ? `source ${st.source}` : "a view-instance chain"}`);
+    }
+    if (s.ungrouped.length > 0) {
+      console.error(`left outside every storyline (${s.ungrouped.length}): ${s.ungrouped.map((i) => model.slices[i].name).join(", ")}`);
+    }
+    console.error("review the patch below and apply it by hand — nothing was written");
+    process.stdout.write(s.patch);
   });
 
 program

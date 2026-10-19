@@ -32,6 +32,7 @@
 | `em skill sync [path]` | Update a vendored skill copy to match the installed em package (overwrites unconditionally) |
 | `em skill check [path]` | Check the em plugin pin (settings + this machine) and/or a vendored skill copy against the installed em package; exits non-zero on mismatch |
 | `em ci init <model>` | Install the CI enforcement preset — two GitHub Actions workflow files, marker-managed and idempotent |
+| `em storyline suggest <file>` | Advisory: propose `storyline` blocks (from slice `source` URLs and `again` chains) as a unified diff; never writes the model |
 | `em upgrade <file>` | Bring a model repo authored under an older em (1.6 forward) up to the installed version: mechanical steps + a human list |
 
 Every command that reads a model also parses and validates it first, printing any
@@ -4883,6 +4884,42 @@ Every argument is validated against the shell-injection-relevant characters it w
 carry into the generated workflow's `run:` steps (`"`, `` ` ``, `$`, a newline) — `em ci init`
 refuses rather than emit a file with a broken (or exploitable) shell command.
 
+## `em storyline suggest <file>`
+
+Advisory (GH #290): proposes [`storyline` blocks](dsl.md#storylines) for a model written before they
+existed, as a **unified diff on stdout** you apply by hand (`git apply`, or `patch -p1`). It never
+writes the model; the explanation (one line per proposed storyline, the slices left outside) goes to
+stderr, so `em storyline suggest model.em > storylines.patch` captures only the patch. Slices already
+inside a `storyline` block are left alone.
+
+Grouping, over the slices not yet in a storyline:
+
+1. **One storyline per distinct slice `source "url"`** — the slices sharing that URL; its name is the
+   URL's fragment (else last path segment), humanized, and the URL becomes the storyline's `source`.
+2. **The rest by the view-instance chains they feed.** A read model with at least one `view … again`
+   instance links its originating slice, every `again` slice and the slices declaring the events any
+   instance is built `from`. A chain touching exactly one `source` group joins it; otherwise it
+   becomes a storyline of its own, named `<first unsourced slice> journey` after the first slice
+   in the chain (lowest index) that has no `source` and is not yet in a storyline. A model with no
+   `source` URLs at all is likely to collapse into one mega-journey (a real 88-slice model put 83
+   slices in one chain), so put `source` on the walkthroughs first: it is the lever.
+3. A slice that fits neither stays outside every storyline (and keeps the advisory
+   `slice-outside-storyline` warning once any storyline exists).
+
+A group whose slices are not adjacent in the file, or have a declaration (a `persona`, `context`, ...)
+between them, becomes several blocks with the same name (a repeated name continues the storyline),
+`source` only on the first. File order is never changed. Review the
+names and the grouping before applying: the heuristic proposes, you decide which story is the main one,
+and the checklist in `docs/storyline.md` ("Reshaping an existing model", arrives with the storylines
+guide) covers the rest of the reshape. Exit 0 whether or not anything is proposed ("nothing to propose"
+on stderr).
+
+```bash
+em storyline suggest orders/orders.em > storylines.patch
+git apply storylines.patch
+em validate orders/orders.em
+```
+
 ## `em upgrade <file>`
 
 Brings a model repo authored under an older `em` (1.6 forward) up to the installed version
@@ -4950,7 +4987,22 @@ The mechanical steps, in this fixed order:
    matches its hash in either scope is reported and left alone; so is a queued question whose doc
    has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
    would not match its hash afterwards.
-9. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
+9. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
+   bound doc's generated view region (the read model's "built from" line now lists the union of
+   `from` across its `again` instances): runs `em slice sync` on those docs, one commit. A ratified
+   (`ready-to-implement` with `ratifiedBy:`) or shipped (`implemented`) doc is listed in the step's
+   reason and left alone — regenerating its region would move its `ratifiedHash`; `em slice revise`
+   it, then sync. Nothing else in a doc moves but the text between region markers.
+10. **`slice-index-stale`** (1.18.0, GH #290 / #275) — `em slice index --check` reports the README
+    Slices table stale: regenerates it, one commit. Not applicable without a `README.md` carrying the
+    `GENERATED:slices` markers.
+11. **`parking-lot-fragments`** (1.18.0, GH #290 / #283) — a `.event-modeling.md` parking-lot bullet
+    `- <text> (from slice <key>, deferred to v<n>)` whose `<text>` is a strict substring of exactly
+    one Open Questions item of that slice's doc (the shape pre-1.18 `em slice defer` wrote) is
+    rewritten to the item's label — the bold title, else the whole item, as `defer` writes it now.
+    Bullets that already equal an item or its label, name an unbound slice, or match several items
+    are left alone.
+12. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
    to 2.0 (see [upgrading.md](upgrading.md#running-it)).
 
 Deliberately does **not** refuse when the model has validation errors: the old two-slice reaction
@@ -4977,6 +5029,8 @@ The human list — detect-only, never applied, printed by every mode:
 | `coverage-scope-default` | `em-ci.yml` runs `em coverage --strict` and no doc is `implemented` yet (MIL-207 scopes `--strict` to `implemented` docs only — the gate is trivially green until then) |
 | `unratified-constitution` | `constitution.md` (or `.specify/memory/constitution.md`) exists with an empty `ratifiedBy:` |
 | `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
+| `view-doc-sources-stale-signed` | (1.18.0, GH #290) `view-doc-sources-stale` found a stale view region in a ratified or shipped doc and left it alone — `em slice revise <key>`, then `em slice sync` |
+| `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only: an event is recorded by more than one command — legal now, one logical event, nothing to change |
 | `plugin-install-locally` | The `skill-plugin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
 
 `--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a
