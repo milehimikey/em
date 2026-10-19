@@ -115,6 +115,9 @@ reviewers:                           # optional; same shape, checked by `em slic
   instances (adding a later `again` instance never changes an earlier slice's contexts). A
   continuation slice also takes its originating instance's own `from`. A slice with neither has no
   context and is permitted only by entries without `contexts`.
+  A continuation fed from a different context than its originating view (e.g. `tool-shows-on-loan` =
+  Loan + Tool) therefore needs a ratifier permitted for every one of those contexts, so a team with
+  one lead per context needs a joint or whole-model roster entry for such slices.
 - **An entry permits a slice** when it applies to the model and either has no `contexts` or lists
   **every** context of the slice: a cross-context slice needs a ratifier who may sign for all of
   them (a leading `@` is tolerated in `contexts`).
