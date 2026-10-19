@@ -81,17 +81,17 @@ describe("collection fields (GH #288)", () => {
     const view = buildSliceRegions(m, [2]).find((r) => r.kind === "view")!;
     const text = view.body.join("\n");
     expect(text).toContain("Collection of `AttributeValue`, fed by `Attribute Value Created`, `Attribute Value Deleted`");
-    expect(text).toContain("- Given `Attribute Value Created` {{ }} Then `values` contains {{ }}");
-    expect(text).toContain("- Given `Attribute Value Deleted` {{ }} Then `values` omits {{ }}");
+    expect(text).toContain("### Scenario: values after Attribute Value Created\n- **Given:** `Attribute Value Created` {{ }}\n- **When:** {{ the view is queried }}\n- **Then:** `values` contains {{ }}");
+    expect(text).toContain("### Scenario: values after Attribute Value Deleted\n- **Given:** `Attribute Value Deleted` {{ }}\n- **When:** {{ the view is queried }}\n- **Then:** `values` omits {{ }}");
     expect(text).toContain("copy into `## Scenarios` and complete them there");
   });
 
   it("three events: Renamed pre-fills updates, an unknown suffix keeps the placeholder", () => {
     const { model: m } = compile(manyEvents(false));
     const text = buildSliceRegions(m, [4]).find((r) => r.kind === "view")!.body.join("\n");
-    expect(text).toContain("Given `Attribute Value Renamed` {{ }} Then `values` updates {{ }}");
-    expect(text).toContain("Given `Attribute Value Deleted` {{ }} Then `values` omits {{ }}");
-    expect(text).toContain("Given `Attribute Value Archived` {{ }} Then `values` {{ contains / omits / updates }} {{ }}");
+    expect(text).toContain("### Scenario: values after Attribute Value Renamed\n- **Given:** `Attribute Value Renamed` {{ }}\n- **When:** {{ the view is queried }}\n- **Then:** `values` updates {{ }}");
+    expect(text).toContain("### Scenario: values after Attribute Value Deleted\n- **Given:** `Attribute Value Deleted` {{ }}\n- **When:** {{ the view is queried }}\n- **Then:** `values` omits {{ }}");
+    expect(text).toContain("### Scenario: values after Attribute Value Archived\n- **Given:** `Attribute Value Archived` {{ }}\n- **When:** {{ the view is queried }}\n- **Then:** `values` {{ contains / omits / updates }} {{ }}");
   });
 
   it("accepts an event supplied only by an `again` instance", () => {

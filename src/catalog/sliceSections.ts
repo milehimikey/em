@@ -183,7 +183,13 @@ function viewBody(model: NormalizedModel, el: Element): string[] {
     out.push("", `Scenario stubs for \`${c.field}\` (copy into \`## Scenarios\` and complete them there):`, "");
     for (const e of c.events) {
       const verb = collectionVerb(e) ?? "{{ contains / omits / updates }}";
-      out.push(`- Given \`${e}\` {{ }} Then \`${c.field}\` ${verb} {{ }}`);
+      out.push(
+        `### Scenario: ${c.field} after ${e}`,
+        `- **Given:** \`${e}\` {{ }}`,
+        "- **When:** {{ the view is queried }}",
+        `- **Then:** \`${c.field}\` ${verb} {{ }}`,
+        "",
+      );
     }
   }
   return out;

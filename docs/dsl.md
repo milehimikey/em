@@ -453,8 +453,8 @@ view Attributes from "Attribute Created", "Attribute Value Created", "Attribute 
 - Named events must be among the view's sources (`derived-from-unresolved`), as for any traced
   `derived`.
 - There is no add/remove/key clause: projection behaviour is not model structure. `em slice sync`
-  writes a ``Collection of `T`, fed by …`` note under the field and one Given/Then scenario stub
-  per named event below the table, in the generated (read-only) view region. Order of the named
+  writes a ``Collection of `T`, fed by …`` note under the field and one `### Scenario:` stub (Given/When/Then, in the `parseScenarios` grammar)
+  per named event below the table; a view scenario's When is the query, in the generated (read-only) view region. Order of the named
   events is not significant. The verb is pre-filled from the event name's last word (Created/
   Added/Attached: `contains`; Deleted/Removed/Detached: `omits`; Updated/Renamed/Changed:
   `updates`), otherwise left as `{{ contains / omits / updates }}`. Copy the stubs into
