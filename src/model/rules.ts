@@ -661,7 +661,8 @@ export const RULES = {
     title: "Command carries a second intent",
     fix: "Split the conditional rule set into its own command; both commands may record the same event (a bare repeat of the event is legal).",
     usageCategory: "command carries second intent",
-    docAnchor: "invariants",
+    docAnchor: "shape",
+    family: "shape",
   },
   "slice-ready-unknown-slice": {
     severity: "error",

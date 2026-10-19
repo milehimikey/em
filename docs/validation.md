@@ -252,6 +252,17 @@ the run breaks up; the lint goes quiet without any suppression. It is a warning 
 here — it never blocks a render — and it carries the `shape` family so a shape-only selector can
 pick it out. See [storyline.md](storyline.md) for the ordering method.
 
+`command-second-intent` (GH #286) is an advisory lint for a command carrying a second intent:
+it fires when a command has at least 2 invariants (model-declared, or from its bound slice doc
+when the slice has one command) whose rule text opens with a conditional on the same field,
+`If|When|Only if|Unless <field> is|are set|present|provided|non-null|not null|given|supplied`
+(field bare or backticked, grouped case-insensitively; the tail is required for every opener, so
+plain guards like "Unless quantity is positive" never fire). It fires once per command and field;
+`refs` is the command ref followed by each invariant ID. The pattern list is a constant, like the
+other shape lints. Fix: split the conditional rule set into its own command. Both commands may
+record the same event: a bare repeat of the event inherits the first declaration's fields and is legal
+(`shared-event-field-mismatch` is the only error, for a repeat whose fields differ). It carries the `shape` family.
+
 ### Translation naming
 
 A `translation` reading from two different producers under the same name is a different kind
@@ -661,7 +672,6 @@ the doc-body reader is the fallback for every ID the model does not declare.
 | `invariants/public-command-without-invariants` | warning | A `public` command has no `invariant` line AND its slice doc's Invariants section declares none | Add an `invariant` line after the command (or declare the rules in the doc) |
 | `invariants/doc-cites-undeclared` | warning | A slice doc (any status, anywhere in its body) mentions an `INV-…` token that neither the model nor any slice doc's Invariants/Delta section declares | Declare the ID, or fix the citation |
 | `invariants/declared-in-both` | warning | An ID declared in the model is also restated as a rule in a doc — written with the declaring label `**INV-X:**` (or `**INV-X**:`) on an Invariants/Delta bullet | Keep the model line; in the doc, cite the ID (`- INV-ORD-1 — why / edge cases`) and elaborate |
-| `command-second-intent` | warning | GH #286: a command has >= 2 invariants (model-declared, or from its bound slice doc when the slice has one command) whose rule text opens with a conditional on the same field: `If|When|Only if|Unless <field> is|are set\|present\|provided\|non-null\|not null\|given\|supplied` (the tail is required for every opener); field bare or backticked, grouped case-insensitively. The pattern list is a constant. One warning per command and field; `refs` = the command ref, then each invariant ID | Split the conditional rule set into its own command — it may record the same event (a bare repeat of the event is legal) |
 
 `declared-in-both` is the ticket's "hint": em's diagnostics have only `error` and `warning`
 severities, so it is a warning. It and `doc-cites-undeclared` carry no slice ref, so neither ever
