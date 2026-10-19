@@ -455,7 +455,7 @@ the block (the title above, or a Given/When/Then bullet). Every invariant declar
 (an `invariant` line in the model, or the doc's Invariants section) should be cited by at least one
 scenario. `em validate` advises on all three — `scenario-when-not-command`,
 `scenario-then-not-outcome`, `invariant-without-scenario` — see
-[validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md#scenario-quality). A doc with no `### Scenario:` blocks is never
+[validation.md](https://github.com/milehimikey/em/blob/main/docs/validation.md#scenario-quality). Older bullet-format scenarios are checked too; a doc with no scenarios is never
 flagged.
 
 A `### Scenario: <title>` heading, then the three column-0 bullets `- **Given:**`, `- **When:**`,

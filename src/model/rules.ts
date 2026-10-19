@@ -412,7 +412,7 @@ export const RULES = {
     severity: "warning",
     advisory: true,
     title: "Scenario's When does not name the slice's command",
-    fix: "Make the When bullet name the slice's command (for a reaction slice, the command it triggers) — each scenario exercises exactly one command.",
+    fix: "Make the When bullet name the slice's command (for a reaction slice: the command, the reaction element, or a view of the slice) — each scenario exercises exactly one command. For a Translation, naming the translation element satisfies it.",
     usageCategory: "scenario When names no command",
     docAnchor: "scenario-quality",
   },

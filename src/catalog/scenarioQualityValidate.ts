@@ -108,11 +108,12 @@ export function checkScenarioQuality(
   if (commands.length > 0) {
     const anchor = commands[0];
     const modelRefs = [refs.sliceKeys[anchor.sliceIndex], refs.refById.get(anchor.id)!];
-    const cmdList = commands.map((c) => `"${c.name}"`).join(", ");
+    const accepted = [...commands, ...(reactions.length > 0 ? [...reactions, ...els.filter((e) => e.kind === "view")] : [])];
+    const cmdList = accepted.map((c) => `${c.kind} "${c.name}"`).join(", ");
     for (const s of scenarios) {
       if (!s.when.some((w) => mentionsAny(w, whenNames))) {
         pushDiag(diags, "scenario-when-not-command", {
-          message: `${at(s)}: When does not name the slice's command${reactions.length > 0 ? ", reaction or the view it reads" : ""} (${cmdList}) — a scenario is tied to exactly one command`,
+          message: `${at(s)}: When does not name the slice's command${reactions.length > 0 ? ", reaction or the view it reads" : ""} (accepted: ${cmdList}) — a scenario is tied to exactly one command`,
           line: anchor.line,
           refs: modelRefs,
         });
