@@ -114,3 +114,103 @@ export function parseScenarios(body: string): ScenarioParseResult {
   }
   return { scenarios, problems };
 }
+
+// ---------------------------------------------------------------------------------------------
+// GH #293: the lenient reader. `parseScenarios` above is the strict, published grammar (export,
+// `structured-section-malformed`); real estates still carry the older bullet format and
+// `##### Scenario:` blocks under `## Delta`. `parseScenariosLenient` reads ALL of them for the
+// scenario-quality advisories (catalog/scenarioQualityValidate.ts) — and any later reader that
+// must apply to a real estate — without changing what `parseScenarios` exports or flags:
+//
+//   1. `### Scenario: <title>` (any `#{3,6}`) in the `## Scenarios…` section or the `## Delta`
+//      section (Delta's are `##### Scenario:`), with `- **Given:**` / `When` / `Then` bullets;
+//   2. the older bullet shape in `## Scenarios…`: a column-0 `- **Title**` bullet whose nested
+//      bullets are `- **Given:** …`, `- **When:** …`, `- **Then:** …`, with indented lines
+//      continuing the previous item.
+//
+// A block with no Given/When/Then at all is not a scenario and is dropped. Never reports
+// problems — malformed-ness stays `parseScenarios`' business. Pure; CRLF tolerated.
+
+export interface LenientScenario extends Scenario {
+  /** 1-based line of the block's heading / title bullet within the text that was parsed. */
+  line: number;
+}
+
+const ANY_SCENARIO_HEADING_RE = /^#{3,6}\s+Scenario:\s*(.*?)\s*$/;
+const TITLE_BULLET_RE = /^[-*]\s+\*\*([^*]+?)\*\*\s*$/;
+const ANY_LABEL_RE = /^(\s*)[-*]\s+\*\*(Given|When|Then):\*\*\s*(.*?)\s*$/;
+const ANY_BULLET_RE = /^(\s*)[-*]\s+(.*?)\s*$/;
+
+export function parseScenariosLenient(text: string): LenientScenario[] {
+  const lines = text.split(/\r?\n/);
+  const out: LenientScenario[] = [];
+  let section: "scenarios" | "delta" | null = null;
+  let cur: { title: string; line: number; beats: Record<Beat, string[]> } | null = null;
+  let beat: Beat | null = null;
+  let labelIndent = 0;
+  let lastItem: { arr: string[]; idx: number } | null = null;
+
+  const flush = () => {
+    if (cur && (cur.beats.given.length || cur.beats.when.length || cur.beats.then.length)) {
+      out.push({ title: cur.title, line: cur.line, given: cur.beats.given, when: cur.beats.when, then: cur.beats.then });
+    }
+    cur = null;
+    beat = null;
+    lastItem = null;
+  };
+  const start = (title: string, line: number) => {
+    flush();
+    cur = { title, line, beats: { given: [], when: [], then: [] } };
+  };
+  const push = (b: Beat, t: string) => {
+    if (!cur || t === "") return;
+    cur.beats[b].push(t);
+    lastItem = { arr: cur.beats[b], idx: cur.beats[b].length - 1 };
+  };
+
+  lines.forEach((line, i) => {
+    if (/^#{1,2}\s/.test(line)) {
+      flush();
+      section = /^##\s+Scenarios\b/.test(line) ? "scenarios" : /^##\s+Delta\b/.test(line) ? "delta" : null;
+      return;
+    }
+    if (!section) return;
+    const heading = ANY_SCENARIO_HEADING_RE.exec(line);
+    if (heading) {
+      start(heading[1], i + 1);
+      return;
+    }
+    if (/^#{3,6}\s/.test(line)) {
+      flush();
+      return;
+    }
+    const label = ANY_LABEL_RE.exec(line);
+    if (label && cur) {
+      beat = label[2].toLowerCase() as Beat;
+      labelIndent = label[1].length;
+      push(beat, label[3]);
+      return;
+    }
+    if (section === "scenarios" && !/^\s/.test(line)) {
+      const t = TITLE_BULLET_RE.exec(line);
+      if (t) {
+        start(t[1], i + 1);
+        return;
+      }
+    }
+    if (!cur) return;
+    const bullet = ANY_BULLET_RE.exec(line);
+    if (bullet && beat && bullet[1].length > labelIndent) {
+      push(beat, bullet[2]);
+      return;
+    }
+    if (line.trim() === "") return;
+    if (/^\s/.test(line) && lastItem && !bullet) {
+      lastItem.arr[lastItem.idx] += ` ${line.trim()}`; // wrapped continuation of the previous item
+      return;
+    }
+    if (!/^\s/.test(line)) beat = null; // any other column-0 line ends the current beat
+  });
+  flush();
+  return out;
+}

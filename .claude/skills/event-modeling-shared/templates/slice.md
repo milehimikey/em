@@ -211,7 +211,7 @@ an event directly.}}
      `- **Given:**`, `- **When:**`, `- **Then:**`, each with its beats as nested `  - ` bullets.
      A block missing any of the three is flagged `slice-doc/structured-section-malformed`.
      Quality (advisory warnings): each scenario is tied to exactly ONE command — its When names
-     this slice's command (a reaction slice: the command it triggers); its Then names an event
+     this slice's command (a reaction slice: the reaction, its view, or the command it triggers); its Then names an event (or a stated no-op)
      this slice records, or a rejection/error; and it CITES the INV ids it exercises (in the
      title or any bullet). Every INV declared for the slice should be cited by some scenario
      (`scenario-when-not-command`, `scenario-then-not-outcome`, `invariant-without-scenario`). -->

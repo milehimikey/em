@@ -140,4 +140,64 @@ describe("scenario-quality rules", () => {
       expect(r.scoped.map((d) => [d.code, d.severity])).toEqual([["scenario-when-not-command", "error"]]);
     });
   });
+
+  describe("real-estate shapes (GH #293 review round)", () => {
+    const bullet = (title: string, when: string, then: string) =>
+      `- **${title}**\n  - **Given:** a basket\n  - **When:** ${when}\n    wrapped\n  - **Then:** ${then}\n`;
+
+    it("reads the older bullet-format scenarios", () => {
+      writeDoc("sq-b1", `## Scenarios (Given / When / Then)\n${bullet("Happy (INV-SQB-1)", "the customer submits", "Order Placed")}`);
+      expect(codes(MODEL("sq-b1", '  invariant INV-SQB-1 "r"'))).toEqual(["scenario-when-not-command"]);
+      writeDoc("sq-b2", `## Scenarios (Given / When / Then)\n${bullet("Happy (INV-SQB-1)", "Place Order", "Order Placed")}`);
+      expect(codes(MODEL("sq-b2", '  invariant INV-SQB-1 "r"'))).toEqual([]);
+    });
+
+    it("reads ##### Scenario: blocks under Delta", () => {
+      writeDoc(
+        "sq-d1",
+        "## Delta\n### Added\n#### Requirement: r (INV-SQD1-1)\ntext\n##### Scenario: s\n- **Given:** a\n- **When:** nothing relevant\n- **Then:** Order Placed\n",
+      );
+      expect(codes(MODEL("sq-d1"))).toEqual(["scenario-when-not-command", "invariant-without-scenario"]);
+    });
+
+    it("a reaction slice's When may name the processor or the view it reads", () => {
+      const model = (k: string) =>
+        [`slice "${k}" {`, '  view Pending Orders', `  processor Order Sweeper from "Pending Orders" note "slices/${k}.md"`, "  command Place Order", "  event Order Placed @Order", "}"].join("\n");
+      writeDoc("sq-r1", `## Scenarios (Given / When / Then)\n${scenario("x", "Order Sweeper runs", "Order Placed")}`);
+      expect(codes(model("sq-r1"))).toEqual([]);
+      writeDoc("sq-r2", `## Scenarios (Given / When / Then)\n${scenario("x", "something happens", "Order Placed")}`);
+      expect(codes(model("sq-r2"))).toEqual(["scenario-when-not-command"]);
+    });
+
+    it("a stated no-op counts as an outcome", () => {
+      for (const t of ["nothing is dispatched", "no second event", "no Place Order command is issued", "success; no second event"]) {
+        writeDoc("sq-n1", `## Scenarios (Given / When / Then)\n${scenario("x", "Place Order", t)}`);
+        expect(codes(MODEL("sq-n1")), t).toEqual([]);
+      }
+    });
+
+    it("declared invariants exclude Delta Removed/Renamed ids and other slices' ids cited on a bullet", () => {
+      writeDoc(
+        "sq-x",
+        [
+          "## Invariants / Business Rules",
+          "- INV-SQX-1 - holds; unlike INV-OTHER-9 in another slice",
+          "## Delta",
+          "### Added",
+          "#### Requirement: new (INV-SQX-2)",
+          "### Removed",
+          "#### Requirement: gone (INV-SQX-3)",
+          "### Renamed",
+          "- old (INV-SQX-4) -> new (INV-SQX-5)",
+          "## Scenarios (Given / When / Then)",
+          scenario("s", "Place Order", "Order Placed"),
+        ].join("\n"),
+      );
+      const { model, refs } = compile(MODEL("sq-x"));
+      const msgs = validateDocModelConsistency(model, refs, dir)
+        .filter((d) => d.code === "invariant-without-scenario")
+        .map((d) => d.message.split(" ")[1]);
+      expect(msgs).toEqual(["INV-SQX-1", "INV-SQX-2"]);
+    });
+  });
 });

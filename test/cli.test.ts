@@ -738,7 +738,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     const r = em(["validate", "ready.em", "--slice-ready", "ready-slice", "--json"], readyDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.validateSliceReadySchemaVersion).toBe("1.3");
+    expect(doc.validateSliceReadySchemaVersion).toBe("1.4");
     expect(doc.sliceKey).toBe("ready-slice");
     expect(doc.gates).toEqual({
       docBound: true,

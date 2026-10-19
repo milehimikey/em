@@ -48,7 +48,7 @@ describe("em slice ratify --skip-review persists reviewSkipped (GH #260, CLI)", 
     expect(exported.schemaVersion).toBe("1.19");
     expect(exported.slice.doc.reviewSkipped).toBe("draft");
     const ready = readyJson();
-    expect(ready.validateSliceReadySchemaVersion).toBe("1.3");
+    expect(ready.validateSliceReadySchemaVersion).toBe("1.4");
     expect(ready.reviewSkipped).toBe("draft");
     expect(ready.ready).toBe(true);
     expect(ready.gates.ratified).toBe(true);

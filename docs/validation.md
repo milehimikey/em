@@ -614,11 +614,11 @@ union of its slices). They follow the canon that each specification is tied to e
 
 | Code | Meaning |
 |---|---|
-| `scenario-when-not-command` | A scenario's When names none of the slice's commands (for a reaction slice, the command it triggers). Names compare ignoring case, spacing and punctuation (`PlaceOrder` matches `Place Order`). Not checked on a slice with no command (State View). |
-| `scenario-then-not-outcome` | A scenario's Then names none of the slice's events (any alternative or shared event counts) and no rejection/error phrase (`rejected`, `error`, `fails`, `invalid`, `denied`, `no event`, …). |
-| `invariant-without-scenario` | An `INV-…` declared for the slice (a model `invariant` line, or the doc's Invariants section) is cited by no scenario. **Convention:** a scenario cites the ids it exercises, anywhere in its block (title, Given, When or Then). |
+| `scenario-when-not-command` | A scenario's When names none of the slice's commands. For a reaction slice (one with a processor/automation/saga/translation) it may instead name the reaction element or a view of the slice, e.g. "Order Sweeper runs". Names compare ignoring case, spacing and punctuation (`PlaceOrder` matches `Place Order`). Not checked on a slice with no command (State View). |
+| `scenario-then-not-outcome` | A scenario's Then names none of the slice's events (any alternative or shared event counts) and no rejection/error phrase (`rejected`, `error`, `fails`, `invalid`, `denied`, …). A stated no-op is an outcome too: `nothing`, `no-op`, `no second event`, `no … command is issued`, `not dispatched/issued/recorded`. |
+| `invariant-without-scenario` | An `INV-…` declared for the slice is cited by no scenario. Declared means a model `invariant` line on the slice, the first `INV-…` id of each top-level bullet in the doc's Invariants section (a later id on that bullet cites another rule), and the ids a `## Delta` `### Added`/`### Modified` requirement introduces; ids under `### Removed`/`### Renamed` are not declared. **Convention:** a scenario cites the ids it exercises, anywhere in its block (title, Given, When or Then). |
 
-Silent on a doc with no `### Scenario:` blocks (every doc written before 1.14). Each diagnostic
+Scenarios are read leniently (`parseScenariosLenient`, `src/catalog/scenarios.ts`): the strict `### Scenario:` blocks, the older bullet shape (`- **Title**` with nested `**Given:**`/`**When:**`/`**Then:**` items), and `##### Scenario:` blocks under `## Delta`. Silent on a doc with none of these. Each diagnostic
 names the doc line of the scenario and refs the slice plus its command (or the invariant's
 element). On a doc cross-covering several commands, the When/Then diagnostics anchor to the
 first command.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Coverage for the constrained, authored Scenario grammar (src/catalog/scenarios.ts, MIL-266).
 import { describe, it, expect } from "vitest";
-import { parseScenarios } from "../src/catalog/scenarios.js";
+import { parseScenarios, parseScenariosLenient } from "../src/catalog/scenarios.js";
 
 const DOC = [
   "# Slice: Checkout",
@@ -89,6 +89,39 @@ describe("parseScenarios", () => {
 
   it("ignores the Delta section's `##### Scenario:` blocks", () => {
     const doc = ["## Delta", "##### Scenario: x", "- **Given:** a", "## Scenarios", "free prose"].join("\n");
+    expect(parseScenarios(doc)).toEqual({ scenarios: [], problems: [] });
+  });
+});
+
+describe("parseScenariosLenient (GH #293)", () => {
+  it("reads strict, bullet and Delta shapes, with 1-based lines, and joins wrapped items", () => {
+    const doc = [
+      "## Scenarios (Given / When / Then)", // 1
+      "### Scenario: strict", // 2
+      "- **Given:**",
+      "  - g1",
+      "- **When:** w1",
+      "- **Then:**",
+      "  - t1",
+      "- **Older**", // 8
+      "  - **Given:** g2",
+      "  - **When:** w2 starts",
+      "    and wraps",
+      "  - **Then:** t2",
+      "- **No beats**",
+      "## Delta",
+      "##### Scenario: delta",
+      "- **When:** w3",
+    ].join("\n");
+    const r = parseScenariosLenient(doc);
+    expect(r.map((x) => [x.title, x.line])).toEqual([["strict", 2], ["Older", 8], ["delta", 15]]);
+    expect(r[0]).toMatchObject({ given: ["g1"], when: ["w1"], then: ["t1"] });
+    expect(r[1].when).toEqual(["w2 starts and wraps"]);
+    expect(r[2].when).toEqual(["w3"]);
+  });
+
+  it("leaves the strict parser's output untouched for bullet-format docs", () => {
+    const doc = "## Scenarios\n- **Older**\n  - **Given:** g\n  - **When:** w\n  - **Then:** t\n";
     expect(parseScenarios(doc)).toEqual({ scenarios: [], problems: [] });
   });
 });

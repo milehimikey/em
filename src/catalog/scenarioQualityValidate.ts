@@ -24,11 +24,15 @@ import { collectModelInvariants, Element, NormalizedModel } from "../model/model
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
-import { extractInvariantIds, INV_TOKEN_RE } from "../cli/coverage.js";
-import { parseScenarios, Scenario } from "./scenarios.js";
+import { INV_TOKEN_RE } from "../cli/coverage.js";
+import { LenientScenario, parseScenariosLenient } from "./scenarios.js";
+import { AUTOMATION_KINDS } from "../parser/ast.js";
 
+// A stated outcome that is not an event: a rejection/error, or a deliberate no-op (an automation
+// or translation that correctly does nothing: "nothing is dispatched", "no second event", "no
+// command is issued", "success; no second event").
 const REJECTION_RE =
-  /\b(reject\w*|refus\w*|den(?:y|ies|ied)|errors?|fail(?:s|ed|ure)?|invalid|not allowed|forbidden|exceptions?|unauthori[sz]ed|violat\w*|no events?|nothing is (?:recorded|emitted))\b/i;
+  /\b(reject\w*|refus\w*|den(?:y|ies|ied)|errors?|fail(?:s|ed|ure)?|invalid|not allowed|forbidden|exceptions?|unauthori[sz]ed|violat\w*|nothing|no[- ]op|no second|not (?:re-?)?(?:dispatched|issued|emitted|recorded|sent|raised)|no\b[^.;]{0,40}\b(?:events?|commands?)\b)/i;
 
 const squash = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
@@ -41,29 +45,32 @@ function mentionsAny(text: string, squashedNames: string[]): boolean {
   return squashedNames.some((n) => t.includes(n));
 }
 
-/** 1-based doc-file line of each scenario's heading, or null when it can't be located. */
-function scenarioLines(baseDir: string, docPath: string, scenarios: Scenario[]): Map<Scenario, number | null> {
-  const out = new Map<Scenario, number | null>();
-  let lines: string[] = [];
-  try {
-    lines = readFileSync(join(baseDir, docPath), "utf8").split(/\r?\n/);
-  } catch {
-    // unreadable: lines stay null
-  }
-  let from = 0;
-  for (const s of scenarios) {
-    let found: number | null = null;
-    for (let i = from; i < lines.length; i++) {
-      const m = /^###\s+Scenario:\s*(.*?)\s*$/.exec(lines[i]);
-      if (m && m[1] === s.title) {
-        found = i + 1;
-        from = i + 1;
-        break;
-      }
+/** Ids this slice DECLARES, from a doc body: the first INV token of each top-level line of the
+ *  Invariants section (later tokens on the line cite other rules, often another slice's), and the
+ *  stable id on each `#### Requirement:` / MODIFIED line under Delta's Added/Modified (never
+ *  Removed or Renamed - those retire ids). */
+function declaredInDoc(body: string): string[] {
+  const ids: string[] = [];
+  const add = (line: string) => {
+    const m = line.match(INV_TOKEN_RE);
+    if (m && !ids.includes(m[0])) ids.push(m[0]);
+  };
+  let section: "inv" | "delta" | null = null;
+  let sub: string | null = null;
+  for (const line of body.split(/\r?\n/)) {
+    if (/^#{1,2}\s/.test(line)) {
+      section = /^##\s+Invariants\b/i.test(line) ? "inv" : /^##\s+Delta\s*$/i.test(line) ? "delta" : null;
+      sub = null;
+      continue;
     }
-    out.set(s, found);
+    if (section === "inv" && /^[-*]\s/.test(line)) add(line);
+    if (section === "delta") {
+      const h = /^###\s+(Added|Modified|Removed|Renamed)\b/.exec(line);
+      if (h) sub = h[1];
+      else if ((sub === "Added" || sub === "Modified") && /^(?:#{4,6}\s|[-*]\s)/.test(line)) add(line);
+    }
   }
-  return out;
+  return ids;
 }
 
 export function checkScenarioQuality(
@@ -76,7 +83,15 @@ export function checkScenarioQuality(
   refs: RefsResult,
   baseDir: string,
 ): void {
-  const { scenarios } = parseScenarios(body);
+  let text = body;
+  let located = false;
+  try {
+    text = readFileSync(join(baseDir, docPath), "utf8"); // full file, so scenario lines are doc-file lines
+    located = true;
+  } catch {
+    // unreadable: parse the body, lines unknown
+  }
+  const scenarios = parseScenariosLenient(text);
   if (scenarios.length === 0) return;
 
   const els: Element[] = [];
@@ -85,20 +100,19 @@ export function checkScenarioQuality(
   const events = els.filter((e) => e.kind === "event");
   const cmdNames = names(commands);
   const evtNames = names(events);
-  const where = scenarioLines(baseDir, docPath, scenarios);
-  const at = (s: Scenario): string => {
-    const l = where.get(s);
-    return `${docPath}${l ? `:${l}` : ""} scenario "${s.title}"`;
-  };
+  // A reaction slice's When may name the reaction itself or the view it reads, not only the command.
+  const reactions = els.filter((e) => AUTOMATION_KINDS.has(e.kind));
+  const whenNames = reactions.length > 0 ? [...cmdNames, ...names(reactions), ...names(els.filter((e) => e.kind === "view"))] : cmdNames;
+  const at = (s: LenientScenario): string => `${docPath}${located ? `:${s.line}` : ""} scenario "${s.title}"`;
 
   if (commands.length > 0) {
     const anchor = commands[0];
     const modelRefs = [refs.sliceKeys[anchor.sliceIndex], refs.refById.get(anchor.id)!];
     const cmdList = commands.map((c) => `"${c.name}"`).join(", ");
     for (const s of scenarios) {
-      if (!s.when.some((w) => mentionsAny(w, cmdNames))) {
+      if (!s.when.some((w) => mentionsAny(w, whenNames))) {
         pushDiag(diags, "scenario-when-not-command", {
-          message: `${at(s)}: When does not name the slice's command (${cmdList}) — a scenario is tied to exactly one command`,
+          message: `${at(s)}: When does not name the slice's command${reactions.length > 0 ? ", reaction or the view it reads" : ""} (${cmdList}) — a scenario is tied to exactly one command`,
           line: anchor.line,
           refs: modelRefs,
         });
@@ -131,7 +145,7 @@ export function checkScenarioQuality(
     });
   }
   const ownerSlice = model.slices[sliceIndices.find((i) => refs.sliceKeys[i] === ownerKey) ?? sliceIndices[0]];
-  for (const id of extractInvariantIds(body)) {
+  for (const id of declaredInDoc(body)) {
     if (cited.has(id) || reported.has(id)) continue;
     reported.add(id);
     pushDiag(diags, "invariant-without-scenario", {
