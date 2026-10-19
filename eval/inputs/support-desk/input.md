@@ -2,9 +2,10 @@
 
 Customers raise support tickets; agents work them.
 
-- A Customer opens a ticket from the help form with a subject.
-- Agents see a queue of open tickets, newest first. Resolved tickets leave the queue.
-- An Agent resolves a ticket from the ticket screen, giving a resolution note.
+- A Customer opens a ticket from the help form with a subject. It appears in the agents' queue.
 - Tickets that stay open too long are escalated automatically; nobody clicks a button. Agents see an "Escalated" list.
+- An Agent resolves a ticket from the ticket screen, giving a resolution note.
+- An Agent can reopen a resolved ticket, giving a reason.
+- An Agent can merge a duplicate ticket into another. Agents see a board of all tickets and where each stands (opened, escalated, resolved, reopened, merged).
 
 Out of scope: SLAs by plan, customer replies, attachments, assignment.

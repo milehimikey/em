@@ -28,7 +28,7 @@ slice "Active Loans after return" {
 }
 
 slice "Loans To Check" {
-  view Loans To Check from "Book Borrowed" { loanId: UUID, memberId: UUID, dueOn: Date }
+  view Loans To Check from "Book Borrowed", "Book Returned" { loanId: UUID, memberId: UUID, dueOn: Date, returnedOn: Date }
 }
 
 slice "Send Overdue Notice" {

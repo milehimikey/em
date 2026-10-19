@@ -1,9 +1,8 @@
 {
   "input": "library-lending",
   "reactions": [
-    { "name": "A member borrows a book", "slices": ["borrow-book"], "events": ["Book Borrowed"] },
-    { "name": "The member sees their active loans", "slices": ["active-loans"], "events": [] },
-    { "name": "A book is returned at the desk", "slices": ["return-book", "active-loans-after-return"], "events": ["Book Returned"] },
+    { "name": "A member borrows a book and sees it in their loans", "slices": ["borrow-book", "active-loans"], "events": ["Book Borrowed"] },
+    { "name": "A book is returned at the desk and leaves the member's loans", "slices": ["return-book", "active-loans-after-return"], "events": ["Book Returned"] },
     { "name": "A member is told a loan is overdue", "slices": ["loans-to-check", "send-overdue-notice", "notice-log"], "events": ["Overdue Notice Sent"] }
   ]
 }

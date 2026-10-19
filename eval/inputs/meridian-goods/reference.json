@@ -3,9 +3,8 @@
   "reactions": [
     { "name": "A customer places an order", "slices": ["place-order"], "events": ["Order Placed"] },
     { "name": "A payment is requested for a placed order", "slices": ["payments-to-request", "request-payment"], "events": ["Payment Requested"] },
-    { "name": "The payment provider reports a capture", "slices": ["record-payment-result"], "events": ["Payment Captured"] },
-    { "name": "Staff see open orders", "slices": ["open-orders"], "events": [] },
+    { "name": "The payment provider reports a capture and staff see open orders", "slices": ["record-payment-result", "open-orders"], "events": ["Payment Captured"] },
     { "name": "A customer sees their order status", "slices": ["order-status"], "events": [] },
-    { "name": "A customer cancels an order", "slices": ["cancel-order", "open-orders-cancelled"], "events": ["Order Cancelled"] }
+    { "name": "A customer cancels an order and it leaves the staff dashboard", "slices": ["cancel-order", "open-orders-cancelled"], "events": ["Order Cancelled"] }
   ]
 }

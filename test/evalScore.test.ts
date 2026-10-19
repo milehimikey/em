@@ -1,6 +1,6 @@
 // GH #296: the eval protocol's smoke test (eval/README.md). Runs eval/score.mjs over the public
 // input set: each reference model, scored against its own reference.json, must give an
-// over-decomposition rate of 1.0, full business-event recall and an entity-clustered rate of 0;
+// slice ratio of 1.0 (slices per reaction equal to the reference's), full business-event recall and an entity-clustered rate of 0;
 // and a deliberately over-decomposed / entity-clustered model must move both numbers.
 
 import { describe, it, expect } from "vitest";
@@ -30,17 +30,42 @@ describe("eval/score.mjs on the public input set", () => {
   });
 
   for (const name of names) {
-    it(`${name}: reference scored against itself gives 1.0 over-decomposition, 0 entity-clustered`, () => {
+    it(`${name}: reference scored against itself gives slice ratio 1.0, 0 entity-clustered`, () => {
       const emPath = join(INPUTS, name, "reference.em");
       const reference = JSON.parse(readFileSync(join(INPUTS, name, "reference.json"), "utf8"));
       const result = score(exportOf(emPath, readFileSync(emPath, "utf8")), reference);
-      expect(result.overDecompositionRate).toBe(1);
+      expect(result.sliceRatio).toBe(1);
+      expect(result.slicesPerReaction).toBe(result.referenceSlicesPerReaction);
+      expect(result.aliasesUsed).toBe(0);
       expect(result.businessEventRecall).toBe(1);
       expect(result.entityClusteredRate).toBe(0);
       expect(result.extraSlices).toEqual([]);
       expect(result.missingSlices).toEqual([]);
     });
   }
+
+  it("support-desk reference holds a genuine 3-slice same-context run that is not clustered (cross-context read)", () => {
+    const emPath = join(INPUTS, "support-desk", "reference.em");
+    const exported = exportOf(emPath, readFileSync(emPath, "utf8"));
+    const patterns = exported.model.slices.map((s: { pattern: string }) => s.pattern);
+    expect(patterns.join(",")).toContain("state-change,state-change,state-change,state-view");
+    expect(entityClustered(exported.model.slices).rate).toBe(0);
+  });
+
+  it("aliases reconcile a renamed slice and are counted", () => {
+    const emPath = join(INPUTS, "support-desk", "reference.em");
+    const reference = JSON.parse(readFileSync(join(INPUTS, "support-desk", "reference.json"), "utf8"));
+    const source = readFileSync(emPath, "utf8").replace(/Merge Ticket/g, "Combine Ticket");
+    const exported = exportOf(emPath, source);
+    const plain = score(exported, reference);
+    expect(plain.missingSlices).toEqual(["merge-ticket"]);
+    expect(plain.extraSlices).toEqual(["combine-ticket"]);
+    const aliased = score(exported, reference, { "combine-ticket": "merge-ticket" });
+    expect(aliased.missingSlices).toEqual([]);
+    expect(aliased.extraSlices).toEqual([]);
+    expect(aliased.aliasesUsed).toBe(1);
+    expect(aliased.slicesPerReaction).toBe(aliased.referenceSlicesPerReaction);
+  });
 
   it("flags an entity-clustered, over-decomposed model", () => {
     const path = join(INPUTS, "library-lending", "reference.em");

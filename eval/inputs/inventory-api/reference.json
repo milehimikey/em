@@ -2,8 +2,7 @@
   "input": "inventory-api",
   "reactions": [
     { "name": "A SKU is registered", "slices": ["register-sku"], "events": ["SKU Registered"] },
-    { "name": "Stock arrives", "slices": ["receive-stock"], "events": ["Stock Received"] },
-    { "name": "A client reads stock levels", "slices": ["stock-levels"], "events": [] },
-    { "name": "A client reserves stock", "slices": ["reserve-stock", "stock-levels-after-reservation"], "events": ["Stock Reserved"] }
+    { "name": "Stock arrives and the client reads stock levels", "slices": ["receive-stock", "stock-levels"], "events": ["Stock Received"] },
+    { "name": "A client reserves stock and sees reduced levels", "slices": ["reserve-stock", "stock-levels-after-reservation"], "events": ["Stock Reserved"] }
   ]
 }

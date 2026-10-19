@@ -1,9 +1,10 @@
 {
   "input": "support-desk",
   "reactions": [
-    { "name": "A customer opens a ticket", "slices": ["open-ticket"], "events": ["Ticket Opened"] },
-    { "name": "An agent sees the queue", "slices": ["ticket-queue"], "events": [] },
-    { "name": "An agent resolves a ticket", "slices": ["resolve-ticket", "ticket-queue-after-resolve"], "events": ["Ticket Resolved"] },
-    { "name": "A stale ticket is escalated", "slices": ["stale-tickets", "escalate-stale-ticket", "escalated-tickets"], "events": ["Ticket Escalated"] }
+    { "name": "A customer opens a ticket and it joins the queue", "slices": ["open-ticket", "ticket-queue"], "events": ["Ticket Opened"] },
+    { "name": "A stale ticket is escalated", "slices": ["stale-tickets", "escalate-stale-ticket", "escalated-tickets"], "events": ["Ticket Escalated"] },
+    { "name": "An agent resolves a ticket", "slices": ["resolve-ticket"], "events": ["Ticket Resolved"] },
+    { "name": "An agent reopens a ticket", "slices": ["reopen-ticket"], "events": ["Ticket Reopened"] },
+    { "name": "An agent merges a duplicate ticket and sees the board", "slices": ["merge-ticket", "ticket-board"], "events": ["Ticket Merged"] }
   ]
 }

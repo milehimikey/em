@@ -2,10 +2,13 @@
 // Scores a produced model against a reference slicing.
 //
 //   em export produced.em > produced.json
-//   node eval/score.mjs produced.json eval/inputs/<input>/reference.json [--json]
+//   node eval/score.mjs produced.json eval/inputs/<input>/reference.json [--aliases aliases.json] [--json]
 //
-// Computes the two mechanical metrics of the eval protocol (README.md):
-//   - overDecompositionRate: produced slices / reference slices (1.0 = same granularity, >1 = over-decomposed)
+// Computes the mechanical metrics of the eval protocol (README.md):
+//   - slicesPerReaction (PRIMARY): produced slices / reference business reactions. The reference's own
+//                            value is reported next to it. aliases.json maps produced slice key ->
+//                            reference slice key so a rename is reconciled explicitly (and counted).
+//   - sliceRatio (secondary): produced slices / reference slices (1.0 = same granularity)
 //   - entityClusteredRate:   share of State Change slices inside a run of >= 3 consecutive same-context
 //                            State Change slices that ends in exactly one trailing State View reading only
 //                            from that run (0 = none)
@@ -49,10 +52,11 @@ export function entityClustered(slices) {
   return { clustered, stateChanges: stateChanges.length, rate: stateChanges.length ? clustered / stateChanges.length : 0 };
 }
 
-export function score(exported, reference) {
+export function score(exported, reference, aliases = {}) {
   const slices = exported.model.slices;
   const expected = new Set(reference.reactions.flatMap((r) => r.slices));
-  const produced = new Set(slices.map((s) => s.key));
+  const produced = new Set(slices.map((s) => aliases[s.key] ?? s.key));
+  const aliasesUsed = slices.filter((s) => s.key in aliases).length;
   const reactions = reference.reactions.length;
 
   const producedEvents = new Set(
@@ -69,7 +73,8 @@ export function score(exported, reference) {
     referenceSlices: expected.size,
     slicesPerReaction: produced.size / reactions,
     referenceSlicesPerReaction: expected.size / reactions,
-    overDecompositionRate: produced.size / expected.size,
+    sliceRatio: produced.size / expected.size,
+    aliasesUsed,
     extraSlices: [...produced].filter((k) => !expected.has(k)),
     missingSlices: [...expected].filter((k) => !produced.has(k)),
     businessEventRecall: expectedEvents.length ? found.length / expectedEvents.length : 1,
@@ -80,18 +85,24 @@ export function score(exported, reference) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const args = process.argv.slice(2).filter((a) => a !== "--json");
+  const argv = process.argv.slice(2);
+  const ai = argv.indexOf("--aliases");
+  const aliasPath = ai >= 0 ? argv[ai + 1] : null;
+  const args = argv.filter((a, i) => a !== "--json" && a !== "--aliases" && (ai < 0 || i !== ai + 1));
   if (args.length !== 2) {
-    console.error("usage: node eval/score.mjs <em-export.json> <reference.json> [--json]");
+    console.error("usage: node eval/score.mjs <em-export.json> <reference.json> [--aliases aliases.json] [--json]");
     process.exit(2);
   }
-  const result = score(JSON.parse(readFileSync(args[0], "utf8")), JSON.parse(readFileSync(args[1], "utf8")));
+  const result = score(JSON.parse(readFileSync(args[0], "utf8")), JSON.parse(readFileSync(args[1], "utf8")),
+    aliasPath ? JSON.parse(readFileSync(aliasPath, "utf8")) : {},
+  );
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify(result, null, 2));
   } else {
     console.log(`input                  ${result.input}`);
-    console.log(`slices per reaction    ${result.slicesPerReaction.toFixed(2)} (reference ${result.referenceSlicesPerReaction.toFixed(2)})`);
-    console.log(`over-decomposition     ${result.overDecompositionRate.toFixed(2)}  (1.00 = reference granularity)`);
+    console.log(`slices per reaction    ${result.slicesPerReaction.toFixed(2)} (reference ${result.referenceSlicesPerReaction.toFixed(2)})  PRIMARY`);
+    console.log(`slice ratio            ${result.sliceRatio.toFixed(2)}  (produced/reference slices; 1.00 = reference granularity)`);
+    console.log(`aliases used           ${result.aliasesUsed}`);
     console.log(`business-event recall  ${result.businessEventRecall.toFixed(2)}`);
     console.log(`entity-clustered rate  ${result.entityClusteredRate.toFixed(2)} (${result.entityClusteredSlices}/${result.stateChangeSlices} State Change slices)`);
     if (result.extraSlices.length) console.log(`extra slices           ${result.extraSlices.join(", ")}`);
