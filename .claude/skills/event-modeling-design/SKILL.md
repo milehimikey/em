@@ -154,7 +154,8 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    count for an estate; it never replaces the bullet. Re-run until each remaining finding has its
    bullet. **Refuse to move to the slice phase otherwise** (`em state set-phase slice` waits): the
    same kind of exit gate as asserting the generated contract above. Do not accept a finding
-   without asking the user for the reason.
+   without asking the user for the reason. The gate runs after doc scaffolding, so update or retire
+   wired docs for renamed, merged or split slices.
 
 End of phase: render, update state (`em state set-phase slice` — the mechanical marker the state
 machine expects), and stop. Every slice already has a draft doc ready to receive the deep spec,

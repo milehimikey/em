@@ -301,13 +301,15 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
     }
   }
   ```
-  The `timeline-entity-clustered` lint is the mechanical half.
+  The `timeline-entity-clustered` lint is the mechanical half (it fires only once two or more
+  contexts are written; this one-entity pair stays silent); once any storyline exists,
+  `slice-outside-storyline` flags slices left outside one.
 - **Commands name intent, not endpoints** (Dilger: "Name by intent", "Every command has a reason"). One
   endpoint may carry several intents. Signal of two intents in one command: invariants or field rules
   that apply only "if `<field>` is set" — split it, and both commands may record the same event
   (`CreateProduct` / `CreateProductVariant`, same `POST /products`, same `ProductCreated`). **Intent
   test:** if a storyline step reads awkwardly with the command's name, the command is named after the
-  endpoint. `command-second-intent` is the mechanical half.
+  endpoint. `command-second-intent` and `command-repeated-across-slices` are the mechanical half.
 - **A read model is one information need** (Dilger: "Every Read Model answers a question. No question,
   no Read Model."). **Question test:** write the question each view answers; add a view only when no
   existing one answers it. A nested route hints the child belongs in the parent's view; the real test
@@ -326,7 +328,7 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   (`event A | B @Ctx`, GH #278), failure as a scenario first, a chapter only when core (it changes what the user does next, or has
   its own actor/SLA). Stated once for
   automations in the Automation pattern (`docs/patterns.md#automation`); `automation-split-by-outcome`
-  is the mechanical half. Two forms, alternatives always on one context: inline `event A | B @Ctx`
+  and `retry-slice-of` are the mechanical half. Two forms, alternatives always on one context: inline `event A | B @Ctx`
   (shared clauses and fields) and `oneof { … }` (each alternative keeps its own fields and clauses):
   ```em
   model "Payments"
@@ -362,7 +364,8 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   ```
 - **One event, two commands.** When two commands record the same fact, repeat the event bare
   (`event X @Ctx`, same name and context) in the second slice: it inherits the first declaration, no
-  marker needed. Declaring different fields is `shared-event-field-mismatch`:
+  marker needed. Declaring different fields is `shared-event-field-mismatch`. (The arrow set for a
+  shared event read by a repeated view is under review: GH #328.)
   ```em
   model "Ordering"
 
@@ -438,6 +441,9 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
 ### Reshaping an existing model
 
 The upgrade path for a CRUD-shaped model. After each step run `em validate`.
+
+`em storyline suggest <model>.em` proposes the `storyline` blocks as a diff (advisory, never
+writes); `em upgrade` offers `collapse-alternative-events` and the opt-in `fold-continuations`.
 
 1. Name the processes (list each spec's walkthroughs or journeys, not endpoints): the main storyline and each secondary one.
 2. Reorder the slices into those stories and wrap each in a `storyline` block (`after "…"` where one

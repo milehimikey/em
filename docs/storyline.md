@@ -175,7 +175,8 @@ storyline "Retire a product" after "Bring a product to market" {
 }
 ```
 
-The mechanical half of rule 1 is the `timeline-entity-clustered` lint ([validation.md](validation.md)).
+The mechanical halves of rule 1 are the `timeline-entity-clustered` lint and, once any storyline exists,
+`slice-outside-storyline` ([validation.md](validation.md#shape)).
 
 ### 4. Commands name intent, not endpoints
 
@@ -220,8 +221,10 @@ One decision, one event. Outcomes are events of one slice: a business action wit
 (PaymentIssued / PaymentFailed) records both as alternative events on one context in one slice, written
 `event A | B @Ctx` (GH #278), instead of splitting the action into one slice per outcome. Write the failure
 as a Given/When/Then scenario first; it becomes a chapter (a secondary storyline) only when it is core. The
-automation form of the rule is in [patterns.md](patterns.md#automation); the `automation-split-by-outcome`
-lint is its mechanical half.
+automation form of the rule is in [patterns.md](patterns.md#automation); the lints `automation-split-by-outcome`,
+`retry-slice-of` (a `Retry <X>` slice) and `command-repeated-across-slices` (one command repeated in a
+column per event) are its mechanical half; see
+[validation.md](validation.md#shape).
 
 ## Judgement calls
 
@@ -234,6 +237,15 @@ lint is its mechanical half.
   Description"). Keep the generic name only when no walkthrough calls it.
 
 ## Reshaping an existing model
+
+### Suggesting storylines
+
+Start with `em storyline suggest <model>.em`: it proposes `storyline` blocks (from slice `source` URLs and
+`view ... again` chains) as a unified diff and never writes the model; you choose the main story
+([cli.md](cli.md#em-storyline-suggest-file)). `em upgrade` also offers the `collapse-alternative-events`
+step and the opt-in `fold-continuations` step ([upgrading.md](upgrading.md)).
+
+### Checklist
 
 The upgrade path for a model that is already CRUD-shaped. Work top to bottom; run `em validate` after each
 step.

@@ -4910,8 +4910,7 @@ A group whose slices are not adjacent in the file, or have a declaration (a `per
 between them, becomes several blocks with the same name (a repeated name continues the storyline),
 `source` only on the first. File order is never changed. Review the
 names and the grouping before applying: the heuristic proposes, you decide which story is the main one,
-and the checklist in `docs/storyline.md` ("Reshaping an existing model", arrives with the storylines
-guide) covers the rest of the reshape. Exit 0 whether or not anything is proposed ("nothing to propose"
+and the checklist in `docs/storyline.md` ("Reshaping an existing model") covers the rest of the reshape. Exit 0 whether or not anything is proposed ("nothing to propose"
 on stderr).
 
 ```bash
