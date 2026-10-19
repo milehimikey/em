@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { compile, CompileOptions, CompileResult } from "./pipeline.js";
@@ -1928,11 +1928,15 @@ discover
     } else if (result.ok) {
       if (opts.markdown) {
         const shape = validatePrdTriage(JSON.parse(readFileSync(file, "utf8")));
-        if (shape.ok) process.stdout.write(renderPrdTriageMarkdown(shape.doc));
+        if (shape.ok) process.stdout.write(renderPrdTriageMarkdown(shape.doc, shape.referenceOnlyGroups));
       } else {
         console.log(
-          `ok — ${result.path}: ${result.storylines} storyline(s), ${result.groups} group(s), ${result.statements} statement(s), quotes verbatim in ${result.source}`,
+          `ok — ${result.path}: ${result.storylines} storyline(s), ${result.groups} group(s), ${result.statements} statement(s), quotes verbatim in ${relative(process.cwd(), result.source) || result.source}`,
         );
+        if (result.referenceOnlyGroups.length > 0) {
+          console.log("reference-only groups — operations no walkthrough touches; check these are not CRUD fill:");
+          for (const g of result.referenceOnlyGroups) console.log(`  - ${g}`);
+        }
       }
     } else {
       console.error(`em discover triage-check: ${result.path} — errors:`);

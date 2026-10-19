@@ -21,11 +21,17 @@ export const TRIAGE_OUTCOMES = ["modeled", "rewritten", "constraint", "parked", 
 export type TriageOutcome = (typeof TRIAGE_OUTCOMES)[number];
 
 export const TRIAGE_CONFIDENCE = ["high", "low"] as const;
+export const TRIAGE_PROVENANCE = ["walkthrough", "reference"] as const;
+
+/** A quote shorter than this is too short to prove anything (`"order"` appears everywhere). */
+export const MIN_QUOTE_CHARS = 12;
 
 export interface RubricCategory {
   id: string;
-  label: string;
-  /** Outcomes this category may carry. */
+  /** What `aboutBusiness` is expected to be for this category. A statement whose answer contradicts
+   *  it must have outcome `question` (the human resolves the disagreement). */
+  aboutBusiness: boolean | "either";
+  /** Outcomes this category may carry (`question` and `parked` are allowed for every category). */
   outcomes: TriageOutcome[];
   meaning: string;
 }
@@ -34,17 +40,17 @@ export const PRD_RUBRIC = {
   rubricVersion: "1.0",
   independentCheck: "Is this about the business, independent of how it is built?",
   categories: [
-    { id: "business-fact", label: "Business fact", outcomes: ["modeled", "rewritten", "parked"], meaning: "Something that happens or is true in the business; candidate event or field." },
-    { id: "user-intent", label: "User intent", outcomes: ["modeled", "rewritten"], meaning: "What an actor wants to accomplish; candidate command with its trigger." },
-    { id: "information-need", label: "Information need", outcomes: ["modeled", "rewritten"], meaning: "What an actor needs to see or know to act; candidate read model." },
-    { id: "actor", label: "Actor", outcomes: ["modeled", "parked"], meaning: "A person, role or calling system; candidate persona." },
-    { id: "business-rule", label: "Business rule", outcomes: ["modeled", "rewritten"], meaning: "A constraint the business imposes; candidate invariant or scenario." },
-    { id: "external-system", label: "External system", outcomes: ["modeled", "rewritten", "constraint"], meaning: "A system outside the boundary; candidate translation slice or constraint." },
-    { id: "implementation-detail", label: "Implementation detail", outcomes: ["rewritten", "constraint", "parked"], meaning: "How it is built. Rewritten in business language when it implies a business fact; a real tech choice goes to the constraints list." },
-    { id: "nfr", label: "Non-functional requirement", outcomes: ["constraint", "parked"], meaning: "Performance, availability, security, compliance: feeds the constitution, never a slice." },
-    { id: "goal-background", label: "Goal or background", outcomes: ["parked", "rewritten"], meaning: "Why the product exists; context for the main storyline, not a slice." },
-    { id: "question", label: "Question", outcomes: ["question"], meaning: "An open question in the source; becomes a Socratic question, never an invented answer." },
-    { id: "resource-or-endpoint", label: "Resource or endpoint description", outcomes: ["rewritten", "question", "parked"], meaning: "Describes an API resource or endpoint. Rewritten to the intent it serves (one endpoint may carry several); never promoted to a command as-is." },
+    { id: "business-fact", aboutBusiness: true, outcomes: ["modeled", "rewritten", "parked", "question"], meaning: "Something that happens or is true in the business; candidate event or field." },
+    { id: "user-intent", aboutBusiness: true, outcomes: ["modeled", "rewritten", "parked", "question"], meaning: "What an actor wants to accomplish; candidate command with its trigger." },
+    { id: "information-need", aboutBusiness: true, outcomes: ["modeled", "rewritten", "parked", "question"], meaning: "What an actor needs to see or know to act; candidate read model." },
+    { id: "actor", aboutBusiness: true, outcomes: ["modeled", "parked", "question"], meaning: "A person, role or calling system; candidate persona." },
+    { id: "business-rule", aboutBusiness: true, outcomes: ["modeled", "rewritten", "parked", "question"], meaning: "A constraint the business imposes; candidate invariant or scenario." },
+    { id: "external-system", aboutBusiness: "either", outcomes: ["modeled", "rewritten", "constraint", "parked", "question"], meaning: "A system outside the boundary; candidate translation slice or constraint." },
+    { id: "implementation-detail", aboutBusiness: false, outcomes: ["rewritten", "constraint", "parked", "question"], meaning: "How it is built. Rewritten in business language when it implies a business fact; a real tech choice goes to the constraints list." },
+    { id: "nfr", aboutBusiness: false, outcomes: ["constraint", "parked", "question"], meaning: "Performance, availability, security, compliance: feeds the constitution, never a slice." },
+    { id: "goal-background", aboutBusiness: true, outcomes: ["parked", "rewritten", "question"], meaning: "Why the product exists; context for the main storyline, not a slice." },
+    { id: "question", aboutBusiness: "either", outcomes: ["question", "parked"], meaning: "An open question in the source; becomes a Socratic question, never an invented answer." },
+    { id: "resource-or-endpoint", aboutBusiness: false, outcomes: ["rewritten", "parked", "question"], meaning: "Describes an API resource or endpoint. Rewritten to the intent it serves (one endpoint may carry several); never promoted to a command as-is." },
   ] as RubricCategory[],
 };
 
@@ -74,6 +80,8 @@ export interface TriageStatement {
   /** The independent check: is this about the business, independent of how it is built? */
   aboutBusiness: boolean;
   confidence: "high" | "low";
+  /** Did the claim come from a walkthrough (the story) or from the resource/endpoint reference? */
+  provenance: "walkthrough" | "reference";
   outcome: TriageOutcome;
   group: string | null;
   storyline: string | null;
@@ -106,13 +114,28 @@ export interface PrdTriageDoc {
 
 const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
 
+/** Comparison form for the verbatim check, applied to BOTH sides: Markdown emphasis/code marks
+ *  stripped, smart quotes straightened, whitespace collapsed. */
+const normQuote = (s: string): string =>
+  norm(
+    s
+      .replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"')
+      .replace(/[`*_]/g, ""),
+  );
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /** Shape + cross-reference validation of a parsed triage document (no file access). When
- *  `sourceText` is given, also checks every quote appears verbatim (whitespace-normalised). */
-export function validatePrdTriage(input: unknown, sourceText?: string): { ok: true; doc: PrdTriageDoc } | { ok: false; errors: string[] } {
+ *  `sourceText` is given, also checks every quote appears verbatim (see `normQuote`). Quotes
+ *  shorter than MIN_QUOTE_CHARS are always rejected. `referenceOnlyGroups` lists the groups whose
+ *  every statement came from the resource/endpoint reference rather than a walkthrough. */
+export function validatePrdTriage(
+  input: unknown,
+  sourceText?: string,
+): { ok: true; doc: PrdTriageDoc; referenceOnlyGroups: string[] } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   const err = (m: string) => errors.push(m);
   if (!isObj(input)) return { ok: false, errors: ["top level must be a JSON object"] };
@@ -131,7 +154,9 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
 
   const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
   const quoteIn = (where: string, q: string) => {
-    if (sourceText !== undefined && !norm(sourceText).includes(norm(q))) {
+    if (normQuote(q).length < MIN_QUOTE_CHARS) {
+      err(`${where}: quote is shorter than ${MIN_QUOTE_CHARS} characters ("${q}"); quote the whole claim`);
+    } else if (sourceText !== undefined && !normQuote(sourceText).includes(normQuote(q))) {
       err(`${where}: quote does not appear verbatim in the source: "${q.length > 60 ? q.slice(0, 57) + "..." : q}"`);
     }
   };
@@ -149,6 +174,7 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
   };
 
   const storylineIds = new Set<string>();
+  const storylineSpan = new Map<string, string>();
   let mains = 0;
   (input.storylines as unknown[]).forEach((raw, i) => {
     const w = `storylines[${i}]`;
@@ -158,16 +184,23 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
     if (typeof raw.main !== "boolean") err(`${w} ${raw.id}: main must be a boolean`);
     else if (raw.main) mains++;
     if (!nonEmpty(raw.quote)) err(`${w} ${raw.id}: quote required (the walkthrough's source span)`);
-    else quoteIn(`${w} ${raw.id}`, raw.quote);
+    else {
+      quoteIn(`${w} ${raw.id}`, raw.quote);
+      storylineSpan.set(raw.id as string, normQuote(raw.quote));
+    }
   });
   if (storylineIds.size === 0) err("storylines must name at least one storyline (the main end-to-end journey)");
   else if (mains !== 1) err(`exactly one storyline must be main (found ${mains})`);
 
   const groupIds = new Set<string>();
+  const groupStoryline = new Map<string, string>();
+  const groupName = new Map<string, string>();
   (input.groups as unknown[]).forEach((raw, i) => {
     const w = `groups[${i}]`;
     if (!isObj(raw)) return err(`${w}: must be an object`);
     if (!seen(w, groupIds, raw.id)) return;
+    if (typeof raw.storyline === "string") groupStoryline.set(raw.id as string, raw.storyline);
+    groupName.set(raw.id as string, typeof raw.name === "string" ? raw.name : (raw.id as string));
     for (const k of ["name", "trigger", "actor"]) if (!nonEmpty(raw[k])) err(`${w} ${raw.id}: ${k} required`);
     if (!nonEmpty(raw.storyline) || !storylineIds.has(raw.storyline)) err(`${w} ${raw.id}: storyline must name a declared storyline`);
   });
@@ -175,6 +208,7 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
   const statementIds = new Set<string>();
   const byId = new Map<string, Record<string, unknown>>();
   const usedGroups = new Set<string>();
+  const groupMembers = new Map<string, Record<string, unknown>[]>();
   (input.statements as unknown[]).forEach((raw, i) => {
     const w = `statements[${i}]`;
     if (!isObj(raw)) return err(`${w}: must be an object`);
@@ -195,12 +229,25 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
       return;
     }
     if (cat && !cat.outcomes.includes(outcome)) err(`${at}: category ${cat.id} may not have outcome ${outcome} (allowed: ${cat.outcomes.join(", ")})`);
+    if (!(TRIAGE_PROVENANCE as readonly string[]).includes(raw.provenance as string)) err(`${at}: provenance must be walkthrough or reference`);
+    // The independent check contradicting the category's expectation is a disagreement: a human's call.
+    if (cat && cat.aboutBusiness !== "either" && typeof raw.aboutBusiness === "boolean" && raw.aboutBusiness !== cat.aboutBusiness && outcome !== "question") {
+      err(`${at}: aboutBusiness is ${raw.aboutBusiness} but category ${cat.id} expects ${cat.aboutBusiness}; a disagreement must have outcome question (carry the proposed rewrite in the question), not ${outcome}`);
+    }
 
     const needsGroup = outcome === "modeled" || outcome === "rewritten";
     if (needsGroup) {
       if (!nonEmpty(raw.group) || !groupIds.has(raw.group)) err(`${at}: outcome ${outcome} needs a group naming a declared group`);
-      else usedGroups.add(raw.group);
+      else {
+        usedGroups.add(raw.group);
+        const members = groupMembers.get(raw.group) ?? [];
+        members.push(raw);
+        groupMembers.set(raw.group, members);
+      }
       if (!nonEmpty(raw.storyline) || !storylineIds.has(raw.storyline)) err(`${at}: outcome ${outcome} needs a storyline naming a declared storyline`);
+      else if (nonEmpty(raw.group) && groupStoryline.has(raw.group) && groupStoryline.get(raw.group) !== raw.storyline) {
+        err(`${at}: storyline ${raw.storyline} differs from its group ${raw.group}'s storyline ${groupStoryline.get(raw.group)}`);
+      }
     } else if (raw.group !== null && raw.group !== undefined) {
       err(`${at}: outcome ${outcome} must have group null (only modeled/rewritten statements join a slice group)`);
     }
@@ -210,8 +257,6 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
     if (cat?.id === "resource-or-endpoint" && outcome === "modeled") {
       err(`${at}: a resource-or-endpoint statement is never modeled as-is; rewrite it to the intent it serves`);
     }
-    // The independent check disagreeing with a modeling outcome, or low confidence, is a human's call.
-    if (raw.aboutBusiness === false && outcome === "modeled") err(`${at}: aboutBusiness is false but outcome is modeled; rewrite it, park it, or ask`);
     if (raw.confidence === "low" && outcome !== "question") err(`${at}: low confidence must become a question, not ${outcome}`);
     if (raw.scenarioOf !== undefined && (!nonEmpty(raw.scenarioOf) || !groupIds.has(raw.scenarioOf))) {
       err(`${at}: scenarioOf must name a declared group`);
@@ -238,11 +283,24 @@ export function validatePrdTriage(input: unknown, sourceText?: string): { ok: tr
   }
   for (const g of groupIds) if (!usedGroups.has(g)) err(`group ${g}: no statement joins it`);
 
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, doc: input as unknown as PrdTriageDoc };
+  // Walkthrough-first: a group is anchored by a walkthrough statement whose quote lies inside its
+  // storyline's span, or it is a reference-only group (listed for the human to inspect).
+  const referenceOnlyGroups: string[] = [];
+  for (const [g, members] of groupMembers) {
+    const span = storylineSpan.get(groupStoryline.get(g) ?? "");
+    const anchored = members.some(
+      (m) => m.provenance === "walkthrough" && span !== undefined && typeof m.quote === "string" && span.includes(normQuote(m.quote)),
+    );
+    if (anchored) continue;
+    if (members.every((m) => m.provenance === "reference")) referenceOnlyGroups.push(groupName.get(g) ?? g);
+    else err(`group ${g}: no walkthrough statement lies inside its storyline's span (and it is not reference-only); anchor it in the walkthrough or mark all its statements reference`);
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, doc: input as unknown as PrdTriageDoc, referenceOnlyGroups };
 }
 
 export type CheckPrdTriageResult =
-  | { ok: true; path: string; source: string; statements: number; storylines: number; groups: number; errors: [] }
+  | { ok: true; path: string; source: string; statements: number; storylines: number; groups: number; referenceOnlyGroups: string[]; errors: [] }
   | { ok: false; path: string; errors: string[] };
 
 /** Check a `discovery/prd-triage.json`. The input document is `opts.source` when given, else the
@@ -275,6 +333,7 @@ export function checkPrdTriage(path: string, opts: { source?: string } = {}): Ch
     statements: shape.doc.statements.length,
     storylines: shape.doc.storylines.length,
     groups: shape.doc.groups.length,
+    referenceOnlyGroups: shape.referenceOnlyGroups,
     errors: [],
   };
 }
@@ -282,13 +341,13 @@ export function checkPrdTriage(path: string, opts: { source?: string } = {}): Ch
 /** `em discover triage-check --json` document. */
 export function buildCheckPrdTriageJson(result: CheckPrdTriageResult): string {
   const doc = result.ok
-    ? { ok: true, path: result.path, source: result.source, storylines: result.storylines, groups: result.groups, statements: result.statements, errors: [] as string[] }
+    ? { ok: true, path: result.path, source: result.source, storylines: result.storylines, groups: result.groups, statements: result.statements, referenceOnlyGroups: result.referenceOnlyGroups, errors: [] as string[] }
     : { ok: false, path: result.path, errors: result.errors };
   return JSON.stringify(doc, null, 2);
 }
 
 /** The Markdown view of a triage record (`--markdown`): deterministic, for the engagement reader. */
-export function renderPrdTriageMarkdown(doc: PrdTriageDoc): string {
+export function renderPrdTriageMarkdown(doc: PrdTriageDoc, referenceOnlyGroups: string[] = []): string {
   const L: string[] = ["# PRD triage", "", `Source: \`${doc.source}\` · rubric ${doc.rubricVersion} · schema ${doc.prdTriageSchemaVersion}`, ""];
   L.push("## Storylines", "");
   for (const s of doc.storylines) L.push(`- **${s.name}**${s.main ? " (main)" : ""} — "${norm(s.quote)}"`);
@@ -299,6 +358,11 @@ export function renderPrdTriageMarkdown(doc: PrdTriageDoc): string {
       const body = s.outcome === "rewritten" ? `${s.rewrite} _(from: "${norm(s.quote)}")_` : `"${norm(s.quote)}"`;
       L.push(`- \`${s.id}\` [${s.category}] ${body}${s.scenarioOf ? ` — scenario of ${s.scenarioOf}` : ""}`);
     }
+    L.push("");
+  }
+  if (referenceOnlyGroups.length > 0) {
+    L.push("## Reference-only groups — operations no walkthrough touches; check these are not CRUD fill", "");
+    for (const g of referenceOnlyGroups) L.push(`- ${g}`);
     L.push("");
   }
   const withOutcome = (o: TriageOutcome) => doc.statements.filter((s) => s.outcome === o);

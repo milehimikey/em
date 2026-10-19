@@ -3,21 +3,39 @@
   "rubricVersion": "1.0",
   "source": "library-api-spec.md",
   "storylines": [
-    { "id": "L1", "name": "Borrow and return a book", "main": true, "quote": "A member reserves a book." },
-    { "id": "L2", "name": "Retire a damaged book", "main": false, "quote": "A librarian marks a damaged book as retired" }
+    {
+      "id": "L1",
+      "name": "Borrow and return a book",
+      "main": true,
+      "quote": "A member reserves a book. When the book is on the shelf the librarian checks it out to the member, who returns it before the due date."
+    },
+    {
+      "id": "L2",
+      "name": "Retire a damaged book",
+      "main": false,
+      "quote": "A librarian marks a damaged book as retired and it is removed from the catalog."
+    }
   ],
   "groups": [
     { "id": "G1", "name": "Reserve Book", "trigger": "member reserves a book", "actor": "Member", "storyline": "L1" },
     { "id": "G2", "name": "Check Out Book", "trigger": "book is on the shelf", "actor": "Librarian", "storyline": "L1" },
-    { "id": "G3", "name": "Retire Book", "trigger": "librarian marks the book retired", "actor": "Librarian", "storyline": "L2" }
+    { "id": "G3", "name": "Return Book", "trigger": "member returns the book", "actor": "Member", "storyline": "L1" },
+    { "id": "G4", "name": "Retire Book", "trigger": "librarian marks the book retired", "actor": "Librarian", "storyline": "L2" },
+    { "id": "G5", "name": "Correct Book Details", "trigger": "librarian edits a book", "actor": "Librarian", "storyline": "L2" }
   ],
   "statements": [
-    { "id": "S1", "quote": "A member reserves a book.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1" },
-    { "id": "S2", "quote": "the librarian checks it out to the member", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G2", "storyline": "L1" },
-    { "id": "S3", "quote": "A librarian marks a damaged book as retired", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G3", "storyline": "L2" },
-    { "id": "S4", "quote": "`POST /loans` creates a loan record in the `loans` table.", "category": "resource-or-endpoint", "aboutBusiness": false, "confidence": "high", "outcome": "rewritten", "group": "G2", "storyline": "L1", "rewrite": "A librarian checks a book out to a member." },
-    { "id": "S5", "quote": "`PATCH /books/{id}` updates any field on a book.", "category": "resource-or-endpoint", "aboutBusiness": false, "confidence": "low", "outcome": "question", "group": null, "storyline": null, "question": "Which business changes to a book does this endpoint carry besides retiring it?" },
-    { "id": "S6", "quote": "the API must stay available 99.9% of the time", "category": "nfr", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null }
+    { "id": "S1", "quote": "A member reserves a book.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S2", "quote": "When the book is on the shelf the librarian checks it out to the member", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G2", "storyline": "L1" },
+    { "id": "S3", "quote": "who returns it before the due date", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
+    { "id": "S4", "quote": "A librarian marks a damaged book as retired", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G4", "storyline": "L2" },
+    { "id": "S5", "quote": "it is removed from the catalog", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G4", "storyline": "L2" },
+    { "id": "S6", "quote": "`POST /loans` creates a loan record in the `loans` table.", "category": "resource-or-endpoint", "aboutBusiness": false, "confidence": "high", "provenance": "reference", "outcome": "rewritten", "group": "G2", "storyline": "L1", "rewrite": "A librarian checks a book out to a member." },
+    { "id": "S7", "quote": "`PATCH /books/{id}` updates any field on a book.", "category": "resource-or-endpoint", "aboutBusiness": false, "confidence": "high", "provenance": "reference", "outcome": "rewritten", "group": "G5", "storyline": "L2", "rewrite": "A librarian corrects a book's details." },
+    { "id": "S8", "quote": "The service is deployed as a single container", "category": "implementation-detail", "aboutBusiness": false, "confidence": "high", "provenance": "reference", "outcome": "constraint", "group": null, "storyline": null },
+    { "id": "S9", "quote": "the API must stay available 99.9% of the time", "category": "nfr", "aboutBusiness": false, "confidence": "high", "provenance": "reference", "outcome": "constraint", "group": null, "storyline": null }
   ],
-  "constraints": [{ "id": "C1", "text": "API availability 99.9%", "statements": ["S6"] }]
+  "constraints": [
+    { "id": "C1", "text": "Deployed as a single container", "statements": ["S8"] },
+    { "id": "C2", "text": "API availability 99.9%", "statements": ["S9"] }
+  ]
 }

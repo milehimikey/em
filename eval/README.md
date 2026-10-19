@@ -69,8 +69,11 @@ Run /em:discover on input.md and produce <slug>.em; do not ask me about anything
 ```
 
 ```
-Run /em:discover on input.md as a PRD/spec (the PRD/spec path) and produce <slug>.em; do not ask me about anything input.md already answers.
+/em:discover
+Discover from this PRD/spec: input.md. Produce <slug>.em; do not ask me about anything input.md already answers.
 ```
+
+Arm C's entry is the discover skill's PRD/spec path (GH #295): `/em:discover` (plugin) or `/event-modeling discover` (repo skills) with the opening message `Discover from this PRD/spec: <path>`, here `<path>` = `input.md`. `test/prdTriage.test.ts` keeps this paragraph and the skill in agreement.
 
 Operator answering rule: answer only from `input.md`. If `input.md` does not say, reply exactly:
 

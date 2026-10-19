@@ -1,43 +1,57 @@
 {
   "prdTriageSchemaVersion": "1.0",
   "rubricVersion": "1.0",
-  "source": "meridian-prd.md",
+  "source": "../../eval/inputs/meridian-goods/input.md",
   "storylines": [
     {
       "id": "L1",
-      "name": "Order to delivery",
+      "name": "Place and pay for an order",
       "main": true,
-      "quote": "A customer browses the catalog, places an order and pays."
+      "quote": "A Customer places an order from the storefront (items, quantities, prices, total). Placing an order records who ordered, what, and when.\n2. Once an order is placed, a payment is requested for its total. This happens automatically; nobody clicks anything.\n3. The payment provider calls us back when a payment is captured. We record the capture (amount, provider reference, time). This is not initiated by anyone in the company."
     },
     {
       "id": "L2",
-      "name": "Return an item",
+      "name": "Staff work the open orders",
       "main": false,
-      "quote": "A customer requests a return within 30 days of delivery."
+      "quote": "Fulfillment Staff see a dashboard of open orders: placed orders, with the capture time once paid."
+    },
+    {
+      "id": "L3",
+      "name": "Customer follows their order",
+      "main": false,
+      "quote": "A Customer sees their order's status on their account page: placed, payment requested, paid."
+    },
+    {
+      "id": "L4",
+      "name": "Customer cancels an order",
+      "main": false,
+      "quote": "A Customer can cancel an order from their account page. Cancelled orders drop off the staff dashboard."
     }
   ],
   "groups": [
-    { "id": "G1", "name": "Place Order", "trigger": "customer submits checkout", "actor": "Storefront", "storyline": "L1" },
-    { "id": "G2", "name": "Pick Order", "trigger": "payment succeeded", "actor": "Warehouse", "storyline": "L1" },
-    { "id": "G3", "name": "Track Order", "trigger": "customer opens order", "actor": "Customer", "storyline": "L1" },
-    { "id": "G4", "name": "Request Return", "trigger": "customer requests a return", "actor": "Customer", "storyline": "L2" }
+    { "id": "G1", "name": "Place Order", "trigger": "customer submits the order from the storefront", "actor": "Customer", "storyline": "L1" },
+    { "id": "G2", "name": "Request Payment", "trigger": "order placed", "actor": "Payment system (automatic)", "storyline": "L1" },
+    { "id": "G3", "name": "Record Payment Capture", "trigger": "payment provider calls back", "actor": "Payment provider", "storyline": "L1" },
+    { "id": "G4", "name": "Open Orders Dashboard", "trigger": "staff open the dashboard", "actor": "Fulfillment Staff", "storyline": "L2" },
+    { "id": "G5", "name": "Order Status", "trigger": "customer opens their account page", "actor": "Customer", "storyline": "L3" },
+    { "id": "G6", "name": "Cancel Order", "trigger": "customer cancels from their account page", "actor": "Customer", "storyline": "L4" }
   ],
   "statements": [
-    { "id": "S1", "quote": "A customer browses the catalog, places an order and pays.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1" },
-    { "id": "S2", "quote": "When payment succeeds the warehouse picks and packs the order", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G2", "storyline": "L1" },
-    { "id": "S3", "quote": "the customer receives a tracking link by email", "category": "information-need", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G3", "storyline": "L1" },
-    { "id": "S4", "quote": "A customer requests a return within 30 days of delivery.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G4", "storyline": "L2" },
-    { "id": "S5", "quote": "If the card is declined the customer sees why and can try another card.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1", "scenarioOf": "G1" },
-    { "id": "S6", "quote": "If a payment provider call times out, we retry it up to three times before cancelling the order.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1", "scenarioOf": "G1" },
-    { "id": "S7", "quote": "Payments are taken through the Stripe API.", "category": "external-system", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null },
-    { "id": "S8", "quote": "The order service writes a row to the stock_levels table when a pick is confirmed.", "category": "implementation-detail", "aboutBusiness": false, "confidence": "high", "outcome": "rewritten", "group": "G2", "storyline": "L1", "rewrite": "Stock is decremented when a pick is confirmed." },
-    { "id": "S9", "quote": "The checkout page must respond within 300 ms at the 95th percentile.", "category": "nfr", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null },
-    { "id": "S10", "quote": "GET /orders/{id} returns the order with its status and tracking link.", "category": "resource-or-endpoint", "aboutBusiness": false, "confidence": "high", "outcome": "rewritten", "group": "G3", "storyline": "L1", "rewrite": "The customer can see an order's status and tracking link." },
-    { "id": "S11", "quote": "Should partial shipments be supported?", "category": "question", "aboutBusiness": true, "confidence": "low", "outcome": "question", "group": null, "storyline": null, "question": "When only part of an order is in stock, does the customer want it shipped in parts or held until complete?" },
-    { "id": "S12", "quote": "We want every order to reach the customer on time and visibly.", "category": "goal-background", "aboutBusiness": true, "confidence": "high", "outcome": "parked", "group": null, "storyline": null, "reason": "Goal of the main storyline; context, not a slice." }
+    { "id": "S1", "quote": "A Customer places an order from the storefront", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S2", "quote": "items, quantities, prices, total", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S3", "quote": "Placing an order records who ordered, what, and when.", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S4", "quote": "Once an order is placed, a payment is requested for its total.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G2", "storyline": "L1" },
+    { "id": "S5", "quote": "This happens automatically; nobody clicks anything.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G2", "storyline": "L1" },
+    { "id": "S6", "quote": "The payment provider calls us back when a payment is captured.", "category": "external-system", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
+    { "id": "S7", "quote": "We record the capture (amount, provider reference, time).", "category": "business-fact", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
+    { "id": "S8", "quote": "This is not initiated by anyone in the company.", "category": "actor", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G3", "storyline": "L1" },
+    { "id": "S9", "quote": "Fulfillment Staff see a dashboard of open orders: placed orders, with the capture time once paid.", "category": "information-need", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G4", "storyline": "L2" },
+    { "id": "S10", "quote": "A Customer sees their order's status on their account page: placed, payment requested, paid.", "category": "information-need", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G5", "storyline": "L3" },
+    { "id": "S11", "quote": "A Customer can cancel an order from their account page.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G6", "storyline": "L4" },
+    { "id": "S12", "quote": "Cancelled orders drop off the staff dashboard.", "category": "business-rule", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G6", "storyline": "L4" },
+    { "id": "S13", "quote": "Meridian Goods sells household goods online.", "category": "goal-background", "aboutBusiness": true, "confidence": "high", "provenance": "reference", "outcome": "parked", "group": null, "storyline": null, "reason": "Background to the main storyline; context, not a slice." },
+    { "id": "S14", "quote": "Two audiences: Customers and Fulfillment Staff.", "category": "actor", "aboutBusiness": true, "confidence": "high", "provenance": "reference", "outcome": "parked", "group": null, "storyline": null, "reason": "Declared as personas in the model from the walkthroughs; no slice of its own." },
+    { "id": "S15", "quote": "Out of scope: shipping, refunds, inventory.", "category": "goal-background", "aboutBusiness": true, "confidence": "high", "provenance": "reference", "outcome": "parked", "group": null, "storyline": null, "reason": "Scope line; recorded in the state file's Session inputs. Nothing modeled for shipping, refunds or inventory." }
   ],
-  "constraints": [
-    { "id": "C1", "text": "Payments go through the Stripe API.", "statements": ["S7"] },
-    { "id": "C2", "text": "Checkout responds within 300 ms at p95.", "statements": ["S9"] }
-  ]
+  "constraints": []
 }

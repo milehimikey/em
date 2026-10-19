@@ -1,3 +1,5 @@
+Note: synthetic spec, authored for em's tests.
+
 # Lending Library API v2
 
 ## Walkthroughs

@@ -4002,30 +4002,46 @@ checks what must not be judged. Checks:
 - `prdTriageSchemaVersion` is `"1.0"` and `rubricVersion` is the shipped rubric's version (`"1.0"`,
   `reference/prd-rubric.md` in the skill bundle).
 - `source` names the input document (relative to the triage file, or `--source`), and **every
-  `statements[].quote` and `storylines[].quote` appears verbatim in it** (whitespace runs are
-  normalised; the agent may reword in `rewrite`, never in `quote`).
+  `statements[].quote` and `storylines[].quote` appears verbatim in it** (Markdown emphasis and
+  code marks `` ` `` `*` `_` are stripped and smart quotes straightened on both sides, whitespace
+  runs are normalised; a quote under 12 characters is rejected; the agent may reword in
+  `rewrite`, never in `quote`). A storyline's `quote` is the full walkthrough span.
 - Exactly one storyline is `main`; ids are unique; every group names a declared storyline and is
   joined by at least one statement.
-- Every statement has a rubric `category`, an `aboutBusiness` check result, a `confidence`, and an
-  `outcome` (`modeled`/`rewritten`/`constraint`/`parked`/`question`) the category allows.
-  `modeled`/`rewritten` need a declared `group` and `storyline`; the others have `group: null`.
-  `rewritten` needs `rewrite`, `parked` a `reason`, `question` a `question`; a
-  `resource-or-endpoint` is never `modeled`; `aboutBusiness: false` is never `modeled`; `low`
-  confidence is always a `question`; every `constraint` appears in `constraints[]`.
+- Every statement has a rubric `category`, an `aboutBusiness` check result, a `confidence`, a
+  `provenance` (`walkthrough` or `reference`) and an `outcome`
+  (`modeled`/`rewritten`/`constraint`/`parked`/`question`) the category allows (`question` and
+  `parked` are allowed for every category).
+  `modeled`/`rewritten` need a declared `group` and a `storyline` equal to the group's; the others
+  have `group: null`. `rewritten` needs `rewrite`, `parked` a `reason`, `question` a `question`;
+  a `resource-or-endpoint` is never `modeled`; `low` confidence is always a `question`; every
+  `constraint` appears in `constraints[]`.
+- **Disagreement is a question.** The rubric records the `aboutBusiness` answer each category
+  expects (`true`, `false` or `either`); a statement whose `aboutBusiness` contradicts it must have
+  outcome `question` (the question text carries the proposed rewrite).
+- **Walkthrough-first.** Each group needs at least one `walkthrough` statement whose quote lies
+  inside its storyline's quote, or every statement in it is `reference`; such **reference-only
+  groups** pass but are listed in the report (operations no walkthrough touches; check these are
+  not CRUD fill).
+
+It cannot judge whether a classification is right, whether every walkthrough claim has a
+statement, or whether the Decisions-log entry for each parked or rejected statement was written:
+that entry is prose in the state file and is unchecked.
 
 | Flag | Effect |
 |---|---|
 | `--source <path>` | Check quotes against this document instead of the file's own `source` |
 | `--markdown` | After a passing check, print the Markdown view of the record instead of the summary |
-| `--json` | Print `{ ok, path, source, storylines, groups, statements, errors }` (on failure `{ ok, path, errors }`) |
+| `--json` | Print `{ ok, path, source, storylines, groups, statements, referenceOnlyGroups, errors }` (`source` resolved to an absolute path; on failure `{ ok, path, errors }`) |
 
 ```bash
-em discover triage-check discovery/prd-triage.json
-# -> ok — discovery/prd-triage.json: 2 storyline(s), 5 group(s), 14 statement(s), quotes verbatim in ../prd.md
+cd examples/prd-triage && em discover triage-check prd-triage.json
+# -> ok — prd-triage.json: 4 storyline(s), 6 group(s), 15 statement(s), quotes verbatim in ../../eval/inputs/meridian-goods/input.md
 ```
 
-Exit 1 (each error printed, one per line) on any problem. Also exposed as the MCP
-`discover_triage_check` tool (see [mcp.md](mcp.md)).
+The text report prints the source relative to the working directory. Exit 1 (each error printed,
+one per line) on any problem. Also exposed as the MCP `discover_triage_check` tool (see
+[mcp.md](mcp.md)).
 
 ## `em conform-findings check <path>`
 

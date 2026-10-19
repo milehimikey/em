@@ -68,8 +68,8 @@ Tell the user they can stop here and resume with `/event-modeling` (or invoke
 ## Path: PRD or spec in (a document is the input)
 
 Use this path when the user hands you a **PRD, requirements document or API spec** instead of
-starting from a blank page. **Entry:** `/event-modeling discover`, opening message
-**`Discover from this PRD/spec: <path to the document>`**. **Read `reference/prd-spec-path.md`
+starting from a blank page. **Entry:** `/em:discover` (plugin) or `/event-modeling discover`
+(repo skills), with the opening message **`Discover from this PRD/spec: <path>`**. **Read `reference/prd-spec-path.md`
 and `reference/prd-rubric.md` before doing any work on it** — the path is a triage, not a
 transcription: a document describes the system its authors imagined (resources, endpoints,
 stack, quality targets), and a model copied from it comes out as CRUD-per-entity.

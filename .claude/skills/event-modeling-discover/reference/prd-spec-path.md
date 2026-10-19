@@ -3,8 +3,9 @@
 Read this **before doing any work on a PRD, requirements document or API spec**, together with
 `prd-rubric.md` (the shipped classification rubric).
 
-**Entry:** `/event-modeling discover`, opening message **`Discover from this PRD/spec: <path>`**.
-This is the exact entry the eval protocol's arm C cites. The path is a **triage**: a document
+**Entry:** `/em:discover` (plugin) or `/event-modeling discover` (repo skills), with the opening
+message **`Discover from this PRD/spec: <path>`**. This is the exact entry the eval protocol's
+arm C cites. The path is a **triage**: a document
 describes the system its authors imagined (resources, endpoints, stack, quality targets). Handed
 one cold, the failure modes are over-decomposition along control flow, implementation flavour,
 and CRUD-per-entity models shaped like the resource reference. The steps below prevent all three
@@ -29,17 +30,23 @@ journeys, an API spec's Walkthroughs / use-case / "getting started" section.
   fill operations no walkthrough touches.
 - No walkthrough at all? Ask: *"what does success look like, start to finish?"* and quote the
   user's answer into the state file; do not synthesize a journey from the endpoint list.
-- Record each storyline in `storylines[]` with its `id`, `name`, `main`, and `quote` — the source
-  span, verbatim. These become the design phase's `storyline` blocks, so the provenance travels
+- Record each storyline in `storylines[]` with its `id`, `name`, `main`, and `quote` — the **full**
+  walkthrough span, start to finish success story, verbatim (not its first sentence: the checker
+  anchors every group to this span). These become the design phase's `storyline` blocks, so the provenance travels
   (`../../event-modeling-design/SKILL.md`, step 5; syntax in `../../event-modeling-shared/reference/em-dsl.md`).
 
 ## Step 1 — Split into single-claim statements
 
 Split the input into **single-claim statements** — one fact, rule, need or description each. A
 sentence with "and" usually holds two. Number them `S1`, `S2`, ... in source order. Each carries a
-`quote` copied **verbatim** from the document (whitespace runs may differ; words may not). You may
-reword later (step 4) but never in `quote`: the checker searches the document for it, and a quote
-it cannot find is an invented claim.
+`quote` copied **verbatim** from the document (whitespace, Markdown emphasis marks and smart
+quotes may differ; words may not; at least 12 characters). You may reword later (step 4) but never
+in `quote`: the checker searches the document for it, and a quote it cannot find is an invented
+claim. Every statement also records `provenance`: `walkthrough` for a claim made inside a
+walkthrough span, `reference` for one from the resource/endpoint reference or operational notes.
+**Every claim in a walkthrough gets a statement** — the carrier collecting, the delivery being
+confirmed, the return before the due date — so nothing in the story is silently dropped; the
+checker cannot see a missing one, so walk each walkthrough sentence by sentence.
 
 ## Step 2 — Classify
 
@@ -48,7 +55,10 @@ For each statement set:
 - `category` — one id from `prd-rubric.md`.
 - `aboutBusiness` — the independent check: *"is this about the business, independent of how it is
   built?"* Answer it separately from the category, without looking at the category.
-- `confidence` — `high` or `low`. Disagreement between category and check, or any doubt: `low`.
+- `confidence` — `high` or `low`. Any doubt: `low` (a low-confidence statement is always a question).
+
+When `aboutBusiness` contradicts what the category expects (the rubric's `aboutBusiness expected`
+column), that disagreement is data, not judgement: the outcome MUST be `question` (step 4, step 6).
 
 A `resource-or-endpoint` statement is **never promoted to a command as-is**: ask which intent(s)
 the resource serves (one endpoint may carry several intents) and rewrite to those (step 4).
@@ -73,9 +83,13 @@ event share one slice.
 Nothing is silently discarded.
 
 - An **implementation detail that implies a business fact** (*"the service writes a row to
-  `stock_levels` when a pick is confirmed"*) becomes `rewritten`: put the business-language form
-  in `rewrite` (*"Stock is decremented when a pick is confirmed"*) — the original stays in `quote`,
-  which is the link to its source.
+  `stock_levels` when a pick is confirmed"*): classify it `implementation-detail` with
+  `aboutBusiness: false` — they agree, so it is `rewritten`, with the business-language form in
+  `rewrite` (*"Stock is decremented when a pick is confirmed"*); the original stays in `quote`,
+  which is the link to its source. If you classified the same sentence `business-fact` but the
+  independent check says `false`, they **disagree**: the outcome is `question`, with the proposed
+  rewrite in the question text (*"Is this a business fact? proposed: Stock is decremented when a
+  pick is confirmed."*). The human resolves it and a later pass records `rewritten`.
 - A **real technology choice or NFR** (*"must run on Postgres"*, *"p95 under 300 ms"*) gets outcome
   `constraint` and an entry in `constraints[]` listing its statement ids. That list feeds the
   project's constitution: hand it to the constitution's owner (the skills read the constitution,
@@ -92,22 +106,27 @@ Write `discovery/prd-triage.json` (UTF-8, 2-space indent):
 {
   "prdTriageSchemaVersion": "1.0",
   "rubricVersion": "1.0",
-  "source": "../requirements/prd.md",
-  "storylines": [{ "id": "L1", "name": "Order to delivery", "main": true, "quote": "A customer places an order, we pick and ship it, and they get a tracking link." }],
+  "source": "prd.md",
+  "storylines": [{ "id": "L1", "name": "Order to delivery", "main": true, "quote": "A customer places an order. We pick and ship it, and they get a tracking link." }],
   "groups": [{ "id": "G1", "name": "Place Order", "trigger": "customer submits checkout", "actor": "Storefront", "storyline": "L1" }],
   "statements": [
-    { "id": "S1", "quote": "A customer places an order", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "outcome": "modeled", "group": "G1", "storyline": "L1" },
-    { "id": "S2", "quote": "must respond within 300 ms", "category": "nfr", "aboutBusiness": false, "confidence": "high", "outcome": "constraint", "group": null, "storyline": null }
+    { "id": "S1", "quote": "A customer places an order.", "category": "user-intent", "aboutBusiness": true, "confidence": "high", "provenance": "walkthrough", "outcome": "modeled", "group": "G1", "storyline": "L1" },
+    { "id": "S2", "quote": "must respond within 300 ms", "category": "nfr", "aboutBusiness": false, "confidence": "high", "provenance": "reference", "outcome": "constraint", "group": null, "storyline": null },
+    { "id": "S3", "quote": "writes a row to stock_levels", "category": "business-fact", "aboutBusiness": false, "confidence": "high", "provenance": "reference", "outcome": "question", "group": null, "storyline": null, "question": "Is this a business fact? proposed: Stock is decremented when a pick is confirmed." }
   ],
   "constraints": [{ "id": "C1", "text": "Checkout responds within 300 ms", "statements": ["S2"] }]
 }
 ```
 
-Per statement: `id`, `quote`, `category`, `aboutBusiness`, `confidence`, `outcome`
+Per statement: `id`, `quote`, `category`, `aboutBusiness`, `confidence`, `provenance`, `outcome`
 (`modeled | rewritten | constraint | parked | question`), `group` and `storyline` (set for
 `modeled`/`rewritten`, otherwise `null`), plus `rewrite` / `reason` / `question` /
 `scenarioOf` where the outcome needs them. **Every statement has a category and an outcome;
-every modeled or rewritten statement has a group.**
+every modeled or rewritten statement has a group.** The rules the checker enforces are listed in
+`prd-rubric.md` ("Rules the checker enforces"): disagreement and low confidence are questions, an
+endpoint is never modeled, group and storyline only for modeled/rewritten (otherwise `null`), and
+every group anchored by a walkthrough statement inside its storyline's span or reported as
+reference-only.
 
 Then run, and fix until it passes:
 
@@ -119,13 +138,16 @@ em discover triage-check discovery/prd-triage.json --markdown > discovery/prd-tr
 `--markdown` prints the human-readable view (storylines, slice groups with their statements,
 constraints, parked, questions); save it next to the JSON. The checker verifies shape, the rubric
 version, verbatim quotes, and the outcome rules; **it cannot judge whether your classification is
-right** — that is what the human review is for.
+right**, whether every walkthrough claim has a statement, or whether the Decisions-log entry for
+each parked or rejected statement was actually written (that entry is prose-only and unchecked) —
+that is what the human review is for. Read the report's **reference-only groups** list: those
+are operations no walkthrough touches; check they are not CRUD fill.
 
 ## Step 6 — Questions, never inventions
 
-Every `low` confidence statement, every statement where the category and the independent check
-disagree, and every `question` category statement gets outcome `question` and a Socratic
-`question`. Ask them one concern at a time, in the story's words. Record each answer in the state
+Every `low` confidence statement, every statement where `aboutBusiness` contradicts the
+category's expectation, and every `question` category statement gets outcome `question` and a
+Socratic `question` (a disagreement's question carries the proposed rewrite). Ask them one concern at a time, in the story's words. Record each answer in the state
 file and update the record (the statement is re-classified; re-run the checker). If the document
 and the human disagree, the human wins and the disagreement is a Decisions-log entry.
 

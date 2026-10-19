@@ -283,7 +283,7 @@ remember, exactly as before the split.
 Handed a PRD, requirements document or API spec, an agent left to improvise over-decomposes along
 control flow, copies implementation flavour into the model, and shapes it like the spec's
 resource reference (CRUD per entity). The discover skill has a dedicated path for this. Start it
-with `/event-modeling discover` and the opening message:
+with `/em:discover` (plugin) or `/event-modeling discover` (repo skills) and the opening message:
 
 ```
 Discover from this PRD/spec: <path>
@@ -306,10 +306,12 @@ and the shipped [rubric](../.claude/skills/event-modeling-discover/reference/prd
    source, tech choices and NFRs go to a constraints list for the constitution, and anything parked
    goes in the Decisions log;
 5. records `discovery/prd-triage.json` (and a Markdown view), which `em discover triage-check`
-   verifies — shape, rubric version, quotes appearing verbatim, every statement with a category and
-   outcome and every modeled one with a group;
-6. turns anything low-confidence or disputed into Socratic questions for you. Discovery never
-   invents the domain.
+   verifies — shape, rubric version, quotes appearing verbatim, every statement with a category,
+   a provenance (walkthrough or reference) and an outcome, every modeled one with a group, and every
+   group anchored in a walkthrough (or listed as reference-only for you to inspect);
+6. turns anything low-confidence, or whose "about the business" answer contradicts its category,
+   into Socratic questions for you (a disagreement's question carries the proposed rewrite).
+   Discovery never invents the domain.
 
 The surviving groups and storylines then feed the normal `discover` steps 1-4 and the design
 phase's `storyline` blocks (see [dsl.md](dsl.md)). The checker is
