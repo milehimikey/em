@@ -90,8 +90,7 @@ same story.
 slice "Issue Payment" {
   ui Payout Screen @Finance
   command Issue Payment
-  event Payment Issued @Payment
-  event Payment Failed @Billing
+  event Payment Issued | Payment Failed @Payment
 }
 
 slice "Payment Outcomes" {
@@ -100,9 +99,13 @@ slice "Payment Outcomes" {
 }
 ```
 
-Today two events on the *same* context in one slice are a `grid-collision` error, so the example
-puts the outcomes on different contexts; when the outcomes are alternatives on one context, write
-them as `event A | B @Ctx` (1.18.0). Splitting this into an "Issue Payment" slice and a
+The outcomes are written as alternatives (`event A | B @Ctx`) and share **one** context and one cell
+in its lane: one command records exactly one of them. This is not the Law 1 fan from
+[timeline.md](timeline.md), which is an atomic set of facts all recorded together on different
+contexts. When the alternatives differ in fields or clauses, use the block form
+(`oneof { event A @Ctx { ... } event B @Ctx { ... } }`); when an alternative is also recorded by
+another command elsewhere, write it bare so it inherits the first declaration (see
+[dsl.md](dsl.md#alternative-events--event-a--b-context)). Splitting this into an "Issue Payment" slice and a
 "Payment Failed" slice is the anti-pattern; 1.18.0 adds the lint `automation-split-by-outcome`,
 which flags the Automation form of it. See also [storyline.md](storyline.md).
 
@@ -200,9 +203,7 @@ slice "Orders To Fulfil" {
 slice "Fulfil Order" {
   processor Fulfilment Worker from "Orders To Fulfil"
   command Fulfil Order
-  event Fulfilment Succeeded @Shipment
-  event Fulfilment Failed @Fulfilment
-  event Fulfilment Retry Scheduled @Scheduling
+  event Fulfilment Succeeded | Fulfilment Failed | Fulfilment Retry Scheduled @Fulfilment
 }
 
 slice "Orders To Fulfil — retry" {
@@ -221,9 +222,9 @@ reappears with `view Orders To Fulfil again from "Fulfilment Retry Scheduled"`, 
 reaction picks the order up again. Add a new slice only when a **different actor or a different
 trigger** is involved: a human override of a failed fulfilment, or a scheduled timer that is
 itself modelled as a reaction on a different view, has its own trigger and so its own slice
-(that is what `retry-slice-of` in #311 distinguishes). Outcomes on different contexts fan out from the command as above (two events on the
-same context are a `grid-collision` today); when the outcomes are alternatives on one context,
-write them as `event A | B @Ctx` (1.18.0). A failure that continues the story is "Linearized"
+(that is what `retry-slice-of` in #311 distinguishes). The outcomes are alternatives on one context (`event A | B @Ctx`, see [dsl.md](dsl.md)): one run of
+the command records exactly one of them, which is why a Law 1 fan across invented contexts is the
+wrong picture. A failure that continues the story is "Linearized"
 (Dilger) as a later chapter linked to the originating event, never a branch; that later chapter
 reads the failure event through a view or a reaction, since Law 1 forbids event-to-event arrows. See
 [storyline.md](storyline.md).
