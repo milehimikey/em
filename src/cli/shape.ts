@@ -3,8 +3,7 @@
 // belongs to it by one field alone, `family: "shape"` on its RULES entry (model/rules.ts), so a new
 // shape lint plugs in by registering that field; nothing here names a rule. Advisory by
 // construction: this module only groups and partitions diagnostics the validator already computed,
-// and the CLI exits 0 whatever it finds. `--waive-file` reuses `em refs`'s waiver file (one slice
-// key per line, `#` comments, missing file = no waivers) so an estate can baseline accepted shapes.
+// and the CLI exits 0 whatever it finds. `--waive-file` reuses `em refs`'s waiver file (one line per waiver, `#` comments, missing file = no waivers) so an estate can baseline accepted shapes.
 
 import type { Diagnostic } from "../model/validate.js";
 import { RULES, type RuleCode } from "../model/rules.js";
@@ -33,29 +32,43 @@ export interface ShapeReport {
   /** Total findings that count / that were waived. */
   findings: number;
   waived: number;
-  /** Waiver keys that excused nothing, for a stderr note. */
-  unknownWaivers: string[];
+  /** Waive-file lines that excused nothing (stale key, unknown rule code). */
+  staleWaivers: string[];
 }
 
-/** A finding is waived when it has refs and every one lies under a waived slice key (the bare key
- *  or `<key>/…`). A finding with no refs can never be waived: nothing identifies what is accepted. */
-function isWaived(d: Diagnostic, keys: Set<string>): boolean {
-  const refs = d.refs ?? [];
-  if (refs.length === 0) return false;
-  return refs.every((r) => [...keys].some((k) => r === k || r.startsWith(`${k}/`)));
+/** One waive-file line: `<rule-code> <slice-key>` waives that rule's findings under the key; a bare
+ *  `<slice-key>` waives every shape rule there. */
+interface Waiver { line: string; rule: string | null; key: string; used: boolean }
+
+function parseWaivers(lines: string[], codes: Set<string>): { waivers: Waiver[]; stale: string[] } {
+  const waivers: Waiver[] = [];
+  const stale: string[] = [];
+  for (const line of lines) {
+    const parts = line.split(/\s+/);
+    if (parts.length === 1) waivers.push({ line, rule: null, key: parts[0], used: false });
+    else if (parts.length === 2 && codes.has(parts[0])) waivers.push({ line, rule: parts[0], key: parts[1], used: false });
+    else stale.push(line); // unknown rule code, or a malformed line
+  }
+  return { waivers, stale };
 }
 
-export function buildShapeReport(diagnostics: Diagnostic[], waiveKeys: string[]): ShapeReport {
-  const keys = new Set(waiveKeys);
-  const used = new Set<string>();
-  const rules: ShapeRuleReport[] = shapeRuleCodes().map((code) => {
+const under = (ref: string, key: string) => ref === key || ref.startsWith(`${key}/`);
+
+export function buildShapeReport(diagnostics: Diagnostic[], waiveLines: string[]): ShapeReport {
+  const codes = shapeRuleCodes();
+  const { waivers, stale } = parseWaivers(waiveLines, new Set<string>(codes));
+  const rules: ShapeRuleReport[] = codes.map((code) => {
     const def = RULES[code];
     const findings: Diagnostic[] = [];
     const waived: Diagnostic[] = [];
     for (const d of diagnostics.filter((x) => x.code === code)) {
-      if (isWaived(d, keys)) {
+      const refs = d.refs ?? [];
+      // Waived when it has refs and every ref lies under a waiver that applies to this rule.
+      const applicable = waivers.filter((w) => w.rule === null || w.rule === code);
+      const covering = refs.length === 0 ? null : refs.map((r) => applicable.filter((w) => under(r, w.key)));
+      if (covering && covering.every((c) => c.length > 0)) {
         waived.push(d);
-        for (const r of d.refs ?? []) for (const k of keys) if (r === k || r.startsWith(`${k}/`)) used.add(k);
+        for (const c of covering) for (const w of c) w.used = true;
       } else findings.push(d);
     }
     return { code, title: def.title, docAnchor: (def as { docAnchor?: string }).docAnchor ?? "shape", findings, waived };
@@ -64,7 +77,7 @@ export function buildShapeReport(diagnostics: Diagnostic[], waiveKeys: string[])
     rules,
     findings: rules.reduce((n, r) => n + r.findings.length, 0),
     waived: rules.reduce((n, r) => n + r.waived.length, 0),
-    unknownWaivers: [...keys].filter((k) => !used.has(k)),
+    staleWaivers: [...stale, ...waivers.filter((w) => !w.used).map((w) => w.line)],
   };
 }
 
@@ -79,7 +92,7 @@ export function formatShapeText(report: ShapeReport, modelErrors: number): strin
     out.push("", `waived (${report.waived}, not counted):`);
     for (const r of report.rules) for (const d of r.waived) out.push(`  ${r.code}: ${(d.refs ?? []).join(", ")}`);
   }
-  out.push("", report.findings === 0 ? "ok — no shape findings" : `${report.findings} shape finding(s) — fix each, or record it as \`shape-accepted: <rule> <refs> — <reason>\` in the model README's Decisions log (advisory: exit 0)`);
+  out.push("", report.findings === 0 ? "ok — no shape findings" : `${report.findings} shape finding(s) — fix each, or record it as \`shape-accepted: <rule> <refs> — <reason>\` in \`.event-modeling.md\` \`## Decisions log\` (advisory: exit 0)`);
   if (modelErrors > 0) out.push(`note: the model has ${modelErrors} error(s) — run \`em validate\`; shape findings may be incomplete`);
   return out.join("\n");
 }

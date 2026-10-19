@@ -193,6 +193,7 @@ export function buildValidateListJson(file: string, markers: MarkerEntry[], diag
 // rule (zero-count ones too, so a consumer sees what was checked), each with its `findings` (the
 // diagnostics that count: message, line, refs) and `waived` (excused by `--waive-file`, never
 // counted). `summary.findings` / `summary.waived` total them; `clean` is `summary.findings === 0`.
+// `staleWaivers` lists waive-file lines that excused nothing (stale key or unknown rule code).
 // `modelErrors` is the count of error diagnostics elsewhere in the model (shape output is
 // incomplete while it is non-zero). Advisory: the exit code is 0 whatever the content.
 export const VALIDATE_SHAPE_SCHEMA_VERSION = "1.0";
@@ -206,6 +207,7 @@ export function buildShapeJson(file: string, report: ShapeReport, modelErrors: n
     clean: report.findings === 0,
     modelErrors,
     summary: { findings: report.findings, waived: report.waived, rules: report.rules.length },
+    staleWaivers: report.staleWaivers,
     rules: report.rules.map((r) => ({
       code: r.code,
       title: r.title,

@@ -373,7 +373,7 @@ exists at all).
 | `--fail-on-issues` | Exit non-zero if the model has any open issues (opt-in — issues are warnings and don't block by default) |
 | `--check-signed-bodies` | (GH #257) Opt-in: compare every slice doc that records a `ratifiedHash:` — any status, `implemented` included — to its body; a mismatch is `slice-body-changed-since-ratification` (error, [validation.md](validation.md#signed-bodies)). Joins the normal diagnostic list, so `--json` and the exit code see it like any other finding |
 | `--shape` | (GH #282) Run only the advisory **shape-family** lints and print a table (rule, count, first ref, docs anchor) — see [`--shape`](#--shape-gh-282). Exit 0 always; cannot be combined with `--slice-ready`, `--list-*`, `--fail-on-issues` or `--check-signed-bodies` |
-| `--waive-file <path>` | With `--shape` only: a baseline file of slice keys (the same format as `em refs --waive-file`: one key per line, `#` comments, missing file = no waivers) whose shape findings are listed as waived and not counted |
+| `--waive-file <path>` | With `--shape` only: a baseline file (`#` comments, missing file = no waivers; lines are `<rule-code> <slice-key>`, or a bare `<slice-key>` that waives **all** shape rules on it) whose shape findings are listed as waived and not counted |
 | `--slice-ready <key>` | Readiness gate for one slice ([slice key](#slice-keys)) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
 | `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
@@ -510,7 +510,7 @@ see [validation.md#the-shape-exit-gate](validation.md#the-shape-exit-gate)). `--
 
 ```
 { shapeSchemaVersion, generator, file, clean, modelErrors,
-  summary: { findings, waived, rules },
+  summary: { findings, waived, rules }, staleWaivers: [line],
   rules: [{ code, title, docAnchor, count,
             findings: [{ message, line, refs }],     // counted
             waived:   [{ message, line, refs }] }] } // excused by --waive-file, never counted
@@ -518,8 +518,7 @@ see [validation.md#the-shape-exit-gate](validation.md#the-shape-exit-gate)). `--
 
 `clean` is `summary.findings === 0`; `modelErrors` counts error diagnostics elsewhere in the model (the
 shape view is incomplete while it is non-zero). `--waive-file <path>` baselines an estate: a finding is
-waived when it has refs and **every** ref lies under a listed slice key (the bare key or `<key>/…`); a key
-that excuses nothing is noted on stderr and ignored. The MCP `validate` tool accepts `shape: true` (and
+waived when it has refs and **every** ref lies under a slice key the rule's waiver names (the key or `<key>/…`); a rule-scoped line never waives another rule. Lines that excuse nothing (stale key, unknown rule code) are noted on stderr and listed in `staleWaivers`. The MCP `validate` tool accepts `shape: true` (and
 `waiveFile`) and returns the same document. Once the `advisory` flag of #316 lands, advisory shape rules
 are listed here the same way and never gate.
 
@@ -2255,7 +2254,7 @@ Plan schema **`1.3`** (GH #282) adds one more `preflight[].kind`:
 
 | `preflight[].kind` | When |
 |---|---|
-| `shape` | A shape-family lint ([`em validate --shape`](#--shape-gh-282)) fires on at least one of the engagement's slices. One finding per rule, `subject` = the rule code, `slices` = the engagement slices its refs name. Accept it in the model README's Decisions log (`shape-accepted: <rule> <refs> — <reason>`) or fix the model before fan-out |
+| `shape` | A shape-family lint ([`em validate --shape`](#--shape-gh-282)) fires on at least one of the engagement's slices. One finding per rule, `subject` = the rule code, `slices` = the engagement slices its refs name. Fix the model, or confirm a `shape-accepted: <rule> <refs> — <reason>` bullet is already in `.event-modeling.md` `## Decisions log` (pre-flight does not read the log) before fan-out |
 
 The text form prints one block per level with its width against the ceiling:
 

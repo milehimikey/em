@@ -134,13 +134,14 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
 4. **Shape exit gate (GH #282).** The model phase ends on the shape lints, not on your judgement
    of the storyline: run `em validate <model>.em --shape` (add `--json` to read it; exit code is
    always 0, so read the output). Every finding is either **fixed** in the model, or **accepted**
-   as one Decisions log bullet in `.event-modeling.md` `## Decisions log`:
+   as one bullet in `.event-modeling.md` `## Decisions log`:
    `- YYYY-MM-DD: shape-accepted: <rule> <refs> — <reason>`
-   (and/or waived in a baseline file passed as `--waive-file <path>`, one slice key per line).
-   Re-run until every remaining finding has a `shape-accepted:` bullet or a waiver. **Refuse to
-   move to the slice phase otherwise** (`em state set-phase slice` waits): the same kind of exit
-   gate as asserting the generated contract above. Do not accept a finding without asking the
-   user for the reason.
+   The gate passes only when **every remaining finding, waived or not,** has such a bullet. A
+   baseline passed as `--waive-file <path>` (lines `<rule-code> <slice-key>`) only silences the CLI
+   count for an estate; it never replaces the bullet. Re-run until each remaining finding has its
+   bullet. **Refuse to move to the slice phase otherwise** (`em state set-phase slice` waits): the
+   same kind of exit gate as asserting the generated contract above. Do not accept a finding
+   without asking the user for the reason.
 
 End of phase: render, update state (`em state set-phase slice` — the mechanical marker the state
 machine expects), and stop. Every slice already has a draft doc ready to receive the deep spec,

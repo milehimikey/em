@@ -2029,7 +2029,7 @@ program
   )
   .option(
     "--waive-file <path>",
-    "with --shape: a baseline file of slice keys (the `em refs --waive-file` format) whose shape findings are listed " +
+    "with --shape: a baseline file (`<rule-code> <slice-key>` per line, or a bare slice key for every shape rule; `#` comments) whose shape findings are listed " +
       "as waived and not counted; missing file = no waivers",
   )
   .option(
@@ -2070,7 +2070,7 @@ program
         const all = computeAllDiagnostics(file, model, refs, diagnostics, source);
         const report = buildShapeReport(all, opts.waiveFile ? readWaiveFile(opts.waiveFile) : []);
         const modelErrors = all.filter((d) => d.severity === "error").length;
-        for (const k of report.unknownWaivers) console.error(`note: waiver for "${k}" (${opts.waiveFile}) excuses no shape finding — ignored`);
+        for (const k of report.staleWaivers) console.error(`note: waiver "${k}" (${opts.waiveFile}) excuses no shape finding — ignored`);
         if (opts.json) process.stdout.write(buildShapeJson(file, report, modelErrors) + "\n");
         else console.log(formatShapeText(report, modelErrors));
         return;

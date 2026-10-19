@@ -111,8 +111,39 @@ describe("em validate --shape", () => {
     writeFileSync(join(dir, "partial.waive"), "create-class\nno-such-slice\n");
     const r = em(["validate", "crud.em", "--shape", "--waive-file", "partial.waive", "--json"], dir);
     expect(JSON.parse(r.stdout).summary).toMatchObject({ findings: 1, waived: 0 });
-    expect(r.stderr).toContain('waiver for "no-such-slice"');
+    expect(r.stderr).toContain('waiver "no-such-slice"');
+    expect(JSON.parse(r.stdout).staleWaivers).toEqual(["create-class", "no-such-slice"]);
     expect(JSON.parse(em(["validate", "crud.em", "--shape", "--waive-file", "absent.waive", "--json"], dir).stdout).summary.findings).toBe(1);
+  }, 30_000);
+
+  it("rule-scoped waivers: `<rule> <key>` waives only that rule; a bare key waives every shape rule; unknown rule codes are stale", () => {
+    // Class List is inside a storyline; the other slices are outside it, so two shape rules fire.
+    const both = CRUD.replace(
+      /slice "Class List" \{[\s\S]*?\n\}\n/,
+      'storyline "Main" {\n  slice "Class List" {\n    view Class List from "Class Created", "Class Renamed", "Class Retired"\n    ui Class Screen\n  }\n}\n',
+    );
+    writeFileSync(join(dir, "both.em"), both);
+    const run = (waive: string) => {
+      writeFileSync(join(dir, "w.waive"), waive);
+      const r = em(["validate", "both.em", "--shape", "--waive-file", "w.waive", "--json"], dir);
+      expect(r.status).toBe(0);
+      return { doc: JSON.parse(r.stdout), stderr: r.stderr };
+    };
+    const rule = (doc: any, code: string) => doc.rules.find((x: { code: string }) => x.code === code);
+    const base = run("");
+    expect(rule(base.doc, "timeline-entity-clustered").count).toBe(1);
+    expect(rule(base.doc, "slice-outside-storyline").count).toBeGreaterThan(0);
+    const scoped = run("timeline-entity-clustered create-class\ntimeline-entity-clustered rename-class\ntimeline-entity-clustered retire-class\n");
+    expect(rule(scoped.doc, "timeline-entity-clustered").count).toBe(0);
+    expect(rule(scoped.doc, "slice-outside-storyline").count).toBe(rule(base.doc, "slice-outside-storyline").count);
+    const bare = run("create-class\nrename-class\nretire-class\nset-price\n");
+    expect(rule(bare.doc, "timeline-entity-clustered").count).toBe(0);
+    expect(rule(bare.doc, "slice-outside-storyline").count).toBe(0);
+    expect(bare.doc.summary.findings).toBe(0);
+    const unknown = run("no-such-rule create-class\n");
+    expect(unknown.doc.staleWaivers).toEqual(["no-such-rule create-class"]);
+    expect(unknown.stderr).toContain("no-such-rule create-class");
+    expect(unknown.doc.summary.waived).toBe(0);
   }, 30_000);
 
   it("refuses --waive-file without --shape and --shape with --slice-ready", () => {
@@ -148,5 +179,20 @@ describe("em engagement plan pre-flight lists shape findings (plan schema 1.3)",
     expect(p.preflight.filter((f) => f.kind === "shape").map((f) => [f.subject, f.slices])).toEqual([["timeline-entity-clustered", ["create-class", "rename-class"]]]);
     expect(formatEngagementPlanText(p)).toContain("shape: shape lint timeline-entity-clustered fires on 2 of the engagement's slices");
     expect(mk("price", ["set-price"]).preflight.filter((f) => f.kind === "shape")).toEqual([]);
+    expect(formatEngagementPlanText(p)).toContain("pre-flight does not read the log");
   });
+
+  it("slice-outside-storyline surfaces as a pre-flight shape finding and in --shape output", () => {
+    const file = join(dir, "outside.em");
+    writeFileSync(file, 'storyline "Main" {\n  slice "In" {\n    command Do In\n    event In Done\n  }\n}\nslice "Out" {\n  command Do Out\n  event Out Done\n}\n');
+    mkdirSync(join(dir, "engagements"), { recursive: true });
+    const r = buildNewEngagement(input(file), { slug: "o", selector: { kind: "slices", keys: ["out"] }, parallel: 3, createdBy: null, tracking: null, created: "2026-10-18" });
+    if (!r.ok) throw new Error(r.message);
+    writeFileSync(engagementPath(file, "o"), r.text);
+    const p = engagementPlanFor(input(file), "o");
+    if (!p.ok) throw new Error(p.message);
+    expect(p.plan.preflight.filter((f) => f.kind === "shape").map((f) => [f.subject, f.slices])).toEqual([["slice-outside-storyline", ["out"]]]);
+    const shape = JSON.parse(em(["validate", "outside.em", "--shape", "--json"], dir).stdout);
+    expect(shape.rules.find((x: { code: string }) => x.code === "slice-outside-storyline").findings[0].refs).toEqual(["out"]);
+  }, 30_000);
 });

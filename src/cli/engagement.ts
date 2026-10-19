@@ -534,7 +534,7 @@ export function computePreflight(input: EngagementModelInput, members: string[],
       kind: "shape",
       subject: code,
       slices,
-      message: `shape lint ${code} fires on ${slices.length} of the engagement's slices (${slices.join(", ")}) — fix the model, or record \`shape-accepted: ${code} <refs> — <reason>\` in the model README's Decisions log, before fan-out`,
+      message: `shape lint ${code} fires on ${slices.length} of the engagement's slices (${slices.join(", ")}) — fix it, or confirm it is already accepted (\`shape-accepted: ${code} <refs> — <reason>\` in .event-modeling.md \`## Decisions log\`; pre-flight does not read the log), before fan-out`,
     });
   }
 

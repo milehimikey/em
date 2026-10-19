@@ -84,7 +84,9 @@ base is `main`), and every held slice with its reason (`not-ready`,
 `upstream-outside-engagement-unmerged`, or `human`). Then the plan's **`pre-flight:` block** (GH
 #239): the model-wide gaps the engagement's slices share — a `repeated-invariant` with no single
 enforcing slice, an `event-without-tag` whose consistency boundary is undeclared, a
-`shared-trigger` (one `ui`, two slices, no endpoint owner), a `doc-model-mismatch`. These are
+`shared-trigger` (one `ui`, two slices, no endpoint owner), a `doc-model-mismatch`, a `shape` (a
+`em validate --shape` lint fires on the slices; the answer is a `shape-accepted: <rule> <refs> —
+<reason>` bullet in `.event-modeling.md` `## Decisions log`, or a model fix). These are
 exactly what every implementer would otherwise stop on and report separately. Put them to the
 human **in the same single question round** as the ceiling, one bullet each with the slices it
 spans, and ask for a ruling on each (the answer goes where it belongs: the model, the foundation
