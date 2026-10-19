@@ -836,6 +836,10 @@ function foldPlan(ctx: UpgradeContext): { kind: "stack"; plan: ReturnType<typeof
 function detectFoldContinuations(ctx: UpgradeContext): StepDetection {
   const f = foldPlan(ctx);
   if (f.plan === null) return { applicable: false, reason: "no consecutive hand-named continuation slices of one view (stack) — or, with --to-sugar, no continuation directly after its host command — in a foldable shape" };
+  if (f.kind === "sugar" && (f.plan as NonNullable<ReturnType<typeof planFoldContinuations>>).groups.length === 0) {
+    const r = (f.plan as NonNullable<ReturnType<typeof planFoldContinuations>>).refused;
+    return { applicable: false, reason: `--to-sugar: nothing folded; refused: ${r.map((x) => `${x.hostKey} (${x.reason})`).join("; ")}` };
+  }
   const optIn = ctx.foldContinuations === true || ctx.toSugar === true;
   const prefix = optIn ? "" : `OPT-IN, not applied by a plain --apply (run \`${FOLD_FLAG}\`): `;
   const stale = signedDocsStaleAfter(ctx, f.plan.next);
@@ -848,12 +852,13 @@ function detectFoldContinuations(ctx: UpgradeContext): StepDetection {
   }
   const p = f.plan as NonNullable<ReturnType<typeof planFoldContinuations>>;
   const desc = p.groups.map((g) => `${g.folded.map((n) => `"${n}"`).join(" + ")} (keys ${g.foldedKeys.join(", ")}) → \`view … again\` lines in "${g.host}" (column ${g.hostKey}--again)`);
-  return { applicable: true, reason: `${prefix}--to-sugar: ${desc.join("; ")} — CHANGES continuationOf and the doc join to the host (${p.groups.map((g) => `${g.hostKey}--again`).join(", ")}) and removes the folded slices' index rows (a stray own doc of a folded slice is left alone)${staleNote}` };
+  const refusedNote = p.refused.length > 0 ? `; refused: ${p.refused.map((x) => `${x.hostKey} (${x.reason})`).join("; ")}` : "";
+  return { applicable: true, reason: `${prefix}--to-sugar: ${desc.join("; ")}${refusedNote} — CHANGES continuationOf and the doc join to the host (${p.groups.map((g) => `${g.hostKey}--again`).join(", ")}) and removes the index rows of ${p.groups.flatMap((g) => g.foldedKeys).join(", ")} (a stray own doc of a folded slice is left alone)${staleNote}` };
 }
 
 function applyFoldContinuations(ctx: UpgradeContext): StepApplyOutcome {
   const f = foldPlan(ctx);
-  if (f.plan === null) return { ok: false, message: "the model no longer folds cleanly" };
+  if (f.plan === null || ("groups" in f.plan && f.plan.groups.length === 0)) return { ok: false, message: "the model no longer folds cleanly" };
   writeFileSync(ctx.modelFile, f.plan.next, "utf8");
   return { ok: true, changedFiles: [ctx.modelFile] };
 }
@@ -1398,6 +1403,8 @@ export interface StepReport {
   applicable: boolean;
   human: boolean;
   reason: string;
+  /** Present (true) for an opt-in step that is detected but not opted into by this run's flags: listed, never applied. */
+  optIn?: boolean;
 }
 
 export interface UpgradeReport {
@@ -1426,7 +1433,8 @@ export function detectUpgrade(ctx: UpgradeContext): UpgradeReport {
   const from = resolveFromVersion(ctx, recorded);
   const steps: StepReport[] = UPGRADE_STEPS.map((s) => {
     const d = s.detect(ctx);
-    return { id: s.id, sinceVersion: s.sinceVersion, applicable: d.applicable, human: d.human === true, reason: d.reason };
+    const optIn = s.optedIn !== undefined && !s.optedIn(ctx) && d.applicable;
+    return { id: s.id, sinceVersion: s.sinceVersion, applicable: d.applicable, human: d.human === true, reason: d.reason, ...(optIn ? { optIn: true } : {}) };
   });
   const human = detectHumanItems(ctx);
 

@@ -218,6 +218,8 @@ export interface FoldGroup {
 
 export interface FoldPlan {
   groups: FoldGroup[];
+  /** Hosts left unfolded, with why. */
+  refused: Array<{ host: string; hostKey: string; reason: string }>;
   next: string;
 }
 
@@ -227,6 +229,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
   const { lines, eol, trailing } = splitLines(text);
   const blocks = model.slices.map((_, i) => blockOf(model, lines, i));
   const groups: FoldGroup[] = [];
+  const refused: FoldPlan["refused"] = [];
   const removals: Array<{ from: number; to: number }> = [];
   const insertions = new Map<number, string[]>(); // host block end line -> lines to insert before it
   const folded = new Set<number>();
@@ -288,6 +291,13 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
       c++;
     }
     if (members.length === 0) continue;
+    // Continuations of several views would be re-joined to ONE host column, moving another view's
+    // instance into the first view's (possibly signed) doc: refuse the host, leave it unfolded.
+    const views = new Set(members.flatMap((m) => blocks[m]!.elements.filter((s) => s.el.kind === "view").map((s) => s.el.logicalId)));
+    if (views.size > 1) {
+      refused.push({ host: model.slices[h].name, hostKey: refs.sliceKeys[h], reason: "continuations of several views — fold by hand or keep the stacked slice" });
+      continue;
+    }
     for (const m of members) folded.add(m);
     insertions.set(hb.end, added);
     for (const m of members) {
@@ -301,7 +311,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
       foldedKeys: members.map((m) => refs.sliceKeys[m]),
     });
   }
-  if (groups.length === 0) return null;
+  if (groups.length === 0) return refused.length > 0 ? { groups, refused, next: text } : null; // nothing to fold, but say why
 
   const drop = new Set<number>();
   for (const r of removals) for (let i = r.from; i <= r.to; i++) drop.add(i);
@@ -315,7 +325,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
   if (!noNewErrors(text, next)) return null;
   const nm = compile(next).model;
   if (!viewSourcesEqual(model, nm)) return null;
-  return { groups, next };
+  return { groups, refused, next };
 }
 
 // ---- fold-continuations, default form (a): stack consecutive continuations of ONE view ----------

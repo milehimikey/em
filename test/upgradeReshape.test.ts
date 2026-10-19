@@ -39,6 +39,15 @@ function ctxOf(dir: string): UpgradeContext {
   if (!root.ok) throw new Error(root.message);
   return { modelFile: join(dir, "orders.em"), baseDir: dir, repoRoot: root.repoRoot, installedVersion: "1.18.0", packagedSkillsRoot: join(dir, "no-skills"), model, refs };
 }
+/** `model` without the slice named `name` (its block and the blank line after it). */
+const without = (model: string, name: string): string => model.replace(new RegExp(`slice "${name}" \\{[\\s\\S]*?\\n\\}\\n\\n?`), "");
+function repoWith(model: string): string {
+  const dir = repo();
+  writeFileSync(join(dir, "orders.em"), model);
+  git(dir, "add", "orders.em");
+  git(dir, "commit", "-q", "-m", "variant model");
+  return dir;
+}
 const step = (dir: string, id: string) => detectUpgrade(ctxOf(dir)).steps.find((s) => s.id === id)!;
 const commits = (dir: string, id: string) => git(dir, "log", "--format=%s").split("\n").filter((l) => l.startsWith(`em upgrade: ${id}`));
 
@@ -201,18 +210,40 @@ describe("fold-continuations (GH #287) — opt-in", () => {
   });
 
   it("--to-sugar moves them into the host and says plainly that continuationOf and the doc join change", () => {
-    const dir = repo();
+    const dir = repoWith(without(MODEL_117_STAGE2, "Orders after ship"));
     const d = detectUpgrade({ ...ctxOf(dir), toSugar: true }).steps.find((x) => x.id === "fold-continuations")!;
     expect(d.reason).toContain("CHANGES continuationOf and the doc join to the host (ship-order--again)");
-    expect(d.reason).toContain("removes the folded slices' index rows");
+    expect(d.reason).toContain("removes the index rows of shipments-after-ship, shipments-after-ship-again");
     expect(applyUpgrade({ ...ctxOf(dir), toSugar: true }).ok).toBe(true);
     const text = readFileSync(join(dir, "orders.em"), "utf8");
     expect(text).toMatch(/slice "Ship Order" \{[\s\S]*view Shipments again from "Order Shipped" shown on "Shipment List"[\s\S]*\n\}/);
     expect(compile(text).refs.sliceKeys).toContain("ship-order--again");
   });
 
+  it("--to-sugar REFUSES a host whose continuations span several views: no fold, no new diagnostic, a ratified origin doc untouched", () => {
+    const withDoc = MODEL_117_STAGE2.replace("view Shipments from \"Order Placed\" { orderId: string }", 'view Shipments from "Order Placed" { orderId: string } note "slices/shipments.md"');
+    const dir = repoWith(withDoc);
+    const doc = join(dir, "slices", "shipments.md");
+    const plain = sliceDocText("shipments", { stage2: true }).replace("pattern: state-change", "pattern: state-view");
+    writeFileSync(doc, plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${sliceDocBodyHash(plain)}`));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "ratify shipments");
+    const signedBytes = readFileSync(doc, "utf8");
+    const diagsBefore = compile(withDoc).diagnostics.map((x) => x.code).sort();
+    const d = detectUpgrade({ ...ctxOf(dir), toSugar: true }).steps.find((x) => x.id === "fold-continuations")!;
+    expect(d.applicable).toBe(false);
+    expect(d.reason).toContain("continuations of several views — fold by hand or keep the stacked slice");
+    expect(applyUpgrade({ ...ctxOf(dir), toSugar: true }).ok).toBe(true);
+    const after = readFileSync(join(dir, "orders.em"), "utf8"); // (the default collapse step still ran)
+    for (const name of ["Shipments after ship", "Shipments after ship, again", "Orders after ship"]) expect(after).toContain(`slice "${name}"`);
+    expect(after).not.toContain("shown on");
+    expect(compile(after).refs.sliceKeys).not.toContain("ship-order--again");
+    expect(readFileSync(doc, "utf8")).toBe(signedBytes);
+    for (const code of compile(after).diagnostics.map((x) => x.code)) expect(diagsBefore).toContain(code); // no new diagnostic (the collapse only removes one)
+  });
+
   it("names a signed doc whose generated regions the fold would make stale", () => {
-    const dir = repo();
+    const dir = repoWith(without(without(MODEL_117_STAGE2, "Shipments after ship, again"), "Shipments after ship"));
     const doc = join(dir, "slices", "orders.md");
     const plain = sliceDocText("orders", { stage2: true }); // current against the model, so only the fold can make it stale
     writeFileSync(doc, plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${sliceDocBodyHash(plain)}`));
@@ -220,11 +251,52 @@ describe("fold-continuations (GH #287) — opt-in", () => {
     expect(sugar.reason).toMatch(/signed doc\(s\)[^;]*slices\/orders\.md/);
   });
 
+  it("stacks the realistic post-collapse case: a host recording `event A | B`, one continuation of ONE view per event", () => {
+    const post = `model "M"
+context Sales
+persona Clerk
+
+slice "Place" {
+  ui Place Form @Clerk
+  command Place
+  event Placed @Sales { id: string }
+}
+
+slice "List" {
+  view Orders from "Placed" { id: string }
+  ui Order List @Clerk
+}
+
+slice "Cancel" {
+  ui Cancel Form @Clerk
+  command Cancel
+  event Cancelled By Customer | Cancelled By Timeout @Sales { id: string }
+}
+
+slice "Orders after customer cancel" {
+  view Orders again from "Cancelled By Customer" { id: string }
+  ui Order List @Clerk
+}
+
+slice "Orders after timeout cancel" {
+  view Orders again from "Cancelled By Timeout" { id: string }
+  ui Order List @Clerk
+}
+`;
+    const { model, refs } = compile(post);
+    const plan = planStackContinuations(model, refs, post)!;
+    expect(plan.groups).toEqual([{ kept: "Orders after customer cancel", keptKey: "orders-after-customer-cancel", dropped: ["Orders after timeout cancel"], droppedKeys: ["orders-after-timeout-cancel"] }]);
+    const lines = plan.next.split("\n").filter((l) => l.includes("view Orders again"));
+    expect(lines).toHaveLength(2);
+    expect(new Set(lines.map((l) => l.trim())).size).toBe(2); // two distinct again lines, not duplicates
+    expect(compile(plan.next).diagnostics.filter((x) => x.severity === "error")).toEqual([]);
+  });
+
   it("does not stack across different ui, nor fold a continuation whose host records none of its events", () => {
     const ui = MODEL_117_STAGE2.replace('slice "Shipments after ship, again" {\n  view Shipments again from "Order Shipped" { orderId: string }\n  ui Shipment List @Clerk', 'slice "Shipments after ship, again" {\n  view Shipments again from "Order Shipped" { orderId: string }\n  ui Ship Form @Clerk');
     const a = compile(ui);
     expect(planStackContinuations(a.model, a.refs, ui)).toBeNull();
-    const unrelated = MODEL_117_STAGE2.replace('view Shipments again from "Order Shipped"', 'view Shipments again from "Order Placed Manually"');
+    const unrelated = without(MODEL_117_STAGE2, "Orders after ship").replace('view Shipments again from "Order Shipped"', 'view Shipments again from "Order Placed Manually"');
     const b = compile(unrelated);
     expect(planFoldContinuations(b.model, b.refs, unrelated)).toBeNull();
   });

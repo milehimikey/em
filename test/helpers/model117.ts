@@ -38,7 +38,7 @@ slice "Orders manual" {
 }
 `;
 
-const PATTERN: Record<string, string> = { "place-order": "state-change", "place-order-manually": "state-change", orders: "state-view", "cancel-order-customer": "state-change", "cancel-order-timeout": "state-change" };
+const PATTERN: Record<string, string> = { "place-order": "state-change", "place-order-manually": "state-change", orders: "state-view", "cancel-order-customer": "state-change", "cancel-order-timeout": "state-change", shipments: "state-view" };
 
 /** Doc text for slice `key`; `staleViewRegion` rewrites the "built from" line to the 1.17 origin-only form. */
 export function sliceDocText(key: string, opts: { staleViewRegion?: boolean; status?: string; extraBody?: string; stage2?: boolean } = {}): string {

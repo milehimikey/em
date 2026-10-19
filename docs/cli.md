@@ -4933,8 +4933,8 @@ upgrade` handles it.
 | `--apply` | Apply every applicable mechanical step, one git commit each, then a final `Em version:` commit |
 | `--check` | Exit non-zero only on a hard incompatibility (unparseable state file, an un-migratable `.em` shape) — writes nothing; what CI runs |
 | `--json` | Print a JSON document instead of text (dry-run/`--check` only, never with `--apply`) |
-| `--fold-continuations` | With `--apply`: also run the opt-in `fold-continuations` step (stack consecutive continuations of one view into the first slice) |
-| `--to-sugar` | With `--apply`, implies `--fold-continuations`: fold into the host command slice instead; changes `continuationOf` and the doc join, removes index rows |
+| `--fold-continuations` | Also run the opt-in `fold-continuations` step (stack consecutive continuations of one view into the first slice) |
+| `--to-sugar` | Implies `--fold-continuations`; without `--apply` a dry run of exactly what would fold. Folds into the host command slice instead; changes `continuationOf` and the doc join, removes index rows |
 
 Determines `from` = the state file's recorded `Em version:` bullet, or — when absent — inferred
 from whatever evidence is on disk (an old two-slice reaction shape, the vendored skill bundle's
@@ -5014,10 +5014,10 @@ The mechanical steps, in this fixed order:
    listed; continuations of a different view are left alone (stacking them would change which view
    the slice continues). The reason names any signed doc whose generated regions (for example the
    view's `via "<slice>"` annotations) the rewrite makes stale — `em slice revise <key>`, then `em
-   slice sync`. **`--to-sugar`** (further opt-in, implies `--fold-continuations`) moves a continuation
+   slice sync`. **`--to-sugar`** (further opt-in, implies `--fold-continuations`; without `--apply` a dry run that lists exactly what would fold, the dropped keys and the index rows removed) moves a continuation
    into its host command slice as `view X again from "E" [shown on "Screen"]` lines instead; that
    **changes `continuationOf` and the doc join to the host (the synthesized `<host-key>--again`
-   column) and removes the folded slices' index rows**; `shown on` is added only when the old
+   column) and removes the folded slices' index rows**; a host whose continuations span several views is refused and left unfolded ("continuations of several views — fold by hand or keep the stacked slice"); `shown on` is added only when the old
    column's screen is not the host's first `ui` and is declared in another slice. Both forms are
    verified by recompiling like the step above.
 11. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
@@ -5043,7 +5043,7 @@ shape `reaction-shape` migrates is itself such an error under the current `em va
 refusing up front would make that step (and the `predates-1.6` human item below) unreachable for
 exactly the repos that need them.
 
-The text report (dry-run and `--apply`) ends with a **Shape** section: `em validate --shape`'s table over the model as it stands and the `shape-accepted:` sentence (advisory, no waive file is written; `--check` and `--json` do not print it). Steps run in order and each re-reads the model the previous one wrote, so `--apply` may do more than the dry run reported (a fold can become possible only after a collapse): treat the dry run as a lower bound.
+Opt-in proposals are marked `[~]` in the step list and are not counted in the "N step(s) applicable" summary. The text report (dry-run and `--apply`) ends with a **Shape** section: `em validate --shape`'s table over the model as it stands and the `shape-accepted:` sentence (advisory, no waive file is written; `--check` and `--json` do not print it). Steps run in order and each re-reads the model the previous one wrote, so `--apply` may do more than the dry run reported (a fold can become possible only after a collapse): treat the dry run as a lower bound.
 
 `--apply` makes **one git commit per applicable step** (`em upgrade: <step-id> (<from> →
 <to>)`), so a reviewer can inspect or cherry-pick each one individually; refuses outright on a

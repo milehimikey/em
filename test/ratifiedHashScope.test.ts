@@ -397,7 +397,10 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
     expect(before.shape.filter((s) => s.continuationOf !== null).map((s) => s.key).sort()).toEqual(["orders-after-ship", "orders-manual", "shipments-after-ship", "shipments-after-ship-again"]);
     const DEFAULT = ["collapse-alternative-events", "view-doc-sources-stale", "slice-index-stale", "parking-lot-fragments"];
     const dry = em(["upgrade", "orders.em"], dir);
-    for (const id of [...DEFAULT, "fold-continuations"]) expect(dry.stdout).toContain(`[x] ${id}`);
+    for (const id of DEFAULT) expect(dry.stdout).toContain(`[x] ${id}`);
+    expect(dry.stdout).toContain("[~] fold-continuations"); // an opt-in proposal is marked [~] ...
+    expect(dry.stdout).toMatch(/\n\d+ step\(s\) applicable \(\+1 opt-in, marked \[~\], not applied by --apply\)/); // ... and not counted as applicable
+    expect(Number(/\n(\d+) step\(s\) applicable/.exec(dry.stdout)![1])).toBe((dry.stdout.match(/^ {2}\[x\] /gm) ?? []).length);
     expect(dry.stdout).toContain("OPT-IN");
     expect(dry.stdout).toContain("fold-continuations-opt-in");
 
@@ -406,6 +409,7 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
     expect(applied.status, applied.stderr).toBe(0);
     for (const id of DEFAULT) expect(upgradeCommits().filter((l) => l.startsWith(`em upgrade: ${id}`))).toHaveLength(1);
     expect(upgradeCommits().some((l) => l.startsWith("em upgrade: fold-continuations"))).toBe(false);
+    expect(applied.stdout).toContain("skipped: fold-continuations (opt-in: not requested by a flag)");
     expect(applied.stdout).toContain("Shape (em validate --shape, advisory):");
     expect(applied.stdout).toContain("shape-accepted:");
     expect(applied.stdout).toContain("note: archive/slices/cancel-order-timeout.md holds Open Questions");
@@ -446,6 +450,23 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
     const commits = upgradeCommits().length;
     expect(em(["upgrade", "orders.em", "--apply", "--fold-continuations"], dir).status).toBe(0);
     expect(upgradeCommits()).toHaveLength(commits);
+  });
+
+  it("em upgrade --to-sugar without --apply is a dry run: it lists the fold (or the refusal) and writes nothing", () => {
+    const refused = em(["upgrade", "orders.em", "--to-sugar"], dir);
+    expect(refused.status, refused.stderr).toBe(0);
+    expect(refused.stdout).toContain("continuations of several views — fold by hand or keep the stacked slice");
+    const model = readFileSync(join(dir, "orders.em"), "utf8").replace(/slice "Orders after ship" \{[\s\S]*?\n\}\n?/, "");
+    writeFileSync(join(dir, "orders.em"), model);
+    git(dir, "add", "orders.em");
+    git(dir, "commit", "-q", "-m", "drop the other-view continuation");
+    const dry = em(["upgrade", "orders.em", "--to-sugar"], dir);
+    expect(dry.status, dry.stderr).toBe(0);
+    expect(dry.stdout).toContain("[x] fold-continuations");
+    expect(dry.stdout).toContain("CHANGES continuationOf and the doc join to the host (ship-order--again)");
+    expect(dry.stdout).toContain("removes the index rows of shipments-after-ship, shipments-after-ship-again");
+    expect(git(dir, "status", "--porcelain")).toBe("");
+    expect(em(["upgrade", "orders.em", "--check", "--to-sugar"], dir).status).toBe(1);
   });
 
   it("a ratified doc with a stale view region is left byte-for-byte alone and its hash still verifies after --apply", () => {
