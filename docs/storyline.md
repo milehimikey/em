@@ -21,7 +21,7 @@ own. Neither Dymitruk nor Dilger states a child-entity rule or bans "Update" or 
   by intent." "Every command has a reason." "Every Read Model answers a question. No question, no Read
   Model." "Every slice is built from exactly one of the four patterns." "A wide blue arrow spanning several
   slices groups them into a named chapter."
-- Dilger, *Modeling branches*: "have one linear flow from left to right. No exceptions... Linearize it!"
+- Dilger, *Modeling branches*: "have one linear flow from left to right. No exceptions… Linearize it!"
   A failure outcome starts a later **chapter** linked back to the originating event. *The protocol*: write
   the "movie script", start at the ending, "Model one process at a time, each with its own clear ending."
 - Dilger, *Command handler simplicity* and *anti-patterns*: "One decision. One event. One state change."
@@ -238,20 +238,22 @@ lint is its mechanical half.
 The upgrade path for a model that is already CRUD-shaped. Work top to bottom; run `em validate` after each
 step.
 
-1. **Name the processes.** List the business journeys the model serves (from walkthroughs, use cases,
-   journeys, not from endpoints). Pick the main storyline; name each secondary one.
+1. **Name the processes.** List each spec's walkthroughs (or journeys) and the business journeys the model
+   serves (from walkthroughs, use cases, journeys, not from endpoints). Pick the main storyline; name each secondary one.
 2. **Reorder the slices into those stories.** Move slices so each storyline's slices run in the order the
    journey happens. A slice that fits no story is a candidate for deletion. Wrap each story in a
    `storyline "..." { ... }` block, adding `after "..."` where one story follows another.
 3. **Intent test per command.** Rename each command to the intent a business person would say. Split any
    command whose invariants or fields apply only "if X is set" (rule 4).
-4. **Question test per view.** For each view, write the question it answers. Merge views that answer the
-   same question; add a view only for a question nothing answers (rule 5).
+4. **Information-need test per read model.** Apply the information-need test to each read model (write the
+   question it answers) and fold children into parents. Merge views that answer the same question; add a
+   view only for a question nothing answers (rule 5).
 5. **Place children.** Move child-entity events onto the parent's context when the child's invariants check
    the parent; repeat shared events bare (rule 6).
 6. **Repeat views span-1.** Put a `view X again` after every command that changes `X` and drop the one
    trailing view (rule 7).
 7. **Fold outcomes.** Collapse success/failure slice pairs into one slice with alternative events;
    keep a failure as a chapter only when it is core (rule 8).
-8. **Re-run `em validate`** (and, once shipped, `em validate --shape`, the 1.18.0 design exit gate). Update
-   slice docs whose slice names changed.
+8. **Tooling, last.** Run `em validate` (and `em validate --shape`, the 1.18.0 design exit gate), then
+   `em slice sync --check` and `em slice sync`, then `em slice index`, and regenerate the TypeSpec and
+   contracts last.

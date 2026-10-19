@@ -333,15 +333,17 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
 
 The upgrade path for a CRUD-shaped model. After each step run `em validate`.
 
-1. Name the processes (from walkthroughs, not endpoints): the main storyline and each secondary one.
+1. Name the processes (list each spec's walkthroughs or journeys, not endpoints): the main storyline and each secondary one.
 2. Reorder the slices into those stories and wrap each in a `storyline` block (`after "…"` where one
    follows another); a slice that fits no story is a deletion candidate.
 3. Intent test per command: rename to the business intent; split any command with "if X is set" rules.
-4. Question test per view: merge views answering the same question; add one only for an unanswered one.
+4. Apply the information-need test to each read model and fold children into parents: merge views
+   answering the same question; add one only for an unanswered one.
 5. Move child-entity events onto the parent's context when the child's invariants check the parent.
 6. Repeat each view (`again`, span-1) after every command that changes it; drop the lone trailing view.
 7. Fold success/failure slice pairs into one slice with alternative events.
-8. Re-run `em validate`, and `em validate --shape` — the 1.18.0 design exit gate — once available.
+8. Tooling, last: `em validate` (and `em validate --shape`, the 1.18.0 design exit gate), `em slice sync
+   --check` then `em slice sync`, `em slice index`, and regenerate TypeSpec/contracts last.
 
 ---
 
