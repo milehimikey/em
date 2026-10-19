@@ -151,6 +151,12 @@ describe("em validate --shape", () => {
     expect(em(["validate", "crud.em", "--shape", "--slice-ready", "create-class"], dir).status).toBe(1);
   }, 30_000);
 
+  it("refuses --strict together with --shape (shape findings never gate)", () => {
+    const r = em(["validate", "crud.em", "--shape", "--strict"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--strict applies only without --shape");
+  }, 30_000);
+
   it("buildShapeReport waives only when every ref is under a waived key", () => {
     const { diagnostics } = compile(CRUD);
     expect(buildShapeReport(diagnostics, ["create-class", "rename-class", "retire-class"]).waived).toBe(1);

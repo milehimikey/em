@@ -375,7 +375,7 @@ exists at all).
 | `--shape` | (GH #282) Run only the advisory **shape-family** lints and print a table (rule, count, first ref, docs anchor) — see [`--shape`](#--shape-gh-282). Exit 0 always; cannot be combined with `--slice-ready`, `--list-*`, `--fail-on-issues` or `--check-signed-bodies` |
 | `--waive-file <path>` | With `--shape` only: a baseline file (`#` comments, missing file = no waivers; lines are `<rule-code> <slice-key>`, or a bare `<slice-key>` that waives **all** shape rules on it) whose shape findings are listed as waived and not counted |
 | `--slice-ready <key>` | Readiness gate for one slice ([slice key](#slice-keys)) — see below. Takes priority over `--list-*`/`--fail-on-issues` if combined. |
-| `--strict` | (GH #293) Promote advisory lints (rules marked advisory in [validation.md](validation.md#scenario-quality), today the scenario-quality warnings) to errors. Plain `em validate` exits non-zero on them; with `--slice-ready` they block readiness. Without `--strict` an advisory lint never gates `--slice-ready` |
+| `--strict` | (GH #293) Promote advisory lints (rules marked advisory in [validation.md](validation.md#scenario-quality), today the scenario-quality warnings) to errors. Plain `em validate` exits non-zero on them; with `--slice-ready` they block readiness. Without `--strict` an advisory lint never gates `--slice-ready`. Refused together with `--shape` (shape findings never gate) |
 | `--json` | Print a JSON document instead of text — see below. Composes with every flag above; exit codes are unchanged in every case. |
 
 ```bash

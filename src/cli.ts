@@ -2069,6 +2069,10 @@ program
         console.error("em validate: --waive-file applies only with --shape");
         process.exit(1);
       }
+      if (opts.shape && opts.strict) {
+        console.error("em validate: --strict applies only without --shape (shape findings never gate)");
+        process.exit(1);
+      }
       if (opts.shape && (opts.sliceReady || opts.listIssues || opts.listDivergences || opts.listPublic || opts.failOnIssues || opts.checkSignedBodies)) {
         console.error("em validate: --shape cannot be combined with --slice-ready, --list-*, --fail-on-issues or --check-signed-bodies");
         process.exit(1);
