@@ -29,13 +29,13 @@ Public set: `meridian-goods` (PRD), `library-lending` and `support-desk` (synthe
 
 ## Arms and setup recipe
 
-The 1.18.0 lints, storyline rules and outcome rule ship together with no per-feature toggle, so the issue's arms B and B' collapse into one. Always run A, B and C: they test different fixes. The flattening rule below decides only whether D runs.
+The 1.18.0 lints, storyline rules and outcome rule ship together with no per-feature toggle, so the issue's arms B and B' collapse into one. Always run A, B and C: they test different fixes. Only the rerun-agreement trigger decides whether D runs.
 
 | Arm | em CLI | Skill bundle (plugin) | Entry point |
 | --- | --- | --- | --- |
 | A | `@milehimikey/em@1.17.0` | marketplace `milehimikey/em@v1.17.0`, plugin `em@em-1-17-0` | `/em:discover` |
 | B | `@milehimikey/em@1.18.0` | marketplace `milehimikey/em@v1.18.0`, plugin `em@em-1-18-0` (lints + storyline rules + outcome rule) | `/em:discover` |
-| C | as B | as B | the PRD/spec path of the discover skill (GH #295). If #295 ships inside 1.18.0, C is B invoked through that entry point; otherwise C is the first release that carries it (use that release's pin and say so in the recording). |
+| C | as B | as B | the PRD/spec path of the discover skill (GH #295). If #295 ships inside 1.18.0, C is B invoked through that entry point; otherwise C is the first release that carries it (use that release's pin and say so in the recording). In that case C differs from B in both CLI/bundle version and entry point, so the C-versus-B comparison is not clean; say so in the verdicts. |
 | D | as C | C + Jev grouping/classification | Only if reached (see Rerun agreement) |
 
 Setup per arm (the pin must be the only difference between arms):
@@ -43,6 +43,7 @@ Setup per arm (the pin must be the only difference between arms):
 ```bash
 export CLAUDE_CONFIG_DIR=$(mktemp -d)        # fresh profile: no user CLAUDE.md, no memories
 export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1     # auto-memory off; if your Claude Code build lacks this switch, the fresh profile above still has no memory
+claude auth login                             # a fresh CLAUDE_CONFIG_DIR has no credentials; log in once (or `/login` inside claude)
 claude plugin marketplace add milehimikey/em@v1.18.0 --scope user
 claude plugin install em@em-1-18-0 --scope user
 npm install --prefix "$CLAUDE_CONFIG_DIR/em" @milehimikey/em@1.18.0
@@ -113,14 +114,14 @@ em export produced.em > produced.json
 node eval/score.mjs produced.json eval/inputs/<name>/reference.json [--aliases aliases.json] [--json]
 ```
 
-`aliases.json` maps a produced slice key to the reference slice key it is equivalent to (`{"combine-ticket": "merge-ticket"}`), decided by a human, so renames are reconciled explicitly. The number of aliases used is reported and is itself a signal (many aliases means the produced slicing shares little vocabulary with the reference).
+`aliases.json` maps a produced slice key to the reference slice key it is equivalent to (`{"combine-ticket": "merge-ticket"}`), decided by a human, so renames are reconciled explicitly. Aliases only reconcile the `extraSlices`/`missingSlices` lists: the produced slice count, and so the primary metric, is always taken from the raw keys and an alias can never lower it. `score.mjs` rejects a many-to-one alias map and an alias onto a key the produced model already has. The number of aliases used is reported and is itself a signal (many aliases means the produced slicing shares little vocabulary with the reference).
 
 | Metric | Kind | Definition |
 | --- | --- | --- |
-| **Slices per business reaction** (primary) | mechanical | Produced slices (after alias reconciliation) divided by the reference's business reactions. Compare with the reference's own value (`referenceSlicesPerReaction`). Higher than the reference means over-decomposed, lower means under-decomposed. |
+| **Slices per business reaction** (primary) | mechanical | Produced slices (raw count) divided by the reference's business reactions. Compare with the reference's own value (`referenceSlicesPerReaction`). Higher than the reference means over-decomposed, lower means under-decomposed. |
 | Slice ratio | mechanical, secondary | Produced slices / reference slices (1.00 = same granularity). Reported with `aliasesUsed`, `extraSlices` and `missingSlices`. |
 | Implementation-flavoured element rate | human-labelled | Share of produced commands, events and views whose name or fields describe the implementation (`UpdateRecord`, `RowInserted`, `*DTO`, HTTP verbs, table names) rather than business intent. Label blind to the arm. |
-| Business-event recall | mechanical | Reference business events found by name in the produced model, divided by reference business events (normalized for case and punctuation; the human resolves near-misses via the alias step or by noting them). |
+| Business-event recall | mechanical | Reference business events found by name in the produced model, divided by reference business events (normalized for case and punctuation; `aliases.json` maps slice keys only, so event near-misses are noted by hand in the recording sheet and counted as found only if the human says so; no event aliases). |
 | Human-routing rate | human-recorded | Questions asked and STOP/gate prompts the session raised, per slice produced. |
 | Cost per input | recorded | Input plus output tokens (or dollars) for the whole session, wall-clock minutes, em CLI calls. |
 | **Entity-clustered rate** | mechanical | Share of State Change slices inside a run of at least 3 consecutive same-context slices with one trailing view and no cross-context read. The `timeline-entity-clustered` lint (GH #281) should match this count; confirm on the first real run, and once GH #315 exposes it in `em validate --json` prefer that number and report any disagreement. `score.mjs` computes it from the export: walk slices in `index` order; a run is a maximal sequence of State Change slices whose first event shares one context; the run counts if its length is at least 3, the next slice is a State View, and every source event of that view belongs to a slice in the run. 0 is good. |
@@ -146,11 +147,16 @@ If the spread is 2 or less on every input after arm C, H1 is moot rather than fa
 2. For arms A, B, C in order, for each input, three reruns: set up per the recipe, send the fixed opening message, follow the answering rule, save `runN.em`, fill in a `templates/recording.md` copy.
 3. Score: `em validate`, `em export`, `score.mjs`, human labels, rerun-agreement diffs.
 4. Fill in `templates/results-summary.md` per arm.
-5. D is decided by the rerun-agreement trigger above, together with the flattening rule: do not run D if the primary metric of C is within 0.1 of B on every input and the spread is 2 or less.
+5. D is decided only by the rerun-agreement trigger above.
 
 ## Decision
 
-Report per arm: median over reruns of slices per reaction per input, the spread, and the secondary metrics. H0 holds if arm C (or earlier) lands within 0.9 to 1.25 times the reference's slices per reaction on every input, with business-event recall of at least 0.9 on every input and a spread of 2 or less. Both sides of the band matter: under-decomposition (below 0.9) is also a failure. Otherwise arm D is justified, and only then does the Jev spike start.
+Report per arm: median over reruns of slices per reaction per input, the spread, and the secondary metrics.
+
+Two separate questions, answered separately:
+
+- **Is H0 met?** H0 holds if arm C lands within 0.9 to 1.25 times the reference's slices per reaction on every input, with business-event recall of at least 0.9 on every input. Both sides of the band matter: under-decomposition (below 0.9) is also a failure.
+- **Does Jev run?** Only the pre-registered spread trigger decides: spread above 2 on any input after arm C means run arm D for that input class. If the reruns are consistent (spread 2 or less) but H0 is not met, the problem is not inconsistency: the answer is to fix the deterministic pipeline (rules, lints, skill guidance), not to add Jev. The Jev spike starts only after arm D has been justified by the trigger.
 
 ## Smoke test
 

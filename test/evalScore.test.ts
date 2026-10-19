@@ -67,6 +67,20 @@ describe("eval/score.mjs on the public input set", () => {
     expect(aliased.slicesPerReaction).toBe(aliased.referenceSlicesPerReaction);
   });
 
+  it("aliases never lower slices per reaction; many-to-one and onto-existing aliases are rejected", () => {
+    const emPath = join(INPUTS, "support-desk", "reference.em");
+    const reference = JSON.parse(readFileSync(join(INPUTS, "support-desk", "reference.json"), "utf8"));
+    const exported = exportOf(emPath, readFileSync(emPath, "utf8"));
+    // reopen -> resolve is onto a key the model already has: rejected, never silently merged
+    expect(() => score(exported, reference, { "reopen-ticket": "resolve-ticket" })).toThrow(/already has/);
+    const renamed = exportOf(emPath, readFileSync(emPath, "utf8").replace(/Reopen Ticket/g, "Reactivate Ticket"));
+    const rename = score(renamed, reference, { "reactivate-ticket": "reopen-ticket" });
+    expect(rename.slicesPerReaction).toBe(1.8);
+    expect(() =>
+      score(renamed, reference, { "reactivate-ticket": "reopen-ticket", "merge-ticket": "reopen-ticket" }),
+    ).toThrow(/many-to-one/);
+  });
+
   it("flags an entity-clustered, over-decomposed model", () => {
     const path = join(INPUTS, "library-lending", "reference.em");
     const reference = JSON.parse(readFileSync(join(INPUTS, "library-lending", "reference.json"), "utf8"));

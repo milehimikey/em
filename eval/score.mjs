@@ -7,7 +7,8 @@
 // Computes the mechanical metrics of the eval protocol (README.md):
 //   - slicesPerReaction (PRIMARY): produced slices / reference business reactions. The reference's own
 //                            value is reported next to it. aliases.json maps produced slice key ->
-//                            reference slice key so a rename is reconciled explicitly (and counted).
+//                            reference slice key so a rename is reconciled explicitly (and counted). Aliases only
+//                            reconcile extra/missing; they never change the produced slice count.
 //   - sliceRatio (secondary): produced slices / reference slices (1.0 = same granularity)
 //   - entityClusteredRate:   share of State Change slices inside a run of >= 3 consecutive same-context
 //                            State Change slices that ends in exactly one trailing State View reading only
@@ -55,8 +56,18 @@ export function entityClustered(slices) {
 export function score(exported, reference, aliases = {}) {
   const slices = exported.model.slices;
   const expected = new Set(reference.reactions.flatMap((r) => r.slices));
-  const produced = new Set(slices.map((s) => aliases[s.key] ?? s.key));
-  const aliasesUsed = slices.filter((s) => s.key in aliases).length;
+  // Counts come from RAW produced keys: aliases only reconcile the extra/missing lists, so they can
+  // never lower the primary metric.
+  const rawKeys = slices.map((s) => s.key);
+  const used = rawKeys.filter((k) => k in aliases);
+  const targets = used.map((k) => aliases[k]);
+  if (new Set(targets).size !== targets.length) throw new Error("aliases: two produced keys map to the same reference key (many-to-one)");
+  for (const k of used) {
+    if (rawKeys.includes(aliases[k])) throw new Error(`aliases: "${k}" maps onto "${aliases[k]}", which the produced model already has`);
+  }
+  const produced = new Set(rawKeys);
+  const reconciled = new Set(rawKeys.map((k) => aliases[k] ?? k));
+  const aliasesUsed = used.length;
   const reactions = reference.reactions.length;
 
   const producedEvents = new Set(
@@ -75,8 +86,8 @@ export function score(exported, reference, aliases = {}) {
     referenceSlicesPerReaction: expected.size / reactions,
     sliceRatio: produced.size / expected.size,
     aliasesUsed,
-    extraSlices: [...produced].filter((k) => !expected.has(k)),
-    missingSlices: [...expected].filter((k) => !produced.has(k)),
+    extraSlices: [...reconciled].filter((k) => !expected.has(k)),
+    missingSlices: [...expected].filter((k) => !reconciled.has(k)),
     businessEventRecall: expectedEvents.length ? found.length / expectedEvents.length : 1,
     stateChangeSlices: cluster.stateChanges,
     entityClusteredSlices: cluster.clustered,

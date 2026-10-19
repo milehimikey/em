@@ -40,9 +40,9 @@ Added = slicesAdded + elementsAdded + typesAdded; removed = slicesRemoved + elem
 ## Verdicts
 
 - Arm C spread > 2 on any input (arm D trigger): yes / no (input classes: )
-- Flattening: C vs B primary within 0.1 on every input: yes / no
-- H0 (C within 0.9 to 1.25 of the reference slices per reaction, recall >= 0.9, spread <= 2, on every input): holds / does not hold, because
-- Arm D run: yes / no. If yes: H1 (more consistent across reruns): supported / not supported; H2 (better models): supported / not supported. If no: H1 moot.
+- H0 (C within 0.9 to 1.25 of the reference slices per reaction, recall >= 0.9, on every input): holds / does not hold, because
+- H0 not met with spread <= 2: fix the deterministic pipeline (not Jev). Note what to fix:
+- Arm D run: yes / no (only the spread trigger justifies it). If yes: H1 (more consistent across reruns): supported / not supported; H2 (better models): supported / not supported. If no: H1 moot.
 - Recommendation on the Jev spike (MIL-252 / GH #300):
 
 ## Free-text observations (element names may be quoted; no input text)

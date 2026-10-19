@@ -16,24 +16,10 @@ slice "Ticket Queue" {
   ui Queue Screen @Agent
 }
 
-slice "Stale Tickets" {
-  view Stale Tickets from "Ticket Opened" { ticketId: UUID, openedAt: DateTime }
-}
-
-slice "Escalate Stale Ticket" {
-  processor Stale Ticket Escalator from "Stale Tickets"
-  command Escalate Ticket { ticketId: UUID, escalatedAt: DateTime }
-  event Ticket Escalated @Escalations { ticketId: UUID, escalatedAt: DateTime }
-}
-
-slice "Escalated Tickets" {
-  view Escalated Tickets from "Ticket Escalated" { ticketId: UUID, escalatedAt: DateTime }
-  ui Escalations Screen @Agent
-}
-
-# A genuine run of three consecutive same-context State Change slices. The board that follows also
-# reads Ticket Opened and Ticket Escalated, which live outside the run (a cross-context read), so
-# the entity-clustered rate stays 0: this reference exercises the metric's negative case.
+# A genuine run of three consecutive same-context State Change slices (all @Tickets; Ticket Opened is
+# the same context too). The board that follows is NOT counted as entity-clustered because it also
+# reads Ticket Opened, which comes from a slice outside the run, so the entity-clustered rate stays
+# 0: this reference exercises the metric's negative case.
 slice "Resolve Ticket" {
   ui Ticket Screen @Agent
   command Resolve Ticket { ticketId: UUID, resolution: String, resolvedAt: DateTime }
@@ -53,6 +39,21 @@ slice "Merge Ticket" {
 }
 
 slice "Ticket Board" {
-  view Ticket Board from "Ticket Opened", "Ticket Escalated", "Ticket Resolved", "Ticket Reopened", "Ticket Merged" { ticketId: UUID, openedAt: DateTime, escalatedAt: DateTime, resolvedAt: DateTime, reopenedAt: DateTime, mergedAt: DateTime }
+  view Ticket Board from "Ticket Opened", "Ticket Resolved", "Ticket Reopened", "Ticket Merged" { ticketId: UUID, openedAt: DateTime, resolvedAt: DateTime, reopenedAt: DateTime, mergedAt: DateTime }
   ui Board Screen @Agent
+}
+
+slice "Stale Tickets" {
+  view Stale Tickets from "Ticket Opened", "Ticket Resolved", "Ticket Reopened", "Ticket Merged" { ticketId: UUID, openedAt: DateTime, resolvedAt: DateTime, reopenedAt: DateTime, mergedAt: DateTime }
+}
+
+slice "Escalate Stale Ticket" {
+  processor Stale Ticket Escalator from "Stale Tickets"
+  command Escalate Ticket { ticketId: UUID, escalatedAt: DateTime }
+  event Ticket Escalated @Escalations { ticketId: UUID, escalatedAt: DateTime }
+}
+
+slice "Escalated Tickets" {
+  view Escalated Tickets from "Ticket Escalated" { ticketId: UUID, escalatedAt: DateTime }
+  ui Escalations Screen @Agent
 }
