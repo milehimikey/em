@@ -872,10 +872,16 @@ export const TIMELINE_ENTITY_CLUSTER_MIN_RUN = 3;
 /** `timeline-entity-clustered` (GH #281): a run of >= N consecutive State Change slices whose
  *  events all sit on ONE context, where the first view-bearing slice from the run onward reads
  *  only that context and no view fed by another context sits inside the run — the
- *  lifecycle-per-entity (CRUD-on-a-timeline) shape. Fires once per maximal run, with `refs`
+ *  lifecycle-per-entity (CRUD-on-a-timeline) shape. Exempt below 2 distinct write contexts. A trailing
+ *  `again` view is judged by the logical view's union of sources. Fires once per maximal run, with `refs`
  *  naming every slice key in the run. */
 function timelineEntityClustered(model: NormalizedModel, sliceKeys: string[]): Diagnostic[] {
   const diags: Diagnostic[] = [];
+  // Interleaving contexts is the fix, so a model with fewer than 2 distinct write contexts
+  // (no `@Context` at all, or every event on one) has nothing to interleave: exempt.
+  const writeContexts = new Set<string | undefined>();
+  for (const slice of model.slices) for (const e of slice.elements) if (e.kind === "event") writeContexts.add(e.context);
+  if (writeContexts.size < 2) return diags;
   const sliceInfo = model.slices.map((slice) => {
     const events = slice.elements.filter((e) => e.kind === "event");
     const views = slice.elements.filter((e) => e.kind === "view");
@@ -912,8 +918,10 @@ function timelineEntityClustered(model: NormalizedModel, sliceKeys: string[]): D
         pushDiag(diags, "timeline-entity-clustered", {
           message:
             `${run.length} consecutive State Change slices ("${first.name}" through "${last.name}") all write ` +
-            `context "${ctx}" and only that context is read next — this is the lifecycle-per-entity shape; ` +
-            `order slices by the business journey (see docs/storyline.md)`,
+            `context "${ctx}" and only that context is read next. If these are create/update/archive operations ` +
+            `on one entity, order the slices by the business journey, interleaving contexts as the story does ` +
+            `(see docs/storyline.md); if they are consecutive steps of one journey, show the screen the user ` +
+            `sees between them (a view after each step)`,
           line: first.line,
           refs: run.map((s) => sliceKeys[s.slice.index]),
         });

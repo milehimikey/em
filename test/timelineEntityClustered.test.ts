@@ -34,6 +34,11 @@ slice "Class List" {
   view Class List from "Class Created", "Class Renamed", "Class Retired"
   ui Class Screen
 }
+slice "Set Price" {
+  ui Price Form
+  command Set Price
+  event Price Set @Pricing
+}
 `;
 
 // The same events, interleaved by the business journey with another context's write and read.
@@ -101,6 +106,26 @@ describe("timeline-entity-clustered", () => {
       'slice "Price Seen" {\n  command Quote\n  event Quoted @Pricing\n  view Quote View from "Quoted"\n  ui Q\n}\nslice "Retire Class"',
     );
     expect(hits(interleaved)).toEqual([]);
+  });
+
+  it("is clean when only an other-context view (write context unchanged) interrupts the run", () => {
+    const m = CLUSTERED.replace(
+      'slice "Retire Class"',
+      'slice "Price Seen" {\n  view Price Seen from "Price Set"\n  ui Q\n}\nslice "Retire Class"',
+    ).replace('slice "Create Class"', 'slice "Seed" {\n  command Seed\n  event Price Set @Pricing\n}\nslice "Create Class"').replace(/slice "Set Price" \{[\s\S]*?\n\}\n/, "");
+    expect(hits(m)).toEqual([]);
+  });
+
+  it("is exempt when the model has no @Context, or every event is on one context", () => {
+    expect(hits(CLUSTERED.replace(/ @Catalog/g, "").replace(/ @Pricing/g, ""))).toEqual([]);
+    expect(hits(CLUSTERED.replace(/@Pricing/g, "@Catalog"))).toEqual([]);
+    expect(hits(CLUSTERED)).toHaveLength(1);
+  });
+
+  it("message offers both outcomes (entity lifecycle vs steps of one journey)", () => {
+    const d = hits(CLUSTERED);
+    expect(d[0].message).toContain("create/update/archive");
+    expect(d[0].message).toContain("a view after each step");
   });
 
   it("is clean when the next view reads another context", () => {

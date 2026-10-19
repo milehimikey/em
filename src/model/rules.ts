@@ -65,7 +65,7 @@ export const RULES = {
   "timeline-entity-clustered": {
     severity: "warning",
     title: "Lifecycle-per-entity shape (storyline order)",
-    fix: "Order the slices by the business journey, interleaving contexts as the story does — see docs/storyline.md.",
+    fix: "If these are create/update/archive steps on one entity, order the slices by the business journey, interleaving contexts as the story does; if they are steps of one journey, show a screen (a view) after each step. See docs/storyline.md.",
     usageCategory: "consecutive same-context state changes",
     docAnchor: "shape",
     family: "shape",
