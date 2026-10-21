@@ -990,15 +990,18 @@ slice
       "— the FIRST of the two human gates (MIL-201, docs/process.md#the-slice-lifecycle-gates): " +
       "the room walked this slice and every open question it raised is resolved. Ratification is " +
       "a separate, later gate (`em slice ratify`). Legal from `status: draft`; idempotent on the " +
-      "same --by/--on pair; refuses to overwrite a different one already recorded; refuses a doc " +
-      "already `ready-to-implement`/`implemented`; never touches `version:` or the doc body",
+      "same --by/--on pair; refuses to overwrite a different one already recorded (--again re-records " +
+      "it); refuses a doc with an unchecked `## Open Questions` item unless --allow-open (GH #333); " +
+      "refuses a doc already `ready-to-implement`/`implemented`; never touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
   .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest ratifiers.yaml above the model, none = unrestricted)")
-  .action((file: string, sliceKey: string, opts: { by: string; on?: string; roster?: string }) => {
+  .option("--again", "re-record reviewedBy/reviewedOn on a doc already `status: reviewed` (prints old -> new); still refused on ready-to-implement/implemented")
+  .option("--allow-open", "record the review although `## Open Questions` has unchecked items (a deliberately partial walk); prints a notice with the open count")
+  .action((file: string, sliceKey: string, opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     sliceKey = resolveSliceOrExit("em slice review", model, refs, sliceKey);
@@ -1026,14 +1029,22 @@ slice
       process.exit(1);
     }
 
-    const result = runReview(model, refs, dirname(file), sliceKey, opts.by, reviewedOn);
+    const result = runReview(model, refs, dirname(file), sliceKey, opts.by, reviewedOn, {
+      again: opts.again === true,
+      allowOpen: opts.allowOpen === true,
+    });
     if (!result.ok) {
       console.error(`em slice review: ${result.message}`);
       process.exit(1);
     }
+    if (result.allowedOpen !== undefined) {
+      console.error(`notice: --allow-open — reviewing "${sliceKey}" with ${result.allowedOpen} unchecked Open Questions item(s)`);
+    }
     console.log(
       result.changed
-        ? `reviewed: ${result.path} (reviewedBy: ${opts.by}, reviewedOn: ${reviewedOn})`
+        ? result.previous
+          ? `re-reviewed: ${result.path} (reviewedBy: ${result.previous.by} -> ${opts.by}, reviewedOn: ${result.previous.on} -> ${reviewedOn})`
+          : `reviewed: ${result.path} (reviewedBy: ${opts.by}, reviewedOn: ${reviewedOn})`
         : `already reviewed (no-op): ${result.path}`,
     );
   });

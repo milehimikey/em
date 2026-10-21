@@ -269,20 +269,31 @@ const TASK_ITEM = /^[ \t]*[-*]\s*\[([ xX])\]/;
  * most slice docs won't have open questions left by the time they're read.
  */
 function countOpenQuestions(body: string): { openQuestionsTotal: number; openQuestionsUnchecked: number } {
+  const items = openQuestionItems(body);
+  return { openQuestionsTotal: items.length, openQuestionsUnchecked: items.filter((i) => !i.checked).length };
+}
+
+/** The `## Open Questions` task-list items in document order, with their text (checkbox stripped).
+ *  The single parser behind `countOpenQuestions` and `uncheckedOpenQuestions`. */
+function openQuestionItems(body: string): { checked: boolean; text: string }[] {
   const lines = body.split(/\r?\n/);
   const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
-  if (start === -1) return { openQuestionsTotal: 0, openQuestionsUnchecked: 0 };
-
-  let openQuestionsTotal = 0;
-  let openQuestionsUnchecked = 0;
+  if (start === -1) return [];
+  const items: { checked: boolean; text: string }[] = [];
   for (let i = start + 1; i < lines.length; i++) {
     if (/^#{1,2}\s/.test(lines[i])) break;
     const m = lines[i].match(TASK_ITEM);
     if (!m) continue;
-    openQuestionsTotal++;
-    if (m[1] === " ") openQuestionsUnchecked++;
+    items.push({ checked: m[1] !== " ", text: lines[i].replace(TASK_ITEM, "").trim() });
   }
-  return { openQuestionsTotal, openQuestionsUnchecked };
+  return items;
+}
+
+/** GH #333: the still-unchecked (`- [ ]`) Open Questions item texts, document order — what
+ *  `em slice review` refuses on. Same section boundary and item grammar as the
+ *  `openQuestionsUnchecked` count `--slice-ready`'s `noUncheckedOpenQuestions` gate reads. */
+export function uncheckedOpenQuestions(body: string): string[] {
+  return openQuestionItems(body).filter((i) => !i.checked).map((i) => i.text);
 }
 
 /**

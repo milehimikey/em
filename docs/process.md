@@ -113,7 +113,9 @@ draft ──(review session)──▶ reviewed ──(ratification gate)──�
    domain. A slice whose open questions are all resolved in the room ends the walkthrough with
    `em slice review <model>.em <key> --by <name>` ([cli.md](cli.md#em-slice-review-file-slice-key---by-name)),
    which flips `status` to `reviewed` and records `reviewedBy:`/`reviewedOn:`. Anything still
-   open stays `draft`. **The facilitator never ratifies in a review session** — that is the next
+   open stays `draft`: since 1.18.1 `em slice review` refuses a doc with an unchecked
+   `## Open Questions` item (`--allow-open` records a deliberately partial walk and prints a notice),
+   and `--again` re-records the review after a body edit. **The facilitator never ratifies in a review session** — that is the next
    gate, and it is not theirs to run.
 3. **The ratification gate → `ready-to-implement`.** Human, per-slice, and *typically
    multi-person*: the ratifier plus whoever will own the build. `em slice ratify <model>.em <key>

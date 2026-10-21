@@ -356,3 +356,91 @@ describe("runReview (note-binding resolution + fs orchestration)", () => {
     expect(written).toContain("reviewedBy: Sam Okafor");
   });
 });
+
+// GH #333: the Open Questions gate and the --again re-record.
+describe("em slice review: Open Questions gate and --again (GH #333)", () => {
+  let dir: string;
+  const fm = (status: string, extra = "") =>
+    `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ${status}\nversion: 1\n${extra}---\n`;
+  const OPEN = "# Slice\n\n## Open Questions\n\n- [x] Settled one\n- [ ] Who pays the fee?\n- [ ] Second open\n\n## Next\n";
+  const CLOSED = "# Slice\n\n## Open Questions\n\n- [x] Settled one\n- [x] Settled two\n";
+  const model = (key: string) => `slice "${key}" {\n  command Do Thing note "slices/${key}.md"\n  event Thing Done\n}\n`;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-review-oq-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docs: Record<string, string> = {
+      "open-doc": fm("draft") + OPEN,
+      "closed-doc": fm("draft") + CLOSED,
+      "reviewed-doc": fm("reviewed", "reviewedBy: Sam\nreviewedOn: 2026-09-01\n") + CLOSED,
+      "ratified-doc": fm("ready-to-implement", "ratifiedBy: Ann\nratifiedOn: 2026-09-02\n") + CLOSED,
+    };
+    for (const [key, content] of Object.entries(docs)) {
+      writeFileSync(join(dir, "slices", `${key}.md`), content);
+      writeFileSync(join(dir, `${key}.em`), model(key));
+    }
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(key: string, by: string, on: string, opts = {}) {
+    const { model: m, refs } = compile(readFileSync(join(dir, `${key}.em`), "utf8"));
+    return runReview(m, refs, dir, key, by, on, opts);
+  }
+  const read = (key: string) => readFileSync(join(dir, "slices", `${key}.md`), "utf8");
+
+  it("refuses an unchecked Open Questions item, naming the first item and the count, file untouched", () => {
+    const before = read("open-doc");
+    const result = run("open-doc", "Sam", "2026-09-05");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("2 unchecked Open Questions item(s)");
+    expect(result.message).toContain('first: "Who pays the fee?"');
+    expect(read("open-doc")).toBe(before);
+  });
+
+  it("--allow-open records the review and reports the open count", () => {
+    const result = run("open-doc", "Sam", "2026-09-05", { allowOpen: true });
+    expect(result).toEqual({ ok: true, path: "slices/open-doc.md", changed: true, allowedOpen: 2 });
+    expect(read("open-doc")).toContain("status: reviewed");
+  });
+
+  it("passes a doc whose Open Questions are all checked, with no open-count notice", () => {
+    const result = run("closed-doc", "Sam", "2026-09-05");
+    expect(result).toEqual({ ok: true, path: "slices/closed-doc.md", changed: true });
+  });
+
+  it("an idempotent re-run on a reviewed doc is unchanged (no gate, no write)", () => {
+    const before = read("closed-doc");
+    const result = run("closed-doc", "Sam", "2026-09-05");
+    expect(result).toEqual({ ok: true, path: "slices/closed-doc.md", changed: false });
+    expect(read("closed-doc")).toBe(before);
+  });
+
+  it("a different reviewer is still refused without --again", () => {
+    const result = run("reviewed-doc", "Robin", "2026-09-06");
+    expect(result.ok).toBe(false);
+  });
+
+  it("--again overwrites reviewedBy/reviewedOn on a reviewed doc and reports old -> new", () => {
+    const result = run("reviewed-doc", "Robin", "2026-09-06", { again: true });
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/reviewed-doc.md",
+      changed: true,
+      previous: { by: "Sam", on: "2026-09-01" },
+    });
+    const written = read("reviewed-doc");
+    expect(written).toContain("reviewedBy: Robin");
+    expect(written).toContain("reviewedOn: 2026-09-06");
+    expect(written).not.toContain("Sam");
+  });
+
+  it("--again is still refused on ready-to-implement", () => {
+    const before = read("ratified-doc");
+    const result = run("ratified-doc", "Robin", "2026-09-06", { again: true });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("review applies before ratification");
+    expect(read("ratified-doc")).toBe(before);
+  });
+});

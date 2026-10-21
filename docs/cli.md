@@ -3377,6 +3377,16 @@ with the same `--by`/`--on` pair once the doc is already `status: reviewed` with
 a no-op (reports as such, exits 0). Refuses, non-zero exit, leaving the file untouched, if the doc
 is already `status: reviewed` with a **different** `reviewedBy`/`reviewedOn` recorded — this
 command never silently overwrites provenance, same discipline `ratify`/`mark-implemented` hold.
+`--again` is the deliberate re-record (GH #333): on a doc already `status: reviewed` it overwrites
+`reviewedBy`/`reviewedOn` with the new `--by`/`--on` and prints old -> new; it is refused on
+`ready-to-implement`/`implemented` exactly like review itself. (There is no review hash: a body edit
+after review is re-reviewed with `--again`.)
+
+**Open Questions gate (GH #333, 1.18.1).** Review records that every open question is resolved, so it
+refuses (exit 1, file untouched) a doc with any unchecked `- [ ]` item under `## Open Questions` — the
+same parse `--slice-ready`'s `noUncheckedOpenQuestions` gate uses. The message names the first
+unchecked item and the count. Resolve it, or park it with [`em slice defer`](#em-slice-defer-file-slice-key-question).
+`--allow-open` records a deliberately partial walk anyway and prints a one-line notice on stderr naming the open count.
 
 Refuses a doc already `ready-to-implement` or `implemented`: review applies *before* ratification,
 and a slice that has already shipped is reopened with [`em slice revise`](#em-slice-revise-file-slice-key)
@@ -3390,9 +3400,12 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 |---|---|
 | `--by <name>` | **Required.** The reviewer's (or facilitator's) name |
 | `--on <date>` | Review date, `YYYY-MM-DD` (default: today, local date) |
+| `--again` | Re-record `reviewedBy`/`reviewedOn` on a doc already `status: reviewed` (prints old -> new) |
+| `--allow-open` | Record the review although `## Open Questions` has unchecked items; prints a notice with the count |
 
 | Error | Meaning |
 |---|---|
+| `<n> unchecked Open Questions item(s) — first: "<text>"` | The Open Questions gate above; resolve/defer them or pass `--allow-open` |
 | `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; review "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — review the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |

@@ -33,6 +33,7 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
+import { parseSliceDoc, uncheckedOpenQuestions } from "../catalog/sliceDoc.js";
 import { isValidDateString } from "./stateFile.js";
 
 /** The status this command flips a slice doc to — the review gate
@@ -46,7 +47,7 @@ export const REVIEWED_STATUS = "reviewed";
 const POST_REVIEW_STATUSES = ["ready-to-implement", "implemented"];
 
 export type ApplyReviewResult =
-  | { ok: true; content: string; changed: boolean }
+  | { ok: true; content: string; changed: boolean; previous?: { by: string; on: string } }
   | { ok: false; message: string };
 
 /**
@@ -58,7 +59,7 @@ export type ApplyReviewResult =
  * Refuses from `ready-to-implement`/`implemented` (see module header). No fs access — the caller
  * reads/writes; see `runReview` below.
  */
-export function applyReviewFrontmatter(raw: string, reviewedBy: string, reviewedOn: string): ApplyReviewResult {
+export function applyReviewFrontmatter(raw: string, reviewedBy: string, reviewedOn: string, again = false): ApplyReviewResult {
   const trimmedBy = reviewedBy.trim();
   if (!trimmedBy) return { ok: false, message: "a reviewer name is required (--by)" };
   // Same guard, same rationale as ratify's: an embedded \r/\n could splice a multi-line value
@@ -87,12 +88,15 @@ export function applyReviewFrontmatter(raw: string, reviewedBy: string, reviewed
     if (currentBy === trimmedBy && currentOn === reviewedOn) {
       return { ok: true, content: raw, changed: false }; // idempotent no-op
     }
-    return {
-      ok: false,
-      message:
-        `already reviewed by ${currentBy} on ${currentOn} — refusing to overwrite with ` +
-        `${trimmedBy} on ${reviewedOn}`,
-    };
+    if (!again) {
+      return {
+        ok: false,
+        message:
+          `already reviewed by ${currentBy} on ${currentOn} — refusing to overwrite with ` +
+          `${trimmedBy} on ${reviewedOn}`,
+      };
+    }
+    // GH #333 --again: fall through to the normal edit below, which replaces both values in place.
   }
 
   if (currentStatus !== null && POST_REVIEW_STATUSES.includes(currentStatus)) {
@@ -133,12 +137,23 @@ export function applyReviewFrontmatter(raw: string, reviewedBy: string, reviewed
   }
 
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
-  return { ok: true, content, changed: true };
+  const previous =
+    currentStatus === REVIEWED_STATUS && currentBy !== null && currentOn !== null
+      ? { by: currentBy, on: currentOn }
+      : undefined;
+  return { ok: true, content, changed: true, ...(previous ? { previous } : {}) };
 }
 
 export type RunReviewResult =
-  | { ok: true; path: string; changed: boolean }
+  | { ok: true; path: string; changed: boolean; previous?: { by: string; on: string }; allowedOpen?: number }
   | { ok: false; message: string };
+
+export interface ReviewOptions {
+  /** GH #333: re-record reviewedBy/reviewedOn on a doc that is already `status: reviewed`. */
+  again?: boolean;
+  /** GH #333: record the review although `## Open Questions` still has unchecked items. */
+  allowOpen?: boolean;
+}
 
 /**
  * Resolves `sliceKey` to its bound doc via the same note-binding join `ratify`/`mark-implemented`/
@@ -152,6 +167,7 @@ export function runReview(
   sliceKey: string,
   reviewedBy: string,
   reviewedOn: string,
+  opts: ReviewOptions = {},
 ): RunReviewResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -197,12 +213,35 @@ export function runReview(
 
   const absPath = join(baseDir, doc.path);
   const raw = readFileSync(absPath, "utf8");
-  const result = applyReviewFrontmatter(raw, reviewedBy, reviewedOn);
+  const result = applyReviewFrontmatter(raw, reviewedBy, reviewedOn, opts.again === true);
   if (!result.ok) {
     return { ok: false, message: `${doc.path}: ${result.message}` };
+  }
+  // GH #333: review is the "every open question is resolved" gate. A no-op re-run records
+  // nothing, so only a write is gated — same unchecked-item grammar as --slice-ready.
+  let allowedOpen: number | undefined;
+  if (result.changed) {
+    const open = uncheckedOpenQuestions(parseSliceDoc(raw).body);
+    if (open.length > 0) {
+      if (!opts.allowOpen) {
+        return {
+          ok: false,
+          message:
+            `${open.length} unchecked Open Questions item(s) — first: "${open[0]}". ` +
+            "Resolve or defer them (`em slice defer`), or pass --allow-open to record a deliberately partial walk",
+        };
+      }
+      allowedOpen = open.length;
+    }
   }
   if (result.changed) {
     writeFileSync(absPath, result.content, "utf8");
   }
-  return { ok: true, path: doc.path, changed: result.changed };
+  return {
+    ok: true,
+    path: doc.path,
+    changed: result.changed,
+    ...(result.previous ? { previous: result.previous } : {}),
+    ...(allowedOpen !== undefined ? { allowedOpen } : {}),
+  };
 }
