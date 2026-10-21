@@ -21,8 +21,9 @@ import {
   engagementPlanFor,
   engagementStatusFor,
   formatEngagementPlanText,
+  resolvePrTitle,
 } from "../src/cli/engagement.js";
-import { engagementPath, loadEngagement } from "../src/cli/engagementFile.js";
+import { engagementPath, loadEngagement, parseEngagementFile } from "../src/cli/engagementFile.js";
 import { LENDING_ENGAGEMENT_KEYS, lendingViewKeys, writeLendingFixture, writeLifecyclesFixture } from "./helpers/engagementFixture.js";
 
 // CLI-spawning file (the `em engagement …` suite below): a cold CI runner takes ~5–6 s per spawn
@@ -420,7 +421,7 @@ describe("engagement tracking key (GH #241)", () => {
     create(file, "tracked", { kind: "slices", keys: ["order-list"] }, 3, "PROJ-123");
     const text = readFileSync(engagementPath(file, "tracked"), "utf8");
     expect(text).toContain('\ntracking: "PROJ-123"\n');
-    expect(text).toContain('engagementSchemaVersion: "1.1"');
+    expect(text).toContain('engagementSchemaVersion: "1.2"');
     expect(plan(file, "tracked")).toMatchObject({ tracking: "PROJ-123", slices: [{ key: "order-list", tracking: "PROJ-123" }] });
     expect(status(file, "tracked")).toMatchObject({ tracking: "PROJ-123", slices: [{ key: "order-list", tracking: "PROJ-123" }] });
   });
@@ -429,7 +430,7 @@ describe("engagement tracking key (GH #241)", () => {
     const { file } = writeLifecyclesFixture(dir);
     create(file, "old", { kind: "slices", keys: ["order-list"] });
     const path = engagementPath(file, "old");
-    writeFileSync(path, readFileSync(path, "utf8").replace('engagementSchemaVersion: "1.1"', 'engagementSchemaVersion: "1.0"'));
+    writeFileSync(path, readFileSync(path, "utf8").replace('engagementSchemaVersion: "1.2"', 'engagementSchemaVersion: "1.0"'));
     expect(plan(file, "old").tracking).toBeNull();
   });
 
@@ -456,9 +457,66 @@ describe("engagement tracking key (GH #241)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "cli", "--slices", "order-list", "--tracking", "PROJ-7"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "cli"), "utf8")).toContain('tracking: "PROJ-7"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
-    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.3", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.4", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
     const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
     expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+  }, 60_000);
+});
+
+// GH #334: the PR title template on the engagement, resolved per slice in the plan.
+describe("engagement prTitle template (GH #334)", () => {
+  it("resolvePrTitle: default with key, default without key, template with key, {key} template without key, no placeholders", () => {
+    expect(resolvePrTitle(null, "PROJ-1", "Order List")).toBe("PROJ-1: Order List");
+    expect(resolvePrTitle(null, null, "Order List")).toBe("Order List");
+    expect(resolvePrTitle("feat({slice}): add it [{key}]", "PROJ-1", "Order List")).toBe("feat(Order List): add it [PROJ-1]");
+    expect(resolvePrTitle("feat: {slice} ({key})", null, "Order List")).toBe("Order List");
+    expect(resolvePrTitle("feat: {slice}", null, "Order List")).toBe("feat: Order List");
+    expect(resolvePrTitle("chore: fixed title", "PROJ-1", "Order List")).toBe("chore: fixed title");
+  });
+
+  it("round-trips through the file; absent key is null and the plan carries the default", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    create(file, "plain", { kind: "slices", keys: ["order-list"] });
+    expect(readFileSync(engagementPath(file, "plain"), "utf8")).not.toContain("prTitle:");
+    const p0 = plan(file, "plain");
+    expect(p0.prTitle).toBeNull();
+    expect(p0.slices[0].prTitle).not.toContain("{");
+
+    const r = buildNewEngagement(input(file), { slug: "titled", selector: { kind: "slices", keys: ["order-list"] }, parallel: 3, createdBy: null, tracking: "PROJ-9", prTitle: "feat({slice}): add [{key}]", created: "2026-10-08" });
+    if (!r.ok) throw new Error(r.message);
+    const path = engagementPath(file, "titled");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, r.text);
+    expect(r.text).toContain('\nprTitle: "feat({slice}): add [{key}]"\n');
+    const parsed = parseEngagementFile(r.text);
+    expect(parsed.ok && parsed.file.prTitle).toBe("feat({slice}): add [{key}]");
+    const p = plan(file, "titled");
+    expect(p.prTitle).toBe("feat({slice}): add [{key}]");
+    expect(p.slices[0].prTitle).toMatch(/^feat\(.+\): add \[PROJ-9\]$/);
+  });
+
+  it("the default with a tracking key is `<key>: <slice name>`", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    create(file, "tracked-default", { kind: "slices", keys: ["order-list"] }, 3, "PROJ-5");
+    expect(plan(file, "tracked-default").slices[0].prTitle).toMatch(/^PROJ-5: .+/);
+  });
+
+  it("rejects an empty or multi-line template", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    for (const bad of ["", "  ", "a\nb"]) {
+      const r = buildNewEngagement(input(file), { slug: "bad", selector: { kind: "slices", keys: ["order-list"] }, parallel: 3, createdBy: null, prTitle: bad, created: "2026-10-08" });
+      expect(r).toEqual({ ok: false, message: "--pr-title must be a non-empty single line (a template using {key} and {slice})" });
+    }
+  });
+
+  it("the CLI flag writes the template and plan --json carries the resolved title per slice", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    expect(em(["engagement", "new", "lifecycles.em", "titled-cli", "--slices", "order-list", "--tracking", "PROJ-7", "--pr-title", "feat: {slice} [{key}]"], dir).status).toBe(0);
+    expect(readFileSync(engagementPath(file, "titled-cli"), "utf8")).toContain('prTitle: "feat: {slice} [{key}]"');
+    const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "titled-cli", "--json"], dir).stdout);
+    expect(p.engagementPlanSchemaVersion).toBe("1.4");
+    expect(p.prTitle).toBe("feat: {slice} [{key}]");
+    expect(p.slices[0].prTitle).toMatch(/^feat: .+ \[PROJ-7\]$/);
   }, 60_000);
 });
 
@@ -592,7 +650,7 @@ describe("plan pre-flight (GH #239)", () => {
     const file = write();
     create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
     const p = JSON.parse(em(["engagement", "plan", "orders.em", "cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.3");
+    expect(p.engagementPlanSchemaVersion).toBe("1.4");
     expect(p.preflight.map((f: { kind: string }) => f.kind)).toEqual(["repeated-invariant", "event-without-tag", "shared-trigger"]);
     expect(em(["engagement", "plan", "orders.em", "cli"], dir).stdout).toContain("pre-flight: 3 model-wide gap(s)");
   }, 60_000);

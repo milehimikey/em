@@ -2199,7 +2199,7 @@ slice's doc through a ratified `covers:` entry folds into that slice.
 every to-do list and its reaction a cycle. Edges are lifted from elements to units, and an
 upstream whose doc is already `implemented` imposes nothing.
 
-### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --downstream-of <ref>) [--parallel N] [--by <name>] [--tracking <key>] [--force]`
+### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --downstream-of <ref>) [--parallel N] [--by <name>] [--tracking <key>] [--pr-title <template>] [--force]`
 
 Writes `engagements/<slug>.md` with every selected slice at state `planned`, and records the
 model it belongs to (`model:`, relative to the file). Every other subcommand refuses a model
@@ -2217,7 +2217,13 @@ Slices that are not yet `ready-to-implement` are accepted; `plan` reports them h
 `created` is today's local date. `--tracking <key>` (GH #241) records an issue-tracker key or URL
 as `tracking:` in the frontmatter — the same name a slice doc's `tracking:` uses — so the lead
 can pass it to every implementer and the PRs cite one ticket; it is free text and must be a
-non-empty single line (`--tracking must be a non-empty single line (a ticket key or URL)`). Refusals (exit 1, stderr): `pass exactly one of --slices,
+non-empty single line (`--tracking must be a non-empty single line (a ticket key or URL)`).
+`--pr-title <template>` (GH #334) records `prTitle:` in the frontmatter: the title every slice PR
+carries, with `{key}` (the slice's resolved tracking key) and `{slice}` (the slice name)
+substituted. Absent, the title is `{key}: {slice}` with a tracking key and `{slice}` without; a
+template that uses `{key}` on a slice with no tracking key falls back to `{slice}`. Free text, one
+non-empty line (`--pr-title must be a non-empty single line (a template using {key} and {slice})`).
+Use it when the host repo's PR-title lint rejects `<key>: <name>` (for example `feat({slice}): add it [{key}]`). Refusals (exit 1, stderr): `pass exactly one of --slices,
 --context, --downstream-of`; `the selection is empty — nothing to engage`; `invalid slug "<s>"
 — expected kebab-case (a-z, 0-9, -)`; `--parallel must be a positive integer`; `engagement
 "<slug>" already exists (<path>) — pass --force to overwrite`.
@@ -2254,6 +2260,7 @@ PR compiles, tests and merges on its own. Holds are recomputed on every run. Per
 | `held` | `planHeld`, else `human` when the Ledger records `set --state held`, else `null` |
 | `state`, `stateInferred` | The Ledger state; `merged` with `stateInferred: true` when the doc has reached `implemented` |
 | `tracking` | The ticket key this slice's PR cites: the slice doc's own `tracking:` when present, else the engagement's; `null` when neither is set |
+| `prTitle` | The exact PR title for this slice (GH #334): the engagement's `prTitle` template with `{key}`/`{slice}` resolved, or the default (`<key>: <slice name>`, or `<slice name>` without a key). The lead hands it to the implementer verbatim |
 
 | Hold reason | When |
 |---|---|
@@ -2303,8 +2310,8 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.3"`, `generator`, `file`, `engagement` (the
-file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
+`--json` prints `engagementPlanSchemaVersion: "1.4"`, `generator`, `file`, `engagement` (the
+file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
 (added in `1.2`, GH #239 — see above). The MCP
 `engagement_plan` tool returns the same document. If a cycle survives the `loops-to` exclusion,

@@ -257,6 +257,17 @@ export function effectiveTracking(sliceTracking: string | null, engagementTracki
   return sliceTracking ?? engagementTracking;
 }
 
+/** GH #334: the PR title for one slice. The default is `{key}: {slice}` with a tracking key and
+ *  `{slice}` without. A custom template substitutes `{key}` and `{slice}`; a template that uses
+ *  `{key}` on a slice with no tracking key falls back to the default without a key. */
+export const DEFAULT_PR_TITLE = "{key}: {slice}";
+export function resolvePrTitle(template: string | null, tracking: string | null, slice: string): string {
+  if (tracking === null) {
+    return template === null || template.includes("{key}") ? slice : template.split("{slice}").join(slice);
+  }
+  return (template ?? DEFAULT_PR_TITLE).split("{key}").join(tracking).split("{slice}").join(slice);
+}
+
 export function effectiveState(entry: EngagementSliceEntry, docShipped: boolean): { state: LedgerState; stateInferred: boolean } {
   if (entry.state !== "merged" && docShipped) return { state: "merged", stateInferred: true };
   return { state: entry.state, stateInferred: false };
@@ -377,6 +388,8 @@ export interface EngagementPlanSlice {
   stateInferred: boolean;
   /** GH #241: the ticket key this slice's PR cites (slice doc `tracking:` wins over the engagement's). */
   tracking: string | null;
+  /** GH #334: the exact PR title the implementer is handed (the engagement's `prTitle` template, or the default, resolved). */
+  prTitle: string;
 }
 
 export interface EngagementPlanLevel {
@@ -407,6 +420,8 @@ export interface EngagementPlan {
   slug: string;
   status: "open" | "closed";
   tracking: string | null;
+  /** GH #334: the engagement's `prTitle` template; null when absent. */
+  prTitle: string | null;
   parallel: number;
   levels: EngagementPlanLevel[];
   slices: EngagementPlanSlice[];
@@ -580,6 +595,8 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       if (!ready) planHeld = "not-ready";
       else if (unmergedOut.length > 0) planHeld = "upstream-outside-engagement-unmerged";
     }
+    const tracking = effectiveTracking(idx.docTracking.get(key) ?? null, eng.tracking);
+    const sliceName = input.model.slices[idx.sliceIndexOf.get(key) ?? -1]?.name ?? key;
     return {
       key,
       pattern: idx.pattern.get(key) ?? "unknown",
@@ -594,7 +611,8 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       held: planHeld ?? (entry.heldBy === "human" && state === "held" ? "human" : null),
       state,
       stateInferred,
-      tracking: effectiveTracking(idx.docTracking.get(key) ?? null, eng.tracking),
+      tracking,
+      prTitle: resolvePrTitle(eng.prTitle, tracking, sliceName),
     };
   });
 
@@ -607,7 +625,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   // Slices listed level by level, model order within a level.
   slices.sort((a, b) => a.level - b.level || order(a.key, b.key));
   const preflight = computePreflight(input, members, idx);
-  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, parallel: eng.parallel, levels, slices, preflight } };
+  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, parallel: eng.parallel, levels, slices, preflight } };
 }
 
 /** Walk predecessors among the unlevelled nodes until one repeats: `a -> b -> a` (upstream
@@ -690,6 +708,8 @@ export interface NewEngagementOptions {
   createdBy: string | null;
   /** GH #241: `--tracking` — a ticket key or URL; null/absent when not given. */
   tracking?: string | null;
+  /** GH #334: `--pr-title` — a PR title template using `{key}` and `{slice}`; null/absent when not given. */
+  prTitle?: string | null;
   created: string;
 }
 
@@ -700,6 +720,8 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
   if (!Number.isInteger(opts.parallel) || opts.parallel < 1) return { ok: false, message: "--parallel must be a positive integer" };
   const tracking = opts.tracking === undefined || opts.tracking === null ? null : opts.tracking.trim();
   if (tracking !== null && (tracking === "" || /[\r\n]/.test(tracking))) return { ok: false, message: "--tracking must be a non-empty single line (a ticket key or URL)" };
+  const prTitle = opts.prTitle === undefined || opts.prTitle === null ? null : opts.prTitle.trim();
+  if (prTitle !== null && (prTitle === "" || /[\r\n]/.test(prTitle))) return { ok: false, message: "--pr-title must be a non-empty single line (a template using {key} and {slice})" };
   const idx = buildUnitIndex(input.model, input.refs, input.baseDir);
   const sel = resolveSelection(input, idx, opts.selector);
   if (!sel.ok) return sel;
@@ -713,6 +735,7 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
     created: opts.created,
     createdBy: opts.createdBy,
     tracking,
+    prTitle,
     parallel: opts.parallel,
     status: "open",
     slices: sel.units.map((key) => ({ key, state: "planned", branch: null, base: null, pr: null })),

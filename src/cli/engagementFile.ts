@@ -53,6 +53,8 @@ export interface EngagementFile {
   createdBy: string | null;
   /** GH #241: the engagement-level ticket key or URL (same `tracking:` name slice docs use); null when absent. */
   tracking: string | null;
+  /** GH #334: the PR title template (`{key}`, `{slice}`); null when absent (the default title applies). */
+  prTitle: string | null;
   parallel: number;
   status: "open" | "closed";
   slices: EngagementSliceEntry[];
@@ -116,6 +118,7 @@ export function renderEngagementFile(fm: EngagementFile, ledgerLines: string[]):
     `created: ${fm.created}`,
     `createdBy: ${q(fm.createdBy)}`,
     ...(fm.tracking === null ? [] : [`tracking: ${q(fm.tracking)}`]),
+    ...(fm.prTitle === null ? [] : [`prTitle: ${q(fm.prTitle)}`]),
     `parallel: ${fm.parallel}`,
     `status: ${fm.status}`,
     "slices:",
@@ -185,6 +188,7 @@ export function parseEngagementFile(text: string): ParseResult {
       created: str(d.created) ?? "",
       createdBy: str(d.createdBy),
       tracking: str(d.tracking),
+      prTitle: str(d.prTitle),
       parallel,
       status,
       slices,

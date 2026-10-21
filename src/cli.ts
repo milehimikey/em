@@ -2911,12 +2911,13 @@ engagement
   .option("--parallel <n>", "how many slices of one level may be in flight at once", "3")
   .option("--by <name>", "who created the engagement (createdBy)")
   .option("--tracking <key>", "an issue-tracker key or URL the slice PRs cite (a slice doc's own tracking: wins)")
+  .option("--pr-title <template>", "PR title template for the slice PRs; {key} = tracking key, {slice} = slice name (default \"{key}: {slice}\", or \"{slice}\" without a key)")
   .option("--force", "overwrite an existing engagement file with this slug")
   .action(
     (
       file: string,
       slug: string,
-      opts: { slices?: string; context?: string; downstreamOf?: string; parallel: string; by?: string; tracking?: string; force?: boolean },
+      opts: { slices?: string; context?: string; downstreamOf?: string; parallel: string; by?: string; tracking?: string; prTitle?: string; force?: boolean },
     ) => {
       const fail = (m: string): never => {
         console.error(`em engagement new: ${m}`);
@@ -2935,7 +2936,7 @@ engagement
       const path = engagementPath(file, slug);
       const result = buildNewEngagement(
         { file, model, refs, baseDir: dirname(file) },
-        { slug, selector, parallel, createdBy: opts.by ?? null, tracking: opts.tracking ?? null, created: localIsoDate() },
+        { slug, selector, parallel, createdBy: opts.by ?? null, tracking: opts.tracking ?? null, prTitle: opts.prTitle ?? null, created: localIsoDate() },
       );
       if (!result.ok) return fail(result.message);
       if (existsSync(path) && !opts.force) fail(`engagement "${slug}" already exists (${path}) — pass --force to overwrite`);

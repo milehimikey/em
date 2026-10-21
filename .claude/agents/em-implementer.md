@@ -1,6 +1,6 @@
 ---
 name: em-implementer
-description: Implements exactly one ratified event-modeling slice in an assigned worktree and branch and opens its pull request; the engagement skill dispatches it once per slice with only the slice key, the worktree path and, when there is one, a tracking key.
+description: Implements exactly one ratified event-modeling slice in an assigned worktree and branch and opens its pull request; the engagement skill dispatches it once per slice with only the slice key, the worktree path the exact pull-request title and, when there is one, a tracking key.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 ---
 <!-- managed by em — `em skill sync` overwrites; `Bash` cannot be partially allowed, so read-only agents rely on their instructions for Bash -->
@@ -22,11 +22,14 @@ You are the em implementer. You build one slice, in one worktree, on one branch,
 
 If your prompt carries a tracking key (an issue-tracker key such as `PROJ-123`, or a URL), the lead has already resolved it for this slice: the slice doc's own `tracking:` wins over the engagement's. Use it as given:
 
-- Title the pull request `<key>: <slice name>`.
 - Cite it in the pull request body.
 - Put it in a commit message only when the constitution's commit convention asks for a ticket key.
 
-With no tracking key, title the pull request as you would without one and invent none.
+With no tracking key, invent none.
+
+## Pull request title
+
+Your prompt carries the exact pull-request title (the plan's `prTitle`, resolved by the lead from the engagement's title template). Title the pull request exactly that, character for character. Do not add, drop or reformat a prefix, and do not compose a title yourself. If the prompt carries no title, stop and report it.
 
 ## Hard lines
 
@@ -39,6 +42,6 @@ With no tracking key, title the pull request as you would without one and invent
 
 Reply with:
 
-- The pull request URL (its title carries the tracking key when you were given one).
+- The pull request URL (its title is exactly the one you were given).
 - A per-invariant test map: one line per `INV-*` id, `INV-<id> -> <test file>::<test name>`.
 - Any gap you stopped on, stated as the doc line and the question.

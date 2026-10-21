@@ -15,12 +15,13 @@ whose markers were deleted.
 
 ```markdown
 ---
-engagementSchemaVersion: "1.1"
+engagementSchemaVersion: "1.2"
 slug: loans
 model: "../lending.em"
 created: 2026-10-08
 createdBy: "Alex Rivera"
 tracking: "LEND-42"
+prTitle: "feat({slice}): add it [{key}]"
 parallel: 3
 status: open
 slices:
@@ -48,12 +49,13 @@ never hand-edit the frontmatter `slices:` entries or the Ledger table (see docs/
 
 | Key | Type | Meaning |
 |---|---|---|
-| `engagementSchemaVersion` | string, `"1.1"` | This contract's version. `new` writes `"1.1"`; a `"1.0"` file (no `tracking`) still reads. Any other value is refused. |
+| `engagementSchemaVersion` | string, `"1.2"` | This contract's version. `new` writes `"1.2"`; a `"1.0"` or `"1.1"` file still reads. Any other value is refused. |
 | `slug` | kebab-case string | The engagement's name; also the file name stem. |
 | `model` | string | The model file this engagement belongs to, as a `/`-separated path relative to the engagement file (`../lending.em`). `new` writes it. `plan`, `set`, `status` and `close` refuse a `<model>.em` argument that does not resolve to it (`em engagement <verb>: engagements/<slug>.md belongs to <model>, not <arg>`). `em status` counts an engagement only for its own model, so several models can share one directory. |
 | `created` | `YYYY-MM-DD` | The local date `new` ran. This is the only date in the file. |
 | `createdBy` | string or `null` | `new --by <name>`; `null` when not given. |
 | `tracking` | string (optional) | An issue-tracker key (`PROJ-123`) or URL every slice PR of this engagement cites (`new --tracking`, GH #241). Same key name a slice doc's `tracking:` uses, so there is one vocabulary; a slice doc's own `tracking:` wins for that slice. Free text, one non-empty line. Absent when `--tracking` was not given. |
+| `prTitle` | string (optional) | The pull-request title template for every slice PR (`new --pr-title`, GH #334): `{key}` is the slice's resolved tracking key, `{slice}` its name. Absent, the default is `{key}: {slice}` with a tracking key and `{slice}` without. A template using `{key}` on a slice with no tracking key falls back to `{slice}`. `plan --json` emits the resolved title per slice as `prTitle`. Free text, one non-empty line. |
 | `parallel` | positive integer | The per-level ceiling: how many slices of one level may be in flight at once (default 3). `plan` reports every level's width against it. |
 | `status` | `open` \| `closed` | `close` sets `closed` once every slice is `merged` or `gap`. `em status` counts the open ones. |
 | `slices` | list | One entry per unit (doc-owning slice), in model order. |
@@ -88,6 +90,6 @@ or a link to the plan.
 ## Versioning
 
 `engagementSchemaVersion` is versioned independently of the npm package and of the two JSON
-documents (`engagementPlanSchemaVersion` and `engagementStatusSchemaVersion`, each `"1.1"`). An
-additive key bumps the minor version (`tracking` took all three from 1.0 to 1.1). Renaming or removing a key bumps the major version and
+documents (`engagementPlanSchemaVersion` `"1.4"` and `engagementStatusSchemaVersion` `"1.1"`). An
+additive key bumps the minor version (`tracking` took all three from 1.0 to 1.1; `prTitle` took the file to 1.2 and the plan document to 1.4). Renaming or removing a key bumps the major version and
 needs an `em upgrade` step.
