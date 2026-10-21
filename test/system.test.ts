@@ -5,7 +5,8 @@
 // legacy seam code — the fs loader (src/cli/systemInputs.ts: `.json` sources, discovery via
 // `git ls-files` and the non-git walk), and determinism of the --json document.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -802,7 +803,7 @@ describe("loadSystem — `.em` and `.json` sources (real fs)", () => {
     writeFileSync(join(dir, "exports", "not-json.json"), "{ nope");
     writeFileSync(join(dir, "broken.em"), 'slice "Read" {\n  view Open Orders from "No Such Event"\n}\n');
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   const manifest = (models: string, seams = "") =>
     `systemSchemaVersion: "${seams ? "1.0" : "2.0"}"\nname: Mixed\nmodels:\n${models}${seams ? `seams:\n${seams}` : ""}`;
@@ -911,7 +912,7 @@ describe("discovery — no manifest (MIL-235, R4)", () => {
       if (inGit) return;
       expect(discoverModelFiles(dir)).toEqual({ root: dir, files: ["a/a.em", "b/b.em"] });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 

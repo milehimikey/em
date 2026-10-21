@@ -11,6 +11,7 @@
 //   repo.cleanup();                                // rm -rf (call from afterEach/afterAll)
 
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { rmTemp } from "./rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -156,5 +157,5 @@ export function makeMultiModelRepo(opts: MultiModelRepoOptions = {}): MultiModel
   git("config", "commit.gpgsign", "false");
   git("add", "-A");
   git("commit", "-q", "-m", "init");
-  return { dir, manifest, checkout, fulfillment, git, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, manifest, checkout, fulfillment, git, cleanup: () => rmTemp(dir) };
 }
