@@ -1,4 +1,4 @@
-# Engagement file schema (`engagementSchemaVersion` 1.1)
+# Engagement file schema (`engagementSchemaVersion` 1.2; 1.1 is written when no `prTitle`)
 
 An engagement file is `<model dir>/engagements/<slug>.md`, beside the model (MIL-268). It holds
 one engagement: the slices a lead session builds as one stack of PRs, and the **Ledger** that

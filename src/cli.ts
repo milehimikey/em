@@ -48,6 +48,8 @@ import {
   applyEngagementClose,
   applyEngagementSet,
   buildNewEngagement,
+  buildUnitIndex,
+  effectiveTracking,
   engagementMembersFor,
   engagementPlanFor,
   engagementStatusFor,
@@ -2942,9 +2944,13 @@ engagement
       if (existsSync(path) && !opts.force) fail(`engagement "${slug}" already exists (${path}) — pass --force to overwrite`);
       if (result.warning) console.error(result.warning);
       if (opts.prTitle !== undefined && opts.prTitle.includes("{key}")) {
-        console.error(
-          `em engagement new: --pr-title uses {key}; slices without a tracking key fall back to the default title "{slice}" (the slice name) — pass --tracking or set tracking: in the slice docs to give them a key`,
-        );
+        const uidx = buildUnitIndex(model, refs, dirname(file));
+        const keyless = result.units.filter((u) => effectiveTracking(uidx.docTracking.get(u) ?? null, opts.tracking?.trim() || null) === null);
+        if (keyless.length > 0) {
+          console.error(
+            `em engagement new: --pr-title uses {key}; slices without a tracking key fall back to the default title "{slice}" (the slice name): ${keyless.join(", ")} — pass --tracking or set tracking: in the slice docs`,
+          );
+        }
       }
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, result.text);

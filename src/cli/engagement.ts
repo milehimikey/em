@@ -666,7 +666,10 @@ export function formatEngagementPlanText(p: EngagementPlan): string {
   }
   // GH #239: the one question round before fan-out. Advisory — nothing above is held by it.
   if (p.preflight.length > 0) {
-    lines.push(`pre-flight: ${p.preflight.length} model-wide gap(s) the engagement's slices share — answer once, before dispatch`);
+    const perSlice = p.preflight.filter((f) => f.kind === "pr-title-fallback").length;
+    const modelWide = p.preflight.length - perSlice;
+    const parts = [modelWide > 0 ? `${modelWide} model-wide gap(s) the engagement's slices share — answer once, before dispatch` : null, perSlice > 0 ? `${perSlice} per-slice PR-title advisory(ies)` : null].filter(Boolean);
+    lines.push(`pre-flight: ${parts.join("; ")}`);
     for (const f of p.preflight) lines.push(`  ${f.kind}: ${f.message}`);
   }
   return lines.join("\n");

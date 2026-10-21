@@ -497,7 +497,7 @@ describe("engagement prTitle template (GH #334)", () => {
 
   it("writes 1.1 without --pr-title and 1.2 with it; a literal 1.1 file reads prTitle null", () => {
     const { file } = writeLifecyclesFixture(dir);
-    const sel = { kind: "slices", keys: ["order-list"] } as const;
+    const sel: Selector = { kind: "slices", keys: ["order-list"] };
     const base = { slug: "v", selector: sel, parallel: 3, createdBy: null, created: "2026-10-08" };
     const without = buildNewEngagement(input(file), base);
     const withT = buildNewEngagement(input(file), { ...base, prTitle: "feat: {sliceKey}" });
@@ -528,6 +528,9 @@ describe("engagement prTitle template (GH #334)", () => {
     const r = em(["engagement", "new", "lifecycles.em", "warn", "--slices", "order-list", "--pr-title", "feat: {slice} [{key}]"], dir);
     expect(r.status).toBe(0);
     expect(r.stderr).toContain("slices without a tracking key fall back");
+    const keyed = em(["engagement", "new", "lifecycles.em", "nowarn", "--slices", "order-list", "--tracking", "PROJ-12", "--pr-title", "feat({key}): {sliceKey}"], dir);
+    expect(keyed.status).toBe(0);
+    expect(keyed.stderr).not.toContain("fall back");
   }, 60_000);
 
   it("the default with a tracking key is `<key>: <slice name>`", () => {
@@ -681,7 +684,7 @@ describe("plan pre-flight (GH #239)", () => {
     expect(findings[0].message).not.toContain("doc omits a fed event");
   });
 
-  it("--json carries preflight under plan schema 1.3 and the MCP-shared builder prints it", () => {
+  it("--json carries preflight under plan schema 1.4 and the MCP-shared builder prints it", () => {
     const file = write();
     create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
     const p = JSON.parse(em(["engagement", "plan", "orders.em", "cli", "--json"], dir).stdout);

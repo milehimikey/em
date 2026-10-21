@@ -484,3 +484,9 @@ em upgrade <model>.em --apply    # one git commit per step, then the final `Em v
 ```
 
 The 1.18.0 steps, in order: `collapse-alternative-events`, `fold-continuations` (these two rewrite the `.em`; the second is opt-in: `--fold-continuations`, and `--to-sugar` for the host form), `view-doc-sources-stale`, `slice-index-stale`, `parking-lot-fragments`. Human items: `slice-doc-stale-signed`, `lineage-backlink-missing`, `fold-continuations-opt-in`, `shared-event-now-legal` (information only), `roster-not-initialised`. The report ends with `em validate --shape` so you see the advisory shape findings of the upgraded model. Then run `em storyline suggest <model>.em` if you want storylines, and review the result: the `.em` rewrites are text edits verified by recompiling, but the dry-run listing is the place to catch a grouping you disagree with. `--apply` recompiles the model after every step, so it may do MORE than the dry run reported: a fold can become possible only after a collapse, and the doc/index steps see the rewritten model. Treat the dry run as a lower bound and run `--apply` on a clean branch.
+
+## 1.18.1
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **`em engagement new --pr-title`** (GH #334, [cli.md](cli.md#em-engagement-new-file-slug---slices-abc----context-c----downstream-of-ref---parallel-n---by-name---tracking-key---pr-title-template---force)): an engagement can carry a PR-title template (`{key}`, `{slice}`, `{sliceKey}`) so slice PRs pass a conventional-commit title lint. `em engagement plan --json` gains `prTitle` per slice and on the document (plan schema **`1.4`**, additive) and a `pr-title-fallback` pre-flight kind; `new` writes engagement file schema `1.2` only when `--pr-title` is given, else `1.1` | no action needed. Consumers reading `engagementPlanSchemaVersion` should accept `1.4` |
