@@ -68,6 +68,8 @@ import { observeSigners } from "../roster/init.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
 import { compile } from "../pipeline.js";
+import { computeModelKey } from "../model/qualifiedRef.js";
+import { contractPathFor, generateContract } from "./api.js";
 import { hasErrors } from "../model/validate.js";
 import { LEGACY_SYSTEM_MANIFEST_SCHEMA_VERSION, parseManifest, SystemManifest } from "../system/manifest.js";
 import { MigrationMember, planManifestMigration } from "../system/migrateManifest.js";
@@ -103,7 +105,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -412,6 +414,87 @@ function applyCiBlock(ctx: UpgradeContext): StepApplyOutcome {
   if (conformStale) {
     applyCiFile(conformPath, planCiFile(conformPath, files.conform[0], files.conform[1], CONFORM_WORKFLOW_MARKER, false, multi));
     changedFiles.push(conformPath);
+  }
+  return { ok: true, changedFiles };
+}
+
+// ---- Step 4b: api-contract-missing (GH #331) — ci-block regenerates the `api-check` job, whose
+// input is `contracts/<model key>.tsp`; nothing else generates that file, so a repo upgraded from
+// before 1.12 would have a CI job that fails on every PR. Same detection shape as the roster
+// (a CI job whose required input file is absent), but the contract is mechanical, so it is applied
+// with `em api generate`'s own generator (generateContract) rather than listed for a human. ----
+
+interface MissingContract { modelFile: string; contractPath: string; modelKey: string }
+interface BlockedContract { model: string; why: string }
+
+/** Every model covered by an `api-check` job whose `contracts/<model key>.tsp` is absent. The job
+ *  counts when it is in the on-disk em-ci.yml OR when `ci-block` is pending (a stale block is
+ *  rewritten to the current preset, which carries `api-check` - so a pre-1.12 workflow is caught by
+ *  the dry run, not only after `--apply`). Models that can't be read or compile cleanly are
+ *  returned in `blocked` (never skipped silently). */
+function contractPlan(ctx: UpgradeContext): { missing: MissingContract[]; blocked: BlockedContract[] } {
+  const none = { missing: [], blocked: [] };
+  const ciPath = ciWorkflowPath(ctx.repoRoot);
+  if (!existsSync(ciPath)) return none;
+  const text = readFileSync(ciPath, "utf8");
+  const plans = ciBlockPlans(ctx);
+  const hasJob = /^ {2}api-check(-[\w-]+)?:/m.test(text) || plans.ciStale;
+  if (!hasJob || !plans.args) return none;
+  const paths = plans.args.models ? plans.args.models.map((m) => m.path) : [plans.args.model];
+  const missing: MissingContract[] = [];
+  const blocked: BlockedContract[] = [];
+  for (const rel of paths) {
+    const modelFile = resolve(ctx.repoRoot, rel);
+    let source: string;
+    try {
+      source = readFileSync(modelFile, "utf8");
+    } catch {
+      blocked.push({ model: rel, why: "the model file can't be read" });
+      continue;
+    }
+    try {
+      const compiled = compile(source);
+      if (hasErrors(compiled.diagnostics)) {
+        // Only blocked when the contract is actually absent (a model mid-edit that already has one is fine).
+        if (!existsSync(contractPathFor(modelFile, computeModelKey(compiled.model, modelFile)))) blocked.push({ model: rel, why: "it has compile errors" });
+        continue;
+      }
+      const g = generateContract(modelFile, source, compiled);
+      if (!existsSync(g.contractPath)) missing.push({ modelFile, contractPath: g.contractPath, modelKey: g.modelKey });
+    } catch (e) {
+      blocked.push({ model: rel, why: `it does not parse (${(e as Error).message})` });
+    }
+  }
+  return { missing, blocked };
+}
+
+function blockedText(blocked: BlockedContract[]): string {
+  return blocked.map((b) => `${b.model} (${b.why})`).join("; ");
+}
+
+function detectApiContractMissing(ctx: UpgradeContext): StepDetection {
+  const { missing, blocked } = contractPlan(ctx);
+  if (missing.length === 0) {
+    if (blocked.length) return { applicable: false, reason: `the api-check contract could not be generated for ${blockedText(blocked)} - see the api-contract-blocked item` };
+    return { applicable: false, reason: "no api-check job lacking its contracts/<model key>.tsp" };
+  }
+  const skipped = blocked.length ? `; not generated for ${blockedText(blocked)} (see the api-contract-blocked item)` : "";
+  return {
+    applicable: true,
+    reason: `the api-check job needs ${missing.map((m) => relative(ctx.repoRoot, m.contractPath)).join(", ")}, which ${missing.length === 1 ? "is" : "are"} missing - em upgrade will run em api generate${skipped}`,
+  };
+}
+
+function applyApiContractMissing(ctx: UpgradeContext): StepApplyOutcome {
+  const { missing } = contractPlan(ctx);
+  if (missing.length === 0) return { ok: false, message: "nothing to generate" };
+  const changedFiles: string[] = [];
+  for (const m of missing) {
+    const source = readFileSync(m.modelFile, "utf8");
+    const generated = generateContract(m.modelFile, source, compile(source));
+    mkdirSync(dirname(generated.contractPath), { recursive: true });
+    writeFileSync(generated.contractPath, generated.text);
+    changedFiles.push(generated.contractPath);
   }
   return { ok: true, changedFiles };
 }
@@ -1043,6 +1126,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },
+  { id: "api-contract-missing", sinceVersion: "1.18.1", detect: detectApiContractMissing, apply: applyApiContractMissing },
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
   { id: "ratified-hash-scope", sinceVersion: "1.17.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
@@ -1069,7 +1153,8 @@ export type HumanItemId =
   | "lineage-backlink-missing"
   | "fold-continuations-opt-in"
   | "shared-event-now-legal"
-  | "roster-not-initialised";
+  | "roster-not-initialised"
+  | "api-contract-blocked";
 
 export interface HumanItem {
   id: HumanItemId;
@@ -1288,6 +1373,16 @@ function detectSharedEventNowLegal(ctx: UpgradeContext): HumanItem | null {
   };
 }
 
+/** GH #331: the api-check job needs a contract the mechanical step could not generate. */
+function detectApiContractBlocked(ctx: UpgradeContext): HumanItem | null {
+  const { blocked } = contractPlan(ctx);
+  if (blocked.length === 0) return null;
+  return {
+    id: "api-contract-blocked",
+    reason: `the contract could not be generated for ${blockedText(blocked)}, so the api-check job will fail until it exists - run \`em validate <model>\` to see why, fix it, then \`em api generate <model>\``,
+  };
+}
+
 const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> = [
   detectNoModelVersion,
   detectContinuationHasOwnDoc,
@@ -1302,6 +1397,7 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectFoldContinuationsOptIn,
   detectSharedEventNowLegal,
   detectRosterNotInitialised,
+  detectApiContractBlocked,
 ];
 
 export function detectHumanItems(ctx: UpgradeContext): HumanItem[] {

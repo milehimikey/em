@@ -1132,3 +1132,162 @@ describe("ratified-hash-scope step (GH #253)", () => {
     expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
   });
 });
+
+describe("api-contract-missing step (GH #331)", () => {
+  const SRC = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
+  const CONTRACT_REL = join("contracts", "checkout.tsp");
+
+  function repoWithCi(withJob: boolean) {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: SRC });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    let ci = buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION);
+    if (!withJob) ci = ci.replace(/^ {2}api-check:[\s\S]*?(?=^ {2}slice-index:)/m, "");
+    writeFileSync(ciWorkflowPath(dir), ci);
+    git(dir, "add", ".github", "checkout.em");
+    git(dir, "commit", "-q", "-m", "ci");
+    return { dir, packagedSkillsRoot };
+  }
+  const stepOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root)).steps.find((s) => s.id === "api-contract-missing")!;
+
+  it("is detected, applied as its own commit after ci-block, and idempotent", () => {
+    const { dir, packagedSkillsRoot } = repoWithCi(true);
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toContain("api-check:");
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(true);
+    const ids = UPGRADE_STEPS.map((s) => s.id);
+    expect(ids.indexOf("api-contract-missing")).toBe(ids.indexOf("ci-block") + 1);
+
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    const applied = result.ok ? result.applied.find((s) => s.id === "api-contract-missing") : undefined;
+    expect(applied?.applied).toBe(true);
+    expect(existsSync(join(dir, CONTRACT_REL))).toBe(true);
+    const log = spawnSync("git", ["-C", dir, "log", "--format=%s"], { encoding: "utf8" }).stdout;
+    expect(log).toContain("api-contract-missing");
+
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+    const again = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(again.ok).toBe(true);
+    expect(again.ok ? again.applied.find((s) => s.id === "api-contract-missing")?.applied : undefined).not.toBe(true);
+  });
+
+  it("is not detected when there is no generated workflow (and so no api-check job)", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: SRC });
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+  });
+
+  it("is not detected when the contract is already present", () => {
+    const { dir, packagedSkillsRoot } = repoWithCi(true);
+    mkdirSync(join(dir, "contracts"), { recursive: true });
+    writeFileSync(join(dir, CONTRACT_REL), "// existing\n");
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+  });
+});
+
+describe("api-contract-missing step - pre-1.12 workflow, multi-model, blocked (GH #331 round 2)", () => {
+  const SRC = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
+  const stepsOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root));
+
+  function preApiCheckRepo() {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: SRC });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    // A pre-1.12 workflow: an old pin and no api-check job at all.
+    const old = buildCiWorkflowFile("checkout.em", "test", "1.11.0").replace(/^ {2}api-check:[\s\S]*?(?=^ {2}slice-index:)/m, "");
+    writeFileSync(ciWorkflowPath(dir), old);
+    git(dir, "add", ".github", "checkout.em");
+    git(dir, "commit", "-q", "-m", "old ci");
+    return { dir, packagedSkillsRoot, old };
+  }
+
+  it("dry run lists ci-block and api-contract-missing together; --apply commits them in order; second run is clean", () => {
+    const { dir, packagedSkillsRoot, old } = preApiCheckRepo();
+    expect(old).not.toContain("api-check:");
+    const report = stepsOf(dir, packagedSkillsRoot);
+    expect(report.steps.find((s) => s.id === "ci-block")!.applicable).toBe(true);
+    expect(report.steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(true);
+
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toContain("api-check:");
+    expect(existsSync(join(dir, "contracts", "checkout.tsp"))).toBe(true);
+    const subjects = spawnSync("git", ["-C", dir, "log", "--reverse", "--format=%s"], { encoding: "utf8" }).stdout;
+    expect(subjects.indexOf("ci-block")).toBeGreaterThan(-1);
+    expect(subjects.indexOf("api-contract-missing")).toBeGreaterThan(subjects.indexOf("ci-block", subjects.indexOf("old ci")));
+
+    const after = stepsOf(dir, packagedSkillsRoot);
+    expect(after.steps.find((s) => s.id === "ci-block")!.applicable).toBe(false);
+    expect(after.steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(false);
+  });
+
+  it("multi-model block: generates every model's contract under its own directory", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: SRC });
+    mkdirSync(join(dir, "billing"), { recursive: true });
+    writeFileSync(join(dir, "billing", "billing.em"), 'slice "Send Invoice" {\n  command Send Invoice\n  event Invoice Sent\n}\n');
+    writeFileSync(join(dir, "system.yaml"), 'systemSchemaVersion: "2.0"\nname: S\nmodels:\n  checkout:\n    source: checkout.em\n  billing:\n    source: billing/billing.em\n');
+    const models: CiModel[] = [
+      { key: "checkout", path: "checkout.em" },
+      { key: "billing", path: "billing/billing.em" },
+    ];
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), buildCiWorkflowFileMulti("system.yaml", models, "test", INSTALLED_VERSION));
+    writeFileSync(conformWorkflowPath(dir), buildConformWorkflowFileMulti("system.yaml", models, INSTALLED_VERSION));
+    git(dir, "add", ".github", "checkout.em", "billing", "system.yaml");
+    git(dir, "commit", "-q", "-m", "multi ci");
+
+    expect(stepsOf(dir, packagedSkillsRoot).steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(true);
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    expect(existsSync(join(dir, "contracts", "checkout.tsp"))).toBe(true);
+    expect(existsSync(join(dir, "billing", "contracts", "billing.tsp"))).toBe(true);
+    expect(stepsOf(dir, packagedSkillsRoot).steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(false);
+  });
+
+  it("a model with compile errors is not skipped silently: api-contract-blocked names it and the step reason does not claim there is no job", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: OLD_SHAPE_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION));
+    git(dir, "add", ".github", "checkout.em");
+    git(dir, "commit", "-q", "-m", "ci");
+    const report = stepsOf(dir, packagedSkillsRoot);
+    const step = report.steps.find((s) => s.id === "api-contract-missing")!;
+    expect(step.applicable).toBe(false);
+    expect(step.reason).not.toContain("no api-check job lacking");
+    expect(step.reason).toContain("checkout.em");
+    const item = report.human.find((h) => h.id === "api-contract-blocked");
+    expect(item).toBeDefined();
+    expect(item!.reason).toContain("checkout.em");
+    expect(item!.reason).toContain("compile errors");
+    expect(item!.reason).toContain("em validate <model>");
+    expect(item!.reason).toContain("em api generate <model>");
+  });
+
+  it("a compile-error model whose contract already exists gets no api-contract-blocked item", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: OLD_SHAPE_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION));
+    mkdirSync(join(dir, "contracts"), { recursive: true });
+    writeFileSync(join(dir, "contracts", "checkout.tsp"), "// existing\n");
+    git(dir, "add", ".github", "checkout.em", "contracts");
+    git(dir, "commit", "-q", "-m", "ci");
+    const report = stepsOf(dir, packagedSkillsRoot);
+    expect(report.steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(false);
+    expect(report.human.find((h) => h.id === "api-contract-blocked")).toBeUndefined();
+  });
+
+  it("a repo that owns its workflow (markers removed, api-check dropped) leaves ci-block and api-contract-missing not applicable", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: SRC });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    const own = buildCiWorkflowFile("checkout.em", "test", "1.9.0")
+      .replace(/^ {2}api-check:[\s\S]*?(?=^ {2}slice-index:)/m, "")
+      .split("\n")
+      .filter((l) => !l.includes("GENERATED"))
+      .join("\n");
+    expect(own).not.toContain("GENERATED");
+    writeFileSync(ciWorkflowPath(dir), own);
+    git(dir, "add", ".github", "checkout.em");
+    git(dir, "commit", "-q", "-m", "own ci");
+    const report = stepsOf(dir, packagedSkillsRoot);
+    expect(report.steps.find((s) => s.id === "ci-block")!.applicable).toBe(false);
+    expect(report.steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(false);
+    expect(report.human.find((h) => h.id === "api-contract-blocked")).toBeUndefined();
+  });
+});

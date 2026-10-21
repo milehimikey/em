@@ -32,7 +32,9 @@ cherry-pick each one individually:
 4. `state-file` — add any missing state-file bullets with their defaults, byte-for-byte
    otherwise.
 5. `ci-block` — refresh the generated block in `.github/workflows/em-ci.yml`, only when
-   that block already exists.
+   that block already exists. Directly after it, `api-contract-missing` (GH #331, 1.18.1): when the
+   generated workflow carries an `api-check` job and `contracts/<model key>.tsp` is absent, run
+   `em api generate` for it (own commit), so one `--apply` leaves `api-check` passing.
 6. `constitution` — scaffold `constitution.md` (draft, unratified) when it's absent and the
    repo has no `.specify/` directory.
 7. `ratified-signoff` — grandfather `ready-to-implement` docs that never recorded a sign-off (see
@@ -491,3 +493,15 @@ The 1.18.0 steps, in order: `collapse-alternative-events`, `fold-continuations` 
 |---|---|
 | **`em engagement new --pr-title`** (GH #334, [cli.md](cli.md#em-engagement-new-file-slug---slices-abc----context-c----downstream-of-ref---parallel-n---by-name---tracking-key---pr-title-template---force)): an engagement can carry a PR-title template (`{key}`, `{slice}`, `{sliceKey}`) so slice PRs pass a conventional-commit title lint. `em engagement plan --json` gains `prTitle` per slice and on the document (plan schema **`1.4`**, additive) and a `pr-title-fallback` pre-flight kind; `new` writes engagement file schema `1.2` only when `--pr-title` is given, else `1.1` | no action needed. Consumers reading `engagementPlanSchemaVersion` should accept `1.4` |
 | **Behavior change:** `em slice review` now exits 1 on a doc with an unchecked `## Open Questions` item (GH #333, [cli.md](cli.md#em-slice-review-file-slice-key---by-name)); `--again` re-records an existing review | human: resolve or `em slice defer` the item, or add `--allow-open` to scripted review calls; docs already `reviewed` with open items are left as they are |
+| `ci-block` regenerates the `api-check` job, but nothing generated its input `contracts/<model key>.tsp`, so every PR failed `em api check` until someone ran `em api generate` by hand (GH #331). New mechanical step `api-contract-missing`, committed on its own right after `ci-block`: it runs `em api generate` for each model whose `api-check` job has no contract. The dry run reports it even while `ci-block` is still pending (it looks at the workflow `ci-block` would write). A repo whose contract exists, or whose workflow has no `api-check` job, is untouched. Advisory in `--check` like every mechanical step. A model that cannot be generated (compile errors, unreadable) becomes the human item `api-contract-blocked` | `api-contract-missing` |
+
+### Upgrading to 1.18.1
+
+Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-18-1` / `v1.18.1` on plugin repos), then in each consumer repo:
+
+```bash
+em upgrade <model>.em            # dry-run: lists every step below and the human items
+em upgrade <model>.em --apply    # one git commit per step, then the final `Em version:` commit
+```
+
+The 1.18.1 steps, in order: `api-contract-missing` (right after `ci-block`). Human items: `api-contract-blocked` (a model whose contract could not be generated: run `em validate <model>`, fix it, then `em api generate <model>`).
