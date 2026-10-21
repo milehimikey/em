@@ -80,9 +80,10 @@ export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.4";
  *  conditions individually (see `computeSliceReadyGates`, catalog/sliceReadyValidate.ts);
  *  `null` when `sliceKey` matches no slice in the model (the `slice-ready-unknown-slice` error
  *  case — nothing to gate). `ready` is the same predicate driving `em validate`'s exit code
- *  for `--slice-ready` (scoped diagnostics empty) — it is the AND of the 5 gates only when
- *  `gates` is non-null AND nothing else concerning this slice is broken (e.g. a plain
- *  both-ends-of-a-flow diagnostic on one of its own elements); `diagnostics` carries that full
+ *  for `--slice-ready` (no error-severity scoped diagnostics and no warning whose code is in the
+ *  gating list of GH #332, see docs/cli.md; any other warning is listed in `diagnostics` but never
+ *  flips it) — it is the AND of the gates only when `gates` is non-null AND nothing gating
+ *  remains (e.g. a `both-ends-of-a-flow/*` warning on one of its own elements); `diagnostics` carries that full
  *  scoped list so a consumer sees exactly why, never just the 4 named gates. `continuationOf`
  *  (MIL-208) is `null` for an ordinary slice or when `gates` is `null`. */
 export function buildSliceReadyJson(

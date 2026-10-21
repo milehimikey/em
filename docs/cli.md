@@ -443,10 +443,24 @@ and the two hand-parsed English sentences ("is ready-to-implement" / "is NOT rea
 It's `null` when `sliceKey` matches no slice in the model (the unknown-key error case — nothing
 to gate; check `diagnostics` for `slice-ready-unknown-slice` instead). A gate not reached because
 an earlier one failed (e.g. `statusReady` when the doc itself isn't bound) reports `false`, not
-`null`. `ready` is the same predicate driving the exit code — it can be `false` even when all 6
-named gates pass, if something else concerning this slice is broken (e.g. a plain
-`both-ends-of-a-flow` diagnostic on one of its own elements); `diagnostics` carries the full
-scoped list so a consumer sees exactly why, not just the 6 named gates.
+`null`. `ready` is the same predicate driving the exit code. It is the named gates, plus every
+error-severity diagnostic scoped to the slice, plus a short list of readiness checks that em emits
+at warning severity (GH #332; a contract clarification, no schema change). A warning whose code is
+in this list blocks; any other warning never does:
+
+- `slice-ready-no-doc-bound`, `slice-ready-status-not-ready`, `slice-ready-open-questions-unchecked`: the gates themselves.
+- `binding-missing-file`, `frontmatter-invalid`: the `frontmatterUsable` gate.
+- `both-ends-of-a-flow/*`: a dangling slice is not a complete pattern.
+- `fields-completeness/event-field-no-source`: the `assigned` marker contract (MIL-148).
+- `invariants/public-command-without-invariants`: the API-first readiness requirement ([process.md](process.md)).
+
+`ready` can therefore be `false` with all 6 named gates true, e.g. on a `both-ends-of-a-flow/*`
+warning on one of the slice's own elements; `diagnostics` carries the full scoped list, so a
+consumer identifies the blocker by intersecting `diagnostics[].code` with this list. Every other
+warning (`command-repeated-across-slices`, `timeline-entity-clustered`,
+`fields-completeness/view-field-no-source`, `open-issue`, `doc-model-*`, `note-binding-*`, shape
+lints, ...) stays in `diagnostics` and never flips `ready` or the exit code. `--strict` promotes
+advisory rules only (see `advisories`); it is not a way to make other warnings gate.
 
 `gates.ratified` (added in schema `1.2`, MIL-259) is `true` when the doc carries a non-empty
 `ratifiedBy:`. It is informational like the other gates: the blocking verdict is the

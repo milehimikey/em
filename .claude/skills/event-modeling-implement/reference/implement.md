@@ -34,6 +34,16 @@ every `## Open Questions` checkbox is checked, and no status/version/link incohe
 — `gates` names each of those 4 conditions individually (`docBound`/`frontmatterUsable`/
 `statusReady`/`noUncheckedOpenQuestions`) if you need to say which one is blocking.
 
+`ready` is the named gates, plus error-severity diagnostics scoped to the slice, plus these warning-severity codes:
+
+- `slice-ready-no-doc-bound`, `slice-ready-status-not-ready`, `slice-ready-open-questions-unchecked`: the gates themselves.
+- `binding-missing-file`, `frontmatter-invalid`: the `frontmatterUsable` gate.
+- `both-ends-of-a-flow/*`: a dangling slice is not a complete pattern.
+- `fields-completeness/event-field-no-source`: the `assigned` marker contract (MIL-148).
+- `invariants/public-command-without-invariants`: the API-first readiness requirement (`docs/process.md`).
+
+A warning whose code is in this list blocks; any other warning never does (it stays in `diagnostics`; don't treat it as a blocker). `--strict` promotes advisory rules only.
+
 **`ready: false` means stop** — with one named exception: a slice already `status: implemented`
 with `driftSignal: in-sync` or `uncertified` (MIL-214) also reads `ready: false` (its
 `statusReady` gate fails because nothing is newly ratified), and that specific case is

@@ -249,7 +249,7 @@ flowchart LR
    `contractChange:` frontmatter. A slice that owns a `public` command also needs that command's
    invariants declared in the model before it is ready
    (`invariants/public-command-without-invariants` is a warning scoped to the slice, and
-   `--slice-ready` counts warnings).
+   it is on the short list of warnings that gate `--slice-ready`; other warnings do not).
 6. **`em system` checks consumer adaptation.** Every `consumes` binding's translation fields are
    compared with the producer's public element at HEAD. A field the consumer declares that the
    producer removed, renamed or retyped is the error `consumer-not-adapted`, naming both sides

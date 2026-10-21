@@ -321,8 +321,9 @@ export function computeSliceReadyGates(
  *  unconditional `em validate` diagnostic set (compile + fs-aware checks); this adds the opt-in
  *  readiness diagnostics, keeps only those concerning THIS slice (a ref that is the bare key or
  *  starts with `<key>/` — an unrelated slice's breakage never blocks it), and derives `ready` as
- *  "no scoped diagnostics". `result` is `computeSliceReadyGates`' named gates (null for an
- *  unknown key). */
+ *  "no error-severity scoped diagnostic and no warning on the GATE_WARNING_CODES /
+ *  GATE_WARNING_PREFIXES list" (GH #332: every other warning is listed, never gating). `result` is
+ *  `computeSliceReadyGates`' named gates (null for an unknown key). */
 export interface SliceReadiness {
   /** Blocking diagnostics concerning this slice — what `ready` is derived from. */
   scoped: Diagnostic[];
@@ -331,6 +332,27 @@ export interface SliceReadiness {
   advisories: Diagnostic[];
   ready: boolean;
   result: SliceReadyResult | null;
+}
+
+/** GH #332: the ONLY warning-severity diagnostics that gate `ready` (a warning whose code is here
+ *  blocks; any other warning never does). Mirrored verbatim in reference/implement.md §1,
+ *  docs/cli.md and docs/validation.md. `--strict` promotes advisory rules only; it is not a way to
+ *  make other warnings gate. */
+const GATE_WARNING_CODES = new Set([
+  "slice-ready-no-doc-bound", // the docBound gate itself
+  "slice-ready-status-not-ready", // the statusReady gate itself
+  "slice-ready-open-questions-unchecked", // the noUncheckedOpenQuestions gate itself
+  "binding-missing-file", // the frontmatterUsable gate
+  "frontmatter-invalid", // the frontmatterUsable gate
+  "fields-completeness/event-field-no-source", // MIL-148 `assigned` marker contract
+  "invariants/public-command-without-invariants", // API-first readiness requirement (docs/process.md)
+]);
+/** Prefix families that gate (kept next to the codes so the list lives in one place). */
+const GATE_WARNING_PREFIXES = [
+  "both-ends-of-a-flow/", // a dangling slice is not a complete pattern (core methodology rule)
+];
+function isGateDiagnostic(d: Diagnostic): boolean {
+  return GATE_WARNING_PREFIXES.some((p) => d.code.startsWith(p)) || GATE_WARNING_CODES.has(d.code);
 }
 
 export function computeSliceReadiness(
@@ -352,5 +374,12 @@ export function computeSliceReadiness(
     .map((d) => (strict && isAdvisory(d) ? { ...d, severity: "error" as const } : d));
   const advisories = strict ? [] : concerning.filter(isAdvisory);
   const result = computeSliceReadyGates(model, refs, baseDir, sliceKey, contract);
-  return { scoped, advisories, ready: scoped.length === 0, result };
+  // GH #332: `ready` is the named gates, error-severity diagnostics, and the warnings on the
+  // GATE_WARNING_CODES / GATE_WARNING_PREFIXES list. Any other warning (advisory or not) stays
+  // listed in `scoped`/`diagnostics` but never flips `ready`;
+  // `--strict` promotes advisories to errors above, and as errors they gate.
+  // Exception: the readiness gates themselves are emitted at warning severity (`slice-ready-*`,
+  // plus the codes in GATE_WARNING_CODES) and keep gating — they ARE the gates, not lints about the slice.
+  const ready = !scoped.some((d) => d.severity === "error" || isGateDiagnostic(d));
+  return { scoped, advisories, ready, result };
 }

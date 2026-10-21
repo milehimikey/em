@@ -410,8 +410,8 @@ doc's prose — the latter being the usual workaround before this marker existed
 export` no longer knowing the field exists. **Everything else in this section is still just a
 warning, and some of it will be correct and permanent** — these warnings never block a render
 or a merge, but note that (like an un-marked field before `derived` existed) an un-marked
-warning **does** still count against `--slice-ready` if it's scoped to that slice (see
-[cli.md](cli.md)).
+warning does **not** block `--slice-ready` unless its code is on the
+[gating list](#slice-readiness) (see [cli.md](cli.md)).
 
 An `issue` warning never blocks by default, same as every other warning — `em render`,
 `em watch`, and `em validate` all still succeed on a model with open issues. Use
@@ -518,12 +518,22 @@ unconditional `allDiagnostics` set the scoped filter draws from. See
 Also folds in any [frontmatter coherence](#frontmatter-coherence) and
 [note-binding mismatch](#note-binding-mismatch) finding already scoped to the same slice — not
 re-derived, just surfaced alongside the above when present. `--slice-ready` exits non-zero if
-any diagnostic (warning or error) concerns this slice — either the bare slice key (every code
+any error, or any warning on the gating list (see "Which warnings gate" at the end of this section), concerns this slice — either the bare slice key (every code
 above, plus frontmatter coherence and note-binding mismatch) or an element ref inside it
 (`<key>/<kind>.<name>`, e.g. an unrelated model rule tripping on an element within the slice
 itself). Diagnostics from **other** slices never block this check — the gate is deliberately
 single-slice-scoped, matching the ticket's own scenario of checking one slice while the rest of
 a large, actively-evolving model is still WIP.
+
+**Which warnings gate `--slice-ready`** (GH #332): `ready` is the named gates, plus error-severity diagnostics scoped to the slice, plus the warnings below. A warning whose code is in this list blocks; any other warning never does (it stays listed in `diagnostics`):
+
+- `slice-ready-no-doc-bound`, `slice-ready-status-not-ready`, `slice-ready-open-questions-unchecked`: the gates themselves.
+- `binding-missing-file`, `frontmatter-invalid`: the `frontmatterUsable` gate.
+- `both-ends-of-a-flow/*`: a dangling slice is not a complete pattern.
+- `fields-completeness/event-field-no-source`: the `assigned` marker contract (MIL-148).
+- `invariants/public-command-without-invariants`: the API-first readiness requirement ([process.md](process.md)).
+
+`--strict` promotes advisory rules only; it is not a way to make other warnings gate.
 
 ### Note-binding mismatch
 

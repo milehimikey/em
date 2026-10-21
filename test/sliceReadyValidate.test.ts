@@ -461,3 +461,98 @@ describe("slice-ready-body-changed-since-ratification (MIL-284)", () => {
     ]);
   });
 });
+
+describe("GH #332: warning-severity diagnostics never flip ready", () => {
+  const src = `model "Shop"
+
+slice "Place Order" {
+  ui "Checkout"
+  command "PlaceOrder" note "slices/place-order.md"
+  event "OrderPlaced" @Order
+}
+
+slice "Place Order (Backorder)" {
+  ui "Checkout"
+  command "PlaceOrder"
+  event "OrderBackordered" @Order
+}
+
+slice "Orders" {
+  view "Orders" from "OrderPlaced", "OrderBackordered"
+  ui "Orders Page"
+}`;
+  const run = (text: string, extra = {}) => {
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const { model, refs, diagnostics } = compile(text);
+    return computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: text, diagnostics }, diagnostics, extra);
+  };
+
+  it("ready is true with the command-repeated-across-slices warning present in diagnostics", () => {
+    const r = run(src);
+    expect(r.scoped.some((d) => d.code === "command-repeated-across-slices" && d.severity === "warning")).toBe(true);
+    expect(r.scoped.some((d) => d.severity === "error")).toBe(false);
+    expect(Object.values(r.result!.gates).every((g) => g === true)).toBe(true);
+    expect(r.ready).toBe(true);
+  });
+
+  it("control: an error-severity diagnostic on the slice still makes ready false", () => {
+    const err = { code: "x-error", severity: "error", message: "boom", refs: ["place-order"] } as unknown as Diagnostic;
+    const { model, refs, diagnostics } = compile(src);
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const r = computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: src, diagnostics }, [...diagnostics, err]);
+    expect(r.ready).toBe(false);
+  });
+
+  it("--strict: a promoted advisory gates as an error", () => {
+    const adv = { code: "scenario-then-not-outcome", severity: "warning", message: "w", refs: ["place-order"] } as unknown as Diagnostic;
+    const { model, refs, diagnostics } = compile(src);
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const call = (strict: boolean) =>
+      computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: src, diagnostics }, [...diagnostics, adv], { strict });
+    expect(call(false).ready).toBe(true);
+    expect(call(true).ready).toBe(false);
+    expect(call(true).scoped.find((d) => d.code === "scenario-then-not-outcome")?.severity).toBe("error");
+  });
+
+  const withExtra = (codes: string[]) => {
+    const extra = codes.map((code) => ({ code, severity: "warning", message: "w", refs: ["place-order"] }) as unknown as Diagnostic);
+    const { model, refs, diagnostics } = compile(src);
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    return computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: src, diagnostics }, [...diagnostics, ...extra]);
+  };
+
+  it.each([
+    "both-ends-of-a-flow/command-untriggered",
+    "fields-completeness/event-field-no-source",
+    "invariants/public-command-without-invariants",
+  ])("allowlist: a lone %s warning makes ready false with all gates true", (code) => {
+    const r = withExtra([code]);
+    expect(Object.values(r.result!.gates).every((g) => g === true)).toBe(true);
+    expect(r.ready).toBe(false);
+  });
+
+  it("the issue comment's cases (view-field-no-source + timeline-entity-clustered) stay ready", () => {
+    const r = withExtra(["fields-completeness/view-field-no-source", "timeline-entity-clustered"]);
+    expect(r.scoped).toHaveLength(2 + r.scoped.filter((d) => d.code === "command-repeated-across-slices").length);
+    expect(r.ready).toBe(true);
+  });
+
+  it("open-issue alone stays ready", () => {
+    expect(withExtra(["open-issue"]).ready).toBe(true);
+  });
+
+  it("a real dangling slice (rule fires from the model, not injected) makes ready false with all gates true", () => {
+    const real = `model "Shop"
+
+slice "Place Order" {
+  command "PlaceOrder" note "slices/place-order.md"
+  event "OrderPlaced" @Order
+}`;
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const { model, refs, diagnostics } = compile(real);
+    const r = computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: real, diagnostics }, diagnostics);
+    expect(r.scoped.some((d) => d.code.startsWith("both-ends-of-a-flow/") && d.severity === "warning")).toBe(true);
+    expect(Object.values(r.result!.gates).every((g) => g === true)).toBe(true);
+    expect(r.ready).toBe(false);
+  });
+});
