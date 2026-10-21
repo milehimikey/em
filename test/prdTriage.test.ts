@@ -388,6 +388,35 @@ describe("GH #295: walkthrough-first provenance", () => {
     expect(e).toContain("S5: quote overlaps statement S4's");
   });
 
+  it("quotes that straddle (partially overlap by character range) are rejected, naming both", () => {
+    const e = errorsOf(lib((d) => (d.statements[4].quote = "damaged book as retired and it is removed")));
+    expect(e).toContain("S5: quote overlaps statement S4's (their quotes share source text)");
+  });
+
+  it("the issue's probe: a statement quoting 'damaged book as retired' against S4's 'A librarian marks a damaged book' is rejected", () => {
+    const e = errorsOf(
+      lib((d) => {
+        d.statements[3].quote = "A librarian marks a damaged book";
+        d.statements[4].quote = "damaged book as retired";
+      }),
+    );
+    expect(e).toContain("S5: quote overlaps statement S4's (their quotes share source text)");
+  });
+
+  it("repeated quote text: ranges use the first occurrence, so a straddle of only the second copy is not flagged (pinned limitation)", () => {
+    const d = load(LIBRARY);
+    const sentence = "Every action is logged for audit purposes.";
+    const src = readFileSync(LIBRARY_SRC, "utf8") + `\n\n${sentence} Reports are filed nightly.\n\n${sentence} Reports are filed weekly.\n`;
+    const base = { category: "business-fact", aboutBusiness: true, confidence: "high", provenance: "reference", outcome: "modeled", group: "G5", storyline: null };
+    d.statements.push({ id: "S10", quote: sentence, ...base }, { id: "S11", quote: "audit purposes. Reports are filed weekly.", ...base });
+    expect(errorsOf(validatePrdTriage(d, src))).not.toContain("overlaps");
+  });
+
+  it("disjoint adjacent quotes still pass", () => {
+    const e = errorsOf(lib((d) => (d.statements[4].quote = "and it is removed from the catalog")));
+    expect(e).not.toContain("overlaps");
+  });
+
   it("a question may name the group it would join (S7 in the reference-only group)", () => {
     const s7 = load(LIBRARY).statements[6];
     expect(s7).toMatchObject({ confidence: "low", outcome: "question", group: "G5", storyline: null });

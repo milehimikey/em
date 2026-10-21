@@ -62,7 +62,7 @@ All of these are checked by `em discover triage-check`; write the record so they
    group** has only `reference` statements and **no storyline**: `storyline: null` on the group and
    on its statements. It never joins a walkthrough storyline. The report lists reference-only
    groups outside every storyline — operations no walkthrough touches; check these are not CRUD fill.
-8. **One statement per claim.** A statement's normalised quote may not equal, contain or be contained in another statement's quote; the error names both.
+8. **One statement per claim.** A statement's normalised quote may not equal, contain, be contained in, or partially overlap (by character range in the normalised source) another statement's quote; the error names both. Ranges are taken at a quote's first occurrence in the normalised source, so a sentence repeated in the PRD can hide or produce an overlap.
 9. **Quotes are verbatim** (Markdown emphasis marks, smart quotes and whitespace aside) and at
    least 12 characters. A storyline `quote` is the **full** walkthrough span, start to finish.
 

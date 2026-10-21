@@ -214,6 +214,10 @@ export function validatePrdTriage(
   const usedGroups = new Set<string>();
   const groupMembers = new Map<string, Record<string, unknown>[]>();
   const quoteOwner = new Map<string, string>();
+  // Each statement's character range (first occurrence) in the normalised source, for the
+  // partial-overlap check; only when the source is available.
+  const normSource = sourceText === undefined ? undefined : normQuote(sourceText);
+  const quoteRanges = new Map<string, [number, number]>();
   (input.statements as unknown[]).forEach((raw, i) => {
     const w = `statements[${i}]`;
     if (!isObj(raw)) return err(`${w}: must be an object`);
@@ -228,6 +232,15 @@ export function validatePrdTriage(
       for (const [pq, pid] of quoteOwner) {
         if (pq === nq) err(`${at}: quote duplicates statement ${pid}'s; one statement per claim`);
         else if (pq.includes(nq) || nq.includes(pq)) err(`${at}: quote overlaps statement ${pid}'s (one contains the other); one statement per claim`);
+        else {
+          const a = quoteRanges.get(pid);
+          const b = normSource === undefined ? -1 : normSource.indexOf(nq);
+          if (a && b >= 0 && b < a[1] && a[0] < b + nq.length) err(`${at}: quote overlaps statement ${pid}'s (their quotes share source text); one statement per claim`);
+        }
+      }
+      if (normSource !== undefined) {
+        const at0 = normSource.indexOf(nq);
+        if (at0 >= 0) quoteRanges.set(id, [at0, at0 + nq.length]);
       }
       if (!quoteOwner.has(nq)) quoteOwner.set(nq, id);
       // Provenance is checked, not declared: walkthrough quotes lie inside a storyline span,

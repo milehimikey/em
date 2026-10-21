@@ -85,7 +85,7 @@ event share one slice.
   built only from `reference` statements (operations no walkthrough touches) is reference-only:
   `storyline: null` on the group and on its statements. It never joins a walkthrough storyline,
   and the report lists it outside every storyline for the human to inspect.
-- A claim is quoted once: no statement's quote may equal, contain or be contained in another's. Only `modeled`/`rewritten` walkthrough statements anchor a group; a `question` never does.
+- A claim is quoted once: no statement's quote may equal, contain, be contained in, or partially overlap by character range in the normalised source another's. Only `modeled`/`rewritten` walkthrough statements anchor a group; a `question` never does.
 
 ## Step 4 — Rewrite, don't drop
 
