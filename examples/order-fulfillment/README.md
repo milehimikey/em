@@ -25,8 +25,8 @@ than just reading the model:
    purpose: `browse-catalog` and `checkout` are `ready-to-implement` with every Open
    Question resolved (`checkout` has none to begin with); `view-open-orders` and
    `capture-payment` are only `reviewed`, each with a real, unresolved Open Question the doc
-   is honest about rather than guessing at. That state is a deliberate partial walk, recorded
-   with `em slice review --allow-open`: without the flag, `em slice review` exits 1 on a doc
+   is honest about rather than guessing at. That is the state a deliberate partial walk
+   (`em slice review --allow-open`) records: without the flag, `em slice review` exits 1 on a doc
    with an unchecked Open Question, so the normal path is to resolve or `em slice defer` first.
 4. **Run the readiness gate, both ways** —
    `em validate order-fulfillment.em --slice-ready checkout` actually passes: exit 0, `slice
