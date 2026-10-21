@@ -421,7 +421,7 @@ describe("engagement tracking key (GH #241)", () => {
     create(file, "tracked", { kind: "slices", keys: ["order-list"] }, 3, "PROJ-123");
     const text = readFileSync(engagementPath(file, "tracked"), "utf8");
     expect(text).toContain('\ntracking: "PROJ-123"\n');
-    expect(text).toContain('engagementSchemaVersion: "1.2"');
+    expect(text).toContain('engagementSchemaVersion: "1.1"');
     expect(plan(file, "tracked")).toMatchObject({ tracking: "PROJ-123", slices: [{ key: "order-list", tracking: "PROJ-123" }] });
     expect(status(file, "tracked")).toMatchObject({ tracking: "PROJ-123", slices: [{ key: "order-list", tracking: "PROJ-123" }] });
   });
@@ -430,7 +430,7 @@ describe("engagement tracking key (GH #241)", () => {
     const { file } = writeLifecyclesFixture(dir);
     create(file, "old", { kind: "slices", keys: ["order-list"] });
     const path = engagementPath(file, "old");
-    writeFileSync(path, readFileSync(path, "utf8").replace('engagementSchemaVersion: "1.2"', 'engagementSchemaVersion: "1.0"'));
+    writeFileSync(path, readFileSync(path, "utf8").replace('engagementSchemaVersion: "1.1"', 'engagementSchemaVersion: "1.0"'));
     expect(plan(file, "old").tracking).toBeNull();
   });
 
@@ -494,6 +494,41 @@ describe("engagement prTitle template (GH #334)", () => {
     expect(p.prTitle).toBe("feat({slice}): add [{key}]");
     expect(p.slices[0].prTitle).toMatch(/^feat\(.+\): add \[PROJ-9\]$/);
   });
+
+  it("writes 1.1 without --pr-title and 1.2 with it; a literal 1.1 file reads prTitle null", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    const sel = { kind: "slices", keys: ["order-list"] } as const;
+    const base = { slug: "v", selector: sel, parallel: 3, createdBy: null, created: "2026-10-08" };
+    const without = buildNewEngagement(input(file), base);
+    const withT = buildNewEngagement(input(file), { ...base, prTitle: "feat: {sliceKey}" });
+    if (!without.ok || !withT.ok) throw new Error("new failed");
+    expect(without.text).toContain('engagementSchemaVersion: "1.1"');
+    expect(withT.text).toContain('engagementSchemaVersion: "1.2"');
+    const parsed = parseEngagementFile(without.text);
+    expect(parsed.ok && parsed.file.prTitle).toBeNull();
+  });
+
+  it("{sliceKey} is the slice key; a {key} template on a keyless slice falls back and the plan warns in preflight", () => {
+    expect(resolvePrTitle("feat: {sliceKey} ({slice})", null, "Order List", "order-list")).toBe("feat: order-list (Order List)");
+    expect(resolvePrTitle("feat: {sliceKey} [{key}]", "P-1", "Order List", "order-list")).toBe("feat: order-list [P-1]");
+    const { file } = writeLifecyclesFixture(dir);
+    const r = buildNewEngagement(input(file), { slug: "fb", selector: { kind: "slices", keys: ["order-list"] }, parallel: 3, createdBy: null, prTitle: "feat: {sliceKey} [{key}]", created: "2026-10-08" });
+    if (!r.ok) throw new Error(r.message);
+    const path = engagementPath(file, "fb");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, r.text);
+    const p = plan(file, "fb");
+    expect(p.slices[0].prTitle).not.toContain("{");
+    expect(p.preflight.filter((f) => f.kind === "pr-title-fallback")).toMatchObject([{ subject: "order-list", slices: ["order-list"] }]);
+    expect(formatEngagementPlanText(p)).toContain("pr-title-fallback:");
+  });
+
+  it("the CLI warns on stderr when --pr-title uses {key}", () => {
+    writeLifecyclesFixture(dir);
+    const r = em(["engagement", "new", "lifecycles.em", "warn", "--slices", "order-list", "--pr-title", "feat: {slice} [{key}]"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("slices without a tracking key fall back");
+  }, 60_000);
 
   it("the default with a tracking key is `<key>: <slice name>`", () => {
     const { file } = writeLifecyclesFixture(dir);

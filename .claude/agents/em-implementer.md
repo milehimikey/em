@@ -1,6 +1,6 @@
 ---
 name: em-implementer
-description: Implements exactly one ratified event-modeling slice in an assigned worktree and branch and opens its pull request; the engagement skill dispatches it once per slice with only the slice key, the worktree path the exact pull-request title and, when there is one, a tracking key.
+description: Implements exactly one ratified event-modeling slice in an assigned worktree and branch and opens its pull request; the engagement skill dispatches it once per slice with only the slice key, the worktree path, the exact pull-request title and, when there is one, a tracking key.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 ---
 <!-- managed by em — `em skill sync` overwrites; `Bash` cannot be partially allowed, so read-only agents rely on their instructions for Bash -->

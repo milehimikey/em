@@ -158,7 +158,7 @@ export function parseEngagementFile(text: string): ParseResult {
   const d = data as Record<string, unknown>;
   const version = str(d.engagementSchemaVersion);
   if (!version || !ENGAGEMENT_READABLE_VERSIONS.includes(version)) {
-    return { ok: false, message: `unsupported engagementSchemaVersion "${version ?? "(missing)"}" (this em reads ${ENGAGEMENT_READABLE_VERSIONS.map((v) => `"${v}"`).join(" and ")})` };
+    return { ok: false, message: `unsupported engagementSchemaVersion "${version ?? "(missing)"}" (this em reads ${ENGAGEMENT_READABLE_VERSIONS.map((v) => `"${v}"`).join(", ").replace(/, ([^,]*)$/, " or $1")})` };
   }
   const model = str(d.model);
   if (!model) return { ok: false, message: "model must name the model file (path relative to the engagement file)" };

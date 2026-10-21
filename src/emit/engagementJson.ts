@@ -26,7 +26,8 @@ export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1
 // 1.3 (GH #282): additive `preflight[].kind: "shape"` — one entry per shape-family lint
 //   (`em validate --shape`) that fires on the engagement's slices; `subject` is the rule code.
 // 1.4 (GH #334): additive `prTitle` on the document (the engagement's template, or `null`) and on
-//   each slice (the resolved PR title the implementer is handed).
+//   each slice (the resolved PR title the implementer is handed), and a `preflight[].kind:
+//   "pr-title-fallback"` per keyless slice whose `{key}` template fell back to the default.
 export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.4";
 
 // 1.0 (MIL-268): initial shape.

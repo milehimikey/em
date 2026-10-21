@@ -257,15 +257,14 @@ export function effectiveTracking(sliceTracking: string | null, engagementTracki
   return sliceTracking ?? engagementTracking;
 }
 
-/** GH #334: the PR title for one slice. The default is `{key}: {slice}` with a tracking key and
+/** GH #334: the PR title for one slice. `{sliceKey}` is the slice key as written in the model. The default is `{key}: {slice}` with a tracking key and
  *  `{slice}` without. A custom template substitutes `{key}` and `{slice}`; a template that uses
  *  `{key}` on a slice with no tracking key falls back to the default without a key. */
 export const DEFAULT_PR_TITLE = "{key}: {slice}";
-export function resolvePrTitle(template: string | null, tracking: string | null, slice: string): string {
-  if (tracking === null) {
-    return template === null || template.includes("{key}") ? slice : template.split("{slice}").join(slice);
-  }
-  return (template ?? DEFAULT_PR_TITLE).split("{key}").join(tracking).split("{slice}").join(slice);
+export function resolvePrTitle(template: string | null, tracking: string | null, slice: string, sliceKey: string = slice): string {
+  const fill = (t: string) => t.split("{sliceKey}").join(sliceKey).split("{slice}").join(slice);
+  if (tracking === null) return template === null || template.includes("{key}") ? slice : fill(template);
+  return fill((template ?? DEFAULT_PR_TITLE).split("{key}").join(tracking));
 }
 
 export function effectiveState(entry: EngagementSliceEntry, docShipped: boolean): { state: LedgerState; stateInferred: boolean } {
@@ -403,7 +402,7 @@ export interface EngagementPlanLevel {
  *  implementer would otherwise rediscover and report on its own. Advisory: never a hold, never
  *  written to the Ledger; the lead puts the whole list to the human in ONE question round before
  *  fan-out (skill §2). Each finding names the slices it spans so the answer lands once. */
-export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch" | "shape";
+export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch" | "shape" | "pr-title-fallback";
 
 export interface PreflightFinding {
   kind: PreflightKind;
@@ -612,7 +611,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       state,
       stateInferred,
       tracking,
-      prTitle: resolvePrTitle(eng.prTitle, tracking, sliceName),
+      prTitle: resolvePrTitle(eng.prTitle, tracking, sliceName, key),
     };
   });
 
@@ -625,6 +624,17 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   // Slices listed level by level, model order within a level.
   slices.sort((a, b) => a.level - b.level || order(a.key, b.key));
   const preflight = computePreflight(input, members, idx);
+  // GH #334: advisory — a `{key}` template on a keyless slice fell back to the bare default title.
+  if (eng.prTitle !== null && eng.prTitle.includes("{key}")) {
+    for (const s of slices.filter((x) => x.tracking === null)) {
+      preflight.push({
+        kind: "pr-title-fallback",
+        subject: s.key,
+        slices: [s.key],
+        message: `slice ${s.key} has no tracking key, so its PR title falls back to "${s.prTitle}" instead of the engagement's prTitle template "${eng.prTitle}"`,
+      });
+    }
+  }
   return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, parallel: eng.parallel, levels, slices, preflight } };
 }
 
@@ -729,7 +739,8 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
   const preds = unitPredecessors(input.model, idx);
   const components = selectionComponents(sel.units, idx, preds);
   const fm: EngagementFile = {
-    engagementSchemaVersion: ENGAGEMENT_SCHEMA_VERSION,
+    // A file that does not use `prTitle` stays 1.1, so a teammate or CI on an older em still reads it.
+    engagementSchemaVersion: prTitle === null ? "1.1" : ENGAGEMENT_SCHEMA_VERSION,
     slug: opts.slug,
     model: modelRefFor(engagementPath(input.file, opts.slug), input.file),
     created: opts.created,

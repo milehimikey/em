@@ -2219,11 +2219,18 @@ as `tracking:` in the frontmatter — the same name a slice doc's `tracking:` us
 can pass it to every implementer and the PRs cite one ticket; it is free text and must be a
 non-empty single line (`--tracking must be a non-empty single line (a ticket key or URL)`).
 `--pr-title <template>` (GH #334) records `prTitle:` in the frontmatter: the title every slice PR
-carries, with `{key}` (the slice's resolved tracking key) and `{slice}` (the slice name)
-substituted. Absent, the title is `{key}: {slice}` with a tracking key and `{slice}` without; a
-template that uses `{key}` on a slice with no tracking key falls back to `{slice}`. Free text, one
-non-empty line (`--pr-title must be a non-empty single line (a template using {key} and {slice})`).
-Use it when the host repo's PR-title lint rejects `<key>: <name>` (for example `feat({slice}): add it [{key}]`). Refusals (exit 1, stderr): `pass exactly one of --slices,
+carries. Placeholders: `{key}` (the slice's resolved tracking key), `{slice}` (the slice's display
+name from the model, falling back to the key) and `{sliceKey}` (the slice key as written in the
+model, kebab-case, what `--slice <key>` takes; use it where a conventional-commit lint rejects a
+start-case subject). Absent, the title is `{key}: {slice}` with a tracking key and `{slice}`
+without. A template that uses `{key}` on a slice with no tracking key falls back to the bare
+`{slice}`; `new` warns on stderr when the template uses `{key}`, and `plan` lists each fallback
+slice as a `pr-title-fallback` pre-flight entry (advisory, never a hold). So `feat({slice}): add it [{key}]`
+falls back to the bare slice name on a keyless slice and would fail such a lint; give those slices a key
+or use a key-free template (`feat: {sliceKey}`). Free text, one non-empty line
+(`--pr-title must be a non-empty single line (a template using {key} and {slice})`). `new` writes
+`engagementSchemaVersion: "1.1"` unless `--pr-title` is given (then `"1.2"`), so older tooling still
+reads files that do not use it. Refusals (exit 1, stderr): `pass exactly one of --slices,
 --context, --downstream-of`; `the selection is empty — nothing to engage`; `invalid slug "<s>"
 — expected kebab-case (a-z, 0-9, -)`; `--parallel must be a positive integer`; `engagement
 "<slug>" already exists (<path>) — pass --force to overwrite`.

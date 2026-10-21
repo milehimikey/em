@@ -228,7 +228,7 @@ em engagement new <file> <slug> --downstream-of <ref>               # a slice ke
 em engagement new <file> <slug> --parallel <n>                      # how many slices of one level may be in flight at once
 em engagement new <file> <slug> --by <name>                         # who created the engagement (createdBy)
 em engagement new <file> <slug> --tracking <key>                    # an issue-tracker key or URL the slice PRs cite (a slice doc's own tracking: wins)
-em engagement new <file> <slug> --pr-title <template>               # PR title template for the slice PRs; {key} = tracking key, {slice} = slice name (default "{key}: {slice}", or "{slice}" without a key)
+em engagement new <file> <slug> --pr-title <template>               # PR title template for the slice PRs; {key} = tracking key, {slice} = slice name, {sliceKey} = slice key (default "{key}: {slice}", or "{slice}" without a key)
 em engagement new <file> <slug> --force                             # overwrite an existing engagement file with this slug
 em engagement plan <file> <slug>                                    # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (always main — MIL-280), and any hold
 em engagement plan <file> <slug> --json                             # print a JSON document instead of text (same document as the MCP engagement_plan tool)
