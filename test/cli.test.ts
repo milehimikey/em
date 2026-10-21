@@ -5705,3 +5705,45 @@ describe("em validate --strict (GH #293)", () => {
     expect(strictReady.stdout).toContain("NOT ready-to-implement");
   });
 });
+
+// GH #333: CLI-level coverage for `em slice review` output (gate notice, --again, draft + --again).
+describe("em slice review CLI output (GH #333)", () => {
+  let d: string;
+  const doc = (status: string, extra: string, oq: string) =>
+    `---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ${status}\nversion: 1\n${extra}---\n# S\n\n## Open Questions\n\n${oq}\n`;
+  beforeAll(() => {
+    d = mkdtempSync(join(tmpdir(), "em-cli-review333-"));
+    mkdirSync(join(d, "slices"), { recursive: true });
+    for (const k of ["open", "again", "plain"]) {
+      writeFileSync(join(d, `${k}.em`), `slice "${k}" {\n  command Do Thing note "slices/${k}.md"\n  event Thing Done\n}\n`);
+    }
+    writeFileSync(join(d, "slices", "open.md"), doc("draft", "", "- [ ] Unresolved?"));
+    writeFileSync(join(d, "slices", "again.md"), doc("reviewed", "reviewedBy: Sam\nreviewedOn: 2026-09-01\n", "- [x] Done"));
+    writeFileSync(join(d, "slices", "plain.md"), doc("draft", "", "- [x] Done"));
+  });
+  afterAll(() => rmSync(d, { recursive: true, force: true }));
+
+  it("--allow-open prints the stderr notice with the open count and exits 0; without it exits 1", () => {
+    const openBefore = readFileSync(join(d, "slices", "open.md"), "utf8");
+    const refused = em(["slice", "review", "open.em", "open", "--by", "Sam", "--on", "2026-09-05"], d);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("slices/open.md: 1 unchecked Open Questions item(s)");
+    expect(readFileSync(join(d, "slices", "open.md"), "utf8")).toBe(openBefore);
+    const r = em(["slice", "review", "open.em", "open", "--by", "Sam", "--on", "2026-09-05", "--allow-open"], d);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('notice: --allow-open — reviewing "open" with 1 unchecked Open Questions item(s)');
+  });
+
+  it("--again prints the re-reviewed old -> new line on stdout", () => {
+    const r = em(["slice", "review", "again.em", "again", "--by", "Robin", "--on", "2026-09-06", "--again"], d);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("re-reviewed: slices/again.md (reviewedBy: Sam -> Robin, reviewedOn: 2026-09-01 -> 2026-09-06)");
+  });
+
+  it("--again on a draft doc is a plain review", () => {
+    const r = em(["slice", "review", "plain.em", "plain", "--by", "Sam", "--on", "2026-09-05", "--again"], d);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("reviewed: slices/plain.md (reviewedBy: Sam, reviewedOn: 2026-09-05)");
+    expect(r.stdout).not.toContain("re-reviewed");
+  });
+});

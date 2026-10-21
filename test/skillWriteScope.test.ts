@@ -235,6 +235,8 @@ describe("MIL-236 (b): the R20 pre-release signal on real em status --json outpu
 
   it("an implemented slice makes the model released, and re-ratification then bumps version:", { timeout: 60_000 }, () => {
     const dir = join(cwd, "fulfillment");
+    // GH #333: a walked doc has no unchecked Open Questions; the `em slice new` placeholder is replaced the way a real walk does.
+    writeFileSync(slicesDoc(), readFileSync(slicesDoc(), "utf8").replace(/^- \[ \] \{\{question\}\}.*$/gm, "- [x] none"));
     for (const args of [
       ["slice", "review", "fulfillment.em", "browse-catalog", "--by", "Reviewer"],
       ["slice", "ratify", "fulfillment.em", "browse-catalog", "--by", "Ratifier", "--on", "2026-10-07"],

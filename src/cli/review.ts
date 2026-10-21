@@ -93,7 +93,7 @@ export function applyReviewFrontmatter(raw: string, reviewedBy: string, reviewed
         ok: false,
         message:
           `already reviewed by ${currentBy} on ${currentOn} — refusing to overwrite with ` +
-          `${trimmedBy} on ${reviewedOn}`,
+          `${trimmedBy} on ${reviewedOn} (re-record with --again)`,
       };
     }
     // GH #333 --again: fall through to the normal edit below, which replaces both values in place.
@@ -227,7 +227,7 @@ export function runReview(
         return {
           ok: false,
           message:
-            `${open.length} unchecked Open Questions item(s) — first: "${open[0]}". ` +
+            `${doc.path}: ${open.length} unchecked Open Questions item(s) — first: "${open[0]}". ` +
             "Resolve or defer them (`em slice defer`), or pass --allow-open to record a deliberately partial walk",
         };
       }

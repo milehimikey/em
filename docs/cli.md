@@ -3386,7 +3386,7 @@ after review is re-reviewed with `--again`.)
 refuses (exit 1, file untouched) a doc with any unchecked `- [ ]` item under `## Open Questions` — the
 same parse `--slice-ready`'s `noUncheckedOpenQuestions` gate uses. The message names the first
 unchecked item and the count. Resolve it, or park it with [`em slice defer`](#em-slice-defer-file-slice-key-question).
-`--allow-open` records a deliberately partial walk anyway and prints a one-line notice on stderr naming the open count.
+A fresh `em slice new` doc carries the placeholder item `- [ ] {{question}}`; edit it (replace it with the real questions, or a checked `- [x] none`) before reviewing. `--allow-open` records a deliberately partial walk anyway and prints a one-line notice on stderr naming the open count.
 
 Refuses a doc already `ready-to-implement` or `implemented`: review applies *before* ratification,
 and a slice that has already shipped is reopened with [`em slice revise`](#em-slice-revise-file-slice-key)
@@ -3405,13 +3405,13 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 
 | Error | Meaning |
 |---|---|
-| `<n> unchecked Open Questions item(s) — first: "<text>"` | The Open Questions gate above; resolve/defer them or pass `--allow-open` |
+| `<doc path>: <n> unchecked Open Questions item(s) — first: "<text>"` | The Open Questions gate above; resolve/defer them or pass `--allow-open` |
 | `no slice with export key "<key>" in this model` | `<slice-key>` resolves to no slice ([slice keys](#slice-keys)); the message lists the valid keys |
 | `"<key>" is a continuation of "<originating-key>" (view "<name>" again) — it has no doc of its own; review "<originating-key>" instead` | (MIL-208) `<slice-key>` is an again-view-only slice with no legacy doc — review the originating slice named |
 | `slice "<key>" has no doc bound via ...` | No `note "slices/<key>.md"` (or ratified cross-binding) resolves a doc |
 | `slice "<key>" notes "..." but no such file exists` | The bound note names a file that isn't there |
 | `slice doc "..." has missing or invalid frontmatter` | No fence, or missing a required key (`em validate` explains which) |
-| ``already reviewed by ... — refusing to overwrite`` | The idempotent/refusal guard — see above |
+| ``already reviewed by ... — refusing to overwrite ... (re-record with --again)`` | The idempotent/refusal guard — see above; `--again` re-records |
 | ``doc is `status: ...` — review applies before ratification`` | The doc is already `ready-to-implement`/`implemented` — use `em slice revise` |
 | `invalid --on date "..."` | `--on` didn't match `YYYY-MM-DD` |
 

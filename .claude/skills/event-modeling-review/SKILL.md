@@ -65,7 +65,9 @@ review:` marker (mirrors `Last conformance:`).
 
 Then, and only then: a slice with nothing left `- [ ]` and no open `issue` →
 `em slice review <model>.em <key> --by <name>` (flips its doc to `status: reviewed` and records
-`reviewedBy:`/`reviewedOn:`). Anything still open stays `draft` — the walkthrough doesn't decide
+`reviewedBy:`/`reviewedOn:`). `em slice review` itself exits 1 on an unchecked Open Question
+(`--allow-open` records a deliberately partial walk; `--again` re-records a review after a body edit).
+Anything still open stays `draft` — the walkthrough doesn't decide
 it, the next session or the open-questions list does.
 
 **The facilitator never ratifies, never offers to ratify, and never suggests ratification in a

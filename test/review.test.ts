@@ -64,7 +64,7 @@ describe("applyReviewFrontmatter (pure text surgery)", () => {
     const second = applyReviewFrontmatter(first.content, "Robin Vale", "2026-09-05");
     expect(second).toEqual({
       ok: false,
-      message: "already reviewed by Sam Okafor on 2026-09-05 — refusing to overwrite with Robin Vale on 2026-09-05",
+      message: "already reviewed by Sam Okafor on 2026-09-05 — refusing to overwrite with Robin Vale on 2026-09-05 (re-record with --again)",
     });
   });
 
@@ -75,7 +75,7 @@ describe("applyReviewFrontmatter (pure text surgery)", () => {
     const second = applyReviewFrontmatter(first.content, "Sam Okafor", "2026-09-06");
     expect(second).toEqual({
       ok: false,
-      message: "already reviewed by Sam Okafor on 2026-09-05 — refusing to overwrite with Sam Okafor on 2026-09-06",
+      message: "already reviewed by Sam Okafor on 2026-09-05 — refusing to overwrite with Sam Okafor on 2026-09-06 (re-record with --again)",
     });
   });
 
@@ -302,7 +302,7 @@ describe("runReview (note-binding resolution + fs orchestration)", () => {
     if (result.ok) return;
     expect(result.message).toBe(
       "slices/draft-slice.md: already reviewed by Sam Okafor on 2026-09-05 — refusing to " +
-        "overwrite with Robin Vale on 2026-09-05",
+        "overwrite with Robin Vale on 2026-09-05 (re-record with --again)",
     );
     expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
   });
@@ -393,7 +393,7 @@ describe("em slice review: Open Questions gate and --again (GH #333)", () => {
     const result = run("open-doc", "Sam", "2026-09-05");
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.message).toContain("2 unchecked Open Questions item(s)");
+    expect(result.message).toMatch(/^slices\/open-doc\.md: 2 unchecked Open Questions item\(s\)/);
     expect(result.message).toContain('first: "Who pays the fee?"');
     expect(read("open-doc")).toBe(before);
   });
