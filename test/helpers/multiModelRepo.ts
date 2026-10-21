@@ -155,6 +155,11 @@ export function makeMultiModelRepo(opts: MultiModelRepoOptions = {}): MultiModel
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "t");
   git("config", "commit.gpgsign", "false");
+  // No auto-maintenance: a detached maintenance/gc child can outlive `git commit` and keep
+  // writing under .git while cleanup removes the dir (ENOTEMPTY, GH #330).
+  git("config", "maintenance.auto", "false");
+  git("config", "gc.auto", "0");
+  git("config", "maintenance.autoDetach", "false");
   git("add", "-A");
   git("commit", "-q", "-m", "init");
   return { dir, manifest, checkout, fulfillment, git, cleanup: () => rmTemp(dir) };
