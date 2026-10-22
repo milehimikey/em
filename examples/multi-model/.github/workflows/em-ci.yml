@@ -15,6 +15,12 @@ on:
       - "**/*.em"
       - "**/slices/**"
       - "**/README.md"
+      - ".github/workflows/em-*.yml"
+      - "**/.event-modeling.md"
+      - ".claude/settings.json"
+      - "**/ratifiers.yaml"
+      - "**/system.yaml"
+      - "contracts/**"
   push:
     branches: [main]
 

@@ -9,12 +9,13 @@
 // throughout (orders/catalog), per the engagement's non-negotiables.
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { parse as parseYaml } from "yaml";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { makeMultiModelRepo, MULTI_MODEL_EXAMPLE_DIR } from "./helpers/multiModelRepo.js";
-import { buildCiWorkflowFile, buildCiWorkflowFileMulti, buildConformWorkflowFileMulti, conformWorkflowPath, ciWorkflowPath, type CiModel } from "../src/cli/ciInit.js";
+import { CI_PR_PATHS, refreshCiPullRequestPaths, buildCiWorkflowFile, buildCiWorkflowFileMulti, buildConformWorkflowFileMulti, conformWorkflowPath, ciWorkflowPath, type CiModel } from "../src/cli/ciInit.js";
 import {
   UpgradeContext,
   resolveFromVersion,
@@ -1293,5 +1294,49 @@ describe("api-contract-missing step - pre-1.12 workflow, multi-model, blocked (G
     expect(report.steps.find((s) => s.id === "ci-block")!.applicable).toBe(false);
     expect(report.steps.find((s) => s.id === "api-contract-missing")!.applicable).toBe(false);
     expect(report.human.find((h) => h.id === "api-contract-blocked")).toBeUndefined();
+  });
+});
+
+describe("GH #346 - ci preset pull_request paths", () => {
+  const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
+  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "contracts/**"];
+  const legacyOf = (content: string): string => {
+    // what 1.18.1 generated: three-entry filter (the header is outside the managed block)
+    let out = content;
+    for (const p of NEW) out = out.replace(`      - "${p}"\n`, "");
+    return out;
+  };
+
+  it("fresh em-ci.yml lists the model sources plus workflows, state file, settings, ratifiers, system manifest and contracts (Fix paragraph)", () => {
+    const doc = parseYaml(buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION)) as { on: { pull_request: { paths: string[] } } };
+    expect(doc.on.pull_request.paths).toEqual([...CI_PR_PATHS]);
+    for (const p of NEW) expect(doc.on.pull_request.paths).toContain(p);
+    const multi = parseYaml(buildCiWorkflowFileMulti("system.yaml", [{ key: "a", path: "a/a.em" }], "test", INSTALLED_VERSION)) as { on: { pull_request: { paths: string[] } } };
+    expect(multi.on.pull_request.paths).toEqual([...CI_PR_PATHS]);
+  });
+
+  it("refreshCiPullRequestPaths rewrites only the exact legacy list; current and hand-edited filters are untouched", () => {
+    const current = buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION);
+    expect(refreshCiPullRequestPaths(current)).toBeNull();
+    const legacy = legacyOf(current);
+    expect(legacy).not.toContain(`      - ".claude/settings.json"`);
+    expect(refreshCiPullRequestPaths(legacy)).toBe(current);
+    expect(refreshCiPullRequestPaths(legacy.replace('"**/README.md"', '"docs/**"'))).toBeNull();
+  });
+
+  it("ci-block detects a 1.18.1-shaped workflow as stale and em upgrade writes the new paths (slate: no new step)", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    // same managed block as the installed version, so only the out-of-block filter differs
+    writeFileSync(ciWorkflowPath(dir), legacyOf(buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION)));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add ci workflow");
+    const ctx = makeCtx(dir, packagedSkillsRoot);
+    expect(detectUpgrade(ctx).steps.find((s) => s.id === "ci-block")!.applicable).toBe(true);
+    const result = applyUpgrade(ctx);
+    expect(result.ok).toBe(true);
+    const updated = readFileSync(ciWorkflowPath(dir), "utf8");
+    expect(updated).toBe(buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION));
+    expect(detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((s) => s.id === "ci-block")!.applicable).toBe(false);
   });
 });

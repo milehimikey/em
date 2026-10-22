@@ -51,6 +51,7 @@ import {
   CiModel,
   planCiFile,
   applyCiFile,
+  refreshCiPullRequestPaths,
   CI_WORKFLOW_MARKER,
   CONFORM_WORKFLOW_MARKER,
 } from "./ciInit.js";
@@ -382,7 +383,9 @@ function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; 
   const files = ciBlockFiles(args, ctx);
 
   const ciStatus = planCiFile(ciPath, files.ci[0], files.ci[1], CI_WORKFLOW_MARKER, false, multi);
-  const ciStale = ciStatus.kind === "stale";
+  // GH #346: the `on:` paths live outside the managed block; refresh them when still the pre-1.19 list.
+  const pathsStale = refreshCiPullRequestPaths(readFileSync(ciPath, "utf8")) !== null;
+  const ciStale = ciStatus.kind === "stale" || pathsStale;
 
   let conformStale = false;
   if (existsSync(conformPath)) {
@@ -409,6 +412,8 @@ function applyCiBlock(ctx: UpgradeContext): StepApplyOutcome {
   const changedFiles: string[] = [];
   if (ciStale) {
     applyCiFile(ciPath, planCiFile(ciPath, files.ci[0], files.ci[1], CI_WORKFLOW_MARKER, false, multi));
+    const refreshed = refreshCiPullRequestPaths(readFileSync(ciPath, "utf8"));
+    if (refreshed !== null) writeFileSync(ciPath, refreshed, "utf8");
     changedFiles.push(ciPath);
   }
   if (conformStale) {
