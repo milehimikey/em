@@ -178,7 +178,7 @@ export function applyGlossaryWaivers(
   conflicts: GlossaryConflict[],
   waivedNames: string[],
 ): { conflicts: GlossaryConflict[]; waived: GlossaryConflict[]; unusedWaivers: string[] } {
-  const keys = new Map(waivedNames.map((n) => [normalizeName(n), n]));
+  const keys = new Map(waivedNames.map((e) => e.split(/\s+/)[0]).map((n) => [normalizeName(n), n] as [string, string]));
   const used = new Set<string>();
   const kept: GlossaryConflict[] = [];
   const waived: GlossaryConflict[] = [];

@@ -2959,11 +2959,12 @@ default, same shape as `em validate --fail-on-issues`.
 contexts, so `--fail-on-conflicts` could never pass on a multi-context system. List those
 field names in a waiver file, one per line, `#` comments allowed (the same contract as
 `em validate --shape --waive-file`; a missing file means no waivers, so a CI job can always
-pass the flag):
+pass the flag). Each line is `<field> [reason]`: the first word is the field name and any
+rest (or a `#` comment) is a free-text reason, so `status quote vs invoice enums` waives `status`:
 
 ```
 # glossary-waivers.txt - a quote's status is not an invoice's status
-status
+status quote vs invoice enums
 reason   # per-context enums
 ```
 
@@ -3009,6 +3010,9 @@ document, so the schemas evolve independently):
   alongside the one(s) that don't (same "every occurrence" convention the text report's
   `formatConflictLine` already uses). Cross-reference `kind`/`type` per occurrence to see
   which side(s) actually disagree.
+- `waived` — the `field-type-conflict`s excused by `--waive-file` (same entry shape as
+  `conflicts`). A top-level key present **only** when `--waive-file` (MCP `waive_file`) is
+  given; a run without it has no `waived` key. `glossarySchemaVersion` stays `1.1`.
 
 Every array is sorted by normalized key, so output is deterministic for the same set of
 inputs in the same order.

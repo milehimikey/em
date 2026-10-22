@@ -3096,6 +3096,19 @@ describe("em glossary --waive-file (GH #355)", () => {
     }
   });
 
+  it("the issue's `field reason` line shape waives the field; `status # reason` and bare `status` too", () => {
+    for (const line of ["status quote vs invoice enums", "status # reason", "status"]) {
+      const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE, line + "\n");
+      try {
+        const r = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "glossary-waivers.txt"], d);
+        expect(r.status, line).toBe(0);
+        expect(r.stderr, line).not.toContain("excuses no field-type conflict");
+      } finally {
+        rmTemp(d);
+      }
+    }
+  });
+
   it("a missing waiver file means no waivers (the CI preset can always pass the flag)", () => {
     const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE);
     try {

@@ -1013,7 +1013,7 @@ describe("glossary tool", () => {
     const a = join(dir, "glossary-a.em");
     const b = join(dir, "glossary-b.em");
     const w = join(dir, "glossary-waivers.txt");
-    writeFileSync(w, "# deliberate\ntotal\n");
+    writeFileSync(w, "# deliberate\ntotal money vs number, per context\n");
     const { result, doc } = await callJson(client, "glossary", { files: [a, b], waive_file: w });
     expect(doc.conflicts).toEqual([]);
     expect(doc.waived).toContainEqual(expect.objectContaining({ type: "field-type-conflict", term: "total" }));
