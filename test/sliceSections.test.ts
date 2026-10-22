@@ -14,6 +14,7 @@ import {
   scanSliceRegions,
 } from "../src/catalog/sliceSections.js";
 import { buildSliceDocContent } from "../src/cli/sliceNew.js";
+import { syncDocText } from "../src/cli/sliceSync.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE = readFileSync(join(ROOT, ".claude/skills/event-modeling-shared/templates/slice.md"), "utf8");
@@ -197,5 +198,50 @@ describe("template ↔ em slice new skeleton", () => {
     expect(findStructuredSectionProblems(TEMPLATE)).toEqual([]);
     expect(findStructuredSectionProblems(skeleton)).toEqual([]);
     expect(scanSliceRegions(skeleton).regions.map((r) => r.body)).toEqual(scan.regions.map((r) => r.body));
+  });
+});
+
+// GH #344: the generated event region uses the same union of recording commands as the lint.
+describe("em-slice-event Source cell: recording commands across slices (GH #344)", () => {
+  const ISSUE_MODEL = [
+    'slice "Create" {',
+    "  command A { a, b, c }",
+    "  event Thing Created { a, b, c }",
+    "}",
+    'slice "Create Variant" {',
+    "  command B { a, b }",
+    "  event Thing Created",
+    "}",
+  ].join("\n");
+  const eventRegion = (src: string, i: number) =>
+    buildSliceRegions(compile(src).model, [i]).find((r) => r.kind === "event")!;
+
+  it("em slice new --wire: the repeat's region names command A from slice \"Create\" for c, no {{ }}", () => {
+    const { model } = compile(ISSUE_MODEL);
+    const doc = buildSliceDocContent("Create Variant", "create-variant", "state-change", "B → Thing Created", buildSliceRegions(model, [1]));
+    expect(doc).toContain('| c | — | yes | from command `A` (slice "Create") |');
+    expect(doc).toContain("| a | — | yes | from command `B` |");
+    const region = doc.slice(doc.indexOf("GENERATED:em-slice-event"), doc.indexOf("GENERATED:em-slice-event", doc.indexOf("GENERATED:em-slice-event") + 5));
+    expect(region).not.toContain("{{");
+  });
+
+  it("em slice sync: a stale region is rewritten to the cross-slice source, never {{ }}", () => {
+    const { model } = compile(ISSUE_MODEL);
+    const stale = buildSliceDocContent("Create Variant", "create-variant", "state-change", "B → Thing Created", buildSliceRegions(model, [1]))
+      .replace('from command `A` (slice "Create")', "{{ }}");
+    const r = syncDocText(stale, buildSliceRegions(model, [1]));
+    expect(r.status).toBe("stale");
+    expect(r.next).toContain('| c | — | yes | from command `A` (slice "Create") |');
+  });
+
+  it("the first declaration's slice and a same-slice provider are unchanged", () => {
+    const body = eventRegion(ISSUE_MODEL, 0).body.join("\n");
+    expect(body).toContain("| c | — | yes | from command `A` |");
+    expect(body).not.toContain("(slice");
+  });
+
+  it("a field no recording command provides still reads {{ }}", () => {
+    const src = ISSUE_MODEL.replace("event Thing Created { a, b, c }", "event Thing Created { a, b, c, d }");
+    expect(eventRegion(src, 1).body.join("\n")).toContain("| d | — | yes | {{ }} |");
   });
 });

@@ -350,6 +350,10 @@ consistently instead of trusting it by eye.
   command provides gets a warning — reported once per event, not once per repeat — unless the
   field carries a trailing `assigned` clause (below). No new syntax: there is no per-field
   "which command provides this" form.
+  A fieldless recording command anywhere silences the event's check (it may be the provider).
+  A bare repeat inherits the first definition only when it is the same logical event: the same
+  name and context (a bare repeat without `@Ctx` in a multi-context model takes the model's
+  first context).
 
 Both checks only fire when **both sides declare `{ fields }`** — the view/event being
 checked, and *every* element on the contributing side (every source event of the view;

@@ -467,7 +467,7 @@ re-run `em slice sync`.
 | Region | Section | Body |
 |---|---|---|
 | `em-slice-command` | `## Command / Input` | `**Command:** \`Name\`` + `\| Field \| Type \| Required \| Rules / Validation \|` (Required is `no` for a `name?: Type` field) |
-| `em-slice-event` | `## Event(s) Emitted` | `**Event:** \`Name\` → context \`Ctx\`` + `\| Field \| Type \| Immutable Fact? \| Source / Notes \|` (Source: the same-slice command field it is copied from, `assigned` for a system-assigned field, else `{{ }}`) |
+| `em-slice-event` | `## Event(s) Emitted` | `**Event:** \`Name\` → context \`Ctx\`` + `\| Field \| Type \| Immutable Fact? \| Source / Notes \|` (Source: the same-slice command field it is copied from; failing that, the command from another slice that also records the event, written `from command \`A\` (slice "Create")` (GH #344, the same union `fields-completeness/event-field-no-source` checks); `assigned` for a system-assigned field, else `{{ }}`) |
 | `em-slice-view` | `## Read Model / View` | `- **View:** \`Name\` built from events: …` (the union across the originating and every `again` instance; each later event is annotated `(via "<slice>")` with the slice of the instance that adds it) + `\| Field \| Type \| Source / Notes \|` (Source: the source event, from that union, carrying the field, `Derived` for a `derived` field, `Collection of \`T\`, fed by …` for a `T[] derived from …` field — followed by one neutral Given/Then scenario stub per named event under the table, to copy into `## Scenarios` and complete there (the region itself stays read-only) — else `{{ }}`) |
 | `em-slice-invariants` | `## Invariants / Business Rules` | one `- **INV-X** — rule` line per model-declared invariant of the slice's commands and events |
 

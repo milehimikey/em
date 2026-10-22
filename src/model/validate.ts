@@ -12,6 +12,7 @@ import {
   PUBLIC_SCALAR_TYPE_NAMES,
   TypeDecl,
   normalizeName,
+  recordingCommandsOf,
   resolvePublicType,
   resolveTypeRef,
 } from "./model.js";
@@ -78,18 +79,6 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     });
   }
 
-  // GH #344: commands recording each logical event, across every slice the event appears in.
-  const commandsByEvent = new Map<string, Element[]>();
-  for (const slice of model.slices) {
-    const cmds = slice.elements.filter((e) => e.kind === "command");
-    for (const e of slice.elements) {
-      if (e.kind !== "event") continue;
-      const list = commandsByEvent.get(e.logicalId) ?? [];
-      for (const c of cmds) if (!list.includes(c)) list.push(c);
-      commandsByEvent.set(e.logicalId, list);
-    }
-  }
-  const recordingCommandsOf = (logicalId: string): Element[] => commandsByEvent.get(logicalId) ?? [];
   const eventFieldReported = new Set<string>();
 
   for (const slice of model.slices) {
@@ -304,7 +293,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     if (commands.length > 0) {
       for (const evt of events) {
         if (!evt.fields || evt.fields.length === 0) continue;
-        const recording = recordingCommandsOf(evt.logicalId);
+        const recording = recordingCommandsOf(model, evt.logicalId);
         if (!recording.every((c) => (c.fields ?? []).length > 0)) continue;
         const commandFieldUnion = new Set<string>();
         for (const c of recording) {

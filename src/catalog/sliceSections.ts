@@ -24,7 +24,7 @@
 // Pure: model in, region bodies (as line arrays, EOL-free) out; doc text in, regions/problems
 // out. The CLI (`em slice new`, cli/sliceSync.ts) owns every read and write.
 
-import { Element, NormalizedModel, normalizeName, resolveTypeRef } from "../model/model.js";
+import { Element, NormalizedModel, normalizeName, recordingCommandsOf, resolveTypeRef } from "../model/model.js";
 import { againInstancesOf, viewSourceNames } from "../model/continuation.js";
 import { alternativesOf } from "../layout/grid.js";
 import { kebabSlug } from "../util/slug.js";
@@ -107,8 +107,18 @@ function eventBody(model: NormalizedModel, el: Element): string[] {
     if (f.assigned === true) {
       notes.push("assigned (set by the handler)");
     } else {
-      const src = commands.find((c) => (c.fields ?? []).some((cf) => normalizeName(cf.name) === normalizeName(f.name)));
-      notes.push(src ? `from command \`${src.name}\`` : "{{ }}");
+      const provides = (c: Element) => (c.fields ?? []).some((cf) => normalizeName(cf.name) === normalizeName(f.name));
+      const src = commands.find(provides);
+      // GH #344: a field this slice's command lacks may come from another command that records
+      // the same logical event (the same union the lint checks); name that command's slice.
+      const other = src ? undefined : recordingCommandsOf(model, el.logicalId).find(provides);
+      notes.push(
+        src
+          ? `from command \`${src.name}\``
+          : other
+            ? `from command \`${other.name}\` (slice "${model.slices[other.sliceIndex].name}")`
+            : "{{ }}",
+      );
     }
     if (f.tag === true) notes.push("identity tag");
     if (f.optional === true) notes.push("optional");

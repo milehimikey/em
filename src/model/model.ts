@@ -482,3 +482,15 @@ export function resolveByName(
   const bucket = byName.get(normalizeName(name));
   return bucket && bucket.length > 0 ? bucket[0].id : undefined;
 }
+/** GH #344: the commands that record a logical event - every command in every slice where an
+ *  instance of the event (first declaration or bare repeat) appears, in timeline order. The one
+ *  lookup `fields-completeness/event-field-no-source` and the generated `em-slice-event` region
+ *  both use, so a lint verdict and a generated "Source" cell cannot disagree. */
+export function recordingCommandsOf(model: NormalizedModel, logicalId: string): Element[] {
+  const out: Element[] = [];
+  for (const slice of model.slices) {
+    if (!slice.elements.some((e) => e.kind === "event" && e.logicalId === logicalId)) continue;
+    for (const c of slice.elements) if (c.kind === "command" && !out.includes(c)) out.push(c);
+  }
+  return out;
+}

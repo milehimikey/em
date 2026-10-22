@@ -2622,19 +2622,46 @@ slice "S" {
     expect(noSource(src)).toHaveLength(0);
   });
 
-  it("the shape lint's advice (separate command, bare repeat of the event) passes this lint", () => {
-    // invariantsValidate's conditional-invariants advice: "consider a separate command for the
-    // <p> case (it may record the same event - a bare repeat of the event is legal)".
-    const src = `
+  it("command-second-intent fires on the pre-split model; its advised split passes both lints", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-gh344-"));
+    try {
+      const both = (src: string) => {
+        const model = normalize(parse(src));
+        const refs = computeRefs(model);
+        return {
+          intent: validateInvariants(model, refs, dir).filter((d) => d.code === "command-second-intent"),
+          noSource: validate(model, layout(model), refs).filter((d) => d.code === "fields-completeness/event-field-no-source"),
+        };
+      };
+      const before = `
+slice "Create" {
+  command Create Thing { name, size, label }
+  invariant INV-THG-1 "If \`label\` is set, it must be unique"
+  invariant INV-THG-2 "When label is present, it must be short"
+  event Thing Created { name, size, label }
+}
+`;
+      const pre = both(before);
+      expect(pre.intent).toHaveLength(1);
+      expect(pre.intent[0].message).toContain("bare repeat of the event is legal");
+
+      // The advised split: a separate command for the label case, recording the same event bare.
+      const after = `
 slice "Create" {
   command Create Thing { name, size }
   event Thing Created { name, size, label }
 }
 slice "Create Labelled" {
   command Create Labelled Thing { name, size, label }
+  invariant INV-THG-1 "If \`label\` is set, it must be unique"
   event Thing Created
 }
 `;
-    expect(noSource(src)).toHaveLength(0);
+      const post = both(after);
+      expect(post.noSource).toHaveLength(0);
+      expect(post.intent).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
