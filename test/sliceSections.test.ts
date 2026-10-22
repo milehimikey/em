@@ -202,7 +202,8 @@ describe("template ↔ em slice new skeleton", () => {
 });
 
 // GH #344: the generated event region uses the same union of recording commands as the lint.
-describe("em-slice-event Source cell: recording commands across slices (GH #344)", () => {
+// GH #362: the cross-slice label is worded as a statement about this slice, not the other command.
+describe("em-slice-event Source cell: recording commands across slices (GH #344, #362)", () => {
   const ISSUE_MODEL = [
     'slice "Create" {',
     "  command A { a, b, c }",
@@ -219,7 +220,7 @@ describe("em-slice-event Source cell: recording commands across slices (GH #344)
   it("em slice new --wire: the repeat's region names command A from slice \"Create\" for c, no {{ }}", () => {
     const { model } = compile(ISSUE_MODEL);
     const doc = buildSliceDocContent("Create Variant", "create-variant", "state-change", "B → Thing Created", buildSliceRegions(model, [1]));
-    expect(doc).toContain('| c | — | yes | from command `A` (slice "Create") |');
+    expect(doc).toContain('| c | — | yes | not supplied by this command (from `A`, slice "Create") |');
     expect(doc).toContain("| a | — | yes | from command `B` |");
     const region = doc.slice(doc.indexOf("GENERATED:em-slice-event"), doc.indexOf("GENERATED:em-slice-event", doc.indexOf("GENERATED:em-slice-event") + 5));
     expect(region).not.toContain("{{");
@@ -228,10 +229,10 @@ describe("em-slice-event Source cell: recording commands across slices (GH #344)
   it("em slice sync: a stale region is rewritten to the cross-slice source, never {{ }}", () => {
     const { model } = compile(ISSUE_MODEL);
     const stale = buildSliceDocContent("Create Variant", "create-variant", "state-change", "B → Thing Created", buildSliceRegions(model, [1]))
-      .replace('from command `A` (slice "Create")', "{{ }}");
+      .replace('not supplied by this command (from `A`, slice "Create")', "{{ }}");
     const r = syncDocText(stale, buildSliceRegions(model, [1]));
     expect(r.status).toBe("stale");
-    expect(r.next).toContain('| c | — | yes | from command `A` (slice "Create") |');
+    expect(r.next).toContain('| c | — | yes | not supplied by this command (from `A`, slice "Create") |');
   });
 
   it("the first declaration's slice and a same-slice provider are unchanged", () => {

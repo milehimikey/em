@@ -111,12 +111,14 @@ function eventBody(model: NormalizedModel, el: Element): string[] {
       const src = commands.find(provides);
       // GH #344: a field this slice's command lacks may come from another command that records
       // the same logical event (the same union the lint checks); name that command's slice.
+      // GH #362: word it as a statement about THIS slice ("not supplied by this command"), so the
+      // repeat's doc never reads as if its own command supplied the field.
       const other = src ? undefined : recordingCommandsOf(model, el.logicalId).find(provides);
       notes.push(
         src
           ? `from command \`${src.name}\``
           : other
-            ? `from command \`${other.name}\` (slice "${model.slices[other.sliceIndex].name}")`
+            ? `not supplied by this command (from \`${other.name}\`, slice "${model.slices[other.sliceIndex].name}")`
             : "{{ }}",
       );
     }
