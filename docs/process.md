@@ -435,8 +435,9 @@ them through em's four sub-agents. The roles do not change; they are named here.
 
 - **The engagement's slices can be named by storyline.** `em engagement new --storyline <name>`
   selects every slice the model declares in that `storyline` block (resolved from the model, nothing
-  recorded on the slice, so the set cannot drift from it); an `after` storyline selects only its own
-  slices, what it reads from the earlier one is upstream.
+  recorded on the slice, so the set cannot drift from it), plus the originating unit of any
+  continuation (`view X again`) slice, which may be declared in an earlier `after` storyline; a note
+  on stderr names each such pulled-in unit. The rest of what it reads from the earlier storyline is upstream.
 - **The engagement lead is the implementing-agent operator.** The lead session dispatches
   `em-implementer`, `em-validator`, `em-reviewer` and `em-critic`, cuts one worktree per slice
   under `.claude/worktrees/` (that directory must be gitignored), records every step with

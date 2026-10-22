@@ -744,6 +744,28 @@ export interface NewEngagementOptions {
   created: string;
 }
 
+/** GH #348: `--storyline` pulls in the originating unit of a continuation (`view X again`) slice even
+ *  when that unit is declared outside the storyline; say so, one note per (continuation, unit). */
+function continuationNotes(model: NormalizedModel, refs: RefsResult, idx: UnitIndex, name: string): string[] {
+  const found = findStoryline(model, name);
+  if (!found) return [];
+  const notes: string[] = [];
+  model.slices.forEach((slice, i) => {
+    if (storylineOfSlice(model, i) !== found) return;
+    for (const el of slice.elements) {
+      if (el.kind !== "view" || !el.again) continue;
+      const origin = model.byId.get(el.logicalId);
+      if (!origin || origin.again || storylineOfSlice(model, origin.sliceIndex) === found) continue;
+      const unit = idx.unitOfSlice[origin.sliceIndex];
+      const other = storylineOfSlice(model, origin.sliceIndex);
+      const from = other ? `storyline "${other.name}"` : "outside any storyline";
+      const note = `note: em engagement new: ${refs.sliceKeys[i]} continues ${el.name} from ${from}; its unit ${unit} is selected`;
+      if (!notes.includes(note)) notes.push(note);
+    }
+  });
+  return notes;
+}
+
 export type NewResult = { ok: true; text: string; units: string[]; warning: string | null } | { ok: false; message: string };
 
 export function buildNewEngagement(input: { file: string; model: NormalizedModel; refs: RefsResult; baseDir: string }, opts: NewEngagementOptions): NewResult {
@@ -759,6 +781,8 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
   if (sel.units.length === 0) return { ok: false, message: "the selection is empty — nothing to engage" };
   const preds = unitPredecessors(input.model, idx);
   const components = selectionComponents(sel.units, idx, preds);
+  const notes = opts.selector.kind === "storyline" ? continuationNotes(input.model, input.refs, idx, opts.selector.name) : [];
+  const warnings = [...notes, ...(components.length > 1 ? [formatComponentsWarning(components)] : [])];
   const fm: EngagementFile = {
     // A file that does not use `prTitle` stays 1.1, so a teammate or CI on an older em still reads it.
     engagementSchemaVersion: prTitle === null ? "1.1" : ENGAGEMENT_SCHEMA_VERSION,
@@ -776,7 +800,7 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
     ok: true,
     text: renderEngagementFile(fm, buildLedgerLines(fm.slices, ledgerFacts(idx, sel.units))),
     units: sel.units,
-    warning: components.length > 1 ? formatComponentsWarning(components) : null,
+    warning: warnings.length > 0 ? warnings.join("\n") : null,
   };
 }
 

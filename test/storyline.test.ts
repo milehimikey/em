@@ -23,7 +23,7 @@ import { buildStorylineDiagram, resolveStorylineArg } from "../src/render/storyl
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { relationOnTimeline, storylineRuns } from "../src/model/storylines.js";
+import { findStoryline, relationOnTimeline, storylineRuns } from "../src/model/storylines.js";
 
 const modelFrom = (src: string) => normalize(parse(src));
 const diagsFor = (src: string) => {
@@ -303,6 +303,30 @@ describe("export, query and slice index", () => {
     expect(!bad.ok && bad.error).toContain('"Main"');
     const all = querySlices(system, {});
     expect(all.ok && all.results).toHaveLength(6);
+  });
+
+  it("storyline names normalise alike: query and findStoryline agree on case, outer and inner whitespace (GH #348)", () => {
+    const compiled = compileForQuery(THREE, ".");
+    const system = buildQuerySystem([{ file: "stock.em", model: compiled.model, refs: compiled.refs, index: compiled.index }]);
+    const odd = "  fOLLOW  ";
+    const spaced = querySlices(system, { storyline: odd });
+    const plain = querySlices(system, { storyline: "Follow" });
+    expect(spaced.ok && spaced.results.map((r) => r.ref)).toEqual(plain.ok && plain.results.map((r) => r.ref));
+    expect(findStoryline(compiled.model, odd)?.name).toBe("Follow");
+    const src = `model "W"
+context Shop
+storyline "Two  Words" {
+  slice "S" {
+    command Do S { id: UUID }
+    event S Done { id: UUID }
+  }
+}
+`;
+    const two = compileForQuery(src, ".");
+    const q2 = buildQuerySystem([{ file: "w.em", model: two.model, refs: two.refs, index: two.index }]);
+    const r = querySlices(q2, { storyline: "two words" });
+    expect(r.ok && r.results.map((x) => x.ref)).toEqual(["s"]);
+    expect(findStoryline(two.model, "two words")?.name).toBe("Two  Words");
   });
 
   it("em slice index adds a Storyline column only for a model that declares storylines", () => {

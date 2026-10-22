@@ -21,7 +21,7 @@ import { Element } from "../model/model.js";
 import { IndexEdge, InvariantIndexEntry } from "../model/queryIndex.js";
 import { QuerySystem, QueryModelEntry, resolveElement, qualifyRef } from "./system.js";
 import { classifySlicePattern } from "../catalog/classify.js";
-import { collectTags } from "../model/model.js";
+import { collectTags, normalizeName } from "../model/model.js";
 import { scanTestCitations, Citation } from "../cli/coverage.js";
 
 export interface ElementSummary {
@@ -206,9 +206,9 @@ export interface SliceFilters {
  *  element in the slice carries that context/persona/tag key. */
 export function querySlices(system: QuerySystem, filters: SliceFilters): VerbResult<SliceQueryEntry> {
   if (filters.storyline !== undefined) {
-    const wanted = filters.storyline.trim().toLowerCase();
+    const wanted = normalizeName(filters.storyline);
     const declared = system.entries.flatMap((e) => (e.model.storylines ?? []).map((s) => s.name));
-    if (!declared.some((n) => n.trim().toLowerCase() === wanted)) {
+    if (!declared.some((n) => normalizeName(n) === wanted)) {
       return err(
         declared.length === 0
           ? `em query slices: --storyline "${filters.storyline}": no storylines are declared in these models`
@@ -230,7 +230,7 @@ export function querySlices(system: QuerySystem, filters: SliceFilters): VerbRes
       if (filters.status && (status ?? "").toLowerCase() !== filters.status.toLowerCase()) return;
       if (filters.context && !contexts.some((c) => c.toLowerCase() === filters.context!.toLowerCase())) return;
       if (filters.persona && !personas.some((p) => p.toLowerCase() === filters.persona!.toLowerCase())) return;
-      if (filters.storyline && (slice.storyline ?? "").trim().toLowerCase() !== filters.storyline.trim().toLowerCase()) return;
+      if (filters.storyline && normalizeName(slice.storyline ?? "") !== normalizeName(filters.storyline)) return;
       if (filters.tag && !tags.some((t) => t.toLowerCase() === filters.tag!.toLowerCase())) return;
 
       results.push({ ref: qualifyRef(system, entry.modelKey, key), name: slice.name, index: i, pattern, status, storyline: slice.storyline ?? null, personas, contexts, tags });

@@ -2224,11 +2224,16 @@ selector:
 - `--slices`: [slice keys](#slice-keys) — export keys, display names or unique prefixes, stored as export keys. An unresolvable key is refused with the valid keys listed.
 - `--context <C>`: every slice with an event in context `<C>` (case-insensitive).
 - `--storyline <name>` (GH #348): every slice declared in the `storyline` block `<name>`, resolved from
-  the model (case/whitespace-insensitive, like `em render --storyline` and `em query slices --storyline`;
-  nothing is recorded on the slice), folded to unit keys in model order. A continued storyline (a second
-  block with the same name) is one storyline; a storyline declared `after "Other"` selects only its own
-  slices (what it reads from `Other` is upstream, as with `--context`). An unknown name is refused with
-  the declared storylines listed.
+  the model (case- and whitespace-insensitive, the same normalisation as `em render --storyline` and
+  `em query slices --storyline`; nothing is recorded on the slice), folded to unit keys in model order.
+  A continued storyline (a second block with the same name) is one storyline. A storyline declared
+  `after "Other"` selects its own slices, plus the originating unit of any continuation slice
+  (`view X again`), which may be declared in an earlier storyline: a continuation has no unit of its
+  own, its work is specified on the origin. Each such pulled-in unit is announced on stderr
+  (`note: em engagement new: <slice> continues <view> from storyline "<Other>"; its unit <origin> is selected`);
+  if that unit is already implemented the plan treats it as imposing nothing. What else the storyline
+  reads from `Other` is upstream, as with `--context`. An unknown name is refused with the declared
+  storylines listed.
 - `--downstream-of <ref>`: a slice key (all its elements), an element ref, or a display name,
   resolved the way `em query` resolves it, plus everything downstream of it (`loops-to` excluded).
 

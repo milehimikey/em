@@ -225,9 +225,44 @@ storyline "Alpha Story" {
     expect(r.ok && r.units).toEqual(["a-one", "a-two"]);
   });
 
-  it("--storyline: a storyline declared `after` selects only its own slices [#348 after]", () => {
+  it("--storyline: a storyline declared `after` with no continuation selects only its own slices [#348 after, own-slices case]", () => {
     const r = runStory("Beta Story");
     expect(r.ok && r.units).toEqual(["b-one"]);
+  });
+
+  it("--storyline: a continuation slice pulls in its origin unit from an earlier storyline, with a stderr note [#348 ruling: unit fold + note]", () => {
+    const src = `model "C"
+context Shop
+
+storyline "First" {
+  slice "Make It" {
+    command Make It { id: UUID }
+    event It Made { id: UUID }
+  }
+  slice "List It" {
+    view It List { id: UUID } from "It Made"
+  }
+}
+
+storyline "Second" after "First" {
+  slice "Break It" {
+    command Break It { id: UUID }
+    event It Broken { id: UUID }
+  }
+  slice "List Broken" {
+    view It List again from "It Broken"
+  }
+}
+`;
+    const file = join(dir, "cont.em");
+    writeFileSync(file, src);
+    const r = buildNewEngagement(input(file), { slug: "c", selector: { kind: "storyline", name: "second" }, parallel: 3, createdBy: null, created: "2026-10-22" });
+    expect(r.ok && r.units).toEqual(["list-it", "break-it"]);
+    expect(r.ok && r.warning).toBe('note: em engagement new: list-broken continues It List from storyline "First"; its unit list-it is selected');
+    // CLI: the note goes to stderr
+    const cli = em(["engagement", "new", "cont.em", "c", "--storyline", "Second"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stderr).toContain('list-broken continues It List from storyline "First"; its unit list-it is selected');
   });
 
   it("--storyline: an unknown name is refused listing the declared storylines [#348 unknown name]", () => {
@@ -246,14 +281,21 @@ storyline "Alpha Story" {
       const made = em(["engagement", "new", "storylines.em", "st", "--storyline", name, "--force"], dir);
       expect(made.status).toBe(0);
       const p = JSON.parse(em(["engagement", "plan", "storylines.em", "st", "--json"], dir).stdout) as { slices: { key: string }[] };
-      // The query lists the declared slices; the engagement folds an `again` view slice into the unit
-      // of the view's originating slice (as --context does), so those units are the query's refs
-      // with each `again` slice replaced by its origin.
       const keys = p.slices.map((x) => x.key).sort();
-      const expected = name === "Bring a product to market" ? ["create-product", "list-products", "publish-product"] : ["archive-product", "list-products"];
-      expect(keys).toEqual(expected);
+      expect(keys).toEqual(name === "Bring a product to market" ? ["create-product", "list-products", "publish-product"] : ["archive-product", "list-products"]);
+      // Mapping: every ref `em query slices --storyline` lists is selected, or is a continuation
+      // (`view X again`) slice whose origin unit is selected.
+      const { model, refs } = compile(readFileSync(join(dir, "storylines.em"), "utf8"));
+      const originUnitOf = (ref: string): string | null => {
+        const slice = model.slices[refs.sliceKeys.indexOf(ref)];
+        const el = slice.elements.find((e) => e.kind === "view" && e.again);
+        return el ? refs.sliceKeys[model.byId.get(el.logicalId)!.sliceIndex] : null;
+      };
       expect(q.results.length).toBeGreaterThan(0);
-      for (const r of q.results) if (!r.ref.startsWith("list-")) expect(keys).toContain(r.ref);
+      for (const r of q.results) {
+        const origin = originUnitOf(r.ref);
+        expect(keys.includes(r.ref) || (origin !== null && keys.includes(origin))).toBe(true);
+      }
     }
     const both = em(["engagement", "new", "storylines.em", "x", "--storyline", "Retire a product", "--context", "Catalog"], dir);
     expect(both.stderr).toBe("em engagement new: pass exactly one of --slices, --context, --storyline, --downstream-of\n");
