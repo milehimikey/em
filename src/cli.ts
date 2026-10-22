@@ -2914,12 +2914,13 @@ engagement
   .command("new")
   .description(
     "write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the " +
-      "generated Ledger table; selection by --slices, --context, or --downstream-of (exactly one)",
+      "generated Ledger table; selection by --slices, --context, --storyline, or --downstream-of (exactly one)",
   )
   .argument("<file>", "input .em file")
   .argument("<slug>", "engagement slug (kebab-case; the file name)")
   .option("--slices <keys>", "comma-separated slice export keys")
   .option("--context <name>", "every slice with an event in this context")
+  .option("--storyline <name>", "every slice declared in this storyline block (resolved from the model)")
   .option("--downstream-of <ref>", "a slice key, element ref, or display name: it and everything downstream of it (loops-to excluded)")
   .option("--parallel <n>", "how many slices of one level may be in flight at once", "3")
   .option("--by <name>", "who created the engagement (createdBy)")
@@ -2930,20 +2931,22 @@ engagement
     (
       file: string,
       slug: string,
-      opts: { slices?: string; context?: string; downstreamOf?: string; parallel: string; by?: string; tracking?: string; prTitle?: string; force?: boolean },
+      opts: { slices?: string; context?: string; storyline?: string; downstreamOf?: string; parallel: string; by?: string; tracking?: string; prTitle?: string; force?: boolean },
     ) => {
       const fail = (m: string): never => {
         console.error(`em engagement new: ${m}`);
         process.exit(1);
       };
-      const given = [opts.slices, opts.context, opts.downstreamOf].filter((v) => v !== undefined).length;
-      if (given !== 1) fail("pass exactly one of --slices, --context, --downstream-of");
+      const given = [opts.slices, opts.context, opts.storyline, opts.downstreamOf].filter((v) => v !== undefined).length;
+      if (given !== 1) fail("pass exactly one of --slices, --context, --storyline, --downstream-of");
       const selector: Selector =
         opts.slices !== undefined
           ? { kind: "slices", keys: opts.slices.split(",").map((k) => k.trim()).filter((k) => k !== "") }
           : opts.context !== undefined
             ? { kind: "context", context: opts.context }
-            : { kind: "downstream-of", ref: opts.downstreamOf! };
+            : opts.storyline !== undefined
+              ? { kind: "storyline", name: opts.storyline }
+              : { kind: "downstream-of", ref: opts.downstreamOf! };
       const parallel = /^\d+$/.test(opts.parallel) ? Number(opts.parallel) : NaN;
       const { model, refs } = compileFile(file);
       const path = engagementPath(file, slug);

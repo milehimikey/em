@@ -189,6 +189,79 @@ describe("new: selection", () => {
     expect(r.ok && r.units).toEqual(["place-order"]);
   });
 
+  // GH #348 (acceptance lines noted per test)
+  const storyModel = `model "S"
+context Shop
+
+storyline "Alpha Story" {
+  slice "A One" {
+    command Do A { id: UUID }
+    event A Done { id: UUID }
+  }
+}
+
+storyline "Beta Story" after "Alpha Story" {
+  slice "B One" {
+    command Do B { id: UUID }
+    event B Done { id: UUID }
+  }
+}
+
+storyline "Alpha Story" {
+  slice "A Two" {
+    command Do A2 { id: UUID }
+    event A2 Done { id: UUID }
+  }
+}
+`;
+  const runStory = (name: string) => {
+    const file = join(dir, "story.em");
+    writeFileSync(file, storyModel);
+    return buildNewEngagement(input(file), { slug: "s", selector: { kind: "storyline", name }, parallel: 3, createdBy: null, created: "2026-10-19" });
+  };
+
+  it("--storyline: name is case/whitespace-insensitive and a continued storyline (two blocks) is one storyline, model order [#348 resolves via findStoryline; continued = one]", () => {
+    const r = runStory("  alpha   STORY ");
+    expect(r.ok && r.units).toEqual(["a-one", "a-two"]);
+  });
+
+  it("--storyline: a storyline declared `after` selects only its own slices [#348 after]", () => {
+    const r = runStory("Beta Story");
+    expect(r.ok && r.units).toEqual(["b-one"]);
+  });
+
+  it("--storyline: an unknown name is refused listing the declared storylines [#348 unknown name]", () => {
+    expect(runStory("Gamma")).toEqual({ ok: false, message: '--storyline: no storyline "Gamma" (declared: "Alpha Story", "Beta Story")' });
+    const file = join(dir, "none.em");
+    writeFileSync(file, 'model "N"\ncontext Shop\nslice "X" {\n  command Do X { id: UUID }\n  event X Done { id: UUID }\n}\n');
+    const r = buildNewEngagement(input(file), { slug: "s", selector: { kind: "storyline", name: "Gamma" }, parallel: 3, createdBy: null, created: "2026-10-19" });
+    expect(r).toEqual({ ok: false, message: '--storyline "Gamma": no storylines are declared in this model' });
+  });
+
+  it("--storyline (CLI): matches `em query slices --storyline` on examples/storylines.em, and is exclusive with the other selectors [#348 fourth selector, exactly one]", () => {
+    const src = join(ROOT, "examples", "storylines.em");
+    writeFileSync(join(dir, "storylines.em"), readFileSync(src, "utf8"));
+    for (const name of ["Bring a product to market", "retire a product"]) {
+      const q = JSON.parse(em(["query", "slices", "storylines.em", "--storyline", name, "--json"], dir).stdout) as { results: { ref: string }[] };
+      const made = em(["engagement", "new", "storylines.em", "st", "--storyline", name, "--force"], dir);
+      expect(made.status).toBe(0);
+      const p = JSON.parse(em(["engagement", "plan", "storylines.em", "st", "--json"], dir).stdout) as { slices: { key: string }[] };
+      // The query lists the declared slices; the engagement folds an `again` view slice into the unit
+      // of the view's originating slice (as --context does), so those units are the query's refs
+      // with each `again` slice replaced by its origin.
+      const keys = p.slices.map((x) => x.key).sort();
+      const expected = name === "Bring a product to market" ? ["create-product", "list-products", "publish-product"] : ["archive-product", "list-products"];
+      expect(keys).toEqual(expected);
+      expect(q.results.length).toBeGreaterThan(0);
+      for (const r of q.results) if (!r.ref.startsWith("list-")) expect(keys).toContain(r.ref);
+    }
+    const both = em(["engagement", "new", "storylines.em", "x", "--storyline", "Retire a product", "--context", "Catalog"], dir);
+    expect(both.stderr).toBe("em engagement new: pass exactly one of --slices, --context, --storyline, --downstream-of\n");
+    const bad = em(["engagement", "new", "storylines.em", "x", "--storyline", "Nope"], dir);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('--storyline: no storyline "Nope" (declared: "Bring a product to market", "Extend an attribute", "Retire a product")');
+  });
+
   it("--downstream-of follows edges downstream, never back along loops-to", () => {
     const { file } = writeLendingFixture(dir);
     const run = (ref: string) => buildNewEngagement(input(file), { slug: "d", selector: { kind: "downstream-of", ref }, parallel: 3, createdBy: null, created: "2026-10-08" });
@@ -359,7 +432,7 @@ describe("em engagement (CLI)", () => {
     expect(forced.stdout).toBe("wrote engagements/three.md (1 slice: order-list)\n");
 
     expect(em(["engagement", "new", rel, "x", "--slices", "a", "--context", "b"], dir).stderr).toBe(
-      "em engagement new: pass exactly one of --slices, --context, --downstream-of\n",
+      "em engagement new: pass exactly one of --slices, --context, --storyline, --downstream-of\n",
     );
 
     const setOk = em(["engagement", "set", rel, "three", "order-list", "--state", "building", "--branch", "impl/order-list"], dir);

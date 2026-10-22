@@ -223,9 +223,10 @@ em query path <files>                                               # shortest p
 em query path <files> --from <ref-or-name>                          # the starting element's export ref or display name
 em query path <files> --to <ref-or-name>                            # the ending element's export ref or display name
 em query path <files> --json                                        # print a JSON document instead of the text report
-em engagement new <file> <slug>                                     # write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the generated Ledger table; selection by --slices, --context, or --downstream-of (exactly one)
+em engagement new <file> <slug>                                     # write <model dir>/engagements/<slug>.md — frontmatter (slices, parallel ceiling) plus the generated Ledger table; selection by --slices, --context, --storyline, or --downstream-of (exactly one)
 em engagement new <file> <slug> --slices <keys>                     # comma-separated slice export keys
 em engagement new <file> <slug> --context <name>                    # every slice with an event in this context
+em engagement new <file> <slug> --storyline <name>                  # every slice declared in this storyline block (resolved from the model)
 em engagement new <file> <slug> --downstream-of <ref>               # a slice key, element ref, or display name: it and everything downstream of it (loops-to excluded)
 em engagement new <file> <slug> --parallel <n>                      # how many slices of one level may be in flight at once
 em engagement new <file> <slug> --by <name>                         # who created the engagement (createdBy)

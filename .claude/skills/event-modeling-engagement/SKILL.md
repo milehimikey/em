@@ -69,9 +69,9 @@ Run the shared preconditions first (tool check, bundle currency, locate the mode
    fails, STOP and ask the human to add `.claude/worktrees/` to `.gitignore` in its own commit
    on `main`.
 5. **The engagement exists.** `em engagement status <model>.em <slug>`. If there is no such
-   engagement, ask the human which slices it covers (a list, a context, or "everything
+   engagement, ask the human which slices it covers (a list, a context, a storyline, or "everything
    downstream of X") and run `em engagement new <model>.em <slug> --slices a,b,c` (or
-   `--context <C>`, or `--downstream-of <ref>`) `--by "<their name>"`. First check the host
+   `--context <C>`, `--storyline <name>`, or `--downstream-of <ref>`) `--by "<their name>"`. First check the host
    repo's PR-title convention (a commitlint config, a PR-title workflow, or the last few merged
    PR titles) and pass `--pr-title "<template>"` when it differs from the default
    `<key>: <slice name>`; placeholders are `{key}`, `{slice}` (display name) and `{sliceKey}`

@@ -20,6 +20,7 @@ import { RefsResult } from "../model/refs.js";
 import { resolveSliceKey } from "../model/resolveSlice.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { semanticEdges } from "../model/edges.js";
+import { findStoryline, storylineOfSlice } from "../model/storylines.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { loadSliceDocsOnce, joinSliceDocFast } from "../model/sliceDocIndex.js";
 import { computeSliceReadiness, ContractCheckInput } from "../catalog/sliceReadyValidate.js";
@@ -144,7 +145,7 @@ const byOrder = (idx: UnitIndex) => (a: string, b: string) => (idx.sliceIndexOf.
 
 // ---- selection (`new`) ----
 
-export type Selector = { kind: "slices"; keys: string[] } | { kind: "context"; context: string } | { kind: "downstream-of"; ref: string };
+export type Selector = { kind: "slices"; keys: string[] } | { kind: "context"; context: string } | { kind: "storyline"; name: string } | { kind: "downstream-of"; ref: string };
 
 export type SelectionResult = { ok: true; units: string[] } | { ok: false; message: string };
 
@@ -161,6 +162,23 @@ export function resolveSelection(input: { file: string; model: NormalizedModel; 
     const want = sel.context.toLowerCase();
     model.slices.forEach((slice, i) => {
       if (slice.elements.some((el) => el.kind === "event" && (el.context ?? "").toLowerCase() === want)) picked.add(idx.unitOfSlice[i]);
+    });
+  } else if (sel.kind === "storyline") {
+    // GH #348: resolved from the model (`findStoryline`, as `em render --storyline` and
+    // `em query slices --storyline` do); a continued storyline is one storyline; `after` is ignored.
+    const found = findStoryline(model, sel.name);
+    if (!found) {
+      const declared = (model.storylines ?? []).map((s) => s.name);
+      return {
+        ok: false,
+        message:
+          declared.length === 0
+            ? `--storyline "${sel.name}": no storylines are declared in this model`
+            : `--storyline: no storyline "${sel.name}" (declared: ${[...new Set(declared)].map((n) => `"${n}"`).join(", ")})`,
+      };
+    }
+    model.slices.forEach((_slice, i) => {
+      if (storylineOfSlice(model, i) === found) picked.add(idx.unitOfSlice[i]);
     });
   } else {
     // Starting elements: every element of a named slice, or the one element a ref/display name
