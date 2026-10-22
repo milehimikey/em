@@ -2555,3 +2555,86 @@ describe("validateInvariants — doc-aware invariants/* advisories (MIL-265)", (
     ]);
   });
 });
+
+// GH #344: event-field-no-source checks the union of every command that records the event.
+describe("event-field-no-source: union of recording commands (GH #344)", () => {
+  const noSource = (src: string) => diagsFor(src).filter((d) => d.code === "fields-completeness/event-field-no-source");
+
+  // The issue comment's model verbatim: A provides {a,b,c}, B provides {a,b}, both record Thing Created.
+  const aFirst = `
+slice "Create" {
+  command A { a, b, c }
+  event Thing Created { a, b, c }
+}
+slice "Create Variant" {
+  command B { a, b }
+  event Thing Created
+}
+`;
+  // Mirror split: the first command lacks the field, the second (repeat's) command provides it.
+  const bFirst = `
+slice "Create" {
+  command B { a, b }
+  event Thing Created { a, b, c }
+}
+slice "Create Variant" {
+  command A { a, b, c }
+  event Thing Created
+}
+`;
+
+  it("issue repro, full-field command first: no warning (bare repeat inherits, union covers c)", () => {
+    expect(noSource(aFirst)).toHaveLength(0);
+  });
+
+  it("issue repro, mirror split (full-field command second): no warning", () => {
+    expect(noSource(bFirst)).toHaveLength(0);
+  });
+
+  it("a field no recording command provides stays a warning, once, naming every recording command", () => {
+    const src = aFirst.replace("event Thing Created { a, b, c }", "event Thing Created { a, b, c, d }");
+    const diags = noSource(src);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({
+      severity: "warning",
+      message: 'event "Thing Created" field "d" not provided by any of commands "A", "B"',
+    });
+    expect(diags[0].refs).toHaveLength(3);
+  });
+
+  it("a single recording command keeps the original single-command message", () => {
+    const diags = noSource(`
+slice "S" {
+  command A { a }
+  event Thing Created { a, z }
+}
+`);
+    expect(diags.map((d) => d.message)).toEqual(['event "Thing Created" field "z" not provided by command "A"']);
+  });
+
+  it("a fieldless recording command in any slice keeps the check silent", () => {
+    const src = aFirst.replace("command B { a, b }", "command B");
+    expect(noSource(src)).toHaveLength(0);
+  });
+
+  it("`assigned` still opts a field out when the event repeats", () => {
+    const src = aFirst.replace("event Thing Created { a, b, c }", "event Thing Created { a, b, c, d assigned }");
+    expect(noSource(src)).toHaveLength(0);
+  });
+
+  it("the shape lint's advice (separate command, bare repeat of the event) passes this lint", () => {
+    // invariantsValidate's conditional-invariants advice: "consider a separate command for the
+    // <p> case (it may record the same event - a bare repeat of the event is legal)".
+    const src = `
+slice "Create" {
+  command Create Thing { name, size }
+  event Thing Created { name, size, label }
+}
+slice "Create Labelled" {
+  command Create Labelled Thing { name, size, label }
+  event Thing Created
+}
+`;
+    expect(noSource(src)).toHaveLength(0);
+  });
+});

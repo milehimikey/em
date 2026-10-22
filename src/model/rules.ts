@@ -132,7 +132,7 @@ export const RULES = {
   "fields-completeness/event-field-no-source": {
     severity: "warning",
     title: "Event field not from a command",
-    fix: "Add the field to a command in the slice, or remove it from the event.",
+    fix: "Add the field to a command that records the event (in any slice), mark it assigned if the handler sets it, or remove it from the event.",
     usageCategory: "event field not provided by command",
     docAnchor: "fields-completeness",
   },

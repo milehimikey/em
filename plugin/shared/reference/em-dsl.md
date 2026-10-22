@@ -882,7 +882,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `duplicate-slice-name` | warning | Duplicate slice name | Rename the slice so its export key is unique. |
 | `duplicate-type-name` | warning | Duplicate type name | Rename one of the duplicate `type` declarations. |
 | `duplicate-type-ref` | warning | Duplicate type ref | Rename the type so its export ref is unique. |
-| `fields-completeness/event-field-no-source` | warning | Event field not from a command | Add the field to a command in the slice, or remove it from the event. |
+| `fields-completeness/event-field-no-source` | warning | Event field not from a command | Add the field to a command that records the event (in any slice), mark it assigned if the handler sets it, or remove it from the event. |
 | `fields-completeness/view-field-no-source` | warning | View field with no source | Add the field to a source event, or remove it from the view. |
 | `frontmatter-coherence-implemented-without-link` | warning | Implemented without a link | Add `implementedIn` once the slice ships. |
 | `frontmatter-invalid` | warning | Invalid or missing frontmatter | Add the required frontmatter keys, or add a frontmatter block. |

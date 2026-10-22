@@ -342,14 +342,18 @@ consistently instead of trusting it by eye.
   source events (any instance of each named event, unioned; a `view X again` instance's `from`
   events count toward the same view). A view field with no matching
   event field gets a warning — unless the field carries a trailing `derived` clause (below).
-- **Event ← command** — every field on an `event` should trace back to a field on a command
-  in the same slice (unioned across commands, in the rare case a slice has more than one).
-  An event field the command never mentions gets a warning — unless the field carries a
-  trailing `assigned` clause (below).
+- **Event ← command** — every field on an `event` should trace back to a field on **one of
+  the commands that record it**, unioned across every slice the event appears in (GH #344).
+  A bare repeat of the event inherits the first definition's fields, so two commands may
+  record the same event (the shape lint's "separate command for the `p` case" advice): a field
+  that either command provides is fine, whichever slice it sits in. A field *no* recording
+  command provides gets a warning — reported once per event, not once per repeat — unless the
+  field carries a trailing `assigned` clause (below). No new syntax: there is no per-field
+  "which command provides this" form.
 
 Both checks only fire when **both sides declare `{ fields }`** — the view/event being
 checked, and *every* element on the contributing side (every source event of the view;
-every command in the slice). A model that never uses fields produces zero completeness
+every command recording the event). A model that never uses fields produces zero completeness
 warnings, a view/event that hasn't gotten a fields block yet is silently skipped rather
 than flagged, and a mixed contributing side (say, `from "A", "B"` where only `A` declares
 fields) is also skipped — a fieldless `B` may well be the field's provider, so a warning
