@@ -1324,7 +1324,10 @@ slice "Executed Orders To Contract" {
     expect(diags).toHaveLength(0);
   });
 
-  it("still warns on a fold instance declared after the consuming reaction's slice — the rule keeps its teeth", () => {
+  // GH #365 (option 1): a reaction consumes every instance of the logical view, including a
+  // continuation declared AFTER its slice — `view X again from "E"` must sit after the event E
+  // that happens later in the story, and the processor keeps working the list it updates.
+  it("doesn't warn on a fold instance declared after the consuming reaction's slice (GH #365)", () => {
     const diags = unconsumed(`
 context Orders
 slice "Orders To Contract - Order Created" {
@@ -1350,16 +1353,13 @@ slice "Orders To Contract - Late Update" {
   view Orders To Contract again from "Order Updated"
 }
 `);
-    expect(diags).toHaveLength(1);
-    expect(diags[0].message).toContain('read model "Orders To Contract"');
+    expect(diags).toHaveLength(0);
   });
 
-  it("preserves the reaction-before-any-instance fallback: only the first instance is credited, no backward propagation from it", () => {
+  it("a reaction declared before any instance still credits every instance (GH #365); the ordering itself is reaction-from-future-view's job", () => {
     // The processor's `from` resolves before any instance of "Ticket Queue" exists (separately
-    // flagged by reaction-from-future-view). The pre-MIL-75 fallback credited the first instance
-    // as consumed — that stays true — but MIL-75's backward propagation doesn't apply here:
-    // there's no instance at-or-before the reaction to propagate from, so later instances still
-    // warn on their own.
+    // flagged by reaction-from-future-view). Under GH #365 the reaction consumes the logical
+    // view wherever its instances sit, so no instance warns "no consumer" on top of that.
     const diags = unconsumed(`
 context Ticket
 slice "React" {
@@ -1381,8 +1381,81 @@ slice "Queue Again" {
   view Ticket Queue again from "Ticket Assigned"
 }
 `);
+    expect(diags).toHaveLength(0);
+  });
+
+  // GH #365: the issue's literal repro — an automation's to-do list whose later events are
+  // continuation instances (`view X again from "E"`), the processor drawn once, earlier.
+  it("doesn't warn on a continuation of an automation's to-do list after the processor's slice — the issue's literal shape (GH #365)", () => {
+    const diags = unconsumed(`
+context Task
+slice "Create Task" {
+  ui Create Task @Operator
+  command CreateTask {
+    taskId: string
+  }
+  event TaskCreated @Task {
+    taskId: string
+  }
+}
+slice "Tasks To Close" {
+  view TasksToClose from "TaskCreated" {
+    taskId: string
+  }
+}
+slice "Close Task" {
+  processor TaskCloser from "TasksToClose"
+  command CloseTask {
+    taskId: string
+  }
+  event TaskClosed @Task {
+    taskId: string
+  }
+}
+slice "Reopen Task" {
+  ui Reopen Task @Operator
+  command ReopenTask {
+    taskId: string
+  }
+  event TaskReopened @Task {
+    taskId: string
+  }
+}
+slice "Tasks To Close: reopened" {
+  view TasksToClose again from "TaskReopened"
+}
+slice "Tasks To Close: closed" {
+  view TasksToClose again from "TaskClosed"
+}
+`);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("a ui reader does not broaden: a continuation after a screen-only consumer still warns (GH #365 keeps its teeth)", () => {
+    // A `ui` shows a snapshot of the view at one point in the story; a later continuation in a
+    // slice with no screen has no consumer of its own (`shown on` names one).
+    const diags = unconsumed(`
+context Task
+slice "Create Task" {
+  ui Create Task @Operator
+  command CreateTask
+  event TaskCreated @Task
+}
+slice "Task List" {
+  view TaskList from "TaskCreated"
+  ui Task List @Operator
+}
+slice "Rename Task" {
+  ui Rename Task @Operator
+  command RenameTask
+  event TaskRenamed @Task
+}
+slice "Task List: renamed" {
+  view TaskList again from "TaskRenamed"
+}
+`);
     expect(diags).toHaveLength(1);
-    expect(diags[0].line).toBeGreaterThan(0);
+    expect(diags[0].message).toContain('read model "TaskList"');
   });
 });
 

@@ -193,16 +193,18 @@ View is `event → read model → ui`. A slice holding only part of one is unfin
   slice or reads it by name from a later slice (Automation/Translation), or via an explicit
   `arrow` out of it. In a headless model the consumer is the `ui` tagged to the API-caller
   persona — same rule, no special case. Each instance of a repeated read model needs its own
-  consumer, but a reaction's isn't limited to the single instance nearest it (MIL-75): em's
+  consumer, but a reaction's isn't limited to the single instance nearest it: em's
   span-1/wire-once DSL rules force an accumulating read model across several instances, each
   re-declaring it with `from` naming only the newly adjacent event, and the consuming reaction
-  legitimately sits only at the last one — so every instance at-or-before a consuming reaction
-  counts as consumed, not just the nearest. (Rendering still draws the reaction's arrow to the
-  nearest instance at-or-before it — that resolution is unchanged; only which instances count as
-  *consumed* broadens.) An instance strictly after the last consuming reaction still needs its
-  own consumer: nothing later reads what it accumulates. If you repeat a view next to an event
-  purely to keep the arrow short, and no reaction ever reads that far, bring its screen along or
-  don't add the instance.
+  legitimately sits only at the last one (MIL-75) — or earlier than the follow-on updates of a
+  to-do list, since `view X again from "E"` must sit after the event E that happens later in the
+  story while the processor that works the list is drawn once, where the list is first worked
+  (GH #365). A reaction therefore watches the logical read model as a whole: every instance of a
+  view a reaction reads by name, before or after it, counts as consumed. (Rendering still draws
+  the reaction's arrow to the nearest instance at-or-before it — that resolution is unchanged;
+  only which instances count as *consumed* broadens.) A `ui` reader is not broadened: a screen
+  shows one instance, so a continuation in a slice with no `ui` and no reaction anywhere still
+  needs `shown on "Screen"` or should not be added.
   **Exemption:** A view marked `public` is a published read API or webhook response shape for
   an external consumer — its reader is outside this model. The warning is suppressed; document
   it as part of the integration surface.

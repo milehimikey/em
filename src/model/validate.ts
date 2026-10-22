@@ -1153,18 +1153,26 @@ function computeViewReaders(model: NormalizedModel): {
 } {
   const readByArrowOrFrom = new Set<string>();
   for (const el of model.elements) {
-    // See the MIL-75 note this function replaces (git blame) for why a reaction credits every
-    // instance at-or-before it, not just the nearest one.
+    // A `ui` reader credits the nearest instance at-or-before it (the snapshot that screen
+    // shows); a reaction credits every instance of the logical view (MIL-75, then GH #365).
     if (el.kind === "view") continue;
     for (const name of el.from ?? []) {
       const bucket = model.byName.get(normalizeName(name));
       if (!bucket) continue;
       const views = bucket.filter((x) => x.kind === "view");
+      if (AUTOMATION_KINDS.has(el.kind)) {
+        // GH #365 (owner ruling 2026-10-22, option 1): a reaction watches the logical read model
+        // as a whole, so it consumes EVERY instance of it — the fold instances before it
+        // (MIL-75) and the continuations after it (`view X again from "E"`, which time-ordering
+        // forces after the processor when E happens later in the story: the follow-on updates
+        // of a to-do list the processor keeps working). Rendering still draws the reaction's
+        // arrow to the nearest instance at-or-before it; only what counts as consumed broadens.
+        for (const v of views) readByArrowOrFrom.add(v.id);
+        continue;
+      }
       const atOrBefore = views.filter((x) => !isLaterOnTimeline(model, x.sliceIndex, el.sliceIndex));
       if (atOrBefore.length === 0) {
         if (views[0]) readByArrowOrFrom.add(views[0].id);
-      } else if (AUTOMATION_KINDS.has(el.kind)) {
-        for (const v of atOrBefore) readByArrowOrFrom.add(v.id);
       } else {
         readByArrowOrFrom.add(latestOnTimeline(model, atOrBefore, el.sliceIndex)!.id);
       }
