@@ -263,7 +263,15 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           }
           if (named.length === 0 || !named.every((e) => (e.fields ?? []).length > 0)) continue;
           const union = new Set<string>();
-          for (const e of named) for (const ef of e.fields ?? []) union.add(normalizeName(ef.name));
+          for (const e of named) {
+            for (const ef of e.fields ?? []) {
+              union.add(normalizeName(ef.name));
+              // GH #345: resolve ONE level through the declared element type of an array field
+              // on the event (`optionValues: VariantOptionValue[]`): that type's fields count too.
+              const nested = resolveTypeRef(ef.type, model.typesByName);
+              if (nested?.array) for (const nf of nested.typeDecl.fields) union.add(normalizeName(nf.name));
+            }
+          }
           const list = named.map((e) => `"${e.name}"`).join(", ");
           for (const tf of resolved.typeDecl.fields) {
             if (union.has(normalizeName(tf.name))) continue;

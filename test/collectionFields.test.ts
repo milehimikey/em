@@ -166,3 +166,47 @@ slice "More Attributes" {
 }
 ` : ""}`;
 }
+
+describe("collection fields trace through nested event element types (GH #345)", () => {
+  const nested = `
+model "Variants"
+context Catalog
+persona Admin
+
+type VariantOptionValue { attributeValueId: string }
+type ValueView { attributeValueId: string, key?: string, value?: string }
+
+slice "Create Thing" {
+  ui Thing Form @Admin
+  command Create Thing
+  event Thing Created @Catalog { thingId: string, optionValues: VariantOptionValue[] }
+}
+
+slice "Update Thing" {
+  ui Thing Edit @Admin
+  command Update Thing
+  event Thing Updated @Catalog { thingId: string, optionValues: VariantOptionValue[] }
+}
+
+slice "Things" {
+  view Things from "Thing Created", "Thing Updated" {
+    thingId: string
+    values: ValueView[] derived from "Thing Created", "Thing Updated"
+  }
+  ui Thing Screen @Admin
+}
+`;
+  const names = (src: string) =>
+    sourceWarnings(src)
+      .map((d) => /element field "(\w+)"/.exec(d.message)![1])
+      .sort();
+
+  it("owner repro: attributeValueId stops warning; key and value keep warning", () => {
+    expect(names(nested)).toEqual(["key", "value"]);
+  });
+
+  it("only array fields are resolved (one level through the element type)", () => {
+    const flat = nested.replaceAll("optionValues: VariantOptionValue[]", "optionValues: VariantOptionValue");
+    expect(names(flat)).toEqual(["attributeValueId", "key", "value"]);
+  });
+});
