@@ -47,6 +47,7 @@ em glossary <files> --json                                          # print the 
 em glossary <files> -o, --out <path>                                # write the JSON document to a file instead of stdout (requires --json)
 em glossary <files> --list-conflicts                                # print only the conflict lines, no summary
 em glossary <files> --fail-on-conflicts                             # exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)
+em glossary <files> --waive-file <path>                             # a baseline file of field names whose field-type-conflict is deliberate, one per line (`#` comments allowed); waived terms are reported separately and ignored by --fail-on-conflicts; kind-conflict is never waived; missing file = no waivers
 em catalog <files>                                                  # generate a browsable static HTML catalog site over one or more .em models (see docs/cli.md)
 em catalog <files> -o, --out <dir>                                  # output directory
 em catalog <files> -T, --format <fmt>                               # diagram format embedded in the catalog (svg or png)

@@ -144,7 +144,10 @@ function codeownersCheckJob(em: string): string {
 }
 
 /** The `glossary` job - identical in both presets (it already spans every tracked `*.em`). */
-function glossaryJob(em: string): string {
+function glossaryJob(em: string, waiverDir = "."): string {
+  // GH #355: deliberate cross-context field-name differences live in glossary-waivers.txt (one field
+  // name per line); a missing file means no waivers, so passing the flag is always safe.
+  const waiveFile = waiverDir === "." ? "glossary-waivers.txt" : `${waiverDir}/glossary-waivers.txt`;
   return `  glossary:
     name: "em glossary --fail-on-conflicts (cross-model vocabulary)"
     if: github.event_name == 'pull_request'
@@ -157,7 +160,7 @@ function glossaryJob(em: string): string {
       - name: Check glossary consistency across models
         run: |
           mapfile -t models < <(git ls-files '*.em')
-          ${em} glossary "\${models[@]}" --fail-on-conflicts`;
+          ${em} glossary "\${models[@]}" --fail-on-conflicts --waive-file ${waiveFile}`;
 }
 
 /** The managed block only (no header/`on:`/`jobs:` scaffolding) — what gets written between
@@ -297,7 +300,7 @@ ${skillCheckJob(em, emVersion)}
         # steps are applicable" case. See docs/upgrading.md.
         run: ${em} upgrade "${model}" --check
 
-${glossaryJob(em)}
+${glossaryJob(em, ciModelDir(model))}
 
   status-badge:
     name: rebuild status badge (advisory - publish only, never a gate)

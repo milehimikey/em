@@ -100,7 +100,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `engagement_status` | `{ file, slug }` | The `em engagement status <file> <slug> --json` document (MIL-268): the Ledger joined with each doc's status, plus `closable`. Read-only: the Ledger is written only by `em engagement set` |
 | `api_check` | `{ file, base? }` (git when `base` is given — see below) | The `em api check <file> [--base <rev>] --json` document (MIL-237): is the committed contract current, plus each public-surface change since `base` annotated additive/breaking |
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
-| `glossary` | `{ files }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts |
+| `glossary` | `{ files, waive_file? }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts; `waive_file` moves deliberate field-type conflicts to a `waived` array |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
 | `conform_scope` | `{ file, repo, full? }` (git — see below) | The `em conform-scope --repo <repo>` document: changed paths mapped to slices via `implementedIn` |
 | `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
@@ -277,7 +277,9 @@ Same document as `em glossary <files...> --json`: element, field, persona, and c
 aggregated across the given models, plus `kind-conflict`/`field-type-conflict` findings where
 the same normalized term disagrees across ≥2 models. Each file is compiled independently, never
 merged — same semantics as the CLI. Refuses (tool error) if any file fails to compile or has
-validation errors. See [`em glossary`](cli.md#em-glossary-files) for the full JSON shape.
+validation errors. The optional `waive_file` is `--waive-file` (GH #355): field names listed in it are
+excluded from `conflicts` and reported under `waived` (`kind-conflict` is never waived; a missing
+file means no waivers). See [`em glossary`](cli.md#em-glossary-files) for the full JSON shape.
 
 ### `changelog`
 

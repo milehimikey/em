@@ -270,7 +270,14 @@ either side of a rename, so scoping the check to the diff alone can miss it:
         run: npx @milehimikey/em glossary $(git ls-files '*.em') --fail-on-conflicts
 ```
 
-See [cli.md](cli.md#em-glossary-files) for the conflict rules and the `--json` schema.
+Names that legitimately differ per bounded context (`status`, `reason`) go in
+`glossary-waivers.txt` (one field name per line, `#` comments) and are passed with
+`--waive-file glossary-waivers.txt`; the `em ci init` preset already passes the flag, resolved
+next to the model for a single-model repo and at the repo root for a multi-model one. A missing
+file means no waivers, so the flag is safe before the file exists, and `ci-block` regenerates the
+job when you upgrade.
+
+See [cli.md](cli.md#em-glossary-files) for the conflict rules, the waiver contract and the `--json` schema.
 
 ## `em ledger` (opt-in)
 

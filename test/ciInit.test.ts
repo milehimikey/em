@@ -90,6 +90,46 @@ describe("buildCiWorkflowFile", () => {
   });
 });
 
+describe("glossary job --waive-file (GH #355)", () => {
+  it("single-model preset passes --waive-file glossary-waivers.txt, model-dir-relative", () => {
+    expect(ciManagedBody("model.em", "test", "1.19.1")).toContain(
+      '--fail-on-conflicts --waive-file glossary-waivers.txt',
+    );
+    expect(ciManagedBody("order-fulfillment/order-fulfillment.em", "test", "1.19.1")).toContain(
+      "--fail-on-conflicts --waive-file order-fulfillment/glossary-waivers.txt",
+    );
+  });
+
+  it("multi-model preset passes the repo-root waiver file", () => {
+    const body = ciManagedBodyMulti(
+      [
+        { key: "a", path: "a/a.em", roster: false },
+        { key: "b", path: "b/b.em", roster: false },
+      ],
+      "test",
+      "1.19.1",
+    );
+    expect(body).toContain("--fail-on-conflicts --waive-file glossary-waivers.txt");
+  });
+
+  it("ci-block sees a 1.19.0 glossary job (no flag) as stale and regenerates it", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "em-ciw-")), "em-ci.yml");
+    try {
+      const gen = buildCiWorkflowFile("model.em", "test", "1.19.1");
+      const body = ciManagedBody("model.em", "test", "1.19.1");
+      const old = gen.replace(" --waive-file glossary-waivers.txt", "");
+      expect(old).not.toBe(gen);
+      writeFileSync(path, old, "utf8");
+      const status = planCiFile(path, gen, body, CI_WORKFLOW_MARKER, false);
+      expect(status.kind).toBe("stale");
+      if (status.kind !== "stale") throw new Error("unreachable");
+      expect(status.content).toContain("--fail-on-conflicts --waive-file glossary-waivers.txt");
+    } finally {
+      rmSync(dirname(path), { recursive: true, force: true });
+    }
+  });
+});
+
 describe("buildConformWorkflowFile", () => {
   const content = buildConformWorkflowFile("order-fulfillment/order-fulfillment.em", "1.9.0");
 

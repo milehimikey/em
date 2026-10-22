@@ -2937,6 +2937,7 @@ explicitly out of scope for v1.
 | `-o, --out <path>` | Write the JSON document to a file instead of stdout (requires `--json`) |
 | `--list-conflicts` | Print only the conflict lines, no scale summary |
 | `--fail-on-conflicts` | Exit non-zero if any cross-model conflicts were found (opt-in — conflicts are warnings and don't block by default) |
+| `--waive-file <path>` | Field names whose `field-type-conflict` is deliberate, one per line (`#` comments); reported as `waived`, not counted; `kind-conflict` is never waived; missing file = no waivers |
 
 ```bash
 em glossary checkout.em billing.em                    # text report
@@ -2952,6 +2953,28 @@ never fail a build): a glossary conflict has no ratification mechanism in v1, so
 conflict reported is by construction un-ratified — closer in spirit to an open `issue`
 than to an accepted `divergence` — hence `--fail-on-conflicts` exists, opt-in and off by
 default, same shape as `em validate --fail-on-issues`.
+
+**Waiving deliberate field-name differences (`--waive-file`, GH #355).** Generic names
+(`status`, `type`, `reason`) legitimately carry different types in different bounded
+contexts, so `--fail-on-conflicts` could never pass on a multi-context system. List those
+field names in a waiver file, one per line, `#` comments allowed (the same contract as
+`em validate --shape --waive-file`; a missing file means no waivers, so a CI job can always
+pass the flag):
+
+```
+# glossary-waivers.txt - a quote's status is not an invoice's status
+status
+reason   # per-context enums
+```
+
+A waived name is excluded from `field-type-conflict` **only** - a `kind-conflict` on the
+same term still fires, and the same concept typed two ways under a name you did not waive
+still fails. Waived terms stay visible: the text report adds `N waived` and a `waived:`
+list, `--list-conflicts` prints them as `waived field-type-conflict ...` lines after the
+conflicts, and `--json` carries them under a top-level `waived` array (present only when
+`--waive-file` is given; same entry shape as `conflicts`). `--fail-on-conflicts` ignores
+waived terms. A waived name that excuses nothing is noted on stderr and ignored. Names match
+on the same normalized key as the glossary itself.
 
 Example output:
 

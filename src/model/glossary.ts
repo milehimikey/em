@@ -171,6 +171,28 @@ export function detectFieldTypeConflicts(glossary: Glossary): GlossaryConflict[]
   return conflicts;
 }
 
+/** GH #355: split `field-type-conflict`s into kept and waived by a list of field names (matched on
+ *  the normalized name, like the glossary's own term keys). `kind-conflict`s are never waived.
+ *  `unusedWaivers` are names that excuse no field-type conflict (stale or misspelled). */
+export function applyGlossaryWaivers(
+  conflicts: GlossaryConflict[],
+  waivedNames: string[],
+): { conflicts: GlossaryConflict[]; waived: GlossaryConflict[]; unusedWaivers: string[] } {
+  const keys = new Map(waivedNames.map((n) => [normalizeName(n), n]));
+  const used = new Set<string>();
+  const kept: GlossaryConflict[] = [];
+  const waived: GlossaryConflict[] = [];
+  for (const c of conflicts) {
+    const key = normalizeName(c.term);
+    if (c.type === "field-type-conflict" && keys.has(key)) {
+      waived.push(c);
+      used.add(key);
+    } else kept.push(c);
+  }
+  const unusedWaivers = [...keys].filter(([k]) => !used.has(k)).map(([, n]) => n);
+  return { conflicts: kept, waived, unusedWaivers };
+}
+
 export function hasConflicts(conflicts: GlossaryConflict[]): boolean {
   return conflicts.length > 0;
 }
@@ -197,7 +219,7 @@ export function formatConflictLine(c: GlossaryConflict): string {
 /** Full `em glossary` default report: scale summary line, then either every conflict
  *  line or "no conflicts" — conflicts are this command's "diagnostics," the same role
  *  `Diagnostic[]` plays for `em validate`. */
-export function formatGlossarySummary(glossary: Glossary, conflicts: GlossaryConflict[]): string {
+export function formatGlossarySummary(glossary: Glossary, conflicts: GlossaryConflict[], waived: GlossaryConflict[] = []): string {
   const termCount =
     glossary.elements.length + glossary.fields.length + glossary.personas.length + glossary.contexts.length;
   const modelWord = glossary.models.length === 1 ? "model" : "models";
@@ -205,5 +227,7 @@ export function formatGlossarySummary(glossary: Glossary, conflicts: GlossaryCon
   const conflictWord = conflicts.length === 1 ? "conflict" : "conflicts";
   const header = `${glossary.models.length} ${modelWord}, ${termCount} ${termWord}, ${conflicts.length} ${conflictWord}`;
   const body = conflicts.length === 0 ? "no conflicts" : conflicts.map(formatConflictLine).join("\n");
-  return `${header}\n\n${body}`;
+  const waivedNote = waived.length > 0 ? `, ${waived.length} waived` : "";
+  const waivedBody = waived.length > 0 ? "\n\nwaived:\n" + waived.map((c) => `  ${formatConflictLine(c)}`).join("\n") : "";
+  return `${header}${waivedNote}\n\n${body}${waivedBody}`;
 }

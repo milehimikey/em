@@ -3044,6 +3044,116 @@ slice "Billing" {
   });
 });
 
+// GH #355: the issue's repro verbatim (two models, `status` typed QuoteStatus vs InvoiceStatus).
+const WAIVE_QUOTE = `slice "Quote" {\n  command Send Quote\n  event Quote Sent { status: QuoteStatus }\n}\n`;
+const WAIVE_INVOICE = `slice "Invoice" {\n  command Send Invoice\n  event Invoice Sent { status: InvoiceStatus }\n}\n`;
+const WAIVE_INVOICE_TWO = `slice "Invoice" {\n  command Send Invoice\n  event Invoice Sent { status: InvoiceStatus, reason: InvoiceReason }\n}\n`;
+const WAIVE_QUOTE_TWO = `slice "Quote" {\n  command Send Quote\n  event Quote Sent { status: QuoteStatus, reason: QuoteReason }\n}\n`;
+
+describe("em glossary --waive-file (GH #355)", () => {
+  function fixture(quote: string, invoice: string, waivers?: string): string {
+    const d = mkdtempSync(join(tmpdir(), "em-gw-"));
+    writeFileSync(join(d, "a.em"), quote);
+    writeFileSync(join(d, "b.em"), invoice);
+    if (waivers !== undefined) writeFileSync(join(d, "glossary-waivers.txt"), waivers);
+    return d;
+  }
+
+  it("repro: fails without the waiver file, passes with `status` waived", () => {
+    const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE, "status\n");
+    try {
+      const without = em(["glossary", "a.em", "b.em", "--fail-on-conflicts"], d);
+      expect(without.status).toBe(1);
+      expect(without.stdout).toContain('field-type-conflict "status"');
+      const waived = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "glossary-waivers.txt"], d);
+      expect(waived.status).toBe(0);
+      expect(waived.stdout).toContain("1 waived");
+      expect(waived.stdout).toContain('waived:\n  field-type-conflict "status"');
+    } finally {
+      rmTemp(d);
+    }
+  });
+
+  it("still fails for a second, unwaived conflict", () => {
+    const d = fixture(WAIVE_QUOTE_TWO, WAIVE_INVOICE_TWO, "status\n");
+    try {
+      const r = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "glossary-waivers.txt"], d);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('field-type-conflict "reason"');
+      expect(r.stdout).not.toMatch(/^field-type-conflict "status"/m);
+    } finally {
+      rmTemp(d);
+    }
+  });
+
+  it("`#` comment lines and trailing comments are ignored; blank lines too", () => {
+    const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE, "# deliberate: quote vs invoice status\n\nstatus  # per-context enum\n");
+    try {
+      const r = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "glossary-waivers.txt"], d);
+      expect(r.status).toBe(0);
+    } finally {
+      rmTemp(d);
+    }
+  });
+
+  it("a missing waiver file means no waivers (the CI preset can always pass the flag)", () => {
+    const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE);
+    try {
+      const r = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "no-such.txt"], d);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('field-type-conflict "status"');
+    } finally {
+      rmTemp(d);
+    }
+  });
+
+  it("kind-conflict is never waived, even when the term is listed", () => {
+    const d = mkdtempSync(join(tmpdir(), "em-gw-"));
+    try {
+      writeFileSync(join(d, "a.em"), GLOSSARY_A);
+      writeFileSync(join(d, "b.em"), GLOSSARY_B_CONFLICT);
+      writeFileSync(join(d, "w.txt"), "Order Confirmed\ntotal\n");
+      const r = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "w.txt"], d);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('kind-conflict "Order Confirmed"');
+      expect(r.stdout).toContain("1 waived");
+    } finally {
+      rmTemp(d);
+    }
+  });
+
+  it("--list-conflicts shows waived terms separately; --json carries them under `waived`", () => {
+    const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE, "status\n");
+    try {
+      const list = em(["glossary", "a.em", "b.em", "--list-conflicts", "--waive-file", "glossary-waivers.txt"], d);
+      expect(list.stdout).toContain("no conflicts");
+      expect(list.stdout).toContain('  waived field-type-conflict "status"');
+      const json = em(["glossary", "a.em", "b.em", "--json", "--waive-file", "glossary-waivers.txt"], d);
+      const doc = JSON.parse(json.stdout);
+      expect(doc.conflicts).toEqual([]);
+      expect(doc.waived).toHaveLength(1);
+      expect(doc.waived[0]).toMatchObject({ type: "field-type-conflict", term: "status" });
+      // Without the flag the document is unchanged (no `waived` key).
+      const plain = JSON.parse(em(["glossary", "a.em", "b.em", "--json"], d).stdout);
+      expect(plain).not.toHaveProperty("waived");
+      expect(plain.conflicts).toHaveLength(1);
+    } finally {
+      rmTemp(d);
+    }
+  });
+
+  it("notes a waiver that excuses nothing, without failing", () => {
+    const d = fixture(WAIVE_QUOTE, WAIVE_INVOICE, "status\nnonsense\n");
+    try {
+      const r = em(["glossary", "a.em", "b.em", "--fail-on-conflicts", "--waive-file", "glossary-waivers.txt"], d);
+      expect(r.status).toBe(0);
+      expect(r.stderr).toContain('waiver "nonsense"');
+    } finally {
+      rmTemp(d);
+    }
+  });
+});
+
 describe("em glossary (CLI)", () => {
   it("reports scale and 'no conflicts' in the default text report when models agree", () => {
     const r = em(["glossary", "glossary-a.em", "glossary-b-clean.em"], dir);

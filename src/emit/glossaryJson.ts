@@ -38,6 +38,7 @@ export function buildGlossaryJson(
   glossary: Glossary,
   conflicts: GlossaryConflict[],
   sources: GlossaryFileSide[],
+  waived?: GlossaryConflict[],
 ): string {
   const doc = {
     glossarySchemaVersion: GLOSSARY_SCHEMA_VERSION,
@@ -48,6 +49,8 @@ export function buildGlossaryJson(
     personas: glossary.personas,
     contexts: glossary.contexts,
     conflicts,
+    // GH #355: present only when a waiver file was given, so a run without one is byte-identical.
+    ...(waived ? { waived } : {}),
   };
   return JSON.stringify(doc, null, 2);
 }

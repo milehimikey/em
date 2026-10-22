@@ -74,7 +74,7 @@ import { buildStatusJson } from "../emit/statusJson.js";
 import { findCertifiedVersion, latestModelVersionNumber } from "../cli/modelVersion.js";
 import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "../cli/diff-inputs.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
-import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, GlossaryModelInput } from "../model/glossary.js";
+import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, applyGlossaryWaivers, GlossaryModelInput } from "../model/glossary.js";
 import { buildGlossaryJson, GlossaryFileSide } from "../emit/glossaryJson.js";
 import { listModelCommits } from "../cli/changelog-git.js";
 import { buildChangelogDoc } from "../cli/changelogBuild.js";
@@ -735,9 +735,16 @@ export function createServer(): McpServer {
         "fails to compile or has validation errors, same as the CLI.",
       inputSchema: {
         files: z.array(z.string()).min(1).describe("one or more .em model file paths"),
+        waive_file: z
+          .string()
+          .optional()
+          .describe(
+            "path to a baseline file of field names (one per line, `#` comments) whose field-type-conflict is deliberate; " +
+              "waived terms are listed under `waived` and excluded from `conflicts`; kind-conflict is never waived; missing file = no waivers",
+          ),
       },
     },
-    async ({ files }) => {
+    async ({ files, waive_file }) => {
       const inputs: GlossaryModelInput[] = [];
       const sources: GlossaryFileSide[] = [];
       for (const file of files) {
@@ -750,8 +757,9 @@ export function createServer(): McpServer {
         sources.push({ label: file, source: compiled.source });
       }
       const glossary = buildGlossary(inputs);
-      const conflicts = [...detectKindConflicts(glossary), ...detectFieldTypeConflicts(glossary)];
-      return textResult(buildGlossaryJson(glossary, conflicts, sources));
+      const all = [...detectKindConflicts(glossary), ...detectFieldTypeConflicts(glossary)];
+      const applied = applyGlossaryWaivers(all, waive_file ? readWaiveFile(waive_file) : []);
+      return textResult(buildGlossaryJson(glossary, applied.conflicts, sources, waive_file ? applied.waived : undefined));
     },
   );
 

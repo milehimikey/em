@@ -105,6 +105,7 @@ import {
   detectKindConflicts,
   detectFieldTypeConflicts,
   hasConflicts,
+  applyGlossaryWaivers,
   formatGlossarySummary,
   formatConflictLine,
   GlossaryModelInput,
@@ -596,10 +597,15 @@ program
     "--fail-on-conflicts",
     "exit non-zero if any cross-model term conflicts were found (opt-in — conflicts are warnings and don't block by default)",
   )
+  .option(
+    "--waive-file <path>",
+    "a baseline file of field names whose field-type-conflict is deliberate, one per line (`#` comments allowed); " +
+      "waived terms are reported separately and ignored by --fail-on-conflicts; kind-conflict is never waived; missing file = no waivers",
+  )
   .action(
     (
       files: string[],
-      opts: { json?: boolean; out?: string; listConflicts?: boolean; failOnConflicts?: boolean },
+      opts: { json?: boolean; out?: string; listConflicts?: boolean; failOnConflicts?: boolean; waiveFile?: string },
     ) => {
       const plan = planGlossaryArgs(opts);
       if ("error" in plan) {
@@ -624,10 +630,14 @@ program
       }
 
       const glossary = buildGlossary(inputs);
-      const conflicts = [...detectKindConflicts(glossary), ...detectFieldTypeConflicts(glossary)];
+      const allConflicts = [...detectKindConflicts(glossary), ...detectFieldTypeConflicts(glossary)];
+      const applied = applyGlossaryWaivers(allConflicts, opts.waiveFile ? readWaiveFile(opts.waiveFile) : []);
+      const conflicts = applied.conflicts;
+      const waived = applied.waived;
+      for (const n of applied.unusedWaivers) console.error(`note: waiver "${n}" (${opts.waiveFile}) excuses no field-type conflict - ignored`);
 
       if (opts.json) {
-        const json = buildGlossaryJson(glossary, conflicts, sources);
+        const json = buildGlossaryJson(glossary, conflicts, sources, opts.waiveFile ? waived : undefined);
         if (opts.out) {
           writeFileSync(opts.out, json + "\n");
           console.log(`wrote ${opts.out}`);
@@ -637,8 +647,9 @@ program
       } else if (opts.listConflicts) {
         if (conflicts.length === 0) console.log("no conflicts");
         else for (const c of conflicts) console.log(`  ${formatConflictLine(c)}`);
+        for (const c of waived) console.log(`  waived ${formatConflictLine(c)}`);
       } else {
-        console.log(formatGlossarySummary(glossary, conflicts));
+        console.log(formatGlossarySummary(glossary, conflicts, waived));
       }
 
       // Same rationale as em diff's --exit-code: set the code rather than

@@ -1009,6 +1009,22 @@ describe("glossary tool", () => {
     expect(cli.stdout).toBe(mcpText + "\n");
   });
 
+  it("waive_file (GH #355): waived field-type-conflict moves to `waived`, byte-identical to the CLI; missing file = no waivers", async () => {
+    const a = join(dir, "glossary-a.em");
+    const b = join(dir, "glossary-b.em");
+    const w = join(dir, "glossary-waivers.txt");
+    writeFileSync(w, "# deliberate\ntotal\n");
+    const { result, doc } = await callJson(client, "glossary", { files: [a, b], waive_file: w });
+    expect(doc.conflicts).toEqual([]);
+    expect(doc.waived).toContainEqual(expect.objectContaining({ type: "field-type-conflict", term: "total" }));
+    const cli = em(["glossary", a, b, "--json", "--waive-file", w], dir);
+    expect(cli.stdout).toBe((result.content[0] as { text: string }).text + "\n");
+
+    const missing = await callJson(client, "glossary", { files: [a, b], waive_file: join(dir, "no-such.txt") });
+    expect(missing.doc.conflicts).toHaveLength(1);
+    expect(missing.doc.waived).toEqual([]);
+  });
+
   it("refuses (tool error) when any input file has errors, same as `em glossary`", async () => {
     const { result } = await callJson(client, "glossary", { files: [join(dir, "clean.em"), join(dir, "error.em")] });
     expect(result.isError).toBe(true);

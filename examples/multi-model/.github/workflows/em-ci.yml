@@ -374,5 +374,5 @@ jobs:
       - name: Check glossary consistency across models
         run: |
           mapfile -t models < <(git ls-files '*.em')
-          npx @milehimikey/em@1.13.1 glossary "${models[@]}" --fail-on-conflicts
+          npx @milehimikey/em@1.13.1 glossary "${models[@]}" --fail-on-conflicts --waive-file glossary-waivers.txt
 # GENERATED:em-ci:end
