@@ -1407,7 +1407,7 @@ describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity
     const bad = run(legacy.dir);
     expect(bad.stdout).toContain("pre-1.19.0 list");
     expect(bad.status).not.toBe(0);
-  });
+  }, 20_000); // spawns the CLI (up to three times); matches the file-level 20 s of test/ciInit.test.ts
 
   it("multi-model workflow through ci-block: legacy filter detected and rewritten", () => {
     const models: CiModel[] = [{ key: "checkout", path: "checkout.em" }, { key: "billing", path: "billing/billing.em" }];
@@ -1450,7 +1450,7 @@ describe("GH #346 round 3 - em ci init applies the filter refresh; comment-toler
     expect(check.stdout).toMatch(/ok: .*em-ci\.yml/);
     expect(check.stdout).not.toContain("stale");
     expect(em(dir).stdout).toMatch(/em-ci\.yml already up to date/);
-  });
+  }, 20_000); // spawns the CLI (up to three times); matches the file-level 20 s of test/ciInit.test.ts
 
   it("markers removed + legacy filter: em ci init leaves the file untouched", () => {
     const { dir } = makeFixtureRepo({ source: CLEAN_SOURCE });
@@ -1459,7 +1459,7 @@ describe("GH #346 round 3 - em ci init applies the filter refresh; comment-toler
     writeFileSync(ciWorkflowPath(dir), optedOut);
     em(dir);
     expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(optedOut);
-  });
+  }, 20_000); // spawns the CLI (up to three times); matches the file-level 20 s of test/ciInit.test.ts
 
   it("missingCiPullRequestPaths tolerates trailing YAML comments on entries", () => {
     const commented = buildCiWorkflowFile("checkout.em", "test", pkgVersion).replace('      - "**/README.md"\n', '      - "**/README.md" # docs\n');
