@@ -555,7 +555,9 @@ view Attributes from "Attribute Created", "Attribute Value Created", "Attribute 
 - The field is exempt from `view-field-no-source` (it is `derived`), but each field of the
   element type must trace to a field on at least one named event; one that does not gets
   `fields-completeness/view-field-no-source` naming the collection field and the element field.
-  Skipped while a named event declares no `{ fields }`.
+  Skipped while a named event declares no `{ fields }`. A field also traces one level through
+  the declared element type of an array field on the event (`optionValues: VariantOptionValue[]`
+  makes `VariantOptionValue`'s fields sources); deeper nesting does not, and there is no path syntax.
 - Named events must be among the view's sources (`derived-from-unresolved`), as for any traced
   `derived`.
 - There is no add/remove/key clause: projection behaviour is not model structure. `em slice sync`

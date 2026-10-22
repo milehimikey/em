@@ -205,8 +205,18 @@ slice "Things" {
     expect(names(nested)).toEqual(["key", "value"]);
   });
 
-  it("only array fields are resolved (one level through the element type)", () => {
+  it("an array event field is resolved through its element type; a non-array field of that type is not", () => {
     const flat = nested.replaceAll("optionValues: VariantOptionValue[]", "optionValues: VariantOptionValue");
     expect(names(flat)).toEqual(["attributeValueId", "key", "value"]);
+  });
+
+  it("strictly one level: a field of a type nested inside the element type still warns", () => {
+    const deep = nested
+      .replace(
+        "type VariantOptionValue { attributeValueId: string }",
+        "type Inner { deepId: string }\ntype VariantOptionValue { attributeValueId: string, inners: Inner[] }",
+      )
+      .replace("type ValueView { attributeValueId: string,", "type ValueView { attributeValueId: string, deepId: string,");
+    expect(names(deep)).toEqual(["deepId", "key", "value"]);
   });
 });

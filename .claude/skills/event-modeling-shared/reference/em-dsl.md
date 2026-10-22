@@ -483,7 +483,8 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   not yet a doc-drift check). **Collection fields (GH #288):** a view field typed `T[]` for a
   declared `type T`, with `derived from "Child Created", "Child Deleted"`, embeds a child entity:
   each field of `T` must trace to a named event (`fields-completeness/view-field-no-source`
-  otherwise). No add/remove/key clauses — `em slice sync` writes a `Collection of` note plus
+  otherwise); a field also traces one level through the declared element type of an array field
+  on the event (`optionValues: VariantOptionValue[]`), no deeper and with no path syntax. No add/remove/key clauses — `em slice sync` writes a `Collection of` note plus
   one Given/Then scenario stub per named event in the view region (copy into `## Scenarios`), and `em export` sets `collection: true`.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a
