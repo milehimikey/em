@@ -224,11 +224,11 @@ import { buildSystemJson } from "./emit/systemJson.js";
 
 /** GH #253: the trailing note `em slice defer` prints after `deferred: …` on a ratified/shipped
  *  doc — the item went into the signed body, outside `ratifiedHash`, and when the stamp was still
- *  in the pre-1.17 whole-body scope it was re-stamped in the same edit (body unchanged). */
+ *  in an older scope (pre-1.17 whole-body, or 1.17–1.18) it was re-stamped in the same edit (body unchanged). */
 function deferSignedNote(result: { signed: boolean; restamped: boolean }): string {
   if (!result.signed) return "";
   return result.restamped
-    ? " — appended to the signed doc's Open Questions, outside ratifiedHash; ratifiedHash re-stamped to the 1.17 scope (body unchanged)"
+    ? " — appended to the signed doc's Open Questions, outside ratifiedHash; ratifiedHash re-stamped to the current scope (body unchanged)"
     : " — appended to the signed doc's Open Questions, outside ratifiedHash";
 }
 
@@ -794,7 +794,10 @@ slice
   .description(
     "regenerate the GENERATED regions (command/event/view field tables, the Invariants list) of " +
       "existing slice docs in place from the model, authored sections untouched (MIL-266); docs " +
-      "without regions are skipped with a note. --check never writes and exits 1 when a doc is stale",
+      "without regions are skipped with a note. --check never writes and exits 1 when a doc is stale. " +
+      "A ratified or shipped doc is synced too and keeps its signature (GH #347): `ratifiedHash` covers the " +
+      "authored text only, and an intact hash still in an older scope is re-stamped in the same write; a " +
+      "`note:` line says so",
   )
   .argument("<model-file>", "the .em model whose bound slice docs to sync")
   .argument("[key]", "only the doc this slice's export key resolves to")
@@ -1069,7 +1072,7 @@ slice
       "the same --by/--on pair; refuses to overwrite a different one already recorded, and (MIL-284) a " +
       "same-pair re-run on a doc whose body moved after sign-off; never " +
       "touches `version:` or the doc body. Inside a git work tree also records `ratifiedRef:` (HEAD, " +
-      "refusing a doc with uncommitted changes) and always `ratifiedHash:`; with --no-ref (GH #255) " +
+      "refusing a doc with uncommitted changes) and always `ratifiedHash:` (over the authored text only — generated regions and Open Questions deferrals excluded, GH #347/#253); with --no-ref (GH #255) " +
       "only the hash — for a repo whose squash/rebase merges would leave the ref unreachable — and " +
       "git is not consulted",
   )
@@ -1299,7 +1302,7 @@ slice
       "On a RATIFIED (`ready-to-implement` + `ratifiedBy:`) or shipped (`implemented`) doc (GH #253) the " +
       "already-deferred `[x]` item is APPENDED to the doc's Open Questions — `ratifiedHash` excludes the " +
       "section heading and its `deferred to v<n>` items, so the signature, `--slice-ready` and ratify's " +
-      "re-run stay valid, and the question is visible in the ratified doc; a pre-1.17 whole-body hash is " +
+      "re-run stay valid, and the question is visible in the ratified doc; a hash in an older scope (pre-1.17, 1.17–1.18) is " +
       "re-stamped in the same edit. Refuses a doc whose body already fails its hash",
   )
   .argument("<file>", "input .em file")
@@ -2103,7 +2106,7 @@ program
   .option(
     "--check-signed-bodies",
     "opt-in (GH #257): compare every slice doc that records a `ratifiedHash:` — ready, implemented, any status — " +
-      "to its body; a mismatch is `slice-body-changed-since-ratification` (error). A pre-1.17 whole-body hash with an " +
+      "to its body; a mismatch is `slice-body-changed-since-ratification` (error). A hash in an older scope (pre-1.17 whole-body, 1.17–1.18) with an " +
       "intact body passes; a deferral written by `em slice defer` is outside the hash. The one check that still " +
       "watches a shipped doc's signed content",
   )

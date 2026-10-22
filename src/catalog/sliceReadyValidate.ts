@@ -176,7 +176,8 @@ export function validateSliceReady(
   // ratify` recorded `ratifiedHash:` is not the spec that was signed — the ratification stands
   // on content that is gone. Only checked when a hash exists (a doc ratified before em 1.15 has
   // none and is judged on `ratifiedBy` alone, as before) and only at ready-to-implement. A hash
-  // in the pre-1.17 whole-body scope still passes (GH #253: `legacy` is intact, not edited).
+  // in an older scope still passes (GH #253 `legacy`, GH #347 `v1.17`: intact, not edited), and a
+  // generated region `em slice sync` rewrote is outside the hash since 1.19.0 (GH #347).
   if (doc.status === "ready-to-implement" && doc.ratifiedHash !== null && ratifiedHashScope(parsed.raw, doc.ratifiedHash) === "mismatch") {
     pushDiag(diags, "slice-ready-body-changed-since-ratification", {
       message: `slice "${sliceKey}"'s doc ${doc.path} was edited after ratification (body no longer matches ratifiedHash) — revert, or re-ratify the new content`,

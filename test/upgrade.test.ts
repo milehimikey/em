@@ -1066,11 +1066,11 @@ describe("ratified-hash-scope step (GH #253)", () => {
   const QUEUED = "- retry policy (from slice place-order, queued for place-order@v2, until v2, 2026-10-12, by Alex; decision: fail fast)";
   const stepOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root)).steps.find((st) => st.id === "ratified-hash-scope")!;
 
-  it("is registered after ratified-signoff and before system-manifest, since 1.17.0", () => {
+  it("is registered after ratified-signoff and before system-manifest, since 1.19.0 (GH #347: its sinceVersion says 1.19.0)", () => {
     const ids = UPGRADE_STEPS.map((s) => s.id);
     expect(ids.indexOf("ratified-hash-scope")).toBe(ids.indexOf("ratified-signoff") + 1);
     expect(ids.at(-1)).toBe("system-manifest");
-    expect(UPGRADE_STEPS.find((s) => s.id === "ratified-hash-scope")!.sinceVersion).toBe("1.17.0");
+    expect(UPGRADE_STEPS.find((s) => s.id === "ratified-hash-scope")!.sinceVersion).toBe("1.19.0");
   });
 
   it("not applicable when every hash is current and nothing is queued; a mismatched doc alone is reported, never applied", () => {
@@ -1078,9 +1078,13 @@ describe("ratified-hash-scope step (GH #253)", () => {
     mkdirSync(join(dir, "slices"), { recursive: true });
     const docPath = join(dir, "slices", "place-order.md");
     writeFileSync(docPath, signed(sliceDocBodyHash(signed("x"))));
-    expect(stepOf(dir, packagedSkillsRoot)).toMatchObject({ applicable: false, reason: "every ratifiedHash is in the 1.17 scope and no question is queued in the state file" });
+    expect(stepOf(dir, packagedSkillsRoot)).toMatchObject({ applicable: false, reason: "every intact ratifiedHash is in the 1.19 scope and no question is queued in the state file" });
     writeFileSync(docPath, signed(sliceDocBodyHash(signed("x"))).replace("— yes", "— no"));
-    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+    // GH #347: a doc matching no scope is listed and left alone.
+    expect(stepOf(dir, packagedSkillsRoot)).toMatchObject({
+      applicable: false,
+      reason: "every intact ratifiedHash is in the 1.19 scope and no question is queued in the state file; left alone: place-order — body no longer matches ratifiedHash in any scope (revert, or em slice revise and re-ratify)",
+    });
   });
 
   it("--apply re-stamps a legacy whole-body hash (same body), in one commit, and a second run is a no-op", () => {
@@ -1093,7 +1097,7 @@ describe("ratified-hash-scope step (GH #253)", () => {
     git(dir, "commit", "-q", "-m", "doc");
     const d = stepOf(dir, packagedSkillsRoot);
     expect(d.applicable).toBe(true);
-    expect(d.reason).toBe("1 doc(s) carry a pre-1.17 whole-body ratifiedHash (body intact): place-order — em upgrade will re-stamp them in the 1.17 scope (Open Questions deferrals excluded; same body, not a re-signing)");
+    expect(d.reason).toBe("1 doc(s) carry a pre-1.17 whole-body ratifiedHash (body intact): place-order — em upgrade will re-stamp them in the 1.19 scope (authored text only: generated regions and Open Questions deferrals excluded; same body, not a re-signing; ratifiedRef untouched)");
     const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
     expect(result.ok).toBe(true);
     if (!result.ok) return;

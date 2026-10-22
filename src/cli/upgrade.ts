@@ -58,7 +58,7 @@ import { findSpecifyRoot, locateConstitution } from "./status.js";
 import { scaffoldConstitution, scaffoldStateFile } from "../templates.js";
 import { loadStateFile, parseState, setEmVersion, ensureOptionalBullets, resolveStateFilePath } from "./stateFile.js";
 import { fieldLineRegex, normalizeFieldValue, locateFrontmatterInner, replaceFieldValue } from "./frontmatterSurgery.js";
-import { parseSliceDoc, ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { isOldHashScope, parseSliceDoc, ratifiedHashScope, RatifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
 import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc, readQueue, rewriteParkingLotFragments } from "./defer.js";
 import { runSliceSync } from "./sliceSync.js";
@@ -599,24 +599,26 @@ function applyRatifiedSignoff(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: writes.map((w) => w.file) };
 }
 
-// ---- Step 7: ratified-hash-scope (GH #253) — `ratifiedHash` leaves `## Open Questions`' deferrals. ----
-// 1.17.0 computes `ratifiedHash` over `ratifiedBody()` (catalog/sliceDoc.ts): the `## Open
-// Questions` heading and its `deferred to v<n>` items are outside it, so `em slice defer` can write
-// to a ratified or shipped doc. Every hash recorded before that is in the whole-body scope. Readers
-// accept both (`ratifiedHashScope`), so nothing breaks — but a legacy-scope doc cannot take a
-// deferral until its stamp moves, and GH #236's 1.16 state-file queue may still hold questions
-// that now belong in their docs. This step does both, model-wide: re-stamps every intact
-// legacy-scope hash with the current-scope hash of the SAME body (a renormalisation, not a
-// re-signing — `ratifiedRef` still holds that body), and appends each queued question to its doc
-// as the deferred item `defer` would write today, draining the queue bullet. A doc whose body no
-// longer matches its hash in either scope is reported and left alone; so is a queued question
-// whose doc has already moved past the version it was queued for.
+// ---- Step 7: ratified-hash-scope (GH #253, GH #347) — `ratifiedHash` covers the authored text only. ----
+// 1.19.0 computes `ratifiedHash` over `ratifiedBody()` (catalog/sliceDoc.ts): the inside of every
+// generated region (GH #347) and the `## Open Questions` heading with its `deferred to v<n>` items
+// (GH #253, 1.17.0) are outside it, so `em slice sync` and `em slice defer` can write to a ratified
+// or shipped doc. A hash recorded by 1.17.0–1.18.x is in the `v1.17` scope (regions inside); one
+// recorded before 1.17.0 is in the whole-body `legacy` scope. Readers accept all three
+// (`ratifiedHashScope`), so nothing breaks — but an old-scope hash does not survive a region
+// rewrite or a deferral until its stamp moves, and GH #236's 1.16 state-file queue may still hold
+// questions that now belong in their docs. This step does both, model-wide: re-stamps every intact
+// old-scope hash with the current-scope hash of the SAME body (a renormalisation, not a
+// re-signing — `ratifiedRef` is untouched and still holds that body), and appends each queued
+// question to its doc as the deferred item `defer` would write today, draining the queue bullet.
+// A doc whose body no longer matches its hash in any scope is listed and left alone; so is a
+// queued question whose doc has already moved past the version it was queued for.
 
 interface HashScopeCandidate {
   key: string;
   path: string;
   version: number | null;
-  scope: "current" | "legacy" | "mismatch";
+  scope: RatifiedHashScope;
 }
 
 function hashScopeCandidates(ctx: UpgradeContext): HashScopeCandidate[] {
@@ -646,28 +648,33 @@ function queuedLeftovers(ctx: UpgradeContext): Array<{ key: string; path: string
 }
 
 function detectRatifiedHashScope(ctx: UpgradeContext): StepDetection {
-  const legacy = hashScopeCandidates(ctx).filter((c) => c.scope === "legacy");
-  const mismatch = hashScopeCandidates(ctx).filter((c) => c.scope === "mismatch");
+  const candidates = hashScopeCandidates(ctx);
+  const v117 = candidates.filter((c) => c.scope === "v1.17");
+  const legacy = candidates.filter((c) => c.scope === "legacy");
+  const mismatch = candidates.filter((c) => c.scope === "mismatch");
   const queued = queuedLeftovers(ctx);
-  if (legacy.length === 0 && queued.length === 0) {
-    return { applicable: false, reason: "every ratifiedHash is in the 1.17 scope and no question is queued in the state file" };
+  const left = mismatch.length > 0 ? `left alone: ${mismatch.map((c) => c.key).join(", ")} — body no longer matches ratifiedHash in any scope (revert, or em slice revise and re-ratify)` : null;
+  if (v117.length === 0 && legacy.length === 0 && queued.length === 0) {
+    return { applicable: false, reason: `every intact ratifiedHash is in the 1.19 scope and no question is queued in the state file${left ? `; ${left}` : ""}` };
   }
+  const restamp = "em upgrade will re-stamp them in the 1.19 scope (authored text only: generated regions and Open Questions deferrals excluded; same body, not a re-signing; ratifiedRef untouched)";
   const parts: string[] = [];
-  if (legacy.length > 0) parts.push(`${legacy.length} doc(s) carry a pre-1.17 whole-body ratifiedHash (body intact): ${legacy.map((c) => c.key).join(", ")} — em upgrade will re-stamp them in the 1.17 scope (Open Questions deferrals excluded; same body, not a re-signing)`);
+  if (v117.length > 0) parts.push(`${v117.length} doc(s) carry a 1.17–1.18 ratifiedHash (generated regions inside; body intact): ${v117.map((c) => c.key).join(", ")} — ${restamp}`);
+  if (legacy.length > 0) parts.push(`${legacy.length} doc(s) carry a pre-1.17 whole-body ratifiedHash (body intact): ${legacy.map((c) => c.key).join(", ")} — ${restamp}`);
   if (queued.length > 0) {
     const n = queued.reduce((s, q) => s + q.items.length, 0);
     parts.push(`${n} question(s) queued in ${STATE_FILE_NAME} by 1.16's em slice defer (GH #236) for ${queued.map((q) => `${q.key}@v${q.version + 1}`).join(", ")} — em upgrade will write each into its doc's Open Questions as a deferred item and drain the queue`);
   }
-  if (mismatch.length > 0) parts.push(`left alone: ${mismatch.map((c) => c.key).join(", ")} — body no longer matches ratifiedHash in either scope (revert, or em slice revise and re-ratify)`);
+  if (left) parts.push(left);
   return { applicable: true, reason: parts.join("; ") };
 }
 
 function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
-  const legacy = new Set(hashScopeCandidates(ctx).filter((c) => c.scope === "legacy").map((c) => c.path));
+  const oldScope = new Set(hashScopeCandidates(ctx).filter((c) => isOldHashScope(c.scope)).map((c) => c.path));
   const queued = queuedLeftovers(ctx);
   const touched = new Map<string, string>(); // abs path -> next content
   const current = (path: string): string => touched.get(path) ?? readFileSync(path, "utf8");
-  // Queue first, on the doc as read: `finishSignedDocEdit` re-stamps a legacy hash itself.
+  // Queue first, on the doc as read: `finishSignedDocEdit` re-stamps an old-scope hash itself.
   for (const q of queued) {
     const file = join(ctx.baseDir, q.path);
     let content = current(file);
@@ -689,9 +696,9 @@ function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
       content = finished.content;
     }
     touched.set(file, content);
-    legacy.delete(q.path);
+    oldScope.delete(q.path);
   }
-  for (const path of legacy) {
+  for (const path of oldScope) {
     const file = join(ctx.baseDir, path);
     const raw = current(file);
     const next = replaceFieldValue(raw, "ratifiedHash", sliceDocBodyHash(raw));
@@ -845,7 +852,7 @@ function detectCollapseAlternativeEvents(ctx: UpgradeContext): StepDetection {
     reason:
       `${plan.groups.length} run(s) of repeated-command slices collapse to alternative events: ${desc.join("; ")} — em upgrade will rewrite them (the first slice's key is kept; the others' docs move to ${ARCHIVE_DIR}/ with superseded-by and a SUPERSEDED banner, and the kept doc gains merged-from)` +
       (notes.length > 0 ? `; ${notes.join("; ")}` : "") +
-      (stale.length > 0 ? `; signed doc(s) will not be synced and go stale: ${stale.join(", ")} — em slice revise <key>, then em slice sync` : ""),
+      (stale.length > 0 ? `; signed doc(s) whose generated regions go stale: ${stale.join(", ")} — em upgrade syncs the kept slice's doc, run em slice sync for any other (since 1.19.0 sync keeps the signature: ratifiedHash covers the authored text only)` : ""),
   };
 }
 
@@ -883,14 +890,14 @@ function applyCollapseAlternativeEvents(ctx: UpgradeContext): StepApplyOutcome {
     writeFileSync(abs, next, "utf8");
     if (!changed.includes(abs)) changed.push(abs);
   }
-  // Regenerate the kept slice's event region (one `Records one of:` region now) unless its doc is signed
-  // (then `slice-doc-stale-signed` is the human item that says what to do).
+  // Regenerate the kept slice's event region (one `Records one of:` region now). A signed doc is synced
+  // too and keeps its signature (GH #347: ratifiedHash covers the authored text only).
   const after = freshCompile(ctx);
   if (after) {
     for (const g of plan.groups) {
       const kept = retired.find((r) => r.keptKey === g.keys[0])?.keptDoc ?? `slices/${g.keys[0]}.md`;
       const doc = join(ctx.baseDir, kept);
-      if (existsSync(doc) && !isSignedDoc(readFileSync(doc, "utf8"))) {
+      if (existsSync(doc)) {
         const r = runSliceSync(after.model, after.refs, ctx.baseDir, g.keys[0], false);
         if (r.ok && r.docs.some((d) => d.status === "synced") && !changed.includes(doc)) changed.push(doc);
       }
@@ -926,7 +933,7 @@ function detectFoldContinuations(ctx: UpgradeContext): StepDetection {
   const optIn = ctx.foldContinuations === true || ctx.toSugar === true;
   const prefix = optIn ? "" : `OPT-IN, not applied by a plain --apply (run \`${FOLD_FLAG}\`): `;
   const stale = signedDocsStaleAfter(ctx, f.plan.next);
-  const staleNote = stale.length > 0 ? `; signed doc(s) whose generated regions (e.g. the view's \`via\` annotations) go stale and will not be synced: ${stale.join(", ")} — em slice revise <key>, then em slice sync` : "";
+  const staleNote = stale.length > 0 ? `; signed doc(s) whose generated regions (e.g. the view's \`via\` annotations) go stale: ${stale.join(", ")} — run em slice sync afterwards (since 1.19.0 it keeps the signature: ratifiedHash covers the authored text only)` : "";
   if (f.kind === "stack") {
     const p = f.plan as NonNullable<ReturnType<typeof planStackContinuations>>;
     const desc = p.groups.map((g) => `${[g.kept, ...g.dropped].map((n) => `"${n}"`).join(" + ")} → one continuation slice "${g.kept}" (key ${g.keptKey} kept; dropped keys: ${g.droppedKeys.join(", ")})`);
@@ -949,38 +956,41 @@ function applyFoldContinuations(ctx: UpgradeContext): StepApplyOutcome {
 // ---- Step 8a: view-doc-sources-stale (GH #290 / #280) — view regions list the union of `from`. ----
 // 1.18.0's generated `em-slice-view` region lists the UNION of `from` across a read model's `again`
 // instances (GH #280), so a doc generated under 1.17 states an origin-only "built from" line. This
-// step is `em slice sync`'s own check/apply, narrowed to docs whose VIEW region is stale. A SIGNED
-// doc (ratified or shipped) is reported and left alone: regenerating its region would move its
-// `ratifiedHash` — open the next draft (`em slice revise`) and sync there.
+// step is `em slice sync`'s own check/apply, narrowed to docs whose VIEW region is stale. Since
+// 1.19.0 a SIGNED doc (ratified or shipped) is synced too and keeps its signature (GH #347:
+// `ratifiedHash` covers the authored text only; `em slice sync` re-stamps an intact old-scope hash
+// in the same write).
 
 type StaleDoc = { key: string; path: string };
 
-function staleViewDocs(ctx: UpgradeContext): { open: StaleDoc[]; signed: StaleDoc[] } {
-  const open: StaleDoc[] = [];
-  const signed: StaleDoc[] = [];
+function staleViewDocs(ctx: UpgradeContext): StaleDoc[] {
+  const out: StaleDoc[] = [];
   const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, undefined, true);
-  if (!r.ok) return { open, signed };
+  if (!r.ok) return out;
   for (const d of r.docs) {
-    if (d.status !== "stale" || !d.regions.some((g) => g.status === "stale" && g.name.startsWith("em-slice-view"))) continue;
-    (isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")) ? signed : open).push({ key: d.key, path: d.path });
+    if (d.status !== "stale" || !hasStaleViewRegion(d)) continue;
+    out.push({ key: d.key, path: d.path });
   }
-  return { open, signed };
+  return out;
+}
+
+function hasStaleViewRegion(d: { regions: Array<{ name: string; status: string }> }): boolean {
+  return d.regions.some((g) => g.status === "stale" && g.name.startsWith("em-slice-view"));
 }
 
 function detectViewDocSourcesStale(ctx: UpgradeContext): StepDetection {
-  const { open, signed } = staleViewDocs(ctx);
-  const left = signed.length > 0 ? `; left alone (ratified or shipped — em slice revise, then em slice sync): ${signed.map((d) => d.path).join(", ")}` : "";
+  const open = staleViewDocs(ctx);
   if (open.length === 0) {
-    return { applicable: false, reason: `no bound slice doc's view region is stale against the model${left}` };
+    return { applicable: false, reason: "no bound slice doc's view region is stale against the model" };
   }
   return {
     applicable: true,
-    reason: `em slice sync --check would change the view region of ${open.length} doc(s): ${open.map((d) => d.path).join(", ")} — em upgrade will run em slice sync on them${left}`,
+    reason: `em slice sync --check would change the view region of ${open.length} doc(s): ${open.map((d) => d.path).join(", ")} — em upgrade will run em slice sync on them (a ratified or shipped doc keeps its signature)`,
   };
 }
 
 function applyViewDocSourcesStale(ctx: UpgradeContext): StepApplyOutcome {
-  const { open } = staleViewDocs(ctx);
+  const open = staleViewDocs(ctx);
   const changedFiles: string[] = [];
   for (const d of open) {
     const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, d.key, false);
@@ -1129,7 +1139,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "api-contract-missing", sinceVersion: "1.18.1", detect: detectApiContractMissing, apply: applyApiContractMissing },
   { id: "constitution", sinceVersion: "1.11.0", detect: detectConstitution, apply: applyConstitution },
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
-  { id: "ratified-hash-scope", sinceVersion: "1.17.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
+  { id: "ratified-hash-scope", sinceVersion: "1.19.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
   { id: "collapse-alternative-events", sinceVersion: "1.18.0", detect: detectCollapseAlternativeEvents, apply: applyCollapseAlternativeEvents },
   { id: "fold-continuations", sinceVersion: "1.18.0", detect: detectFoldContinuations, apply: applyFoldContinuations, optedIn: (c) => c.foldContinuations === true || c.toSugar === true },
   { id: "view-doc-sources-stale", sinceVersion: "1.18.0", detect: detectViewDocSourcesStale, apply: applyViewDocSourcesStale },
@@ -1287,17 +1297,19 @@ function detectPluginInstallLocally(ctx: UpgradeContext): HumanItem | null {
   return null;
 }
 
-/** GH #290: a SIGNED doc (ratified or shipped) whose generated regions are stale against the model —
- *  `view-doc-sources-stale` and `collapse-alternative-events` leave it alone because syncing would move
- *  its `ratifiedHash`. Raised for any region (view, event, command, invariants). */
+/** GH #290 / GH #347: a SIGNED doc (ratified or shipped) whose generated regions are stale against the
+ *  model and that no step syncs (`view-doc-sources-stale` syncs a doc with a stale view region, signed or
+ *  not). Since 1.19.0 the fix is mechanical — `em slice sync` keeps the signature, because
+ *  `ratifiedHash` covers the authored text only; model-change discipline is the model's own pin
+ *  (`model-versions/v<N>.json`). Raised for the event, command and invariants regions. */
 function detectSliceDocStaleSigned(ctx: UpgradeContext): HumanItem | null {
   const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, undefined, true);
   if (!r.ok) return null;
-  const docs = r.docs.filter((d) => d.status === "stale" && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")));
+  const docs = r.docs.filter((d) => d.status === "stale" && !hasStaleViewRegion(d) && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")));
   if (docs.length === 0) return null;
   return {
     id: "slice-doc-stale-signed",
-    reason: `${docs.map((d) => `${d.path} (${d.regions.filter((g) => g.status === "stale").map((g) => g.name).join(", ")})`).join("; ")} — ratified or shipped and stale against the model; run \`em slice revise ${docs.map((d) => d.key).join(" / ")}\`, then \`em slice sync\``,
+    reason: `${docs.map((d) => `${d.path} (${d.regions.filter((g) => g.status === "stale").map((g) => g.name).join(", ")})`).join("; ")} — ratified or shipped and stale against the model; run \`em slice sync ${basename(ctx.modelFile)}\` (it rewrites the generated regions and keeps the signature: ratifiedHash covers the authored text only)`,
   };
 }
 

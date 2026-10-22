@@ -114,6 +114,7 @@ affected lines written by hand.
 | scenario When names no command |
 | seam crossing greenfield |
 | seam manifest outdated |
+| signed doc generated region placeholder |
 | slice doc cites undeclared invariant |
 | slice doc structured section malformed |
 | slice outside storyline |

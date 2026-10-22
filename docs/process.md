@@ -166,6 +166,20 @@ itself, not for recording a question. (1.16.0 queued such questions in `.event-m
 GH #236; anything still queued there is injected when the next draft opens, and `em upgrade` moves
 it into the doc.)
 
+**A model change reaches a ratified doc through `em slice sync`, not a re-ratification** (GH #347,
+1.19.0). The signature covers what the ratifier wrote: `ratifiedHash` leaves out the text between
+each generated region's markers, which only restates the model. So when the model changes (or a
+new em version writes the regions differently), run `em slice sync <model>.em`: it rewrites the
+regions of ratified and shipped docs too, keeps `ratifiedHash` and `ratifiedRef`, and says so
+(a hash still in the 1.17–1.18 or pre-1.17 scope is re-stamped in the current scope in the same
+write — same authored text, not a re-signing). Model-change discipline lives in the model's own
+pin: the slice-ready gate requires the slice's model version (`model-versions/v<N>.json`,
+`modelHash`) to be current, so a contract change is still a decision someone records. Changing the
+*authored* text — a scenario, an invariant elaboration, the intent — is still a new version:
+`em slice revise`, review, `em slice ratify`. A scenario stub sync writes into a signed doc's region
+is reported by `em validate` (`slice-doc/generated-region-placeholder`) until the scenario is written
+in `## Scenarios` in the next version, or the model gap behind a `{{ }}` cell is filled.
+
 Why two gates and not one: "the room understood this slice" and "we commit to building this
 slice" are different decisions, made by different people, often days apart. Collapsing them means
 whoever facilitated the review also authorized the build — which is exactly the failure the

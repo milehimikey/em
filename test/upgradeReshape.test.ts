@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
+import { ratifiedHashScope, sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
 import { UpgradeContext, UPGRADE_STEPS, applyUpgrade, detectUpgrade, resolveRepoRoot } from "../src/cli/upgrade.js";
 import { planCollapseAlternativeEvents, planFoldContinuations, planStackContinuations } from "../src/cli/upgradeReshape.js";
 import { continuationOf } from "../src/model/continuation.js";
@@ -102,7 +102,7 @@ describe("collapse-alternative-events (GH #278)", () => {
     expect(archived).toMatch(/superseded-by: cancel-order-customer@v1\n---\n\n> \*\*SUPERSEDED\*\* by `cancel-order-customer`/);
   });
 
-  it("a signed kept doc is left byte-identical and becomes the human item slice-doc-stale-signed", () => {
+  it("GH #347: a signed kept doc has its event region re-synced under the signature (ratifiedHash kept, no slice-doc-stale-signed item)", () => {
     const dir = repo();
     const doc = join(dir, "slices", "cancel-order-customer.md");
     const plain = readFileSync(doc, "utf8");
@@ -110,19 +110,21 @@ describe("collapse-alternative-events (GH #278)", () => {
     git(dir, "add", "slices/cancel-order-customer.md");
     git(dir, "commit", "-q", "-m", "ratify");
     const signedBytes = readFileSync(doc, "utf8");
-    expect(step(dir, "collapse-alternative-events").reason).toContain("will not be synced and go stale");
+    const hash = /ratifiedHash: (\S+)/.exec(signedBytes)![1];
+    expect(step(dir, "collapse-alternative-events").reason).toContain(
+      "signed doc(s) whose generated regions go stale: slices/cancel-order-customer.md (em-slice-event) — em upgrade syncs the kept slice's doc",
+    );
     const result = applyUpgrade(ctxOf(dir));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(readFileSync(doc, "utf8")).toBe(signedBytes);
-    const item = result.report.human.find((h) => h.id === "slice-doc-stale-signed")!;
-    expect(item.reason).toContain("slices/cancel-order-customer.md");
-    expect(item.reason).toContain("em-slice-event");
-    expect(item.reason).toContain("em slice revise cancel-order-customer");
+    const after = readFileSync(doc, "utf8");
+    expect(after).not.toBe(signedBytes); // the event region was regenerated ...
+    expect(after).toContain(`ratifiedHash: ${hash}\n`); // ... under the same signature
+    expect(ratifiedHashScope(after, hash)).toBe("current");
+    expect(result.report.human.find((h) => h.id === "slice-doc-stale-signed")).toBeUndefined();
     // the signed kept doc cannot take the back-link: a human item says what to add
-    expect(readFileSync(doc, "utf8")).not.toMatch(/merged-from/);
+    expect(after).not.toMatch(/merged-from/);
     expect(result.report.human.find((h) => h.id === "lineage-backlink-missing")!.reason).toContain("merged-from: cancel-order-timeout@v1");
-    expect(item.reason).toContain("em slice sync");
   });
 
   it("takes the kept doc and its version from the slice's actual (covers) binding, not slices/<key>.md", () => {

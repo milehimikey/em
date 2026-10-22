@@ -127,7 +127,8 @@ export interface SliceDocExport {
    *  written only by `em slice ratify` — null when absent. `--slice-ready` compares it to the
    *  current body (`slice-ready-body-changed-since-ratification`). Since 1.17.0 the `## Open
    *  Questions` heading and its `deferred to v<n>` items are outside the hash (GH #253,
-   *  `sliceDoc.ts`'s `ratifiedBody`); a pre-1.17 whole-body hash is still accepted as intact. */
+   *  `sliceDoc.ts`'s `ratifiedBody`), and since 1.19.0 so is the inside of every generated region (GH #347);
+   *  a hash in an older scope (pre-1.17 whole-body, 1.17–1.18) is still accepted as intact. */
   ratifiedHash: string | null;
   /** MIL-283/284: the shipped record — `em slice mark-implemented`'s `shippedVersion:`/
    *  `shippedRef:`/`shippedOn:` beside `implementedIn:`, or, for a doc shipped before em 1.15

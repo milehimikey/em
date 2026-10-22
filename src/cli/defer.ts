@@ -28,7 +28,8 @@
 // version, not the one that was signed. So on a signed doc both paths APPEND the already-deferred
 // `- [x]` item (the shape `--from-issue` always wrote) and the hash does not move; `--slice-ready`
 // and `ratify`'s re-run keep passing. Before writing, `finishSignedDocEdit` re-stamps a hash still
-// in the pre-1.17 whole-body scope (the body is intact, only the stamp is old) and refuses, with
+// in an older scope (pre-1.17 whole-body, or 1.17–1.18 with generated regions inside; the body is
+// intact, only the stamp is old) and refuses, with
 // nothing written, if the edit would somehow leave the hash unmatched.
 //
 // GH #236's state-file QUEUE (1.16.x) is write-retired by this: `revise`/`mark-implemented` still
@@ -47,7 +48,7 @@ import { compile } from "../pipeline.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue, replaceFieldValue } from "./frontmatterSurgery.js";
 import { QueuedItem, parseQueuedBullet, queuedItems } from "../catalog/deferQueue.js";
-import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { isOldHashScope, ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 
 const OPEN_QUESTIONS_HEADING = /^##\s+Open Questions\s*$/i;
 const TASK_ITEM = /^([ \t]*[-*]\s*)\[([ xX])\](.*)$/;
@@ -356,7 +357,7 @@ export type SignedEditResult = { ok: true; content: string; restamped: boolean }
  * Pure (GH #253): the last step of any defer that edits a signed doc. `before` is the doc as
  * read, `after` the doc with the deferral written. Refuses when `before` already fails its own
  * `ratifiedHash` (the body moved after sign-off — defer is not the command that papers over
- * that), re-stamps a hash still in the pre-1.17 whole-body scope to the current scope (same
+ * that), re-stamps a hash still in an older intact scope (`v1.17` or `legacy`) to the current scope (same
  * body, new normalisation — not a re-signing), and finally checks that `after` matches the
  * recorded hash in the current scope, refusing with nothing written if it does not: the one
  * invariant this whole design rests on is that a deferral never moves the hash.
@@ -373,7 +374,7 @@ export function finishSignedDocEdit(before: string, after: string): SignedEditRe
   }
   let content = after;
   let restamped = false;
-  if (scope === "legacy") {
+  if (isOldHashScope(scope)) {
     const next = replaceFieldValue(after, "ratifiedHash", sliceDocBodyHash(before));
     if (next === null) return { ok: false, message: "could not locate ratifiedHash: in the frontmatter" };
     content = next;

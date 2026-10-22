@@ -471,7 +471,7 @@ ledger` watches `version:` against content, not the hash). The history-aware twi
 
 | Code | Severity | Meaning |
 |---|---|---|
-| `slice-body-changed-since-ratification` | error | A doc with a `ratifiedHash` whose body no longer matches it, in either scope — the message names the doc's `status` and `version`. Compared through `ratifiedHashScope` (GH #253): a pre-1.17 whole-body hash with an intact body is `legacy` and passes; a deferral written by `em slice defer` sits outside the hash and never trips this; a hand edit does. Docs with no hash are not reported — that is `--slice-ready --require-ratified-hash` (GH #256). Fix: revert the edit, or open the next version (`em slice revise`, review, `em slice ratify --by`) so the change is signed |
+| `slice-body-changed-since-ratification` | error | A doc with a `ratifiedHash` whose body no longer matches it in any scope — the message names the doc's `status` and `version`. Compared through `ratifiedHashScope` (GH #253, GH #347): the hash covers the authored text only, so a generated region `em slice sync` rewrote never trips this (since 1.19.0), nor does a deferral written by `em slice defer`; a hash recorded by 1.17.0–1.18.x (`v1.17`, regions inside) or before 1.17.0 (`legacy`, whole body) with an intact body passes; a hand edit of authored text does, whatever scope the hash was recorded in. Docs with no hash are not reported — that is `--slice-ready --require-ratified-hash` (GH #256). Fix: revert the edit, or open the next version (`em slice revise`, review, `em slice ratify --by`) so the change is signed |
 
 ### Slice readiness
 
@@ -493,7 +493,7 @@ overall `ready` boolean, instead of scraping this table's codes out of stderr pr
 | `slice-ready-status-not-ready` | warning | The doc's `status` isn't `ready-to-implement` |
 | `slice-ready-open-questions-unchecked` | warning | The doc's `## Open Questions` section has one or more unchecked (`- [ ]`) items |
 | `slice-ready-not-ratified` | error | The doc is `ready-to-implement` but carries no `ratifiedBy` — e.g. right after `em slice reratify` cleared it (MIL-259). Fix: `em slice ratify --by <name>` |
-| `slice-ready-body-changed-since-ratification` | error | The doc is `ready-to-implement` and carries a `ratifiedHash`, but its body no longer hashes to it — the spec was edited after sign-off, so the ratification stands on content that is gone (MIL-284). Silent on a doc ratified before 1.15 (no hash), and on a hash recorded before 1.17.0 whose whole body is still intact (the pre-1.17 scope; `em upgrade` re-stamps it). The `## Open Questions` heading and its `deferred to v<n>` items are outside the hash (GH #253), so a deferral recorded by `em slice defer` after sign-off never trips this; a `- [ ]` added by hand does. Fix: revert the edit, or re-ratify the new content (`em slice revise --withdraw`, review, `em slice ratify --by`) |
+| `slice-ready-body-changed-since-ratification` | error | The doc is `ready-to-implement` and carries a `ratifiedHash`, but its body no longer hashes to it — the spec was edited after sign-off, so the ratification stands on content that is gone (MIL-284). Silent on a doc ratified before 1.15 (no hash), and on a hash in an older scope whose body is still intact (recorded by 1.17.0–1.18.x or before 1.17.0; `em upgrade` re-stamps it). The text between generated region markers (GH #347, 1.19.0) and the `## Open Questions` heading with its `deferred to v<n>` items (GH #253) are outside the hash, so `em slice sync` refreshing a region or `em slice defer` recording a deferral after sign-off never trips this; a `- [ ]` added by hand does. Fix: revert the edit, or re-ratify the new content (`em slice revise --withdraw`, review, `em slice ratify --by`) |
 | `ratified-by-not-in-roster` | error | **Roster present only** (GH #259): the `ready-to-implement` doc's `ratifiedBy` is not permitted by `ratifiers.yaml` for the slice's context — typically a hand-edited frontmatter, since `em slice ratify` refuses such a name up front. `ready` is `false` in `--json`; `gates` gain no boolean. Fix: re-ratify with a permitted name (`em slice revise --withdraw`, review, `em slice ratify --by`), or update the roster. See [slice-doc-schema.md](slice-doc-schema.md#who-may-ratify) |
 | `reviewed-by-not-in-roster` | error | **`em roster check` only** (GH #259): a doc's `reviewedBy` is not permitted by the roster's `reviewers:` for the slice's contexts. `ratified-by-not-in-roster` is also raised by `em roster check` for `implemented` docs, which `--slice-ready` never examines. `grandfathered ...` signers are exempt |
 | `roster-invalid` | error | **`--slice-ready` with a roster file only** (GH #259): `ratifiers.yaml` (or the `--roster` path) is missing, not valid YAML, breaks the schema (`rosterSchemaVersion: "1.0"`, non-empty `ratifiers:`/`reviewers:` of `{ name, contexts?, models? }`, no unknown keys), or names a `contexts:` entry the model does not declare / a `models:` key the system does not have. `ratify` and `review` refuse for the same reason. Fix the file |
@@ -636,6 +636,31 @@ never blocks `--slice-ready` by itself; the gate adds its own twin,
 no region markers and no `### Scenario:` heading — every doc written before 1.14 — is never
 flagged. A stale region (the model changed, the doc didn't) is not malformed: `em slice sync
 --check` reports that.
+
+### Generated region placeholders
+
+`slice-doc/generated-region-placeholder` (warning, GH #347, 1.19.0) fires on a bound slice doc that
+is **signed** — `status: ready-to-implement` with a `ratifiedBy:`, or `status: implemented` — when
+one of its [generated regions](slice-doc-schema.md#generated-regions-and-authored-sections) still
+holds an unresolved `{{ … }}` placeholder. One warning per region, naming the doc, its slice and
+status, the region and how many placeholders it holds. Since 1.19.0 `em slice sync` rewrites a
+signed doc's regions under the signature (`ratifiedHash` covers the authored text only), so what
+sync writes there would otherwise go unreported: the `Scenario stubs for <field>` blocks under a
+collection field's table (GH #288) and a `{{ }}` Source cell (a field no command or event
+provides).
+
+- Fix a `{{ }}` Source cell in the model — give the field a source, or mark it `derived` — and
+  run `em slice sync`.
+- A scenario stub is a prompt, not content: write the scenario it describes in `## Scenarios`.
+  On a signed doc that is authored text, so it is the next version (`em slice revise`, review,
+  `em slice ratify`).
+
+A `draft` or `reviewed` doc is still being written, and its stubs are expected, so it is never
+flagged; neither is a doc whose markers don't balance (that is
+`slice-doc/structured-section-malformed`). The warning refs the doc's slice, so `--slice-ready`
+lists it among the slice's diagnostics. It does **not** gate readiness: it is not on the gating
+warning list (see [Slice readiness](#slice-readiness)), because a stub restates the model's shape
+and does not change what was signed.
 
 ### Scenario quality
 

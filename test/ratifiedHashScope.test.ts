@@ -12,7 +12,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { countDeferredBeyond, ratifiedBody, ratifiedHashScope, sliceDocBodyHash, sliceDocLegacyBodyHash } from "../src/catalog/sliceDoc.js";
+import { countDeferredBeyond, isOldHashScope, ratifiedBody, ratifiedHashScope, sliceDocBodyHash, sliceDocLegacyBodyHash, sliceDocV117BodyHash, stripGeneratedRegions } from "../src/catalog/sliceDoc.js";
+import { regionEndLine, regionStartLine } from "../src/catalog/sliceSections.js";
 import { parseQueuedBullet, queuedBullet, queuedItems } from "../src/catalog/deferQueue.js";
 import { drainQueueInState, finishSignedDocEdit, injectQueuedQuestions, isSignedDoc } from "../src/cli/defer.js";
 import { replaceFieldValue } from "../src/cli/frontmatterSurgery.js";
@@ -73,6 +74,89 @@ describe("ratifiedBody / sliceDocBodyHash (pure)", () => {
     expect(countDeferredBeyond(body, 3)).toBe(0);
     expect(countDeferredBeyond(body, null)).toBe(0);
     expect(countDeferredBeyond("# no section\n", 1)).toBe(0);
+  });
+});
+
+// GH #347 (owner ruling: option A): `ratifiedHash` covers the authored text only.
+describe("GH #347: ratifiedBody / ratifiedHashScope across the three scopes (pure)", () => {
+  const fm = "---\nversion: 1\n---\n";
+  const region = (name: string, ...lines: string[]) => [regionStartLine(name), ...lines, regionEndLine(name)].join("\n");
+  const VIEW_117 = ["- **View:** `Orders` built from events: \"Order Placed\"", "", "| Field | Type | Source / Notes |", "|---|---|---|", "| orderId | string | from event `Order Placed` |"];
+  const VIEW_118 = [
+    "- **View:** `Orders` built from events: \"Order Placed\", \"Order Placed Manually\" (via \"Orders manual\")",
+    "",
+    "| Field | Type | Source / Notes |",
+    "|---|---|---|",
+    "| orderId | string | from event `Order Placed` |",
+    "| lines | Collection of Line | {{ }} |",
+    "",
+    "Scenario stubs for `lines`:",
+    "- **Given:** `Order Placed` {{ }}",
+  ];
+  const doc = (view: string[], intent = "Show orders.") =>
+    `${fm}# Orders\n\n## Intent\n\n${intent}\n\n${region("em-slice-view", ...view)}\n\n${region("em-slice-invariants", "_No invariants declared in the model._")}\n\n## Open Questions\n\n- [x] answered — yes\n`;
+
+  it("ratifiedBody empties every generated region but keeps its two marker lines and every authored line", () => {
+    const body = doc(VIEW_118).slice(fm.length);
+    expect(ratifiedBody(body)).toBe(
+      `# Orders\n\n## Intent\n\nShow orders.\n\n${regionStartLine("em-slice-view")}\n${regionEndLine("em-slice-view")}\n\n${regionStartLine("em-slice-invariants")}\n${regionEndLine("em-slice-invariants")}\n\n- [x] answered — yes`,
+    );
+  });
+
+  it("a region rewrite (the 1.17 → 1.18 sync output change) never moves the current-scope hash; it does move the 1.17 and whole-body hashes", () => {
+    expect(sliceDocBodyHash(doc(VIEW_118))).toBe(sliceDocBodyHash(doc(VIEW_117)));
+    expect(sliceDocV117BodyHash(doc(VIEW_118))).not.toBe(sliceDocV117BodyHash(doc(VIEW_117)));
+    expect(sliceDocLegacyBodyHash(doc(VIEW_118))).not.toBe(sliceDocLegacyBodyHash(doc(VIEW_117)));
+  });
+
+  it("an authored edit moves the hash in every scope", () => {
+    const edited = doc(VIEW_117, "Show every order.");
+    expect(sliceDocBodyHash(edited)).not.toBe(sliceDocBodyHash(doc(VIEW_117)));
+    expect(sliceDocV117BodyHash(edited)).not.toBe(sliceDocV117BodyHash(doc(VIEW_117)));
+    expect(sliceDocLegacyBodyHash(edited)).not.toBe(sliceDocLegacyBodyHash(doc(VIEW_117)));
+    // a marker pair added or removed is an authored edit too
+    expect(sliceDocBodyHash(doc(VIEW_117).replace(`${region("em-slice-invariants", "_No invariants declared in the model._")}\n\n`, ""))).not.toBe(sliceDocBodyHash(doc(VIEW_117)));
+  });
+
+  it("ratifiedHashScope: current (1.19), v1.17, legacy (whole-body), mismatch — the 1.17 scope stays intact", () => {
+    const d = doc(VIEW_117);
+    expect(ratifiedHashScope(d, sliceDocBodyHash(d))).toBe("current");
+    expect(ratifiedHashScope(d, sliceDocV117BodyHash(d))).toBe("v1.17");
+    expect(ratifiedHashScope(d, sliceDocLegacyBodyHash(d))).toBe("legacy");
+    expect(ratifiedHashScope(d, "sha256:0")).toBe("mismatch");
+    // after the region rewrite only the current scope still matches the signed authored text
+    expect(ratifiedHashScope(doc(VIEW_118), sliceDocBodyHash(d))).toBe("current");
+    expect(ratifiedHashScope(doc(VIEW_118), sliceDocV117BodyHash(d))).toBe("mismatch");
+    // an authored edit is a mismatch whatever scope the hash was recorded in
+    const edited = doc(VIEW_117, "Show every order.");
+    for (const h of [sliceDocBodyHash(d), sliceDocV117BodyHash(d), sliceDocLegacyBodyHash(d)]) expect(ratifiedHashScope(edited, h)).toBe("mismatch");
+    // a doc with no regions: the current and 1.17 scopes coincide, so its hash reads as current
+    const plain = `${fm}# Slice\n\nbody\n`;
+    expect(sliceDocBodyHash(plain)).toBe(sliceDocV117BodyHash(plain));
+    expect(ratifiedHashScope(plain, sliceDocV117BodyHash(plain))).toBe("current");
+  });
+
+  it("unbalanced markers strip nothing — the whole text counts", () => {
+    const broken = `${fm}# Orders\n\n${regionStartLine("em-slice-view")}\nrow\n`;
+    expect(stripGeneratedRegions(broken.slice(fm.length))).toBe(broken.slice(fm.length));
+    expect(sliceDocBodyHash(broken)).not.toBe(sliceDocBodyHash(broken.replace("row", "other")));
+  });
+
+  it("isOldHashScope: v1.17 and legacy are re-stampable; current and mismatch are not", () => {
+    expect(isOldHashScope("v1.17")).toBe(true);
+    expect(isOldHashScope("legacy")).toBe(true);
+    expect(isOldHashScope("current")).toBe(false);
+    expect(isOldHashScope("mismatch")).toBe(false);
+  });
+
+  it("finishSignedDocEdit (em slice defer) re-stamps a v1.17-scope hash in the same edit", () => {
+    const signed = (h: string) => `---\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex\nratifiedHash: ${h}\n---\n${doc(VIEW_117).slice(fm.length)}`;
+    const v117 = sliceDocV117BodyHash(signed("x"));
+    const before = signed(v117);
+    const after = `${before}${DEFERRED}\n`;
+    const r = finishSignedDocEdit(before, after);
+    expect(r).toMatchObject({ ok: true, restamped: true });
+    if (r.ok) expect(r.content).toBe(after.replace(v117, sliceDocBodyHash(before)));
   });
 });
 
@@ -337,7 +421,7 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(ratify()).toMatchObject({ status: 0, stdout: expect.stringContaining("already ratified") });
     const d = defer();
     expect(d.status).toBe(0);
-    expect(d.stdout).toContain("ratifiedHash re-stamped to the 1.17 scope (body unchanged)");
+    expect(d.stdout).toContain("ratifiedHash re-stamped to the current scope (body unchanged)");
     const doc = read(docPath());
     expect(doc).toContain(DEFERRED);
     expect(recordedHash()).not.toBe(legacy);
@@ -469,27 +553,34 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
     expect(em(["upgrade", "orders.em", "--check", "--to-sugar"], dir).status).toBe(1);
   });
 
-  it("a ratified doc with a stale view region is left byte-for-byte alone and its hash still verifies after --apply", () => {
+  it("GH #347: a doc ratified under the 1.17 scope with a stale view region is re-stamped, then re-synced under its signature by --apply", () => {
     const docPath = join(dir, "slices", "orders.md");
     const plain = readFileSync(docPath, "utf8");
     const withHash = (h: string) => plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${h}`);
-    writeFileSync(docPath, withHash(sliceDocBodyHash(plain)));
+    const v117 = sliceDocV117BodyHash(plain); // what 1.17.0–1.18.x recorded: generated regions inside the hash
+    writeFileSync(docPath, withHash(v117));
     git(dir, "add", "slices/orders.md");
     git(dir, "commit", "-q", "-m", "ratify orders");
     const signedBytes = readFileSync(docPath, "utf8");
+    expect(ratifiedHashScope(signedBytes, v117)).toBe("v1.17");
     expect(em(["validate", "orders.em", "--check-signed-bodies"], dir).status).toBe(0);
 
     const dry = em(["upgrade", "orders.em"], dir);
-    expect(dry.stdout).toContain("[ ] view-doc-sources-stale");
-    expect(dry.stdout).toContain("slice-doc-stale-signed");
+    expect(dry.stdout).toContain("[x] ratified-hash-scope (since 1.19.0): 1 doc(s) carry a 1.17–1.18 ratifiedHash (generated regions inside; body intact): orders");
+    expect(dry.stdout).toContain("[x] view-doc-sources-stale");
+    expect(dry.stdout).not.toContain("slice-doc-stale-signed");
     const applied = em(["upgrade", "orders.em", "--apply"], dir);
     expect(applied.status, applied.stderr).toBe(0);
-    expect(upgradeCommits().some((l) => l.startsWith("em upgrade: view-doc-sources-stale"))).toBe(false);
-    expect(readFileSync(docPath, "utf8")).toBe(signedBytes);
-    const hash = /ratifiedHash: (\S+)/.exec(signedBytes)![1];
-    expect(ratifiedHashScope(signedBytes, hash)).toBe("current");
+    expect(upgradeCommits().filter((l) => l.startsWith("em upgrade: ratified-hash-scope"))).toHaveLength(1);
+    expect(upgradeCommits().filter((l) => l.startsWith("em upgrade: view-doc-sources-stale"))).toHaveLength(1);
+    const after = readFileSync(docPath, "utf8");
+    expect(after).toContain('"Order Placed Manually" (via "Orders manual")'); // the view region was re-synced
+    const hash = /ratifiedHash: (\S+)/.exec(after)![1];
+    expect(hash).toBe(sliceDocBodyHash(signedBytes)); // the current-scope hash of the SAME authored text
+    expect(ratifiedHashScope(after, hash)).toBe("current");
     expect(em(["validate", "orders.em", "--check-signed-bodies"], dir).status).toBe(0);
-    expect(em(["validate", "orders.em", "--slice-ready", "orders"], dir).stdout).not.toContain("slice-ready-ratified-hash-mismatch");
+    expect(em(["slice", "sync", "orders.em", "--check"], dir).status).toBe(0);
+    expect(em(["validate", "orders.em", "--slice-ready", "orders"], dir).stdout).not.toContain("slice-ready-body-changed-since-ratification");
   });
 
   it("em storyline suggest prints a patch that git apply accepts and never writes the model", () => {

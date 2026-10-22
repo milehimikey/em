@@ -6,8 +6,9 @@
 // doc's signed content can drift with no diagnostic anywhere (`em ledger` watches `version:`
 // against content, never the hash — and a repo that suspends ledger as a gate has nothing left).
 // Opt-in: every doc that carries a `ratifiedHash:` is compared, whatever its status, through
-// `ratifiedHashScope` (GH #253) — a pre-1.17 whole-body hash whose body is intact is `legacy`,
-// not a defect; a deferral `em slice defer` appended is outside the hash by construction.
+// `ratifiedHashScope` (GH #253, GH #347) — a hash in an older scope whose body is intact (`legacy`,
+// `v1.17`) is not a defect; neither is a generated region `em slice sync` rewrote (outside the hash),
+// and a deferral `em slice defer` appended is outside the hash by construction.
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";

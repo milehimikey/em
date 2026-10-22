@@ -70,15 +70,29 @@ describe("view-doc-sources-stale (GH #280)", () => {
     expect(step(dir, "view-doc-sources-stale").applicable).toBe(false);
   });
 
-  it("a signed (shipped) doc is reported and left alone, and is a human item", () => {
+  it("GH #347: a signed (shipped) doc is synced too (the signature covers the authored text only), and is no human item", () => {
     const dir = repo({ signedOrders: true });
     const d = step(dir, "view-doc-sources-stale");
-    expect(d.applicable).toBe(false);
-    expect(d.reason).toContain("left alone");
+    expect(d.applicable).toBe(true);
     expect(d.reason).toContain("slices/orders.md");
+    expect(d.reason).toContain("a ratified or shipped doc keeps its signature");
+    expect(detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "slice-doc-stale-signed")).toBeUndefined();
+    const result = applyUpgrade(ctxOf(dir));
+    expect(result.ok).toBe(true);
+    const text = readFileSync(join(dir, "slices", "orders.md"), "utf8");
+    expect(text).toContain("status: implemented");
+    expect(text).toContain('built from events: "Order Placed", "Order Placed Manually" (via "Orders manual")');
+  });
+
+  it("GH #347: slice-doc-stale-signed (a signed doc stale in a region no step syncs) now says run `em slice sync`, not revise", () => {
+    const dir = repo();
+    const doc = join(dir, "slices", "place-order.md");
+    writeFileSync(doc, readFileSync(doc, "utf8").replace("status: draft", "status: implemented"));
+    writeFileSync(join(dir, "orders.em"), MODEL_117.replace("event Order Placed @Sales { orderId: string, total: number }", "event Order Placed @Sales { orderId: string, total: number, currency: string }"));
     const item = detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "slice-doc-stale-signed")!;
-    expect(item.reason).toContain("em slice revise orders");
-    expect(item.reason).toContain("em slice sync");
+    expect(item.reason).toContain("slices/place-order.md (em-slice-event)");
+    expect(item.reason).toContain("run `em slice sync orders.em` (it rewrites the generated regions and keeps the signature: ratifiedHash covers the authored text only)");
+    expect(item.reason).not.toContain("em slice revise");
   });
 
   it("shared-event-now-legal is an information-only human item for an event recorded by two commands", () => {

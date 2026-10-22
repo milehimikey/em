@@ -396,6 +396,24 @@ export function scanSliceRegions(text: string): RegionScan {
   return { regions, problems };
 }
 
+const PLACEHOLDER_RE = /\{\{[\s\S]*?\}\}/g;
+
+/** GH #347: every generated region whose body holds an unresolved `{{ … }}` placeholder, with the
+ *  count of placeholders in it, in doc order — the facts behind
+ *  `slice-doc/generated-region-placeholder`. Empty for a doc with no regions or with unbalanced
+ *  markers (`slice-doc/structured-section-malformed` reports those). A nested placeholder such as
+ *  `{{rule … {{MNEMONIC}} …}}` counts by its outermost-first non-overlapping matches. */
+export function generatedRegionPlaceholders(text: string): Array<{ region: string; count: number }> {
+  const scan = scanSliceRegions(text);
+  if (scan.problems.length > 0) return [];
+  const out: Array<{ region: string; count: number }> = [];
+  for (const r of scan.regions) {
+    const count = (r.body.match(PLACEHOLDER_RE) ?? []).length;
+    if (count > 0) out.push({ region: r.name, count });
+  }
+  return out;
+}
+
 /** Splits a markdown table row into trimmed cells on unescaped pipes only, then unescapes `\|`
  *  in each cell — the inverse of `cell()`, so a union type like `"a" | "b"` that sync wrote as
  *  `"a" \| "b"` reads back as the one cell it is. The shared row splitter for every doc-table

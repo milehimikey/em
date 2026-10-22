@@ -81,6 +81,7 @@
 
 import { createHash } from "node:crypto";
 import { marked } from "marked";
+import { scanSliceRegions } from "./sliceSections.js";
 
 /** A parsed `<slice-key>@v<N>` lineage reference. */
 export interface SliceRef {
@@ -417,16 +418,16 @@ export function shippedRecordOf(
 const DEFERRED_ITEM = /^[ \t]*[-*]\s*\[[xX]\]\s.* — v\d+: .*; deferred to v(\d+) \(.*\)\s*$/;
 
 /**
- * GH #253: the text `ratifiedHash` is computed over — the body minus what describes a LATER
- * version. Inside the `## Open Questions` section (heading to the next `#`/`##` heading or EOF)
- * the heading line itself, blank lines, and every `deferred to v<n>` item are dropped; everything
- * else — every other section, the section's answered `- [x]` history, any `- [ ]` — is kept, in
- * order. Trailing whitespace is trimmed last, so appending a deferred item (and, on a doc with no
- * section, the heading before it) never moves the hash. The blank lines go because `appendBullet`
- * (cli/defer.ts) inserts one after a bare heading; keeping them would make an empty section and
- * a one-item section hash differently.
+ * GH #253: the 1.17 scope — the body minus what describes a LATER version. Inside the `## Open
+ * Questions` section (heading to the next `#`/`##` heading or EOF) the heading line itself, blank
+ * lines, and every `deferred to v<n>` item are dropped; everything else — every other section, the
+ * section's answered `- [x]` history, any `- [ ]` — is kept, in order. Trailing whitespace is
+ * trimmed last, so appending a deferred item (and, on a doc with no section, the heading before
+ * it) never moves the hash. The blank lines go because `appendBullet` (cli/defer.ts) inserts one
+ * after a bare heading; keeping them would make an empty section and a one-item section hash
+ * differently. Since 1.19.0 `ratifiedBody()` applies this AFTER `stripGeneratedRegions()`.
  */
-export function ratifiedBody(body: string): string {
+function withoutDeferrals(body: string): string {
   const lines = body.split("\n");
   const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
   if (start === -1) return body.trimEnd();
@@ -440,6 +441,36 @@ export function ratifiedBody(body: string): string {
   }
   out.push(...lines.slice(i));
   return out.join("\n").trimEnd();
+}
+
+/**
+ * GH #347: the body with the inside of every generated region `em slice sync` owns
+ * (`<!-- GENERATED:em-slice-…:start … -->` … `<!-- GENERATED:em-slice-…:end -->`,
+ * catalog/sliceSections.ts) emptied. The two marker lines stay — sync never writes them, so adding
+ * or removing a marker pair is an authored edit — and only the text strictly between them goes,
+ * which is exactly the text sync rewrites. A doc whose markers do not balance (`scanSliceRegions`
+ * reports a problem) is returned unchanged: sync refuses to rewrite such a doc, so nothing in it
+ * is generated output and all of it counts.
+ */
+export function stripGeneratedRegions(body: string): string {
+  const scan = scanSliceRegions(body);
+  if (scan.problems.length > 0 || scan.regions.length === 0) return body;
+  let out = body;
+  for (const r of [...scan.regions].sort((a, b) => b.innerStart - a.innerStart)) out = out.slice(0, r.innerStart) + "\n" + out.slice(r.innerEnd);
+  return out;
+}
+
+/**
+ * The text `ratifiedHash` is computed over — the AUTHORED text of the body, the part a ratifier
+ * signs. Since 1.19.0 (GH #347) the inside of every generated region is left out
+ * (`stripGeneratedRegions`): those regions restate the model, whose own contract changes surface
+ * through model validation and its pin (`model-versions/v<N>.json`), so `em slice sync` can
+ * refresh them on a ratified or shipped doc without breaking the signature. Since 1.17.0 (GH #253)
+ * the `## Open Questions` heading and its `deferred to v<n>` items are left out too
+ * (`withoutDeferrals`), so `em slice defer` can record a question on a signed doc.
+ */
+export function ratifiedBody(body: string): string {
+  return withoutDeferrals(stripGeneratedRegions(body));
 }
 
 function sha256(text: string): string {
@@ -475,26 +506,56 @@ export function parseConformedAt(value: string): ConformedAtRef {
  *  ratify edit itself, `mark-implemented` and `conform` touch only frontmatter, without changing
  *  what was ratified. Since 1.17.0 the `## Open Questions` heading and its `deferred to v<n>`
  *  items are excluded too, so `em slice defer` can record a question on a ratified or shipped doc
- *  (GH #253, superseding GH #236's state-file queue). */
+ *  (GH #253, superseding GH #236's state-file queue). Since 1.19.0 the inside of every generated
+ *  region is excluded as well, so `em slice sync` keeps the signature (GH #347). */
 export function sliceDocBodyHash(markdown: string): string {
   return sha256(ratifiedBody(splitFrontmatter(markdown).body));
 }
 
+/** The 1.17.0–1.18.x scope (GH #253): the body minus `## Open Questions`' deferrals, generated
+ *  regions INCLUDED. Readers still accept a hash in this scope as intact — `ratifiedHashScope()`
+ *  calls it `v1.17` — and `em upgrade`'s `ratified-hash-scope` step (or `em slice sync` /
+ *  `em slice defer`, on first touch) re-stamps it in the current scope. */
+export function sliceDocV117BodyHash(markdown: string): string {
+  return sha256(withoutDeferrals(splitFrontmatter(markdown).body));
+}
+
 /** The pre-1.17.0 scope: the whole body (GH #236 kept `## Open Questions` inside it). Readers
  *  still accept a hash in this scope — `ratifiedHashScope()` — and `em upgrade`'s
- *  `ratified-hash-scope` step (or `em slice defer`, on first touch) re-stamps it. */
+ *  `ratified-hash-scope` step (or `em slice sync` / `em slice defer`, on first touch) re-stamps it. */
 export function sliceDocLegacyBodyHash(markdown: string): string {
   return sha256(splitFrontmatter(markdown).body);
 }
 
-/** How a recorded `ratifiedHash:` relates to the doc as it stands: `current` (matches the 1.17
- *  scope), `legacy` (matches only the pre-1.17 whole-body scope — the body is intact, the stamp
- *  is old), or `mismatch` (the body moved after sign-off). Every reader that judges "was the
- *  body edited after ratification" goes through this, never through `===` on one hash. */
-export function ratifiedHashScope(markdown: string, recorded: string): "current" | "legacy" | "mismatch" {
+/** How a recorded `ratifiedHash:` relates to the doc as it stands:
+ *  - `current`: matches the 1.19 scope (authored text only);
+ *  - `v1.17`: matches only the 1.17.0–1.18.x scope (generated regions inside the hash) — the body
+ *    is intact, the stamp is old;
+ *  - `legacy`: matches only the pre-1.17 whole-body scope — the body is intact, the stamp is old;
+ *  - `mismatch`: matches no scope — the body moved after sign-off. */
+export type RatifiedHashScope = "current" | "v1.17" | "legacy" | "mismatch";
+
+/** Which scope a recorded `ratifiedHash:` matches, newest first. Every reader that judges "was the
+ *  body edited after ratification" goes through this, never through `===` on one hash: `v1.17`
+ *  and `legacy` are intact (not edited); only `mismatch` is a moved body. */
+export function ratifiedHashScope(markdown: string, recorded: string): RatifiedHashScope {
   if (recorded === sliceDocBodyHash(markdown)) return "current";
+  if (recorded === sliceDocV117BodyHash(markdown)) return "v1.17";
   if (recorded === sliceDocLegacyBodyHash(markdown)) return "legacy";
   return "mismatch";
+}
+
+/** True for a scope whose body is intact but whose stamp predates the current scope — the hashes
+ *  `em upgrade`'s `ratified-hash-scope` step, `em slice sync` and `em slice defer` re-stamp (same
+ *  body, not a re-signing; `ratifiedRef` untouched). */
+export function isOldHashScope(scope: RatifiedHashScope): boolean {
+  return scope === "v1.17" || scope === "legacy";
+}
+
+/** True when the doc's body is a signed spec: `status: implemented`, or `status:
+ *  ready-to-implement` with a `ratifiedBy:` — the parsed-doc twin of cli/defer.ts `isSignedDoc`. */
+export function isSignedSliceDoc(doc: Pick<SliceDoc, "status" | "ratifiedBy">): boolean {
+  return doc.status === "implemented" || (doc.status === "ready-to-implement" && doc.ratifiedBy !== null && doc.ratifiedBy.trim() !== "");
 }
 
 /** GH #253: how many `## Open Questions` items are deferred to a version later than `version` —

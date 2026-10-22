@@ -244,7 +244,10 @@ For each slice:
    **never hand-edit a generated region.** To change a field, a type, or an invariant, edit the
    `.em`, then **after any model edit run `em slice sync <model>.em`**, which rewrites every
    region in place and leaves everything else byte-for-byte (`em slice sync <model>.em --check`
-   reports a stale doc without writing). **Edit authored sections only**: Intent, Trigger &
+   reports a stale doc without writing). That includes a ratified or shipped doc: `ratifiedHash`
+   covers the authored text only (since em 1.19.0), so sync rewrites its regions, keeps the
+   signature and says so — never `em slice revise` a doc just to sync it; revise only when an
+   authored section has to change. **Edit authored sections only**: Intent, Trigger &
    Actor, `Triggered by`/`Read by`/`Consumed by`, the invariant elaborations below the generated
    list, Scenarios, Alternate & Error Flows, NFRs, Dependencies, Open Questions. Scenarios use the
    constrained shape `em` reads back: a `### Scenario: <title>` heading, then `- **Given:**`,

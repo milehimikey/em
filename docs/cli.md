@@ -1342,10 +1342,11 @@ it suspends the version rule as a gate; waivable (below) so a baseline of known-
 excused auditably.
 
 **What counts as a content change, precisely.** The **signed** body (`ratifiedBody()`, the same
-text `ratifiedHash` covers since GH #253: the `## Open Questions` heading and its `deferred to
-v<n>` items are left out, then `.trim()` — leading/trailing whitespace ignored, everything else
-exact) and the three lineage refs. So a deferral `em slice defer` appends to a ratified or
-shipped doc is not a content change for any finding; a hand-added `- [ ]` is. `status`
+text `ratifiedHash` covers: since GH #347 (1.19.0) the text between generated region markers and
+since GH #253 the `## Open Questions` heading and its `deferred to v<n>` items are left out, then
+`.trim()` — leading/trailing whitespace ignored, everything else exact) and the three lineage refs.
+So a deferral `em slice defer` appends to a ratified or shipped doc, or a region `em slice sync`
+rewrites, is not a content change for any finding; a hand-added `- [ ]` is. `status`
 and `implementedIn` are **deliberately excluded**: those change independently by design during
 re-ratification (see
 [slice-doc-schema.md#status-under-re-ratification](slice-doc-schema.md#status-under-re-ratification))
@@ -3199,7 +3200,26 @@ elements.
 A region the doc has but the model no longer needs (an element renamed or removed) is left
 untouched with a `note:`; a region the model needs but the doc lacks is not inserted (that would
 be an edit outside the markers) — add its marker pair, or re-create the doc with `em slice new
---force`. Refuses a model with errors (`em slice sync: not syncing — fix the errors in <file>
+--force`.
+
+**Ratified and shipped docs (GH #347, 1.19.0).** A doc that records a `ratifiedHash:` is synced
+like any other and keeps its signature: `ratifiedHash` covers the authored text only (the text
+between region markers is outside it — see
+[slice-doc-schema.md](slice-doc-schema.md#generated-regions-and-authored-sections)), so the
+rewrite never moves it, and `ratifiedRef` is never touched. After `synced:` a stderr line says what
+happened to the signature:
+
+| Recorded hash | stderr after `synced:` |
+|---|---|
+| current scope | `note: <path> is signed — generated regions rewritten, ratifiedHash kept (it covers the authored text only)` |
+| 1.17–1.18 or pre-1.17 scope, body intact | `note: <path> is signed — generated regions rewritten, ratifiedHash re-stamped from the 1.17 scope to the current scope (same authored text, not a re-signing; ratifiedRef untouched)` (`pre-1.17 whole-body` for the oldest scope) — the old-scope hash would not survive the rewrite, so it is moved in the same write |
+| matches no scope (authored text edited after sign-off) | `note: <path>'s body already failed its ratifiedHash before this sync (edited after ratification) — generated regions rewritten, nothing re-stamped; see em validate --check-signed-bodies` |
+
+`--check` and `--json` are unchanged. A scenario stub or `{{ }}` cell sync writes into a signed
+doc's region is reported by `em validate` as `slice-doc/generated-region-placeholder` (warning,
+[validation.md](validation.md#generated-region-placeholders)).
+
+Refuses a model with errors (`em slice sync: not syncing — fix the errors in <file>
 above`), an unknown key (`em slice sync: no slice with export key "<key>" in this model`) and an
 unbound one (`em slice sync: slice "<key>" has no doc bound via \`note "slices/<key>.md"\` —
 nothing to sync`).
@@ -3469,14 +3489,19 @@ roster file means today's behaviour. An unreadable or schema-invalid roster refu
 **Ratification has an address (MIL-284, 1.15.0).** The sign-off also records *what* was
 signed: `ratifiedRef:` is `HEAD` of the model directory's repository at the moment of
 ratification — the commit whose tree holds the body being ratified — and `ratifiedHash:` is
-`sha256:` over the doc body (everything after the frontmatter fence, EOLs normalised; frontmatter
-is excluded because this edit, `mark-implemented` and `conform` all touch it without changing
-what was ratified; the `## Open Questions` heading and its `deferred to v<n>` items are excluded
-too — GH #253, since 1.17.0 — because a deferral describes a later version, which is what lets
+`sha256:` over the **authored text** of the doc body (everything after the frontmatter fence, EOLs
+normalised; frontmatter is excluded because this edit, `mark-implemented` and `conform` all touch it
+without changing what was ratified; the text between each generated region's markers is excluded —
+GH #347, since 1.19.0 — because it restates the model, which is what lets
+[`em slice sync`](#em-slice-sync-file-key) refresh a ratified doc's regions without moving the hash;
+the `## Open Questions` heading and its `deferred to v<n>` items are excluded too — GH #253, since
+1.17.0 — because a deferral describes a later version, which is what lets
 [`em slice defer`](#em-slice-defer-file-slice-key-question) write one into a ratified doc without
-moving the hash; everything else in the section stays signed). A hash recorded before 1.17.0 covers
-the whole body and is still read as intact; `em upgrade`'s `ratified-hash-scope` step re-stamps it,
-and `defer` does so on first touch. Because a ref whose tree does not hold the signed body would
+moving the hash; everything else, the region marker lines included, stays signed). A hash recorded
+by 1.17.0–1.18.x (generated regions inside) or before 1.17.0 (the whole body) is still read as
+intact while the body is; `em upgrade`'s `ratified-hash-scope` step re-stamps it, and `sync` and
+`defer` do so on first touch. The same-sign-off re-run (`ratify --again` with the same `--by`/`--on`)
+reads the hash through the same scope check. Because a ref whose tree does not hold the signed body would
 be meaningless, **ratify refuses a doc with uncommitted changes** — commit the body first — and
 refuses in a repository with no commits. Outside a git work tree the ref is simply omitted; the
 hash is still written, and `--slice-ready` still checks it
@@ -3889,11 +3914,11 @@ move: `--slice-ready` stays green, `ratify`'s same-sign-off re-run still reads t
 `<question>` is the full text to record. Before writing, defer checks that the doc as read still
 matches its `ratifiedHash` (a body someone edited by hand after sign-off is refused — revert, or
 `revise` and re-ratify — defer is not the command that papers over that) and verifies the result
-matches it afterwards; a hash recorded before 1.17.0 (whole-body scope) is accepted as intact and
-**re-stamped in the same edit** to the 1.17 scope, body unchanged (`em upgrade`'s
-`ratified-hash-scope` step does the same model-wide). Prints `deferred: <doc> (<question> → v<n>)
-— appended to the signed doc's Open Questions, outside ratifiedHash[; ratifiedHash re-stamped to
-the 1.17 scope (body unchanged)]`. When v<n> opens as a draft — by
+matches it afterwards; a hash in an older scope (recorded by 1.17.0–1.18.x, or before 1.17.0) is
+accepted as intact and **re-stamped in the same edit** to the current scope, body unchanged (`em
+upgrade`'s `ratified-hash-scope` step does the same model-wide). Prints `deferred: <doc> (<question>
+→ v<n>) — appended to the signed doc's Open Questions, outside ratifiedHash[; ratifiedHash
+re-stamped to the current scope (body unchanged)]`. When v<n> opens as a draft — by
 [`em slice mark-implemented`](#em-slice-mark-implemented-file-slice-key-pr-url) (at merge) or
 [`em slice revise`](#em-slice-revise-file-slice-key) — the item is reopened as `- [ ] <question>`,
 exactly as a pre-ratification deferral is. The work waiting on later versions shows in `em status`
@@ -5022,13 +5047,15 @@ The mechanical steps, in this fixed order:
    item, not mechanical (spec-kit owns the slot).
 7. **`ratified-signoff`** (1.14.0, MIL-259) — grandfathers a version-1 `ready-to-implement` doc
    that never recorded a sign-off (see [upgrading.md](upgrading.md#1140)).
-8. **`ratified-hash-scope`** (1.17.0, GH #253) — re-stamps every `ratifiedHash:` still in the
-   pre-1.17 whole-body scope with the 1.17-scope hash of the **same** body (the `## Open
-   Questions` heading and its `deferred to v<n>` items excluded; a renormalisation, not a
-   re-signing — `ratifiedRef` still holds that body), and moves every question 1.16's
+8. **`ratified-hash-scope`** (1.19.0; GH #347, first shipped in 1.17.0 for GH #253) — re-stamps
+   every `ratifiedHash:` still in an older scope whose body is intact — the 1.17.0–1.18.x scope
+   (generated regions inside the hash) or the pre-1.17 whole-body scope — with the current-scope
+   hash of the **same** body (authored text only: the text between generated region markers and
+   the `## Open Questions` heading with its `deferred to v<n>` items excluded; a renormalisation,
+   not a re-signing — `ratifiedRef` is untouched and still holds that body), and moves every question 1.16's
    `em slice defer` queued in `.event-modeling.md` (GH #236) into its doc's `## Open Questions`
    as the deferred item defer writes today, draining the queue bullet. A doc whose body no longer
-   matches its hash in either scope is reported and left alone; so is a queued question whose doc
+   matches its hash in any scope is listed in the reason (`left alone: <keys>`) and left alone; so is a queued question whose doc
    has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
    would not match its hash afterwards.
 9. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
@@ -5042,9 +5069,9 @@ The mechanical steps, in this fixed order:
    `archive/slices/<file>.md` with `superseded-by: <kept-doc>@v<N>` and a SUPERSEDED banner under its
    frontmatter. Authored Scenarios, Invariants, Open Questions or Decisions in an archived doc are
    listed in the dry-run reason and the `--apply` output as "fold these into <kept doc>". The kept
-   doc's generated event region is synced unless the doc is signed: a signed kept doc is left
-   byte-identical (not even `merged-from`) and raised as the human items `slice-doc-stale-signed` and
-   `lineage-backlink-missing`. A run with a declaration between its slices, a different storyline or
+   doc's generated event region is synced; since 1.19.0 that includes a signed kept doc, which keeps
+   its signature (GH #347) but does not take `merged-from` (its frontmatter is left as signed) and is
+   raised as the human item `lineage-backlink-missing`. A run with a declaration between its slices, a different storyline or
    an event name repeated is skipped. The rewrite is verified by recompiling (no new error, same
    event names, same view sources) before anything is written.
 10. **`fold-continuations`** (1.18.0, GH #290 / #287) — **opt-in**: every run detects and lists it
@@ -5055,8 +5082,8 @@ The mechanical steps, in this fixed order:
    key, so `continuationOf`, the doc join and the kept key's index row are exact; the dropped keys are
    listed; continuations of a different view are left alone (stacking them would change which view
    the slice continues). The reason names any signed doc whose generated regions (for example the
-   view's `via "<slice>"` annotations) the rewrite makes stale — `em slice revise <key>`, then `em
-   slice sync`. **`--to-sugar`** (further opt-in, implies `--fold-continuations`; without `--apply` a dry run that lists exactly what would fold, the dropped keys and the index rows removed) moves a continuation
+   view's `via "<slice>"` annotations) the rewrite makes stale — run `em slice sync` afterwards; it
+   keeps the signature (GH #347). **`--to-sugar`** (further opt-in, implies `--fold-continuations`; without `--apply` a dry run that lists exactly what would fold, the dropped keys and the index rows removed) moves a continuation
    into its host command slice as `view X again from "E" [shown on "Screen"]` lines instead; that
    **changes `continuationOf` and the doc join to the host (the synthesized `<host-key>--again`
    column) and removes the folded slices' index rows**; a host whose continuations span several views is refused and left unfolded ("continuations of several views — fold by hand or keep the stacked slice"); `shown on` is added only when the old
@@ -5064,10 +5091,11 @@ The mechanical steps, in this fixed order:
    verified by recompiling like the step above.
 11. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
    bound doc's generated view region (the read model's "built from" line now lists the union of
-   `from` across its `again` instances): runs `em slice sync` on those docs, one commit. A ratified
-   (`ready-to-implement` with `ratifiedBy:`) or shipped (`implemented`) doc is listed in the step's
-   reason and left alone — regenerating its region would move its `ratifiedHash`; `em slice revise`
-   it, then sync. Nothing else in a doc moves but the text between region markers.
+   `from` across its `again` instances): runs `em slice sync` on those docs, one commit. Since
+   1.19.0 (GH #347) that includes a ratified (`ready-to-implement` with `ratifiedBy:`) or shipped
+   (`implemented`) doc, which keeps its signature: `ratifiedHash` covers the authored text only.
+   Nothing else in a doc moves but the text between region markers (and, for an intact older-scope
+   hash the step before did not already move, the `ratifiedHash:` value).
 12. **`slice-index-stale`** (1.18.0, GH #290 / #275) — `em slice index --check` reports the README
     Slices table stale: regenerates it, one commit. Not applicable without a `README.md` carrying the
     `GENERATED:slices` markers.
@@ -5106,7 +5134,7 @@ The human list — detect-only, never applied, printed by every mode:
 | `coverage-scope-default` | `em-ci.yml` runs `em coverage --strict` and no doc is `implemented` yet (MIL-207 scopes `--strict` to `implemented` docs only — the gate is trivially green until then) |
 | `unratified-constitution` | `constitution.md` (or `.specify/memory/constitution.md`) exists with an empty `ratifiedBy:` |
 | `predates-1.6` | The `reaction-shape` step's own detector finds an old-shape reaction site it recognizes but can't cleanly auto-migrate (a refusal, same as `em migrate`'s own) — run `em migrate` by hand, resolve it, then re-run `em upgrade` |
-| `slice-doc-stale-signed` | (1.18.0, GH #290) a ratified or shipped doc has a generated region (view, event, …) stale against the model, which `view-doc-sources-stale` / `collapse-alternative-events` leave alone — `em slice revise <key>`, then `em slice sync` |
+| `slice-doc-stale-signed` | (1.18.0, GH #290; 1.19.0, GH #347) a ratified or shipped doc has a generated region (event, command, invariants) stale against the model that no step syncs — run `em slice sync <model>.em`: it rewrites the regions and keeps the signature (`ratifiedHash` covers the authored text only; model-change discipline is the model's own pin, `model-versions/v<N>.json`). A doc with a stale view region is synced by `view-doc-sources-stale` instead |
 | `lineage-backlink-missing` | (1.18.0, GH #290 / #278) an archived doc under `archive/slices/` names a signed successor in `superseded-by` that lacks `merged-from` — add the line (frontmatter is outside the hash) |
 | `fold-continuations-opt-in` | (1.18.0, GH #290 / #287) the opt-in `fold-continuations` step has a proposal — run `em upgrade --apply --fold-continuations` (or `--to-sugar`) |
 | `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only, shown while upgrading from before 1.18.0: an event is recorded by more than one command — legal now, one logical event, nothing to change |

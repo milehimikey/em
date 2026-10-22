@@ -20,6 +20,16 @@
 //     rewritten, exit 1.
 // `--check` never writes; it exits 1 when any doc is stale (or malformed).
 //
+// GH #347 — a doc that records a `ratifiedHash:` (a ratified or shipped doc) is synced like any
+// other and KEEPS its signature: since 1.19.0 the hash covers the authored text only
+// (catalog/sliceDoc.ts `ratifiedBody` leaves the inside of every generated region out), so a
+// region rewrite never moves it. A hash still in an older scope (1.17–1.18, regions inside; or
+// pre-1.17 whole-body) whose body is intact is re-stamped in the current scope in the same write
+// — same authored text, not a re-signing, `ratifiedRef` untouched — because the old-scope hash
+// would not survive the rewrite. A doc whose body already fails its hash is synced too, nothing
+// re-stamped (the signature was broken before; `--check-signed-bodies` still says so). Each case
+// prints a `note:` line (`signatureNote`).
+//
 // Pure core (`syncDocText`) + fs-aware runner (`runSliceSync`); the CLI and the MCP `slice_sync`
 // tool (check-only) share `buildSliceSyncJson`.
 
@@ -29,6 +39,8 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { buildSliceRegions, GeneratedRegion, scanSliceRegions } from "../catalog/sliceSections.js";
+import { isOldHashScope, parseSliceDoc, ratifiedHashScope, RatifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { replaceFieldValue } from "./frontmatterSurgery.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "../emit/json.js";
 
 // 1.0 (MIL-266): initial shape.
@@ -85,12 +97,49 @@ export function syncDocText(raw: string, expected: GeneratedRegion[]): DocTextSy
   return { status: edits.length > 0 ? "stale" : "ok", regions, problems: [], next };
 }
 
+/** GH #347: what a region rewrite did to a doc's `ratifiedHash:` — `kept` (current scope, the
+ *  hash is untouched), `restamped` (an intact older-scope hash moved to the current scope; `from`
+ *  names the old scope), `broken` (the body already failed its hash before the sync). */
+export type SignatureOutcome = { kind: "kept" } | { kind: "restamped"; from: Exclude<RatifiedHashScope, "current" | "mismatch"> } | { kind: "broken" };
+
+export type SignedSyncResult = { ok: true; content: string; signature: SignatureOutcome | null } | { ok: false; message: string };
+
+/**
+ * Pure (GH #347): the signature half of a sync. `raw` is the doc as read, `next` the doc with its
+ * regions regenerated. A doc with no `ratifiedHash:` passes through (`signature: null`). Otherwise
+ * the recorded hash is judged on `raw` through `ratifiedHashScope`: `current` is kept; an intact
+ * `v1.17`/`legacy` hash is re-stamped with the current-scope hash of the same body; `mismatch`
+ * passes through untouched. Then — the invariant this rests on — an intact signature must match
+ * `next` in the current scope, or nothing is written.
+ */
+export function keepSignature(raw: string, next: string): SignedSyncResult {
+  const recorded = parseSliceDoc(raw).ratifiedHash;
+  if (recorded === null) return { ok: true, content: next, signature: null };
+  const scope = ratifiedHashScope(raw, recorded);
+  if (scope === "mismatch") return { ok: true, content: next, signature: { kind: "broken" } };
+  let content = next;
+  let signature: SignatureOutcome = { kind: "kept" };
+  if (isOldHashScope(scope)) {
+    const restamped = replaceFieldValue(next, "ratifiedHash", sliceDocBodyHash(raw));
+    if (restamped === null) return { ok: false, message: "could not locate ratifiedHash: in the frontmatter" };
+    content = restamped;
+    signature = { kind: "restamped", from: scope as "v1.17" | "legacy" };
+  }
+  const after = parseSliceDoc(content).ratifiedHash;
+  if (after === null || ratifiedHashScope(content, after) !== "current") {
+    return { ok: false, message: "rewriting the generated regions would leave the authored text unmatched by ratifiedHash — nothing written (this is a bug in em; please report it)" };
+  }
+  return { ok: true, content, signature };
+}
+
 export interface DocSyncResult {
   key: string;
   path: string;
   status: DocSyncStatus;
   regions: RegionSyncEntry[];
   problems: string[];
+  /** GH #347: set when the doc records a `ratifiedHash:` and its regions were rewritten. */
+  signature?: SignatureOutcome;
 }
 
 export type SliceSyncOutcome = { ok: true; docs: DocSyncResult[] } | { ok: false; message: string };
@@ -141,12 +190,21 @@ export function runSliceSync(
     const result = syncDocText(raw, buildSliceRegions(model, indices));
     let status: DocSyncStatus = result.status;
     let regions = result.regions;
+    let problems = result.problems;
+    let signature: SignatureOutcome | null = null;
     if (!check && result.status === "stale") {
-      writeFileSync(abs, result.next);
-      status = "synced";
-      regions = regions.map((r) => (r.status === "stale" ? { name: r.name, status: "synced" as const } : r));
+      const signed = keepSignature(raw, result.next);
+      if (signed.ok) {
+        writeFileSync(abs, signed.content);
+        status = "synced";
+        regions = regions.map((r) => (r.status === "stale" ? { name: r.name, status: "synced" as const } : r));
+        signature = signed.signature;
+      } else {
+        status = "malformed";
+        problems = [signed.message];
+      }
     }
-    docs.push({ key: refs.sliceKeys[ownerIdx], path, status, regions, problems: result.problems });
+    docs.push({ key: refs.sliceKeys[ownerIdx], path, status, regions, problems, ...(signature !== null ? { signature } : {}) });
   }
   return { ok: true, docs };
 }
@@ -170,6 +228,19 @@ export function sliceSyncFailed(docs: DocSyncResult[], check: boolean): boolean 
   return docs.some((d) => d.status === "malformed" || (check && d.status === "stale"));
 }
 
+/** GH #347: the line `em slice sync` prints after rewriting the regions of a doc that records a
+ *  `ratifiedHash:`. */
+export function signatureNote(path: string, signature: SignatureOutcome): string {
+  switch (signature.kind) {
+    case "kept":
+      return `note: ${path} is signed — generated regions rewritten, ratifiedHash kept (it covers the authored text only)`;
+    case "restamped":
+      return `note: ${path} is signed — generated regions rewritten, ratifiedHash re-stamped from the ${signature.from === "v1.17" ? "1.17" : "pre-1.17 whole-body"} scope to the current scope (same authored text, not a re-signing; ratifiedRef untouched)`;
+    case "broken":
+      return `note: ${path}'s body already failed its ratifiedHash before this sync (edited after ratification) — generated regions rewritten, nothing re-stamped; see em validate --check-signed-bodies`;
+  }
+}
+
 /** Text-mode report: `{ out, err }` lines (status lines on stdout, notes and problems on stderr). */
 export function formatSliceSync(docs: DocSyncResult[], check: boolean): { out: string[]; err: string[] } {
   const out: string[] = [];
@@ -185,6 +256,7 @@ export function formatSliceSync(docs: DocSyncResult[], check: boolean): { out: s
         break;
       case "synced":
         out.push(`synced: ${d.path} (${changed.join(", ")})`);
+        if (d.signature) err.push(signatureNote(d.path, d.signature));
         break;
       case "no-regions":
         if (check) out.push(`no-regions: ${d.path}`);

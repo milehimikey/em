@@ -471,6 +471,13 @@ export const RULES = {
     usageCategory: "slice doc structured section malformed",
     docAnchor: "structured-sections",
   },
+  "slice-doc/generated-region-placeholder": {
+    severity: "warning",
+    title: "Unresolved placeholder in a signed doc's generated region",
+    fix: "A `{{ }}` in a generated region is a prompt, not content: fill the model gap it marks (a field with no source) and run `em slice sync`, or write the scenario a stub describes in `## Scenarios` (on a signed doc that is the next version: `em slice revise`).",
+    usageCategory: "signed doc generated region placeholder",
+    docAnchor: "generated-region-placeholders",
+  },
   "orphaned-slice-doc": {
     severity: "warning",
     title: "Orphaned slice doc",

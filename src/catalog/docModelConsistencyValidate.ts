@@ -65,9 +65,9 @@ import { pushDiag } from "../model/rules.js";
 import { classifySlicePattern, slicePatternLabel } from "./classify.js";
 import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
-import { SliceDoc } from "./sliceDoc.js";
+import { isSignedSliceDoc, SliceDoc } from "./sliceDoc.js";
 import { checkScenarioQuality } from "./scenarioQualityValidate.js";
-import { findStructuredSectionProblems, splitCells } from "./sliceSections.js";
+import { findStructuredSectionProblems, generatedRegionPlaceholders, splitCells } from "./sliceSections.js";
 import { parseScenariosLenient } from "./scenarios.js";
 import { viewSourceNames } from "../model/continuation.js";
 
@@ -270,6 +270,22 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
       pushDiag(diags, "slice-doc/structured-section-malformed", {
         message: `slice doc "${docPath}" (slice "${ownerKey}"): ${problem}`,
       });
+    }
+
+    // GH #347: an unresolved `{{ }}` inside a generated region of a SIGNED doc (ratified or
+    // shipped). Since 1.19.0 `em slice sync` rewrites a signed doc's regions under the signature,
+    // so a stub it writes there (a collection field's scenario stub, a Source cell no command or
+    // event provides) would otherwise sit in the doc unreported. A draft is still being written —
+    // its stubs are expected — so it is not checked. One warning per region; the slice ref lists
+    // it under `--slice-ready`, where it never gates (it is not on GATE_WARNING_CODES).
+    if (isSignedSliceDoc(parsed)) {
+      for (const { region, count } of generatedRegionPlaceholders(parsed.body)) {
+        pushDiag(diags, "slice-doc/generated-region-placeholder", {
+          message: `slice doc "${docPath}" (slice "${ownerKey}", status: ${parsed.status}): generated region "${region}" holds ${count} unresolved {{ }} placeholder(s)`,
+          line: ownerSlice.line,
+          refs: [ownerKey],
+        });
+      }
     }
 
     // GH #293: scenario-quality advisories (catalog/scenarioQualityValidate.ts).
