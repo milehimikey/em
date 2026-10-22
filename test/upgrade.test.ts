@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { compile } from "../src/pipeline.js";
 import { makeMultiModelRepo, MULTI_MODEL_EXAMPLE_DIR } from "./helpers/multiModelRepo.js";
-import { CI_PR_PATHS, refreshCiPullRequestPaths, buildCiWorkflowFile, buildCiWorkflowFileMulti, buildConformWorkflowFileMulti, conformWorkflowPath, ciWorkflowPath, type CiModel } from "../src/cli/ciInit.js";
+import { CI_PR_PATHS, missingCiPullRequestPaths, refreshCiPullRequestPaths, buildCiWorkflowFile, buildCiWorkflowFileMulti, buildConformWorkflowFileMulti, conformWorkflowPath, ciWorkflowPath, type CiModel } from "../src/cli/ciInit.js";
 import {
   UpgradeContext,
   resolveFromVersion,
@@ -1422,5 +1422,47 @@ describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity
     expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(true);
     applyUpgrade(makeCtx(dir, packagedSkillsRoot));
     expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(current);
+  });
+});
+
+describe("GH #346 round 3 - em ci init applies the filter refresh; comment-tolerant parsing", () => {
+  const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
+  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "**/contracts/**"];
+  const legacyOf = (content: string): string => {
+    let out = content;
+    for (const p of EXTRA) out = out.replace(`      - "${p}"\n`, "");
+    return out;
+  };
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const pkgVersion = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
+  const em = (dir: string, ...args: string[]) =>
+    spawnSync(process.execPath, [join(root, "node_modules", "tsx", "dist", "cli.mjs"), join(root, "src", "cli.ts"), "ci", "init", "checkout.em", ...args], { cwd: dir, encoding: "utf8" });
+
+  it("legacy workflow: em ci init rewrites the filter, --check then exits 0, a second run says already up to date", () => {
+    const { dir } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), legacyOf(buildCiWorkflowFile("checkout.em", "test", pkgVersion)));
+    expect(em(dir, "--check").status).not.toBe(0);
+    const first = em(dir);
+    expect(first.stdout).toContain("pull_request paths filter updated to the 1.19.0 list");
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(buildCiWorkflowFile("checkout.em", "test", pkgVersion));
+    const check = em(dir, "--check");
+    expect(check.stdout).toMatch(/ok: .*em-ci\.yml/);
+    expect(check.stdout).not.toContain("stale");
+    expect(em(dir).stdout).toMatch(/em-ci\.yml already up to date/);
+  });
+
+  it("markers removed + legacy filter: em ci init leaves the file untouched", () => {
+    const { dir } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    const optedOut = legacyOf(buildCiWorkflowFile("checkout.em", "test", pkgVersion)).replace(/^.*GENERATED:.*\n/gm, "");
+    writeFileSync(ciWorkflowPath(dir), optedOut);
+    em(dir);
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(optedOut);
+  });
+
+  it("missingCiPullRequestPaths tolerates trailing YAML comments on entries", () => {
+    const commented = buildCiWorkflowFile("checkout.em", "test", pkgVersion).replace('      - "**/README.md"\n', '      - "**/README.md" # docs\n');
+    expect(missingCiPullRequestPaths(commented)).toEqual([]);
   });
 });

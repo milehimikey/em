@@ -173,6 +173,7 @@ import {
   fileBlockModels,
   planCiFile,
   refreshCiPullRequestPaths,
+  applyCiPullRequestPathsRefresh,
   applyCiFile,
   findUnsafeCiInitArg,
   CI_WORKFLOW_MARKER,
@@ -3739,6 +3740,10 @@ ci.command("init")
     mkdirSync(dirname(ciPath), { recursive: true });
     for (const [path, status] of files) {
       applyCiFile(path, status);
+      if (path === ciPath && (status.kind === "ok" || status.kind === "stale") && applyCiPullRequestPathsRefresh(path)) {
+        console.log(status.kind === "stale" ? `updated ${path}` : `${path}: pull_request paths filter updated to the 1.19.0 list`);
+        continue;
+      }
       if (status.kind === "replace-models") console.log(`replaced ${path} (--force; was generated for ${status.previous.join(", ")})`);
       else if (status.kind === "create") console.log(`installed ${path}`);
       else if (status.kind === "stale") console.log(`updated ${path}`);

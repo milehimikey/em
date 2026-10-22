@@ -52,6 +52,7 @@ import {
   planCiFile,
   applyCiFile,
   refreshCiPullRequestPaths,
+  applyCiPullRequestPathsRefresh,
   missingCiPullRequestPaths,
   CI_WORKFLOW_MARKER,
   CONFORM_WORKFLOW_MARKER,
@@ -415,8 +416,7 @@ function applyCiBlock(ctx: UpgradeContext): StepApplyOutcome {
   const changedFiles: string[] = [];
   if (ciStale) {
     applyCiFile(ciPath, planCiFile(ciPath, files.ci[0], files.ci[1], CI_WORKFLOW_MARKER, false, multi));
-    const refreshed = refreshCiPullRequestPaths(readFileSync(ciPath, "utf8"));
-    if (refreshed !== null) writeFileSync(ciPath, refreshed, "utf8");
+    applyCiPullRequestPathsRefresh(ciPath);
     changedFiles.push(ciPath);
   }
   if (conformStale) {

@@ -342,13 +342,23 @@ export const CI_PR_PATHS: readonly string[] = [
 
 const LEGACY_CI_PR_PATHS = CI_PR_PATHS.slice(0, 3);
 
+/** GH #346: rewrite the legacy filter of the workflow at `path` in place; true when it changed.
+ *  Shared by `em ci init` and the `ci-block` upgrade step. The caller decides eligibility (managed
+ *  block status ok/stale only - markers removed is the opt-out). */
+export function applyCiPullRequestPathsRefresh(path: string): boolean {
+  const refreshed = refreshCiPullRequestPaths(readFileSync(path, "utf8"));
+  if (refreshed === null) return false;
+  writeFileSync(path, refreshed, "utf8");
+  return true;
+}
+
 /** GH #346: the entries of CI_PR_PATHS a workflow's `pull_request.paths` lacks, or null when the
  *  workflow has no such list. Used to explain a hand-edited filter that `refreshCiPullRequestPaths`
  *  leaves alone. */
 export function missingCiPullRequestPaths(content: string): string[] | null {
   const m = /^ {2}pull_request:\n {4}paths:\n((?: {6}- .*\n)+)/m.exec(content);
   if (!m) return null;
-  const have = new Set([...m[1].matchAll(/- "?([^"\n]*)"?\s*$/gm)].map((x) => x[1]));
+  const have = new Set([...m[1].matchAll(/^ +- (.*)$/gm)].map((x) => x[1].replace(/\s+#.*$/, "").trim().replace(/^"(.*)"$/, "$1")));
   return CI_PR_PATHS.filter((p) => !have.has(p));
 }
 const pathLines = (paths: readonly string[]): string => paths.map((p) => `      - "${p}"`).join("\n");
