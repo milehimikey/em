@@ -140,6 +140,9 @@ export interface DocSyncResult {
   problems: string[];
   /** GH #347: set when the doc records a `ratifiedHash:` and its regions were rewritten. */
   signature?: SignatureOutcome;
+  /** GH #347: set (check mode only) on a `stale` doc whose rewrite `keepSignature` would refuse —
+   *  the reason a write would fail. A write-mode run reports such a doc as `malformed` instead. */
+  signatureRefused?: string;
 }
 
 export type SliceSyncOutcome = { ok: true; docs: DocSyncResult[] } | { ok: false; message: string };
@@ -192,6 +195,11 @@ export function runSliceSync(
     let regions = result.regions;
     let problems = result.problems;
     let signature: SignatureOutcome | null = null;
+    let signatureRefused: string | null = null;
+    if (check && result.status === "stale") {
+      const probe = keepSignature(raw, result.next);
+      if (!probe.ok) signatureRefused = probe.message;
+    }
     if (!check && result.status === "stale") {
       const signed = keepSignature(raw, result.next);
       if (signed.ok) {
@@ -204,7 +212,15 @@ export function runSliceSync(
         problems = [signed.message];
       }
     }
-    docs.push({ key: refs.sliceKeys[ownerIdx], path, status, regions, problems, ...(signature !== null ? { signature } : {}) });
+    docs.push({
+      key: refs.sliceKeys[ownerIdx],
+      path,
+      status,
+      regions,
+      problems,
+      ...(signature !== null ? { signature } : {}),
+      ...(signatureRefused !== null ? { signatureRefused } : {}),
+    });
   }
   return { ok: true, docs };
 }

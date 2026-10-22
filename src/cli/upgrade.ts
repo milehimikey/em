@@ -899,6 +899,8 @@ function applyCollapseAlternativeEvents(ctx: UpgradeContext): StepApplyOutcome {
       const doc = join(ctx.baseDir, kept);
       if (existsSync(doc)) {
         const r = runSliceSync(after.model, after.refs, ctx.baseDir, g.keys[0], false);
+        const bad = r.ok ? r.docs.find((d) => d.status === "malformed") : undefined;
+        if (bad) return { ok: false, message: `${bad.path}: em slice sync could not rewrite it — ${bad.problems.join("; ")}` };
         if (r.ok && r.docs.some((d) => d.status === "synced") && !changed.includes(doc)) changed.push(doc);
       }
     }
@@ -995,6 +997,8 @@ function applyViewDocSourcesStale(ctx: UpgradeContext): StepApplyOutcome {
   for (const d of open) {
     const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, d.key, false);
     if (!r.ok) return { ok: false, message: r.message };
+    const bad = r.docs.find((x) => x.status === "malformed");
+    if (bad) return { ok: false, message: `${bad.path}: em slice sync could not rewrite it — ${bad.problems.join("; ")}` };
     changedFiles.push(join(ctx.baseDir, d.path));
   }
   return { ok: true, changedFiles };
@@ -1305,7 +1309,11 @@ function detectPluginInstallLocally(ctx: UpgradeContext): HumanItem | null {
 function detectSliceDocStaleSigned(ctx: UpgradeContext): HumanItem | null {
   const r = runSliceSync(ctx.model, ctx.refs, ctx.baseDir, undefined, true);
   if (!r.ok) return null;
-  const docs = r.docs.filter((d) => d.status === "stale" && !hasStaleViewRegion(d) && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")));
+  // A doc with a stale view region is `view-doc-sources-stale`'s — unless sync could not rewrite it
+  // (`signatureRefused`), in which case that step fails on it and the human item must still name it.
+  const docs = r.docs.filter(
+    (d) => d.status === "stale" && (!hasStaleViewRegion(d) || d.signatureRefused !== undefined) && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")),
+  );
   if (docs.length === 0) return null;
   return {
     id: "slice-doc-stale-signed",

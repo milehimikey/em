@@ -13,6 +13,7 @@ import { decodeQuoted, encodeQuoted } from "../src/parser/lexer.js";
 import { rewriteParkingLotFragments } from "../src/cli/defer.js";
 import { buildStorylineSuggestion } from "../src/cli/storylineSuggest.js";
 import { MODEL_117, sliceDocText, writeModel117 } from "./helpers/model117.js";
+import { sliceDocV117BodyHash } from "../src/catalog/sliceDoc.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -82,6 +83,25 @@ describe("view-doc-sources-stale (GH #280)", () => {
     const text = readFileSync(join(dir, "slices", "orders.md"), "utf8");
     expect(text).toContain("status: implemented");
     expect(text).toContain('built from events: "Order Placed", "Order Placed Manually" (via "Orders manual")');
+  });
+
+  it("GH #347: a signed doc whose rewrite sync must refuse fails view-doc-sources-stale and stays a slice-doc-stale-signed item", () => {
+    const dir = repo();
+    const doc = join(dir, "slices", "orders.md");
+    const plain = readFileSync(doc, "utf8");
+    // Two ratifiedHash lines: the parser reads the last, the frontmatter surgery rewrites the first —
+    // so re-stamping the (intact, 1.17-scope) hash cannot verify and keepSignature refuses.
+    writeFileSync(
+      doc,
+      plain.replace("status: draft", `status: ready-to-implement\nratifiedBy: Alex\nratifiedHash: sha256:junk\nratifiedHash: ${sliceDocV117BodyHash(plain)}`),
+    );
+    const item = detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "slice-doc-stale-signed");
+    expect(item?.reason).toContain("slices/orders.md (em-slice-view)");
+    const before = readFileSync(doc, "utf8");
+    const outcome = UPGRADE_STEPS.find((s) => s.id === "view-doc-sources-stale")!.apply(ctxOf(dir));
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.message).toContain("slices/orders.md: em slice sync could not rewrite it");
+    expect(readFileSync(doc, "utf8")).toBe(before);
   });
 
   it("GH #347: slice-doc-stale-signed (a signed doc stale in a region no step syncs) now says run `em slice sync`, not revise", () => {

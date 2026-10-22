@@ -322,6 +322,14 @@ way; only `ledger-content-without-version-bump` is. For a one-off manual run, `-
 <slice-key>` does the same thing without a commit trailer — see
 [cli.md](cli.md#em-ledger-file) for both forms.
 
+## `em slice sync --check` (opt-in)
+
+Since 1.19.0 `ratifiedHash` covers the authored text only (GH #347), so neither
+`--check-signed-bodies`, `--slice-ready` nor `em ledger` notices a generated region of a signed
+doc drifting from the model (or a hand edit inside one); a team that wants that caught in CI adds
+`npx @milehimikey/em slice sync model.em --check` as a step (exit 1 on any stale doc; see
+[cli.md](cli.md#em-slice-sync-file-key)).
+
 ## `em refs` (opt-in)
 
 `em refs` (GH #258) checks that every commit a slice doc records — `ratifiedRef:`,
