@@ -172,6 +172,7 @@ import {
   describeSetChange,
   fileBlockModels,
   planCiFile,
+  refreshCiPullRequestPaths,
   applyCiFile,
   findUnsafeCiInitArg,
   CI_WORKFLOW_MARKER,
@@ -3711,6 +3712,10 @@ ci.command("init")
               )
             : null;
           console.log(`stale: ${path} — run \`em ci init ${model}\` and commit the result${change ? ` (${change})` : ""}`);
+          drift = true;
+        } else if (path === ciPath && status.kind === "ok" && refreshCiPullRequestPaths(readFileSync(ciPath, "utf8")) !== null) {
+          // GH #346: the `on:` filter sits outside the managed block; the legacy list is outdated too.
+          console.log(`stale: ${path} - pull_request paths filter is the pre-1.19.0 list; run \`em ci init ${model}\` or \`em upgrade --apply\``);
           drift = true;
         } else {
           console.log(`ok: ${path}`);

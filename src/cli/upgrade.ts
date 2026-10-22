@@ -52,6 +52,7 @@ import {
   planCiFile,
   applyCiFile,
   refreshCiPullRequestPaths,
+  missingCiPullRequestPaths,
   CI_WORKFLOW_MARKER,
   CONFORM_WORKFLOW_MARKER,
 } from "./ciInit.js";
@@ -372,7 +373,7 @@ function ciBlockFiles(args: CiInitArgs, ctx: UpgradeContext): { ci: [string, str
  *  patches the managed block of a file that already exists, so this never reaches disk there. */
 const SYSTEM_MANIFEST_ARG = "system.yaml";
 
-function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; conformPath: string; conformStale: boolean; args: CiInitArgs | null; blocked?: string } {
+function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; pathsOnly?: boolean; conformPath: string; conformStale: boolean; args: CiInitArgs | null; blocked?: string } {
   const ciPath = ciWorkflowPath(ctx.repoRoot);
   const conformPath = conformWorkflowPath(ctx.repoRoot);
   if (!existsSync(ciPath)) return { ciPath, ciStale: false, conformPath, conformStale: false, args: null };
@@ -384,7 +385,8 @@ function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; 
 
   const ciStatus = planCiFile(ciPath, files.ci[0], files.ci[1], CI_WORKFLOW_MARKER, false, multi);
   // GH #346: the `on:` paths live outside the managed block; refresh them when still the pre-1.19 list.
-  const pathsStale = refreshCiPullRequestPaths(readFileSync(ciPath, "utf8")) !== null;
+  // A workflow with its markers removed is the documented opt-out and stays untouched, filter included.
+  const pathsStale = (ciStatus.kind === "ok" || ciStatus.kind === "stale") && refreshCiPullRequestPaths(readFileSync(ciPath, "utf8")) !== null;
   const ciStale = ciStatus.kind === "stale" || pathsStale;
 
   let conformStale = false;
@@ -392,15 +394,16 @@ function ciBlockPlans(ctx: UpgradeContext): { ciPath: string; ciStale: boolean; 
     const conformStatus = planCiFile(conformPath, files.conform[0], files.conform[1], CONFORM_WORKFLOW_MARKER, false, multi);
     conformStale = conformStatus.kind === "stale";
   }
-  return { ciPath, ciStale, conformPath, conformStale, args };
+  return { ciPath, ciStale, pathsOnly: pathsStale && ciStatus.kind === "ok", conformPath, conformStale, args };
 }
 
 function detectCiBlock(ctx: UpgradeContext): StepDetection {
-  const { ciPath, ciStale, conformStale, args, blocked } = ciBlockPlans(ctx);
+  const { ciPath, ciStale, pathsOnly, conformStale, args, blocked } = ciBlockPlans(ctx);
   if (!existsSync(ciPath)) return { applicable: false, reason: "no .github/workflows/em-ci.yml — em upgrade never creates one" };
   if (!args && blocked) return { applicable: false, reason: blocked };
   if (!args) return { applicable: false, reason: "can't determine the <model>/--tests arguments em-ci.yml was generated with — run `em ci init <model>` by hand if it needs refreshing" };
   if (!ciStale && !conformStale) return { applicable: false, reason: "generated CI block(s) already match the installed em" };
+  if (pathsOnly && !conformStale) return { applicable: true, reason: "em-ci.yml pull_request paths filter is the pre-1.19.0 list" };
   return { applicable: true, reason: "generated CI block(s) are stale" };
 }
 
@@ -1173,7 +1176,8 @@ export type HumanItemId =
   | "fold-continuations-opt-in"
   | "shared-event-now-legal"
   | "roster-not-initialised"
-  | "api-contract-blocked";
+  | "api-contract-blocked"
+  | "ci-paths-hand-edited";
 
 export interface HumanItem {
   id: HumanItemId;
@@ -1408,6 +1412,21 @@ function detectApiContractBlocked(ctx: UpgradeContext): HumanItem | null {
   };
 }
 
+/** GH #346: a hand-edited `pull_request.paths` filter that lacks entries of the current preset is
+ *  left alone, but the owner should know why upgrade PRs may get no CI run. */
+function detectCiPathsHandEdited(ctx: UpgradeContext): HumanItem | null {
+  const ciPath = ciWorkflowPath(ctx.repoRoot);
+  if (!existsSync(ciPath)) return null;
+  const content = readFileSync(ciPath, "utf8");
+  if (refreshCiPullRequestPaths(content) !== null) return null;
+  const missing = missingCiPullRequestPaths(content);
+  if (!missing || missing.length === 0) return null;
+  return {
+    id: "ci-paths-hand-edited",
+    reason: `em-ci.yml's hand-edited pull_request paths filter lacks ${missing.map((p) => `"${p}"`).join(", ")}, so a PR touching only those files (an \`em upgrade\` PR, for one) runs no CI; em leaves a hand-edited filter alone - add them if you want those PRs checked`,
+  };
+}
+
 const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> = [
   detectNoModelVersion,
   detectContinuationHasOwnDoc,
@@ -1423,6 +1442,7 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectSharedEventNowLegal,
   detectRosterNotInitialised,
   detectApiContractBlocked,
+  detectCiPathsHandEdited,
 ];
 
 export function detectHumanItems(ctx: UpgradeContext): HumanItem[] {

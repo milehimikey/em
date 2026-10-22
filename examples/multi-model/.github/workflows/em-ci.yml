@@ -20,7 +20,7 @@ on:
       - ".claude/settings.json"
       - "**/ratifiers.yaml"
       - "**/system.yaml"
-      - "contracts/**"
+      - "**/contracts/**"
   push:
     branches: [main]
 

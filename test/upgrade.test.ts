@@ -11,6 +11,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { compile } from "../src/pipeline.js";
@@ -27,6 +28,7 @@ import {
   checkUpgrade,
   UPGRADE_STEPS,
   applyGrandfatherSignoff,
+  detectHumanItems,
 } from "../src/cli/upgrade.js";
 import { localIsoDate } from "../src/util/localDate.js";
 import { ratifiedHashScope, sliceDocBodyHash, sliceDocLegacyBodyHash } from "../src/catalog/sliceDoc.js";
@@ -1299,7 +1301,7 @@ describe("api-contract-missing step - pre-1.12 workflow, multi-model, blocked (G
 
 describe("GH #346 - ci preset pull_request paths", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "contracts/**"];
+  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "**/contracts/**"];
   const legacyOf = (content: string): string => {
     // what 1.18.1 generated: three-entry filter (the header is outside the managed block)
     let out = content;
@@ -1338,5 +1340,87 @@ describe("GH #346 - ci preset pull_request paths", () => {
     const updated = readFileSync(ciWorkflowPath(dir), "utf8");
     expect(updated).toBe(buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION));
     expect(detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((s) => s.id === "ci-block")!.applicable).toBe(false);
+  });
+});
+
+describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity, multi-model", () => {
+  const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
+  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "**/contracts/**"];
+  const legacyOf = (content: string): string => {
+    let out = content;
+    for (const p of EXTRA) out = out.replace(`      - "${p}"\n`, "");
+    return out;
+  };
+  function repoWithCi(content: string): { dir: string; packagedSkillsRoot: string } {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), content);
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add ci workflow");
+    return { dir, packagedSkillsRoot };
+  }
+  const stepOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root)).steps.find((s) => s.id === "ci-block")!;
+
+  it("contracts glob is nested (contractPathFor resolves relative to the model dir)", () => {
+    expect(CI_PR_PATHS).toContain("**/contracts/**");
+    expect(CI_PR_PATHS).not.toContain("contracts/**");
+  });
+
+  it("markers removed + legacy filter: not applicable and --apply writes nothing (opt-out respected)", () => {
+    const current = buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION);
+    const optedOut = legacyOf(current).replace(/^.*GENERATED:.*\n/gm, "");
+    expect(optedOut).not.toContain("GENERATED:");
+    const { dir, packagedSkillsRoot } = repoWithCi(optedOut);
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+    applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(optedOut);
+  });
+
+  it("reason names the filter when only the filter is legacy, and keeps the old wording when the block is stale", () => {
+    const current = buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION);
+    const a = repoWithCi(legacyOf(current));
+    expect(stepOf(a.dir, a.packagedSkillsRoot).reason).toBe("em-ci.yml pull_request paths filter is the pre-1.19.0 list");
+    const b = repoWithCi(legacyOf(buildCiWorkflowFile("checkout.em", "test", "1.9.0")));
+    expect(stepOf(b.dir, b.packagedSkillsRoot).reason).toBe("generated CI block(s) are stale");
+  });
+
+  it("hand-edited filter missing preset entries: untouched, human item ci-paths-hand-edited lists the missing ones", () => {
+    const edited = buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION).replace('      - "**/README.md"\n', '      - "docs/**"\n');
+    const { dir, packagedSkillsRoot } = repoWithCi(edited);
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+    const item = detectHumanItems(makeCtx(dir, packagedSkillsRoot)).find((h) => h.id === "ci-paths-hand-edited");
+    expect(item?.reason).toContain('"**/README.md"');
+    expect(item?.reason).not.toContain('"**/*.em"');
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(edited);
+    const ok = repoWithCi(buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION));
+    expect(detectHumanItems(makeCtx(ok.dir, ok.packagedSkillsRoot)).find((h) => h.id === "ci-paths-hand-edited")).toBeUndefined();
+  });
+
+  it("em ci init --check reports the legacy filter as drift (parity with em upgrade)", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const pkgVersion = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
+    const run = (dir: string) =>
+      spawnSync(process.execPath, [join(root, "node_modules", "tsx", "dist", "cli.mjs"), join(root, "src", "cli.ts"), "ci", "init", "checkout.em", "--check"], { cwd: dir, encoding: "utf8" });
+    const current = repoWithCi(buildCiWorkflowFile("checkout.em", "test", pkgVersion));
+    expect(run(current.dir).stdout).toMatch(/ok: .*em-ci\.yml/);
+    const legacy = repoWithCi(legacyOf(buildCiWorkflowFile("checkout.em", "test", pkgVersion)));
+    const bad = run(legacy.dir);
+    expect(bad.stdout).toContain("pre-1.19.0 list");
+    expect(bad.status).not.toBe(0);
+  });
+
+  it("multi-model workflow through ci-block: legacy filter detected and rewritten", () => {
+    const models: CiModel[] = [{ key: "checkout", path: "checkout.em" }, { key: "billing", path: "billing/billing.em" }];
+    const manifest = 'systemSchemaVersion: "2.0"\nname: S\nmodels:\n  checkout:\n    source: checkout.em\n  billing:\n    source: billing/billing.em\n';
+    const current = buildCiWorkflowFileMulti("system.yaml", models, "test", INSTALLED_VERSION);
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN_SOURCE });
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(ciWorkflowPath(dir), legacyOf(current));
+    writeFileSync(join(dir, "system.yaml"), manifest);
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "add multi ci");
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(true);
+    applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(current);
   });
 });
