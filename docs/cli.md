@@ -3255,7 +3255,12 @@ happened to the signature:
 
 `--check` and `--json` are unchanged. A scenario stub or `{{ }}` cell sync writes into a signed
 doc's region is reported by `em validate` as `slice-doc/generated-region-placeholder` (warning,
-[validation.md](validation.md#generated-region-placeholders)).
+[validation.md](validation.md#generated-region-placeholders)). Sync reads the doc's own
+`## Scenarios` (and `## Delta`) blocks before it writes: a collection field's scenario stub is
+retired once an authored scenario covers that field and event — by the stub's `<field> after
+<Event>` title, or by a Given naming the event with the field named in the block (GH #368) — so
+writing the scenario and running sync clears the stub, and `--check` reports the region stale
+until then.
 
 Refuses a model with errors (`em slice sync: not syncing — fix the errors in <file>
 above`), an unknown key (`em slice sync: no slice with export key "<key>" in this model`) and an

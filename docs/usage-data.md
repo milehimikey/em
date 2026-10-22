@@ -116,6 +116,7 @@ affected lines written by hand.
 | seam manifest outdated |
 | signed doc generated region placeholder |
 | slice doc cites undeclared invariant |
+| slice doc duplicate scenario title |
 | slice doc structured section malformed |
 | slice outside storyline |
 | slice-ready slice has no doc bound |

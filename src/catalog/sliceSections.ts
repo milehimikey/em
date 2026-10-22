@@ -28,6 +28,7 @@ import { Element, NormalizedModel, normalizeName, recordingCommandsOf, resolveTy
 import { againInstancesOf, viewSourceNames } from "../model/continuation.js";
 import { alternativesOf } from "../layout/grid.js";
 import { kebabSlug } from "../util/slug.js";
+import { LenientScenario, parseScenariosLenient } from "./scenarios.js";
 import { parseScenarios } from "./scenarios.js";
 
 export const SLICE_REGION_PREFIX = "em-slice-";
@@ -152,7 +153,54 @@ function alternativesBody(model: NormalizedModel, lead: Element): string[] {
   return out;
 }
 
-function viewBody(model: NormalizedModel, el: Element): string[] {
+export interface RegionBuildOptions {
+  /** GH #368: the text of the doc being synced. Its authored scenario blocks retire the collection
+   *  scenario stubs they cover (`coversCollectionStub`), so a stub is a prompt only until it is
+   *  answered. Omitted for a doc that does not exist yet (`em slice new --wire`). */
+  authoredDoc?: string;
+}
+
+const squashText = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/** `docText` with the interior of every generated region blanked out — the authored text only.
+ *  Unbalanced markers (`structured-section-malformed`) leave the text as it is. */
+export function authoredTextOf(docText: string): string {
+  const scan = scanSliceRegions(docText);
+  if (scan.problems.length > 0) return docText;
+  const parts: string[] = [];
+  let at = 0;
+  for (const r of scan.regions) {
+    parts.push(docText.slice(at, r.innerStart));
+    at = r.innerEnd;
+  }
+  parts.push(docText.slice(at));
+  return parts.join("");
+}
+
+/** GH #368: the doc's authored scenario blocks (`## Scenarios…` and `## Delta`, lenient grammar),
+ *  read with the generated regions' interiors blanked out — a stub sync itself wrote under the
+ *  view's table never counts as covering itself. */
+export function authoredScenarios(docText: string): LenientScenario[] {
+  return parseScenariosLenient(authoredTextOf(docText));
+}
+
+/** GH #368: does an authored scenario cover the stub for `field` after `event`? By title — the
+ *  stub's own heading `<field> after <Event>`, compared with case, spacing and punctuation
+ *  stripped — or by content: a Given that names the event and the field named anywhere in the
+ *  block (title, Given, When or Then). */
+export function coversCollectionStub(authored: LenientScenario[], field: string, event: string): boolean {
+  const stubTitle = squashText(`${field} after ${event}`);
+  const f = squashText(field);
+  const e = squashText(event);
+  return authored.some((s) => {
+    if (squashText(s.title) === stubTitle) return true;
+    const givenNamesEvent = s.given.some((g) => squashText(g).includes(e));
+    const namesField = [s.title, ...s.given, ...s.when, ...s.then].some((t) => squashText(t).includes(f));
+    return givenNamesEvent && namesField;
+  });
+}
+
+function viewBody(model: NormalizedModel, el: Element, authored?: LenientScenario[]): string[] {
   // The union across every `again` instance (GH #280): each instance lists only the NEW events.
   const sources = viewSourceNames(model, el);
   // Each later event is annotated with the slice of the `again` instance that adds it; the
@@ -202,10 +250,14 @@ function viewBody(model: NormalizedModel, el: Element): string[] {
   // Behaviour of a collection lives in scenarios, not the model (GH #288): one NEUTRAL stub per
   // named event (order is not significant). The verb is pre-filled only when the event name ends
   // in a known word; otherwise the placeholder stays. The region is generated and read-only, so
-  // the author copies the stubs into `## Scenarios` and completes them there.
+  // the author copies the stubs into `## Scenarios` and completes them there — and once a stub
+  // is covered there, sync retires it (GH #368): a stub is a prompt, not content, and a prompt
+  // that has been answered is noise (and a `{{ }}` the placeholder warning keeps reporting).
   for (const c of collections) {
+    const pending = authored ? c.events.filter((e) => !coversCollectionStub(authored, c.field, e)) : c.events;
+    if (pending.length === 0) continue;
     out.push("", `Scenario stubs for \`${c.field}\` (copy into \`## Scenarios\` and complete them there):`, "");
-    for (const e of c.events) {
+    for (const e of pending) {
       const verb = collectionVerb(e) ?? "{{ contains / omits / updates }}";
       out.push(
         `### Scenario: ${c.field} after ${e}`,
@@ -232,8 +284,9 @@ function noneBody(kind: "command" | "event" | "view"): string[] {
  * union across instances, GH #280), and two elements of one kind with the same slug only the
  * first.
  */
-export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]): GeneratedRegion[] {
+export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[], opts: RegionBuildOptions = {}): GeneratedRegion[] {
   const ordered = [...sliceIndices].sort((a, b) => a - b);
+  const authored = opts.authoredDoc === undefined ? undefined : authoredScenarios(opts.authoredDoc);
   const elements: Element[] = [];
   for (const i of ordered) elements.push(...model.slices[i].elements);
 
@@ -255,7 +308,7 @@ export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]
     }
     const eventRegion = (m: NormalizedModel, e: Element): string[] =>
       e.alternativeGroup !== undefined ? alternativesBody(m, e) : eventBody(m, e);
-    const build = kind === "command" ? commandBody : kind === "event" ? eventRegion : viewBody;
+    const build = kind === "command" ? commandBody : kind === "event" ? eventRegion : (m: NormalizedModel, e: Element) => viewBody(m, e, authored);
     if (els.length === 0) {
       regions.push({ name: `${SLICE_REGION_PREFIX}${kind}`, kind, body: noneBody(kind) });
     } else if (els.length === 1) {

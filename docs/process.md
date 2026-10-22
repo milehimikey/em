@@ -178,7 +178,8 @@ pin: the slice-ready gate requires the slice's model version (`model-versions/v<
 *authored* text — a scenario, an invariant elaboration, the intent — is still a new version:
 `em slice revise`, review, `em slice ratify`. A scenario stub sync writes into a signed doc's region
 is reported by `em validate` (`slice-doc/generated-region-placeholder`) until the scenario is written
-in `## Scenarios` in the next version, or the model gap behind a `{{ }}` cell is filled.
+in `## Scenarios` in the next version — the sync that follows retires the covered stub (GH #368) —
+or the model gap behind a `{{ }}` cell is filled.
 
 Why two gates and not one: "the room understood this slice" and "we commit to building this
 slice" are different decisions, made by different people, often days apart. Collapsing them means

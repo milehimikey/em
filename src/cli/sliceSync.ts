@@ -190,7 +190,8 @@ export function runSliceSync(
     const ownerIdx = indices.find((i) => refs.sliceKeys[i] === docKey) ?? Math.min(...indices);
     const abs = join(baseDir, path);
     const raw = readFileSync(abs, "utf8");
-    const result = syncDocText(raw, buildSliceRegions(model, indices));
+    // GH #368: the doc's own authored scenarios retire the collection stubs they cover.
+    const result = syncDocText(raw, buildSliceRegions(model, indices, { authoredDoc: raw }));
     let status: DocSyncStatus = result.status;
     let regions = result.regions;
     let problems = result.problems;

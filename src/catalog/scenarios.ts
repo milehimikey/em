@@ -115,6 +115,28 @@ export function parseScenarios(body: string): ScenarioParseResult {
   return { scenarios, problems };
 }
 
+/** GH #368: `### Scenario:` titles that appear more than once inside the `## Scenarios…` section
+ *  (the strict grammar's section rule), compared with case, spacing and punctuation stripped. The
+ *  facts behind `slice-doc/scenario-title-duplicate`. Pure; CRLF tolerated. */
+export function duplicateScenarioTitles(body: string): Array<{ title: string; count: number }> {
+  const counts = new Map<string, { title: string; count: number }>();
+  let inSection = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (/^#{1,2}\s/.test(line)) {
+      inSection = SCENARIOS_SECTION_RE.test(line);
+      continue;
+    }
+    if (!inSection) continue;
+    const m = SCENARIO_HEADING_RE.exec(line);
+    if (!m) continue;
+    const key = m[1].toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const cur = counts.get(key);
+    if (cur) cur.count += 1;
+    else counts.set(key, { title: m[1], count: 1 });
+  }
+  return [...counts.values()].filter((c) => c.count > 1);
+}
+
 // ---------------------------------------------------------------------------------------------
 // GH #293: the lenient reader. `parseScenarios` above is the strict, published grammar (export,
 // `structured-section-malformed`); real estates still carry the older bullet format and

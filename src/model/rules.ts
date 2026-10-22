@@ -474,9 +474,16 @@ export const RULES = {
   "slice-doc/generated-region-placeholder": {
     severity: "warning",
     title: "Unresolved placeholder in a signed doc's generated region",
-    fix: "A `{{ }}` in a generated region is a prompt, not content: fill the model gap it marks (a field with no source) and run `em slice sync`, or write the scenario a stub describes in `## Scenarios` (on a signed doc that is the next version: `em slice revise`).",
+    fix: "A `{{ }}` in a generated region is a prompt, not content: fill the model gap it marks (a field with no source) and run `em slice sync`, or write the scenario a stub describes in `## Scenarios` and run `em slice sync` — the covered stub is retired (on a signed doc the scenario is the next version: `em slice revise`).",
     usageCategory: "signed doc generated region placeholder",
     docAnchor: "generated-region-placeholders",
+  },
+  "slice-doc/scenario-title-duplicate": {
+    severity: "warning",
+    title: "Two scenarios in a slice doc share a title",
+    fix: "One scenario per title under `## Scenarios`: merge the blocks or rename one. A stub `em slice sync` wrote under a collection field is retired once `## Scenarios` covers it, so it never needs a second copy.",
+    usageCategory: "slice doc duplicate scenario title",
+    docAnchor: "duplicate-scenario-titles",
   },
   "orphaned-slice-doc": {
     severity: "warning",

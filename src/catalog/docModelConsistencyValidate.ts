@@ -67,8 +67,8 @@ import { resolveSliceDocJoin } from "./docJoin.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { isSignedSliceDoc, SliceDoc } from "./sliceDoc.js";
 import { checkScenarioQuality } from "./scenarioQualityValidate.js";
-import { findStructuredSectionProblems, generatedRegionPlaceholders, splitCells } from "./sliceSections.js";
-import { parseScenariosLenient } from "./scenarios.js";
+import { authoredTextOf, findStructuredSectionProblems, generatedRegionPlaceholders, splitCells } from "./sliceSections.js";
+import { duplicateScenarioTitles, parseScenariosLenient } from "./scenarios.js";
 import { viewSourceNames } from "../model/continuation.js";
 
 /** The three element kinds this rule's doc markers can name — the DSL has more (`ui`,
@@ -286,6 +286,17 @@ export function validateDocModelConsistency(model: NormalizedModel, refs: RefsRe
           refs: [ownerKey],
         });
       }
+    }
+
+    // GH #368: two authored scenarios under one title. Counted on the authored text only (a stub
+    // sync wrote under a collection field sits in a generated region and is retired by sync once
+    // `## Scenarios` covers it, so it is never the second copy here).
+    for (const { title, count } of duplicateScenarioTitles(authoredTextOf(parsed.body))) {
+      pushDiag(diags, "slice-doc/scenario-title-duplicate", {
+        message: `slice doc "${docPath}" (slice "${ownerKey}"): scenario title "${title}" appears ${count} times in ## Scenarios — one scenario per title; merge the blocks or rename one`,
+        line: ownerSlice.line,
+        refs: [ownerKey],
+      });
     }
 
     // GH #293: scenario-quality advisories (catalog/scenarioQualityValidate.ts).

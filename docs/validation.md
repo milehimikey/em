@@ -661,9 +661,12 @@ provides).
 
 - Fix a `{{ }}` Source cell in the model — give the field a source, or mark it `derived` — and
   run `em slice sync`.
-- A scenario stub is a prompt, not content: write the scenario it describes in `## Scenarios`.
-  On a signed doc that is authored text, so it is the next version (`em slice revise`, review,
-  `em slice ratify`).
+- A scenario stub is a prompt, not content: write the scenario it describes in `## Scenarios`
+  and run `em slice sync` — sync retires a stub once an authored scenario covers it (GH #368,
+  1.19.4): by title (the stub's own `<field> after <Event>` heading, compared with case, spacing
+  and punctuation stripped) or by content (a Given naming the event and the field named anywhere
+  in the block). On a signed doc the scenario is authored text, so it is the next version
+  (`em slice revise`, review, `em slice ratify`); the sync that follows keeps the signature.
 
 A `draft` or `reviewed` doc is still being written, and its stubs are expected, so it is never
 flagged; neither is a doc whose markers don't balance (that is
@@ -671,6 +674,21 @@ flagged; neither is a doc whose markers don't balance (that is
 lists it among the slice's diagnostics. It does **not** gate readiness: it is not on the gating
 warning list (see [Slice readiness](#slice-readiness)), because a stub restates the model's shape
 and does not change what was signed.
+
+### Duplicate scenario titles
+
+`slice-doc/scenario-title-duplicate` (warning, GH #368, 1.19.4) fires on a bound slice doc whose
+`## Scenarios` section holds two or more `### Scenario:` blocks with one title (compared with
+case, spacing and punctuation stripped). One warning per title, naming the doc, its slice, the
+title and how many times it appears. A scenario is a specification tied to one title; two blocks
+under one title read as one and whichever a reader or test generator takes first wins silently.
+
+Only the authored text counts: the interior of every generated region is left out, so the
+collection scenario stubs `em slice sync` writes under a view's field table (GH #288) are never
+the second copy — and since 1.19.4 sync retires a stub once `## Scenarios` covers it, copying a
+stub in and completing it is exactly the intended move. Not on the gating warning list.
+
+- Merge the two blocks into one, or rename one so each title names one scenario.
 
 ### Scenario quality
 
