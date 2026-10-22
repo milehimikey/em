@@ -3,7 +3,9 @@
 // `view-doc-sources-stale`, `slice-index-stale`, `parking-lot-fragments`, and the advisory
 // `em storyline suggest` patch.
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,7 +19,7 @@ import { sliceDocV117BodyHash } from "../src/catalog/sliceDoc.js";
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs.splice(0)) rmTemp(d);
 });
 
 function git(dir: string, ...args: string[]): string {
@@ -29,7 +31,7 @@ function git(dir: string, ...args: string[]): string {
 function repo(opts: { signedOrders?: boolean } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "em-gh290-"));
   dirs.push(dir);
-  git(dir, "init", "-q", "-b", "main");
+  gitInitQuiet(dir, "-b", "main");
   git(dir, "config", "user.email", "t@t.test");
   git(dir, "config", "user.name", "t");
   writeModel117(dir, opts);
@@ -226,7 +228,7 @@ describe("em storyline suggest (GH #290)", () => {
     expect(patch).toContain("--- a/orders.em");
     expect(patch).toContain('+storyline "Place" source "docs/orders.md#place" {');
     writeFileSync(join(dir, "p.patch"), patch);
-    git(dir, "init", "-q");
+    gitInitQuiet(dir);
     const applied = spawnSync("git", ["-C", dir, "apply", "--check", "p.patch"], { encoding: "utf8" });
     expect(applied.status, applied.stderr).toBe(0);
     spawnSync("git", ["-C", dir, "apply", "p.patch"], { encoding: "utf8" });
@@ -250,7 +252,7 @@ describe("em storyline suggest (GH #290)", () => {
     dirs.push(dir);
     writeFileSync(join(dir, "mg.em"), src);
     writeFileSync(join(dir, "p.patch"), s.patch);
-    git(dir, "init", "-q");
+    gitInitQuiet(dir);
     git(dir, "apply", "--check", "p.patch");
     git(dir, "apply", "p.patch");
     const { model, diagnostics } = compile(readFileSync(join(dir, "mg.em"), "utf8"));

@@ -7,7 +7,9 @@
 // multi-commit history is far more legible against a real repo than a hand-built response queue.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeMetrics, formatMetricsText } from "../src/cli/metrics.js";
@@ -46,7 +48,7 @@ describe("computeMetrics: ratification turnaround", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-metrics-turnaround-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
 
     writeFileSync(join(repo, "model.em"), 'slice "Checkout" {}\n');
     mkdirSync(join(repo, "slices"), { recursive: true });
@@ -70,7 +72,7 @@ describe("computeMetrics: ratification turnaround", () => {
     git(["add", "-A"], repo);
     commitAt(repo, "2026-01-15", "ship checkout");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("reports the review->ratify and ratify->implement gaps for the one touched slice", () => {
     const result = computeMetrics(join(repo, "model.em"), "start", "HEAD");
@@ -112,7 +114,7 @@ describe("computeMetrics: conform cadence + findings", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-metrics-cadence-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
 
     writeFileSync(join(repo, "model.em"), 'slice "Checkout" {}\n');
     writeFileSync(join(repo, ".event-modeling.md"), stateFile("never"));
@@ -150,7 +152,7 @@ describe("computeMetrics: conform cadence + findings", () => {
     git(["add", "-A"], repo);
     commitAt(repo, "2026-01-16", "second conform run");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("reads counts from the findings file and the revision from it when present", () => {
     const result = computeMetrics(join(repo, "model.em"), "start", "HEAD");
@@ -184,7 +186,7 @@ describe("computeMetrics: conform cadence + findings", () => {
   it("returns an empty metric, not an error, for a repo with no conformance dir", () => {
     const bareRepo = mkdtempSync(join(tmpdir(), "em-metrics-no-conformance-"));
     try {
-      git(["init", "-q", "-b", "main"], bareRepo);
+      gitInitQuiet(bareRepo, "-b", "main");
       writeFileSync(join(bareRepo, "model.em"), 'slice "Checkout" {}\n');
       git(["add", "-A"], bareRepo);
       commitAt(bareRepo, "2026-01-01", "start");
@@ -198,7 +200,7 @@ describe("computeMetrics: conform cadence + findings", () => {
       if (!result.ok) return;
       expect(result.result.conformCadence).toEqual({ entries: [], medianCadenceDays: null });
     } finally {
-      rmSync(bareRepo, { recursive: true, force: true });
+      rmTemp(bareRepo);
     }
   });
 });
@@ -208,7 +210,7 @@ describe("computeMetrics: status-vs-reality disagreement", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-metrics-drift-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
 
     writeFileSync(join(repo, "model.em"), 'slice "Checkout" {}\n');
     mkdirSync(join(repo, "slices"), { recursive: true });
@@ -237,7 +239,7 @@ describe("computeMetrics: status-vs-reality disagreement", () => {
     git(["add", "-A"], repo);
     commitAt(repo, "2026-02-12", "re-ratify refund");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("builds a time series across every commit touching slices/, and a matching current value", () => {
     const result = computeMetrics(join(repo, "model.em"), "start", "HEAD");
@@ -259,7 +261,7 @@ describe("computeMetrics: determinism, empty range, and refusals", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-metrics-determinism-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     writeFileSync(join(repo, "model.em"), 'slice "Checkout" {}\n');
     mkdirSync(join(repo, "slices"), { recursive: true });
     writeFileSync(join(repo, "slices", "checkout.md"), doc("reviewed", 1, "reviewedOn: 2026-03-01\n"));
@@ -270,7 +272,7 @@ describe("computeMetrics: determinism, empty range, and refusals", () => {
     git(["add", "-A"], repo);
     commitAt(repo, "2026-03-04", "ratify");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("produces byte-identical JSON across two runs of the same range", () => {
     const a = computeMetrics(join(repo, "model.em"), "start", "HEAD");
@@ -312,7 +314,7 @@ describe("computeMetrics: determinism, empty range, and refusals", () => {
       if (result.ok) return;
       expect(result.message).toContain("is not inside a git repository");
     } finally {
-      rmSync(outside, { recursive: true, force: true });
+      rmTemp(outside);
     }
   });
 
@@ -370,7 +372,7 @@ describe("computeMetrics: seam crossings (MIL-240)", () => {
   it("a single-model repo reports zero", () => {
     const repo = mkdtempSync(join(tmpdir(), "em-metrics-seam0-"));
     try {
-      git(["init", "-q", "-b", "main"], repo);
+      gitInitQuiet(repo, "-b", "main");
       writeFileSync(join(repo, "model.em"), 'slice "A" {}\n');
       git(["add", "-A"], repo);
       commitAt(repo, "2026-01-01", "one");
@@ -380,7 +382,7 @@ describe("computeMetrics: seam crossings (MIL-240)", () => {
       const m = computeMetrics(join(repo, "model.em"), "HEAD~1", "HEAD");
       expect(m.ok && m.result.seamCrossings).toEqual({ count: 0, commits: [] });
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmTemp(repo);
     }
   });
 });

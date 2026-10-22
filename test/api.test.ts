@@ -8,7 +8,9 @@
 // `@typespec/compiler` block at the bottom compiles generated text — skip-if-absent.
 import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -449,7 +451,7 @@ describe("invariants on the public surface (MIL-265)", () => {
 function tmpMultiModelRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "em-api-"));
   cpSync(MULTI, dir, { recursive: true });
-  git(dir, "init", "-q");
+  gitInitQuiet(dir);
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "seed");
   return dir;
@@ -472,7 +474,7 @@ describe("em api generate / check (CLI)", () => {
       const fromInside = em(["api", "generate", "shop.em", "--stdout"], join(dir, "m"));
       expect(fromInside.stdout).toBe(readFileSync(join(dir, "m", "contracts", "shop.tsp"), "utf8"));
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -491,7 +493,7 @@ describe("em api generate / check (CLI)", () => {
       expect(doc).toMatchObject({ apiCheckSchemaVersion: API_CHECK_SCHEMA_VERSION, file: "shop.em", current: false, base: null, changes: [] });
       expect(Object.keys(doc)).toEqual(["apiCheckSchemaVersion", "generator", "file", "contractPath", "current", "base", "changes"]);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -505,7 +507,7 @@ describe("em api generate / check (CLI)", () => {
       expect(r.stderr).toContain("not generating: fix the errors above");
       expect(existsSync(join(dir, "contracts"))).toBe(false);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -530,7 +532,7 @@ describe("em api generate / check (CLI)", () => {
           'breaking: event.order-submitted field "total" removed\n',
       );
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -553,7 +555,7 @@ describe("em api generate / check (CLI)", () => {
       expect(em(["api", "generate", file], dir).status).toBe(0);
       expect(readFileSync(contract, "utf8")).toBe(before);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -583,7 +585,7 @@ describe("em api generate / check (CLI)", () => {
       const text = em(["api", "check", file, "--base", "HEAD"], dir);
       expect(text.stdout).toContain("breaking: command.submit-order invariant INV-CHK-2 added\n");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -597,7 +599,7 @@ describe("em api generate / check (CLI)", () => {
       expect(r.status).toBe(0);
       expect(JSON.parse(r.stdout).changes).toEqual([{ kind: "additive", element: "command.bill", field: null, what: "added" }]);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -608,7 +610,7 @@ describe("em api generate / check (CLI)", () => {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('em api check: unknown revision "no-such-rev" (needed for --base)');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -648,7 +650,7 @@ function tspCompile(text: string): { status: number | null; out: string } {
     const res = spawnSync(process.execPath, [TSP_BIN, "compile", file, "--no-emit"], { encoding: "utf8" });
     return { status: res.status, out: `${res.stdout ?? ""}\n${res.stderr ?? ""}` };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmTemp(dir);
   }
 }
 

@@ -5,6 +5,7 @@
 // (the seeded producer rename is a TEST, not a committed broken example).
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -177,7 +178,7 @@ describe("consumer-not-adapted end to end (multi-model example)", () => {
     const sub = join(repo.dir, "sub");
     mkdirSync(sub);
     writeFileSync(join(sub, "m.em"), readFileSync(repo.fulfillment, "utf8"));
-    spawnSync("git", ["init", "-q"], { cwd: sub });
+    gitInitQuiet(sub);
     const out = em(["status", join("sub", "m.em"), "--json"], repo.dir);
     expect(out.status).toBe(0);
     expect(JSON.parse(out.stdout).system).toBeNull();

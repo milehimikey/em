@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,7 +48,7 @@ describe("GH #347 repro (b): a ratified view doc whose 'built from' line gains `
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "em-gh347-"));
     writeModel117(dir); // slices/orders.md as 1.17's sync wrote it: origin-only "built from" line
-    git(dir, "init", "-q", "-b", "main");
+    gitInitQuiet(dir, "-b", "main");
     git(dir, "config", "user.name", "em test");
     git(dir, "config", "user.email", "em-test@example.com");
     git(dir, "add", "-A");

@@ -8,7 +8,9 @@
 // repository, because `em slice ratify` records the HEAD it signs.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -245,13 +247,13 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     writeFileSync(docPath(), REVIEWED + BODY);
     writeFileSync(join(dir, "model.em"), MODEL);
     writeFileSync(statePath(), STATE);
-    git(dir, "init", "-q", "-b", "main");
+    gitInitQuiet(dir, "-b", "main");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", "reviewed");
     const r = ratify();
     if (r.status !== 0) throw new Error(`fixture ratify failed: ${r.stderr}`);
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => rmTemp(dir));
 
   it("ratify records the 1.17-scope hash; defer on the ratified doc writes the deferred item, hash and readiness unchanged", () => {
     expect(recordedHash()).toBe(sliceDocBodyHash(read(docPath())));
@@ -462,13 +464,13 @@ describe("lifecycle walk: a 1.17.0 model upgraded to 1.18.0 (GH #290, CLI, real 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "em-gh290-e2e-"));
     writeModel117(dir, { stage2: true });
-    git(dir, "init", "-q", "-b", "main");
+    gitInitQuiet(dir, "-b", "main");
     git(dir, "config", "user.name", "em test"); // CI runners have no global identity; `em upgrade --apply` commits
     git(dir, "config", "user.email", "em-test@example.com");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", "1.17 model");
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => rmTemp(dir));
 
   it("em upgrade --apply takes every step, one commit each, and the model validates clean with the same read-model facts", () => {
     const before = exportShape();

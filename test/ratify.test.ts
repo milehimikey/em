@@ -16,7 +16,9 @@
 // integration test proving the warnings ride the `ok: true` result. CLI-level stderr-line
 // coverage lives in test/cli.test.ts's ratify block.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { sliceDocBodyHash } from "../src/catalog/sliceDoc.js";
@@ -428,7 +430,7 @@ describe("runRatify (note-binding resolution + fs orchestration)", () => {
       ].join("\n"),
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   function run(file: string, sliceKey: string, by: string, on: string, skipReview = false) {
     const { model, refs } = compile(readFileSync(join(dir, file), "utf8"));
@@ -623,7 +625,7 @@ slice "Notify From Latest" {
     // "no doc" (what a genuinely-unbound slice would report).
     writeFileSync(join(dir, "slices", "notify-from-latest.md"), doc("draft"));
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   function upstreamFor(sliceKey: string) {
     const { model, refs } = compile(FIXTURE);
@@ -683,7 +685,7 @@ describe("runRatify carries upstreamWarnings on success (MIL-198)", () => {
     writeFileSync(join(dir, "slices", "producer.md"), DRAFT_DOC.replace("Draft Slice", "Producer"));
     writeFileSync(join(dir, "slices", "consumer.md"), REVIEWED_DOC.replace("Draft Slice", "Consumer"));
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("warns about the upstream producer still at draft, and never refuses", () => {
     const { model, refs } = compile(readFileSync(join(dir, "upstream.em"), "utf8"));
@@ -817,7 +819,7 @@ describe("runRatify — public-touching slices (MIL-238)", () => {
     writeFileSync(join(dir, "slices", "place-order.md"), REVIEWED_DOC);
     writeFileSync(join(dir, "slices", "audit.md"), REVIEWED_DOC);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   function run(key: string, confirmation: Parameters<typeof runRatify>[7] = null) {
     const { model, refs } = compile(MODEL);
@@ -989,14 +991,14 @@ describe("runRatify in a real git repository (MIL-284)", () => {
   }
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-ratify-git-"));
-    git("init", "-q", "-b", "main");
+    gitInitQuiet(repo, "-b", "main");
     mkdirSync(join(repo, "slices"));
     writeFileSync(join(repo, "slices", "draft-slice.md"), REVIEWED_DOC);
     writeFileSync(join(repo, "model.em"), EM);
     git("add", "-A");
     git("commit", "-q", "-m", "reviewed doc");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("records HEAD as ratifiedRef and the body hash as ratifiedHash on a committed doc", () => {
     const head = git("rev-parse", "HEAD");
@@ -1044,7 +1046,7 @@ describe("runRatify — same-sign-off re-run after a body edit (MIL-284)", () =>
     mkdirSync(join(dir, "slices"));
     writeFileSync(docPath(), REVIEWED_DOC);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("ratifies, and the same-sign-off re-run is the no-op while the body is intact", () => {
     expect(run()).toMatchObject({ ok: true, changed: true });

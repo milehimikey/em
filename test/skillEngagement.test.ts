@@ -11,7 +11,9 @@
 //       a dependent is cut from `main` while its upstream is still open, and a merge changes
 //       nothing about the slices around it.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { cpSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -173,7 +175,7 @@ describe("the new skill directory is part of the bundle (MIL-270)", () => {
       applySkillSyncBundle(bundlePlan, SKILLS, vendored);
       expect(checkSkillSyncBundle(SKILLS, vendored, version, EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES).ok).toBe(true);
     } finally {
-      rmSync(vendored, { recursive: true, force: true });
+      rmTemp(vendored);
     }
   });
 });
@@ -246,12 +248,12 @@ describe("scripted engagement scenario — the skill's commands by hand, no agen
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-engagement-skill-"));
     writeLendingFixture(repo);
-    git(repo, "init", "-q", "-b", "main");
+    gitInitQuiet(repo, "-b", "main");
     git(repo, "add", "-A");
     git(repo, "commit", "-q", "-m", "model + ratified docs (foundation merged)");
   });
   afterAll(() => {
-    if (repo) rmSync(repo, { recursive: true, force: true });
+    if (repo) rmTemp(repo);
   });
 
   it("step 1-2: `em engagement new` + `plan` give three levels, every base main, no hold (MIL-280)", () => {

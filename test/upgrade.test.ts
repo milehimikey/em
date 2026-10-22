@@ -10,6 +10,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -85,7 +87,7 @@ interface FixtureOptions {
 const tmpDirs: string[] = [];
 
 afterEach(() => {
-  for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const d of tmpDirs.splice(0)) rmTemp(d);
 });
 
 /** A "1.6 shape" fixture repo (per the brief): old two-slice reaction, a state file with only
@@ -94,7 +96,7 @@ afterEach(() => {
 function makeFixtureRepo(opts: FixtureOptions = {}): { dir: string; packagedSkillsRoot: string } {
   const dir = mkdtempSync(join(tmpdir(), "em-upgrade-fixture-"));
   tmpDirs.push(dir);
-  git(dir, "init", "-q");
+  gitInitQuiet(dir);
   // Persistent repo-local identity, not just this test file's own `-c user.name=...` override
   // (a one-shot flag, never written to `.git/config`): `applyUpgrade`'s internal `git commit`
   // calls (inside the CLI/module under test, via `realGit`) carry no such override of their own

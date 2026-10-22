@@ -6,7 +6,9 @@
 // what ratify does and does not ask git.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,11 +45,11 @@ describe("em slice ratify --no-ref (GH #255, CLI, real git)", () => {
     mkdirSync(join(dir, "slices"));
     writeFileSync(docPath(), REVIEWED + BODY);
     writeFileSync(join(dir, "model.em"), MODEL);
-    git(dir, "init", "-q", "-b", "main");
+    gitInitQuiet(dir, "-b", "main");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", "reviewed");
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => rmTemp(dir));
 
   it("without the flag, an uncommitted doc is refused; with --no-ref it ratifies with the hash only and git is not consulted", () => {
     writeFileSync(docPath(), read().replace("Charge the customer.", "Charge the customer, once."));

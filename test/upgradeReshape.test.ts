@@ -3,6 +3,8 @@
 // items, and the `em upgrade` shape section.
 import { describe, it, expect, afterEach } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +17,7 @@ import { MODEL_117_STAGE2, sliceDocText, writeModel117 } from "./helpers/model11
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs.splice(0)) rmTemp(d);
 });
 const git = (dir: string, ...args: string[]): string => {
   const r = spawnSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=t", "-C", dir, ...args], { encoding: "utf8" });
@@ -25,7 +27,7 @@ const git = (dir: string, ...args: string[]): string => {
 function repo(): string {
   const dir = mkdtempSync(join(tmpdir(), "em-gh290-s2-"));
   dirs.push(dir);
-  git(dir, "init", "-q", "-b", "main");
+  gitInitQuiet(dir, "-b", "main");
   git(dir, "config", "user.email", "t@t.test");
   git(dir, "config", "user.name", "t");
   writeModel117(dir, { stage2: true });

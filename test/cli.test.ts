@@ -6,6 +6,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -190,7 +192,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "catalog-duplicate.em"), CATALOG_DUPLICATE_SLICE_NAMES);
   writeFileSync(join(dir, "ui-only.em"), UI_ONLY);
 });
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(() => rmTemp(dir));
 
 describe("em export (CLI)", () => {
   it("-o writes the file and confirms on stdout", () => {
@@ -557,7 +559,7 @@ describe("em validate lineage checks (CLI, MIL-84)", () => {
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 5\n---\nbody\n",
     );
   });
-  afterAll(() => rmSync(lineageDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(lineageDir));
 
   it("errors with lineage-version-impossible when a ref names a future version", () => {
     writeFileSync(
@@ -591,7 +593,7 @@ describe("em validate frontmatter coherence checks (CLI, MIL-85)", () => {
     coherenceDir = mkdtempSync(join(tmpdir(), "em-cli-frontmatter-coherence-validate-"));
     mkdirSync(join(coherenceDir, "slices"), { recursive: true });
   });
-  afterAll(() => rmSync(coherenceDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(coherenceDir));
 
   it("warns with frontmatter-coherence-implemented-without-link when implemented has no link", () => {
     writeFileSync(
@@ -678,7 +680,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md" { customerId }\n  event Thing Done { customerId, thingId assigned }\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n`,
     );
   });
-  afterAll(() => rmSync(readyDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(readyDir));
 
   it("exits 0 and reports ready-to-implement for a bound, ready, fully-checked doc", () => {
     const r = em(["validate", "ready.em", "--slice-ready", "ready-slice"], readyDir);
@@ -898,7 +900,7 @@ describe("em diff --json with --from/--to (CLI, real git repo)", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-git-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     writeFileSync(join(repo, "model.em"), CLEAN);
     git(["add", "model.em"], repo);
     git(["commit", "-qm", "first"], repo);
@@ -918,7 +920,7 @@ describe("em diff --json with --from/--to (CLI, real git repo)", () => {
     git(["commit", "-qam", "second"], repo);
     writeFileSync(join(repo, "model.em"), CLEAN + READ + `slice "Ship" {\n  command Ship It\n}\n`);
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("--from labels the old side path@rev and the new side as the working tree", () => {
     const r = em(["diff", "model.em", "--from", "HEAD", "--json"], repo);
@@ -974,7 +976,7 @@ describe("em diff lineage: removed-slice doc resolves via git show even after de
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-git-removed-doc-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     mkdirSync(join(repo, "slices"), { recursive: true });
     writeFileSync(join(repo, "model.em"), `slice "Old Checkout" {\n  command Do Old Checkout\n  event Old Checkout Done\n}\n`);
     writeFileSync(
@@ -991,7 +993,7 @@ describe("em diff lineage: removed-slice doc resolves via git show even after de
     git(["add", "model.em"], repo);
     git(["commit", "-qm", "second"], repo);
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("resolves the removed slice's superseded-by even though its doc is gone from the current tree", () => {
     const r = em(["diff", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
@@ -1029,8 +1031,8 @@ describe("em diff lineage annotations (MIL-84, CLI)", () => {
     );
   });
   afterAll(() => {
-    rmSync(oldDir, { recursive: true, force: true });
-    rmSync(newDir, { recursive: true, force: true });
+    rmTemp(oldDir);
+    rmTemp(newDir);
   });
 
   it("resolves the new-side doc's split-from and shows it in --json", () => {
@@ -1068,7 +1070,7 @@ describe("em ledger (CLI, real git repo, MIL-89)", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     writeFileSync(join(repo, "model.em"), CLEAN);
     mkdirSync(join(repo, "slices"), { recursive: true });
     // "checkout": version bump + real body change together — the clean case.
@@ -1104,7 +1106,7 @@ describe("em ledger (CLI, real git repo, MIL-89)", () => {
     git(["add", "-A"], repo);
     git(["commit", "-qm", "second"], repo);
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("--json reports every mismatch and skip between two commits", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD", "--json"], repo);
@@ -1143,7 +1145,7 @@ describe("em ledger: text report, working tree, and argument validation (CLI, re
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-simple-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     writeFileSync(join(repo, "model.em"), CLEAN);
     mkdirSync(join(repo, "slices"), { recursive: true });
     writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original body."));
@@ -1153,7 +1155,7 @@ describe("em ledger: text report, working tree, and argument validation (CLI, re
     git(["add", "-A"], repo);
     git(["commit", "-qm", "second"], repo);
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("exits 0 and prints an ok summary in the text report when everything agrees", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD"], repo);
@@ -1197,7 +1199,7 @@ describe("em ledger --waive: trailer waiver (CLI, real git repo, MIL-185)", () =
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-waive-trailer-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     writeFileSync(join(repo, "model.em"), CLEAN);
     mkdirSync(join(repo, "slices"), { recursive: true });
     writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original body."));
@@ -1216,7 +1218,7 @@ describe("em ledger --waive: trailer waiver (CLI, real git repo, MIL-185)", () =
     git(["add", "-A"], repo);
     git(["commit", "-qm", "later, no trailer"], repo);
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("waives the finding when the trailer's commit is inside the checked range", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~2", "--to", "HEAD~1"], repo);
@@ -1264,7 +1266,7 @@ describe("em ledger --waive: flag waiver and non-waivable codes (CLI, real git r
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-ledger-waive-flag-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
     writeFileSync(join(repo, "model.em"), CLEAN);
     mkdirSync(join(repo, "slices"), { recursive: true });
     writeFileSync(join(repo, "slices", "checkout.md"), ledgerDoc(1, "implemented", "PR#1", "Original body."));
@@ -1278,7 +1280,7 @@ describe("em ledger --waive: flag waiver and non-waivable codes (CLI, real git r
     git(["add", "-A"], repo);
     git(["commit", "-qm", "second"], repo);
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("without --waive, both findings are reported and the run exits non-zero", () => {
     const r = em(["ledger", "model.em", "--from", "HEAD~1", "--to", "HEAD"], repo);
@@ -1360,7 +1362,7 @@ describe("em coverage --slice (CLI, real fs, MIL-255)", () => {
     );
     writeFileSync(join(dir, "tests", "place.test.ts"), `it("rule (INV-PL-1)", () => {});\n`);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("--slice <cited> --strict exits 0 and lists its invariants, without --include-ready", () => {
     const r = em(["coverage", "model.em", "--tests", "tests", "--slice", "place", "--strict"], dir);
@@ -1467,7 +1469,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     // "INV-1" is cited; "INV-2" is not.
     writeFileSync(join(tests, "place.test.ts"), `it("rejects a negative amount (INV-1)", () => {});\n`);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("text mode reports cited/uncovered per invariant with citations, plus a summary line", () => {
     const r = em(["coverage", "model.em", "--tests", "tests"], dir);
@@ -1536,7 +1538,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     expect(placeWithReady.inScope).toBe(true);
     expect(placeWithReady.invariants).toEqual([{ id: "INV-1", cited: false, citations: [] }]);
 
-    rmSync(readyDir, { recursive: true, force: true });
+    rmTemp(readyDir);
   });
 
   // MIL-207: the exact fresh-scaffold scenario the ticket names — a model + a `ready-to-implement`
@@ -1558,7 +1560,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     expect(r.stderr).toContain("--tests directory not found: test");
     expect(r.stdout).toContain("0 invariant(s) checked, 0 uncovered");
 
-    rmSync(freshDir, { recursive: true, force: true });
+    rmTemp(freshDir);
   });
 
   it("advisory mode exits 0 even with uncovered IDs; --strict exits non-zero", () => {
@@ -1586,7 +1588,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
 
     const r = em(["coverage", "model.em", "--tests", "tests", "--strict"], fullyCovered);
     expect(r.status).toBe(0);
-    rmSync(fullyCovered, { recursive: true, force: true });
+    rmTemp(fullyCovered);
   });
 
   it("errors when --tests names a directory that doesn't exist", () => {
@@ -1613,7 +1615,7 @@ describe("em coverage (CLI, real fs, MIL-130)", () => {
     const r = em(["coverage", "model.em", "--tests", "no-such-dir"], badDir);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("em coverage: model has errors — fix them first");
-    rmSync(badDir, { recursive: true, force: true });
+    rmTemp(badDir);
   });
 });
 
@@ -1623,7 +1625,7 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
   beforeAll(() => {
     target = mkdtempSync(join(tmpdir(), "em-cli-skillsync-"));
   });
-  afterAll(() => rmSync(target, { recursive: true, force: true }));
+  afterAll(() => rmTemp(target));
 
   it("sync materializes the packaged skill bundle into [path]/.claude/skills/", () => {
     const r = em(["skill", "sync", target], ROOT);
@@ -1678,7 +1680,7 @@ describe("em skill install --force reconciles orphans (CLI, real fs, MIL-180)", 
     const r = em(["skill", "install", "--no-agents-md"], target);
     expect(r.status).toBe(0);
   });
-  afterAll(() => rmSync(target, { recursive: true, force: true }));
+  afterAll(() => rmTemp(target));
 
   it("install without --force on an existing bundle still refuses, unchanged", () => {
     const r = em(["skill", "install"], target);
@@ -1821,7 +1823,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(r2.status).toBe(0);
       expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(agentsMd);
     } finally {
-      rmSync(target, { recursive: true, force: true });
+      rmTemp(target);
     }
   });
 
@@ -1832,7 +1834,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(r.status).toBe(0);
       expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
     } finally {
-      rmSync(target, { recursive: true, force: true });
+      rmTemp(target);
     }
   });
 
@@ -1844,7 +1846,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
       expect(agentsMd).toContain("em contract");
     } finally {
-      rmSync(target, { recursive: true, force: true });
+      rmTemp(target);
     }
   });
 
@@ -1870,7 +1872,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
       expect(agentsMd).toContain("em contract");
     } finally {
-      rmSync(target, { recursive: true, force: true });
+      rmTemp(target);
     }
   });
 
@@ -1887,7 +1889,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(r2.stdout).toContain("skill already installed at");
       expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
     } finally {
-      rmSync(target, { recursive: true, force: true });
+      rmTemp(target);
     }
   });
 
@@ -1903,7 +1905,7 @@ describe("em skill install / em skill sync: AGENTS.md managed section (CLI, real
       expect(agentsMd).toContain("Hand-written project notes.");
       expect(agentsMd).toContain("<!-- GENERATED:agent-contract:start -->");
     } finally {
-      rmSync(target, { recursive: true, force: true });
+      rmTemp(target);
     }
   });
 });
@@ -1914,7 +1916,7 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
   beforeAll(() => {
     cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-"));
   });
-  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+  afterAll(() => rmTemp(cwd));
 
   it("creates <slug>/ with all 4 files, correctly titled/slugged", () => {
     const r = em(["scaffold", "Order Fulfillment"], cwd);
@@ -2078,7 +2080,7 @@ describe("em changelog (CLI, real git repo)", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-changelog-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
 
     writeFileSync(join(repo, "model.em"), INTRO);
     git(["add", "model.em"], repo);
@@ -2100,7 +2102,7 @@ describe("em changelog (CLI, real git repo)", () => {
     git(["add", "model.em", ".event-modeling.md"], repo);
     commitAt(repo, "2026-01-04", "open delivery confirmation issue");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("walks history newest-first, omits the comment-only commit, and weaves in the matching decision", () => {
     const r = em(["changelog", "model.em"], repo);
@@ -2147,7 +2149,7 @@ describe("em changelog (CLI, real git repo)", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("is not inside a git repository");
     expect(r.stdout).toBe("");
-    rmSync(outside, { recursive: true, force: true });
+    rmTemp(outside);
   });
 
   it("fails with a clear, non-zero exit on an unknown --from revision", () => {
@@ -2176,7 +2178,7 @@ describe("em changelog follows renames (CLI, real git repo)", () => {
 
   beforeAll(() => {
     repo = mkdtempSync(join(tmpdir(), "em-cli-changelog-rename-"));
-    git(["init", "-q", "-b", "main"], repo);
+    gitInitQuiet(repo, "-b", "main");
 
     writeFileSync(join(repo, "old-name.em"), INTRO);
     git(["add", "old-name.em"], repo);
@@ -2193,7 +2195,7 @@ describe("em changelog follows renames (CLI, real git repo)", () => {
     git(["add", "new-name.em"], repo);
     commitAt(repo, "2026-01-04", "add cancellation");
   });
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  afterAll(() => rmTemp(repo));
 
   it("reads pre-rename revisions at their historical path — no error sections", () => {
     const r = em(["changelog", "new-name.em"], repo);
@@ -2243,7 +2245,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
     writeFileSync(join(modelDir, "slices", "ship-order.md"), docWithImplementedIn("https://github.com/example/repo/pull/42"));
 
     targetRepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-target-"));
-    git(["init", "-q", "-b", "main"], targetRepo);
+    gitInitQuiet(targetRepo, "-b", "main");
     mkdirSync(join(targetRepo, "src", "checkout"), { recursive: true });
     writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
     writeFileSync(join(targetRepo, "README.md"), "# demo\n");
@@ -2271,8 +2273,8 @@ describe("em conform-scope (CLI, real git repo)", () => {
     git(["commit", "-qam", "unrelated readme edit"], targetRepo);
   });
   afterAll(() => {
-    rmSync(modelDir, { recursive: true, force: true });
-    rmSync(targetRepo, { recursive: true, force: true });
+    rmTemp(modelDir);
+    rmTemp(targetRepo);
   });
 
   it("diff-scoped: maps a changed path to its slice via implementedIn, a URL-only slice matches nothing, unmatched paths come back unmapped", () => {
@@ -2318,7 +2320,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
       expect(doc.changedPaths).toEqual([]);
       expect(doc.candidateSlices.map((c: { key: string }) => c.key).sort()).toEqual(["place-order", "ship-order"]);
     } finally {
-      rmSync(cwd, { recursive: true, force: true });
+      rmTemp(cwd);
     }
   });
 
@@ -2353,7 +2355,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("is not a git repository");
     } finally {
-      rmSync(notARepo, { recursive: true, force: true });
+      rmTemp(notARepo);
     }
   });
 
@@ -2379,7 +2381,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("git diff failed");
     } finally {
-      rmSync(cwd, { recursive: true, force: true });
+      rmTemp(cwd);
     }
   });
 
@@ -2427,7 +2429,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("not reporting freshness");
     } finally {
-      rmSync(cwd, { recursive: true, force: true });
+      rmTemp(cwd);
     }
   });
 });
@@ -2459,7 +2461,7 @@ describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
     writeFileSync(join(modelDir, "slices", "place-order.md"), DOC);
 
     targetRepo = mkdtempSync(join(tmpdir(), "em-cli-conform-scope-mismatch-target-"));
-    git(["init", "-q", "-b", "main"], targetRepo);
+    gitInitQuiet(targetRepo, "-b", "main");
     mkdirSync(join(targetRepo, "src", "checkout"), { recursive: true });
     writeFileSync(join(targetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
     git(["add", "."], targetRepo);
@@ -2480,8 +2482,8 @@ describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
     git(["commit", "-qam", "tweak checkout handler"], targetRepo);
   });
   afterAll(() => {
-    rmSync(modelDir, { recursive: true, force: true });
-    rmSync(targetRepo, { recursive: true, force: true });
+    rmTemp(modelDir);
+    rmTemp(targetRepo);
   });
 
   it("happy path unchanged: checkout.em (the state file's own Model file:) attributes lastConformance normally", () => {
@@ -2518,7 +2520,7 @@ describe("em conform-supersede (CLI, MIL-164)", () => {
     writeFileSync(join(dir, "checkout.em"), 'slice "A" {\n  ui Dashboard @Customer\n}\n');
     writeFileSync(join(dir, "conformance", "2026-08-23-report.md"), REPORT);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("stamps the report and prints confirmation", () => {
     const r = em(
@@ -2623,7 +2625,7 @@ describe("em conform-supersede (CLI, MIL-164)", () => {
         ),
       );
     });
-    afterAll(() => rmSync(ruleDir, { recursive: true, force: true }));
+    afterAll(() => rmTemp(ruleDir));
 
     it("records the ruling on the findings JSON and stamps the banner in one call", () => {
       const r = em(
@@ -2717,7 +2719,7 @@ slice "Billing" {
     mkdirSync(join(modelDir, "tests"), { recursive: true });
     writeFileSync(join(modelDir, "tests", "place-order.spec.ts"), "// citing INV-CHK-1 in this test\nit('works', () => {});\n");
 
-    git(["init", "-q", "-b", "main"], modelDir);
+    gitInitQuiet(modelDir, "-b", "main");
     git(["add", "."], modelDir);
     git(["commit", "-qam", "initial"], modelDir);
     baseRev = git(["rev-parse", "HEAD"], modelDir).stdout.trim();
@@ -2732,7 +2734,7 @@ slice "Billing" {
     git(["add", "."], modelDir);
     git(["commit", "-qam", "record conformance"], modelDir);
   });
-  afterAll(() => rmSync(modelDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(modelDir));
 
   it("text report: the acceptance-line summary plus a detail block", () => {
     const r = em(["status", "checkout.em", "--tests", "tests"], modelDir);
@@ -2855,7 +2857,7 @@ slice "Billing" {
     expect(r.stderr).toContain("--tests directory not found: test");
     expect(JSON.parse(r.stdout).invariants).toEqual({ testsDir: "test", total: 0, cited: 0, uncovered: 0 });
 
-    rmSync(freshDir, { recursive: true, force: true });
+    rmTemp(freshDir);
   });
 
   it("refuses (exit 1) when a model has errors, printing diagnostics instead of a report", () => {
@@ -2866,14 +2868,14 @@ slice "Billing" {
       expect(r.status).toBe(1);
       expect(r.stderr).toContain("not reporting status");
     } finally {
-      rmSync(cwd, { recursive: true, force: true });
+      rmTemp(cwd);
     }
   });
 
   it("--repo overrides the default per-model repo used for commits-behind-HEAD", () => {
     const targetRepo = mkdtempSync(join(tmpdir(), "em-cli-status-target-"));
     try {
-      git(["init", "-q", "-b", "main"], targetRepo);
+      gitInitQuiet(targetRepo, "-b", "main");
       writeFileSync(join(targetRepo, "README.md"), "# demo\n");
       git(["add", "."], targetRepo);
       git(["commit", "-qam", "initial"], targetRepo);
@@ -2900,9 +2902,9 @@ slice "Billing" {
       expect(doc.conformance[0].repo).toBe(targetRepo);
       expect(doc.conformance[0].commitsBehindHead).toBe(1);
       expect(doc.conformance[0].slicePRsBehindHead).toBe(0); // PLACE_ORDER_DOC's implementedIn ("PR#1") matches no changed path here either
-      rmSync(cwd, { recursive: true, force: true });
+      rmTemp(cwd);
     } finally {
-      rmSync(targetRepo, { recursive: true, force: true });
+      rmTemp(targetRepo);
     }
   });
 
@@ -2921,7 +2923,7 @@ slice "Billing" {
       expect(doc.conformance.map((c: { file: string }) => c.file)).toEqual(["a.em", "b.em"]);
       expect(doc.conformance.every((c: { hasStateFile: boolean }) => c.hasStateFile === false)).toBe(true);
     } finally {
-      rmSync(cwd, { recursive: true, force: true });
+      rmTemp(cwd);
     }
   });
 
@@ -2948,7 +2950,7 @@ slice "Billing" {
         expect(doc.diagnostics).toHaveLength(1);
         expect(doc.diagnostics[0]).toMatchObject({ file: "model.em", code: "frontmatter-invalid" });
       } finally {
-        rmSync(cwd, { recursive: true, force: true });
+        rmTemp(cwd);
       }
     });
 
@@ -2974,7 +2976,7 @@ slice "Billing" {
         expect(doc.issues.openQuestionsTotal).toBe(1); // the doc's own count, not 2
         expect(doc.issues.openQuestionsUnchecked).toBe(1);
       } finally {
-        rmSync(cwd, { recursive: true, force: true });
+        rmTemp(cwd);
       }
     });
 
@@ -3013,7 +3015,7 @@ slice "Billing" {
         expect(asisDoc.conformance[0].lastConformance).toBeNull();
         expect(asisDoc.conformance[0].error).toContain('describes "checkout.em"');
       } finally {
-        rmSync(cwd, { recursive: true, force: true });
+        rmTemp(cwd);
       }
     });
 
@@ -3035,8 +3037,8 @@ slice "Billing" {
         expect(r.stdout).not.toContain("#4c1");
         expect(r.stdout).toContain("#dfb317");
       } finally {
-        rmSync(cwd, { recursive: true, force: true });
-        rmSync(notARepo, { recursive: true, force: true });
+        rmTemp(cwd);
+        rmTemp(notARepo);
       }
     });
   });
@@ -3229,7 +3231,7 @@ describe("em slice index (CLI, MIL-98)", () => {
       "# Demo\n\n## Slices\n<!-- GENERATED:slices:start -->\n<!-- GENERATED:slices:end -->\n\n## Status\n",
     );
   });
-  afterAll(() => rmSync(sliceIndexDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(sliceIndexDir));
 
   it("writes the sibling README.md's Slices table and confirms on stdout", () => {
     const r = em(["slice", "index", "clean.em"], sliceIndexDir);
@@ -3263,7 +3265,7 @@ describe("em slice index (CLI, MIL-98)", () => {
       expect(r.stderr).toContain("stale");
       expect(readFileSync(join(staleDir, "README.md"), "utf8")).toBe(before); // never written
     } finally {
-      rmSync(staleDir, { recursive: true, force: true });
+      rmTemp(staleDir);
     }
   });
 
@@ -3277,7 +3279,7 @@ describe("em slice index (CLI, MIL-98)", () => {
       expect(r.stderr).toContain("README.md");
       expect(existsSync(join(noReadmeDir, "README.md"))).toBe(false);
     } finally {
-      rmSync(noReadmeDir, { recursive: true, force: true });
+      rmTemp(noReadmeDir);
     }
   });
 
@@ -3293,7 +3295,7 @@ describe("em slice index (CLI, MIL-98)", () => {
       expect(r.stderr).toContain("model-readme.md");
       expect(readFileSync(join(noMarkersDir, "README.md"), "utf8")).toBe(before); // never written
     } finally {
-      rmSync(noMarkersDir, { recursive: true, force: true });
+      rmTemp(noMarkersDir);
     }
   });
 
@@ -3332,7 +3334,7 @@ describe("em slice mark-implemented (CLI, MIL-103)", () => {
       'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("flips status/implementedIn and confirms on stdout", () => {
     const r = em(["slice", "mark-implemented", "ready.em", "ready-slice", "https://github.com/org/repo/pull/42"], dir);
@@ -3408,7 +3410,7 @@ describe("em slice mark-implemented (CLI, MIL-103)", () => {
         expect(r.stdout).toContain("    - Retry policy?");
         expect(r.stdout).toContain("`shipped:` (`shippedVersion:`) is the record of implementation; `status:` is the next version's state.");
       } finally {
-        rmSync(d, { recursive: true, force: true });
+        rmTemp(d);
       }
     });
 
@@ -3427,7 +3429,7 @@ describe("em slice mark-implemented (CLI, MIL-103)", () => {
         const again = em(["slice", "mark-implemented", "ready.em", "ready-slice", url, "--json"], d);
         expect(JSON.parse(again.stdout)).toEqual({ path: "slices/ready-slice.md", changed: false, implementedIn: url, nextDraft: null });
       } finally {
-        rmSync(d, { recursive: true, force: true });
+        rmTemp(d);
       }
     });
   });
@@ -3468,7 +3470,7 @@ describe("em slice review (CLI, MIL-201)", () => {
       'slice "Good" {\n  ui Screen @Customer\n  command Do Thing note "slices/good.md"\n  event Thing Done\n}\nslice "Bad" {\n  view Broken View from "No Such Event"\n}\n',
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("flips status and records reviewedBy/reviewedOn (default --on today), confirms on stdout", () => {
     const r = em(["slice", "review", "draft.em", "draft-slice", "--by", "Sam Okafor"], dir);
@@ -3614,7 +3616,7 @@ describe("em slice ratify (CLI, MIL-165)", () => {
         'slice "Consumer Gated" {\n  view Consumed Gated from "Produced" note "slices/consumer-gated.md"\n}\n',
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("refuses a doc that never passed the review gate: exact message, exit 1, file untouched (MIL-201)", () => {
     const before = readFileSync(join(dir, "slices", "gated-slice.md"), "utf8");
@@ -3793,7 +3795,7 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
       'slice "Uncertified Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/uncertified-slice.md"\n  event Thing Done\n}\n',
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("opens v2 as a draft: version bumped, status draft, sign-off and review cleared, v1 stays shipped (record materialised on a pre-1.15 doc)", () => {
     const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
@@ -3945,7 +3947,7 @@ describe("em slice conform (CLI, MIL-214)", () => {
       ),
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("certifies a note-bound doc and confirms on stdout", () => {
     const r = em(["slice", "conform", "shipped.em", "shipped-slice", "--at", "8f12ed8", "--on", "2026-09-08"], dir);
@@ -4009,7 +4011,7 @@ describe("em model version (CLI, MIL-218)", () => {
         "- **Last stakeholder review:** never\n",
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("show reports design: null, certified: null before any bump", () => {
     const r = em(["model", "version", "show", "orders.em", "--json"], dir);
@@ -4032,7 +4034,7 @@ describe("em model version (CLI, MIL-218)", () => {
     expect(r.stderr).toContain("no state file");
     expect(r.stderr).toContain("em scaffold");
     expect(existsSync(join(emptyDir, "model-versions"))).toBe(false);
-    rmSync(emptyDir, { recursive: true, force: true });
+    rmTemp(emptyDir);
   });
 
   it("bump requires --by", () => {
@@ -4108,7 +4110,7 @@ describe("em conform-findings check (CLI, MIL-214)", () => {
     );
     writeFileSync(join(dir, "conformance", "broken-findings.json"), "not json");
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("prints ok and the finding count for a valid file", () => {
     const r = em(["conform-findings", "check", "conformance/2026-09-01-findings.json"], dir);
@@ -4147,7 +4149,7 @@ describe("em slice new (CLI, MIL-97 item 3)", () => {
   beforeAll(() => {
     cwd = mkdtempSync(join(tmpdir(), "em-cli-slice-new-"));
   });
-  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+  afterAll(() => rmTemp(cwd));
 
   it("writes slices/<key>.md with the 5-key frontmatter and body stub, creating slices/", () => {
     expect(existsSync(join(cwd, "slices"))).toBe(false);
@@ -4312,7 +4314,7 @@ describe("em slice new --wire (CLI, MIL-161)", () => {
       ].join("\n"),
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("writes the doc AND inserts the note line into the .em file", () => {
     const r = em(
@@ -4389,7 +4391,7 @@ describe("em slice stub-all (CLI, MIL-184)", () => {
       ].join("\n") + "\n",
     );
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => rmTemp(dir));
 
   it("stubs and wires every undocumented slice, creating slices/", () => {
     expect(existsSync(join(dir, "slices"))).toBe(false);
@@ -4485,7 +4487,7 @@ slice "Capture Payment" {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "em-cli-migrate-"));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => rmTemp(dir));
 
   it("dry run (default, no --write) reports the plan and writes nothing", () => {
     writeFileSync(join(dir, "model.em"), OLD_SHAPE);
@@ -4590,7 +4592,7 @@ describe("em status — cross-model slice-doc collisions (CLI, real fs, MIL-160)
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "em-status-collision-"));
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   const CHECKOUT = `slice "Checkout" {
   ui Checkout Screen @Customer
@@ -4671,7 +4673,7 @@ describe("em status — orphaned slice docs (CLI, real fs, MIL-183)", () => {
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "em-status-orphan-"));
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("warns (non-fatally) when a slice doc's key matches no current slice, after a rename", () => {
     const modelDir = join(dir, "renamed");
@@ -4733,7 +4735,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-specify-"));
     mkdirSync(join(cwd, ".specify", "memory"), { recursive: true });
   });
-  afterEach(() => rmSync(cwd, { recursive: true, force: true }));
+  afterEach(() => rmTemp(cwd));
 
   it("writes no constitution.md and notes spec-kit's file instead", () => {
     const r = em(["scaffold", "Checkout"], cwd);
@@ -4784,7 +4786,7 @@ describe("em scaffold --under (CLI, real fs, MIL-160)", () => {
   beforeAll(() => {
     cwd = mkdtempSync(join(tmpdir(), "em-cli-scaffold-under-"));
   });
-  afterAll(() => rmSync(cwd, { recursive: true, force: true }));
+  afterAll(() => rmTemp(cwd));
 
   it("scaffolds <under>/<slug>/ instead of ./<slug>/, keeping filenames un-namespaced", () => {
     const r = em(["scaffold", "Checkout", "--under", "models"], cwd);
@@ -4830,7 +4832,7 @@ describe("em ci init (CLI, real fs, MIL-166)", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "em-cli-ci-init-"));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => rmTemp(dir));
 
   it("installs both workflow files under .github/workflows/", () => {
     const r = em(["ci", "init", "model.em"], dir);
@@ -5064,7 +5066,7 @@ describe("em query (CLI, real fs, MIL-168)", () => {
     // A model with a compile error, for the refusal test.
     writeFileSync(join(dir, "broken.em"), 'slice "Broken" {\n  view Bad from "No Such Event"\n}\n');
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("consumers: text mode lists both views reading the event, exit 0", () => {
     const r = em(["query", "consumers", "model.em", "--event", "Order Placed"], dir);
@@ -5266,7 +5268,7 @@ slice "To Ship" {
     writeFileSync(join(dir, "broken.em"), 'slice "Read" {\n  view Open Orders from "No Such Event"\n}\n');
     writeFileSync(join(dir, "broken-source.yaml"), 'systemSchemaVersion: "2.0"\nmodels:\n  broken:\n    source: broken.em\n');
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("text: summary line, then each diagnostic as <file>: <severity>:<line> <message>; warnings exit 0", () => {
     const res = em(["system", "system.yaml"], dir);
@@ -5395,7 +5397,7 @@ slice "Capture Payment" {
     const dir = mkdtempSync(join(tmpdir(), "em-cli-upgrade-"));
     writeFileSync(join(dir, "checkout.em"), OLD_SHAPE);
     writeFileSync(join(dir, ".event-modeling.md"), SIX_BULLET_STATE);
-    git(["init", "-q"], dir);
+    gitInitQuiet(dir);
     // Persistent repo-local identity (not just this file's own `-c user.name=...` override,
     // which never writes `.git/config`) — the CLI's own internal `git commit` calls (inside
     // `em upgrade --apply`) carry no such override and need a real config to read.
@@ -5418,7 +5420,7 @@ slice "Capture Payment" {
       expect(byId["state-file"]).toBe(true);
       expect(git(["status", "--porcelain"], dir).stdout.trim()).toBe("");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5439,7 +5441,7 @@ slice "Capture Payment" {
       const logAfter = git(["log", "--format=%s"], dir).stdout.trim().split("\n");
       expect(logAfter).toEqual(log);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5451,7 +5453,7 @@ slice "Capture Payment" {
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("working tree is not clean");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5464,7 +5466,7 @@ slice "Capture Payment" {
       expect(res.stderr).toContain("em upgrade --check:");
       expect(res.stderr).toContain("ok — no hard incompatibility");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5478,7 +5480,7 @@ slice "Capture Payment" {
       expect(lastLine).toContain("em upgrade --check: hard incompatibility found: state file");
       expect(lastLine).toContain('is missing bullet line(s): "- **Current step:**", "- **Last stakeholder review:**"');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5492,7 +5494,7 @@ slice "Capture Payment" {
       expect(res.status).toBe(0);
       expect(res.stderr).toMatch(/\[x\] state-file .*will scaffold/);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5503,7 +5505,7 @@ slice "Capture Payment" {
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("mutually exclusive");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 });
@@ -5524,8 +5526,8 @@ describe("model-declared invariants (MIL-265)", () => {
     writeInvariantFixture(withGrammar, true);
   });
   afterAll(() => {
-    rmSync(docOnly, { recursive: true, force: true });
-    rmSync(withGrammar, { recursive: true, force: true });
+    rmTemp(docOnly);
+    rmTemp(withGrammar);
   });
 
   it("1.13-style doc-only invariants: em coverage output is byte-identical to the 1.13 baseline", () => {
@@ -5582,7 +5584,7 @@ describe("model-declared invariants (MIL-265)", () => {
         'error:4 invariant "INV-1" on command "Do" does not match INV-<MNEMONIC>-<n> (a 2-4 character uppercase/digit mnemonic and a number, e.g. INV-ORD-1)',
       );
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -5617,7 +5619,7 @@ describe("API-first gate (CLI, MIL-238)", () => {
     writeFileSync(join(dir, "shop.em"), MODEL);
     writeFileSync(join(dir, "slices", "place-order.md"), REVIEWED);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("ratify refuses both flags at once and an unconfirmed public-touching slice — exact messages, nothing written", () => {
     const both = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--meaning-unchanged", "--contract-change", "x"], dir);
@@ -5692,7 +5694,7 @@ describe("em validate --strict (GH #293)", () => {
       `slice "Ready Slice" {\n  ui Screen @Customer\n  command Do Thing note "slices/ready-slice.md"\n  event Thing Done\n}\nslice "Read Model" {\n  view Thing List from "Thing Done"\n  ui List Screen @Customer\n}\n`,
     );
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("exits 0 without --strict (warning, still ready), 1 with --strict", () => {
     const plain = em(["validate", "m.em"], dir);
@@ -5721,7 +5723,7 @@ describe("em slice review CLI output (GH #333)", () => {
     writeFileSync(join(d, "slices", "again.md"), doc("reviewed", "reviewedBy: Sam\nreviewedOn: 2026-09-01\n", "- [x] Done"));
     writeFileSync(join(d, "slices", "plain.md"), doc("draft", "", "- [x] Done"));
   });
-  afterAll(() => rmSync(d, { recursive: true, force: true }));
+  afterAll(() => rmTemp(d));
 
   it("--allow-open prints the stderr notice with the open count and exits 0; without it exits 1", () => {
     const openBefore = readFileSync(join(d, "slices", "open.md"), "utf8");

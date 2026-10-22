@@ -5,7 +5,9 @@
 // `em slice defer` to a ratified doc never trips it. Real git, because ratify records the HEAD it signs.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +44,7 @@ describe("em validate --check-signed-bodies (GH #257, CLI, real git)", () => {
     writeFileSync(docPath(), REVIEWED + BODY);
     writeFileSync(join(dir, "model.em"), MODEL);
     writeFileSync(join(dir, ".event-modeling.md"), "# State\n\n## Decisions log\n\n## Open questions / parking lot\n\n## Slice inventory\n");
-    git(dir, "init", "-q", "-b", "main");
+    gitInitQuiet(dir, "-b", "main");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", "reviewed");
     const r = em(["slice", "ratify", "model.em", "pay", "--by", "Alex", "--on", "2026-10-02"], dir);
@@ -50,7 +52,7 @@ describe("em validate --check-signed-bodies (GH #257, CLI, real git)", () => {
     const m = em(["slice", "mark-implemented", "model.em", "pay", "https://github.com/org/repo/pull/7", "--on", "2026-10-13"], dir);
     if (m.status !== 0) throw new Error(m.stderr);
   });
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(dir));
 
   it("a shipped doc with an intact body passes; a deferral written by defer passes; a hand edit fails only with the flag", () => {
     expect(read()).toContain("status: implemented\n");

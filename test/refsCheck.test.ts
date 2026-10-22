@@ -7,7 +7,9 @@
 // `conformedAt` (skipped), and a shallow clone of it all (`undecidable`, never a pass).
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,7 +88,7 @@ describe("applyRefWaivers / readWaiveFile (pure)", () => {
     writeFileSync(join(dir, "b.txt"), "# baseline from before em refs ran\npay   # ratified on a squashed branch\n\nship\n");
     expect(readWaiveFile(join(dir, "b.txt"))).toEqual(["pay", "ship"]);
     expect(readWaiveFile(join(dir, "missing.txt"))).toEqual([]);
-    rmSync(dir, { recursive: true, force: true });
+    rmTemp(dir);
   });
 });
 
@@ -110,7 +112,7 @@ describe("em refs (CLI, real git): squash-merged ratification, main ratification
     writeFileSync(join(dir, "slices", "pay.md"), reviewed("Pay"));
     writeFileSync(join(dir, "slices", "ship.md"), reviewed("Ship"));
     writeFileSync(join(dir, "model.em"), MODEL);
-    git(dir, "init", "-q", "-b", "main");
+    gitInitQuiet(dir, "-b", "main");
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "-m", "reviewed docs");
     // `ship`: ratified on main → ancestor.
@@ -135,13 +137,13 @@ describe("em refs (CLI, real git): squash-merged ratification, main ratification
     if (r.status !== 0) throw new Error(r.stderr);
     git(dir, "commit", "-qam", "pay shipped + certified");
     shallow = mkdtempSync(join(tmpdir(), "em-gh258-shallow-"));
-    rmSync(shallow, { recursive: true, force: true });
+    rmTemp(shallow);
     const c = spawnSync("git", ["clone", "-q", "--depth", "1", `file://${dir}`, shallow], { encoding: "utf8" });
     if (c.status !== 0) throw new Error(c.stderr);
   });
   afterAll(() => {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(shallow, { recursive: true, force: true });
+    rmTemp(dir);
+    rmTemp(shallow);
   });
 
   it("text report: ship ancestor; pay's ratifiedRef + shippedRef not-ancestor (squash), conformedAt build: skipped; exit 1", () => {

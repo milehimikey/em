@@ -7,6 +7,8 @@
 // nothing of its own to unit-test.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
+import { rmTemp } from "./helpers/rmTemp.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -192,7 +194,7 @@ beforeAll(() => {
   // `query` tool ambiguous-name fixture: the same display name declared twice, in two slices.
   writeFileSync(join(dir, "ambiguous.em"), 'slice "A" {\n  ui Screen @Customer\n}\nslice "B" {\n  ui Screen @Customer\n}\n');
 });
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(() => rmTemp(dir));
 
 // `diff` (git-revision form) + `changelog` tool fixture: one small git repo, two commits plus a
 // working-tree edit on top, so `--from`/`--to`/no-args all have something real to walk.
@@ -203,7 +205,7 @@ const HISTORY_ADD_CANCEL = HISTORY_ADD_SHIP + `slice "Cancel" {\n  command Cance
 let historyRepo: string;
 beforeAll(() => {
   historyRepo = mkdtempSync(join(tmpdir(), "em-mcp-history-"));
-  git(["init", "-q", "-b", "main"], historyRepo);
+  gitInitQuiet(historyRepo, "-b", "main");
   writeFileSync(join(historyRepo, "model.em"), HISTORY_INTRO);
   git(["add", "model.em"], historyRepo);
   git(["commit", "-qm", "introduce order placement"], historyRepo);
@@ -214,7 +216,7 @@ beforeAll(() => {
   // `--to`) has a real, uncommitted difference to report.
   writeFileSync(join(historyRepo, "model.em"), HISTORY_ADD_CANCEL);
 });
-afterAll(() => rmSync(historyRepo, { recursive: true, force: true }));
+afterAll(() => rmTemp(historyRepo));
 
 // `conform_scope` tool fixture: a model with one doc-bound, `implementedIn`-carrying slice, a
 // hand-written state file recording `Last conformance:`, and a separate target-codebase git repo
@@ -235,7 +237,7 @@ beforeAll(() => {
   );
 
   conformTargetRepo = mkdtempSync(join(tmpdir(), "em-mcp-conform-target-"));
-  git(["init", "-q", "-b", "main"], conformTargetRepo);
+  gitInitQuiet(conformTargetRepo, "-b", "main");
   mkdirSync(join(conformTargetRepo, "src", "checkout"), { recursive: true });
   writeFileSync(join(conformTargetRepo, "src", "checkout", "Handler.kt"), "class Handler\n");
   git(["add", "."], conformTargetRepo);
@@ -258,8 +260,8 @@ beforeAll(() => {
   );
 });
 afterAll(() => {
-  rmSync(conformDir, { recursive: true, force: true });
-  rmSync(conformTargetRepo, { recursive: true, force: true });
+  rmTemp(conformDir);
+  rmTemp(conformTargetRepo);
 });
 
 /** Connect a fresh server/client pair over the SDK's in-memory transport — the recommended way
@@ -467,7 +469,7 @@ describe("API-first gate parity (MIL-238)", () => {
       "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n---\nbody\n",
     );
   });
-  afterAll(() => rmSync(apiDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(apiDir));
 
   it("slice_ready is byte-identical to the CLI with the contract missing, then current", async () => {
     const file = join(apiDir, "shop.em");
@@ -852,13 +854,13 @@ describe("upgrade tool (MIL-219)", () => {
         "- **Last conformance:** never\n" +
         "- **Last stakeholder review:** never\n",
     );
-    git(["init", "-q"], upgradeDir);
+    gitInitQuiet(upgradeDir);
     git(["add", "-A"], upgradeDir);
     git(["commit", "-qm", "init"], upgradeDir);
   });
 
   afterAll(() => {
-    rmSync(upgradeDir, { recursive: true, force: true });
+    rmTemp(upgradeDir);
   });
 
   it("dry-run reports the old two-slice reaction shape as applicable, never writing anything (byte-identical to `em upgrade --json`)", async () => {
@@ -1078,7 +1080,7 @@ describe("discover_triage_check tool (GH #295)", () => {
       expect(doc.ok).toBe(false);
       expect(doc.errors.join("\n")).toContain("S1: quote does not appear verbatim");
     } finally {
-      rmSync(tmp, { recursive: true, force: true });
+      rmTemp(tmp);
     }
   });
 });
@@ -1183,7 +1185,7 @@ describe("api_check tool (MIL-237)", () => {
     const dir = mkdtempSync(join(tmpdir(), "em-mcp-api-"));
     try {
       writeFileSync(join(dir, "shop.em"), `model "Shop"\nslice "S" {\n  command Buy public { sku: string }\n  event Bought @D\n}\n`);
-      git(["init", "-q"], dir);
+      gitInitQuiet(dir);
       git(["add", "-A"], dir);
       git(["commit", "-q", "-m", "seed"], dir);
       writeFileSync(join(dir, "shop.em"), `model "Shop"\nslice "S" {\n  command Buy public { sku: string, qty: int }\n  event Bought @D\n}\n`);
@@ -1197,7 +1199,7 @@ describe("api_check tool (MIL-237)", () => {
       expect(cli.status).toBe(1);
       expect(cli.stdout).toBe(mcpText + "\n");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 });
@@ -1544,7 +1546,7 @@ describe("model-declared invariants — CLI/MCP byte identity (MIL-265)", () => 
     invDir = mkdtempSync(join(tmpdir(), "em-mcp-inv-"));
     writeInvariantFixture(invDir, true);
   });
-  afterAll(() => rmSync(invDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(invDir));
 
   it("query invariant: byte-identical to `em query invariant --json`, rule + declaredIn: model", async () => {
     const modelFile = join(invDir, "model.em");
@@ -1600,7 +1602,7 @@ describe("slice_sync tool (MIL-266)", () => {
       expect(cli.status).toBe(1);
       expect(cli.stdout).toBe(mcpText + "\n");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmTemp(dir);
     }
   });
 
@@ -1639,7 +1641,7 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     expect(r.status).toBe(0);
     expect(em(["engagement", "set", "lending.em", "loans", "reserve-tool", "--state", "merged", "--pr", "https://example.test/pr/1"], lendDir).status).toBe(0);
   });
-  afterAll(() => rmSync(lendDir, { recursive: true, force: true }));
+  afterAll(() => rmTemp(lendDir));
 
   const mcpText = (result: CallToolResult) => (result.content?.[0] as { type: "text"; text: string }).text;
 
