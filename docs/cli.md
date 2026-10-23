@@ -2347,10 +2347,18 @@ level 2: 1 slice (ceiling 3)
 file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
 (added in `1.2`, GH #239 — see above). The MCP
-`engagement_plan` tool returns the same document. If a cycle survives the `loops-to` exclusion,
-`plan` refuses and names it: `em engagement plan: the engagement's dependency graph has a cycle
-(loops-to edges already excluded): a -> b -> a`. An engagement naming a slice the model no
-longer has is refused too.
+`engagement_plan` tool returns the same document. Two kinds of edge never order a build and are
+left out of the levelling graph: a `loops-to` edge (it re-feeds an earlier read model) and, since
+1.19.5 (GH #378), any edge into a `view … again` instance — a continuation has no doc or PR of its own
+(MIL-208), and its inputs say how a later fact changes the list (a to-do view's continuation
+reading an event recorded downstream of the view's own automation is the usual way a row drops),
+which is not a dependency: every slice PR is cut from `main` and `em engagement foundation`
+confirms the events exist (selection — `--downstream-of`, the unconnected-components warning —
+still follows such an edge: a continuation does relate its origin to the slice it reads). If a
+cycle survives both exclusions, `plan` refuses and names it:
+`em engagement plan: the engagement's dependency graph has a cycle (loops-to and
+again-continuation edges already excluded): a -> b -> a`. An engagement naming a slice the model
+no longer has is refused too.
 
 ### `em engagement foundation <file> <slug> --code <dir> [--json]`
 

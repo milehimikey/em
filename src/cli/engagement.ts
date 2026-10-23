@@ -6,8 +6,15 @@
 //
 // The graph (R22) is the model's own semantic edges (`model/edges.ts`, serialized by `em export`
 // as `model.edges`) with `source !== "loops-to"`: a `loops-to` edge re-feeds an EARLIER read
-// model and would turn every to-do-list/reaction pair into a cycle. Edges are lifted from
-// elements to UNITS — the slice that owns a doc: a continuation slice (an again-view-only slice,
+// model and would turn every to-do-list/reaction pair into a cycle. For ORDERING (the plan's
+// levels and holds) an edge INTO a `view … again` instance is dropped for the same reason
+// (GH #378): the instance is a later point on its logical view's timeline with no doc or PR of
+// its own (MIL-208), and its inputs say how a later fact changes the list — a to-do view's
+// continuation reading an event recorded downstream of the view's own automation is the usual
+// way a row drops — so they never order a build; every slice PR is cut from main and the
+// foundation check already confirms the events exist. Selection (`--downstream-of`, the
+// unconnected-components warning) keeps those edges: a continuation does relate its origin to
+// the slice it reads (#348). Edges are lifted from elements to UNITS — the slice that owns a doc: a continuation slice (an again-view-only slice,
 // MIL-208) and an `again` view instance fold into the originating slice, and a slice whose doc
 // is a ratified `covers:` cross-binding (MIL-121) folds into the slice owning that doc. One
 // unit = one doc = one PR = one Ledger row.
@@ -128,11 +135,14 @@ function unitOfElement(model: NormalizedModel, idx: UnitIndex, id: string): stri
   return idx.unitOfSlice[origin.sliceIndex] ?? null;
 }
 
-/** Direct unit-level predecessors over the non-`loops-to` edges (self-edges dropped). */
-export function unitPredecessors(model: NormalizedModel, idx: UnitIndex): Map<string, Set<string>> {
+/** Direct unit-level predecessors over the non-`loops-to` edges (self-edges dropped). With
+ *  `ordering`, edges into `again` view instances are dropped too (GH #378): a continuation's input
+ *  never orders a build. The plan uses the ordering graph; selection keeps the full one. */
+export function unitPredecessors(model: NormalizedModel, idx: UnitIndex, opts: { ordering?: boolean } = {}): Map<string, Set<string>> {
   const preds = new Map<string, Set<string>>(idx.units.map((u) => [u, new Set<string>()]));
   for (const e of semanticEdges(model)) {
     if (e.source === "loops-to") continue;
+    if (opts.ordering && model.byId.get(e.to)?.again === true) continue;
     const from = unitOfElement(model, idx, e.from);
     const to = unitOfElement(model, idx, e.to);
     if (!from || !to || from === to) continue;
@@ -581,7 +591,7 @@ export function missingKeys(eng: EngagementFile, idx: UnitIndex): string[] {
 }
 
 export function buildEngagementPlan(input: EngagementModelInput, engagementFile: string, eng: EngagementFile, idx: UnitIndex): PlanResult {
-  const preds = unitPredecessors(input.model, idx);
+  const preds = unitPredecessors(input.model, idx, { ordering: true });
   const members = eng.slices.map((e) => e.key);
   const memberSet = new Set(members);
   const order = byOrder(idx);
@@ -592,7 +602,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
   let remaining = [...members];
   while (remaining.length > 0) {
     const next = remaining.filter((k) => inPreds.get(k)!.every((p) => level.has(p)));
-    if (next.length === 0) return { ok: false, message: `the engagement's dependency graph has a cycle (loops-to edges already excluded): ${describeCycle(remaining, inPreds)}` };
+    if (next.length === 0) return { ok: false, message: `the engagement's dependency graph has a cycle (loops-to and again-continuation edges already excluded): ${describeCycle(remaining, inPreds)}` };
     for (const k of next) level.set(k, Math.max(-1, ...inPreds.get(k)!.map((p) => level.get(p)!)) + 1);
     remaining = remaining.filter((k) => !level.has(k));
   }

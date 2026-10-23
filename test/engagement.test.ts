@@ -374,8 +374,66 @@ describe("plan: cycles", () => {
     create(file, "cyc", { kind: "slices", keys: ["edit-profile", "profile-view"] });
     expect(engagementPlanFor(input(file), "cyc")).toEqual({
       ok: false,
-      message: "the engagement's dependency graph has a cycle (loops-to edges already excluded): profile-view -> edit-profile -> profile-view",
+      message: "the engagement's dependency graph has a cycle (loops-to and again-continuation edges already excluded): profile-view -> edit-profile -> profile-view",
     });
+  });
+
+  it("GH #378: a to-do view's `again` continuation reading a downstream slice's event is not a cycle — its inputs never order a build", () => {
+    const src = `model "Shop"
+
+slice "Place Order" {
+  ui "Checkout"
+  command "PlaceOrder" note "slices/place-order.md"
+  event "OrderPlaced" @Order
+}
+
+slice "Orders To Charge" {
+  view "OrdersToCharge" from "OrderPlaced" note "slices/charge-order.md"
+}
+
+slice "Charge Order" {
+  processor "Charger" from "OrdersToCharge"
+  command "ChargeOrder" note "slices/charge-order.md"
+  event "OrderCharged" @Order
+}
+
+slice "Charges To Settle" {
+  view "ChargesToSettle" from "OrderCharged" note "slices/settle-charge.md"
+}
+
+slice "Settle Charge" {
+  processor "Settler" from "ChargesToSettle"
+  command "SettleCharge" note "slices/settle-charge.md"
+  event "ChargeSettled" @Order
+}
+
+slice "Orders To Charge: settled" {
+  view "OrdersToCharge" again from "ChargeSettled"
+}
+
+slice "Orders" {
+  view "Orders" from "OrderPlaced", "OrderCharged", "ChargeSettled"
+  ui "Orders Page"
+}
+`;
+    writeFileSync(join(dir, "shop.em"), src);
+    mkdirSync(join(dir, "slices"));
+    const covers = { "place-order": "", "charge-order": "covers: orders-to-charge\n", "settle-charge": "covers: charges-to-settle\n" };
+    for (const [key, extra] of Object.entries(covers)) {
+      writeFileSync(
+        join(dir, "slices", `${key}.md`),
+        `---\nschemaVersion: 1\npattern: state-change\nswimlane: x\nstatus: ready-to-implement\nratifiedBy: Alex Rivera\nratifiedOn: 2026-10-20\nreviewedBy: Alex Rivera\nreviewedOn: 2026-10-20\nversion: 1\n${extra}---\n# Slice: ${key}\n\n## Intent\n\nx\n\n## Open Questions\n\n- [x] none\n`,
+      );
+    }
+    const file = join(dir, "shop.em");
+    expect(create(file, "demo", { kind: "downstream-of", ref: "place-order" })).toBeNull();
+    const p = plan(file, "demo");
+    const levelOf = Object.fromEntries(p.slices.map((s) => [s.key, s.level]));
+    expect(levelOf).toEqual({ "place-order": 0, "charge-order": 1, "settle-charge": 2, orders: 3 });
+    // The continuation (folded into charge-order's unit via covers) imposes nothing on charge-order:
+    expect(p.slices.find((s) => s.key === "charge-order")!.upstreams).toEqual(["place-order"]);
+    expect(p.slices.find((s) => s.key === "settle-charge")!.upstreams).toEqual(["charge-order"]);
+    for (const s of p.slices) expect(s.held).toBe(s.key === "orders" ? "not-ready" : null); // orders has no doc; nothing is held on an upstream
   });
 });
 
