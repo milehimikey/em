@@ -128,7 +128,7 @@ describe("scenario-quality rules", () => {
       expect(r.scoped).toEqual([]);
       expect(r.advisories.map((d) => d.code)).toEqual(["scenario-when-not-command"]);
       const json = JSON.parse(buildSliceReadyJson("m.em", "sq-ready", r.result?.gates ?? null, r.scoped, r.ready, null, null, r.advisories));
-      expect(json.validateSliceReadySchemaVersion).toBe("1.4");
+      expect(json.validateSliceReadySchemaVersion).toBe("1.5");
       expect(json.advisories).toHaveLength(1);
       expect(json.ready).toBe(true);
     });

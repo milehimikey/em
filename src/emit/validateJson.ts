@@ -72,7 +72,12 @@ export function buildValidateJson(file: string, diagnostics: Diagnostic[]): stri
 // (RuleDef.advisory, e.g. the scenario-quality warnings) concerning this slice. They are listed
 // but never gate `ready`; under `--strict` they are promoted into `diagnostics` as errors and
 // `advisories` is empty. Additive-only.
-export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.4";
+// 1.5 (GH #377): top-level `blockedBy: string[]` — the distinct codes of the `diagnostics` that
+// flip `ready` (every error, plus the warnings on the GH #332 gating list), in first-appearance
+// order; `[]` exactly when `ready` is true. `ready` can be false with every gate true (a
+// `both-ends-of-a-flow/*` warning on one of the slice's own elements, by design); this names the
+// blocker instead of leaving it to be inferred from `gates`. Additive-only.
+export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.5";
 
 /** Build the `em validate <file> --slice-ready <key> --json` document — the machine verdict
  *  replacing the two hand-parsed English sentences ("is ready-to-implement" /
@@ -84,8 +89,9 @@ export const VALIDATE_SLICE_READY_SCHEMA_VERSION = "1.4";
  *  gating list of GH #332, see docs/cli.md; any other warning is listed in `diagnostics` but never
  *  flips it) — it is the AND of the gates only when `gates` is non-null AND nothing gating
  *  remains (e.g. a `both-ends-of-a-flow/*` warning on one of its own elements); `diagnostics` carries that full
- *  scoped list so a consumer sees exactly why, never just the 4 named gates. `continuationOf`
- *  (MIL-208) is `null` for an ordinary slice or when `gates` is `null`. */
+ *  scoped list and `blockedBy` (GH #377) names the codes that flipped `ready`, so a consumer sees
+ *  exactly why, never just the named gates. `continuationOf` (MIL-208) is `null` for an ordinary
+ *  slice or when `gates` is `null`. */
 export function buildSliceReadyJson(
   file: string,
   sliceKey: string,
@@ -95,6 +101,7 @@ export function buildSliceReadyJson(
   continuationOf: string | null,
   reviewSkipped: string | null = null,
   advisories: Diagnostic[] = [],
+  blockedBy: string[] = [],
 ): string {
   const doc = {
     validateSliceReadySchemaVersion: VALIDATE_SLICE_READY_SCHEMA_VERSION,
@@ -105,6 +112,7 @@ export function buildSliceReadyJson(
     continuationOf,
     reviewSkipped,
     ready,
+    blockedBy,
     diagnostics: diagnostics.map(serializeDiagnosticWithUsage),
     advisories: advisories.map(serializeDiagnosticWithUsage),
   };

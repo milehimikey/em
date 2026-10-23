@@ -43,15 +43,17 @@ every `## Open Questions` checkbox is checked, and no status/version/link incohe
 - `fields-completeness/event-field-no-source`: the `assigned` marker contract (MIL-148).
 - `invariants/public-command-without-invariants`: the API-first readiness requirement (`docs/process.md`).
 
-A warning whose code is in this list blocks; any other warning never does (it stays in `diagnostics`; don't treat it as a blocker). `--strict` promotes advisory rules only.
+A warning whose code is in this list blocks; any other warning never does — `command-repeated-across-slices`, `timeline-entity-clustered`, `fields-completeness/view-field-no-source`, `open-issue`, `doc-model-*`, `note-binding-*` and the shape lints stay in `diagnostics` and are not blockers. `--strict` promotes advisory rules only.
+
+Because of that list, `ready` can be `false` with every `gates` entry `true` (a `both-ends-of-a-flow/*` warning on one of the slice's own elements, say). Don't work it out from `gates`: read **`blockedBy`** (schema `1.5`, GH #377), the codes that flipped `ready`, `[]` exactly when it is `true`, and report those codes with the `false` gates when you hand the slice back.
 
 **`ready: false` means stop** — with one named exception: a slice already `status: implemented`
 with `driftSignal: in-sync` or `uncertified` (MIL-214) also reads `ready: false` (its
 `statusReady` gate fails because nothing is newly ratified), and that specific case is
 re-implementation/repair, not a blocker — see §3's third mode before treating it as one. For
 every other `false`, report which `gates`
-entries are `false` (and any `diagnostics` entries concerning this slice) and hand the slice
-back to the humans. Never make the gate pass yourself — checking an open-question box, flipping
+entries are `false` and what `blockedBy` names (and any `diagnostics` entries concerning this
+slice) and hand the slice back to the humans. Never make the gate pass yourself — checking an open-question box, flipping
 `status`, or editing frontmatter are ratification decisions, and ratification happens in a
 facilitated session, not in an implementation branch.
 

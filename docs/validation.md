@@ -543,7 +543,7 @@ a large, actively-evolving model is still WIP.
 - `fields-completeness/event-field-no-source`: the `assigned` marker contract (MIL-148).
 - `invariants/public-command-without-invariants`: the API-first readiness requirement ([process.md](process.md)).
 
-`--strict` promotes advisory rules only; it is not a way to make other warnings gate.
+Every other warning (`command-repeated-across-slices`, `timeline-entity-clustered`, `fields-completeness/view-field-no-source`, `open-issue`, `doc-model-*`, `note-binding-*`, shape lints, …) never gates. `--strict` promotes advisory rules only; it is not a way to make other warnings gate. Since `ready` can be `false` with every named gate `true` (a gating warning on one of the slice's own elements), `--json` carries `blockedBy` (GH #377, schema `1.5`): the distinct codes that flipped `ready`, `[]` when it is `true`; the text mode prints the same codes after `is NOT ready-to-implement — blocked by:`. See [cli.md](cli.md#em-validate-file) for the document.
 
 ### Note-binding mismatch
 

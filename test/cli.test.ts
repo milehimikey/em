@@ -691,7 +691,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
   it("exits 1 and reports not-ready for status: draft with unchecked Open Questions", () => {
     const r = em(["validate", "draft.em", "--slice-ready", "draft-slice"], readyDir);
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain('slice "draft-slice" is NOT ready-to-implement');
+    expect(r.stdout).toContain('slice "draft-slice" is NOT ready-to-implement — blocked by: both-ends-of-a-flow/command-untriggered, both-ends-of-a-flow/event-unread, slice-ready-status-not-ready, slice-ready-open-questions-unchecked');
     expect(r.stderr).toContain('slice "draft-slice" is status: draft, not ready-to-implement');
     expect(r.stderr).toContain('slice "draft-slice" has 1 of 1 Open Question(s) unchecked');
   });
@@ -726,7 +726,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
   it("blocks (exit 1) on a system-assigned event field with no `assigned` marker (MIL-148)", () => {
     const r = em(["validate", "assigned-without-marker.em", "--slice-ready", "ready-slice"], readyDir);
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain('slice "ready-slice" is NOT ready-to-implement');
+    expect(r.stdout).toContain('slice "ready-slice" is NOT ready-to-implement — blocked by: fields-completeness/event-field-no-source');
     expect(r.stderr).toContain('event "Thing Done" field "thingId" not provided by command "Do Thing"');
   });
 
@@ -740,7 +740,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     const r = em(["validate", "ready.em", "--slice-ready", "ready-slice", "--json"], readyDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.validateSliceReadySchemaVersion).toBe("1.4");
+    expect(doc.validateSliceReadySchemaVersion).toBe("1.5");
     expect(doc.sliceKey).toBe("ready-slice");
     expect(doc.gates).toEqual({
       docBound: true,
@@ -752,6 +752,7 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
     });
     expect(doc.continuationOf).toBeNull();
     expect(doc.ready).toBe(true);
+    expect(doc.blockedBy).toEqual([]); // GH #377
     expect(doc.diagnostics).toEqual([]);
   });
 
@@ -768,6 +769,8 @@ describe("em validate --slice-ready (CLI, MIL-87)", () => {
       contractCurrent: true,
     });
     expect(doc.ready).toBe(false);
+    // GH #377: the fixture is also a dangling slice, so the two gating warnings lead the list
+    expect(doc.blockedBy).toEqual(["both-ends-of-a-flow/command-untriggered", "both-ends-of-a-flow/event-unread", "slice-ready-status-not-ready", "slice-ready-open-questions-unchecked"]);
     expect(doc.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "slice-ready-status-not-ready", usageCategory: expect.any(String) }),
@@ -5778,7 +5781,7 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(before.stderr).toContain(
       'slice "place-order" touches the public surface but the contract contracts/shop.tsp is missing — run: em api generate shop.em',
     );
-    expect(before.stdout).toBe('slice "place-order" is NOT ready-to-implement\n');
+    expect(before.stdout).toBe('slice "place-order" is NOT ready-to-implement — blocked by: slice-ready-contract-stale\n');
     expect(em(["api", "generate", "shop.em"], dir).status).toBe(0);
     const after = em(["validate", "shop.em", "--slice-ready", "place-order", "--json"], dir);
     expect(after.status).toBe(0);

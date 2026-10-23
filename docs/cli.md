@@ -420,12 +420,12 @@ Each diagnostic is `serializeDiagnostic()`'s shape (same as `em export`/`em diff
 `severity`, `code`, `message`, `line`, `refs`) plus `usageCategory`. `refs` are export refs;
 invariant-scoped rules (`command-second-intent`) also list the bare `INV-…` ids they concern.
 
-**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.4"`) — see the
+**`--slice-ready <key> --json`** (`validateSliceReadySchemaVersion: "1.5"`) — see the
 `--slice-ready` section below for what each gate means:
 
 ```json
 {
-  "validateSliceReadySchemaVersion": "1.4",
+  "validateSliceReadySchemaVersion": "1.5",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "model.em",
   "sliceKey": "checkout",
@@ -433,6 +433,7 @@ invariant-scoped rules (`command-second-intent`) also list the bare `INV-…` id
   "continuationOf": null,
   "reviewSkipped": null,
   "ready": false,
+  "blockedBy": [ "slice-ready-status-not-ready", "slice-ready-open-questions-unchecked" ],
   "diagnostics": [ … ],
   "advisories": [ … ]
 }
@@ -455,12 +456,17 @@ in this list blocks; any other warning never does:
 - `invariants/public-command-without-invariants`: the API-first readiness requirement ([process.md](process.md)).
 
 `ready` can therefore be `false` with all 6 named gates true, e.g. on a `both-ends-of-a-flow/*`
-warning on one of the slice's own elements; `diagnostics` carries the full scoped list, so a
-consumer identifies the blocker by intersecting `diagnostics[].code` with this list. Every other
-warning (`command-repeated-across-slices`, `timeline-entity-clustered`,
-`fields-completeness/view-field-no-source`, `open-issue`, `doc-model-*`, `note-binding-*`, shape
-lints, ...) stays in `diagnostics` and never flips `ready` or the exit code. `--strict` promotes
-advisory rules only (see `advisories`); it is not a way to make other warnings gate.
+warning on one of the slice's own elements — by design: an event the slice records that no read
+model reads is a modeling gap, and the slice is not built until it is closed. **`blockedBy`**
+(top-level, added in schema `1.5`, GH #377) names why: the distinct codes of the `diagnostics`
+that flipped `ready` — every error-severity one plus the warnings on the list above — in
+first-appearance order, `[]` exactly when `ready` is `true`. Read it instead of intersecting
+`diagnostics[].code` with the list by hand; the text mode prints the same codes after `is NOT
+ready-to-implement — blocked by:`. Every other warning (`command-repeated-across-slices`,
+`timeline-entity-clustered`, `fields-completeness/view-field-no-source`, `open-issue`,
+`doc-model-*`, `note-binding-*`, shape lints, ...) stays in `diagnostics`, never appears in
+`blockedBy`, and never flips `ready` or the exit code. `--strict` promotes advisory rules only
+(see `advisories`); it is not a way to make other warnings gate.
 
 `gates.ratified` (added in schema `1.2`, MIL-259) is `true` when the doc carries a non-empty
 `ratifiedBy:`. It is informational like the other gates: the blocking verdict is the

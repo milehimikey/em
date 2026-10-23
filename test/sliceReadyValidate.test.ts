@@ -556,3 +556,54 @@ slice "Place Order" {
     expect(r.ready).toBe(false);
   });
 });
+
+describe("GH #377: blockedBy names what flipped ready", () => {
+  const issue = `model "Shop"
+
+slice "Place Order" {
+  ui "Checkout"
+  command "PlaceOrder" note "slices/place-order.md"
+  event "OrderPlaced" @Order
+  event "OrderAudited" @Audit
+}
+
+slice "Orders" {
+  view "Orders" from "OrderPlaced"
+  ui "Orders Page"
+}`;
+  const ready = (text: string, extra: Diagnostic[] = []) => {
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const { model, refs, diagnostics } = compile(text);
+    return computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: text, diagnostics }, [...diagnostics, ...extra]);
+  };
+  const warn = (code: string): Diagnostic => ({ code, severity: "warning", message: "w", refs: ["place-order"] }) as unknown as Diagnostic;
+
+  it("the issue's repro: every gate true, ready false, blockedBy names the event-unread warning", () => {
+    const r = ready(issue);
+    expect(Object.values(r.result!.gates).every((g) => g === true)).toBe(true);
+    expect(r.ready).toBe(false);
+    expect(r.blockedBy).toEqual(["both-ends-of-a-flow/event-unread"]);
+  });
+
+  it("is empty exactly when ready", () => {
+    const r = ready(issue.replace('  event "OrderAudited" @Audit\n', ""));
+    expect(r.ready).toBe(true);
+    expect(r.blockedBy).toEqual([]);
+  });
+
+  it("lists errors and gating warnings once each, in first-appearance order; non-gating warnings never appear", () => {
+    const err = { code: "x-error", severity: "error", message: "boom", refs: ["place-order"] } as unknown as Diagnostic;
+    const r = ready(issue, [warn("command-repeated-across-slices"), err, warn("invariants/public-command-without-invariants"), err]);
+    expect(r.blockedBy).toEqual(["both-ends-of-a-flow/event-unread", "x-error", "invariants/public-command-without-invariants"]);
+    expect(r.scoped.some((d) => d.code === "command-repeated-across-slices")).toBe(true);
+  });
+
+  it("--strict: a promoted advisory shows up as the blocker", () => {
+    const clean = issue.replace('  event "OrderAudited" @Audit\n', "");
+    writeDoc("place-order", "status: ready-to-implement\nversion: 1\nratifiedBy: Alex Rivera\n", "## Open Questions\n- [x] done\n");
+    const { model, refs, diagnostics } = compile(clean);
+    const adv = { code: "scenario-then-not-outcome", severity: "warning", message: "w", refs: ["place-order"] } as unknown as Diagnostic;
+    const r = computeSliceReadiness(model, refs, dir, "place-order", { file: join(dir, "model.em"), source: clean, diagnostics }, [...diagnostics, adv], { strict: true });
+    expect(r.blockedBy).toEqual(["scenario-then-not-outcome"]);
+  });
+});

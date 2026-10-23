@@ -100,7 +100,10 @@ per-model checks. Together they enforce the seam lifecycle described in
 
 All four run on pull requests only; all but `codeowners-check` read history and check out with
 `fetch-depth: 0`. The API-first readiness gate (`em validate --slice-ready`, MIL-238) is per slice and runs at
-handoff, not here; it uses the same "contract current" test as `api-check`.
+handoff, not here; it uses the same "contract current" test as `api-check`. A job that reads its
+`--json` `.ready` should print `.blockedBy` beside it (GH #377): `ready` is the six gates plus the
+slice's errors plus a short, documented list of gating warnings ([cli.md](cli.md#em-validate-file)),
+so it can be `false` with every gate `true`, and `blockedBy` names the codes that did it.
 
 **Generated, not hand-assembled (MIL-233).** `em ci init <system.yaml>` writes all of it as one
 `em-ci.yml`: a `validate-`, `api-check-`, `slice-index-`, `coverage-`, `ledger-`,

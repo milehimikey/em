@@ -2222,7 +2222,7 @@ program
         // `slice-ready-unknown-slice` error (carrying the resolver's message).
         const resolved = resolveSliceKey(model, refs, opts.sliceReady);
         const key = resolved.ok ? resolved.key : opts.sliceReady;
-        const { scoped, advisories, ready, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics, {
+        const { scoped, advisories, ready, blockedBy, result } = computeSliceReadiness(model, refs, dirname(file), key, contractInput, allDiagnostics, {
           requireRatifiedHash: opts.requireRatifiedHash === true,
           strict: opts.strict === true,
           rosterPath: opts.roster,
@@ -2233,10 +2233,12 @@ program
           // diagnostics and `ready` verdict driving the exit code below — replaces both the
           // scraped warning prose and the two hand-parsed English sentences.
           process.stdout.write(
-            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories) + "\n",
+            buildSliceReadyJson(file, key, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories, blockedBy) + "\n",
           );
         } else {
-          console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement`);
+          // GH #377: name the blocker in text mode too — `ready` can be false with every gate
+          // true (a gating warning on one of the slice's own elements), and the codes say why.
+          console.log(ready ? `slice "${key}" is ready-to-implement` : `slice "${key}" is NOT ready-to-implement — blocked by: ${blockedBy.join(", ")}`);
           // MIL-208: `--slice-ready` on a continuation key transparently reports the
           // originating slice's own verdict (the doc join resolves straight through) — name
           // that slice so the text mode doesn't look like this key has a doc of its own.

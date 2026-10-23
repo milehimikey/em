@@ -332,6 +332,11 @@ export interface SliceReadiness {
    *  `strict`, which promotes them into `scoped` as errors. */
   advisories: Diagnostic[];
   ready: boolean;
+  /** GH #377: the distinct codes of the `scoped` diagnostics that flip `ready` — every
+   *  error-severity one plus the warnings on the GATE_WARNING_CODES / GATE_WARNING_PREFIXES list —
+   *  in first-appearance order; empty exactly when `ready` is true. The same list every
+   *  consumer of this verdict prints, so "why not ready" never has to be inferred from `gates`. */
+  blockedBy: string[];
   result: SliceReadyResult | null;
 }
 
@@ -381,6 +386,7 @@ export function computeSliceReadiness(
   // `--strict` promotes advisories to errors above, and as errors they gate.
   // Exception: the readiness gates themselves are emitted at warning severity (`slice-ready-*`,
   // plus the codes in GATE_WARNING_CODES) and keep gating — they ARE the gates, not lints about the slice.
-  const ready = !scoped.some((d) => d.severity === "error" || isGateDiagnostic(d));
-  return { scoped, advisories, ready, result };
+  const blockedBy = [...new Set(scoped.filter((d) => d.severity === "error" || isGateDiagnostic(d)).map((d) => d.code))];
+  const ready = blockedBy.length === 0;
+  return { scoped, advisories, ready, blockedBy, result };
 }

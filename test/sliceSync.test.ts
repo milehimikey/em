@@ -239,7 +239,7 @@ describe("em slice sync (CLI)", () => {
     );
     const gate = em(["validate", "m.em", "--slice-ready", "pay"], dir);
     expect(gate.status).toBe(1);
-    expect(gate.stdout).toBe('slice "pay" is NOT ready-to-implement\n');
+    expect(gate.stdout).toBe('slice "pay" is NOT ready-to-implement — blocked by: slice-ready-structured-section-malformed\n');
     // The optIn twin (error, refs [key]) is the blocker; the plain structured-section warning carries no ref.
     // GH #293: advisory scenario-quality warnings on this slice are printed too (never gating).
     expect(gate.stderr).toContain(

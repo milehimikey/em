@@ -291,7 +291,8 @@ export function createServer(): McpServer {
         "`em validate <file> --slice-ready <key> --json` prints: 6 named gates (doc bound, " +
         "frontmatter usable, status ready-to-implement, no unchecked Open Questions, ratified, " +
         "contract current for a public-touching slice), the " +
-        "overall `ready` boolean, and the scoped diagnostics behind it. Call this before " +
+        "overall `ready` boolean, `blockedBy` (the diagnostic codes that flipped it — `ready` can be " +
+        "false with every gate true, GH #377) and the scoped diagnostics behind it. Call this before " +
         "implementing a slice — never infer readiness yourself from `export_slice`'s content.",
       inputSchema: {
         file: fileParam,
@@ -312,9 +313,9 @@ export function createServer(): McpServer {
       const { model, refs, allDiagnostics, source, diagnostics } = compiled;
       const baseDir = dirname(file);
       const contractInput = { file, source, diagnostics };
-      const { scoped, advisories, ready, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash, rosterPath: roster });
+      const { scoped, advisories, ready, blockedBy, result } = computeSliceReadiness(model, refs, baseDir, sliceKey, contractInput, allDiagnostics, { requireRatifiedHash, rosterPath: roster });
       return textResult(
-        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories),
+        buildSliceReadyJson(file, sliceKey, result?.gates ?? null, scoped, ready, result?.continuationOf ?? null, result?.reviewSkipped ?? null, advisories, blockedBy),
       );
     },
   );
