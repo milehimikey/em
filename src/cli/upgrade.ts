@@ -847,6 +847,14 @@ function carriedNotes(retired: RetiredDoc[]): string[] {
   return retired.filter((r) => r.carried.length > 0).map((r) => `${ARCHIVE_DIR}/${basename(r.to)} holds ${r.carried.join(", ")} — fold these into ${r.keptDoc ?? `slices/${r.keptKey}.md`}`);
 }
 
+/** GH #374: a rewrite keeps the comment directly above a moved line; any other comment in a slice it
+ *  drops is lost, so the reason names each one — the dry run says it and the apply reason repeats it. */
+function droppedCommentsNote(dropped: Array<{ key: string; lines: string[] }>, anchor: string): string {
+  if (dropped.length === 0) return "";
+  const each = dropped.map((d) => `${d.lines.length} in ${d.key} (${d.lines.map((l) => `\`${l}\``).join(", ")})`);
+  return `; comment line(s) not directly above ${anchor} are DROPPED by the rewrite: ${each.join("; ")} — move them by hand first`;
+}
+
 function detectCollapseAlternativeEvents(ctx: UpgradeContext): StepDetection {
   const fresh = freshCompile(ctx);
   const plan = fresh ? planCollapseAlternativeEvents(fresh.model, fresh.refs, readModelText(ctx)) : null;
@@ -860,6 +868,7 @@ function detectCollapseAlternativeEvents(ctx: UpgradeContext): StepDetection {
     reason:
       `${plan.groups.length} run(s) of repeated-command slices collapse to alternative events: ${desc.join("; ")} — em upgrade will rewrite them (the first slice's key is kept; the others' docs move to ${ARCHIVE_DIR}/ with superseded-by and a SUPERSEDED banner, and the kept doc gains merged-from)` +
       (notes.length > 0 ? `; ${notes.join("; ")}` : "") +
+      droppedCommentsNote(plan.droppedComments, "a merged slice's event") +
       (stale.length > 0 ? `; signed doc(s) whose generated regions go stale: ${stale.join(", ")} — em upgrade syncs the kept slice's doc, run em slice sync for any other (since 1.19.0 sync keeps the signature: ratifiedHash covers the authored text only)` : ""),
   };
 }
@@ -948,12 +957,14 @@ function detectFoldContinuations(ctx: UpgradeContext): StepDetection {
     const p = f.plan as NonNullable<ReturnType<typeof planStackContinuations>>;
     const desc = p.groups.map((g) => `${[g.kept, ...g.dropped].map((n) => `"${n}"`).join(" + ")} → one continuation slice "${g.kept}" (key ${g.keptKey} kept; dropped keys: ${g.droppedKeys.join(", ")})`);
     const skipped = p.skipped.length > 0 ? `; left unstacked: ${p.skipped.map((s) => `${s.key} (${s.reason})`).join(", ")}` : "";
-    return { applicable: true, reason: `${prefix}${desc.join("; ")} — continuationOf, the doc join and the kept key's index row are unchanged${skipped}${staleNote}` };
+    const dropped = droppedCommentsNote(p.droppedComments, "a moved `view … again` line");
+    return { applicable: true, reason: `${prefix}${desc.join("; ")} — continuationOf, the doc join and the kept key's index row are unchanged${skipped}${dropped}${staleNote}` };
   }
   const p = f.plan as NonNullable<ReturnType<typeof planFoldContinuations>>;
   const desc = p.groups.map((g) => `${g.folded.map((n) => `"${n}"`).join(" + ")} (keys ${g.foldedKeys.join(", ")}) → \`view … again\` lines in "${g.host}" (column ${g.hostKey}--again)`);
   const refusedNote = p.refused.length > 0 ? `; refused: ${p.refused.map((x) => `${x.hostKey} (${x.reason})`).join("; ")}` : "";
-  return { applicable: true, reason: `${prefix}--to-sugar: ${desc.join("; ")}${refusedNote} — CHANGES continuationOf and the doc join to the host (${p.groups.map((g) => `${g.hostKey}--again`).join(", ")}) and removes the index rows of ${p.groups.flatMap((g) => g.foldedKeys).join(", ")} (a stray own doc of a folded slice is left alone)${staleNote}` };
+  const dropped = droppedCommentsNote(p.droppedComments, "a moved `view … again` line");
+  return { applicable: true, reason: `${prefix}--to-sugar: ${desc.join("; ")}${refusedNote}${dropped} — CHANGES continuationOf and the doc join to the host (${p.groups.map((g) => `${g.hostKey}--again`).join(", ")}) and removes the index rows of ${p.groups.flatMap((g) => g.foldedKeys).join(", ")} (a stray own doc of a folded slice is left alone)${staleNote}` };
 }
 
 function applyFoldContinuations(ctx: UpgradeContext): StepApplyOutcome {

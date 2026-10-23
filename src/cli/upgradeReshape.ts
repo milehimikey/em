@@ -51,6 +51,10 @@ function blockOf(model: NormalizedModel, lines: string[], index: number): SliceB
     if (first <= start || first >= end) return null;
     if (k > 0 && first === els[k - 1].line - 1) return null;
     let last = (k + 1 < els.length ? els[k + 1].line - 1 : end) - 1;
+    // GH #374: contiguous `#` lines directly above the NEXT element are its lead comments, not this
+    // span's — so they travel with that element, and a comment above an event does not make two
+    // otherwise identical command spans differ.
+    if (k + 1 < els.length) while (last > first && lines[last].trim().startsWith("#")) last--;
     while (last > first && lines[last].trim() === "") last--;
     out.push({ el: els[k], first, last });
   }
@@ -61,6 +65,46 @@ const norm = (ls: string[]): string => ls.map((l) => l.trim()).filter((l) => l !
 // a `note "…"` binding is compared by hasNote(), not by text: only the first slice may carry one
 const spanText = (lines: string[], s: { first: number; last: number }): string => norm(lines.slice(s.first, s.last + 1)).replace(/\s+note\s+"(?:[^"\\]|\\.)*"/g, "");
 const hasNote = (b: SliceBlock): boolean => b.elements.some((s) => s.el.note !== undefined || s.el.issue !== undefined || s.el.divergence !== undefined);
+
+// ---- comments inside a rewritten block (GH #374) ------------------------------------------------
+// A `#` comment directly above an element — between the previous element's last line (or the block
+// header) and the element's first line — belongs to that element and travels with it when only that
+// element's lines move. A comment that belongs to a line the rewrite drops (a folded slice's `ui`,
+// say) cannot be placed: the plan names it so the dry run and the apply reason say it is dropped.
+
+/** Comment lines in a rewritten block that no moved line carried: the plan reports them as dropped. */
+export interface DroppedComments {
+  key: string;
+  lines: string[];
+}
+
+function leadCommentLines(lines: string[], b: SliceBlock, k: number): number[] {
+  const from = k === 0 ? b.start + 1 : b.elements[k - 1].last + 1;
+  const out: number[] = [];
+  for (let i = from; i < b.elements[k].first; i++) if (lines[i].trim().startsWith("#")) out.push(i);
+  return out;
+}
+
+function lostCommentLines(lines: string[], b: SliceBlock, carried: Set<number>): string[] {
+  const out: string[] = [];
+  for (let i = b.start + 1; i < b.end; i++) if (!carried.has(i) && lines[i].trim().startsWith("#")) out.push(lines[i].trim());
+  return out;
+}
+
+/** What a folded block contributes when only its `view` lines move: each view's lead comments and
+ *  its own span, in file order, plus the block's comment lines that would not travel. */
+function movedViews(lines: string[], b: SliceBlock): { views: Array<{ lead: string[]; span: string[] }>; lost: string[] } {
+  const carried = new Set<number>();
+  const views: Array<{ lead: string[]; span: string[] }> = [];
+  b.elements.forEach((s, k) => {
+    if (s.el.kind !== "view") return;
+    const lead = leadCommentLines(lines, b, k);
+    for (const i of lead) carried.add(i);
+    for (let i = s.first; i <= s.last; i++) carried.add(i);
+    views.push({ lead: lead.map((i) => lines[i]), span: lines.slice(s.first, s.last + 1) });
+  });
+  return { views, lost: lostCommentLines(lines, b, carried) };
+}
 
 function errorCounts(src: string): Map<string, number> | null {
   try {
@@ -106,6 +150,8 @@ export interface CollapseGroup {
 
 export interface CollapsePlan {
   groups: CollapseGroup[];
+  /** Comments in the later (merged-away) slices that the rewrite cannot place (GH #374). */
+  droppedComments: DroppedComments[];
   next: string;
 }
 
@@ -153,11 +199,24 @@ export function planCollapseAlternativeEvents(model: NormalizedModel, refs: Refs
   if (runs.length === 0) return null;
 
   const groups: CollapseGroup[] = [];
+  const droppedComments: DroppedComments[] = [];
   let out = lines.slice();
   for (const run of runs.slice().reverse()) {
     const members = Array.from({ length: run.last - run.first + 1 }, (_, k) => run.first + k);
     const first = blocks[run.first]!;
     const evSpans = members.map((i) => shape(blocks[i])!.ev);
+    // GH #374: the first block is kept whole; of a later block only its event lines survive, so the
+    // comment directly above that event rides along and any other comment in the block is reported.
+    const evLeads = members.map((i, k) => {
+      if (k === 0) return [] as string[];
+      const b = blocks[i]!;
+      const lead = leadCommentLines(lines, b, b.elements.indexOf(evSpans[k]));
+      const carried = new Set<number>(lead);
+      for (let n = evSpans[k].first; n <= evSpans[k].last; n++) carried.add(n);
+      const lost = lostCommentLines(lines, b, carried);
+      if (lost.length > 0) droppedComments.unshift({ key: refs.sliceKeys[i], lines: lost });
+      return lead.map((n) => lines[n]);
+    });
     const names = evSpans.map((s) => s.el.name);
     const normalised = evSpans.map((s, k) => {
       const l = lines.slice(s.first, s.last + 1);
@@ -171,9 +230,12 @@ export function planCollapseAlternativeEvents(model: NormalizedModel, refs: Refs
     if (inline) {
       replacement = lines.slice(e0.first, e0.last + 1);
       replacement[0] = replacement[0].replace(`event ${names[0]}`, `event ${names.join(" | ")}`);
+      replacement = evLeads.flat().concat(replacement); // the later events' comments sit above the merged line
     } else {
       replacement = [`${indent}oneof {`];
-      for (const s of evSpans) for (const l of lines.slice(s.first, s.last + 1)) replacement.push(l.trim() === "" ? l : `  ${l}`);
+      evSpans.forEach((s, k) => {
+        for (const l of evLeads[k].concat(lines.slice(s.first, s.last + 1))) replacement.push(l.trim() === "" ? l : `  ${l}`);
+      });
       replacement.push(`${indent}}`);
     }
     const keep: string[] = [];
@@ -196,7 +258,7 @@ export function planCollapseAlternativeEvents(model: NormalizedModel, refs: Refs
   const after = compile(next).model.elements.filter((e) => e.kind === "event").map((e) => e.name);
   if (before.join("\u0000") !== after.join("\u0000")) return null;
   if (!viewSourcesEqual(model, compile(next).model)) return null;
-  return { groups, next };
+  return { groups, droppedComments, next };
 }
 
 function viewSourcesEqual(a: NormalizedModel, b: NormalizedModel): boolean {
@@ -220,6 +282,8 @@ export interface FoldPlan {
   groups: FoldGroup[];
   /** Hosts left unfolded, with why. */
   refused: Array<{ host: string; hostKey: string; reason: string }>;
+  /** Comments in the folded slices that no moved `view … again` line carried (GH #374). */
+  droppedComments: DroppedComments[];
   next: string;
 }
 
@@ -230,6 +294,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
   const blocks = model.slices.map((_, i) => blockOf(model, lines, i));
   const groups: FoldGroup[] = [];
   const refused: FoldPlan["refused"] = [];
+  const droppedComments: DroppedComments[] = [];
   const removals: Array<{ from: number; to: number }> = [];
   const insertions = new Map<number, string[]>(); // host block end line -> lines to insert before it
   const folded = new Set<number>();
@@ -245,6 +310,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
     const hostUi = hb.elements.find((s) => s.el.kind === "ui")?.el;
     const members: number[] = [];
     const added: string[] = [];
+    const lost: DroppedComments[] = [];
     let c = h + 1;
     while (c < model.slices.length) {
       if (model.slices[c].synthesized) {
@@ -260,16 +326,17 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
       const uis = cb.elements.filter((s) => s.el.kind === "ui");
       const views = cb.elements.filter((s) => s.el.kind === "view");
       const trial = new Set([...folded, ...members, c]);
+      const moved = movedViews(lines, cb); // GH #374: each view's lead comment travels with it
       const out: string[] = [];
       let ok = views.length > 0;
-      for (const v of views) {
+      for (const [vi, v] of views.entries()) {
         const first = lines[v.first];
         const from = v.el.from ?? [];
         if (!from.some((n) => hostEvents.has(normalizeName(n))) || !FROM_LIST.test(first)) {
           ok = false;
           break;
         }
-        const span = lines.slice(v.first, v.last + 1);
+        const span = moved.views[vi].span;
         const shownOn = /\bshown\s+on\s+"((?:[^"\\]|\\.)*)"/.exec(span.join("\n"));
         if (shownOn) {
           const u = model.elements.find((e) => e.kind === "ui" && e.sliceIndex === c && normalizeName(e.name) === normalizeName(shownOn[1]));
@@ -283,11 +350,12 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
           }
         } else ok = false; // no consumer, or several screens the old wiring cannot be reproduced for
         if (!ok) break;
-        out.push(...span);
+        out.push(...moved.views[vi].lead, ...span);
       }
       if (!ok) break;
       members.push(c);
       added.push(...out);
+      if (moved.lost.length > 0) lost.push({ key: refs.sliceKeys[c], lines: moved.lost });
       c++;
     }
     if (members.length === 0) continue;
@@ -299,6 +367,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
       continue;
     }
     for (const m of members) folded.add(m);
+    droppedComments.push(...lost);
     insertions.set(hb.end, added);
     for (const m of members) {
       const b = blocks[m]!;
@@ -311,7 +380,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
       foldedKeys: members.map((m) => refs.sliceKeys[m]),
     });
   }
-  if (groups.length === 0) return refused.length > 0 ? { groups, refused, next: text } : null; // nothing to fold, but say why
+  if (groups.length === 0) return refused.length > 0 ? { groups, refused, droppedComments, next: text } : null; // nothing to fold, but say why
 
   const drop = new Set<number>();
   for (const r of removals) for (let i = r.from; i <= r.to; i++) drop.add(i);
@@ -325,7 +394,7 @@ export function planFoldContinuations(model: NormalizedModel, refs: RefsResult, 
   if (!noNewErrors(text, next)) return null;
   const nm = compile(next).model;
   if (!viewSourcesEqual(model, nm)) return null;
-  return { groups, refused, next };
+  return { groups, refused, droppedComments, next };
 }
 
 // ---- fold-continuations, default form (a): stack consecutive continuations of ONE view ----------
@@ -344,6 +413,8 @@ export interface StackPlan {
   /** Consecutive continuations left alone because they continue a different view (stacking them
    *  would change which view the slice is a continuation of, i.e. `continuationOf` and the doc join). */
   skipped: Array<{ key: string; reason: string }>;
+  /** Comments in the dropped slices that no moved `view … again` line carried (GH #374). */
+  droppedComments: DroppedComments[];
   next: string;
 }
 
@@ -360,6 +431,7 @@ export function planStackContinuations(model: NormalizedModel, refs: RefsResult,
   const blocks = model.slices.map((_, i) => blockOf(model, lines, i));
   const groups: StackGroup[] = [];
   const skipped: StackPlan["skipped"] = [];
+  const droppedComments: DroppedComments[] = [];
   const removals: Array<{ from: number; to: number }> = [];
   const insertions = new Map<number, string[]>();
   const uiSig = (b: SliceBlock): string => b.elements.filter((s) => s.el.kind === "ui").map((s) => `${normalizeName(s.el.name)}@${s.el.persona}`).sort().join(",");
@@ -390,7 +462,9 @@ export function planStackContinuations(model: NormalizedModel, refs: RefsResult,
     }
     const added: string[] = [];
     for (const n of run.slice(1)) {
-      for (const v of blocks[n]!.elements.filter((s) => s.el.kind === "view")) added.push(...lines.slice(v.first, v.last + 1));
+      const moved = movedViews(lines, blocks[n]!); // GH #374: each view's lead comment travels with it
+      for (const v of moved.views) added.push(...v.lead, ...v.span);
+      if (moved.lost.length > 0) droppedComments.push({ key: refs.sliceKeys[n], lines: moved.lost });
       removals.push({ from: blocks[n]!.start > 0 && lines[blocks[n]!.start - 1].trim() === "" ? blocks[n]!.start - 1 : blocks[n]!.start, to: blocks[n]!.end });
     }
     insertions.set(head.end, added);
@@ -423,5 +497,5 @@ export function planStackContinuations(model: NormalizedModel, refs: RefsResult,
     const now = idx === -1 ? null : continuationOf(after.model, after.refs, idx);
     if (!was || !now || was.sliceKey !== now.sliceKey) return null;
   }
-  return { groups, skipped, next };
+  return { groups, skipped, droppedComments, next };
 }

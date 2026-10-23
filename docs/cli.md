@@ -5116,7 +5116,10 @@ The mechanical steps, in this fixed order:
    its signature (GH #347) but does not take `merged-from` (its frontmatter is left as signed) and is
    raised as the human item `lineage-backlink-missing`. A run with a declaration between its slices, a different storyline or
    an event name repeated is skipped. The rewrite is verified by recompiling (no new error, same
-   event names, same view sources) before anything is written.
+   event names, same view sources) before anything is written. A `#` comment directly above a
+   later slice's event moves with that event (above the merged `event A | B` line, or above its
+   entry in `oneof { … }`); any other comment in a merged-away slice cannot be placed and is named
+   in the step's reason as dropped — move it by hand first (GH #374).
 10. **`fold-continuations`** (1.18.0, GH #290 / #287) — **opt-in**: every run detects and lists it
    (and raises the human item `fold-continuations-opt-in`), but a plain `--apply` does not apply it;
    run `em upgrade <model>.em --apply --fold-continuations`. Default form: consecutive hand-named
@@ -5131,7 +5134,9 @@ The mechanical steps, in this fixed order:
    **changes `continuationOf` and the doc join to the host (the synthesized `<host-key>--again`
    column) and removes the folded slices' index rows**; a host whose continuations span several views is refused and left unfolded ("continuations of several views — fold by hand or keep the stacked slice"); `shown on` is added only when the old
    column's screen is not the host's first `ui` and is declared in another slice. Both forms are
-   verified by recompiling like the step above.
+   verified by recompiling like the step above. In both forms a `#` comment directly above a
+   moved `view … again` line moves with it; a comment elsewhere in a folded slice (above its `ui`,
+   say) is named in the step's reason as dropped — move it by hand first (GH #374).
 11. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
    bound doc's generated view region (the read model's "built from" line now lists the union of
    `from` across its `again` instances): runs `em slice sync` on those docs, one commit. Since

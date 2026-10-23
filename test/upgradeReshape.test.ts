@@ -321,3 +321,158 @@ describe("human items (GH #259 roster)", () => {
     expect(humanOf()).toBeUndefined();
   });
 });
+
+describe("rewrites keep the comment above a moved line (GH #374)", () => {
+  const TODO = `model "Todo"
+context Ops
+persona Admin
+
+slice "Do A" {
+  ui A Form @Admin
+  command Do A
+  event A1 @Ops { id: string }
+  event A2 @Ops { id: string }
+}
+
+slice "Do B" {
+  ui B Form @Admin
+  command Do B
+  event B1 @Ops { id: string }
+  event B2 @Ops { id: string }
+}
+
+slice "Things To Do" {
+  view ThingsToDo from "A1" { id: string }
+  ui Todo Screen @Admin
+}
+
+slice "Things To Do: a" {
+  view ThingsToDo again from "A1", "A2"
+  ui Todo Screen @Admin
+}
+
+slice "Things To Do: b" {
+  # why these sources: explains the B events
+  view ThingsToDo again from "B1", "B2"
+  ui Todo Screen @Admin
+}
+`;
+  const errors = (src: string) => compile(src).diagnostics.filter((d) => d.severity === "error").length;
+
+  it("stack form: the issue's repro — the comment moves into the kept slice directly above its `view … again` line", () => {
+    const { model, refs } = compile(TODO);
+    const plan = planStackContinuations(model, refs, TODO)!;
+    expect(plan.groups.map((g) => g.droppedKeys)).toEqual([["things-to-do-b"]]);
+    expect(plan.droppedComments).toEqual([]);
+    expect(plan.next).toContain('  # why these sources: explains the B events\n  view ThingsToDo again from "B1", "B2"\n}');
+    expect(plan.next.split("# why these sources")).toHaveLength(2); // once, not duplicated or left behind
+    expect(plan.next).not.toContain('slice "Things To Do: b"');
+    expect(errors(plan.next)).toBe(errors(TODO));
+  });
+
+  it("stack form: a comment that belongs to the dropped `ui` line is reported, not silently lost; the dry run names it", () => {
+    const src = TODO.replace('  view ThingsToDo again from "B1", "B2"\n  ui Todo Screen @Admin', '  view ThingsToDo again from "B1", "B2"\n  # screen note: belongs to the ui line\n  ui Todo Screen @Admin');
+    const { model, refs } = compile(src);
+    const plan = planStackContinuations(model, refs, src)!;
+    expect(plan.droppedComments).toEqual([{ key: "things-to-do-b", lines: ["# screen note: belongs to the ui line"] }]);
+    expect(plan.next).toContain("# why these sources: explains the B events\n");
+    expect(plan.next).not.toContain("# screen note");
+    const dir = repoWith(src);
+    const reason = step(dir, "fold-continuations").reason;
+    expect(reason).toContain("DROPPED by the rewrite: 1 in things-to-do-b (`# screen note: belongs to the ui line`) — move them by hand first");
+    expect(reason).toContain("not directly above a moved `view … again` line");
+  });
+
+  it("stack form through em upgrade --apply --fold-continuations writes the comment with its line", () => {
+    const dir = repoWith(TODO);
+    expect(applyUpgrade({ ...ctxOf(dir), foldContinuations: true }).ok).toBe(true);
+    const text = readFileSync(join(dir, "orders.em"), "utf8");
+    expect(text).toContain('  # why these sources: explains the B events\n  view ThingsToDo again from "B1", "B2"\n}');
+    expect(text).not.toContain('slice "Things To Do: b"');
+  });
+
+  it("--to-sugar: the comment lands in the host directly above the moved line, `shown on` and all", () => {
+    const sugar = `model "Todo"
+context Ops
+persona Admin
+
+slice "Do A" {
+  ui A Form @Admin
+  command Do A
+  event A1 @Ops { id: string }
+}
+
+slice "Things To Do" {
+  view ThingsToDo from "A1" { id: string }
+  ui Todo Screen @Admin
+}
+
+slice "Do B" {
+  ui B Form @Admin
+  command Do B
+  event B1 @Ops { id: string }
+}
+
+slice "Things To Do: b" {
+  # why these sources: explains the B events
+  view ThingsToDo again from "B1"
+  # screen note: belongs to the ui line
+  ui Todo Screen @Admin
+}
+`;
+    const { model, refs } = compile(sugar);
+    const plan = planFoldContinuations(model, refs, sugar)!;
+    expect(plan.groups.map((g) => g.foldedKeys)).toEqual([["things-to-do-b"]]);
+    expect(plan.next).toContain('  event B1 @Ops { id: string }\n  # why these sources: explains the B events\n  view ThingsToDo again from "B1" shown on "Todo Screen"\n}');
+    expect(plan.droppedComments).toEqual([{ key: "things-to-do-b", lines: ["# screen note: belongs to the ui line"] }]);
+    expect(plan.next).not.toContain("# screen note");
+    const dir = repoWith(sugar);
+    const reason = detectUpgrade({ ...ctxOf(dir), toSugar: true }).steps.find((x) => x.id === "fold-continuations")!.reason;
+    expect(reason).toContain("DROPPED by the rewrite: 1 in things-to-do-b (`# screen note: belongs to the ui line`)");
+  });
+
+  const CANCEL = (timeoutFields: string) => `model "M"
+context Sales
+persona Clerk
+
+slice "Cancel by customer" {
+  ui Cancel Form @Clerk
+  command Cancel Order
+  event Cancelled By Customer @Sales { id: string }
+}
+
+slice "Cancel by timeout" {
+  # the screen is shared
+  ui Cancel Form @Clerk
+  command Cancel Order
+  # timeouts come from the scheduler
+  event Cancelled By Timeout @Sales { ${timeoutFields} }
+}
+
+slice "List" {
+  view Orders from "Cancelled By Customer", "Cancelled By Timeout" { id: string }
+  ui Order List @Clerk
+}
+`;
+
+  it("collapse, inline form: the later event's comment sits above the merged `event A | B` line; the ui comment is reported", () => {
+    const src = CANCEL("id: string");
+    const { model, refs } = compile(src);
+    const plan = planCollapseAlternativeEvents(model, refs, src)!;
+    expect(plan.groups[0].form).toBe("inline");
+    expect(plan.next).toContain("  command Cancel Order\n  # timeouts come from the scheduler\n  event Cancelled By Customer | Cancelled By Timeout @Sales { id: string }\n}");
+    expect(plan.droppedComments).toEqual([{ key: "cancel-by-timeout", lines: ["# the screen is shared"] }]);
+    expect(plan.next).not.toContain("# the screen is shared");
+    const reason = step(repoWith(src), "collapse-alternative-events").reason;
+    expect(reason).toContain("not directly above a merged slice's event are DROPPED by the rewrite: 1 in cancel-by-timeout (`# the screen is shared`)");
+  });
+
+  it("collapse, oneof form: the comment rides inside the block above its event", () => {
+    const src = CANCEL("id: string, reason: string");
+    const { model, refs } = compile(src);
+    const plan = planCollapseAlternativeEvents(model, refs, src)!;
+    expect(plan.groups[0].form).toBe("oneof");
+    expect(plan.next).toContain("  oneof {\n    event Cancelled By Customer @Sales { id: string }\n    # timeouts come from the scheduler\n    event Cancelled By Timeout @Sales { id: string, reason: string }\n  }\n}");
+    expect(plan.droppedComments).toEqual([{ key: "cancel-by-timeout", lines: ["# the screen is shared"] }]);
+  });
+});
