@@ -331,8 +331,6 @@ slice "Order Status" {
   ui Track Order @Customer
 }
 slice "Import Order" {
-  ui Import Button @Customer
-  command Import Order
   event Order Placed @Sales
   view Order Status again
 }
@@ -348,6 +346,51 @@ slice "Order Status after Reorder" {
 `;
     const edges = fromEdges(src).filter((e) => e.endsWith("-> Order Status after Reorder"));
     expect(edges).toEqual(["Reorder -> Order Status after Reorder"]);
+    // the Import Order site feeds only its same-slice instance, by pattern
+    const model = modelFrom(src);
+    const site = model.elements.find((e) => e.kind === "event" && model.slices[e.sliceIndex].name === "Import Order")!;
+    const out = semanticEdges(model).filter((e) => e.from === site.id);
+    expect(out.map((e) => [e.source, model.slices[model.byId.get(e.to)!.sliceIndex].name])).toEqual([
+      ["pattern", "Import Order"],
+    ]);
+  });
+
+  it("a from-less continuation lifted out of a command slice never counts as a previous reader", () => {
+    const src = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+slice "Order Status" {
+  view Order Status from "Order Placed"
+  ui Track Order @Customer
+}
+slice "Import Order" {
+  ui Import Button @Customer
+  command Import Order
+  event Order Placed @Sales
+  view Order Status again
+}
+slice "Order Status after Import" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+    const model = modelFrom(src);
+    expect(model.slices.some((s) => s.synthesized)).toBe(true);
+    const site = model.elements.find((e) => e.kind === "event" && model.slices[e.sliceIndex].name === "Import Order")!;
+    const edges = semanticEdges(model);
+    const out = edges.filter((e) => e.from === site.id && e.source === "from");
+    expect(out.map((e) => model.slices[model.byId.get(e.to)!.sliceIndex].name)).toEqual(["Order Status after Import"]);
+    // no recording site is left without an outgoing edge to a view
+    for (const ev of model.elements.filter((e) => e.kind === "event")) {
+      expect(edges.some((e) => e.from === ev.id && model.byId.get(e.to)?.kind === "view")).toBe(true);
+    }
   });
 
   it("an instance fed by an explicit arrow from the event is a previous reader", () => {

@@ -202,11 +202,10 @@ function readsEvent(model: NormalizedModel, v: Element, key: string): boolean {
   if (from.length > 0) {
     if (from.some((n) => normalizeName(n) === key)) return true;
   } else if (
-    // a `view X again` written inside another slice lives in a synthesized continuation column
-    // (GH #287); it reads the events of the slice that hosts it
-    (model.slices[model.slices[v.sliceIndex]?.synthesized?.host ?? v.sliceIndex]?.elements ?? []).some(
-      (e) => e.kind === "event" && normalizeName(e.name) === key,
-    )
+    // exactly `sharedSiteHasReader`: same slice only. A from-less `view … again` lifted into a
+    // synthesized continuation column (GH #287) is in its own slice and gets no edge from the
+    // host's event, so it never counts as a previous reader.
+    (model.slices[v.sliceIndex]?.elements ?? []).some((e) => e.kind === "event" && normalizeName(e.name) === key)
   ) {
     return true;
   }
