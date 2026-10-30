@@ -1,6 +1,6 @@
 ---
 name: event-modeling-conform
-em-version: 1.19.5
+em-version: 1.19.6
 description: >-
   Use when checking a ratified event model (and its slice docs) for drift against the codebase
   that implements it — advisory only, never a gate, never an unprompted edit — or when walking

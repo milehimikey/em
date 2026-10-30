@@ -223,7 +223,6 @@ The review gate: `status: reviewed` becomes a real, enforced step before ratific
 | `reviewedBy:`/`reviewedOn:` frontmatter, written by `em slice review --by <name>` | human: same as `ratifiedBy` above — a doc reviewed before this land has no `reviewedBy`, but there's no gate demanding it retroactively |
 | `loops-to "View"` clause on events (a new DSL construct) | no action needed — opt-in syntax |
 | `derived` view-field marker (`status: String derived`, or `derived from "Event A"`) | no action needed — opt-in syntax |
-| `derived` / `derived from "Event A"` on a `type` field used as a collection element (GH #382) | no action needed — opt-in syntax |
 | `constitution.md` scaffolding — `em scaffold` writes it beside the model unless `.specify/` exists | `constitution` |
 | `em ledger --waive <slice-key>` / `Em-Ledger-Waive:` commit trailer | no action needed — opt-in |
 | **Release note: run `em skill sync` in each consumer repo** (the bundle gained a template and new skill text) | `skill-bundle` |
@@ -543,6 +542,20 @@ em upgrade <model>.em --apply    # one git commit per step, then the final `Em v
 ```
 
 The 1.19.0 steps, in order: `ci-block` (now also rewrites the header's `pull_request.paths` when it is the exact old list) and `ratified-hash-scope` (now also re-stamps 1.17–1.18 hashes), plus `view-doc-sources-stale` and `collapse-alternative-events` syncing signed docs. Human items: `ci-paths-hand-edited`, `slice-doc-stale-signed` (now "run `em slice sync`"). Then run `em slice sync <model>.em` once to refresh generated `em-slice-event` regions, and consider `em slice sync --check` in CI (see [ci.md](ci.md)).
+
+## 1.19.6
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **`model.edges` for a shared event read by a repeated view** (GH #328, [dsl.md](dsl.md#one-event-recorded-by-several-commands), [validation.md](validation.md#shared-events)): each recording site of a shared event now feeds the nearest instance of the reading view at or after it, so `view X again from "E"` draws arrows only from the sites of E recorded since the previous instance of X that also reads E; the back-span from earlier sites is gone. An `again` with no new site keeps its edges. The same edges feed `storyline-after-out-of-order` and `em engagement` ordering, so a `storyline-after-out-of-order` error caused only by the removed back-span goes away and engagement levelling may change. Derived data, no schema bump; no model in the examples or consumer repos declares a shared event today | no action needed |
+| **`em slice conform` reads every findings file** (GH #385, [cli.md](cli.md#em-slice-conform-file-slice-key---at-rev), [process.md](process.md)): the gate (and the `em slice revise` advisory) now reads `conformance/<date>-<name>-findings.json` as well as `<date>-findings.json`, merges every file sharing the `--at` revision, names the files it read on refusal and on the certification line, and prints a note when no findings file matches `--at`. A repo whose findings files carried other names may now be refused where it certified before — that is the fix. `em state set-conformance` / `em status` pair report↔findings by sibling name as before (GH #391 tracks aligning them) | no action needed; rule the surfaced findings, or pass `--skip-findings-check` |
+| **`derived` / `derived from "Event A"` on a `type` field used as a collection element** (GH #382, [dsl.md](dsl.md#derived-fields)): an element field the projection computes rather than copies (an audit stamp from event metadata, say) is marked on the `type` field itself and is then skipped by `view-field-no-source`; a traced form's names must be among the view's sources. Still a parse error on command, event and `ui` fields; no effect on a `type` field outside the collection-element case. `em export` carries the marker through the existing `derived` / `derivedFrom` keys, no schema change | no action needed — opt-in syntax |
+| **Dependency patch** (GH #386): zod 4.4.3 to 4.6.7 (Dependabot alert 42, high) and fast-uri 3.1.3 to 3.1.9 (alert 43, medium), with qs, body-parser and `@hono/node-server` patch bumps from the same `npm audit fix`; `package-lock.json` only, `npm audit` clean. Behaviour unchanged | no action needed |
+| **Release note: update the `@milehimikey/em` dependency and move the plugin pin to `em-1-19-6` / `v1.19.6` (and mise) together.** No `em upgrade` step, no schema bumps. | no action needed |
+
+### Upgrading to 1.19.6
+
+Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-19-6` / `v1.19.6` on plugin repos, and the mise pin), all together. `em upgrade <model>.em` has no 1.19.6 step and only bumps the `Em version:` line. Re-run `em slice conform` where findings files carry a name between the date and `-findings.json`: files that were silently skipped are now read.
 
 ## 1.19.5
 
