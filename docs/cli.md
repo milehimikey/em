@@ -3909,7 +3909,10 @@ lives in the shipped record (MIL-284), `status` is free to say what the working 
 **MIL-214 advisory (shipped case only, never refuses):** `warn: revising "<key>" whose shipped v<N>
 was never certified` when the shipped version has no matching `conformedVersion:`, and `warn:
 revising "<key>" with <n> unruled conformance finding(s) on the shipped version` when any
-`conformance/*-findings.json` beside the model still has an unruled finding in scope.
+`conformance/<date>[-<name>]-findings.json` beside the model still has an unruled finding in scope
+(same filename pattern as the conform gate below). When no findings file was found at all it
+prints `note: no conformance findings file (...) was found beside the model` on stderr, so a
+naming mismatch cannot hide the check.
 
 | Error | Meaning |
 |---|---|
@@ -4099,15 +4102,22 @@ string without walking that repo's own git history (which this command never doe
 `--force` escape hatch to reach for. Refuses a continuation key (MIL-208 — `<slice-key>` is an
 again-view-only slice with no doc of its own).
 
-**The findings-check gate.** Refuses when the newest `conformance/<date>-findings.json` (by
-filename, i.e. by date) whose `revision` equals `--at` still has an unruled (`locus: null`)
-finding in scope for this slice (`slice` equal to `<slice-key>`, or `slice: null` — ambiguous/
-whole-model findings block every slice) — the whole point of this command existing:
-certification means every finding touching this slice's version was actually ruled on.
+**The findings-check gate.** Reads every `conformance/<YYYY-MM-DD>-findings.json` and every
+`conformance/<YYYY-MM-DD>-<anything>-findings.json` (a dash must precede `findings.json`) beside the model (GH #385; e.g.
+`2026-01-01-abc-0001-findings.json` for a per-slice or per-run file; a file that is not valid
+findings JSON is skipped — `em conform-findings check` diagnoses it). Scope is read from each
+finding's own `slice` field, never from the file name. Of those files, **every** one whose
+`revision` equals `--at` is merged (several runs can share a revision), and the command refuses
+when any of them still has an unruled (`locus: null`) finding in scope for this slice (`slice`
+equal to `<slice-key>`, or `slice: null` — ambiguous/whole-model findings block every slice) —
+the whole point of this command existing: certification means every finding touching this
+slice's version was actually ruled on. The refusal names every file that matched `--at`, with the finding ids for the ones holding unruled findings; a successful certification line ends `— findings: <file>, ...` naming the files checked.
 `--skip-findings-check` overrides, printing `notice: --skip-findings-check — certifying "<key>"
-with <n> unruled conformance finding(s) still in scope (id ...)` on stderr — never silent. No
-matching findings file at all (none for that revision, or no `conformance/` directory) is not an
-error — nothing to check, certification proceeds.
+with <n> unruled conformance finding(s) still in scope (id ...)` on stderr — never silent. When
+**no** findings file has a `revision` equal to `--at` (none for that revision, a misnamed file,
+or no `conformance/` directory) certification still proceeds — it is a note, not a refusal — but
+the certification line ends `— note: no conformance findings file matches --at <rev> (...), so
+the findings check had nothing to read`, so a naming mismatch cannot pass silently.
 
 | Error | Meaning |
 |---|---|
@@ -4238,7 +4248,7 @@ one per line) on any problem. Also exposed as the MCP `discover_triage_check` to
 
 ## `em conform-findings check <path>`
 
-Read-only shape validator for a `conformance/<date>-findings.json` file (MIL-214) — the
+Read-only shape validator for a `conformance/<date>-findings.json` file (MIL-214; the conform gates also read `<date>-<name>-findings.json`) — the
 structured findings record the conform skill writes directly alongside its report (no dedicated
 `em conform-findings <model> <report> --add` writer exists; see
 [slice-doc-schema.md](slice-doc-schema.md) / [process.md](process.md) for the record's full
@@ -4421,7 +4431,7 @@ parses back out:
 em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
 ```
 
-**The findings gate (MIL-214).** Refuses when the `conformance/<date>-findings.json` beside
+**The findings gate (MIL-214).** (This pairs the report with its sibling `<date>-findings.json`; `em slice conform` and the revise advisory also read `<date>-<name>-findings.json`.) Refuses when the `conformance/<date>-findings.json` beside
 `--report` has any unruled (`locus: null`) finding in scope — every `implemented` slice in the
 sibling state file's own model (compiled to find them; a model that doesn't exist or has errors
 skips this gate rather than blocking on an unrelated problem), plus every `slice: null` finding

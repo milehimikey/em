@@ -223,6 +223,22 @@ describe("runRevise (fs orchestration + MIL-214 advisory)", () => {
     const r = run("uncertified.em", "uncertified");
     expect(r).toMatchObject({ ok: true, kind: "shipped", advisory: { neverCertified: true, unruledFindingsCount: 1 } });
   });
+  it("GH #385: the advisory scan reads <date>-<anything>-findings.json too, and reports how many files it opened", () => {
+    writeFileSync(
+      join(dir, "conformance", "2026-09-02-named-findings.json"),
+      serializeFindingsDoc({
+        findingsSchemaVersion: "1.0", model: "uncertified.em", report: "conformance/2026-09-02-report.md", revision: "zzz",
+        findings: [{ id: 1, surface: "structural", class: "Real drift", slice: "named-only", evidence: "e1", locus: null, resolvedBy: null, resolvedOn: null }],
+      }),
+    );
+    expect(reviseAdvisory(dir, "named-only", 1, null)).toEqual({ neverCertified: true, unruledFindingsCount: 1, findingsFilesScanned: 2 });
+    const empty = mkdtempSync(join(tmpdir(), "em-revise-nofiles-"));
+    try {
+      expect(reviseAdvisory(empty, "x", 1, 1)).toEqual({ neverCertified: false, unruledFindingsCount: 0, findingsFilesScanned: 0 });
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
   it("errors clearly on an unknown key and an unbound slice", () => {
     expect(run("shipped.em", "nope")).toEqual({ ok: false, message: 'no slice with export key "nope" in this model' });
     expect(run("unbound.em", "unbound")).toMatchObject({ ok: false, message: expect.stringContaining("has no doc bound") });
@@ -248,6 +264,7 @@ describe("em slice revise / reratify (CLI)", () => {
     const r = em(["slice", "revise", "model.em", "pay"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toBe("revised: slices/pay.md (status: draft, version: 2 — v1 stays shipped; v2 opened as draft)\n");
+    expect(r.stderr).toContain("note: no conformance findings file (conformance/<date>[-<name>]-findings.json) was found beside the model");
     expect(readFileSync(join(dir, "slices", "pay.md"), "utf8")).toContain("status: draft\n");
   });
   it("reratify is the deprecated alias: same effect, a notice on stderr, flags ignored with a notice", () => {

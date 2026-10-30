@@ -230,8 +230,13 @@ export function lookupFindingsBesideReport(baseDir: string, reportPath: string):
   return { kind: "found", path: findingsRel, doc: shape.doc };
 }
 
-/** Every `conformance/*-findings.json` beside `baseDir`, newest filename first, that parses and
- *  shape-validates — a malformed candidate is silently skipped (`em conform-findings check` is
+/** A findings file name the scan opens (GH #385): `<YYYY-MM-DD>-findings.json`, or
+ *  `<YYYY-MM-DD>-<anything>-findings.json` (e.g. `2026-01-01-abc-0001-findings.json`, a per-slice
+ *  or per-run file). Scope is never read from the name — each finding's own `slice` field decides. */
+export const FINDINGS_FILE_NAME_RE = /^\d{4}-\d{2}-\d{2}-(.*-)?findings\.json$/;
+
+/** Every `conformance/<YYYY-MM-DD>[-<anything>]-findings.json` beside `baseDir`, newest filename
+ *  first, that parses and shape-validates — a malformed candidate is silently skipped (`em conform-findings check` is
  *  the loud diagnosis for a broken file, not this scan). Shared by `cli/sliceConform.ts`'s
  *  `findLatestFindingsForRevision` (filters to one `revision`) and `em slice revise`'s advisory
  *  (`reviseAdvisory`, cli/revise.ts — looks across every past run, not just one revision).
@@ -244,7 +249,7 @@ export function listAllFindingsFiles(baseDir: string): { path: string; doc: Find
   } catch {
     return [];
   }
-  const names = entries.filter((f) => /^\d{4}-\d{2}-\d{2}-findings\.json$/.test(f)).sort().reverse();
+  const names = entries.filter((f) => FINDINGS_FILE_NAME_RE.test(f)).sort().reverse();
   const results: { path: string; doc: FindingsDoc }[] = [];
   for (const name of names) {
     const relPath = `conformance/${name}`;

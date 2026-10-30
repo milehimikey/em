@@ -247,17 +247,21 @@ export interface ReviseAdvisory {
    *  certified against a different version. */
   neverCertified: boolean;
   /** Unruled (`locus: null`) conformance findings in scope for this slice, across every
-   *  `conformance/*-findings.json` beside the model. */
+   *  `conformance/<date>[-<name>]-findings.json` beside the model. */
   unruledFindingsCount: number;
+  /** GH #385: how many findings files the scan opened (any revision). Zero means the advisory
+   *  had nothing to read — the CLI says so rather than staying silent. */
+  findingsFilesScanned: number;
 }
 
 export function reviseAdvisory(baseDir: string, sliceKey: string, shippedVersion: number | null, conformedVersion: number | null): ReviseAdvisory {
   const neverCertified = conformedVersion === null || conformedVersion !== shippedVersion;
   let unruledFindingsCount = 0;
-  for (const { doc } of listAllFindingsFiles(baseDir)) {
+  const files = listAllFindingsFiles(baseDir);
+  for (const { doc } of files) {
     unruledFindingsCount += unruledFindingsInScope(doc.findings, new Set([sliceKey])).length;
   }
-  return { neverCertified, unruledFindingsCount };
+  return { neverCertified, unruledFindingsCount, findingsFilesScanned: files.length };
 }
 
 export type RunReviseResult =

@@ -79,7 +79,8 @@ three specific points:
    human gate, the same shape as ratifying a slice: an agent gathers evidence and proposes, a person decides, and the decision
    is recorded with a name and a date. The report proposes; you decide.
    **The findings themselves are structured data** (MIL-214): the conform skill writes
-   `conformance/<date>-findings.json` alongside its `<date>-report.md`, one entry per `### n.`
+   `conformance/<date>-findings.json` alongside its `<date>-report.md` (the gates also read
+   `conformance/<date>-<name>-findings.json`, e.g. one file per slice), one entry per `### n.`
    finding, ids matching (shape: [slice-doc-schema.md](slice-doc-schema.md);
    `em conform-findings check <path>` verifies a headless run wrote it correctly).
    `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec> --locus <model|doc|code|none> --by <name>`

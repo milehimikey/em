@@ -106,7 +106,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `freshness` | `{ file, repo? }` | The `em freshness <file> --json` document: one model's conformance record — last-conformed revision, commits behind HEAD, slice-PRs behind HEAD, unruled conformance findings |
 | `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
 | `discover_triage_check` | `{ path, source? }` | The `em discover triage-check <path> --json` document: validates a `discovery/prd-triage.json` PRD/spec triage record (GH #295) |
-| `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214) |
+| `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214; `em slice conform` also reads `<date>-<name>-findings.json`) |
 | `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
 | `upgrade` | `{ file }` (git — see below) | The `em upgrade <file> --json` document (MIL-219): dry-run only, never applies anything |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
