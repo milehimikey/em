@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { applyConformFrontmatter, findLatestFindingsForRevision, runSliceConform } from "../src/cli/sliceConform.js";
+import { applyConformFrontmatter, findFindingsForRevision, findLatestFindingsForRevision, runSliceConform } from "../src/cli/sliceConform.js";
 import { parseConformedAt } from "../src/catalog/sliceDoc.js";
 import { serializeFindingsDoc } from "../src/cli/findings.js";
 
@@ -308,7 +308,7 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
 
   it("certifies a note-bound doc and writes it to disk", () => {
     const result = run("shipped.em", "shipped-slice", "8f12ed8", "2026-09-08");
-    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: true, version: 2, skippedFindingsCheck: null });
+    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: true, version: 2, skippedFindingsCheck: null, findingsFiles: ["conformance/2026-09-01-findings.json"] });
     const written = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     expect(written).toContain("conformedVersion: 2");
     expect(written).toContain("conformedAt: 8f12ed8");
@@ -318,7 +318,7 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
   it("is idempotent on a second run with the same --at", () => {
     const before = readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8");
     const result = run("shipped.em", "shipped-slice", "8f12ed8", "2026-09-08");
-    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: false, version: 2, skippedFindingsCheck: null });
+    expect(result).toEqual({ ok: true, path: "slices/shipped-slice.md", changed: false, version: 2, skippedFindingsCheck: null, findingsFiles: ["conformance/2026-09-01-findings.json"] });
     expect(readFileSync(join(dir, "slices", "shipped-slice.md"), "utf8")).toBe(before);
   });
 
@@ -374,6 +374,7 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
       changed: true,
       version: 2,
       skippedFindingsCheck: [1],
+      findingsFiles: ["conformance/2026-09-01-findings.json"],
     });
     const written = readFileSync(join(dir, "slices", "gated-slice.md"), "utf8");
     expect(written).toContain("conformedVersion: 2");
@@ -393,3 +394,90 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
   });
 });
 
+
+// GH #385: the scan opens every `<date>[-<anything>]-findings.json`, merges every file that shares
+// the `--at` revision, and says so when `--at` matches none.
+describe("findings file names and revision merging (GH #385)", () => {
+  let dir: string;
+  const finding = (id: number, slice: string | null, locus: "code" | null = null) => ({
+    id, surface: "structural" as const, class: "Real drift", slice, evidence: `e${id}`, locus,
+    resolvedBy: locus ? "Alex" : null, resolvedOn: locus ? "2026-09-02" : null,
+  });
+  const writeFindings = (name: string, revision: string, findings: ReturnType<typeof finding>[]) =>
+    writeFileSync(
+      join(dir, "conformance", name),
+      serializeFindingsDoc({ findingsSchemaVersion: "1.0", model: "m.em", report: "conformance/r.md", revision, findings }),
+    );
+  const fresh = (docName: string) => {
+    writeFileSync(join(dir, "slices", `${docName}.md`), IMPLEMENTED_DOC);
+    writeFileSync(join(dir, `${docName}.em`), `slice "${docName}" {\n  command Do Thing note "slices/${docName}.md"\n  event Thing Done\n}\n`);
+  };
+  const run = (docName: string, at: string) => {
+    const { model, refs } = compile(readFileSync(join(dir, `${docName}.em`), "utf8"));
+    return runSliceConform(model, refs, dir, docName, at, "2026-10-30");
+  };
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-slice-conform-names-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("the issue's reproduction verbatim: <date>-abc-0001-findings.json with an unruled finding is refused", () => {
+    fresh("abc-0001");
+    writeFindings("2026-01-01-abc-0001-findings.json", "build:commit_deadbeef", [finding(1, "abc-0001")]);
+    const r = run("abc-0001", "build:commit_deadbeef");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.message).toContain("1 unruled conformance finding(s)");
+    expect(r.message).toContain("conformance/2026-01-01-abc-0001-findings.json (id 1)");
+  });
+
+  it("<date>-<anything>-findings.json is scanned; names without a date prefix or findings.json suffix are not", () => {
+    writeFindings("2026-02-02-run-b-findings.json", "rev-names", []);
+    writeFindings("notes-findings.json", "rev-names", []);
+    writeFindings("2026-02-02-findings.txt", "rev-names", []);
+    writeFindings("2026-02-03-findings.json", "rev-names", []);
+    expect(findFindingsForRevision(dir, "rev-names").map((f) => f.path)).toEqual([
+      "conformance/2026-02-03-findings.json",
+      "conformance/2026-02-02-run-b-findings.json",
+    ]);
+  });
+
+  it("scope still comes from each finding's slice field: another slice's finding in the file does not block", () => {
+    fresh("scoped-slice");
+    writeFindings("2026-03-01-other-findings.json", "rev-scope", [finding(1, "someone-else")]);
+    const r = run("scoped-slice", "rev-scope");
+    expect(r).toMatchObject({ ok: true, findingsFiles: ["conformance/2026-03-01-other-findings.json"] });
+  });
+
+  it("merges EVERY file sharing the revision, not just the newest: an older file's unruled finding still refuses, and both files are named", () => {
+    fresh("merge-slice");
+    writeFindings("2026-04-01-findings.json", "rev-merge", [finding(1, "merge-slice")]);
+    writeFindings("2026-04-02-second-run-findings.json", "rev-merge", [finding(1, "merge-slice"), finding(2, null)]);
+    const r = run("merge-slice", "rev-merge");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.message).toContain("3 unruled conformance finding(s)");
+    expect(r.message).toContain("conformance/2026-04-02-second-run-findings.json (id 1, 2)");
+    expect(r.message).toContain("conformance/2026-04-01-findings.json (id 1)");
+  });
+
+  it("when every matching file is ruled the slice certifies and the result names the files used", () => {
+    fresh("ruled-slice");
+    writeFindings("2026-05-01-findings.json", "rev-ruled", [finding(1, "ruled-slice", "code")]);
+    writeFindings("2026-05-02-b-findings.json", "rev-ruled", [finding(1, "ruled-slice", "code")]);
+    const r = run("ruled-slice", "rev-ruled");
+    expect(r).toMatchObject({
+      ok: true,
+      skippedFindingsCheck: null,
+      findingsFiles: ["conformance/2026-05-02-b-findings.json", "conformance/2026-05-01-findings.json"],
+    });
+  });
+
+  it("--at matching no findings file certifies (a note, not a refusal) with findingsFiles empty", () => {
+    fresh("nomatch-slice");
+    const r = run("nomatch-slice", "rev-nothing-matches");
+    expect(r).toMatchObject({ ok: true, findingsFiles: [] });
+  });
+});

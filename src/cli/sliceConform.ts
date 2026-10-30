@@ -34,7 +34,7 @@
 //    "later" from "earlier" for an arbitrary target-repo revision string without walking that
 //    repo's git history, which this pure, fs-scoped command never does.
 //  - Refuses a continuation key (MIL-208 pattern) — no doc of its own to flip.
-//  - Refuses when the newest `conformance/*-findings.json` beside this model whose `revision`
+//  - Refuses when any `conformance/<date>[-<name>]-findings.json` beside this model whose `revision`
 //    equals `--at` still has an unruled finding (`locus: null`) in scope for this slice —
 //    the whole point (docs the code was never fully certified, so bumping/certifying past it
 //    would be exactly the sequencing bug MIL-214 exists to close). `--skip-findings-check`
@@ -161,14 +161,20 @@ export function applyConformFrontmatter(raw: string, sliceKey: string, at: strin
   return { ok: true, content, changed: true, version };
 }
 
-/** Scan `<baseDir>/conformance/*-findings.json`, newest filename first, for the first one whose
- *  `revision` matches `at` — the "newest findings JSON whose revision == --at" the ruling
- *  describes. A malformed candidate is silently skipped (not refused): this is a best-effort
- *  lookup for the findings-check gate below, not itself a validator — `em conform-findings
- *  check` is where a broken findings file gets a loud diagnosis. Returns null when the
- *  `conformance/` directory doesn't exist, or no candidate matches `at`. */
+/** Scan `<baseDir>/conformance/<date>[-<anything>]-findings.json`, newest filename first, for
+ *  EVERY file whose `revision` matches `at` (GH #385: several runs/slices can share a revision, so
+ *  the files are merged, not first-wins) — the "newest findings JSON whose revision == --at" the
+ *  original ruling describes, widened. A malformed candidate is silently skipped (not refused):
+ *  this is a best-effort lookup for the findings-check gate below, not itself a validator — `em
+ *  conform-findings check` is where a broken findings file gets a loud diagnosis. Returns `[]`
+ *  when the `conformance/` directory doesn't exist, or no candidate matches `at`. */
+export function findFindingsForRevision(baseDir: string, at: string): { path: string; doc: FindingsDoc }[] {
+  return listAllFindingsFiles(baseDir).filter((f) => f.doc.revision === at);
+}
+
+/** The newest file of `findFindingsForRevision`, or null — kept for callers that want one. */
 export function findLatestFindingsForRevision(baseDir: string, at: string): { path: string; doc: FindingsDoc } | null {
-  return listAllFindingsFiles(baseDir).find((f) => f.doc.revision === at) ?? null;
+  return findFindingsForRevision(baseDir, at)[0] ?? null;
 }
 
 export type RunSliceConformResult =
@@ -182,6 +188,10 @@ export type RunSliceConformResult =
        *  the findings-check gate passed on its own merits (no findings file for this revision, or
        *  nothing unruled in scope), whether or not the flag was passed. */
       skippedFindingsCheck: number[] | null;
+      /** GH #385: the findings files (relative paths, newest first) whose `revision` matched `--at`
+       *  and were checked. Empty exactly when none matched — the CLI prints a note then, so a
+       *  naming mismatch cannot pass silently. */
+      findingsFiles: string[];
     }
   | { ok: false; message: string };
 
@@ -248,22 +258,23 @@ export function runSliceConform(
   // the other would certify against a tree holding no code for the slice and let the gate pass
   // vacuously (no findings file for that revision).
 
-  const found = findLatestFindingsForRevision(baseDir, at);
+  const found = findFindingsForRevision(baseDir, at);
   let skippedFindingsCheck: number[] | null = null;
-  if (found) {
-    const unruled = unruledFindingsInScope(found.doc.findings, new Set([sliceKey]));
-    if (unruled.length > 0) {
-      if (!skipFindingsCheck) {
-        return {
-          ok: false,
-          message:
-            `slice "${sliceKey}" has ${unruled.length} unruled conformance finding(s) in ${found.path} ` +
-            `(id ${unruled.map((f) => f.id).join(", ")}) — rule on them (\`em conform-supersede --locus --by\`) ` +
-            "or pass --skip-findings-check to certify anyway",
-        };
-      }
-      skippedFindingsCheck = unruled.map((f) => f.id);
+  const unruledByFile = found
+    .map((f) => ({ path: f.path, unruled: unruledFindingsInScope(f.doc.findings, new Set([sliceKey])) }))
+    .filter((f) => f.unruled.length > 0);
+  if (unruledByFile.length > 0) {
+    const total = unruledByFile.reduce((n, f) => n + f.unruled.length, 0);
+    if (!skipFindingsCheck) {
+      return {
+        ok: false,
+        message:
+          `slice "${sliceKey}" has ${total} unruled conformance finding(s) in ` +
+          unruledByFile.map((f) => `${f.path} (id ${f.unruled.map((x) => x.id).join(", ")})`).join("; ") +
+          " — rule on them (`em conform-supersede --locus --by`) or pass --skip-findings-check to certify anyway",
+      };
     }
+    skippedFindingsCheck = unruledByFile.flatMap((f) => f.unruled.map((x) => x.id));
   }
 
   const absPath = join(baseDir, doc.path);
@@ -275,5 +286,5 @@ export function runSliceConform(
   if (result.changed) {
     writeFileSync(absPath, result.content, "utf8");
   }
-  return { ok: true, path: doc.path, changed: result.changed, version: result.version, skippedFindingsCheck };
+  return { ok: true, path: doc.path, changed: result.changed, version: result.version, skippedFindingsCheck, findingsFiles: found.map((f) => f.path) };
 }

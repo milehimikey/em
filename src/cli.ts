@@ -1238,6 +1238,11 @@ function reviseAction(commandName: "revise" | "reratify") {
     if (result.advisory && result.advisory.unruledFindingsCount > 0) {
       console.error(`warn: revising "${sliceKey}" with ${result.advisory.unruledFindingsCount} unruled conformance finding(s) on the shipped version`);
     }
+    if (result.advisory && result.advisory.findingsFilesScanned === 0) {
+      console.error(
+        `note: no conformance findings file (conformance/<date>[-<name>]-findings.json) was found beside the model — unruled findings on "${sliceKey}" could not be checked`,
+      );
+    }
     const what =
       result.kind === "shipped"
         ? `v${result.newVersion - 1} stays shipped; v${result.newVersion} opened as draft`
@@ -1388,7 +1393,7 @@ slice
       "Idempotent on the same (version, --at) pair; a different --at simply overwrites (a " +
       "later re-certification is normal — there's no way for em to tell 'later' from 'earlier' " +
       "for an arbitrary revision string, so there's no --force to reach for). Refuses when the " +
-      "newest conformance/*-findings.json matching --at still has an unruled finding in scope " +
+      "conformance/<date>[-<name>]-findings.json file matching --at still has an unruled finding in scope " +
       "for this slice; --skip-findings-check overrides with a loud notice.",
   )
   .argument("<file>", "input .em file")
@@ -1434,10 +1439,14 @@ slice
           `unruled conformance finding(s) still in scope (id ${result.skippedFindingsCheck.join(", ")})`,
       );
     }
+    const noFindingsNote =
+      result.findingsFiles.length === 0
+        ? ` — note: no conformance findings file matches --at ${opts.at} (conformance/<date>[-<name>]-findings.json with that revision), so the findings check had nothing to read`
+        : "";
     console.log(
-      result.changed
+      (result.changed
         ? `certified: ${result.path} (conformedVersion: ${result.version}, conformedAt: ${opts.at}, conformedOn: ${on})`
-        : `already certified (no-op): ${result.path}`,
+        : `already certified (no-op): ${result.path}`) + noFindingsNote,
     );
   });
 
