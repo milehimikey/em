@@ -348,8 +348,9 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   slice with the same name and context. A bare repeat of an event with the same name and context is
   ONE logical event — no `duplicate-name`, no marker (`again` stays view-only). The repeat inherits
   the first declaration's fields, element-level `tag` clauses and `public`; declaring different ones
-  is the error `shared-event-field-mismatch`. A view's `from "E"` draws an arrow from every recording
-  site at or before it, and EVERY site needs a reader at or after it (add `view V again from "E"`
+  is the error `shared-event-field-mismatch`. Each recording site feeds the nearest instance of the
+  reading view at or after it (a `view V again from "E"` draws arrows only from the sites since the
+  previous instance of V that also reads E), and EVERY site needs a reader at or after it (add `view V again from "E"`
   after the last site, or `event-unread` warns for that site). The same name in a different context
   is still a `duplicate-name` warning.
 - **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an

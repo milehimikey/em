@@ -159,10 +159,17 @@ export function resolveFromSource(model: NormalizedModel, el: Element, name: str
 }
 
 /**
- * Like `resolveFromSource`, but a `view`'s event source resolves to EVERY recording site of
- * that logical event (GH #279: one event recorded by several commands) at or before the view's
- * slice — Law 2 (forward-only) still applies per occurrence. When no occurrence is at or
- * before the view (a `view-from-future-event` error), falls back to the first occurrence.
+ * Like `resolveFromSource`, but a `view`'s event source resolves to the recording sites of that
+ * logical event (GH #279: one event recorded by several commands) that this view instance
+ * reads. GH #328 rule: each recording site feeds the NEAREST instance of the reading view at or
+ * after it, so an instance draws arrows only from the sites recorded since the previous
+ * instance of the same view that also reads this event (the first such instance keeps every
+ * site at or before it). "Previous" means the previous instance that reads the event, not any
+ * earlier instance — the dual of the per-site `event-unread` check. Law 2 (forward-only) still
+ * applies per occurrence. An empty window (an `again` naming the event with no new site since
+ * the previous reading instance — a cumulative `from`) keeps every reachable site, as before.
+ * When no occurrence is at or before the view (a `view-from-future-event` error), falls back
+ * to the first occurrence.
  */
 export function resolveFromSources(model: NormalizedModel, el: Element, name: string): Element[] {
   const first = resolveFromSource(model, el, name);
@@ -172,7 +179,19 @@ export function resolveFromSources(model: NormalizedModel, el: Element, name: st
     (x) => x.kind === "event" && x.logicalId === first.logicalId,
   );
   const reachable = sites.filter((x) => !isLaterOnTimeline(model, x.sliceIndex, el.sliceIndex));
-  return reachable.length > 0 ? reachable : [first];
+  if (reachable.length === 0) return [first];
+  const key = normalizeName(name);
+  const previousReaders = model.elements.filter(
+    (v) =>
+      v.kind === "view" &&
+      v.id !== el.id &&
+      v.logicalId === el.logicalId &&
+      (v.from ?? []).some((n) => normalizeName(n) === key),
+  );
+  const previous = latestOnTimeline(model, previousReaders, el.sliceIndex, true);
+  if (!previous) return reachable;
+  const window = reachable.filter((x) => isLaterOnTimeline(model, x.sliceIndex, previous.sliceIndex));
+  return window.length > 0 ? window : reachable;
 }
 
 /** Latest view instance at-or-before the given slice on the model's timeline (reactions read

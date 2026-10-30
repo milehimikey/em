@@ -325,7 +325,10 @@ An event declared in more than one slice with the same name **and** the same con
 logical event — two commands recording the same fact — and draws no `duplicate-name` warning.
 Declare it bare in the later slice; it inherits the first declaration's fields, element-level
 `tag` clauses and `public` (same fact, same consistency boundary, same publication status). A
-view's `from "Event"` draws an arrow from every recording site at or before the view. Same name
+view's `from "Event"` draws an arrow from the recording sites it reads: each site feeds the
+nearest instance of the reading view at or after it, so `view X again from "Event"` draws arrows
+only from the sites recorded since the previous instance of X that also reads the event (the first
+instance keeps every site at or before it; with no new site the edge set is unchanged). Same name
 in a different context still warns `duplicate-name`. `public-name-not-unique` skips the repeats
 (they are the same public event, not a second one).
 

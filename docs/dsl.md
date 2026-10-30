@@ -174,7 +174,10 @@ repeat, pointing at the first). No marker is needed — `again` stays view-only.
 declaration with no `{ fields }` block, `tag` clauses or `public` inherits the first
 declaration's; one that declares different ones is the error `shared-event-field-mismatch`.
 Every recording site needs a reader at or after it (`event-unread`, per site). A view reading the event
-(`from "Event"`) gets an arrow from every recording site at or before it. The same name in a
+(`from "Event"`) gets an arrow from the recording sites it reads: each site feeds the nearest
+instance of the reading view at or after it, so a `view X again from "Event"` draws arrows only
+from the sites recorded since the previous instance of X that also reads the event (the first
+instance keeps every site at or before it; an `again` with no new site keeps all of them). The same name in a
 different context is still a `duplicate-name` warning when referenced.
 
 ```
