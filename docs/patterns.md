@@ -40,7 +40,9 @@ to each (never an event-to-event chain).
 **Two intents record one fact.** `Create Product` and `Create Product Variant` can both end in
 `Product Created`. Declare the event in each slice, bare, with the same name and context — the
 repeats are one logical event (they inherit the first declaration's fields, tags and `public`),
-a view reading it gets an arrow from every recording site, and each site needs a reader after it:
+each recording site feeds the nearest instance of the reading view at or after it (a repeated
+`view … again` draws arrows only from the sites since its previous reading instance), and each site
+needs a reader after it:
 
 ```em
 slice "Create Product" {

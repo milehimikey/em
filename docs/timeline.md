@@ -138,4 +138,6 @@ When two commands record the same event (same name, same context — see
 [dsl.md](dsl.md#one-event-recorded-by-several-commands)), each recording site is a separate
 box on the timeline and the same forward rule applies to each: a read model only reads a
 recording at or before its own slice, and every recording site needs a reader at or after it.
+Each site feeds the nearest instance of the reading view at or after it: a `view V again` draws
+arrows only from the sites recorded since the previous instance of V that also reads the event.
 A site placed after the last reader warns `event-unread`; add `view V again from "Event"` after it.

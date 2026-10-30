@@ -211,3 +211,226 @@ describe("render and query of shared events (GH #279)", () => {
     expect(into.length).toBe(2);
   });
 });
+
+// GH #328: each recording site feeds the nearest instance of the reading view at or after it.
+describe("a repeated view reads only the sites since its previous reading instance (GH #328)", () => {
+  const ordering = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+
+slice "Order Status" {
+  view Order Status from "Order Placed"
+  ui Track Order @Customer
+}
+
+slice "Reorder" {
+  ui Reorder Button @Customer
+  command Reorder
+  event Order Placed @Sales
+}
+
+slice "Order Status after Reorder" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+  const fromEdges = (src: string) => {
+    const model = modelFrom(src);
+    return semanticEdges(model)
+      .filter((e) => e.source === "from")
+      .map((e) => {
+        const a = model.byId.get(e.from)!;
+        const b = model.byId.get(e.to)!;
+        return `${model.slices[a.sliceIndex].name} -> ${model.slices[b.sliceIndex].name}`;
+      });
+  };
+
+  it("the Ordering exhibit yields exactly two from edges, no back-span", () => {
+    expect(fromEdges(ordering)).toEqual([
+      "Place Order -> Order Status",
+      "Reorder -> Order Status after Reorder",
+    ]);
+  });
+
+  it("the previous instance is the previous one that READS the event (interleaved case)", () => {
+    const src = `
+model "Shop"
+persona Customer
+context Sales
+
+slice "A1" {
+  ui A1 UI @Customer
+  command Do A1
+  event E1 Happened @Sales
+}
+slice "Slice X" {
+  view X from "E1 Happened"
+  ui X UI @Customer
+}
+slice "F" {
+  ui F UI @Customer
+  command Do F
+  event F Happened @Sales
+}
+slice "Slice X2" {
+  view X again from "F Happened"
+  ui X UI 2 @Customer
+}
+slice "A2" {
+  ui A2 UI @Customer
+  command Do A2
+  event E1 Happened @Sales
+}
+slice "Slice X3" {
+  view X again from "E1 Happened"
+  ui X UI 3 @Customer
+}
+`;
+    expect(fromEdges(src)).toEqual(["A1 -> Slice X", "F -> Slice X2", "A2 -> Slice X3"]);
+  });
+
+  it("an empty window keeps every reachable site (cumulative from is unchanged)", () => {
+    const src = ordering.replace(
+      /slice "Order Status after Reorder" \{/,
+      `slice "Order Status Again" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+slice "Order Status after Reorder" {`,
+    );
+    const edges = fromEdges(src);
+    expect(edges).toContain("Place Order -> Order Status");
+    expect(edges).toContain("Reorder -> Order Status Again");
+    // the third instance has no new site since the second: today's edge set (both sites)
+    expect(edges.filter((e) => e.endsWith("-> Order Status after Reorder")).sort()).toEqual([
+      "Place Order -> Order Status after Reorder",
+      "Reorder -> Order Status after Reorder",
+    ]);
+  });
+
+  it("a from-less instance in a slice that records the event is a previous reader (critic probe)", () => {
+    const src = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+slice "Order Status" {
+  view Order Status from "Order Placed"
+  ui Track Order @Customer
+}
+slice "Import Order" {
+  event Order Placed @Sales
+  view Order Status again
+}
+slice "Reorder" {
+  ui Reorder Button @Customer
+  command Reorder
+  event Order Placed @Sales
+}
+slice "Order Status after Reorder" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+    const edges = fromEdges(src).filter((e) => e.endsWith("-> Order Status after Reorder"));
+    expect(edges).toEqual(["Reorder -> Order Status after Reorder"]);
+    // the Import Order site feeds only its same-slice instance, by pattern
+    const model = modelFrom(src);
+    const site = model.elements.find((e) => e.kind === "event" && model.slices[e.sliceIndex].name === "Import Order")!;
+    const out = semanticEdges(model).filter((e) => e.from === site.id);
+    expect(out.map((e) => [e.source, model.slices[model.byId.get(e.to)!.sliceIndex].name])).toEqual([
+      ["pattern", "Import Order"],
+    ]);
+  });
+
+  it("a from-less continuation lifted out of a command slice never counts as a previous reader", () => {
+    const src = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+slice "Order Status" {
+  view Order Status from "Order Placed"
+  ui Track Order @Customer
+}
+slice "Import Order" {
+  ui Import Button @Customer
+  command Import Order
+  event Order Placed @Sales
+  view Order Status again
+}
+slice "Order Status after Import" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+    const model = modelFrom(src);
+    expect(model.slices.some((s) => s.synthesized)).toBe(true);
+    const site = model.elements.find((e) => e.kind === "event" && model.slices[e.sliceIndex].name === "Import Order")!;
+    const edges = semanticEdges(model);
+    const out = edges.filter((e) => e.from === site.id && e.source === "from");
+    expect(out.map((e) => model.slices[model.byId.get(e.to)!.sliceIndex].name)).toEqual(["Order Status after Import"]);
+    // no recording site is left without an outgoing edge to a view
+    for (const ev of model.elements.filter((e) => e.kind === "event")) {
+      expect(edges.some((e) => e.from === ev.id && model.byId.get(e.to)?.kind === "view")).toBe(true);
+    }
+  });
+
+  it("an instance fed by an explicit arrow from the event is a previous reader", () => {
+    const src = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+slice "Order Status" {
+  view Order Status
+  ui Track Order @Customer
+}
+arrow Order Placed -> Order Status
+slice "Reorder" {
+  ui Reorder Button @Customer
+  command Reorder
+  event Order Placed @Sales
+}
+slice "Order Status after Reorder" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+    const model = modelFrom(src);
+    expect(model.arrows.some((a) => a.toId !== undefined && a.fromId !== undefined)).toBe(true);
+    expect(fromEdges(src).filter((e) => e.endsWith("-> Order Status after Reorder"))).toEqual([
+      "Reorder -> Order Status after Reorder",
+    ]);
+  });
+
+  it("the slice diagram follows the same rule", () => {
+    const model = modelFrom(ordering);
+    const { model: sm } = buildSliceDiagram(model, 3);
+    const view = sm.elements.find((e) => e.kind === "view")!;
+    const into = semanticEdges(sm).filter((e) => e.to === view.id && e.source === "from");
+    expect(into.length).toBe(1);
+  });
+});

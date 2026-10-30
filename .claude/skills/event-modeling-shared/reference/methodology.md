@@ -363,8 +363,10 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   ```
 - **One event, two commands.** When two commands record the same fact, repeat the event bare
   (`event X @Ctx`, same name and context) in the second slice: it inherits the first declaration, no
-  marker needed. Declaring different fields is `shared-event-field-mismatch`. (The arrow set for a
-  shared event read by a repeated view is under review: GH #328.)
+  marker needed. Declaring different fields is `shared-event-field-mismatch`. Each recording site
+  feeds the nearest instance of the reading view at or after it: a `view X again from "E"` draws
+  arrows only from the sites of E recorded since the previous instance of X that also reads E (the
+  first instance keeps every site at or before it).
   ```em
   model "Ordering"
 
