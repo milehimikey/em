@@ -264,6 +264,7 @@ describe("em slice revise / reratify (CLI)", () => {
     const r = em(["slice", "revise", "model.em", "pay"], dir);
     expect(r.status).toBe(0);
     expect(r.stdout).toBe("revised: slices/pay.md (status: draft, version: 2 — v1 stays shipped; v2 opened as draft)\n");
+    expect(r.stderr).toContain("note: no conformance findings file (conformance/<date>[-<name>]-findings.json) was found beside the model");
     expect(readFileSync(join(dir, "slices", "pay.md"), "utf8")).toContain("status: draft\n");
   });
   it("reratify is the deprecated alias: same effect, a notice on stderr, flags ignored with a notice", () => {

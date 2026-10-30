@@ -233,7 +233,7 @@ export function lookupFindingsBesideReport(baseDir: string, reportPath: string):
 /** A findings file name the scan opens (GH #385): `<YYYY-MM-DD>-findings.json`, or
  *  `<YYYY-MM-DD>-<anything>-findings.json` (e.g. `2026-01-01-abc-0001-findings.json`, a per-slice
  *  or per-run file). Scope is never read from the name — each finding's own `slice` field decides. */
-export const FINDINGS_FILE_NAME_RE = /^\d{4}-\d{2}-\d{2}-.*findings\.json$/;
+export const FINDINGS_FILE_NAME_RE = /^\d{4}-\d{2}-\d{2}-(.*-)?findings\.json$/;
 
 /** Every `conformance/<YYYY-MM-DD>[-<anything>]-findings.json` beside `baseDir`, newest filename
  *  first, that parses and shape-validates — a malformed candidate is silently skipped (`em conform-findings check` is

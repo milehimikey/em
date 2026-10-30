@@ -4092,6 +4092,15 @@ describe("em slice conform (CLI, MIL-214)", () => {
     expect(none.status).toBe(0);
     expect(none.stdout).toContain("certified: slices/named-slice.md");
     expect(none.stdout).toContain("note: no conformance findings file matches --at no-such-rev");
+    writeFileSync(join(dir, "slices", "ruled-slice.md"), IMPLEMENTED_DOC);
+    writeFileSync(join(dir, "ruled.em"), 'slice "Ruled Slice" {\n  command Do Thing note "slices/ruled-slice.md"\n  event Thing Done\n}\n');
+    writeFileSync(
+      join(dir, "conformance", "2026-09-03-ruled-slice-findings.json"),
+      JSON.stringify({ findingsSchemaVersion: "1.0", model: "ruled.em", report: "conformance/r.md", revision: "ruled-rev", findings: [] }),
+    );
+    const ruled = em(["slice", "conform", "ruled.em", "ruled-slice", "--at", "ruled-rev", "--on", "2026-09-08"], dir);
+    expect(ruled.status).toBe(0);
+    expect(ruled.stdout).toContain("— findings: conformance/2026-09-03-ruled-slice-findings.json");
     writeFileSync(
       join(dir, "conformance", "2026-09-02-named-slice-findings.json"),
       JSON.stringify({ findingsSchemaVersion: "1.0", model: "named.em", report: "conformance/r.md", revision: "named-rev",

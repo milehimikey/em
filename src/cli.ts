@@ -1442,7 +1442,7 @@ slice
     const noFindingsNote =
       result.findingsFiles.length === 0
         ? ` — note: no conformance findings file matches --at ${opts.at} (conformance/<date>[-<name>]-findings.json with that revision), so the findings check had nothing to read`
-        : "";
+        : ` — findings: ${result.findingsFiles.join(", ")}`;
     console.log(
       (result.changed
         ? `certified: ${result.path} (conformedVersion: ${result.version}, conformedAt: ${opts.at}, conformedOn: ${on})`

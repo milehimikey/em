@@ -438,6 +438,7 @@ describe("findings file names and revision merging (GH #385)", () => {
     writeFindings("notes-findings.json", "rev-names", []);
     writeFindings("2026-02-02-findings.txt", "rev-names", []);
     writeFindings("2026-02-03-findings.json", "rev-names", []);
+    writeFindings("2026-02-04-xfindings.json", "rev-names", []);
     expect(findFindingsForRevision(dir, "rev-names").map((f) => f.path)).toEqual([
       "conformance/2026-02-03-findings.json",
       "conformance/2026-02-02-run-b-findings.json",
@@ -460,6 +461,10 @@ describe("findings file names and revision merging (GH #385)", () => {
     if (r.ok) return;
     expect(r.message).toContain("3 unruled conformance finding(s)");
     expect(r.message).toContain("conformance/2026-04-02-second-run-findings.json (id 1, 2)");
+    writeFindings("2026-04-03-clean-findings.json", "rev-merge", []);
+    const r2 = run("merge-slice", "rev-merge");
+    if (r2.ok) throw new Error("expected refusal");
+    expect(r2.message).toContain("conformance/2026-04-03-clean-findings.json (no unruled)");
     expect(r.message).toContain("conformance/2026-04-01-findings.json (id 1)");
   });
 

@@ -270,7 +270,10 @@ export function runSliceConform(
         ok: false,
         message:
           `slice "${sliceKey}" has ${total} unruled conformance finding(s) in ` +
-          unruledByFile.map((f) => `${f.path} (id ${f.unruled.map((x) => x.id).join(", ")})`).join("; ") +
+          found.map((f) => {
+            const u = unruledByFile.find((x) => x.path === f.path);
+            return u ? `${f.path} (id ${u.unruled.map((x) => x.id).join(", ")})` : `${f.path} (no unruled)`;
+          }).join("; ") +
           " — rule on them (`em conform-supersede --locus --by`) or pass --skip-findings-check to certify anyway",
       };
     }

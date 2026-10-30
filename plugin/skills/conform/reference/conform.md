@@ -264,7 +264,8 @@ canonical model or a slice doc unprompted** — walk the report with the user, a
 proposals they approve, then re-render and `em validate`.
 
 **Also write the findings JSON (MIL-214).** Alongside the report, write
-`conformance/<YYYY-MM-DD>-findings.json` — one entry per `### n.` finding, ids matching the
+`conformance/<YYYY-MM-DD>-findings.json` (write the plain name; `em slice conform` also reads
+`<YYYY-MM-DD>-<name>-findings.json`) — one entry per `### n.` finding, ids matching the
 report's own numbering. Shape (`findingsSchemaVersion: "1.0"`, additive-only, 2-space indent,
 keys sorted, findings sorted by `id`, trailing newline):
 
