@@ -481,7 +481,7 @@ always present, same convention as `tag`) — see [cli.md](cli.md).
 
 ## Derived fields
 
-**View fields only.** A trailing `derived` clause marks a field as computed from which events
+**View fields, and `type` fields used as collection elements.** A trailing `derived` clause marks a field as computed from which events
 have landed, rather than copied straight from a single source event's payload — a `status`
 that steps through `queued` → `notified` → `fulfilled` as different events arrive, a `position`
 recomputed as an ordinal over existing rows, an `availability` flag flipped by whichever of two
@@ -489,8 +489,9 @@ events landed last. These fields are real and belong in the model, but by constr
 fail the ordinary [view field ↔ source event field trace](#fields) — `derived` records that as
 a modeling fact instead of leaving `em validate` to warn forever, or forcing the field out of
 the `.em` and into doc-only prose where `em export` can no longer see it. Writing it on a
-`command`, `event`, `ui`, or `type` field — or an element-level clause on a non-view element —
-is a parse error, the same posture as `assigned`.
+`command`, `event`, or `ui` field — or an element-level clause on a non-view element —
+is a parse error, the same posture as `assigned`. On a `type` field it is accepted for the
+[collection element](#collection-fields-fed-by-child-events) case below.
 
 There are two forms: bare `derived` (no traced source — the value is computed some other way,
 like a row's rank), and traced `derived from "Event A", "Event B"` (the value's arrival depends
@@ -533,7 +534,7 @@ view Waitlist Queue from "Waitlist Entry Added" {
 `em export` carries the marker forward as `derived: boolean` on each field (`true`/`false`,
 always present, same convention as `tag`/`assigned`) and `derivedFrom: string[] | null` (the
 traced form's event name(s), `null` on a bare `derived` field, a non-derived field, and every
-field of a declared type) — see [cli.md](cli.md). This is the actual payoff: a computed field
+field of a declared type that doesn't carry the clause) — see [cli.md](cli.md). This is the actual payoff: a computed field
 declared with `derived` shows up in `em export`'s model again, instead of living only in a
 slice doc's prose where nothing machine-readable knows it exists.
 
@@ -563,6 +564,19 @@ view Attributes from "Attribute Created", "Attribute Value Created", "Attribute 
   makes `VariantOptionValue`'s fields sources); deeper nesting does not, and there is no path syntax.
 - Named events must be among the view's sources (`derived-from-unresolved`), as for any traced
   `derived`.
+- An element field whose value the projection computes rather than copies from an event payload
+  (an audit stamp taken from event metadata, say) is marked `derived` on the `type` field itself,
+  with the same syntax as on a view field, bare or `derived from "<events>"`. It is then skipped by
+  `view-field-no-source`; a traced form's event names must be among the view's sources
+  (`derived-from-unresolved`), as at the top level:
+
+  ```
+  type Loan {
+    loanId: UUID
+    created: Instant derived from "Loan Opened"
+    updated: Instant derived
+  }
+  ```
 - There is no add/remove/key clause: projection behaviour is not model structure. `em slice sync`
   writes a ``Collection of `T`, fed by …`` note under the field and one `### Scenario:` stub (Given/When/Then, in the `parseScenarios` grammar)
   per named event below the table; a view scenario's When is the query, in the generated (read-only) view region. Order of the named

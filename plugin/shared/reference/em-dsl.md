@@ -466,14 +466,16 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   `=== true` convention as `tag`. **Reach for this before echoing a server-set field onto the
   command just to silence a fields-completeness warning** — that misrepresents what the client
   actually sends.
-- **`derived`** (view fields only, MIL-200): marks a field as computed from which events have
+- **`derived`** (view fields, and `type` fields used as collection elements — MIL-200, GH #382):
+  marks a field as computed from which events have
   landed, rather than copied from a single source event's payload (a status stepping through
   states as events arrive, a computed ordinal, an availability flag two events can flip).
   Trails a field's type, or the bare name of a typeless field — bare `derived` (no traced
   source) or traced `derived from "Event A", "Event B"` (the two-word form parsed before the
   bare check, same discipline as `renamed from` vs. plain `from`). A field whose ENTIRE text is
   just `derived` is a field named `derived`, not a clause. `derived`/`derived from` on a
-  command/event/`ui`/`type` field is a parse error. Excludes the field from
+  command/event/`ui` field is a parse error; on a `type` field it is accepted for the
+  collection-element case below (GH #382). Excludes the field from
   `fields-completeness/view-field-no-source` entirely (and thus from `--slice-ready`). The
   traced form still checks something: every named event must resolve among the view's ACTUAL
   sources (the union of `from` across the view's originating and every `again` instance, or the same-slice events for a `from`-less view) — an
@@ -488,7 +490,13 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   declared `type T`, with `derived from "Child Created", "Child Deleted"`, embeds a child entity:
   each field of `T` must trace to a named event (`fields-completeness/view-field-no-source`
   otherwise); a field also traces one level through the declared element type of an array field
-  on the event (`optionValues: VariantOptionValue[]`), no deeper and with no path syntax. No add/remove/key clauses — `em slice sync` writes a `Collection of` note plus
+  on the event (`optionValues: VariantOptionValue[]`), no deeper and with no path syntax. An
+  element field the projection computes rather than copies (an audit stamp from event metadata,
+  say) is marked `derived` on the `type` field itself — bare or `derived from "<events>"`, same
+  syntax as a view field (GH #382): it is then skipped by `view-field-no-source`, and a traced
+  form's names must still be among the view's sources (`derived-from-unresolved`). The marker only
+  takes effect when the type is a collection element of a view field; elsewhere it parses and
+  exports (`derived`/`derivedFrom` on the type's field) but changes nothing. No add/remove/key clauses — `em slice sync` writes a `Collection of` note plus
   one Given/Then scenario stub per named event in the view region (copy into `## Scenarios`), and `em export` sets `collection: true`.
 - **Fields:** `command Place Order { orderId: UUID, items: LineItem[], customerId }` — inline or
   one-per-line. Types are free text (no semantic checking) UNLESS the type string names a

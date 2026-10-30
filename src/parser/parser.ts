@@ -1158,7 +1158,7 @@ interface FieldClauses {
  * work (each clause can only unblock another once), so this never loops meaningfully longer than
  * a fixed clause chain would.
  *
- * `derived from "Event A", "Event B"` (view fields only, MIL-200) is checked in the same loop,
+ * `derived from "Event A", "Event B"` (view fields, and `type` fields for collection elements, MIL-200 / GH #382) is checked in the same loop,
  * BEFORE the bare `derived` check below it — mirroring how the element-level `renamed from` is
  * extracted before the plain `from` clause (`extractClauses`) — so the two-word clause's own
  * "from"-adjacent text is never at risk of being mistaken for anything the bare form's regex
@@ -1228,10 +1228,10 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
     if (clauses.derived === undefined && clauses.derivedFrom === undefined) {
       const derivedFromClause = extractQuotedListClause(rest, "derived\\s+from", "derived from", line);
       if (derivedFromClause) {
-        if (context !== "view") {
+        if (context !== "view" && context !== "type-decl") {
           throw new ParseError(
-            "`derived from` is only valid on a view field — it names the events a computed " +
-              `value's arrival depends on, so it can't describe a ${context === "type-decl" ? "type" : context} field`,
+            "`derived from` is only valid on a view field or a `type` field — it names the events a computed " +
+              `value's arrival depends on, so it can't describe a ${context} field`,
             line,
           );
         }
@@ -1245,11 +1245,11 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
     if (clauses.derived === undefined) {
       const derivedMatch = rest.match(/^(.*\S)\s+derived$/);
       if (derivedMatch) {
-        if (context !== "view") {
+        if (context !== "view" && context !== "type-decl") {
           throw new ParseError(
-            "`derived` is only valid on a view field — it marks a field computed from which " +
+            "`derived` is only valid on a view field or a `type` field — it marks a field computed from which " +
               `events have landed, not copied from a triggering command or event payload, so ` +
-              `it can't describe a ${context === "type-decl" ? "type" : context} field`,
+              `it can't describe a ${context} field`,
             line,
           );
         }

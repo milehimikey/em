@@ -47,7 +47,7 @@ export interface Field {
    *  slice's commands. Still visible to view↔event field tracing; the marker only narrows
    *  the event↔command completeness check, not the view-facing one. */
   assigned?: boolean;
-  /** Trailing `derived` clause on the field line (view fields only, MIL-200): marks this
+  /** Trailing `derived` clause on the field line (view fields, and `type` fields used as collection elements, MIL-200 / GH #382): marks this
    *  field as computed from which events have landed, rather than copied from a single
    *  source event's payload — so `fields-completeness/view-field-no-source` never checks it
    *  against the view's source events. Optionally traced: `derivedFrom` names the event(s)

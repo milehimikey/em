@@ -96,7 +96,7 @@ export const GENERATOR_VERSION: string = JSON.parse(
 //    `model.edges[].source` enum value `"loops-to"` (model/edges.ts's `EdgeSource`) for the
 //    corresponding edge, straight from `semanticEdges()` — no new key, same `source` field
 //    every other edge already carries.
-//  - MIL-200: field `derived: boolean` (computed-from-events marker, view fields only) — same
+//  - MIL-200: field `derived: boolean` (computed-from-events marker, view fields and `type` fields, GH #382) — same
 //    `=== true` convention as `tag`/`assigned` — and `derivedFrom: string[] | null` (the traced
 //    form's event name(s), `renamedFrom`-style nullable). A trailing `derived` (or `derived
 //    from "Event A", "Event B"`) clause exempts the field from

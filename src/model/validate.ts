@@ -277,6 +277,27 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           }
           const list = named.map((e) => `"${e.name}"`).join(", ");
           for (const tf of resolved.typeDecl.fields) {
+            // GH #382: an element field marked `derived` is computed by the projection (e.g. an
+            // audit stamp from event metadata), not copied from an event payload — exempt, like
+            // a top-level derived field. A traced `derived from` still has its names checked.
+            if (tf.derived) {
+              for (const name of tf.derivedFrom ?? []) {
+                if (actualSourceNames.has(normalizeName(name))) continue;
+                const actualList =
+                  actualSourceEvents.length > 0
+                    ? actualSourceEvents.map((e) => `"${e.name}"`).join(", ")
+                    : "(none)";
+                pushDiag(diags, "derived-from-unresolved", {
+                  message:
+                    `view "${view.name}" collection field "${f.name}" (${f.type}) element field ` +
+                    `"${tf.name}" of type "${resolved.typeDecl.name}" is derived from unknown event ` +
+                    `"${name}" — its actual sources are ${actualList}`,
+                  line: view.line,
+                  refs: [refOf(view.id), ...actualSourceEvents.map((e) => refOf(e.id))],
+                });
+              }
+              continue;
+            }
             if (union.has(normalizeName(tf.name))) continue;
             pushDiag(diags, "fields-completeness/view-field-no-source", {
               message:

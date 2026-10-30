@@ -1635,7 +1635,7 @@ slice "S" {
       expect(ast.slices[0].elements[0].fields![0].derivedFrom).toBeUndefined();
     });
 
-    it("rejects a `derived` clause on a command, event, ui, and `type` block", () => {
+    it("rejects a `derived` clause on a command, event, and ui", () => {
       expect(() => parse(`slice "S" {\n  command Do Thing {\n    total: Money derived\n  }\n}`)).toThrow(
         /`derived` is only valid on a view field/,
       );
@@ -1645,21 +1645,31 @@ slice "S" {
       expect(() => parse(`slice "S" {\n  ui Catalog @Customer {\n    total: Money derived\n  }\n}`)).toThrow(
         /`derived` is only valid on a view field/,
       );
-      expect(() => parse(`type Money {\n  amount: int derived\n}`)).toThrow(
-        /`derived` is only valid on a view field/,
-      );
     });
 
-    it("rejects a traced `derived from` clause on a command, event, ui, and `type` block", () => {
+    it("rejects a traced `derived from` clause on a command, event, and ui", () => {
       expect(() =>
         parse(`slice "S" {\n  command Do Thing {\n    total: Money derived from "Order Placed"\n  }\n}`),
       ).toThrow(/`derived from` is only valid on a view field/);
       expect(() =>
         parse(`slice "S" {\n  event E {\n    total: Money derived from "Order Placed"\n  }\n}`),
       ).toThrow(/`derived from` is only valid on a view field/);
-      expect(() => parse(`type Money {\n  amount: int derived from "Order Placed"\n}`)).toThrow(
-        /`derived from` is only valid on a view field/,
+    });
+
+    it("accepts bare `derived` and traced `derived from` on a `type` field (GH #382)", () => {
+      const ast = parse(
+        `type Loan {\n  id: string\n  created: string derived\n  updated: string derived from "Loan Renewed", "Loan Returned"\n}`,
       );
+      const fields = ast.types[0].fields;
+      expect(fields[0].derived).toBeUndefined();
+      expect(fields[1]).toMatchObject({ name: "created", type: "string", derived: true });
+      expect(fields[1].derivedFrom).toBeUndefined();
+      expect(fields[2]).toMatchObject({ name: "updated", derived: true, derivedFrom: ["Loan Renewed", "Loan Returned"] });
+    });
+
+    it("accepts `derived` on an inline `type { ... }` field list (GH #382)", () => {
+      const ast = parse(`type Loan { id: string, created: string derived from "Loan Opened" }`);
+      expect(ast.types[0].fields[1]).toMatchObject({ name: "created", derived: true, derivedFrom: ["Loan Opened"] });
     });
   });
 });

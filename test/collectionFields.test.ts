@@ -220,3 +220,75 @@ slice "Things" {
     expect(names(deep)).toEqual(["deepId", "key", "value"]);
   });
 });
+
+// GH #382: `derived` / `derived from "..."` on a field of a type used as a collection element.
+describe("derived collection element fields (GH #382)", () => {
+  const library = (loanFields: string, viewFrom = `"Loan Opened", "Loan Renewed"`) => `
+model "Library"
+context Lending
+persona Librarian
+
+type Loan { ${loanFields} }
+
+slice "Open Loan" {
+  ui Loan Form @Librarian
+  command Open Loan
+  event Loan Opened @Lending { bookId: string, loanId: string }
+}
+
+slice "Renew Loan" {
+  ui Loan Screen @Librarian
+  command Renew Loan
+  event Loan Renewed @Lending { bookId: string, loanId: string }
+}
+
+slice "Books" {
+  view Books from ${viewFrom} {
+    bookId: string
+    loans: Loan[] derived from "Loan Opened", "Loan Renewed"
+  }
+  ui Book Screen @Librarian
+}
+`;
+  const warnings = (src: string) =>
+    compile(src).diagnostics.filter((d) => d.code === "fields-completeness/view-field-no-source");
+  const unresolved = (src: string) =>
+    compile(src).diagnostics.filter((d) => d.code === "derived-from-unresolved");
+
+  it("warns on audit-stamp element fields that no event carries", () => {
+    const w = warnings(library("loanId: string, created: string, updated: string"));
+    expect(w.map((d) => d.message).join("\n")).toContain('"created"');
+    expect(w).toHaveLength(2);
+  });
+
+  it("does not warn when those element fields are marked derived (bare or traced)", () => {
+    const src = library(`loanId: string, created: string derived, updated: string derived from "Loan Renewed"`);
+    expect(warnings(src)).toEqual([]);
+    expect(unresolved(src)).toEqual([]);
+  });
+
+  it("still warns on a non-derived element field no event carries", () => {
+    const w = warnings(library(`loanId: string, created: string derived, notes: string`));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('"notes"');
+  });
+
+  it("reports derived-from-unresolved for an element field naming a non-source event", () => {
+    const d = unresolved(library(`loanId: string, created: string derived from "Loan Lost"`));
+    expect(d).toHaveLength(1);
+    expect(d[0].message).toContain('element field "created"');
+    expect(d[0].message).toContain('"Loan Lost"');
+  });
+
+  it("exports the marker on the type's fields", () => {
+    const src = library(`loanId: string, created: string derived from "Loan Opened"`);
+    const { model: m, refs, diagnostics } = compile(src);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc: any = JSON.parse(buildExport(m, refs, diagnostics, src, "library.em").text);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const loan = doc.model.types.find((t: any) => t.name === "Loan");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const created = loan.fields.find((f: any) => f.name === "created");
+    expect(created).toMatchObject({ derived: true, derivedFrom: ["Loan Opened"] });
+  });
+});

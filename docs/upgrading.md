@@ -223,6 +223,7 @@ The review gate: `status: reviewed` becomes a real, enforced step before ratific
 | `reviewedBy:`/`reviewedOn:` frontmatter, written by `em slice review --by <name>` | human: same as `ratifiedBy` above — a doc reviewed before this land has no `reviewedBy`, but there's no gate demanding it retroactively |
 | `loops-to "View"` clause on events (a new DSL construct) | no action needed — opt-in syntax |
 | `derived` view-field marker (`status: String derived`, or `derived from "Event A"`) | no action needed — opt-in syntax |
+| `derived` / `derived from "Event A"` on a `type` field used as a collection element (GH #382) | no action needed — opt-in syntax |
 | `constitution.md` scaffolding — `em scaffold` writes it beside the model unless `.specify/` exists | `constitution` |
 | `em ledger --waive <slice-key>` / `Em-Ledger-Waive:` commit trailer | no action needed — opt-in |
 | **Release note: run `em skill sync` in each consumer repo** (the bundle gained a template and new skill text) | `skill-bundle` |
