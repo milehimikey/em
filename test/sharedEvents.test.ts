@@ -315,6 +315,74 @@ slice "Order Status after Reorder" {`,
     ]);
   });
 
+  it("a from-less instance in a slice that records the event is a previous reader (critic probe)", () => {
+    const src = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+slice "Order Status" {
+  view Order Status from "Order Placed"
+  ui Track Order @Customer
+}
+slice "Import Order" {
+  ui Import Button @Customer
+  command Import Order
+  event Order Placed @Sales
+  view Order Status again
+}
+slice "Reorder" {
+  ui Reorder Button @Customer
+  command Reorder
+  event Order Placed @Sales
+}
+slice "Order Status after Reorder" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+    const edges = fromEdges(src).filter((e) => e.endsWith("-> Order Status after Reorder"));
+    expect(edges).toEqual(["Reorder -> Order Status after Reorder"]);
+  });
+
+  it("an instance fed by an explicit arrow from the event is a previous reader", () => {
+    const src = `
+model "Ordering"
+persona Customer
+context Sales
+
+slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed @Sales { orderId: UUID }
+}
+slice "Order Status" {
+  view Order Status
+  ui Track Order @Customer
+}
+arrow Order Placed -> Order Status
+slice "Reorder" {
+  ui Reorder Button @Customer
+  command Reorder
+  event Order Placed @Sales
+}
+slice "Order Status after Reorder" {
+  view Order Status again from "Order Placed"
+  ui Track Order @Customer
+}
+`;
+    const model = modelFrom(src);
+    expect(model.arrows.some((a) => a.toId !== undefined && a.fromId !== undefined)).toBe(true);
+    expect(fromEdges(src).filter((e) => e.endsWith("-> Order Status after Reorder"))).toEqual([
+      "Reorder -> Order Status after Reorder",
+    ]);
+  });
+
   it("the slice diagram follows the same rule", () => {
     const model = modelFrom(ordering);
     const { model: sm } = buildSliceDiagram(model, 3);

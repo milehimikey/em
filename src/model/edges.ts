@@ -186,12 +186,31 @@ export function resolveFromSources(model: NormalizedModel, el: Element, name: st
       v.kind === "view" &&
       v.id !== el.id &&
       v.logicalId === el.logicalId &&
-      (v.from ?? []).some((n) => normalizeName(n) === key),
+      readsEvent(model, v, key),
   );
   const previous = latestOnTimeline(model, previousReaders, el.sliceIndex, true);
   if (!previous) return reachable;
   const window = reachable.filter((x) => isLaterOnTimeline(model, x.sliceIndex, previous.sliceIndex));
   return window.length > 0 ? window : reachable;
+}
+
+/** Whether a view instance reads the event (normalized name `key`), mirroring validate.ts's
+ *  `sharedSiteHasReader`: its `from` names it, or it has no `from` and its own slice records
+ *  it, or an explicit `arrow` from the event lands on it. */
+function readsEvent(model: NormalizedModel, v: Element, key: string): boolean {
+  const from = v.from ?? [];
+  if (from.length > 0) {
+    if (from.some((n) => normalizeName(n) === key)) return true;
+  } else if (
+    // a `view X again` written inside another slice lives in a synthesized continuation column
+    // (GH #287); it reads the events of the slice that hosts it
+    (model.slices[model.slices[v.sliceIndex]?.synthesized?.host ?? v.sliceIndex]?.elements ?? []).some(
+      (e) => e.kind === "event" && normalizeName(e.name) === key,
+    )
+  ) {
+    return true;
+  }
+  return model.arrows.some((a) => a.toId === v.id && normalizeName(a.from) === key);
 }
 
 /** Latest view instance at-or-before the given slice on the model's timeline (reactions read
