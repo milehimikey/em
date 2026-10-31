@@ -109,7 +109,7 @@ flowchart LR
 
 ## Model with AI
 
-`em` ships a Claude Code skill bundle — one router skill plus six focused, SDLC-stage skills
+`em` ships a plugin skill bundle for Claude Code and Codex — one router skill plus six focused, SDLC-stage skills
 (discover/extract, model/slice, implement, conform/validate, watch/review) — that runs a
 facilitated Event Modeling session: the AI asks the questions, you supply the domain, and the
 model renders live as it grows.
@@ -121,6 +121,16 @@ machine; replace `1.14.0` with your `em --version`):
 claude plugin marketplace add milehimikey/em@v1.14.0 --scope project
 claude plugin install em@em-1-14-0 --scope project
 ```
+
+Codex uses the same marketplace and plugin bundle:
+
+```bash
+codex plugin marketplace add milehimikey/em --ref v1.14.0
+codex plugin add em@em-1-14-0
+```
+
+Start a new Codex session after installation. The same skills and MCP server are available; Codex
+does not use Claude's `/em:` slash-command syntax.
 
 Then run `/em:event-modeling` in Claude Code. The older vendored route (`em skill install`,
 which copies the bundle into `.claude/skills/`) still works but is deprecated since 1.14;

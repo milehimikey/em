@@ -2,7 +2,11 @@
 
 ## The plugin route
 
-`em` ships its skill bundle as a Claude Code plugin named `em`, pinned to the em release you run.
+`em` ships its skill bundle as a plugin named `em` for Claude Code and Codex, pinned to the em
+release you run.
+
+### Claude Code
+
 Two commands, once per machine (the examples use 1.14.0; use your own `em --version`):
 
 ```bash
@@ -101,6 +105,20 @@ because registration is per user: settings alone cannot prove which content the 
 missing local registration prints the two install commands above and exits 0 on a dev machine; it
 exits 1 under `--ci` / `CI=true`. The registry location follows `EM_CLAUDE_PLUGINS_DIR` (default
 `~/.claude/plugins`). Full finding table: [cli.md](cli.md#em-skill-check-path).
+
+### Codex
+
+Codex uses the same versioned marketplace and plugin names:
+
+```bash
+codex plugin marketplace add milehimikey/em --ref v1.14.0
+codex plugin add em@em-1-14-0
+```
+
+Start a new Codex session after installation. Codex loads the same `skills/` bundle and MCP server;
+the Claude-specific `/em:` slash-command syntax does not apply. Codex marketplace registration is
+user-level by default. For a repository-scoped setup, use Codex's repository marketplace/config
+mechanism and commit that configuration for collaborators.
 
 ### Sub-agents em ships
 
