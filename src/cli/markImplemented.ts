@@ -73,7 +73,9 @@ const IMPLEMENTED_STATUS = "implemented";
  * MIL-284: the shipped record, written beside `implementedIn:` — `shippedVersion:` (the doc's
  * `version:` now), `shippedRef:` (its `ratifiedRef:`, when it has one) and `shippedOn:`
  * (`shippedOn`, the local date). Each key that already has a line is replaced in place; the rest
- * are inserted right after `implementedIn:`. Since MIL-283 this record, not `status`, is what
+ * are inserted right after `implementedIn:`. GH #392: when the doc has no `ratifiedRef:`, an existing
+ * `shippedRef:` line (the previous version's) is REMOVED instead, so the record reads as a `--no-ref`
+ * ship. Since MIL-283 this record, not `status`, is what
  * every lifecycle reader decides on (`shippedRecordOf` in catalog/sliceDoc.ts), so
  * `shippedVersion:`/`shippedRef:` are ALWAYS written on a real flip — a v2 merge that left a
  * stale `shippedVersion: 1` beside `version: 2` would read as an unshipped delta forever. Only
