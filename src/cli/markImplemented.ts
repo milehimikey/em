@@ -94,8 +94,23 @@ function withShippedRecord(inner: string, eol: string, shippedOn: string | null)
   const edits: { index: number; oldLen: number; next: string }[] = [];
   const fresh: string[] = [];
   for (const [key, value] of wanted) {
-    if (value === null) continue;
     const m = fieldLineRegex(key).exec(inner);
+    if (value === null) {
+      // GH #392: a doc with no `ratifiedRef` must not keep the previous version's `shippedRef:`
+      // line -- remove it (line plus its eol) so the record reads as a `--no-ref` ship.
+      if (key === "shippedRef" && m) {
+        let start = m.index;
+        let end = m.index + m[0].length;
+        const tail = /^\r?\n/.exec(inner.slice(end));
+        if (tail) end += tail[0].length;
+        else {
+          const head = /\r?\n$/.exec(inner.slice(0, start));
+          if (head) start -= head[0].length;
+        }
+        edits.push({ index: start, oldLen: end - start, next: "" });
+      }
+      continue;
+    }
     if (m) edits.push({ index: m.index, oldLen: m[0].length, next: `${m[1]}${value}` });
     else fresh.push(`${key}: ${value}`);
   }

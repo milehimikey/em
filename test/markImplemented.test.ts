@@ -348,6 +348,43 @@ describe("applyImplementedFrontmatter — shipped record (MIL-284)", () => {
     expect(result.ok && result.content).toContain(`implementedIn: ${URL}\nshippedVersion: 1\nshippedOn: 2026-10-12\n`);
     expect(result.ok && result.content).not.toContain("shippedRef:");
   });
+  it("GH #392: a v2 doc ratified --no-ref drops the v1 shippedRef line; shippedVersion/shippedOn move, implementedIn is overwritten", () => {
+    const v2 = READY_DOC.replace(
+      "status: ready-to-implement\n",
+      `status: ready-to-implement\nimplementedIn: https://github.com/org/repo/pull/1\nshippedVersion: 1\nshippedRef: ${REF}\nshippedOn: 2026-10-01\n`,
+    ).replace("version: 1\n", "version: 2\n");
+    expect(v2).toContain("shippedRef:");
+    const result = applyImplementedFrontmatter(v2, URL, "2026-10-30");
+    expect(result.ok).toBe(true);
+    const out = result.ok ? result.content : "";
+    expect(out).not.toContain("shippedRef");
+    expect(out).toContain("shippedVersion: 2\n");
+    expect(out).toContain("shippedOn: 2026-10-30\n");
+    expect(out).toContain(`implementedIn: ${URL}\n`);
+    expect(out).not.toContain("pull/1\n");
+    expect(out).not.toMatch(/\n\n(?=[a-z]+:)/);
+  });
+  it("GH #392: removing the stale shippedRef keeps CRLF discipline", () => {
+    const v2 = READY_DOC.replace(
+      "status: ready-to-implement\n",
+      `status: ready-to-implement\nimplementedIn: https://github.com/org/repo/pull/1\nshippedVersion: 1\nshippedRef: ${REF}\nshippedOn: 2026-10-01\n`,
+    ).replace("version: 1\n", "version: 2\n").replace(/\n/g, "\r\n");
+    const result = applyImplementedFrontmatter(v2, URL, "2026-10-30");
+    const out = result.ok ? result.content : "";
+    expect(out).not.toContain("shippedRef");
+    expect(out).not.toMatch(/[^\r]\n/);
+    expect(out).toContain("shippedVersion: 2\r\nshippedOn: 2026-10-30\r\n");
+  });
+  it("GH #392: a v2 doc WITH ratifiedRef replaces shippedRef with it", () => {
+    const v2 = RATIFIED_DOC.replace(
+      "status: ready-to-implement\n",
+      `status: ready-to-implement\nimplementedIn: https://github.com/org/repo/pull/1\nshippedVersion: 1\nshippedRef: ${"a".repeat(40)}\nshippedOn: 2026-10-01\n`,
+    ).replace("version: 1\n", "version: 2\n");
+    const result = applyImplementedFrontmatter(v2, URL, "2026-10-30");
+    const out = result.ok ? result.content : "";
+    expect(out).toContain(`shippedRef: ${REF}\n`);
+    expect(out).not.toContain("a".repeat(40));
+  });
   it("always writes shippedVersion/shippedRef on a flip; only shippedOn needs a date (the pure default skips it)", () => {
     const result = applyImplementedFrontmatter(RATIFIED_DOC, URL);
     expect(result.ok && result.content).toContain(`implementedIn: ${URL}\nshippedVersion: 1\nshippedRef: ${REF}\nversion: 1\n`);
