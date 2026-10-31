@@ -129,9 +129,9 @@ import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runRevise } from "./cli/revise.js";
 import { runDefer, runDeferFromIssue } from "./cli/defer.js";
-import { runSliceConform } from "./cli/sliceConform.js";
+import { runSliceConform, resolveFindingsForReport, findingsFilesOf, unruledAcrossFiles } from "./cli/sliceConform.js";
 import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, validatePrdTriage } from "./cli/prdTriage.js";
-import { checkFindingsFile, buildCheckFindingsJson, lookupFindingsBesideReport, unruledFindingsInScope, Finding, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
+import { checkFindingsFile, buildCheckFindingsJson, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -1557,9 +1557,10 @@ state
   .description(
     "rewrite Last conformance: (and Last updated:) in the exact format reference/conform.md " +
       "parses. Refuses (MIL-214) while any `implemented` slice has an unruled conformance " +
-      "finding in the findings JSON beside --report (a `slice: null` finding blocks every " +
+      "finding in the findings JSON beside --report, or, when that is absent, in every findings " +
+      "file at the report's own revision (a `slice: null` finding blocks every " +
       "slice); --partial records the marker with a ` (partial)` suffix instead, with a loud " +
-      "notice. Without a findings JSON beside --report: warns once and records the marker as " +
+      "notice. Without a findings JSON beside --report and none at the report's revision: warns once and records the marker as " +
       "given (migration path for a report predating `em conform-findings`)",
   )
   .argument("<revision>", "target-repo revision just diffed against")
@@ -1598,31 +1599,34 @@ state
       }
     }
 
-    let unruled: Finding[] = [];
-    const lookup = lookupFindingsBesideReport(modelDir, opts.report);
-    if (lookup.kind === "invalid") {
-      console.error(`em state set-conformance: ${lookup.message}`);
+    let unruledTotal = 0;
+    let unruledDescribe = "";
+    const resolved = resolveFindingsForReport(modelDir, opts.report, revision);
+    if (resolved.kind === "invalid") {
+      console.error(`em state set-conformance: ${resolved.message}`);
       process.exit(1);
-    } else if (lookup.kind === "absent") {
+    } else if (resolved.kind === "none") {
       console.error(
-        `warn: no findings JSON found beside ${opts.report} — recording the marker without verifying every ` +
+        `warn: no findings JSON found beside ${opts.report} (and no same-revision file) — recording the marker without verifying every ` +
           "finding is ruled (migration path for a report written before `em conform-findings`)",
       );
     } else {
-      unruled = unruledFindingsInScope(lookup.doc.findings, inScope);
+      const counted = unruledAcrossFiles(findingsFilesOf(resolved)!, inScope);
+      unruledTotal = counted.total;
+      unruledDescribe = counted.describe;
     }
 
     const partialFlag = opts.partial === true;
-    if (unruled.length > 0 && !partialFlag) {
+    if (unruledTotal > 0 && !partialFlag) {
       console.error(
-        `em state set-conformance: ${unruled.length} unruled conformance finding(s) among implemented slices ` +
-          `(id ${unruled.map((f) => f.id).join(", ")}) — rule on them (\`em conform-supersede --locus --by\`) or pass --partial`,
+        `em state set-conformance: ${unruledTotal} unruled conformance finding(s) among implemented slices ` +
+          `in ${unruledDescribe} — rule on them (\`em conform-supersede --locus --by\`) or pass --partial`,
       );
       process.exit(1);
     }
-    const recordPartial = partialFlag && unruled.length > 0;
+    const recordPartial = partialFlag && unruledTotal > 0;
     if (recordPartial) {
-      console.error(`notice: conformance marker recorded as PARTIAL — ${unruled.length} finding(s) unruled`);
+      console.error(`notice: conformance marker recorded as PARTIAL — ${unruledTotal} finding(s) unruled`);
     }
 
     const today = localIsoDate();
@@ -1639,7 +1643,8 @@ state
     // is where that problem gets its own diagnostic.
     let certifiedVersion: number | null = null;
     if (!recordPartial && compiledForCertify) {
-      const findingsPath = lookup.kind === "found" ? lookup.path : null;
+      const readFiles = findingsFilesOf(resolved);
+      const findingsPath = readFiles ? readFiles.map((f) => f.path).join(", ") : null;
       const certifyResult = runCertifyModelVersion(
         modelDir,
         compiledForCertify.model,
@@ -1892,7 +1897,8 @@ program
       "report; idempotent on the same --as-of/--findings/--on stamp; refuses if the report " +
       "doesn't exist. --locus/--by (MIL-214, both required together) additionally record the " +
       "ruling itself — locus/resolvedBy/resolvedOn — on the findings named by --findings in the " +
-      "sibling conformance/<date>-findings.json, when one exists (warns once and stamps the " +
+      "sibling conformance/<date>-findings.json, when one exists (refuses, naming them, when only " +
+      "other findings files exist at the report's revision; warns once and stamps the " +
       "banner only when it doesn't — the migration path for a report predating em conform-findings)",
   )
   .argument("<file>", "input .em file (used only to resolve the report path's base directory)")

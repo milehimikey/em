@@ -342,7 +342,7 @@ em state set-conformance <target-repo revision> --report conformance/YYYY-MM-DD-
 ```
 
 — the revision is the one you just diffed against, so the next run's scope starts from here.
-The command writes the exact format step 1 parses back out; never hand-edit the bullet.
+The command writes the exact format step 1 parses back out; never hand-edit the bullet. Gates read every same-revision findings file (the report's own `-findings.json` first, else every file whose `revision` matches). The same-revision lookup uses the report's OWN revision (its `Target repo: … @ <rev>` header line; the caller's `<rev>` / `--as-of` only when the report has none).
 **Refuses (MIL-214) while any `implemented` slice still has an unruled finding** in the findings
 JSON beside the report — rule on every finding first (or certify what's already ruled via `em
 slice conform` above), or pass `--partial` to record the marker with a loud notice instead
@@ -363,7 +363,7 @@ a ruling you're only banner-stamping after the fact), run the same command witho
 em conform-supersede <model-name>.em conformance/YYYY-MM-DD-report.md --as-of <target-repo revision> --findings <spec>
 ```
 
-— stamping the report with a "superseded as of `<rev>`" banner so a later reader who finds it
+— a ruling is written to the file the report names (`<x>-report.md` <-> `<x>-findings.json`; with only per-slice files at that revision, pass the per-slice report or it refuses; `--as-of` is NOT the lookup key — the report's own `Target repo: … @ <rev>` header revision is, and `--as-of` only when the report has none) — stamping the report with a "superseded as of `<rev>`" banner so a later reader who finds it
 (a search hit, a bookmark, a link from an old PR description) sees immediately that its
 file:line citations describe an ancestor of the current model, not its current state. This is
 what keeps a superseded report an honest piece of history rather than a silently-misleading
@@ -379,7 +379,7 @@ each call adds its own stamp rather than overwriting the last.
   the gitignoring (`*-asis.em`, idempotent) mechanically, never built up from nothing and never
   hand-maintained. It's regenerated every conform run.
 - **Report location:** `conformance/<YYYY-MM-DD>-report.md` in the model directory. One file
-  per run; don't overwrite a prior date's report.
+  per run; don't overwrite a prior date's report. Its findings go in the same-stem `-findings.json`; gates read every same-revision findings file, so per-slice runs may write `<date>-<name>-findings.json`, and a ruling is written to the file the report names. The same-revision lookup uses the report's OWN revision (its `Target repo: … @ <rev>` header line; the caller's `<rev>` / `--as-of` only when the report has none).
 - **Red note wording:** `issue "conformance: <what's wrong, plainly>"` — plain enough that
   whoever ratifies it later understands the claim without re-reading the report.
 - **Naming/matching rules:** same past-tense-event / imperative-command / thing-shown-view
