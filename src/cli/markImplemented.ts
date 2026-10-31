@@ -73,7 +73,9 @@ const IMPLEMENTED_STATUS = "implemented";
  * MIL-284: the shipped record, written beside `implementedIn:` — `shippedVersion:` (the doc's
  * `version:` now), `shippedRef:` (its `ratifiedRef:`, when it has one) and `shippedOn:`
  * (`shippedOn`, the local date). Each key that already has a line is replaced in place; the rest
- * are inserted right after `implementedIn:`. Since MIL-283 this record, not `status`, is what
+ * are inserted right after `implementedIn:`. GH #392: when the doc has no `ratifiedRef:`, an existing
+ * `shippedRef:` line (the previous version's) is REMOVED instead, so the record reads as a `--no-ref`
+ * ship. Since MIL-283 this record, not `status`, is what
  * every lifecycle reader decides on (`shippedRecordOf` in catalog/sliceDoc.ts), so
  * `shippedVersion:`/`shippedRef:` are ALWAYS written on a real flip — a v2 merge that left a
  * stale `shippedVersion: 1` beside `version: 2` would read as an unshipped delta forever. Only
@@ -94,8 +96,23 @@ function withShippedRecord(inner: string, eol: string, shippedOn: string | null)
   const edits: { index: number; oldLen: number; next: string }[] = [];
   const fresh: string[] = [];
   for (const [key, value] of wanted) {
-    if (value === null) continue;
     const m = fieldLineRegex(key).exec(inner);
+    if (value === null) {
+      // GH #392: a doc with no `ratifiedRef` must not keep the previous version's `shippedRef:`
+      // line -- remove it (line plus its eol) so the record reads as a `--no-ref` ship.
+      if (key === "shippedRef" && m) {
+        let start = m.index;
+        let end = m.index + m[0].length;
+        const tail = /^\r?\n/.exec(inner.slice(end));
+        if (tail) end += tail[0].length;
+        else {
+          const head = /\r?\n$/.exec(inner.slice(0, start));
+          if (head) start -= head[0].length;
+        }
+        edits.push({ index: start, oldLen: end - start, next: "" });
+      }
+      continue;
+    }
     if (m) edits.push({ index: m.index, oldLen: m[0].length, next: `${m[1]}${value}` });
     else fresh.push(`${key}: ${value}`);
   }

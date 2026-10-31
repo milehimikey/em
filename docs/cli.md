@@ -3770,8 +3770,9 @@ shippedOn: <local date>              # MIL-284 — or --on <date>
 
 **The shipped record (MIL-284, 1.15.0).** Beside the link, the command records *which* version
 shipped and the ref it was ratified at: `shippedVersion:` is the doc's `version:` now,
-`shippedRef:` copies its `ratifiedRef:` (omitted when the doc has none — ratified before 1.15 or
-outside git), `shippedOn:` is today or `--on <date>`. `em export` joins the three with
+`shippedRef:` copies its `ratifiedRef:` (when the doc has none — ratified before 1.15, outside a
+repository or with `--no-ref` — no `shippedRef:` is written, and a `shippedRef:` line left by the previous
+version's ship is removed on the flip, GH #392), `shippedOn:` is today or `--on <date>`. `em export` joins the three with
 `implementedIn` as `slice.doc.shipped` (schema `1.16`). Additive: `status: implemented` and
 `implementedIn:` are unchanged; since MIL-283 `shipped` is the record every lifecycle reader
 decides on (see [slice-doc-schema.md](slice-doc-schema.md#status-under-re-ratification)).
