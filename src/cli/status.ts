@@ -34,7 +34,7 @@ import { CoverageReport } from "./coverage.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { loadStateFile, parseState, modelPathMismatch } from "./stateFile.js";
 import { SliceDocFacts, changedPathsSince, buildConformScope } from "./conformScope.js";
-import { lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
+import { findingsFilesOf, resolveFindingsForReport, unruledAcrossFiles } from "./sliceConform.js";
 import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, ModelVersionSliceChange } from "./modelVersion.js";
 import { isOlder } from "../util/semver.js";
 import { slicePublicTouching } from "../catalog/apiFirst.js";
@@ -421,8 +421,9 @@ export function resolveConformanceEntry(
   // scope, same "in scope" definition `em state set-conformance`'s own refusal/`--partial` gate
   // uses (a `slice: null` finding counts as in scope for all of them).
   const inScope = new Set(sliceDocFacts.filter((s) => s.shipped).map((s) => s.key));
-  const findingsLookup = lookupFindingsBesideReport(modelDir, report);
-  const unruledFindings = findingsLookup.kind === "found" ? unruledFindingsInScope(findingsLookup.doc.findings, inScope).length : null;
+  // GH #391: exact-stem twin first, else every same-revision findings file (the marker's revision).
+  const findingsFiles = findingsFilesOf(resolveFindingsForReport(modelDir, report, revision));
+  const unruledFindings = findingsFiles ? unruledAcrossFiles(findingsFiles, inScope).total : null;
   const commitsResult = commitsBehindHead(repo, revision, runGit);
   if (!commitsResult.ok) {
     return {

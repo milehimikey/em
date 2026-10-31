@@ -48,7 +48,7 @@ import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { isValidDateString } from "./stateFile.js";
-import { FindingsDoc, listAllFindingsFiles, unruledFindingsInScope } from "./findings.js";
+import { FindingsDoc, listAllFindingsFiles, lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
 
 export type ApplyConformResult =
   | { ok: true; content: string; changed: boolean; version: number }
@@ -170,6 +170,47 @@ export function applyConformFrontmatter(raw: string, sliceKey: string, at: strin
  *  when the `conformance/` directory doesn't exist, or no candidate matches `at`. */
 export function findFindingsForRevision(baseDir: string, at: string): { path: string; doc: FindingsDoc }[] {
   return listAllFindingsFiles(baseDir).filter((f) => f.doc.revision === at);
+}
+
+/** GH #391: how a report's findings record resolves for the three callers of
+ *  `lookupFindingsBesideReport` — ONE resolution so they cannot drift. The exact-stem twin
+ *  (`<x>-report.md` <-> `<x>-findings.json`) wins when present (`twin`); an `invalid` twin still
+ *  refuses; when the twin is absent, every `conformance/*-findings.json` whose `revision` equals
+ *  `revision` is returned (`revision`, newest filename first); `none` when neither exists (the
+ *  pre-`em conform-findings` migration path). */
+export type FindingsForReport =
+  | { kind: "invalid"; path: string; message: string }
+  | { kind: "twin"; path: string; doc: FindingsDoc }
+  | { kind: "revision"; files: { path: string; doc: FindingsDoc }[] }
+  | { kind: "none" };
+
+export function resolveFindingsForReport(baseDir: string, reportPath: string, revision: string): FindingsForReport {
+  const lookup = lookupFindingsBesideReport(baseDir, reportPath);
+  if (lookup.kind === "invalid") return lookup;
+  if (lookup.kind === "found") return { kind: "twin", path: lookup.path, doc: lookup.doc };
+  const files = findFindingsForRevision(baseDir, revision);
+  return files.length > 0 ? { kind: "revision", files } : { kind: "none" };
+}
+
+/** The files a reader gate (`set-conformance`, `status`) counts, or null when there are none. */
+export function findingsFilesOf(r: FindingsForReport): { path: string; doc: FindingsDoc }[] | null {
+  if (r.kind === "twin") return [{ path: r.path, doc: r.doc }];
+  if (r.kind === "revision") return r.files;
+  return null;
+}
+
+/** Unruled in-scope findings per file read (every file named, `unruled` possibly empty), plus a
+ *  `src (id 1, 2); other (no unruled)` rendering in `runSliceConform`'s shape. */
+export function unruledAcrossFiles(
+  files: { path: string; doc: FindingsDoc }[],
+  inScope: ReadonlySet<string>,
+): { total: number; ids: number[]; describe: string } {
+  const per = files.map((f) => ({ path: f.path, unruled: unruledFindingsInScope(f.doc.findings, inScope) }));
+  return {
+    total: per.reduce((n, f) => n + f.unruled.length, 0),
+    ids: per.flatMap((f) => f.unruled.map((x) => x.id)),
+    describe: per.map((f) => (f.unruled.length > 0 ? `${f.path} (id ${f.unruled.map((x) => x.id).join(", ")})` : `${f.path} (no unruled)`)).join("; "),
+  };
 }
 
 /** The newest file of `findFindingsForRevision`, or null — kept for callers that want one. */

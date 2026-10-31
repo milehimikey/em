@@ -4431,7 +4431,7 @@ parses back out:
 em state set-conformance abc123f my-model/ --report conformance/2026-08-20-report.md
 ```
 
-**The findings gate (MIL-214).** (This pairs the report with its sibling `<date>-findings.json`; `em slice conform` and the revise advisory also read `<date>-<name>-findings.json`.) Refuses when the `conformance/<date>-findings.json` beside
+**The findings gate (MIL-214).** (This pairs the report with its sibling `<date>-findings.json`; `em slice conform` and the revise advisory also read `<date>-<name>-findings.json`. **Gates read every same-revision findings file** (GH #391): when the exact-stem sibling is absent, `em state set-conformance` and `em status` read every `conformance/<date>-[<name>-]findings.json` whose `revision` equals the marker's — merged, ids reported per file — and the `warn: no findings JSON found beside …` migration line fires only when neither the sibling nor any same-revision file exists.) Refuses when the `conformance/<date>-findings.json` beside
 `--report` has any unruled (`locus: null`) finding in scope — every `implemented` slice in the
 sibling state file's own model (compiled to find them; a model that doesn't exist or has errors
 skips this gate rather than blocking on an unrelated problem), plus every `slice: null` finding
@@ -4696,7 +4696,7 @@ not just that a ruling happened — onto the `conformance/<date>-findings.json` 
 (same date, `-report.md` -> `-findings.json`), via the same refuse-different-identity discipline
 `em slice ratify` holds for `ratifiedBy`/`ratifiedOn`: refuses to change an already-different
 `locus` recorded on a named finding, rather than silently overwriting a prior ruling. Idempotent
-on the exact same locus/by/on. When no findings JSON exists beside the report at all (a report
+on the exact same locus/by/on. **A ruling is written to the file the report names** (GH #391): ids are per file, so only the exact sibling is ever written. When that sibling is absent but findings files exist at the report's revision (`--as-of`), the command refuses (exit 1, nothing written), naming the report and the same-revision files — name the report to match its findings file, or pass the per-slice report. When no findings JSON exists at that revision either (a report
 predating `em conform-findings`): warns once on stderr and stamps the banner only — the migration
 path.
 

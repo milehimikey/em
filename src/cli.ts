@@ -129,9 +129,9 @@ import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runRevise } from "./cli/revise.js";
 import { runDefer, runDeferFromIssue } from "./cli/defer.js";
-import { runSliceConform } from "./cli/sliceConform.js";
+import { runSliceConform, resolveFindingsForReport, findingsFilesOf, unruledAcrossFiles } from "./cli/sliceConform.js";
 import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, validatePrdTriage } from "./cli/prdTriage.js";
-import { checkFindingsFile, buildCheckFindingsJson, lookupFindingsBesideReport, unruledFindingsInScope, Finding, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
+import { checkFindingsFile, buildCheckFindingsJson, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -1598,31 +1598,36 @@ state
       }
     }
 
-    let unruled: Finding[] = [];
-    const lookup = lookupFindingsBesideReport(modelDir, opts.report);
-    if (lookup.kind === "invalid") {
-      console.error(`em state set-conformance: ${lookup.message}`);
+    let unruledTotal = 0;
+    let unruledIds: number[] = [];
+    let unruledDescribe = "";
+    const resolved = resolveFindingsForReport(modelDir, opts.report, revision);
+    if (resolved.kind === "invalid") {
+      console.error(`em state set-conformance: ${resolved.message}`);
       process.exit(1);
-    } else if (lookup.kind === "absent") {
+    } else if (resolved.kind === "none") {
       console.error(
-        `warn: no findings JSON found beside ${opts.report} — recording the marker without verifying every ` +
+        `warn: no findings JSON found beside ${opts.report} (and none at revision ${revision}) — recording the marker without verifying every ` +
           "finding is ruled (migration path for a report written before `em conform-findings`)",
       );
     } else {
-      unruled = unruledFindingsInScope(lookup.doc.findings, inScope);
+      const counted = unruledAcrossFiles(findingsFilesOf(resolved)!, inScope);
+      unruledTotal = counted.total;
+      unruledIds = counted.ids;
+      unruledDescribe = counted.describe;
     }
 
     const partialFlag = opts.partial === true;
-    if (unruled.length > 0 && !partialFlag) {
+    if (unruledTotal > 0 && !partialFlag) {
       console.error(
-        `em state set-conformance: ${unruled.length} unruled conformance finding(s) among implemented slices ` +
-          `(id ${unruled.map((f) => f.id).join(", ")}) — rule on them (\`em conform-supersede --locus --by\`) or pass --partial`,
+        `em state set-conformance: ${unruledTotal} unruled conformance finding(s) among implemented slices ` +
+          `(id ${unruledIds.join(", ")}) in ${unruledDescribe} — rule on them (\`em conform-supersede --locus --by\`) or pass --partial`,
       );
       process.exit(1);
     }
-    const recordPartial = partialFlag && unruled.length > 0;
+    const recordPartial = partialFlag && unruledTotal > 0;
     if (recordPartial) {
-      console.error(`notice: conformance marker recorded as PARTIAL — ${unruled.length} finding(s) unruled`);
+      console.error(`notice: conformance marker recorded as PARTIAL — ${unruledTotal} finding(s) unruled`);
     }
 
     const today = localIsoDate();
@@ -1639,7 +1644,8 @@ state
     // is where that problem gets its own diagnostic.
     let certifiedVersion: number | null = null;
     if (!recordPartial && compiledForCertify) {
-      const findingsPath = lookup.kind === "found" ? lookup.path : null;
+      const readFiles = findingsFilesOf(resolved);
+      const findingsPath = readFiles ? readFiles.map((f) => f.path).join(", ") : null;
       const certifyResult = runCertifyModelVersion(
         modelDir,
         compiledForCertify.model,

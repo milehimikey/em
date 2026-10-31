@@ -32,7 +32,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isValidDateString } from "./stateFile.js";
-import { applyFindingsRuling, FindingLocus, lookupFindingsBesideReport, parseFindingsSpec, serializeFindingsDoc } from "./findings.js";
+import { applyFindingsRuling, FindingLocus, parseFindingsSpec, serializeFindingsDoc } from "./findings.js";
+import { resolveFindingsForReport } from "./sliceConform.js";
 
 const BANNER_PREFIX = "> **Superseded as of `";
 
@@ -141,11 +142,21 @@ export function runConformSupersede(
     if (ids === null) {
       return { ok: false, message: `--findings "${findings}" doesn't parse into finding id(s) — expected e.g. "1-3" or "1, 2, 4"` };
     }
-    const lookup = lookupFindingsBesideReport(baseDir, reportPath);
+    // GH #391: the writer keeps the exact stem (ids are per file, so a ruling must land in ONE
+    // named file); when the twin is absent but same-revision files exist it refuses, naming them.
+    const lookup = resolveFindingsForReport(baseDir, reportPath, revision);
     if (lookup.kind === "invalid") {
       return { ok: false, message: lookup.message };
     }
-    if (lookup.kind === "absent") {
+    if (lookup.kind === "revision") {
+      return {
+        ok: false,
+        message:
+          `findings file beside ${reportPath} not found; same-revision files: ${lookup.files.map((f) => f.path).join(", ")} — ` +
+          "name the report to match its findings file (<x>-report.md <-> <x>-findings.json), or pass the per-slice report",
+      };
+    }
+    if (lookup.kind === "none") {
       findingsRuling = {
         kind: "no-findings-file",
         warning:
