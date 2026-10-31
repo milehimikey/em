@@ -1,6 +1,6 @@
 ---
 name: discover
-em-version: 1.19.6
+em-version: 1.19.7
 description: >-
   Use when starting a brand-new event model from scratch — greenfield discovery: brainstorming
   past-tense events, storyboarding the happy path, finding the commands and read models — or when

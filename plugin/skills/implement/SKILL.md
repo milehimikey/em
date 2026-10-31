@@ -1,6 +1,6 @@
 ---
 name: implement
-em-version: 1.19.6
+em-version: 1.19.7
 description: >-
   Use when building a single ratified event-modeling slice (status: ready-to-implement) into
   merged, tested code — the one phase where the agent builds rather than facilitates. Gates on
