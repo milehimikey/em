@@ -185,7 +185,7 @@ describe("runConformSupersede — --locus/--by findings ruling (MIL-214)", () =>
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "em-conform-supersede-ruling-"));
     mkdirSync(join(dir, "conformance"), { recursive: true });
-    writeFileSync(join(dir, NO_FINDINGS_REPORT_PATH), REPORT);
+    writeFileSync(join(dir, NO_FINDINGS_REPORT_PATH), REPORT.replace("8f12ed8", "a1b2c3d"));
     writeFileSync(join(dir, "conformance", "2026-09-01-report.md"), OTHER_REPORT);
     writeFileSync(join(dir, FINDINGS_PATH), JSON.stringify(findingsDoc(), null, 2) + "\n");
   });

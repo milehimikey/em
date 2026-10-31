@@ -40,7 +40,7 @@
 //    would be exactly the sequencing bug MIL-214 exists to close). `--skip-findings-check`
 //    escapes with a loud notice, never silently.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
@@ -48,7 +48,7 @@ import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { isValidDateString } from "./stateFile.js";
-import { FindingsDoc, listAllFindingsFiles, lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
+import { FINDINGS_FILE_NAME_RE, FindingsDoc, listAllFindingsFiles, lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
 
 export type ApplyConformResult =
   | { ok: true; content: string; changed: boolean; version: number }
@@ -184,10 +184,47 @@ export type FindingsForReport =
   | { kind: "revision"; files: { path: string; doc: FindingsDoc }[] }
   | { kind: "none" };
 
-export function resolveFindingsForReport(baseDir: string, reportPath: string, revision: string): FindingsForReport {
+/** The report's OWN revision: the backticked value after `@` on its `**Target repo:** … @ \`<rev>\``
+ *  header line (templates/conformance-report.md). Null when the report is unreadable or has no
+ *  such line. */
+export function reportRevisionOf(baseDir: string, reportPath: string): string | null {
+  let text: string;
+  try {
+    text = readFileSync(join(baseDir, reportPath), "utf8");
+  } catch {
+    return null;
+  }
+  const m = /^[-*]?\s*\*\*Target repo:\*\*[^\n]*@\s*`([^`\n]+)`/m.exec(text);
+  return m ? m[1].trim() : null;
+}
+
+/** Findings-file names sharing the report's `<YYYY-MM-DD>-` prefix that `listAllFindingsFiles`
+ *  silently skipped (unparseable / shape-invalid) — a malformed file must refuse, not slide into
+ *  the migration warn. */
+function malformedSameDateFile(baseDir: string, reportPath: string): string | null {
+  const date = /(?:^|\/)(\d{4}-\d{2}-\d{2})-[^/]*$/.exec(reportPath)?.[1];
+  if (!date) return null;
+  let names: string[];
+  try {
+    names = readdirSync(join(baseDir, "conformance"));
+  } catch {
+    return null;
+  }
+  const good = new Set(listAllFindingsFiles(baseDir).map((f) => f.path));
+  const bad = names.filter((n) => n.startsWith(`${date}-`) && FINDINGS_FILE_NAME_RE.test(n) && !good.has(`conformance/${n}`)).sort();
+  return bad.length > 0 ? `conformance/${bad[0]}` : null;
+}
+
+export function resolveFindingsForReport(baseDir: string, reportPath: string, callerRevision: string): FindingsForReport {
   const lookup = lookupFindingsBesideReport(baseDir, reportPath);
   if (lookup.kind === "invalid") return lookup;
   if (lookup.kind === "found") return { kind: "twin", path: lookup.path, doc: lookup.doc };
+  const bad = malformedSameDateFile(baseDir, reportPath);
+  if (bad) {
+    return { kind: "invalid", path: bad, message: `${bad} is not a valid findings file (not JSON, or fails shape validation) — fix it (\`em conform-findings check ${bad}\`)` };
+  }
+  // The report's own revision wins; the caller's is only the fallback for a report with no header line.
+  const revision = reportRevisionOf(baseDir, reportPath) ?? callerRevision;
   const files = findFindingsForRevision(baseDir, revision);
   return files.length > 0 ? { kind: "revision", files } : { kind: "none" };
 }

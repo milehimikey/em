@@ -239,3 +239,48 @@ describe("em conform-supersede (GH #391)", () => {
     if (r.ok) expect(r.findingsRuling.kind).toBe("no-findings-file");
   });
 });
+
+describe("the report's own revision and malformed files (GH #391 amendment)", () => {
+  const WITH_HEADER = `# Conformance Report — Test — 2026-01-01\n\n- **Target repo:** . @ \`${REV}\`\n`;
+  const ruling = { locus: "code" as const, by: "Alex" };
+
+  it("conform-supersede --as-of at a different revision still refuses: the report's header revision decides", () => {
+    writeFileSync(join(dir, REPORT), WITH_HEADER);
+    put("2026-01-01-abc-0001-findings.json", REV, [{ id: 1 }]);
+    const r = runConformSupersede(dir, REPORT, "def5678", "1", "2026-01-02", ruling);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toContain("conformance/2026-01-01-abc-0001-findings.json");
+    expect(readFileSync(join(dir, REPORT), "utf8")).toBe(WITH_HEADER);
+  });
+
+  it("a report with no Target repo line falls back to the caller's revision", () => {
+    put("2026-01-01-abc-0001-findings.json", REV, [{ id: 1 }]);
+    expect(resolveFindingsForReport(dir, REPORT, REV).kind).toBe("revision");
+    expect(resolveFindingsForReport(dir, REPORT, "def5678").kind).toBe("none");
+  });
+
+  it("set-conformance <other-rev> refuses with the unruled ids when the report header names the findings' revision", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-findings-pairing-hdr-"));
+    try {
+      expect(em(["scaffold", "Order Fulfillment"], cwd).status).toBe(0);
+      const mdir = join(cwd, "order-fulfillment");
+      mkdirSync(join(mdir, "conformance"), { recursive: true });
+      writeFileSync(join(mdir, REPORT), WITH_HEADER);
+      writeFileSync(join(mdir, "conformance", "2026-01-01-abc-0001-findings.json"), findingsJson(REV, [{ id: 3 }]));
+      const r = em(["state", "set-conformance", "def5678", mdir, "--report", REPORT], cwd);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain("conformance/2026-01-01-abc-0001-findings.json (id 3)");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("a malformed same-date findings file with no twin is invalid, not the migration path", () => {
+    writeFileSync(join(dir, "conformance", "2026-01-01-abc-0001-findings.json"), "{ nope");
+    const r = resolveFindingsForReport(dir, REPORT, REV);
+    expect(r.kind).toBe("invalid");
+    if (r.kind === "invalid") expect(r.message).toContain("conformance/2026-01-01-abc-0001-findings.json");
+    const s = runConformSupersede(dir, REPORT, REV, "1", "2026-01-02", ruling);
+    expect(s.ok).toBe(false);
+  });
+});
