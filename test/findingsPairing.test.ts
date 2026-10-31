@@ -319,3 +319,41 @@ describe("tolerant Target repo header shapes (GH #391 fix-up 2)", () => {
     expect(resolveFindingsForReport(dir, REPORT, "def5678").kind).toBe("none");
   });
 });
+
+describe("certified.findings in the model-versions manifest (GH #391)", () => {
+  const certify = (files: Record<string, F[]>) => {
+    const cwd = mkdtempSync(join(tmpdir(), "em-findings-pairing-cert-"));
+    try {
+      expect(em(["scaffold", "Order Fulfillment"], cwd).status).toBe(0);
+      const mdir = join(cwd, "order-fulfillment");
+      expect(em(["model", "version", "bump", join(mdir, "order-fulfillment.em"), "--by", "Alex"], cwd).status).toBe(0);
+      mkdirSync(join(mdir, "conformance"), { recursive: true });
+      writeFileSync(join(mdir, REPORT), REPORT_BODY);
+      for (const [name, findings] of Object.entries(files)) {
+        writeFileSync(join(mdir, "conformance", name), findingsJson(REV, findings));
+      }
+      const r = em(["state", "set-conformance", REV, mdir, "--report", REPORT], cwd);
+      expect(r.status).toBe(0);
+      return JSON.parse(readFileSync(join(mdir, "model-versions", "v1.json"), "utf8")).certified;
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  };
+
+  it("a full set-conformance that read several same-revision files writes their paths comma-separated", () => {
+    const certified = certify({
+      "2026-01-01-abc-0001-findings.json": [{ id: 1, locus: "code" }],
+      "2026-01-01-abc-0002-findings.json": [{ id: 1, locus: "code" }],
+    });
+    const paths = (certified.findings as string).split(", ").sort();
+    expect(certified.findings).toBe(
+      "conformance/2026-01-01-abc-0002-findings.json, conformance/2026-01-01-abc-0001-findings.json",
+    );
+    expect(paths).toEqual(["conformance/2026-01-01-abc-0001-findings.json", "conformance/2026-01-01-abc-0002-findings.json"]);
+  });
+
+  it("a lone exact-stem twin still writes the single path", () => {
+    const certified = certify({ "2026-01-01-findings.json": [{ id: 1, locus: "code" }] });
+    expect(certified.findings).toBe("conformance/2026-01-01-findings.json");
+  });
+});
