@@ -1560,7 +1560,7 @@ state
       "finding in the findings JSON beside --report, or, when that is absent, in every findings " +
       "file at the report's own revision (a `slice: null` finding blocks every " +
       "slice); --partial records the marker with a ` (partial)` suffix instead, with a loud " +
-      "notice. Without a findings JSON beside --report: warns once and records the marker as " +
+      "notice. Without a findings JSON beside --report and none at the report's revision: warns once and records the marker as " +
       "given (migration path for a report predating `em conform-findings`)",
   )
   .argument("<revision>", "target-repo revision just diffed against")

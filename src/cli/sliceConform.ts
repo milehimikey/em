@@ -194,8 +194,14 @@ export function reportRevisionOf(baseDir: string, reportPath: string): string | 
   } catch {
     return null;
   }
-  const m = /^[-*]?\s*\*\*Target repo:\*\*[^\n]*@\s*`([^`\n]+)`/m.exec(text);
-  return m ? m[1].trim() : null;
+  // Tolerant of hand-written shapes: optional `- `, bold and backticks optional, label case-
+  // insensitive; the revision is the first token after the LAST ` @ ` on the line.
+  const line = /^[ \t]*(?:[-*][ \t]+)?\*{0,2}Target repo\*{0,2}:?\*{0,2}(.*)$/im.exec(text);
+  if (!line) return null;
+  const at = line[1].lastIndexOf(" @ ");
+  if (at < 0) return null;
+  const token = line[1].slice(at + 3).trim().split(/\s+/)[0]?.replace(/`/g, "") ?? "";
+  return token === "" ? null : token;
 }
 
 /** Findings-file names sharing the report's `<YYYY-MM-DD>-` prefix that `listAllFindingsFiles`

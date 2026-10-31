@@ -284,3 +284,38 @@ describe("the report's own revision and malformed files (GH #391 amendment)", ()
     expect(s.ok).toBe(false);
   });
 });
+
+describe("tolerant Target repo header shapes (GH #391 fix-up 2)", () => {
+  const shapes: [string, string][] = [
+    ["plain template-less bullet with bold label", `- **Target repo:** ../app @ ${REV}`],
+    ["no bullet, plain label, backticked revision", `Target repo: ../app @ \`${REV}\``],
+    ["colon outside the bold label", `- **Target repo**: ../app @ ${REV}`],
+    ["lower-case label", `- **target repo:** ../app @ ${REV}`],
+    ["git URL containing @", `- **Target repo:** git@host:o/r.git @ \`${REV}\``],
+    ["trailing text after the revision", `- **Target repo:** ../app @ ${REV} (clean checkout)`],
+  ];
+  for (const [name, header] of shapes) {
+    it(`set-conformance <other-rev> refuses with the per-run file's id: ${name}`, () => {
+      const cwd = mkdtempSync(join(tmpdir(), "em-findings-pairing-shape-"));
+      try {
+        expect(em(["scaffold", "Order Fulfillment"], cwd).status).toBe(0);
+        const mdir = join(cwd, "order-fulfillment");
+        mkdirSync(join(mdir, "conformance"), { recursive: true });
+        writeFileSync(join(mdir, REPORT), `# Conformance Report — Test\n\n${header}\n`);
+        writeFileSync(join(mdir, "conformance", "2026-01-01-abc-0001-findings.json"), findingsJson(REV, [{ id: 3 }]));
+        const r = em(["state", "set-conformance", "def5678", mdir, "--report", REPORT], cwd);
+        expect(r.status).not.toBe(0);
+        expect(r.stderr).toContain("conformance/2026-01-01-abc-0001-findings.json (id 3)");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("a Target repo line with no token after @ is treated as no header: falls back to the caller's revision", () => {
+    writeFileSync(join(dir, REPORT), "# Conformance Report\n\n- **Target repo:** ../app @ \n");
+    put("2026-01-01-abc-0001-findings.json", REV, [{ id: 1 }]);
+    expect(resolveFindingsForReport(dir, REPORT, REV).kind).toBe("revision");
+    expect(resolveFindingsForReport(dir, REPORT, "def5678").kind).toBe("none");
+  });
+});

@@ -80,7 +80,7 @@ three specific points:
    is recorded with a name and a date. The report proposes; you decide.
    **The findings themselves are structured data** (MIL-214): the conform skill writes
    `conformance/<date>-findings.json` alongside its `<date>-report.md` (the gates read every same-revision
-   `conformance/<date>-<name>-findings.json`, e.g. one file per slice; a ruling is written to the file the report names), one entry per `### n.`
+   `conformance/<date>-<name>-findings.json`, e.g. one file per slice; a ruling is written to the file the report names; the lookup uses the report's own `Target repo: … @ <rev>` revision, the caller's only when the report has none), one entry per `### n.`
    finding, ids matching (shape: [slice-doc-schema.md](slice-doc-schema.md);
    `em conform-findings check <path>` verifies a headless run wrote it correctly).
    `em conform-supersede <model> <report-path> --as-of <rev> --findings <spec> --locus <model|doc|code|none> --by <name>`
