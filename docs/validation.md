@@ -122,6 +122,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A model `owner` that is not a CODEOWNERS handle (`owner-not-a-handle`, MIL-234): not `@user`, `@org/team` or an email, e.g. the free text `"Storefront team"` | Write `owner "@org/team"`; `em system codeowners` skips a non-handle owner |
 | A slice outside every storyline, once the model declares any `storyline` block (`slice-outside-storyline`, GH #277 — advisory so a model can adopt storylines incrementally) | Move the slice inside one of the storylines — see [Storylines](#storylines) |
 | A run of 3 or more consecutive State Change slices that all write one context, with the next view reading only that context (`timeline-entity-clustered`, GH #281) | If they are create/update/archive operations on one entity, order the slices by the business journey, interleaving contexts; if they are steps of one journey, show a screen after each step — see [Shape](#shape) |
+| A view reads another context's event only to fill a column, not because that event changes a row it owns (`view-lookup-source`, GH #398) — see [Shape](#shape) | Carry the field on the event that creates this view's own row instead, or accept a genuine cross-context row change on the shape exit gate |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event, and not marked `derived` — or, for a collection field `T[] derived from "E1", …`, an element-type field of `T` that no named event carries and that is not itself marked `derived` on the `type`, as a top-level field or as a field of the declared element type of an array field on the event (one level, e.g. `optionValues: VariantOptionValue[]`; no path syntax) | Add the field to the event, drop it from the view, or mark it `derived` if it's genuinely computed from which events have landed |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
@@ -275,6 +276,24 @@ slice (no reaction) whose only command is `Retry <X>`, where `<X>` is another sl
 `refs` are both commands. Fix: re-fire the same reaction via `view … again from` the retry-scheduled event; a different actor's override is its own slice with its own command. Both carry the
 `shape` family and may appear on existing models.
 
+`view-lookup-source` (GH #398) is an advisory lint for the views-as-lookups shape: a view reading
+another event only as a lookup rather than because that event changes a row the view owns — see
+the generation rule in the methodology reference
+(`.claude/skills/event-modeling-shared/reference/methodology.md`, next to "a read model is one
+information need") and [patterns.md](patterns.md#state-view). It fires once per (view, source)
+pair when a view's source event, other than the view's own first (row-creating) source, is
+declared `@Context`-different from that first source **and** is itself the first (row-creating)
+source of some *other* view — the cheap signal: that event really does create rows somewhere, just
+not in this view, so reading it here is probably only to copy a column onto the row the first
+source created. `refs` are the flagged view, the lookup event, and every other view it genuinely
+feeds as a row-creating source. A within-context lookup (same context as the view's first source)
+never fires — the heuristic can't see it; the generation rule is the only guard there, and false
+positives are expected on a real cross-context state change (two genuine sibling causes of the
+same row, e.g. a checkout ending a hold on the same item): fix by moving the lookup field onto the
+row-creating event, or accept the finding on the shape exit gate like any other shape finding — no
+new DSL clause, the same `--waive-file`/Decisions-log mechanism every shape lint already uses.
+Carries the `shape` family.
+
 Reorder by the story ("create a class, then its attributes, then a product that uses them") and
 the run breaks up; the lint goes quiet without any suppression. It is a warning like every other
 here — it never blocks a render — and it carries the `shape` family, which `em validate --shape` selects. See [storyline.md](storyline.md) for the ordering method.
@@ -294,7 +313,7 @@ The gate passes only when **every remaining finding, waived or not,** has such a
 on that key) only silences the CLI count for an estate that carries shapes it has decided to keep; it is
 never a substitute for the record. The skill refuses to move to the slice phase otherwise. `em engagement plan` lists the same findings on the engagement's slices in its pre-flight.
 A rule joins the family by registering `family: "shape"`; today that includes `timeline-entity-clustered`,
-`slice-outside-storyline`, `automation-split-by-outcome` and `retry-slice-of`.
+`slice-outside-storyline`, `automation-split-by-outcome`, `retry-slice-of` and `view-lookup-source`.
 
 `command-second-intent` (GH #286) is an advisory lint for a command carrying a second intent:
 it fires when a command has at least 2 invariants (model-declared, or from its bound slice doc

@@ -77,6 +77,14 @@ export const RULES = {
     docAnchor: "shape",
     family: "shape",
   },
+  "view-lookup-source": {
+    severity: "warning",
+    title: "View reads an event only as a lookup",
+    fix: "Carry the field on the event that creates this view's own row instead; if this is a genuine cross-context row change, accept it on the shape exit gate (docs/validation.md#the-shape-exit-gate) rather than fixing it (docs/patterns.md#state-view).",
+    usageCategory: "view reads event as lookup",
+    docAnchor: "shape",
+    family: "shape",
+  },
   "alternative-events-no-command": {
     severity: "error",
     title: "Alternative events without a command",

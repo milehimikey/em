@@ -174,4 +174,49 @@ export function shapeDiagnostics(model: NormalizedModel, refs: RefsResult, diags
       refs: [refOf(cmd.id), refOf(target.id)],
     });
   }
+
+  // --- view-lookup-source (GH #398) ---
+  // A view's FIRST source is the one that creates the row this view shows — the generation rule
+  // (shared/reference/methodology.md, "views-as-lookups") says every other source should only be
+  // read when it changes that same row. The cheap, advisory signal (false positives expected —
+  // that's why this never gates): another source E, read from a different @Context than the
+  // first source's, where E is itself the FIRST (row-creating) source of some OTHER view — i.e.
+  // E really does create rows, just not this view's. A within-context lookup (the same context as
+  // the first source) is invisible to this heuristic on purpose; the generation rule covers it.
+  const logicalViews = model.elements.filter((e) => e.kind === "view" && e.logicalId === e.id);
+  const contextOf = (eventName: string): string | undefined =>
+    model.byName.get(normalizeName(eventName))?.find((e) => e.kind === "event")?.context;
+  // Every logical view's own first source, keyed by its normalized name, so a candidate lookup
+  // can be checked against every view it genuinely creates rows for.
+  const rowCreatingFor = new Map<string, Element[]>();
+  for (const v of logicalViews) {
+    const first = viewSourceNames(model, v)[0];
+    if (first === undefined) continue;
+    const key = normalizeName(first);
+    rowCreatingFor.set(key, [...(rowCreatingFor.get(key) ?? []), v]);
+  }
+  for (const v of logicalViews) {
+    const sources = viewSourceNames(model, v);
+    if (sources.length < 2) continue;
+    const firstContext = contextOf(sources[0]);
+    if (firstContext === undefined) continue;
+    for (const src of sources.slice(1)) {
+      const srcContext = contextOf(src);
+      if (srcContext === undefined || srcContext === firstContext) continue;
+      const rowCreators = (rowCreatingFor.get(normalizeName(src)) ?? []).filter((rv) => rv.id !== v.id);
+      if (rowCreators.length === 0) continue;
+      const srcEvent = model.byName.get(normalizeName(src))?.find((e) => e.kind === "event");
+      if (!srcEvent) continue;
+      pushDiag(diags, "view-lookup-source", {
+        message:
+          `view "${v.name}" reads "${src}" (@${srcContext}) only to fill a column onto the row "${sources[0]}" ` +
+          `(@${firstContext}) creates here; "${src}" is itself the row-creating source of ` +
+          `${rowCreators.map((rv) => `"${rv.name}"`).join(", ")} — carry the field on the event that creates ` +
+          `"${v.name}"'s own row instead, or accept a genuine cross-context row change on the shape exit gate ` +
+          `(docs/patterns.md#state-view)`,
+        line: v.line,
+        refs: [refOf(v.id), refOf(srcEvent.id), ...rowCreators.map((rv) => refOf(rv.id))],
+      });
+    }
+  }
 }

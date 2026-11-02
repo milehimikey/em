@@ -141,6 +141,16 @@ A read model is one information need: it answers a question no existing view ans
 it is repeated after every command that changes it so the reader sees the information arrive. See
 [The story, not the schema](storyline.md#5-a-read-model-is-one-information-need).
 
+**A view reads another event only when that event changes a row it owns, not to fill a column.**
+The row a view shows carries the data its consumer needs *from the event that put it there* — an
+event that creates a row carries what the row shows, so the view reading it needs nothing else. An
+overdue-notice to-do list that declares `borrowerEmail derived from "Neighbor Registered",
+"Neighbor Email Changed"` is the smell: it's keeping a lookup table of every neighbor's email
+beside its own rows instead of having the event that created the notice (the hold expiring, the
+loan going overdue) carry the borrower's name and email in the first place — those were already
+known to whatever recorded that event. `view-lookup-source` is the advisory, cross-context half of
+the mechanical check for this; see [validation.md](validation.md#shape).
+
 ## Automation
 
 The system acts on its own. A processor watches a read model — a "to-do list" of pending

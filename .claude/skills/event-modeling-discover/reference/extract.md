@@ -96,6 +96,14 @@ it is fine to finish a round with `# TBD`s still parked.
   read model* warnings: real systems do record fire-and-forget events. In an as-is model that is
   a **finding about the system**, not a modelling mistake — never invent a reader to silence it
   (that would be desired state). Park it in the Decisions log and carry the warning.
+  **Expect lookup-style sources too.** A lifted model will faithfully reproduce the projection's
+  lookup joins — a view wired to `from "Order Created"` only because the current query joins the
+  orders table to get `customerName`, not because this view owns any row that event changes. Wire
+  it as-is (current-state-only stance: that join is how the system behaves today); don't fix it
+  here, that would be inventing desired state. Note it as a finding in the Decisions log the same
+  way as an unread event, and leave it for `model`/`slice` to apply the views-as-lookups rule
+  (`../../event-modeling-shared/reference/methodology.md`, "Views as lookups") once the as-is
+  model is agreed.
 - **R5 — Boundaries & reactions.** Current automations and integrations as-is: schedulers,
   listeners, outbound syncs, inbound webhooks. Model each as a reaction sharing its slice with
   the `command` + `event` it triggers (`reaction → command → event`, per `em-dsl.md`) — the

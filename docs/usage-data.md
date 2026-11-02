@@ -127,6 +127,7 @@ affected lines written by hand.
 | ui with no view or command |
 | undeclared seam candidate |
 | view field no source |
+| view reads event as lookup |
 <!-- GENERATED:usage-categories-warnings:end -->
 
 **Errors**

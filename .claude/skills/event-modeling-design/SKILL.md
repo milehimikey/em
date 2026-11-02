@@ -88,10 +88,14 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    shape — reshape it with the "Reshaping an existing model" checklist. Then the **intent test**
    per command (would a business person say this name at this step in the story? an endpoint-shaped
    name fails), the **question test** per view (write the question it answers; no question, no
-   read model; a child view only when its query needs what the parent view lacks), and the
+   read model; a child view only when its query needs what the parent view lacks), the
+   **views-as-lookups check** per `from "E"` on a view (does E add, change or remove a row here? if
+   it only fills a column, put the column on the event that creates the row and drop E — see
+   `../event-modeling-shared/reference/methodology.md`, "Views as lookups"), and the
    **conditional-invariant signal** (invariants or fields that apply only "if `<field>` is set"
    mean two intents in one command: split it). The `timeline-entity-clustered`,
-   `command-second-intent` and `automation-split-by-outcome` lints are the mechanical half; the
+   `command-second-intent`, `automation-split-by-outcome` and `view-lookup-source` lints are the
+   mechanical half (the last one only catches the cross-context cases — do the check by eye too); the
    1.18.0 design exit gate is `em validate --shape`. Shape the model first, scaffold docs after: a rename,
    split or merge from the reshape would orphan docs already wired with `--wire`. The `slice` phase is unchanged (timeline order).
 3. **Elaborate scenarios — first pass (step 6).** Scaffold every slice's doc now, one per
@@ -130,6 +134,13 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    that reads it; another model/system reads it → mark it `public`; only an automation reads
    it → nothing, it's internal by design. No new keyword — reachability is already what `ui` and
    `public` mean.
+   **Per `view`, also ask whether each of its sources earns its place (GH #398):** for every
+   `from "E"` on the view, does E add, change or remove a row here — or only fill a column on a
+   row some other event already created? The latter is the views-as-lookups smell (methodology
+   reference, "Views as lookups"): drop E as a source and have the event that creates the row
+   carry the field instead. `view-lookup-source` flags the cross-context instances of this
+   mechanically; a lookup from the view's own context (no `@Context` mismatch to key on) only
+   this by-eye check catches.
    **Per translation fed from another model, declare what it consumes (MIL-235):** write
    `translation Order Intake consumes checkout:event.order-submitted`. The ref is
    `<modelKey>:<kind>.<slug>`, where kind is `event` or `view` and the target is marked `public`

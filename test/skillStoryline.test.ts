@@ -125,7 +125,7 @@ describe("GH #276: docs/storyline.md and docs/patterns.md", () => {
     expect(view).toContain("(storyline.md");
   });
 
-  it("the before shape trips only timeline-entity-clustered; the after shape is clean", () => {
+  it("the before shape trips only timeline-entity-clustered; the after shape is clean apart from a known view-lookup-source false positive", () => {
     const blocks = [...readFileSync(STORYLINE_DOC, "utf8").matchAll(/```em\n([\s\S]*?)```/g)].map((m) => m[1]);
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toContain("CRUD shape");
@@ -135,6 +135,12 @@ describe("GH #276: docs/storyline.md and docs/patterns.md", () => {
       return validate(model, layout(model), computeRefs(model)).map((d) => d.code);
     });
     expect(new Set(codes[0])).toEqual(new Set(["timeline-entity-clustered"]));
-    expect(codes[1]).toEqual([]);
+    // GH #398: "Catalog Tree" reads "Product Created" (@Product) after its own first source
+    // "Category Defined" (@Category) — a genuine cross-context row add (a new product node
+    // under its category), not a lookup, but "Product Created" is also "Product Page"'s
+    // row-creating source, so the cheap heuristic can't tell the two apart. Exactly the kind of
+    // accepted false positive docs/validation.md#shape describes; this worked example isn't a
+    // live model with a Decisions log to record the acceptance in, so the test records it here.
+    expect(codes[1]).toEqual(["view-lookup-source"]);
   });
 });
