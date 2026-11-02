@@ -548,6 +548,29 @@ describe("export_model tool", () => {
     expect(cli.status).toBe(0);
     expect(cli.stdout).toBe(mcpText + "\n");
   });
+
+  it("GH #401: docJson:true returns the structured doc export (schema 1.0), byte-identical to `em export --doc-json`", async () => {
+    const { result, doc } = await callJson(client, "export_model", { file: join(dir, "clean.em"), docJson: true });
+    expect(result.isError).toBeFalsy();
+    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.model.slices.map((s: any) => s.key)).toEqual(["place", "open-orders"]);
+    expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["export", join(dir, "clean.em"), "--doc-json"], dir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("GH #401: includeHtml:true adds each slice's rendered HTML (key absent without it)", async () => {
+    const { doc: without } = await callJson(client, "export_model", { file: join(dir, "clean.em"), docJson: true });
+    expect("html" in without.model.slices[0]).toBe(false);
+    const { doc: withHtml } = await callJson(client, "export_model", {
+      file: join(dir, "clean.em"),
+      docJson: true,
+      includeHtml: true,
+    });
+    expect("html" in withHtml.model.slices[0]).toBe(true);
+  });
 });
 
 describe("export_slice tool", () => {

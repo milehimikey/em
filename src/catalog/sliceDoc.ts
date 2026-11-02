@@ -563,6 +563,71 @@ export function isSignedSliceDoc(doc: Pick<SliceDoc, "status" | "ratifiedBy">): 
   return doc.status === "implemented" || (doc.status === "ready-to-implement" && doc.ratifiedBy !== null && doc.ratifiedBy.trim() !== "");
 }
 
+/** GH #401: one `## Open Questions` item exported for the structured doc export
+ *  (`em export --doc-json`), carrying its deferral state. */
+export interface OpenQuestionExport {
+  /** The item's text, with the `- [ ]`/`- [x]` checkbox marker stripped (document order). */
+  text: string;
+  /** `true` for a `- [x]` item, `false` for `- [ ]`. */
+  checked: boolean;
+  /** The `v<n>` a `deferred to v<n>` marker (`em slice defer`, `DEFERRED_ITEM`) names, or null
+   *  for an item with no such marker. */
+  deferredToVersion: number | null;
+}
+
+/**
+ * GH #401: the `## Open Questions` task-list items with their deferral state, in document order —
+ * the structured form `em export --doc-json` surfaces. Same section boundary (heading to the next
+ * `#`/`##` heading or EOF) and item grammar (`TASK_ITEM`) as `countOpenQuestions`/
+ * `countDeferredBeyond`; the deferral version is read from the same `DEFERRED_ITEM` marker `em
+ * slice defer` writes. Empty when the doc has no `## Open Questions` heading.
+ */
+export function openQuestions(body: string): OpenQuestionExport[] {
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
+  if (start === -1) return [];
+  const items: OpenQuestionExport[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^#{1,2}\s/.test(lines[i])) break;
+    const m = lines[i].match(TASK_ITEM);
+    if (!m) continue;
+    const deferred = DEFERRED_ITEM.exec(lines[i]);
+    items.push({
+      text: lines[i].replace(TASK_ITEM, "").trim(),
+      checked: m[1] !== " ",
+      deferredToVersion: deferred ? Number(deferred[1]) : null,
+    });
+  }
+  return items;
+}
+
+/** The `## Alternate & Error Flows` heading (or any `##` heading whose text ends in "Error
+ *  Flows"), and a column-0 bullet — the grammar `errorFlows` reads. */
+const ERROR_FLOWS_HEADING = /^##\s+.*Error Flows\s*$/i;
+const TOP_LEVEL_BULLET = /^[-*]\s+(.*\S)\s*$/;
+
+/**
+ * GH #401: the top-level bullet items under the slice doc's `## … Error Flows` section (the
+ * template's `## Alternate & Error Flows`), in document order, the `- `/`* ` marker stripped —
+ * the authored failure-path list `em export --doc-json` surfaces. Section boundary is the next
+ * `#`/`##` heading or EOF, the same boundary `countOpenQuestions` uses. Only column-0 bullets are
+ * items; nested detail bullets and prose are skipped. Empty when the doc has no such heading or
+ * the section has no bullets (unfilled template placeholders are kept verbatim, like every other
+ * authored section). Pure; CRLF tolerated.
+ */
+export function errorFlows(body: string): string[] {
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex((l) => ERROR_FLOWS_HEADING.test(l));
+  if (start === -1) return [];
+  const items: string[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^#{1,2}\s/.test(lines[i])) break;
+    const m = lines[i].match(TOP_LEVEL_BULLET);
+    if (m) items.push(m[1].trim());
+  }
+  return items;
+}
+
 /** GH #253: how many `## Open Questions` items are deferred to a version later than `version` —
  *  the known work waiting on a later version that `em status` / `em export` report as
  *  `queuedForNext` (the name predates #253: GH #236's state-file queue reported the same fact

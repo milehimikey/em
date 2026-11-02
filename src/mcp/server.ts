@@ -34,6 +34,7 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { diffModels, LineageResolvers } from "../model/diff.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "../emit/json.js";
+import { buildDocJsonExport } from "../emit/docJson.js";
 import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "../emit/validateJson.js";
 import { buildDiffJson } from "../emit/diffJson.js";
 import { runApiCheck } from "../cli/api.js";
@@ -383,15 +384,34 @@ export function createServer(): McpServer {
         "— read it rather than re-deriving connections from slice membership), and export-stable " +
         "refs. Refuses (tool error) when the model has " +
         "errors, same as the CLI — call `validate` first, or use `export_slice` to read one " +
-        "already-ratified slice while the rest of the model is still broken.",
-      inputSchema: { file: fileParam },
+        "already-ratified slice while the rest of the model is still broken. With `docJson: true` " +
+        "(GH #401) it returns the structured slice-doc export instead (`em export --doc-json`): " +
+        "per slice the frontmatter join plus the parsed sections as data (fields, invariants, " +
+        "scenarios, error flows, open questions) and a model-level invariant catalog, under its " +
+        "own `DOC_EXPORT_SCHEMA_VERSION`. `includeHtml: true` adds each slice doc's rendered HTML " +
+        "body (excluded by default, and only read with `docJson`).",
+      inputSchema: {
+        file: fileParam,
+        docJson: z
+          .boolean()
+          .optional()
+          .describe("return the structured slice-doc export (`em export --doc-json`) instead of the model snapshot"),
+        includeHtml: z
+          .boolean()
+          .optional()
+          .describe("with `docJson`, include each slice doc's rendered HTML body (excluded by default)"),
+      },
     },
-    async ({ file }) => {
+    async ({ file, docJson, includeHtml }) => {
       const compiled = compileFile(file);
       if ("error" in compiled) return errorResult(compiled.error);
       const { model, refs, diagnostics, source } = compiled;
       if (hasErrors(diagnostics)) {
         return errorResult(`not exporting: "${file}" has errors — run \`validate\` first and fix them`);
+      }
+      if (docJson) {
+        const exportedDoc = buildDocJsonExport(model, refs, diagnostics, source, file, { includeHtml });
+        return textResult(exportedDoc.text);
       }
       const exported = buildExport(model, refs, diagnostics, source, file);
       return textResult(exported.text);
