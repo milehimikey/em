@@ -353,9 +353,9 @@ spec/code drift while you can still fix it on the same branch, rather than after
 walk itself (steps 1-4 above) is unchanged; only the certify step's preconditions differ. Output
 is ephemeral by default (nothing is written, not even to `conformance/`); pass
 `--write-findings` to persist the run's own unruled findings as a normal
-`conformance/<date>-<slice-key>-preview-findings.json` (this is deliberate — see
-[`docs/cli.md`](../../../../docs/cli.md#em-slice-conform---preview-gh-400) for the exact
-shape and naming). `em state set-conformance` and the unruled-findings gates are unaffected by
+`conformance/<date>-<slice-key>-preview-findings.json` (this is deliberate — `docs/cli.md`'s
+`em slice conform --preview` section documents the exact shape and naming).
+`em state set-conformance` and the unruled-findings gates are unaffected by
 this mode either way: a default preview run writes nothing for them to read, so it can never
 block a later certify or `set-conformance` call. There is no `--slice-ready` integration for this
 mode yet.
