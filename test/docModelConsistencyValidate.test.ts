@@ -573,6 +573,85 @@ describe("GH #294 doc-names-unfed-event / doc-omits-fed-event", () => {
   });
 });
 
+describe("GH #397 doc-names-unfed-event honours loops-to edges", () => {
+  // Repro verbatim from the issue: `view V from "A"` in slice 1, `event B ... loops-to "V"` in a
+  // later slice, slice 1's doc listing B under the view's Source column.
+  const loopDoc = (rows: string[]) =>
+    [
+      "# Slice",
+      "## Read Model / View",
+      "<!-- GENERATED:em-slice-view:start -->",
+      '- **View:** `V` built from events: "A"',
+      "",
+      "| Field | Type | Source / Notes |",
+      "|-------|------|----------------|",
+      ...rows,
+      "<!-- GENERATED:em-slice-view:end -->",
+    ].join("\n");
+  const loopModel = (loopsTo: string) =>
+    [
+      'slice "V" {',
+      '  view V from "A" note "slices/v.md"',
+      "}",
+      'slice "Make A" {',
+      "  command Make A",
+      "  event A @Ctx",
+      "}",
+      'slice "Make B" {',
+      "  command Make B",
+      `  event B @Ctx${loopsTo}`,
+      "}",
+    ].join("\n");
+
+  it("baseline: flags the event when no loops-to edge exists", () => {
+    writeDoc("v", { pattern: "state-view", body: loopDoc(["| a | string | from event `A` |", "| b | string | from event `B` |"]) });
+    const diags = diagsOf(loopModel("")).filter((d) => d.code === "doc-names-unfed-event");
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('names event "B"');
+  });
+
+  it("is clean once the event reaches the view only via a resolved loops-to edge (GH #397 repro)", () => {
+    writeDoc("v", { pattern: "state-view", body: loopDoc(["| a | string | from event `A` |", "| b | string | from event `B` |"]) });
+    const diags = diagsOf(loopModel(' loops-to "V"')).filter((d) => d.code === "doc-names-unfed-event");
+    expect(diags).toEqual([]);
+  });
+
+  it("an unresolved (forward or unknown) loops-to does not silence the warning", () => {
+    writeDoc("v", { pattern: "state-view", body: loopDoc(["| a | string | from event `A` |", "| b | string | from event `B` |"]) });
+    const diags = diagsOf(loopModel(' loops-to "No Such View"')).filter((d) => d.code === "doc-names-unfed-event");
+    expect(diags).toHaveLength(1);
+  });
+
+  it("credits a loops-to that resolves to a LATER `again` instance of the same logical view (MIL-208 union)", () => {
+    // resolveLoopsToTarget picks the latest earlier instance by name — here that's "V Again",
+    // not the origin "V" — but the origin's doc (which the continuation has no doc of its own
+    // and borrows) must still be credited: it's one logical read model.
+    writeDoc("v", { pattern: "state-view", body: loopDoc(["| a | string | from event `A` |", "| c | string | from event `C` |"]) });
+    const src = [
+      'slice "V" {',
+      '  view V from "A" note "slices/v.md"',
+      "}",
+      'slice "Make A" {',
+      "  command Make A",
+      "  event A @Ctx",
+      "}",
+      'slice "V Again" {',
+      '  view V again from "D"',
+      "}",
+      'slice "Make D" {',
+      "  command Make D",
+      "  event D @Ctx",
+      "}",
+      'slice "Make C" {',
+      "  command Make C",
+      '  event C @Ctx loops-to "V"',
+      "}",
+    ].join("\n");
+    const diags = diagsOf(src).filter((d) => d.code === "doc-names-unfed-event");
+    expect(diags).toEqual([]);
+  });
+});
+
 describe("GH #294 real-estate shapes (toolshed)", () => {
   // Shape of toolshed's slices/see-my-loans.md: hand-written view marker, built-from prose with a
   // "Later instances add" tail, a Source column that never names the event, scenarios in the older
