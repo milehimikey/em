@@ -28,7 +28,8 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
-import { extractInvariantIds, ownershipStructuralLines } from "../catalog/invTokens.js";
+import { extractInvariantIds, OWNERSHIP_HEADING_RE, ownershipStructuralLines, STRUCTURAL_LINE_RE } from "../catalog/invTokens.js";
+import { isContinuationLine } from "../catalog/sliceDoc.js";
 import { walkDir } from "../util/walkDir.js";
 
 export { INV_TOKEN_RE, extractInvariantIds } from "../catalog/invTokens.js";
@@ -81,20 +82,56 @@ export function extractDeclaredInvariantLabels(body: string): string[] {
   return ids;
 }
 
+/** A declaring label with its rule text: `**INV-X:**` / `**INV-X**:` (an optional parenthesised
+ *  qualifier tolerated, `**INV-CAP-1 (idempotency):**`), capturing the rest of the line. */
+const DECLARING_RULE_RE = /\*\*(INV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?:\s+\([^)]*\))?(?::\*\*|\*\*:)\s*([^\n]*)/g;
+
 /**
  * GH #286: like `extractDeclaredInvariantLabels`, but also returns the rule text after the label
- * (`- **INV-X:** If `parentId` is set, ...`), trimmed. Used only by the advisory
- * `command-second-intent` lint (catalog/invariantsValidate.ts).
+ * (`- **INV-X:** If `parentId` is set, ...`), trimmed. Since GH #401 (round 3) a soft-wrapped
+ * declaring bullet's indented continuation lines are joined into its text with single spaces
+ * (`isContinuationLine` — nested elaboration bullets stay excluded, as does everything MIL-155
+ * excludes from ID extraction): real docs wrap their rule sentences
+ * (examples/order-fulfillment/slices/capture-payment.md's INV-CAP-1), and a single-line capture
+ * exported 4 of that estate's 7 catalog entries mid-sentence. Walks the ownership sections
+ * line-by-line itself — `ownershipStructuralLines` drops the continuation lines on purpose
+ * (MIL-155, so a wrapped line's cross-citation never contributes an ID) and must stay that way
+ * for `extractInvariantIds`. Consumers: the advisory `command-second-intent` lint
+ * (catalog/invariantsValidate.ts) — unaffected by the join, since `conditionalField` matches
+ * patterns anchored at `^` and the join only appends tail text — and `em export --doc-json`'s
+ * doc-declared invariant fallback (emit/docJson.ts), which needs the full sentence.
  */
 export function extractDeclaredInvariantRules(body: string): { id: string; text: string }[] {
   const seen = new Set<string>();
   const out: { id: string; text: string }[] = [];
-  for (const line of ownershipStructuralLines(body)) {
-    for (const m of line.matchAll(/\*\*(INV-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?:\s+\([^)]*\))?(?::\*\*|\*\*:)\s*([^\n]*)/g)) {
-      if (seen.has(m[1])) continue;
-      seen.add(m[1]);
-      out.push({ id: m[1], text: m[2].trim() });
+  let inOwnershipSection = false;
+  let open: { id: string } | null = null; // the entry still accepting continuation lines
+  const byId = new Map<string, { id: string; text: string }>();
+  for (const line of body.split(/\r?\n/)) {
+    if (/^#{1,2}\s/.test(line)) {
+      inOwnershipSection = OWNERSHIP_HEADING_RE.test(line);
+      open = null;
+      continue;
     }
+    if (!inOwnershipSection) continue;
+    if (STRUCTURAL_LINE_RE.test(line)) {
+      open = null;
+      for (const m of line.matchAll(DECLARING_RULE_RE)) {
+        if (seen.has(m[1])) continue;
+        seen.add(m[1]);
+        const entry = { id: m[1], text: m[2].trim() };
+        out.push(entry);
+        byId.set(m[1], entry);
+        open = { id: m[1] };
+      }
+      continue;
+    }
+    if (open && isContinuationLine(line)) {
+      const entry = byId.get(open.id)!;
+      entry.text = `${entry.text} ${line.trim()}`.trim();
+      continue;
+    }
+    open = null; // a blank line, nested bullet, or column-0 prose ends the wrap
   }
   return out;
 }

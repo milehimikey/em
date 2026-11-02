@@ -12,6 +12,7 @@ import { compile } from "../src/pipeline.js";
 import { buildDocJsonExport, DOC_EXPORT_SCHEMA_VERSION } from "../src/emit/docJson.js";
 import { buildExport, SCHEMA_VERSION } from "../src/emit/json.js";
 import { errorFlows, openQuestions } from "../src/catalog/sliceDoc.js";
+import { extractDeclaredInvariantRules } from "../src/cli/coverage.js";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -70,7 +71,7 @@ conformedOn: 2026-10-02
 # Slice: Checkout
 
 ## Invariants / Business Rules
-- **INV-CHK-1** — the order total must be positive
+- **INV-CHK-1:** stated in the doc with the declaring label too — the model's rule must win
 
 ## Scenarios (Given / When / Then)
 ### Scenario: Happy path
@@ -324,22 +325,72 @@ version: 1
   });
 
   it("a model-declared id wins over the doc's label for the same id (declared-in-both restates, never duplicates)", () => {
-    // The main fixture's checkout doc restates INV-CHK-1; its slice entry carries exactly one
-    // INV-CHK-1, source "model" (asserted above) — here assert no "doc" duplicate exists.
+    // The main fixture's checkout doc declares INV-CHK-1 with a TRUE `**INV-CHK-1:**` declaring
+    // label (which extractDeclaredInvariantRules does return) — without the dedupe guard this
+    // would be a second, "doc"-sourced entry with the doc's own wording. Exactly one entry, the
+    // model's, must survive.
     const invs = sliceByKey(docJson(), "checkout").invariants.filter((i: any) => i.id === "INV-CHK-1");
-    expect(invs).toHaveLength(1);
-    expect(invs[0].source).toBe("model");
+    expect(invs).toEqual([{ id: "INV-CHK-1", text: "the order total must be positive", source: "model" }]);
   });
 
   it("examples/order-fulfillment (a real doc-only estate) exports a NON-EMPTY catalog", () => {
-    const emPath = join(TEST_DIR, "..", "examples", "order-fulfillment", "order-fulfillment.em");
-    const src = readFileSync(emPath, "utf8");
-    const { model, refs, diagnostics } = compile(src);
-    const doc = JSON.parse(buildDocJsonExport(model, refs, diagnostics, src, emPath).text);
+    const doc = orderFulfillmentDocJson();
     expect(doc.model.invariants.length).toBeGreaterThan(0);
     expect(doc.model.invariants).toContainEqual(
       expect.objectContaining({ id: "INV-CHK-1", owningSlice: "checkout", source: "doc" }),
     );
+  });
+});
+
+function orderFulfillmentDocJson() {
+  const emPath = join(TEST_DIR, "..", "examples", "order-fulfillment", "order-fulfillment.em");
+  const src = readFileSync(emPath, "utf8");
+  const { model, refs, diagnostics } = compile(src);
+  return JSON.parse(buildDocJsonExport(model, refs, diagnostics, src, emPath).text);
+}
+
+describe("doc-fallback invariant text joins soft-wrapped declaring labels (round 3 item 1)", () => {
+  it("extractDeclaredInvariantRules joins a wrapped label's continuation lines — INV-CAP-1's two-liner, verbatim", () => {
+    // Copied verbatim from examples/order-fulfillment/slices/capture-payment.md: the rule
+    // sentence wraps onto a second physical line; the nested elaboration bullet below it is NOT
+    // part of the rule text and ends the wrap.
+    const body = `## Invariants / Business Rules
+
+- **INV-CAP-1 (idempotency):** capturing twice for the same \`authorizationId\` is a defect, not a
+  legitimate retry.
+  - The command handler must dedupe on it. The gateway is known to retry.
+- **INV-CAP-2:** a declined capture must not silently disappear.
+  - See Open Questions; this model doesn't yet have a failure event for it.
+`;
+    expect(extractDeclaredInvariantRules(body)).toEqual([
+      { id: "INV-CAP-1", text: "capturing twice for the same `authorizationId` is a defect, not a legitimate retry." },
+      { id: "INV-CAP-2", text: "a declined capture must not silently disappear." },
+    ]);
+  });
+
+  it("the 4 flagship order-fulfillment entries export their full sentence, never ending mid-line", () => {
+    const doc = orderFulfillmentDocJson();
+    const invOf = (sliceKey: string, id: string) =>
+      doc.model.slices.find((s: any) => s.key === sliceKey).invariants.find((i: any) => i.id === id);
+    expect(invOf("capture-payment", "INV-CAP-1").text).toBe(
+      "capturing twice for the same `authorizationId` is a defect, not a legitimate retry.",
+    );
+    expect(invOf("browse-catalog", "INV-BC-1").text).toBe(
+      "An order's `total` must equal the sum of its line items' `unitPrice * quantity` at order time.",
+    );
+    expect(invOf("browse-catalog", "INV-BC-2").text).toBe(
+      "Every line item's product must be in stock at the moment `Place Order` is handled (checked then, not reserved earlier).",
+    );
+    expect(invOf("view-open-orders", "INV-VOO-1").text).toBe(
+      "An order appears in this view exactly once per `Order Placed` it's projected from.",
+    );
+    // The class, not just the instances: no catalog-owned invariant anywhere in the estate ends
+    // mid-sentence on a dangling article/conjunction the way the truncation did ("…, not a").
+    for (const s of doc.model.slices) {
+      for (const inv of s.invariants) {
+        expect(inv.text, `${inv.id} in ${s.key}`).not.toMatch(/\b(?:a|an|the|is|not|and|or|of|to)$/);
+      }
+    }
   });
 });
 

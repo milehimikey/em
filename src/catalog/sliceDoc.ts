@@ -577,8 +577,10 @@ export interface OpenQuestionExport {
 
 /** A soft-wrapped bullet's continuation line: indented, non-empty, and not itself a bullet —
  *  the line a markdown renderer joins onto the bullet above it. Nested bullets (`  - detail`)
- *  are their own items, never a continuation, and end the wrap. */
-function isContinuationLine(line: string): boolean {
+ *  are their own items, never a continuation, and end the wrap. Shared (GH #401) by
+ *  `openQuestions`/`errorFlows` below and coverage.ts's `extractDeclaredInvariantRules` so every
+ *  wrapped-bullet reader joins on the one definition. */
+export function isContinuationLine(line: string): boolean {
   return /^\s/.test(line) && line.trim() !== "" && !/^\s*[-*]\s/.test(line);
 }
 
