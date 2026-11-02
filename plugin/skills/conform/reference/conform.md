@@ -355,7 +355,10 @@ walk itself (steps 1-4 above) is unchanged; only the certify step's precondition
 is ephemeral by default (nothing is written, not even to `conformance/`); pass
 `--write-findings` to persist the run's own unruled findings as a normal
 `conformance/<date>-<slice-key>-preview-findings.json` (this is deliberate — `docs/cli.md`'s
-`em slice conform --preview` section documents the exact shape and naming).
+`em slice conform --preview` section documents the exact shape and naming). Know before opting
+in: the written file has no sibling report (`report` is synthetic), so `em conform-supersede`
+refuses to rule on it — unruled entries in it gate certify/`set-conformance` at that revision
+until you rule them in the file by hand, delete the snapshot, or author the sibling report.
 `em state set-conformance` and the unruled-findings gates are unaffected by
 this mode either way: a default preview run writes nothing for them to read, so it can never
 block a later certify or `set-conformance` call. There is no `--slice-ready` integration for this

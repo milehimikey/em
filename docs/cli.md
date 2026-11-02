@@ -4177,10 +4177,19 @@ description (`em slice conform --preview <slice-key> --at <rev>` — there is no
 file is a sibling of). Once written, this file is a `conformance/*.json` like any other — picked
 up by `em conform-findings check`, and by any *later* findings-check-gate read (a real
 certification at the same `--at`, `em state set-conformance`, `em status`) exactly the way a
-hand-written findings file would be. `em state set-conformance` and the unruled-findings gates
-themselves are unchanged by `--preview`/`--write-findings` — nothing here alters what counts as
-"in scope" or "unruled"; it only changes whether this run's own read lands on disk for a later
-read to find. `--slice-ready` does not read this file (no integration this release).
+hand-written findings file would be. **One asymmetry to know before opting in:** because the
+`report` field is synthetic, no `<x>-report.md` sits beside this file, and
+[`em conform-supersede`](#em-conform-supersede-file-report-path) — whose argument is a
+report path — refuses to rule on it (the same no-sibling-report refusal as GH #391). So written
+preview findings with unruled entries **will gate** `em slice conform` (certifying) and
+`em state set-conformance` at that revision, and are cleared by ruling them **in the file** (set
+`locus`/`resolvedBy`/`resolvedOn` by hand, the same fields `conform-supersede` writes), by
+**deleting the snapshot** once it has served its purpose, or by **authoring the sibling report**
+(`conformance/<on>-<slice-key>-preview-report.md`) and ruling through `conform-supersede` as
+usual — `conform-supersede` alone cannot. `em state set-conformance` and the unruled-findings
+gates themselves are unchanged by `--preview`/`--write-findings` — nothing here alters what
+counts as "in scope" or "unruled"; it only changes whether this run's own read lands on disk for
+a later read to find. `--slice-ready` does not read this file (no integration this release).
 
 ```bash
 em slice conform model.em request-payment --at pr-42-head --preview
