@@ -184,9 +184,11 @@ sections *define* (see **Token format** under
 [`em coverage`](cli.md#em-coverage-file---tests-dir) for exactly what counts as a definition),
 whether a test under `testsDir` cites it, and every citing `file:line`. Refuses (a
 tool error) when the model has errors, or when `testsDir` doesn't exist AND at least one doc is
-in scope — matching the CLI's own behavior: a fresh scaffold or doc-only ratification PR with
-zero `implemented` docs has nothing yet to check, so a missing `--tests` directory there isn't a
-defect (MIL-207). This is a *checking* tool, not a *judgment* one: it confirms an ID is cited,
+in scope — matching the CLI's own behavior: a fresh scaffold, or a slice ratified but not yet
+implemented — whether through a doc-only ratification PR or ratified inline on the same branch
+as its build (GH #399, [process.md](process.md#inline-ratification-approval-as-the-ratification-session))
+— has zero `implemented` docs and so nothing yet to check, so a missing `--tests` directory
+there isn't a defect (MIL-207). This is a *checking* tool, not a *judgment* one: it confirms an ID is cited,
 never whether the citing test is good or passing. A continuation slice (MIL-208 — an `again`
 view instance with no doc of its own) is excluded from `slices` entirely — its invariants, if
 any, live in the originating slice's own doc, already listed under that key.

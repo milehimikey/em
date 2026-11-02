@@ -296,6 +296,16 @@ Each phase skill's own preconditions locate the model and, when invoked with no 
 to the `event-modeling` router skill — so `/event-modeling` alone is still all you need to
 remember, exactly as before the split.
 
+`slice` and `implement` above read as two separate PRs — a doc-only ratification merge, then a
+build on its own branch — because that's the shape that makes a `event-modeling-engagement` run
+possible (ratification has to precede every dispatched branch, not share one with it). For a
+single slice built outside an engagement, that split is a convention, not a CLI requirement: `em
+slice ratify`/`mark-implemented` don't care which branch they run on. **Inline ratification** —
+draft, ratify, and implement on one branch, with the PR's own approval as the ratification
+session — is the documented alternative for internal slices (GH #399,
+[process.md](process.md#inline-ratification-approval-as-the-ratification-session)); public-
+contract-touching slices and engagements keep the separate doc PR.
+
 ## PRD or spec in
 
 Handed a PRD, requirements document or API spec, an agent left to improvise over-decomposes along

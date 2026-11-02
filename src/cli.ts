@@ -65,7 +65,7 @@ import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { buildRefsJson } from "./emit/refsJson.js";
 import { buildShapeReport, formatShapeText } from "./cli/shape.js";
-import { applyRefWaivers, checkRefs, readWaiveFile } from "./cli/refsCheck.js";
+import { applyRefWaivers, checkRatificationOrder, checkRefs, readWaiveFile } from "./cli/refsCheck.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
 import {
@@ -2376,8 +2376,15 @@ program
     [] as string[],
   )
   .option("--waive-file <path>", "a baseline file of slice keys to waive, one per line (`#` comments allowed); missing file = no waivers")
+  .option(
+    "--check-order",
+    "advisory-only (GH #399): for every slice doc with a ratifiedRef, report whether a commit between the branch's " +
+      "fork point and ratifiedRef already touched code other than the doc itself — a retrofit signal for inline " +
+      "ratification (spec written to describe code that already exists). History is rewritable, so this NEVER " +
+      "affects the exit code or `ok`, and is never a validate gate — see docs/process.md's inline-ratification section",
+  )
   .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
-  .action((file: string, opts: { reachableFrom: string; waive: string[]; waiveFile?: string; json?: boolean }) => {
+  .action((file: string, opts: { reachableFrom: string; waive: string[]; waiveFile?: string; checkOrder?: boolean; json?: boolean }) => {
     const { model, refs } = compileFile(file);
     const outcome = checkRefs(model, refs, dirname(file), opts.reachableFrom);
     if (!outcome.ok) {
@@ -2391,8 +2398,12 @@ program
     }
     if (result.shallow) console.error("warn: shallow clone — every ref is undecidable; check out with fetch-depth: 0");
 
+    // GH #399: computed only with --check-order, and never folded into `result`/`result.ok` —
+    // it is a sibling report, not a new ref field, and must never move the exit code (R5).
+    const orderResults = opts.checkOrder ? checkRatificationOrder(model, refs, dirname(file), result.target, result.shallow) : null;
+
     if (opts.json) {
-      process.stdout.write(buildRefsJson(result, file) + "\n");
+      process.stdout.write(buildRefsJson(result, file, orderResults) + "\n");
     } else {
       for (const r of result.results) {
         console.log(`  ${r.status.padEnd(12)} ${r.sliceKey} ${r.field}: ${r.ref}${r.detail ? ` — ${r.detail}` : ""}`);
@@ -2407,8 +2418,19 @@ program
       } else {
         console.log(`${bad} ref(s) not reachable from ${opts.reachableFrom} (${result.checkedRefs} checked on ${result.checkedDocs} doc(s)${waivedNote})`);
       }
+      if (orderResults) {
+        console.log("");
+        console.log("ratification order (advisory — never affects exit code):");
+        if (orderResults.length === 0) {
+          console.log("  no slice doc carries a ratifiedRef to check");
+        }
+        for (const o of orderResults) {
+          console.log(`  ${o.status.padEnd(23)} ${o.sliceKey} ratifiedRef: ${o.ratifiedRef}${o.detail ? ` — ${o.detail}` : ""}`);
+        }
+      }
     }
     // Set the code rather than process.exit(): stdout to a pipe shouldn't risk truncation.
+    // `orderResults` never participates — advisory only, per R5.
     if (!result.ok) process.exitCode = 1;
   });
 

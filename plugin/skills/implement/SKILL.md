@@ -53,7 +53,12 @@ routing table (§7) is what names the skill set for each pattern.
 Preconditions (tool check, model location) are the same as every other phase — see
 `${CLAUDE_PLUGIN_ROOT}/shared/reference/operating-principles.md` — but this phase additionally
 requires the target slice to already be ratified; if it isn't, stop and say so rather than
-starting on unratified work.
+starting on unratified work. The one documented exception is **inline ratification** (GH #399,
+`reference/implement.md` §1a): for an internal (non-public-touching, non-engagement) slice whose
+doc is already `reviewed`, drafting code on the same branch ahead of the human's `em slice
+ratify` is sanctioned — provided you never flip the gate yourself and re-confirm
+`--slice-ready` reads `true` before treating the slice as done. `em:engagement` is
+unchanged by this: it still requires every dispatched slice ratified before its branch is cut.
 
 End of phase: PR merged, slice doc flipped to `status: implemented` with `implementedIn`
 filled, `em slice index <model-name>.em` run to refresh `README.md`'s Slices table. Implement

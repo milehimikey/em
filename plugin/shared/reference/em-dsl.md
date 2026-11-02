@@ -165,6 +165,7 @@ em refs <file>                                                      # check that
 em refs <file> --reachable-from <rev>                               # the branch or commit every ref must be an ancestor of (e.g. origin/main)
 em refs <file> --waive <slice-key>                                  # excuse this slice's non-ancestor/unresolved/undecidable results from the exit code (repeatable); still reported
 em refs <file> --waive-file <path>                                  # a baseline file of slice keys to waive, one per line (`#` comments allowed); missing file = no waivers
+em refs <file> --check-order                                        # advisory-only (GH #399): for every slice doc with a ratifiedRef, report whether a commit between the branch's fork point and ratifiedRef already touched code other than the doc itself — a retrofit signal for inline ratification (spec written to describe code that already exists). History is rewritable, so this NEVER affects the exit code or `ok`, and is never a validate gate — see docs/process.md's inline-ratification section
 em refs <file> --json                                               # print a JSON document instead of the text report (see docs/cli.md)
 em ledger <file>                                                    # check slice docs' version: field agrees with their content across two git revisions (opt-in CI check, MIL-89 — never part of `em validate`, see docs/ci.md)
 em ledger <file> --from <rev>                                       # baseline revision

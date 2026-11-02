@@ -96,6 +96,121 @@ export function classifyRef(run: GitRunner, baseDir: string, ref: string, target
   return { status: "undecidable", detail: `git merge-base failed: ${anc.stderr.trim() || `exit ${anc.status}`}` };
 }
 
+// GH #399 (inline ratification): the ratify-then-implement split used to buy "spec frozen before
+// code exists" for free, because the two lived in different PRs. Inline mode (one branch, PR
+// approval IS the ratification act — docs/process.md's "Inline ratification" section) drops that
+// for free property, so the one thing worth checking mechanically is the *retrofit* risk the
+// issue names: an agent builds first, then writes the doc to describe what already exists. This
+// is that check, in `em refs`' own idiom — three outcomes, real git, nothing enforced.
+//
+// Deliberately advisory only (R5 of the 1.20.0 slate): commit history is rewritable (a rebase or
+// reorder can make any ordering look clean after the fact), so this can at best be a smoke
+// signal for the human in the PR review, never a fact `em validate`/`ratify`/`mark-implemented`
+// could safely gate on. It never touches `RefsCheckResult.ok` or the CLI exit code — see
+// `checkRatificationOrder` below and its lone call site in cli.ts.
+export type OrderStatus = "ratified-first" | "code-before-ratification" | "undecidable";
+
+export interface OrderResult {
+  sliceKey: string;
+  /** Same convention as `RefResult.path`: the doc the ratification was read from. */
+  path: string;
+  ratifiedRef: string;
+  /** The earliest commit found to touch something other than the slice's own doc before
+   *  `ratifiedRef`, when `status` is `code-before-ratification`; otherwise `null`. */
+  commit: string | null;
+  status: OrderStatus;
+  detail: string | null;
+}
+
+/**
+ * Walk from `target`'s merge-base with `ratifiedRef` up to `ratifiedRef` itself, looking for a
+ * commit that already touched a path other than `docPath` (the slice's own doc) — evidence that
+ * implementation work predates the sign-off it should follow. Commits strictly between the fork
+ * point and `ratifiedRef` are "before ratification" by construction (`ratifiedRef` is excluded
+ * from that scan and checked separately, below, since a single commit that bundles the doc edit
+ * with code has no decidable order *within itself*).
+ */
+export function classifyRatificationOrder(
+  run: GitRunner,
+  baseDir: string,
+  ratifiedRef: string,
+  target: string,
+  docPath: string,
+  shallow: boolean,
+): { status: OrderStatus; commit: string | null; detail: string | null } {
+  if (shallow) {
+    return { status: "undecidable", commit: null, detail: "shallow clone — history is truncated, order cannot be decided (checkout with fetch-depth: 0)" };
+  }
+  const resolved = git(run, baseDir, ["cat-file", "-e", `${ratifiedRef}^{commit}`]);
+  if (resolved.status !== 0) {
+    return { status: "undecidable", commit: null, detail: "ratifiedRef does not resolve to a commit — see the ratifiedRef row above" };
+  }
+  const touchedFiles = (sha: string): { ok: true; files: string[] } | { ok: false; detail: string } => {
+    const diff = git(run, baseDir, ["diff-tree", "--no-commit-id", "--name-only", "-r", sha]);
+    if (diff.status !== 0) return { ok: false, detail: `git diff-tree failed on ${sha.slice(0, 7)}: ${diff.stderr.trim() || `exit ${diff.status}`}` };
+    return { ok: true, files: diff.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0) };
+  };
+  const base = git(run, baseDir, ["merge-base", ratifiedRef, target]);
+  if (base.status !== 0) {
+    return { status: "undecidable", commit: null, detail: `git merge-base failed: ${base.stderr.trim() || `exit ${base.status}`}` };
+  }
+  const forkPoint = base.stdout.trim();
+  if (forkPoint !== ratifiedRef) {
+    const list = git(run, baseDir, ["rev-list", `${forkPoint}..${ratifiedRef}`]);
+    if (list.status !== 0) {
+      return { status: "undecidable", commit: null, detail: `git rev-list failed: ${list.stderr.trim() || `exit ${list.status}`}` };
+    }
+    // rev-list orders newest first; drop the first entry (ratifiedRef itself, checked separately
+    // below) and walk the rest oldest-relevant-first so a reported commit is the earliest offender.
+    const before = list.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0).slice(1).reverse();
+    for (const sha of before) {
+      const files = touchedFiles(sha);
+      if (!files.ok) return { status: "undecidable", commit: null, detail: files.detail };
+      if (files.files.some((f) => f !== docPath)) {
+        return {
+          status: "code-before-ratification",
+          commit: sha,
+          detail: `commit ${sha.slice(0, 7)} touched code other than ${docPath} before ${ratifiedRef.slice(0, 7)} was ratified — the doc may describe code that already existed rather than the other way round`,
+        };
+      }
+    }
+  }
+  // No earlier commit touched anything but the doc. Last check: does the ratification commit
+  // itself bundle code alongside the doc edit? That commit has no decidable internal order.
+  const own = touchedFiles(ratifiedRef);
+  if (!own.ok) return { status: "undecidable", commit: null, detail: own.detail };
+  if (own.files.some((f) => f !== docPath)) {
+    return {
+      status: "undecidable",
+      commit: null,
+      detail: `${ratifiedRef.slice(0, 7)} (the ratification commit) also touches code other than ${docPath} — a single commit has no decidable order within itself`,
+    };
+  }
+  return { status: "ratified-first", commit: null, detail: null };
+}
+
+/**
+ * The GH #399 advisory ordering check, in `checkRefs`' own shape: one `OrderResult` per slice
+ * doc that carries a `ratifiedRef` (the same docs `checkRefs` already reads), run against the
+ * same `baseDir`/`reachableFrom`. Deliberately returns no `ok` field — nothing here is ever a
+ * pass/fail gate (R5); the CLI never derives an exit code from this list.
+ */
+export function checkRatificationOrder(model: NormalizedModel, refs: RefsResult, baseDir: string, target: string, shallow: boolean, run: GitRunner = realGit): OrderResult[] {
+  const results: OrderResult[] = [];
+  const seen = new Set<string>();
+  model.slices.forEach((_slice, i) => {
+    const sliceKey = refs.sliceKeys[i];
+    if (seen.has(sliceKey)) return;
+    seen.add(sliceKey);
+    const doc = readSliceDoc(baseDir, sliceKey);
+    if (!doc || !hasUsableFrontmatter(doc) || doc.ratifiedRef === null) return;
+    const path = `slices/${sliceKey}.md`;
+    const { status, commit, detail } = classifyRatificationOrder(run, baseDir, doc.ratifiedRef, target, path, shallow);
+    results.push({ sliceKey, path, ratifiedRef: doc.ratifiedRef, commit, status, detail });
+  });
+  return results;
+}
+
 /**
  * Check every recorded ref on every slice doc of `model` against `reachableFrom`. `baseDir` is the
  * `.em` file's directory (the docs' repository is located from it with `-C`, never the process

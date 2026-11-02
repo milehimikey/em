@@ -1527,6 +1527,47 @@ new ones.
 - `ok` — `false` when any active result is not `ancestor` (so a shallow clone reads
   `ok: false, shallow: true`).
 
+### `--check-order` (GH #399): the inline-ratification ordering advisory
+
+Inline ratification (a slice drafted, ratified and implemented on one branch — see
+[process.md](process.md#inline-ratification-approval-as-the-ratification-session)) drops the
+free "spec frozen before code exists" property that came from ratifying in a separate PR. The one
+mechanical thing worth checking is the retrofit risk the inline-ratification section names: an
+agent builds, then writes the doc to describe what already exists. `--check-order` is that check,
+added to the same per-doc, per-commit idiom `em refs` already uses — never a second command.
+
+For every slice doc that carries a `ratifiedRef:` (docs with none, including every doc ratified
+`--no-ref`, are not reported — there is no ref to order against), it walks the commits between
+the branch's fork point off `--reachable-from` and `ratifiedRef` itself, looking for one that
+already touched something other than the slice's own doc:
+
+| Status | Meaning |
+|---|---|
+| `ratified-first` | No commit up to and including `ratifiedRef` touched anything but the slice's doc — the healthy case |
+| `code-before-ratification` | A commit strictly before `ratifiedRef` already touched other files — `commit` names the earliest one. The doc may describe code that already existed rather than the other way round |
+| `undecidable` | A shallow clone, a failed git call, **or** `ratifiedRef`'s own commit bundles the doc edit together with other files — a single commit has no decidable order within itself |
+
+**Advisory, full stop (R5 of the 1.20.0 slate).** Commit history is rewritable — a rebase can
+make any ordering look clean after the fact — so this is a smoke signal for the human in the PR
+review, never a fact to enforce. It is computed only when `--check-order` is passed, it is never
+folded into `results`/`ok`, and it **never affects the exit code**: a run can report
+`code-before-ratification` or `undecidable` and still exit `0` if the ref-reachability check
+itself passes. It is not part of `em validate`, `--slice-ready`, `em slice ratify`, or `em slice
+mark-implemented` — none of those commands change behavior because this flag exists.
+
+```bash
+$ em refs model.em --reachable-from origin/main --check-order
+  ...
+
+ratification order (advisory — never affects exit code):
+  code-before-ratification code-first ratifiedRef: 065c937… — commit c08b274 touched code other than slices/code-first.md before 065c937 was ratified — the doc may describe code that already existed rather than the other way round
+```
+
+**`--json`** adds one field, only when `--check-order` is passed (plain `em refs --json` is
+byte-identical to before GH #399): `orderResults` — `{ sliceKey, path, ratifiedRef, commit,
+status, detail }[]`, `commit` set only for `code-before-ratification`, `detail` the same
+plain-English reason the text report prints or `null`.
+
 ## `em coverage <file> --tests <dir>`
 
 Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every
