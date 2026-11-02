@@ -561,7 +561,35 @@ view Attributes from "Attribute Created", "Attribute Value Created", "Attribute 
   `fields-completeness/view-field-no-source` naming the collection field and the element field.
   Skipped while a named event declares no `{ fields }`. A field also traces one level through
   the declared element type of an array field on the event (`optionValues: VariantOptionValue[]`
-  makes `VariantOptionValue`'s fields sources); deeper nesting does not, and there is no path syntax.
+  makes `VariantOptionValue`'s fields sources); deeper same-name nesting does not — reach it with
+  a path source instead (next bullet).
+- When the event renamed or flattened the field, so same-name tracing can't reach it, an element
+  field may declare its source by **path** into the named source event, as the unquoted form of
+  the same `derived from` clause (GH #383):
+
+  ```
+  type ValueRef { attributeValueId: string }
+  type Option {
+    id: string
+    attributeValueIds: string[] derived from values[].attributeValueId
+  }
+
+  view Shop from "OptionAdded" {
+    options: Option[] derived from "OptionAdded"
+  }
+  // event OptionAdded @Shop { id: string, values: ValueRef[] }
+  ```
+
+  The path is a `.`-joined chain of identifiers, each optionally suffixed `[]` to step through an
+  array field (`values[].attributeValueId`). It is resolved against the collection field's named
+  source event(s): every non-leaf segment must name a field whose declared type is a `type` the
+  next segment can descend into, the whole path must resolve on at least one named event, and the
+  **leaf field's type must match this element field's type** (array markers stripped on both sides).
+  A path that does not resolve, or whose leaf type does not match, is a `fields-completeness/view-field-no-source`
+  warning naming the collection field, the element field and the path. The quoted event-list form
+  and the unquoted path form are mutually exclusive on one field. `em export` carries a path-derived
+  field as `derived: true` (with `derivedFrom: null`, the same shape as a bare `derived`); the path
+  itself is a validation-time source declaration and is not a separate export field.
 - Named events must be among the view's sources (`derived-from-unresolved`), as for any traced
   `derived`.
 - An element field whose value the projection computes rather than copies from an event payload

@@ -60,6 +60,57 @@ export function isOwnerHandle(owner: string): boolean {
   return OWNER_HANDLE_RE.test(owner) || OWNER_EMAIL_RE.test(owner);
 }
 
+/** A field's declared type with a single trailing `[]` array marker stripped (`string[]` →
+ *  `string`, `Option` → `Option`), trimmed. Empty string for a typeless field. The unit of
+ *  comparison for a path source's leaf-type match (GH #383). */
+function baseFieldType(type: string | undefined): string {
+  return (type ?? "").trim().replace(/\[\]$/, "").trim();
+}
+
+/** Two field types match for a path source (GH #383) when their base types (array markers
+ *  stripped) are equal, compared case-insensitively like every other name/type in the model. */
+function leafTypesMatch(leafType: string | undefined, fieldType: string | undefined): boolean {
+  return normalizeName(baseFieldType(leafType)) === normalizeName(baseFieldType(fieldType));
+}
+
+/** Resolve a `derived from` source PATH (GH #383) — `values[].attributeValueId` — against a set
+ *  of candidate source events. Each dotted segment names a field; a non-leaf segment must resolve
+ *  to a declared `type` so the next segment has fields to match against (array markers on a
+ *  segment are cosmetic — `resolveTypeRef` descends through `T[]` the same as `T`). Returns the
+ *  first event on which the WHOLE path resolves, carrying the leaf field's declared type; `found:
+ *  false` when no candidate event resolves the full path. */
+function resolveEventPath(
+  path: string,
+  events: Element[],
+  typesByName: Map<string, TypeDecl>,
+): { found: boolean; leafType?: string } {
+  const segments = path.split(".").map((s) => s.replace(/\[\]$/, "").trim());
+  for (const evt of events) {
+    let fields: Field[] | undefined = evt.fields;
+    let leafType: string | undefined;
+    let ok = true;
+    for (let i = 0; i < segments.length; i++) {
+      const f = (fields ?? []).find((x) => normalizeName(x.name) === normalizeName(segments[i]));
+      if (!f) {
+        ok = false;
+        break;
+      }
+      if (i === segments.length - 1) {
+        leafType = f.type;
+      } else {
+        const ref = resolveTypeRef(f.type, typesByName);
+        if (!ref) {
+          ok = false;
+          break;
+        }
+        fields = ref.typeDecl.fields;
+      }
+    }
+    if (ok) return { found: true, leafType };
+  }
+  return { found: false };
+}
+
 export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): Diagnostic[] {
   const diags: Diagnostic[] = [];
   const refOf = (id: string): string => refs.refById.get(id)!;
@@ -277,6 +328,35 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           }
           const list = named.map((e) => `"${e.name}"`).join(", ");
           for (const tf of resolved.typeDecl.fields) {
+            // GH #383: an element field may declare its source by PATH into a named source event
+            // (`attributeValueIds: string[] derived from values[].attributeValueId`) when the
+            // event renamed or flattened the field, so same-name tracing can't reach it. The path
+            // must resolve against at least one named event, and its leaf field's type must match
+            // this element field's type (both array markers stripped). Checked before the bare
+            // `derived` branch: the path form always sets `derived` too.
+            if (tf.derivedPath) {
+              const pathRes = resolveEventPath(tf.derivedPath, named, model.typesByName);
+              if (!pathRes.found) {
+                pushDiag(diags, "fields-completeness/view-field-no-source", {
+                  message:
+                    `view "${view.name}" collection field "${f.name}" (${f.type}) element field ` +
+                    `"${tf.name}" of type "${resolved.typeDecl.name}" has no source for path ` +
+                    `"${tf.derivedPath}" in ${list}`,
+                  line: view.line,
+                  refs: [refOf(view.id), ...named.map((e) => refOf(e.id))],
+                });
+              } else if (!leafTypesMatch(pathRes.leafType, tf.type)) {
+                pushDiag(diags, "fields-completeness/view-field-no-source", {
+                  message:
+                    `view "${view.name}" collection field "${f.name}" (${f.type}) element field ` +
+                    `"${tf.name}" of type "${resolved.typeDecl.name}" path "${tf.derivedPath}" resolves ` +
+                    `to type "${pathRes.leafType ?? "(none)"}" but the field is typed "${tf.type ?? "(none)"}" in ${list}`,
+                  line: view.line,
+                  refs: [refOf(view.id), ...named.map((e) => refOf(e.id))],
+                });
+              }
+              continue;
+            }
             // GH #382: an element field marked `derived` is computed by the projection (e.g. an
             // audit stamp from event metadata), not copied from an event payload — exempt, like
             // a top-level derived field. A traced `derived from` still has its names checked.

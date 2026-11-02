@@ -292,3 +292,106 @@ slice "Books" {
     expect(created).toMatchObject({ derived: true, derivedFrom: ["Loan Opened"] });
   });
 });
+
+// GH #383: a collection element field may declare its source by PATH into the source event
+// (`attributeValueIds: string[] derived from values[].attributeValueId`) when the event
+// renamed or flattened the field, so same-name tracing can't reach it.
+describe("path-based element sources (GH #383)", () => {
+  // The issue's verbatim repro, with the ask's `derived from <path>` clause added.
+  const repro = (optionField: string) => `
+model "Repro"
+type ValueRef { attributeValueId: string }
+type Option {
+  id: string
+  ${optionField}
+}
+context Shop
+slice "Add Option" {
+  command AddOption { id: string, values: ValueRef[] }
+  event OptionAdded @Shop { id: string, values: ValueRef[] }
+}
+slice "Shop View" {
+  view Shop from "OptionAdded" {
+    options?: Option[] derived from "OptionAdded"
+  }
+}
+`;
+
+  // Acceptance: "a collection element field may declare its source by path into the source event
+  // (the issue's repro: attributeValueIds ← values[].attributeValueId)" — validates clean after.
+  it("owner repro: a flattened path source resolves, no view-field-no-source warning", () => {
+    expect(sourceWarnings(repro("attributeValueIds: string[] derived from values[].attributeValueId"))).toEqual([]);
+  });
+
+  // Acceptance: the status quo the feature fixes — same-name tracing can't reach the renamed field.
+  it("before: the same-name form still warns that the element field has no source", () => {
+    const w = sourceWarnings(repro("attributeValueIds: string[]"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('element field "attributeValueIds"');
+    expect(w[0].message).toContain('"OptionAdded"');
+  });
+
+  // Acceptance: "resolved path must exist on the event" — a nonexistent path still warns.
+  it("a nonexistent path still warns, naming the path", () => {
+    const w = sourceWarnings(repro("attributeValueIds: string[] derived from values[].nope"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('element field "attributeValueIds"');
+    expect(w[0].message).toContain('values[].nope');
+    expect(w[0].message).toContain("has no source for path");
+  });
+
+  // Acceptance: "resolved path must exist on the event" — a bad FIRST segment warns too.
+  it("a path whose first segment is not an event field still warns", () => {
+    const w = sourceWarnings(repro("attributeValueIds: string[] derived from missing[].attributeValueId"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('element field "attributeValueIds"');
+  });
+
+  // Acceptance: "leaf type must match" — a leaf-type mismatch still warns.
+  it("a leaf-type mismatch still warns, naming both types", () => {
+    const w = sourceWarnings(repro("attributeValueIds: number[] derived from values[].attributeValueId"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('element field "attributeValueIds"');
+    expect(w[0].message).toContain('"string"');
+    expect(w[0].message).toContain('"number[]"');
+  });
+
+  // The "renamed" half of the issue title: a flat, single-segment rename (no array hop) resolves.
+  it("a single-segment renamed path (no array) resolves against a top-level event field", () => {
+    expect(sourceWarnings(repro("label: string derived from id"))).toEqual([]);
+  });
+
+  it("sets derived + derivedPath on the parsed field, leaving derivedFrom unset", () => {
+    const { model: m } = compile(repro("attributeValueIds: string[] derived from values[].attributeValueId"));
+    const option = m.typesByName.get("option")!;
+    const field = option.fields.find((f) => f.name === "attributeValueIds")!;
+    expect(field.derived).toBe(true);
+    expect(field.derivedPath).toBe("values[].attributeValueId");
+    expect(field.derivedFrom).toBeUndefined();
+  });
+
+  it("exports a path-derived field as derived:true/derivedFrom:null — no new key, schema unchanged", () => {
+    const src = repro("attributeValueIds: string[] derived from values[].attributeValueId");
+    const { model: m, refs, diagnostics } = compile(src);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc: any = JSON.parse(buildExport(m, refs, diagnostics, src, "repro.em").text);
+    expect(doc.schemaVersion).toBe("1.19");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const option = doc.model.types.find((t: any) => t.name === "Option");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const f = option.fields.find((f: any) => f.name === "attributeValueIds");
+    expect(f).toMatchObject({ derived: true, derivedFrom: null });
+    expect("derivedPath" in f).toBe(false);
+  });
+
+  it("the path form is a parse error on a command or event field, like the quoted form", () => {
+    const bad = `
+model "M"
+context C
+slice "S" {
+  command Do { x: string derived from a.b }
+}
+`;
+    expect(() => compile(bad)).toThrow(/derived from.*only valid on a view field or a .type. field/);
+  });
+});

@@ -490,7 +490,14 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   declared `type T`, with `derived from "Child Created", "Child Deleted"`, embeds a child entity:
   each field of `T` must trace to a named event (`fields-completeness/view-field-no-source`
   otherwise); a field also traces one level through the declared element type of an array field
-  on the event (`optionValues: VariantOptionValue[]`), no deeper and with no path syntax. An
+  on the event (`optionValues: VariantOptionValue[]`), no deeper by same name. When the event
+  renamed or flattened the field, declare the element field's source by **path** into the named
+  event, as the unquoted form of the same clause (GH #383): `attributeValueIds: string[] derived
+  from values[].attributeValueId` — a `.`-joined chain of identifiers, each optionally `[]` to
+  step through an array field. The path must resolve on a named event (every non-leaf segment a
+  `type`-valued field) and the leaf field's type must match the element field's (array markers
+  stripped); an unresolved path or leaf-type mismatch is `fields-completeness/view-field-no-source`.
+  The quoted event-list form and the unquoted path form are mutually exclusive on one field. An
   element field the projection computes rather than copies (an audit stamp from event metadata,
   say) is marked `derived` on the `type` field itself — bare or `derived from "<events>"`, same
   syntax as a view field (GH #382): it is then skipped by `view-field-no-source`, and a traced
