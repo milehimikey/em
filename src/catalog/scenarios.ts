@@ -41,7 +41,10 @@ export interface ScenarioParseResult {
   problems: string[];
 }
 
-const SCENARIOS_SECTION_RE = /^##\s+Scenarios\b/;
+/** The strict grammar's section gate — a block counts only under a literal `## Scenarios…`
+ *  heading (case-sensitive). Exported for the section-aware renderer (sliceDocRender.ts, GH
+ *  #402), which must card-render exactly the blocks this module accepts, nothing laxer. */
+export const SCENARIOS_SECTION_RE = /^##\s+Scenarios\b/;
 const SCENARIO_HEADING_RE = /^###\s+Scenario:\s*(.*?)\s*$/;
 const HEADING_RE = /^#{1,3}\s/;
 const LABEL_RE = /^[-*]\s+\*\*(Given|When|Then):\*\*\s*(.*?)\s*$/;

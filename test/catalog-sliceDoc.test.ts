@@ -327,6 +327,31 @@ describe("parseSliceDoc: section-aware rendering (GH #402)", () => {
     expect(doc.html).toMatch(/<h3[^>]*>Scenario: Missing beats<\/h3>/);
   });
 
+  // Round 3: card rendering converges on the strict grammar (catalog/scenarios.ts) — a block
+  // `slice-doc/structured-section-malformed` would flag, or that export/validate ignore, never
+  // card-renders.
+  it("leaves a missing-beat block (Given only — the strict grammar flags it) as plain rendering, not a card", () => {
+    const doc = parseSliceDoc(["## Scenarios", "", "### Scenario: Given only", "- **Given:** a zero total"].join("\n"));
+    expect(doc.html).not.toContain("scenario-card");
+    expect(doc.html).toMatch(/<h3[^>]*>Scenario: Given only<\/h3>/);
+    expect(doc.html).toContain("<strong>Given:</strong>");
+  });
+
+  it("leaves lowercase-labelled beats (the strict grammar's labels are case-sensitive) as plain rendering", () => {
+    const doc = parseSliceDoc(
+      ["## Scenarios", "", "### Scenario: lower", "- **given:** a", "- **when:** b", "- **then:** c"].join("\n"),
+    );
+    expect(doc.html).not.toContain("scenario-card");
+  });
+
+  it("leaves a block outside any `## Scenarios` section (which export/validate ignore) as plain rendering", () => {
+    const doc = parseSliceDoc(
+      ["## Read Model / View", "", "### Scenario: a copied stub", "- **Given:** a", "- **When:** b", "- **Then:** c"].join("\n"),
+    );
+    expect(doc.html).not.toContain("scenario-card");
+    expect(doc.html).toMatch(/<h3[^>]*>Scenario: a copied stub<\/h3>/);
+  });
+
   it("anchors the first owned INV-* mention inside Invariants and links every later mention to it", () => {
     const doc = parseSliceDoc(
       [
@@ -351,6 +376,40 @@ describe("parseSliceDoc: section-aware rendering (GH #402)", () => {
     const doc = parseSliceDoc("## Dependencies\n\n- See also INV-SIB-3, owned by a sibling slice.\n");
     expect(doc.html).toContain('<span class="inv-chip inv-chip--external">INV-SIB-3</span>');
     expect(doc.html).not.toContain("href");
+  });
+
+  // Round 3: the definition anchor belongs to the occurrence inside the ownership section — the
+  // template's canonical order puts the Command field table (whose Rules column cites ids)
+  // BEFORE `## Invariants / Business Rules`, so "first rendered mention" would hang the anchor
+  // on a passing citation and demote the real declaration to a link pointing back up.
+  it("anchors the definition in the Invariants section even when a field table cites the id first (canonical order)", () => {
+    const doc = parseSliceDoc(
+      [
+        "## Command / Input",
+        "",
+        "| Field | Type | Required | Rules / Validation |",
+        "|---|---|---|---|",
+        "| total | Money | yes | INV-ORD-1 |",
+        "",
+        "## Invariants / Business Rules",
+        "",
+        "- **INV-ORD-1** — total must be positive",
+      ].join("\n"),
+    );
+    // exactly one anchor, and it sits AFTER the table — in the Invariants list, not the cell.
+    expect(doc.html.match(/inv-chip--def/g)).toHaveLength(1);
+    expect(doc.html.indexOf('<span class="inv-chip inv-chip--def" id="inv-inv-ord-1">')).toBeGreaterThan(doc.html.indexOf("</table>"));
+    // the table cell's citation is a link to that anchor.
+    expect(doc.html).toContain('<td class="col-notes"><a class="inv-chip inv-chip--ref" href="#inv-inv-ord-1">INV-ORD-1</a></td>');
+  });
+
+  // Round 3: INV_TOKEN_RE's \b semantics — an `INV-` run glued to a preceding word never chips.
+  it("does not chip an INV- run glued to a preceding word (\\b semantics, like INV_TOKEN_RE)", () => {
+    const doc = parseSliceDoc("# Slice\n\nsee REINV-2 and fooINV-3 here, but INV-4 chips.\n");
+    expect(doc.html).toContain("REINV-2");
+    expect(doc.html).toContain("fooINV-3");
+    expect(doc.html.match(/inv-chip/g)).toHaveLength(2); // INV-4's one chip, two class names
+    expect(doc.html).toContain('<span class="inv-chip inv-chip--external">INV-4</span>');
   });
 
   it("styles a generated field table's Type/Rules columns by header text, not position", () => {
