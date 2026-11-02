@@ -492,11 +492,16 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   on the event (`optionValues: VariantOptionValue[]`), no deeper by same name. When the event
   renamed or flattened the field, declare the element field's source by **path** into the named
   event, as the unquoted form of the same clause (GH #383): `attributeValueIds: string[] derived
-  from values[].attributeValueId` — a `.`-joined chain of identifiers, each optionally `[]` to
-  step through an array field. The path must resolve on a named event (every non-leaf segment a
-  `type`-valued field) and the leaf field's type must match the element field's (array markers
-  stripped); an unresolved path or leaf-type mismatch is `fields-completeness/view-field-no-source`.
-  The quoted event-list form and the unquoted path form are mutually exclusive on one field. An
+  from values[].attributeValueId` — a `.`-joined chain of identifiers, each `[]`-suffixed exactly
+  when it steps through an array field (the marker is enforced against the event field's actual
+  arrayness). The path must resolve on a named event — every named event is tried; non-leaf
+  segments must be `type`-valued fields — and the leaf field's type must match the element
+  field's (array markers stripped); an unresolved path or leaf-type mismatch is
+  `fields-completeness/view-field-no-source` (implicit same-name nested tracing matches names
+  only; the explicit path form earns the stronger leaf-type check). The quoted event-list form
+  and the unquoted path form are mutually exclusive on one field — both at once is a parse error.
+  A plain (non-collection) view field may carry the same path form, checked the same way against
+  the view's source events — never silently exempt like a bare `derived` field. An
   element field the projection computes rather than copies (an audit stamp from event metadata,
   say) is marked `derived` on the `type` field itself — bare or `derived from "<events>"`, same
   syntax as a view field (GH #382): it is then skipped by `view-field-no-source`, and a traced

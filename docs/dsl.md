@@ -580,14 +580,23 @@ view Attributes from "Attribute Created", "Attribute Value Created", "Attribute 
   // event OptionAdded @Shop { id: string, values: ValueRef[] }
   ```
 
-  The path is a `.`-joined chain of identifiers, each optionally suffixed `[]` to step through an
-  array field (`values[].attributeValueId`). It is resolved against the collection field's named
-  source event(s): every non-leaf segment must name a field whose declared type is a `type` the
-  next segment can descend into, the whole path must resolve on at least one named event, and the
-  **leaf field's type must match this element field's type** (array markers stripped on both sides).
-  A path that does not resolve, or whose leaf type does not match, is a `fields-completeness/view-field-no-source`
+  The path is a `.`-joined chain of identifiers, each suffixed `[]` when — and only when — it
+  steps through an array field (`values[].attributeValueId`): the marker is enforced, a
+  `[]`-marked segment must resolve to an array-typed field and an unmarked segment to a
+  non-array one. The path is resolved against the collection field's named source event(s) —
+  every named event is tried: every non-leaf segment must name a field whose declared type is a
+  `type` the next segment can descend into, the whole path must resolve on at least one named
+  event, and the **leaf field's type must match this element field's type** (array markers
+  stripped on both sides). A path that does not resolve (including a wrong `[]` marker), or that
+  resolves only with a mismatched leaf type, is a `fields-completeness/view-field-no-source`
   warning naming the collection field, the element field and the path. The quoted event-list form
-  and the unquoted path form are mutually exclusive on one field. `em export` carries a path-derived
+  and the unquoted path form are mutually exclusive on one field — writing both is a parse error.
+  On a plain (non-collection) view field the same path form is accepted and checked the same way
+  against the view's source events — a path-derived view field is never silently exempt the way a
+  bare `derived` one is. Note the explicit path form checks its leaf TYPE, while implicit
+  same-name nested tracing (GH #345 above) matches names only — an explicit source declaration
+  earns the stronger check, so the same mapping can pass implicitly yet warn when declared with a
+  mismatched type. `em export` carries a path-derived
   field as `derived: true` (with `derivedFrom: null`, the same shape as a bare `derived`); the path
   itself is a validation-time source declaration and is not a separate export field.
 - Named events must be among the view's sources (`derived-from-unresolved`), as for any traced

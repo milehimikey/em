@@ -73,42 +73,71 @@ function leafTypesMatch(leafType: string | undefined, fieldType: string | undefi
   return normalizeName(baseFieldType(leafType)) === normalizeName(baseFieldType(fieldType));
 }
 
+/** Outcome of resolving a path source (GH #383) against a view's source events: the path
+ *  resolved somewhere with a compatible leaf type (`ok`), resolved structurally on at least one
+ *  event but never with a matching leaf type (`type-mismatch`, carrying the first mismatched
+ *  leaf's declared type for the message), or never resolved at all (`not-found`). */
+type PathResolution =
+  | { status: "ok" }
+  | { status: "type-mismatch"; leafType?: string }
+  | { status: "not-found" };
+
 /** Resolve a `derived from` source PATH (GH #383) — `values[].attributeValueId` — against a set
  *  of candidate source events. Each dotted segment names a field; a non-leaf segment must resolve
- *  to a declared `type` so the next segment has fields to match against (array markers on a
- *  segment are cosmetic — `resolveTypeRef` descends through `T[]` the same as `T`). Returns the
- *  first event on which the WHOLE path resolves, carrying the leaf field's declared type; `found:
- *  false` when no candidate event resolves the full path. */
+ *  to a declared `type` so the next segment has fields to match against. A segment's `[]` marker
+ *  is ENFORCED, not cosmetic: a `[]`-marked segment must resolve to an array-typed field and an
+ *  unmarked segment to a non-array one (for a non-leaf segment the declared type's arrayness; for
+ *  the leaf the field's own `[]` suffix). EVERY candidate event is tried — the first on which the
+ *  whole path resolves with a leaf type matching `fieldType` wins — so an event whose structure
+ *  matches but whose leaf type doesn't never shadows a later event that matches outright. */
 function resolveEventPath(
   path: string,
+  fieldType: string | undefined,
   events: Element[],
   typesByName: Map<string, TypeDecl>,
-): { found: boolean; leafType?: string } {
-  const segments = path.split(".").map((s) => s.replace(/\[\]$/, "").trim());
+): PathResolution {
+  const segments = path.split(".").map((s) => {
+    const t = s.trim();
+    const array = t.endsWith("[]");
+    return { name: array ? t.slice(0, -2).trim() : t, array };
+  });
+  let mismatchLeafType: string | undefined;
+  let sawStructuralMatch = false;
   for (const evt of events) {
     let fields: Field[] | undefined = evt.fields;
     let leafType: string | undefined;
     let ok = true;
     for (let i = 0; i < segments.length; i++) {
-      const f = (fields ?? []).find((x) => normalizeName(x.name) === normalizeName(segments[i]));
+      const seg = segments[i];
+      const f = (fields ?? []).find((x) => normalizeName(x.name) === normalizeName(seg.name));
       if (!f) {
         ok = false;
         break;
       }
       if (i === segments.length - 1) {
+        if (((f.type ?? "").trim().endsWith("[]")) !== seg.array) {
+          ok = false;
+          break;
+        }
         leafType = f.type;
       } else {
         const ref = resolveTypeRef(f.type, typesByName);
-        if (!ref) {
+        if (!ref || ref.array !== seg.array) {
           ok = false;
           break;
         }
         fields = ref.typeDecl.fields;
       }
     }
-    if (ok) return { found: true, leafType };
+    if (ok) {
+      if (leafTypesMatch(leafType, fieldType)) return { status: "ok" };
+      sawStructuralMatch = true;
+      mismatchLeafType ??= leafType;
+    }
   }
-  return { found: false };
+  return sawStructuralMatch
+    ? { status: "type-mismatch", leafType: mismatchLeafType }
+    : { status: "not-found" };
 }
 
 export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): Diagnostic[] {
@@ -262,6 +291,33 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
           }
           const eventList = fromNames.map((n) => `"${n}"`).join(", ");
           for (const f of view.fields) {
+            // GH #383: a plain view field carrying a PATH source is never silently exempt — the
+            // declared path is resolved against the view's source events exactly like a
+            // collection element field's: it must exist on an event and its leaf type must
+            // match. Checked before the bare/traced `derived` exemption below (the path form
+            // sets `derived` too, so order matters).
+            if (f.derivedPath) {
+              const pathRes = resolveEventPath(f.derivedPath, f.type, sourceEvents, model.typesByName);
+              if (pathRes.status === "not-found") {
+                pushDiag(diags, "fields-completeness/view-field-no-source", {
+                  message:
+                    `view "${view.name}" field "${f.name}" has no source for path ` +
+                    `"${f.derivedPath}" in ${eventList}`,
+                  line: view.line,
+                  refs: [refOf(view.id), ...sourceEvents.map((e) => refOf(e.id))],
+                });
+              } else if (pathRes.status === "type-mismatch") {
+                pushDiag(diags, "fields-completeness/view-field-no-source", {
+                  message:
+                    `view "${view.name}" field "${f.name}" path "${f.derivedPath}" resolves to ` +
+                    `type "${pathRes.leafType ?? "(none)"}" but the field is typed ` +
+                    `"${f.type ?? "(none)"}" in ${eventList}`,
+                  line: view.line,
+                  refs: [refOf(view.id), ...sourceEvents.map((e) => refOf(e.id))],
+                });
+              }
+              continue;
+            }
             // `derived` (bare or traced, MIL-200) marks a field as computed from which events
             // have landed rather than copied from a single source event's payload — exempt
             // from this check entirely, same posture as `assigned` below for event fields.
@@ -331,12 +387,12 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
             // GH #383: an element field may declare its source by PATH into a named source event
             // (`attributeValueIds: string[] derived from values[].attributeValueId`) when the
             // event renamed or flattened the field, so same-name tracing can't reach it. The path
-            // must resolve against at least one named event, and its leaf field's type must match
-            // this element field's type (both array markers stripped). Checked before the bare
-            // `derived` branch: the path form always sets `derived` too.
+            // must resolve against at least one named event — EVERY named event is tried — and
+            // its leaf field's type must match this element field's type (both array markers
+            // stripped). Checked before the bare `derived` branch: the path form sets `derived` too.
             if (tf.derivedPath) {
-              const pathRes = resolveEventPath(tf.derivedPath, named, model.typesByName);
-              if (!pathRes.found) {
+              const pathRes = resolveEventPath(tf.derivedPath, tf.type, named, model.typesByName);
+              if (pathRes.status === "not-found") {
                 pushDiag(diags, "fields-completeness/view-field-no-source", {
                   message:
                     `view "${view.name}" collection field "${f.name}" (${f.type}) element field ` +
@@ -345,7 +401,7 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
                   line: view.line,
                   refs: [refOf(view.id), ...named.map((e) => refOf(e.id))],
                 });
-              } else if (!leafTypesMatch(pathRes.leafType, tf.type)) {
+              } else if (pathRes.status === "type-mismatch") {
                 pushDiag(diags, "fields-completeness/view-field-no-source", {
                   message:
                     `view "${view.name}" collection field "${f.name}" (${f.type}) element field ` +

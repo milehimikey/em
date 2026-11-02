@@ -394,4 +394,104 @@ slice "S" {
 `;
     expect(() => compile(bad)).toThrow(/derived from.*only valid on a view field or a .type. field/);
   });
+
+  // --- Round 2, item 3: the quoted event-list form and the path form are mutually exclusive ---
+
+  it("both derived from forms on one field is a parse error (quoted first)", () => {
+    const src = repro(
+      `attributeValueIds: string[] derived from "OptionAdded" derived from values[].attributeValueId`,
+    );
+    expect(() => compile(src)).toThrow(/mutually exclusive/);
+  });
+
+  it("both derived from forms on one field is a parse error (path first)", () => {
+    const src = repro(
+      `attributeValueIds: string[] derived from values[].attributeValueId derived from "OptionAdded"`,
+    );
+    expect(() => compile(src)).toThrow(/mutually exclusive/);
+  });
+
+  // --- Round 2, item 1: a plain (non-collection) view field's path source is checked too ---
+
+  const plainView = (viewField: string) => `
+model "Repro"
+type ValueRef { attributeValueId: string }
+context Shop
+slice "Add Option" {
+  ui Option Form @Admin
+  command AddOption { id: string, values: ValueRef[] }
+  event OptionAdded @Shop { id: string, values: ValueRef[] }
+}
+slice "Shop View" {
+  view Shop from "OptionAdded" {
+    id: string
+    ${viewField}
+  }
+  ui Shop Screen @Admin
+}
+persona Admin
+`;
+
+  it("a plain view field's valid path source resolves, no warning", () => {
+    expect(sourceWarnings(plainView("firstValueId: string derived from values[].attributeValueId"))).toEqual([]);
+  });
+
+  it("a plain view field's bogus path warns instead of being silently exempt", () => {
+    const w = sourceWarnings(plainView("status: string derived from totallyBogus.nonexistent"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('field "status"');
+    expect(w[0].message).toContain("has no source for path");
+    expect(w[0].message).toContain("totallyBogus.nonexistent");
+  });
+
+  it("a plain view field's path leaf-type mismatch warns, naming both types", () => {
+    const w = sourceWarnings(plainView("count: number derived from values[].attributeValueId"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('"string"');
+    expect(w[0].message).toContain('"number"');
+  });
+
+  // --- Round 2, item 2: every named event is tried, not just the first structural match ---
+
+  it("resolves against a later named event when an earlier one matches structurally but not by type", () => {
+    const twoSources = `
+model "Two"
+persona Admin
+context Shop
+type NumRef { attributeValueId: number }
+type StrRef { attributeValueId: string }
+type Option { id: string, attributeValueIds: string[] derived from values[].attributeValueId }
+slice "Add A" {
+  ui A Form @Admin
+  command AddA { id: string, values: NumRef[] }
+  event AAdded @Shop { id: string, values: NumRef[] }
+}
+slice "Add B" {
+  ui B Form @Admin
+  command AddB { id: string, values: StrRef[] }
+  event BAdded @Shop { id: string, values: StrRef[] }
+}
+slice "Shop View" {
+  view Shop from "AAdded", "BAdded" {
+    options: Option[] derived from "AAdded", "BAdded"
+  }
+  ui Shop Screen @Admin
+}
+`;
+    expect(sourceWarnings(twoSources)).toEqual([]);
+  });
+
+  // --- Round 2, item 5: a segment's [] marker must match the event field's actual arrayness ---
+
+  it("a [] marker on a non-array leaf segment warns (marker is enforced, not cosmetic)", () => {
+    const w = sourceWarnings(repro("attributeValueIds: string[] derived from values[].attributeValueId[]"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain("has no source for path");
+  });
+
+  it("an unmarked segment on an array event field warns (marker is enforced, not cosmetic)", () => {
+    const w = sourceWarnings(repro("attributeValueIds: string[] derived from values.attributeValueId"));
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain("has no source for path");
+  });
 });

@@ -1305,6 +1305,23 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
     if (!progressed) break;
   }
 
+  // GH #383: the quoted event-list form and the unquoted path form of `derived from` are
+  // mutually exclusive on one field. Once a `derived` clause is extracted the fixpoint loop
+  // stops matching further ones, so a second `derived from` clause (either form, either order)
+  // survives in `rest` — where it would silently leak into the field's TYPE string. Catch it
+  // here instead: leftover text still shaped like a `derived from` clause is an error.
+  if (
+    clauses.derived &&
+    new RegExp(`(?:^|\\s)derived\\s+from\\s+(?:"|${DERIVED_PATH}\\s*$)`).test(rest)
+  ) {
+    throw new ParseError(
+      "a field may carry only one `derived from` clause — the quoted event-list form " +
+        '(`derived from "Event A"`) and the unquoted path form (`derived from values[].attributeValueId`) ' +
+        "are mutually exclusive",
+      line,
+    );
+  }
+
   return { rest, clauses };
 }
 
