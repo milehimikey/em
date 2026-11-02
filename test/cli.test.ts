@@ -5,7 +5,7 @@
 // functions (which test/export.test.ts and test/validate.test.ts cover).
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
 import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
@@ -4141,6 +4141,157 @@ describe("em slice conform (CLI, MIL-214)", () => {
     expect(r.stderr).toContain("notice: --skip-findings-check");
     expect(r.stderr).toContain("1 unruled conformance finding(s) still in scope");
     expect(r.stdout).toContain("certified: slices/gated-slice.md");
+  });
+});
+
+describe("em slice conform --preview (CLI, GH #400)", () => {
+  let dir: string;
+  const DRAFT_DOC =
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\n# Slice: Draft Slice\n\nbody\n";
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-conform-preview-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(join(dir, "slices", "draft-slice.md"), DRAFT_DOC);
+    writeFileSync(
+      join(dir, "draft.em"),
+      'slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n',
+    );
+    writeFileSync(
+      join(dir, "slices", "gated-slice.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: draft\nversion: 1\n---\nbody\n",
+    );
+    writeFileSync(
+      join(dir, "gated.em"),
+      'slice "Gated Slice" {\n  command Do Thing note "slices/gated-slice.md"\n  event Thing Done\n}\n',
+    );
+    writeFileSync(
+      join(dir, "conformance", "2026-09-01-findings.json"),
+      JSON.stringify({
+        findingsSchemaVersion: "1.0",
+        model: "gated.em",
+        report: "conformance/2026-09-01-report.md",
+        revision: "8f12ed8",
+        findings: [
+          { id: 1, surface: "structural", class: "Real drift", slice: "gated-slice", evidence: "e1", locus: null, resolvedBy: null, resolvedOn: null },
+        ],
+      }),
+    );
+  });
+  afterAll(() => rmTemp(dir));
+
+  it("previews a never-shipped (draft) slice cleanly — the shipped/implementedIn gates are waived", () => {
+    const r = em(["slice", "conform", "draft.em", "draft-slice", "--at", "pr-branch-rev", "--preview"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("preview: slices/draft-slice.md (status: draft) @ pr-branch-rev");
+    expect(r.stdout).not.toContain("certified");
+    expect(r.stdout).toContain("ephemeral — nothing written");
+    const content = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    expect(content).not.toContain("conformedVersion");
+    expect(content).not.toContain("conformedAt");
+  });
+
+  it("--json prints a parseable preview document; writtenTo is null by default", () => {
+    const r = em(["slice", "conform", "draft.em", "draft-slice", "--at", "pr-branch-rev", "--preview", "--json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc).toMatchObject({ ok: true, preview: true, slice: "draft-slice", status: "draft", at: "pr-branch-rev", writtenTo: null });
+  });
+
+  it("reports an unruled conformance finding in scope but still exits 0 (never refuses)", () => {
+    const r = em(["slice", "conform", "gated.em", "gated-slice", "--at", "8f12ed8", "--preview"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("1 unruled conformance finding(s) in scope (id 1)");
+  });
+
+  it("--write-findings requires --preview", () => {
+    const r = em(["slice", "conform", "gated.em", "gated-slice", "--at", "8f12ed8", "--write-findings"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--write-findings only applies with --preview");
+  });
+
+  it("--json requires --preview", () => {
+    const r = em(["slice", "conform", "gated.em", "gated-slice", "--at", "8f12ed8", "--json"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--json only applies with --preview");
+  });
+
+  it("--skip-findings-check has no effect with --preview and is rejected", () => {
+    const r = em(["slice", "conform", "gated.em", "gated-slice", "--at", "8f12ed8", "--preview", "--skip-findings-check"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--skip-findings-check has no effect with --preview");
+  });
+
+  it("by default, --preview touches nothing under conformance/ — findings output is ephemeral", () => {
+    const before = readdirSync(join(dir, "conformance")).sort();
+    const r = em(["slice", "conform", "gated.em", "gated-slice", "--at", "8f12ed8", "--preview", "--on", "2026-11-01"], dir);
+    expect(r.status).toBe(0);
+    expect(readdirSync(join(dir, "conformance")).sort()).toEqual(before);
+    expect(existsSync(join(dir, "conformance", "2026-11-01-gated-slice-preview-findings.json"))).toBe(false);
+  });
+
+  it("--write-findings persists a normal findings file, named conformance/<on>-<slice-key>-preview-findings.json", () => {
+    const r = em(["slice", "conform", "gated.em", "gated-slice", "--at", "8f12ed8", "--preview", "--on", "2026-11-01", "--write-findings"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("wrote: conformance/2026-11-01-gated-slice-preview-findings.json");
+    const written = JSON.parse(readFileSync(join(dir, "conformance", "2026-11-01-gated-slice-preview-findings.json"), "utf8"));
+    expect(written).toMatchObject({
+      findingsSchemaVersion: "1.0",
+      model: "gated.em",
+      revision: "8f12ed8",
+      findings: [{ id: 1, evidence: "e1", slice: "gated-slice", locus: null }],
+    });
+  });
+
+  it("--json with --write-findings reports the written path", () => {
+    const r = em(
+      ["slice", "conform", "draft.em", "draft-slice", "--at", "fresh-rev", "--preview", "--on", "2026-11-02", "--json", "--write-findings"],
+      dir,
+    );
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout);
+    expect(doc.writtenTo).toBe("conformance/2026-11-02-draft-slice-preview-findings.json");
+    const written = JSON.parse(readFileSync(join(dir, doc.writtenTo), "utf8"));
+    expect(written.findings).toEqual([]);
+  });
+
+  // GH #400 / R2: a default preview run must never be able to block a LATER `em state
+  // set-conformance` — it never persists anything by itself, so it cannot add an unruled
+  // finding for that gate to trip over.
+  it("a default --preview run never blocks a later `em state set-conformance` at the same revision", () => {
+    const freshDir = mkdtempSync(join(tmpdir(), "em-cli-conform-preview-set-conformance-"));
+    mkdirSync(join(freshDir, "slices"), { recursive: true });
+    writeFileSync(join(freshDir, "slices", "place-order.md"), DRAFT_DOC.replace("Draft Slice", "Place Order"));
+    writeFileSync(
+      join(freshDir, "model.em"),
+      'slice "Place Order" {\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n',
+    );
+    writeFileSync(
+      join(freshDir, ".event-modeling.md"),
+      "# Event Modeling Progress — Model\n\n" +
+        "- **Model file:** `model.em`\n" +
+        "- **Current phase:** discover\n" +
+        "- **Current step:** 1\n" +
+        "- **Last updated:** 2026-11-01\n" +
+        "- **Last conformance:** never\n" +
+        "- **Last stakeholder review:** never\n",
+    );
+    // Bump AFTER the slice doc + note binding exist, so set-conformance's own "has the model
+    // drifted since the bump" check (unrelated to #400) doesn't trip on a later edit.
+    const bump = em(["model", "version", "bump", "model.em", "--by", "Alex"], freshDir);
+    expect(bump.status).toBe(0);
+
+    const preview = em(["slice", "conform", "model.em", "place-order", "--at", "unswept-rev", "--preview"], freshDir);
+    expect(preview.status).toBe(0);
+    expect(existsSync(join(freshDir, "conformance"))).toBe(false); // nothing written, dir never even created
+
+    const setConformance = em(
+      ["state", "set-conformance", "unswept-rev", freshDir, "--report", "conformance/2026-11-01-report.md"],
+      freshDir,
+    );
+    expect(setConformance.status).toBe(0);
+    rmTemp(freshDir);
   });
 });
 

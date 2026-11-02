@@ -4138,6 +4138,59 @@ em slice conform model.em request-payment --at 8f12ed8
 em slice conform model.em request-payment --at 8f12ed8 --skip-findings-check
 ```
 
+### `em slice conform --preview` (GH #400)
+
+The pre-ship advisory mode. Certification above means "audit **shipped** code for drift" — it refuses a slice that hasn't
+shipped, so it can't participate in a loop that runs *before* merge. `--preview` is that loop's
+early-signal mode: the same doc-resolution and findings-check-gate **read** as the certifying
+command, legal for a slice that hasn't shipped yet, and it **never writes anything** — no
+`conformedVersion:`/`conformedAt:`/`conformedOn:`, ever, on any run.
+
+| Flag | Effect |
+|---|---|
+| `--preview` | Waives the shipped-status and `implementedIn:` preconditions; never writes the doc. `--at` keeps its usual meaning and shape (kinded `<kind>:<id>` values supported the same as a real certify) |
+| `--json` | With `--preview`: print a JSON document instead of the text report. Refused without `--preview` |
+| `--write-findings` | With `--preview`: persist the preview's own unruled findings as `conformance/<on>-<slice-key>-preview-findings.json` — see below. Refused without `--preview` |
+
+`--skip-findings-check` is refused together with `--preview`: a preview run never refuses on
+findings in the first place, so the flag would have nothing to skip.
+
+**Ephemeral by default.** Without `--write-findings`, a `--preview` run touches no file at all —
+not the slice doc (never written in this mode, same as always), and not `conformance/` either.
+It only reads: the same `conformance/<date>[-<name>]-findings.json` lookup the certifying
+command's findings-check gate uses, scoped to `<slice-key>` at `--at`, reported (not refused on)
+as `unruledFindings` in the output. This is deliberate (GH #400 R2): a preview run must never be
+able to make a later `em slice conform` (certifying) or `em state set-conformance` fail by itself
+— and it structurally can't, since by default it writes nothing, and `--write-findings` (below)
+only ever **mirrors** findings a reader could already discover by other means, never invents new
+ones.
+
+**`--write-findings` makes that persistence deliberate.** It writes a normal,
+`findingsSchemaVersion: "1.0"` findings document — the exact same shape
+[`em conform-findings check`](#em-conform-findings-check-path---json) validates — to
+`conformance/<on>-<slice-key>-preview-findings.json` (the reserved `-preview-` segment means a
+hand-authored conform sweep's own `<date>[-<name>]-findings.json` never collides with it).
+`findings` is the run's own `unruledFindings`, ids renumbered `1..N` in the order reported (each
+source file's ids are only unique within that file, so a fresh file needs its own numbering);
+empty when none were found. `model` is `<file>`'s own basename; `report` is a synthetic
+description (`em slice conform --preview <slice-key> --at <rev>` — there is no `report.md` this
+file is a sibling of). Once written, this file is a `conformance/*.json` like any other — picked
+up by `em conform-findings check`, and by any *later* findings-check-gate read (a real
+certification at the same `--at`, `em state set-conformance`, `em status`) exactly the way a
+hand-written findings file would be. `em state set-conformance` and the unruled-findings gates
+themselves are unchanged by `--preview`/`--write-findings` — nothing here alters what counts as
+"in scope" or "unruled"; it only changes whether this run's own read lands on disk for a later
+read to find. `--slice-ready` does not read this file (no integration this release).
+
+```bash
+em slice conform model.em request-payment --at pr-42-head --preview
+# -> preview: slices/request-payment.md (status: ready-to-implement) @ pr-42-head — no unruled conformance findings in scope (checked: conformance/2026-10-30-report.md)
+# -> ephemeral — nothing written; pass --write-findings to persist a snapshot
+em slice conform model.em request-payment --at pr-42-head --preview --write-findings
+# -> wrote: conformance/2026-11-01-request-payment-preview-findings.json
+em slice conform model.em request-payment --at pr-42-head --preview --json
+```
+
 ## `em model version bump <file> --by <name>`
 
 Bumps the model's **design version** (MIL-218, [process.md#model-versions](process.md#model-versions)):
