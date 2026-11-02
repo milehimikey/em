@@ -87,7 +87,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `slice_ready` | `{ file, sliceKey, requireRatifiedHash?, roster? }` | The `em validate --slice-ready --json` machine verdict for one slice |
 | `slice_sync` | `{ file, sliceKey? }` | The `em slice sync <file> [<key>] --check --json` document (MIL-266): per bound slice doc, whether its generated regions match the model. Read-only: never writes |
 | `list_markers` | `{ file, issues?, divergences?, public? }` (booleans, default `true`) | The `--list-issues`/`--list-divergences`/`--list-public --json` marker document |
-| `export_model` | `{ file }` | The full `em export` document — refuses (tool error) if the model has errors |
+| `export_model` | `{ file, docJson?, includeHtml? }` | The full `em export` document — refuses (tool error) if the model has errors; `docJson: true` (GH #401) returns the structured slice-doc export (`em export --doc-json`) instead, `includeHtml: true` adding each slice doc's rendered HTML body |
 | `export_slice` | `{ file, sliceKey }` | One slice's scoped `em export --slice` document — refuses only if *that* slice has an error, or the key is unknown |
 | `coverage` | `{ file, testsDir, includeReady?, slice? }` | The `em coverage --tests <dir> --json` document: per-slice, per-invariant citation status |
 | `status` | `{ files, testsDir?, repo? }` | The `em status <files...> --json` document: state-of-the-system rollup across one or more models; when a `system.yaml` sits above the first file, the `system` block carries the consumer-adaptation count (MIL-239); `engagements` counts the open engagements beside the models (MIL-268); `roster` (status schema 1.12, GH #259) is `present`/`absent`/`invalid` for the first model |
@@ -162,6 +162,15 @@ appear in the document's `diagnostics` field regardless of which marker kinds ar
 
 Same document as `em export <file>`. Refuses — a tool error, not a partial document — when the
 model has any error-severity diagnostic, matching the CLI's own refusal.
+
+With `docJson: true` (GH #401) the same tool returns the document `em export <file> --doc-json`
+prints instead: the structured slice-doc export under its own `schemaVersion` (`"1.0"`,
+`DOC_EXPORT_SCHEMA_VERSION` — separate from the model export's schema) — per slice the frontmatter
+join plus the parsed sections as data (fields, invariants with ids and a `source` marker,
+scenarios, error flows, open questions with deferral state) and the model-level invariant catalog.
+`includeHtml: true` (only read with `docJson`) adds each slice doc's rendered HTML body, excluded
+by default. Same refusal gate either way. See
+[cli.md](cli.md#--doc-json-gh-401).
 
 ### `export_slice`
 

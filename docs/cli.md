@@ -684,7 +684,7 @@ markdown body still never appears in a plain export; here the rendered HTML is o
     "name": "Shop",
     "key": "shop",
     "invariants": [
-      { "id": "INV-CHK-1", "owningSlice": "checkout", "referencingSlices": ["cancel"] }
+      { "id": "INV-CHK-1", "owningSlice": "checkout", "source": "model", "referencingSlices": ["cancel"] }
     ],
     "slices": [
       {
@@ -695,7 +695,7 @@ markdown body still never appears in a plain export; here the rendered HTML is o
         "fields": [
           { "element": "Submit Order", "kind": "command", "fields": [ { "name": "total", "type": "decimal", "notes": "yes · —" } ] }
         ],
-        "invariants": [ { "id": "INV-CHK-1", "text": "the order total must be positive" } ],
+        "invariants": [ { "id": "INV-CHK-1", "text": "the order total must be positive", "source": "model" } ],
         "scenarios": [ { "title": "Happy path", "given": [ "…" ], "when": [ "…" ], "then": [ "…" ] } ],
         "errorFlows": [ "Submitting the same basket twice records one order." ],
         "openQuestions": [ { "text": "Should tax be included?", "checked": false, "deferredToVersion": null } ]
@@ -706,27 +706,44 @@ markdown body still never appears in a plain export; here the rendered HTML is o
 }
 ```
 
-- `model.invariants` — the model-level **invariant catalog**: each model-declared `INV-*` id, the
-  slice whose element declares it (`owningSlice`), and every OTHER slice whose doc body mentions it
-  (`referencingSlices`, using the same `INV-*` token grammar `em coverage` reads), in declaration
-  order.
+- `model.invariants` — the model-level **invariant catalog**: each declared `INV-*` id, the slice
+  that declares it (`owningSlice`, with `source` saying how — see `invariants` below), and every
+  OTHER slice whose doc body mentions it (`referencingSlices`, using the same `INV-*` token
+  grammar `em coverage` reads), in declaration order.
 - `frontmatter` — the same doc-join object the model export's `slice.doc` carries (status, version,
   `driftSignal`, the review/ratification/shipped/conformed keys, scenarios, …); see the schema
   summary above.
 - `fields` — the generated field tables (`em slice sync`'s regions) read back as data, grouped by
   element: `element` (its display name), `kind`, and `fields` of `{ name, type, notes }` where
   `notes` is the table's trailing column(s) (Required+Rules for a command, Source/Notes for an
-  event or view) joined with `·`, verbatim.
-- `invariants` — the slice's model-declared `invariant` lines, `{ id, text }` (`text` `null` when
-  the line declares no quoted rule), deduped by id in declaration order.
+  event or view) joined with `·`, verbatim. An alternatives event (`event A | B` / `oneof`,
+  GH #278) yields one group per alternative, each under its own element name.
+- `invariants` — the slice's declared invariants, `{ id, text, source }` (`text` `null` when the
+  declaration gives no rule text), deduped by id in declaration order. `source: "model"` for a
+  model `invariant` line (canonical); `source: "doc"` for the doc's own `**INV-X:**` declaring
+  label, the fallback for ids the model does not declare — the same model-first precedence
+  `em coverage`/`em query invariant` apply, so a 1.13-style estate with doc-only invariants still
+  exports them. A doc label restating a model-declared id is never a second entry.
 - `scenarios` — the authored `### Scenario:` Given/When/Then blocks (the same `parseScenarios`
   `slice.doc.scenarios` uses).
 - `errorFlows` — the top-level bullets under the doc's `## Alternate & Error Flows` section, in
-  document order.
+  document order; a soft-wrapped bullet's indented continuation lines are joined into its text
+  with single spaces.
 - `openQuestions` — each `## Open Questions` item as `{ text, checked, deferredToVersion }` —
-  `deferredToVersion` is the `v<n>` an `em slice defer` `deferred to v<n>` marker names, else `null`.
+  `deferredToVersion` is the `v<n>` an `em slice defer` `deferred to v<n>` marker names, else
+  `null`; wrapped items join their continuation lines the same way `errorFlows` does.
 - `html` — present on each slice only with `--include-html` (the rendered doc body, `null` when no
   usable doc is bound).
+
+Two caveats worth knowing as a consumer:
+
+- `frontmatter` reuses the model export's `SliceDocExport` shape verbatim (one source of truth with
+  `slice.doc` there), so its **fields track the export `schemaVersion`** (currently `1.19`) while
+  the doc-json's own sections track `DOC_EXPORT_SCHEMA_VERSION` — a consumer reading both watches
+  two version numbers.
+- `scenarios` carries only the strict `### Scenario:` grammar blocks (`parseScenarios`) — a
+  pre-1.17 free-prose scenario style exports as `[]`, exactly as `slice.doc.scenarios` reports
+  `null` for it in the model export.
 
 **Determinism.** The same source text always exports to byte-identical JSON: no timestamps,
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of

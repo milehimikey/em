@@ -4,12 +4,16 @@
 // slate #403 entry + rulings R3/R6). Real fs fixtures via mkdtempSync — the builder reads
 // slices/*.md off disk, same convention as test/docModelConsistencyValidate.test.ts.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { compile } from "../src/pipeline.js";
 import { buildDocJsonExport, DOC_EXPORT_SCHEMA_VERSION } from "../src/emit/docJson.js";
 import { buildExport, SCHEMA_VERSION } from "../src/emit/json.js";
+import { errorFlows, openQuestions } from "../src/catalog/sliceDoc.js";
+
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 
 const MODEL = `model "Shop"
 
@@ -183,10 +187,10 @@ describe("per slice: fields as data (reusing the sliceSections generated regions
   });
 });
 
-describe("per slice: invariants with ids `[{id, text}]`", () => {
-  it("emits the model-declared invariant's id and rule text", () => {
+describe("per slice: invariants with ids `[{id, text, source}]`", () => {
+  it("emits the model-declared invariant's id and rule text, source \"model\"", () => {
     expect(sliceByKey(docJson(), "checkout").invariants).toEqual([
-      { id: "INV-CHK-1", text: "the order total must be positive" },
+      { id: "INV-CHK-1", text: "the order total must be positive", source: "model" },
     ]);
   });
 });
@@ -231,8 +235,8 @@ describe("model-level invariant catalog (id -> owning slice -> referencing slice
   it("names the declaring slice as owner and every OTHER slice whose doc mentions the id", () => {
     const catalog = docJson().model.invariants;
     expect(catalog).toEqual([
-      { id: "INV-CHK-1", owningSlice: "checkout", referencingSlices: ["cancel"] },
-      { id: "INV-CXL-1", owningSlice: "cancel", referencingSlices: [] },
+      { id: "INV-CHK-1", owningSlice: "checkout", source: "model", referencingSlices: ["cancel"] },
+      { id: "INV-CXL-1", owningSlice: "cancel", source: "model", referencingSlices: [] },
     ]);
   });
 });
@@ -256,5 +260,171 @@ describe("determinism", () => {
     const a = buildDocJsonExport(model, refs, diagnostics, MODEL, path).text;
     const b = buildDocJsonExport(model, refs, diagnostics, MODEL, path).text;
     expect(a).toBe(b);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Round 2 (reviewer/critic findings).
+
+describe("doc-declared invariant fallback (round 2 item 2): a 1.13-style estate still exports", () => {
+  // A doc that declares its invariant ONLY with the `**INV-X:**` label — no model `invariant`
+  // line — the `em coverage`/`em query invariant` precedence: model first, doc as fallback.
+  const DOC_ONLY_MODEL = `model "Legacy"
+persona User
+context Order
+slice "Refund" {
+  ui Refund Screen @User
+  command Refund Order note "slices/refund.md"
+  event Order Refunded @Order
+  view Refund Result from "Order Refunded"
+  ui Refund Done @User
+}
+`;
+  const REFUND_DOC = `---
+schemaVersion: 1
+pattern: state-change
+swimlane: User → Order
+status: draft
+version: 1
+---
+# Slice: Refund
+
+## Invariants / Business Rules
+- **INV-REF-1:** a refund never exceeds the captured amount
+- INV-CHK-1 — cited here as context only, never a declaration (no label)
+
+## Scenarios
+`;
+  let legacyDir: string;
+  let legacyPath: string;
+  beforeAll(() => {
+    legacyDir = mkdtempSync(join(tmpdir(), "em-doc-json-legacy-"));
+    mkdirSync(join(legacyDir, "slices"), { recursive: true });
+    legacyPath = join(legacyDir, "model.em");
+    writeFileSync(legacyPath, DOC_ONLY_MODEL);
+    writeFileSync(join(legacyDir, "slices", "refund.md"), REFUND_DOC);
+  });
+  afterAll(() => rmSync(legacyDir, { recursive: true, force: true }));
+
+  function legacyDocJson() {
+    const { model, refs, diagnostics } = compile(DOC_ONLY_MODEL);
+    return JSON.parse(buildDocJsonExport(model, refs, diagnostics, DOC_ONLY_MODEL, legacyPath).text);
+  }
+
+  it("exports the doc-label-declared invariant with source \"doc\" (plain citations never count)", () => {
+    expect(sliceByKey(legacyDocJson(), "refund").invariants).toEqual([
+      { id: "INV-REF-1", text: "a refund never exceeds the captured amount", source: "doc" },
+    ]);
+  });
+
+  it("the catalog attributes the doc-declared id to its slice, marked source \"doc\"", () => {
+    expect(legacyDocJson().model.invariants).toEqual([
+      { id: "INV-REF-1", owningSlice: "refund", source: "doc", referencingSlices: [] },
+    ]);
+  });
+
+  it("a model-declared id wins over the doc's label for the same id (declared-in-both restates, never duplicates)", () => {
+    // The main fixture's checkout doc restates INV-CHK-1; its slice entry carries exactly one
+    // INV-CHK-1, source "model" (asserted above) — here assert no "doc" duplicate exists.
+    const invs = sliceByKey(docJson(), "checkout").invariants.filter((i: any) => i.id === "INV-CHK-1");
+    expect(invs).toHaveLength(1);
+    expect(invs[0].source).toBe("model");
+  });
+
+  it("examples/order-fulfillment (a real doc-only estate) exports a NON-EMPTY catalog", () => {
+    const emPath = join(TEST_DIR, "..", "examples", "order-fulfillment", "order-fulfillment.em");
+    const src = readFileSync(emPath, "utf8");
+    const { model, refs, diagnostics } = compile(src);
+    const doc = JSON.parse(buildDocJsonExport(model, refs, diagnostics, src, emPath).text);
+    expect(doc.model.invariants.length).toBeGreaterThan(0);
+    expect(doc.model.invariants).toContainEqual(
+      expect.objectContaining({ id: "INV-CHK-1", owningSlice: "checkout", source: "doc" }),
+    );
+  });
+});
+
+describe("alternatives-aware field groups (round 2 item 3)", () => {
+  const ALT_MODEL = `model "Alt"
+persona User
+context Billing
+slice "Pay" {
+  ui Pay Screen @User
+  command Take Payment { txnId: uuid }
+  event Payment Succeeded | Payment Failed @Billing { txnId: uuid }
+}
+slice "Payment Status" {
+  view Payment Status from "Payment Succeeded", "Payment Failed"
+  ui Status @User
+}
+`;
+
+  it("an `event A | B` slice exports one group per alternative, each under its own element name", () => {
+    const { model, refs, diagnostics } = compile(ALT_MODEL);
+    const doc = JSON.parse(buildDocJsonExport(model, refs, diagnostics, ALT_MODEL, path).text);
+    const eventGroups = sliceByKey(doc, "pay").fields.filter((g: any) => g.kind === "event");
+    expect(eventGroups.map((g: any) => g.element)).toEqual(["Payment Succeeded", "Payment Failed"]);
+    // Each alternative carries only its OWN rows — never both alternatives' rows concatenated
+    // under the first alternative's name.
+    for (const g of eventGroups) {
+      expect(g.fields).toEqual([{ name: "txnId", type: "uuid", notes: "yes · from command `Take Payment`" }]);
+    }
+  });
+});
+
+describe("soft-wrapped bullets (round 2 item 4): continuation lines join the item", () => {
+  // Wrapped bullets copied from the real examples the critic demonstrated on:
+  // examples/order-fulfillment/slices/capture-payment.md (Open Questions) and checkout.md
+  // (Alternate & Error Flows).
+  const WRAPPED_BODY = `# Slice: Wrapped
+
+## Alternate & Error Flows
+
+- Idempotency: covered by INV-CHK-1 — a resubmit while a request is outstanding is rejected
+  outright rather than silently deduplicated, so the customer sees the state clearly instead
+  of wondering if their second click did anything.
+
+## Open Questions
+
+- [ ] What resolves \`authorizationId\` → \`orderId\` for the \`Payment Captured\` event's
+  \`orderId\` field? Not modeled yet — the field-completeness warning on this event is real.
+- [ ] Partial captures (e.g. after a line-item cancellation reduces the authorized amount) —
+  supported, or does \`Capture Payment\` always capture in full?
+`;
+
+  it("errorFlows joins a wrapped bullet's continuation lines with single spaces", () => {
+    expect(errorFlows(WRAPPED_BODY)).toEqual([
+      "Idempotency: covered by INV-CHK-1 — a resubmit while a request is outstanding is rejected " +
+        "outright rather than silently deduplicated, so the customer sees the state clearly instead " +
+        "of wondering if their second click did anything.",
+    ]);
+  });
+
+  it("openQuestions joins a wrapped item's continuation lines with single spaces", () => {
+    expect(openQuestions(WRAPPED_BODY)).toEqual([
+      {
+        text:
+          "What resolves `authorizationId` → `orderId` for the `Payment Captured` event's " +
+          "`orderId` field? Not modeled yet — the field-completeness warning on this event is real.",
+        checked: false,
+        deferredToVersion: null,
+      },
+      {
+        text:
+          "Partial captures (e.g. after a line-item cancellation reduces the authorized amount) — " +
+          "supported, or does `Capture Payment` always capture in full?",
+        checked: false,
+        deferredToVersion: null,
+      },
+    ]);
+  });
+
+  it("a nested detail bullet is not a continuation and ends the wrap", () => {
+    const body = `## Alternate & Error Flows
+- external call fails → retry
+  with backoff
+  - detail: three attempts max
+  stray indented prose after a nested bullet
+`;
+    expect(errorFlows(body)).toEqual(["external call fails → retry with backoff"]);
   });
 });

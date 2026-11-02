@@ -14,11 +14,13 @@
 //
 // Every parse is REUSED, never re-derived ad hoc: the field rows come from `buildSliceRegions`
 // (the same generated regions `em slice sync` writes) read back with `splitCells`; invariants
-// from the model's own `invariant` lines; scenarios from the doc-join's `parseScenarios`; error
-// flows / open questions from sliceDoc.ts's section parsers; INV mentions from coverage.ts's
-// `INV_TOKEN_RE`. The whole thing is layered on `buildExportDoc` so the doc join (and its
-// continuation/cross-binding resolution) is computed exactly once, the same way the model export
-// computes it.
+// from the model's own `invariant` lines, falling back to the doc's `**INV-X:**` declaring labels
+// (coverage.ts's `extractDeclaredInvariantRules`) for ids the model does not declare — the same
+// model-first precedence `em coverage`/`em query invariant` apply; scenarios from the doc-join's
+// `parseScenarios`; error flows / open questions from sliceDoc.ts's section parsers; INV mentions
+// from coverage.ts's `INV_TOKEN_RE`. The whole thing is layered on `buildExportDoc` so the doc
+// join (and its continuation/cross-binding resolution) is computed exactly once, the same way the
+// model export computes it.
 
 import { dirname } from "node:path";
 import { NormalizedModel } from "../model/model.js";
@@ -30,7 +32,7 @@ import { Scenario } from "../catalog/scenarios.js";
 import { errorFlows, openQuestions, OpenQuestionExport } from "../catalog/sliceDoc.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { buildSliceRegions, splitCells } from "../catalog/sliceSections.js";
-import { INV_TOKEN_RE } from "../cli/coverage.js";
+import { extractDeclaredInvariantRules, INV_TOKEN_RE } from "../cli/coverage.js";
 
 // 1.0 (GH #401): the first structured slice-doc export. Separate constant from the model export's
 // SCHEMA_VERSION on purpose — a change to the model snapshot does not bump this, and a change to
@@ -55,11 +57,17 @@ export interface DocFieldGroup {
   fields: DocFieldRow[];
 }
 
-/** One model-declared invariant of a slice: its stable ID and rule text (`text` null when the
- *  `invariant` line declares no quoted rule), deduped by ID in declaration order. */
+/** One invariant of a slice: its stable ID and rule text (`text` null when the declaration gives
+ *  none), deduped by ID in declaration order. `source` says where the declaration lives — a model
+ *  `invariant` line (`"model"`, canonical) or, following the same precedence `em coverage`/`em
+ *  query invariant` apply, the doc's own `**INV-X:**` label (`"doc"`, the fallback a 1.13-style
+ *  estate with no model `invariant` lines still exports). Model-declared ids win: a doc label for
+ *  an id the model already declares is the normal `declared-in-both` restatement, not a second
+ *  entry. */
 export interface DocInvariant {
   id: string;
   text: string | null;
+  source: "model" | "doc";
 }
 
 /** One slice's structured doc, in `model.slices[]`. */
@@ -85,11 +93,14 @@ export interface DocJsonSlice {
   html?: string | null;
 }
 
-/** One entry of the model-level invariant catalog: a declared INV id, the slice whose model
- *  element declares it, and every OTHER slice whose doc body mentions the id. */
+/** One entry of the model-level invariant catalog: a declared INV id, the slice that declares it
+ *  (`owningSlice` — first declaring slice in model order; `source` says whether that declaration
+ *  is a model `invariant` line or the doc-label fallback, see `DocInvariant`), and every OTHER
+ *  slice whose doc body mentions the id. */
 export interface DocInvariantCatalogEntry {
   id: string;
   owningSlice: string;
+  source: "model" | "doc";
   referencingSlices: string[];
 }
 
@@ -120,18 +131,10 @@ function keyFromDocPath(path: string, fallback: string): string {
   return m ? m[1] : fallback;
 }
 
-/** The element display name from a generated region's lead marker line, or null for a "none"/
- *  placeholder body with no element. An alternatives region (`**Records one of:**`) resolves to
- *  its first alternative's name. */
-function leadElementName(body: string[]): string | null {
-  for (const line of body) {
-    const ce = /^\*\*(?:Command|Event):\*\*\s+`([^`]+)`/.exec(line);
-    if (ce) return ce[1];
-    const v = /^- \*\*View:\*\*\s+`([^`]+)`/.exec(line);
-    if (v) return v[1];
-  }
-  return null;
-}
+/** A generated region's element marker line (`**Command:**` / `**Event:**` / `- **View:**`) —
+ *  one per element block. An alternatives region (GH #278, `**Records one of:**`) carries one
+ *  `**Event:**` marker per alternative, so splitting on these yields one group per alternative. */
+const ELEMENT_MARKER_RE = /^(?:\*\*(?:Command|Event):\*\*|- \*\*View:\*\*)\s+`([^`]+)`/;
 
 /** Every data row of every markdown table in a generated region body, read back with the same
  *  `splitCells` the region writers and `structured-section-malformed` use. `name`/`type` are
@@ -159,22 +162,42 @@ function parseFieldRows(body: string[]): DocFieldRow[] {
   return rows;
 }
 
-/** The generated field tables of one slice, grouped by element, reusing `buildSliceRegions`. */
+/** The generated field tables of one slice, grouped by element, reusing `buildSliceRegions`.
+ *  Each region's body is split at its `ELEMENT_MARKER_RE` lines, one group per marker — so an
+ *  alternatives region (one `**Event:**` block per alternative, GH #278) yields one group per
+ *  alternative, each with only its own rows, never the concatenation under the first name. A
+ *  region with no marker (the "none"/placeholder body) yields no group. */
 function fieldGroups(model: NormalizedModel, sliceIndex: number): DocFieldGroup[] {
   const groups: DocFieldGroup[] = [];
   for (const region of buildSliceRegions(model, [sliceIndex])) {
     if (region.kind === "invariants") continue;
-    const element = leadElementName(region.body);
-    if (element === null) continue; // "none" body — this slice has no element of that kind
-    groups.push({ element, kind: region.kind, fields: parseFieldRows(region.body) });
+    let element: string | null = null;
+    let chunk: string[] = [];
+    const flush = () => {
+      if (element !== null) groups.push({ element, kind: region.kind as "command" | "event" | "view", fields: parseFieldRows(chunk) });
+      chunk = [];
+    };
+    for (const line of region.body) {
+      const m = ELEMENT_MARKER_RE.exec(line);
+      if (m) {
+        flush();
+        element = m[1];
+        continue;
+      }
+      chunk.push(line);
+    }
+    flush();
   }
   return groups;
 }
 
-/** The model-declared invariants of one slice (`invariant` lines on its command/event elements),
- *  deduped by ID in declaration order — the same lines `buildSliceRegions`' invariants region
- *  restates. */
-function sliceInvariants(slice: NormalizedModel["slices"][number]): DocInvariant[] {
+/** One slice's invariants, deduped by ID: the model-declared `invariant` lines on its
+ *  command/event elements first (declaration order, `source: "model"` — the same lines
+ *  `buildSliceRegions`' invariants region restates), then — the same model-first precedence
+ *  `em coverage`/`em query invariant` apply — the doc's own `**INV-X:**` declaring labels
+ *  (`extractDeclaredInvariantRules`, ownership sections only) as the fallback for ids the model
+ *  does not declare (`source: "doc"`, how a 1.13-style estate's invariants still export). */
+function sliceInvariants(slice: NormalizedModel["slices"][number], body: string): DocInvariant[] {
   const out: DocInvariant[] = [];
   const seen = new Set<string>();
   for (const el of slice.elements) {
@@ -182,8 +205,13 @@ function sliceInvariants(slice: NormalizedModel["slices"][number]): DocInvariant
     for (const inv of el.invariants ?? []) {
       if (seen.has(inv.id)) continue;
       seen.add(inv.id);
-      out.push({ id: inv.id, text: inv.rule ?? null });
+      out.push({ id: inv.id, text: inv.rule ?? null, source: "model" });
     }
+  }
+  for (const declared of extractDeclaredInvariantRules(body)) {
+    if (seen.has(declared.id)) continue;
+    seen.add(declared.id);
+    out.push({ id: declared.id, text: declared.text === "" ? null : declared.text, source: "doc" });
   }
   return out;
 }
@@ -217,7 +245,7 @@ export function buildDocJsonExport(
     const docKey = keyFromDocPath(frontmatter.path, s.key);
     const parsed = readSliceDoc(baseDir, docKey);
     const body = parsed?.body ?? "";
-    const invariants = sliceInvariants(model.slices[sliceIndex]);
+    const invariants = sliceInvariants(model.slices[sliceIndex], body);
     const slice: DocJsonSlice = {
       key: s.key,
       name: s.name,
@@ -230,26 +258,27 @@ export function buildDocJsonExport(
       openQuestions: openQuestions(body),
     };
     if (opts.includeHtml) slice.html = parsed?.html ?? null;
-    return { slice, body, invariantIds: invariants.map((i) => i.id) };
+    return { slice, body };
   });
 
-  // Model-level invariant catalog: first slice to declare an id OWNS it (declaration order);
+  // Model-level invariant catalog: first slice to declare an id OWNS it (declaration order —
+  // model-declared and doc-declared alike, each entry keeping its declaration's `source`);
   // every other slice whose doc body mentions the id REFERENCES it.
-  const owningSlice = new Map<string, string>();
+  const owningSlice = new Map<string, { key: string; source: "model" | "doc" }>();
   const idOrder: string[] = [];
   for (const b of built) {
-    for (const id of b.invariantIds) {
-      if (owningSlice.has(id)) continue;
-      owningSlice.set(id, b.slice.key);
-      idOrder.push(id);
+    for (const inv of b.slice.invariants) {
+      if (owningSlice.has(inv.id)) continue;
+      owningSlice.set(inv.id, { key: b.slice.key, source: inv.source });
+      idOrder.push(inv.id);
     }
   }
   const invariants: DocInvariantCatalogEntry[] = idOrder.map((id) => {
     const owner = owningSlice.get(id)!;
     const referencingSlices = built
-      .filter((b) => b.slice.key !== owner && mentionsInvariant(b.body, id))
+      .filter((b) => b.slice.key !== owner.key && mentionsInvariant(b.body, id))
       .map((b) => b.slice.key);
-    return { id, owningSlice: owner, referencingSlices };
+    return { id, owningSlice: owner.key, source: owner.source, referencingSlices };
   });
 
   const docJson: DocJsonExportDoc = {

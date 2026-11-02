@@ -575,28 +575,48 @@ export interface OpenQuestionExport {
   deferredToVersion: number | null;
 }
 
+/** A soft-wrapped bullet's continuation line: indented, non-empty, and not itself a bullet —
+ *  the line a markdown renderer joins onto the bullet above it. Nested bullets (`  - detail`)
+ *  are their own items, never a continuation, and end the wrap. */
+function isContinuationLine(line: string): boolean {
+  return /^\s/.test(line) && line.trim() !== "" && !/^\s*[-*]\s/.test(line);
+}
+
 /**
  * GH #401: the `## Open Questions` task-list items with their deferral state, in document order —
  * the structured form `em export --doc-json` surfaces. Same section boundary (heading to the next
  * `#`/`##` heading or EOF) and item grammar (`TASK_ITEM`) as `countOpenQuestions`/
  * `countDeferredBeyond`; the deferral version is read from the same `DEFERRED_ITEM` marker `em
- * slice defer` writes. Empty when the doc has no `## Open Questions` heading.
+ * slice defer` writes. A soft-wrapped item's indented continuation lines are joined into its
+ * `text` with single spaces — real docs wrap their sentences (see
+ * examples/order-fulfillment/slices/capture-payment.md). Empty when the doc has no
+ * `## Open Questions` heading.
  */
 export function openQuestions(body: string): OpenQuestionExport[] {
   const lines = body.split(/\r?\n/);
   const start = lines.findIndex((l) => OPEN_QUESTIONS_HEADING.test(l));
   if (start === -1) return [];
   const items: OpenQuestionExport[] = [];
+  let current: OpenQuestionExport | null = null;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^#{1,2}\s/.test(lines[i])) break;
-    const m = lines[i].match(TASK_ITEM);
-    if (!m) continue;
-    const deferred = DEFERRED_ITEM.exec(lines[i]);
-    items.push({
-      text: lines[i].replace(TASK_ITEM, "").trim(),
-      checked: m[1] !== " ",
-      deferredToVersion: deferred ? Number(deferred[1]) : null,
-    });
+    const line = lines[i];
+    if (/^#{1,2}\s/.test(line)) break;
+    const m = line.match(TASK_ITEM);
+    if (m) {
+      const deferred = DEFERRED_ITEM.exec(line);
+      current = {
+        text: line.replace(TASK_ITEM, "").trim(),
+        checked: m[1] !== " ",
+        deferredToVersion: deferred ? Number(deferred[1]) : null,
+      };
+      items.push(current);
+      continue;
+    }
+    if (current && isContinuationLine(line)) {
+      current.text += ` ${line.trim()}`;
+      continue;
+    }
+    current = null; // a blank line, nested bullet, or column-0 prose ends the item's wrap
   }
   return items;
 }
@@ -611,7 +631,9 @@ const TOP_LEVEL_BULLET = /^[-*]\s+(.*\S)\s*$/;
  * template's `## Alternate & Error Flows`), in document order, the `- `/`* ` marker stripped —
  * the authored failure-path list `em export --doc-json` surfaces. Section boundary is the next
  * `#`/`##` heading or EOF, the same boundary `countOpenQuestions` uses. Only column-0 bullets are
- * items; nested detail bullets and prose are skipped. Empty when the doc has no such heading or
+ * items; a soft-wrapped bullet's indented continuation lines are joined into it with single
+ * spaces (real docs wrap — see examples/order-fulfillment/slices/checkout.md), while nested
+ * detail bullets and standalone prose are skipped. Empty when the doc has no such heading or
  * the section has no bullets (unfilled template placeholders are kept verbatim, like every other
  * authored section). Pure; CRLF tolerated.
  */
@@ -620,10 +642,21 @@ export function errorFlows(body: string): string[] {
   const start = lines.findIndex((l) => ERROR_FLOWS_HEADING.test(l));
   if (start === -1) return [];
   const items: string[] = [];
+  let open = false;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^#{1,2}\s/.test(lines[i])) break;
-    const m = lines[i].match(TOP_LEVEL_BULLET);
-    if (m) items.push(m[1].trim());
+    const line = lines[i];
+    if (/^#{1,2}\s/.test(line)) break;
+    const m = line.match(TOP_LEVEL_BULLET);
+    if (m) {
+      items.push(m[1].trim());
+      open = true;
+      continue;
+    }
+    if (open && isContinuationLine(line)) {
+      items[items.length - 1] += ` ${line.trim()}`;
+      continue;
+    }
+    open = false; // a blank line, nested bullet, or column-0 prose ends the item's wrap
   }
   return items;
 }
