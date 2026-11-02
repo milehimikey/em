@@ -3036,7 +3036,13 @@ inputs in the same order.
 Generates a browsable static HTML site over one or more models — an index page with each
 model's diagram embedded inline plus a table of its slices, and a per-slice detail page
 (diagram, elements, and its `slices/<slice-name>.md` slice doc rendered as HTML, if one
-exists). Git stays the only
+exists). The doc render is section-aware (GH #402, `src/catalog/sliceDocRender.ts`): a
+well-formed `### Scenario:` block renders as a Given/When/Then card, `INV-*` ids render as
+chips (the first one inside the doc's own Invariants/Delta section is an anchor, every later
+mention links to it), and field tables get Type/Notes-column styling — the same rendering the
+live viewer's doc flyout uses (`em watch --serve`, see below). A doc with a frontmatter fence
+also gets a compact pattern/version/status/drift-signal badge row above its body. Presentation
+only: none of this touches `em export`'s JSON. Git stays the only
 history store: the catalog is regenerated from the current `.em` file(s) each run, never a
 new place data lives. This is the presentation layer the roadmap held back until there was
 a concrete reason for it — more models than a repo can comfortably hold, or a non-engineer

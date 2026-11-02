@@ -8,6 +8,8 @@
 import { Element, Slice } from "../model/model.js";
 import { SlicePattern, slicePatternLabel } from "./classify.js";
 import { SliceDoc } from "./sliceDoc.js";
+import { classifyImplementationDrift } from "./driftSignal.js";
+import { renderFrontmatterBadgeRow } from "./docBadge.js";
 
 export function escapeHtml(s: string): string {
   return s
@@ -47,6 +49,15 @@ function statusLabel(hasDoc: boolean, status: string | null): string {
   if (!hasDoc) return "no doc";
   if (!status) return "unknown";
   return status;
+}
+
+/** GH #402: the frontmatter badge row above a resolved doc's rendered body — pattern, version,
+ *  status, and implementation-drift signal, from catalog/docBadge.ts. Empty for a doc whose
+ *  frontmatter fence isn't even present (a legacy freeform doc), so a 1.13-style page renders
+ *  exactly as it did before this feature. */
+function docBadgeRow(doc: SliceDoc): string {
+  if (!doc.frontmatterPresent) return "";
+  return renderFrontmatterBadgeRow({ pattern: doc.pattern, version: doc.version, status: doc.status, driftSignal: classifyImplementationDrift(doc) });
 }
 
 /** MIME type for the diagram `<object>` — must match the actual file `buildCatalog` wrote
@@ -102,6 +113,42 @@ function layout(title: string, bodyHtml: string, homeHref: string): string {
     .no-doc { color: #7b8794; font-style: italic; }
     .covered-by { color: #52606d; font-style: italic; }
     code { background: #eee; padding: .05rem .3rem; border-radius: 3px; }
+    /* GH #402: section-aware slice-doc rendering — the frontmatter badge row, Given/When/Then
+       scenario cards, INV-* chips, and field-table column styling catalog/sliceDocRender.ts and
+       catalog/docBadge.ts build; see render/viewer.html for the doc flyout's matching rules. */
+    .doc-badge-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1.2rem; }
+    .doc-badge {
+      display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: 11px;
+      font-weight: 600; letter-spacing: .01em; background: #e4e7eb; color: #3b4754;
+    }
+    .doc-badge--pattern { background: #e1ecff; color: #1d4ed8; }
+    .doc-badge--version { background: #eef0f3; color: #52606d; font-variant-numeric: tabular-nums; }
+    .doc-badge--status { background: #fef3cf; color: #8a6116; text-transform: capitalize; }
+    .doc-badge--drift-in-sync { background: #d8f3dc; color: #1b7a3d; }
+    .doc-badge--drift-uncertified, .doc-badge--drift-unpropagated-delta { background: #ffe9c7; color: #8a5300; }
+    .doc-badge--drift-implemented-without-link { background: #fbd8d4; color: #9b2c20; }
+    .doc-badge--drift-never-implemented { background: #e4e7eb; color: #52606d; }
+    .scenario-card { border: 1px solid #ddd; border-radius: 8px; margin: 1rem 0; overflow: hidden; background: #fff; }
+    .scenario-card-title { margin: 0; padding: .5rem .75rem; background: #f0f2f5; font-size: .95rem; border-bottom: 1px solid #ddd; }
+    .scenario-step { display: flex; gap: .6rem; padding: .45rem .75rem; border-top: 1px solid #eceef1; align-items: flex-start; }
+    .scenario-step:first-of-type { border-top: 0; }
+    .scenario-step-label {
+      flex: none; min-width: 4.2em; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; color: #52606d; padding-top: .15em;
+    }
+    .scenario-step--given .scenario-step-label { color: #1d4ed8; }
+    .scenario-step--when .scenario-step-label { color: #8a5300; }
+    .scenario-step--then .scenario-step-label { color: #1b7a3d; }
+    .scenario-step-body { flex: 1 1 auto; }
+    .scenario-step-body ul { margin: .2em 0; padding-left: 1.1em; }
+    .inv-chip { display: inline-block; padding: .05em .4em; border-radius: 4px; font-size: .85em; font-family: ui-monospace, Menlo, monospace; }
+    .inv-chip--def { background: #1f2933; color: #fff; scroll-margin-top: 1rem; }
+    .inv-chip--ref { background: #eef0f3; color: #1d4ed8; text-decoration: none; }
+    .inv-chip--ref:hover { text-decoration: underline; }
+    .inv-chip--external { background: #eef0f3; color: #52606d; }
+    table.field-table th.col-type, table.field-table td.col-type { font-family: ui-monospace, Menlo, monospace; font-size: .85em; color: #3b4754; white-space: nowrap; }
+    table.field-table th.col-notes, table.field-table td.col-notes { color: #52606d; }
+    table.field-table th.col-flag, table.field-table td.col-flag { text-align: center; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -236,7 +283,7 @@ export function renderSlicePage(args: SlicePageArgs): string {
       ? `    <p class="covered-by">Continuation of <a href="${escapeHtml(coveredBy.key)}.html">${escapeHtml(coveredBy.name)}</a> — documented in <code>slices/${escapeHtml(coveredBy.key)}.md</code>.</p>`
       : `    <p class="covered-by">Documented as part of <a href="${escapeHtml(coveredBy.key)}.html">${escapeHtml(coveredBy.name)}</a> — see <code>slices/${escapeHtml(coveredBy.key)}.md</code>.</p>`
     : doc
-      ? `    <div class="doc">${doc.html}</div>`
+      ? `    <div class="doc">${docBadgeRow(doc)}${doc.html}</div>`
       : `    <p class="no-doc">No slice doc found at <code>${escapeHtml(docExpectedPath)}</code>.</p>`;
 
   return layout(

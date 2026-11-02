@@ -80,8 +80,8 @@
 // readers that will DECIDE on `shipped*` instead of `status` are MIL-283's breaking half.
 
 import { createHash } from "node:crypto";
-import { marked } from "marked";
 import { scanSliceRegions } from "./sliceSections.js";
+import { renderSliceDocBodyHtml } from "./sliceDocRender.js";
 
 /** A parsed `<slice-key>@v<N>` lineage reference. */
 export interface SliceRef {
@@ -226,7 +226,12 @@ export interface SliceDoc {
   missingRequiredFields: string[];
   /** The whole doc rendered to HTML, with any leading frontmatter block stripped
    *  first (otherwise its `---` fences render as stray <hr>s and the raw
-   *  `key: value` lines leak into the body). */
+   *  `key: value` lines leak into the body). Section-aware since GH #402
+   *  (catalog/sliceDocRender.ts): Given/When/Then blocks render as scenario cards, `INV-*`
+   *  mentions as anchored/linked chips, and field tables get type/notes-column styling.
+   *  Frontmatter facts (pattern/version/status/driftSignal) are NOT part of this string — the
+   *  callers that render a frontmatter badge row (catalog/pages.ts, render/sliceOverlay.ts)
+   *  build it themselves from the fields below, via catalog/docBadge.ts. */
   html: string;
   /** Count of GFM task-list items (`- [ ]` / `- [x]`) found under the `## Open Questions`
    *  heading (case-insensitive), up to the next `#`/`##` heading or EOF. Both 0 when the doc
@@ -617,7 +622,7 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     reviewSkipped: fields.get("reviewskipped") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
-    html: marked.parse(body, { async: false }) as string,
+    html: renderSliceDocBodyHtml(body),
     openQuestionsTotal,
     openQuestionsUnchecked,
   };

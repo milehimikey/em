@@ -29,6 +29,8 @@ import { NormalizedModel } from "../model/model.js";
 import { Grid, headerCellId } from "../layout/grid.js";
 import { rowLabelId } from "../emit/dot.js";
 import { SliceDoc } from "../catalog/sliceDoc.js";
+import { classifyImplementationDrift } from "../catalog/driftSignal.js";
+import { renderFrontmatterBadgeRow } from "../catalog/docBadge.js";
 import { decode, readGraphTransform, NODE_GROUP, TITLE, Rect } from "./svgGeometry.js";
 
 const TEXT = /<text\b([^>]*)>([^<]*)<\/text>/;
@@ -57,9 +59,26 @@ interface SliceRange {
   x0: number;
   x1: number;
   /** The slice's resolved design doc, rendered to HTML (see catalog/sliceDoc.ts's
-   *  marked-based `.html`), or null if it has none yet — the live view's slice-click
-   *  flyout (MIL-153) renders this directly, with no separate fetch. */
+   *  section-aware `.html`, catalog/sliceDocRender.ts — GH #402), or null if it has none yet —
+   *  the live view's slice-click flyout (MIL-153) renders this directly, with no separate fetch.
+   *  Prefixed with the frontmatter badge row (catalog/docBadge.ts) when the doc has
+   *  frontmatter — see `docHtmlFor` below. */
   docHtml: string | null;
+}
+
+/** GH #402: `doc.html` prefixed with its frontmatter badge row (pattern/version/status/
+ *  implementation-drift), or null when there's no doc. A doc with no frontmatter fence at all
+ *  (a legacy freeform doc) gets no badge row, same as catalog/pages.ts's own gate. */
+function docHtmlFor(doc: SliceDoc | null): string | null {
+  if (!doc) return null;
+  if (!doc.frontmatterPresent) return doc.html;
+  const badge = renderFrontmatterBadgeRow({
+    pattern: doc.pattern,
+    version: doc.version,
+    status: doc.status,
+    driftSignal: classifyImplementationDrift(doc),
+  });
+  return badge + doc.html;
 }
 
 /** `<metadata>` (slice ranges, as JSON) + `<style>` (the dim class) block, spliced
@@ -96,7 +115,7 @@ export function buildSliceOverlay(
       name: grid.sliceNames[c],
       x0: toRootX(r.left),
       x1: toRootX(r.right),
-      docHtml: docs[c]?.html ?? null,
+      docHtml: docHtmlFor(docs[c] ?? null),
     });
   }
   if (slices.length === 0) return "";

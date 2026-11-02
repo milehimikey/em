@@ -175,6 +175,58 @@ describe("renderSlicePage", () => {
     // the full-diagram link is a plain anchor — no MIME type attached to it
     expect(html).toContain('href="../diagram.png">View full model diagram');
   });
+
+  // GH #402: the frontmatter badge row (pattern/version/status/driftSignal) sits above a
+  // resolved doc's rendered body, built from the doc's own frontmatter fields.
+  it("GH #402: shows a frontmatter badge row (pattern, version, status, drift signal) above a doc with frontmatter", () => {
+    const { model } = compile(`slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed
+}`);
+    const doc = parseSliceDoc("---\npattern: state-change\nversion: 2\nstatus: ready-to-implement\n---\n# Some Slice\n");
+    const html = renderSlicePage({
+      modelName: "Checkout",
+      diagramFile: "../diagram.svg",
+      sliceDiagramFile: "place-order.svg",
+      slice: model.slices[0],
+      sliceKey: "place-order",
+      pattern: "state-change",
+      elementRefs: new Map(),
+      doc,
+      coveredBy: null,
+      docExpectedPath: "slices/place-order.md",
+    });
+    expect(html).toContain('<div class="doc-badge-row">');
+    expect(html).toContain('<span class="doc-badge doc-badge--pattern">State Change</span>');
+    expect(html).toContain('<span class="doc-badge doc-badge--version">v2</span>');
+    expect(html).toContain('<span class="doc-badge doc-badge--status">Ready To Implement</span>');
+    // never implemented, no implementedIn — "never-implemented" is the drift signal.
+    expect(html).toContain('doc-badge--drift-never-implemented">Not implemented</span>');
+  });
+
+  it("GH #402: shows no badge row for a legacy doc with no frontmatter fence at all", () => {
+    const { model } = compile(`slice "Place Order" {
+  ui Checkout @Customer
+  command Place Order
+  event Order Placed
+}`);
+    const doc = parseSliceDoc("- **Status:** draft\n\n## Intent\nWhy this exists.\n");
+    const html = renderSlicePage({
+      modelName: "Checkout",
+      diagramFile: "../diagram.svg",
+      sliceDiagramFile: "place-order.svg",
+      slice: model.slices[0],
+      sliceKey: "place-order",
+      pattern: "state-change",
+      elementRefs: new Map(),
+      doc,
+      coveredBy: null,
+      docExpectedPath: "slices/place-order.md",
+    });
+    // the CSS class is always defined in <style>; only the rendered <div> marks it present.
+    expect(html).not.toContain('<div class="doc-badge-row">');
+  });
 });
 
 describe("layout's home link", () => {

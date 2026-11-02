@@ -5,7 +5,7 @@ import { normalize } from "../src/model/model.js";
 import { layout } from "../src/layout/grid.js";
 import { parseNodeRects } from "../src/render/svgGeometry.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "../src/render/sliceOverlay.js";
-import { SliceDoc } from "../src/catalog/sliceDoc.js";
+import { SliceDoc, parseSliceDoc } from "../src/catalog/sliceDoc.js";
 
 // Two slices, three bands (ui/api/event) — enough to exercise element tagging
 // across slices, header-cell ranges, and a multi-row swimlane label range.
@@ -143,5 +143,20 @@ describe("buildSliceOverlay", () => {
 
     expect(payload.slices[0].docHtml).toBe("<p>Place Order doc</p>");
     expect(payload.slices[1].docHtml).toBeNull();
+  });
+
+  // GH #402: the flyout's docHtml carries the same frontmatter badge row (pattern/version/
+  // status/driftSignal) the static catalog page shows, prepended ahead of the rendered body.
+  it("GH #402: prefixes docHtml with the frontmatter badge row for a doc with frontmatter", () => {
+    const { model, grid } = build();
+    const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
+    const doc = parseSliceDoc("---\npattern: state-view\nversion: 1\nstatus: draft\n---\n# Some Slice\n");
+    const out = buildSliceOverlay(SVG, grid, rects, [doc, null]);
+    const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
+    const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"'));
+
+    expect(payload.slices[0].docHtml).toContain('<div class="doc-badge-row">');
+    expect(payload.slices[0].docHtml).toContain('<span class="doc-badge doc-badge--pattern">State View</span>');
+    expect(payload.slices[0].docHtml.endsWith(doc.html)).toBe(true);
   });
 });

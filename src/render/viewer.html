@@ -136,6 +136,42 @@
     }
     #docFlyout .docBody table { border-collapse: collapse; margin: .5em 0; }
     #docFlyout .docBody :is(th, td) { border: 1px solid #d0d3d7; padding: .3em .5em; }
+    /* GH #402: section-aware slice-doc rendering — the frontmatter badge row, Given/When/Then
+       scenario cards, INV-* chips, and field-table column styling catalog/sliceDocRender.ts and
+       catalog/docBadge.ts build; see catalog/pages.ts for the static catalog's matching rules. */
+    #docFlyout .docBody .doc-badge-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1rem; }
+    #docFlyout .docBody .doc-badge {
+      display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: 11px;
+      font-weight: 600; letter-spacing: .01em; background: #e4e7eb; color: #3b4754;
+    }
+    #docFlyout .docBody .doc-badge--pattern { background: #e1ecff; color: #1d4ed8; }
+    #docFlyout .docBody .doc-badge--version { background: #eef0f3; color: #52606d; font-variant-numeric: tabular-nums; }
+    #docFlyout .docBody .doc-badge--status { background: #fef3cf; color: #8a6116; text-transform: capitalize; }
+    #docFlyout .docBody .doc-badge--drift-in-sync { background: #d8f3dc; color: #1b7a3d; }
+    #docFlyout .docBody .doc-badge--drift-uncertified, #docFlyout .docBody .doc-badge--drift-unpropagated-delta { background: #ffe9c7; color: #8a5300; }
+    #docFlyout .docBody .doc-badge--drift-implemented-without-link { background: #fbd8d4; color: #9b2c20; }
+    #docFlyout .docBody .doc-badge--drift-never-implemented { background: #e4e7eb; color: #52606d; }
+    #docFlyout .docBody .scenario-card { border: 1px solid #d0d3d7; border-radius: 8px; margin: 1em 0; overflow: hidden; background: #fff; }
+    #docFlyout .docBody .scenario-card-title { margin: 0; padding: .5rem .75rem; background: #f0f2f5; font-size: .95rem; border-bottom: 1px solid #d0d3d7; }
+    #docFlyout .docBody .scenario-step { display: flex; gap: .6rem; padding: .45rem .75rem; border-top: 1px solid #eceef1; align-items: flex-start; }
+    #docFlyout .docBody .scenario-step:first-of-type { border-top: 0; }
+    #docFlyout .docBody .scenario-step-label {
+      flex: none; min-width: 4.2em; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; color: #52606d; padding-top: .15em;
+    }
+    #docFlyout .docBody .scenario-step--given .scenario-step-label { color: #1d4ed8; }
+    #docFlyout .docBody .scenario-step--when .scenario-step-label { color: #8a5300; }
+    #docFlyout .docBody .scenario-step--then .scenario-step-label { color: #1b7a3d; }
+    #docFlyout .docBody .scenario-step-body { flex: 1 1 auto; }
+    #docFlyout .docBody .scenario-step-body ul { margin: .2em 0; padding-left: 1.1em; }
+    #docFlyout .docBody .inv-chip { display: inline-block; padding: .05em .4em; border-radius: 4px; font-size: .85em; font-family: ui-monospace, Menlo, monospace; }
+    #docFlyout .docBody .inv-chip--def { background: #1f2933; color: #fff; scroll-margin-top: 1rem; }
+    #docFlyout .docBody .inv-chip--ref { background: #eef0f3; color: #1d4ed8; text-decoration: none; }
+    #docFlyout .docBody .inv-chip--ref:hover { text-decoration: underline; }
+    #docFlyout .docBody .inv-chip--external { background: #eef0f3; color: #52606d; }
+    #docFlyout .docBody table.field-table th.col-type, #docFlyout .docBody table.field-table td.col-type { font-family: ui-monospace, Menlo, monospace; font-size: .85em; color: #3b4754; white-space: nowrap; }
+    #docFlyout .docBody table.field-table th.col-notes, #docFlyout .docBody table.field-table td.col-notes { color: #52606d; }
+    #docFlyout .docBody table.field-table th.col-flag, #docFlyout .docBody table.field-table td.col-flag { text-align: center; white-space: nowrap; }
   </style>
 </head>
 <body>
