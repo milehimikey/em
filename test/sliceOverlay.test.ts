@@ -153,7 +153,10 @@ describe("buildSliceOverlay", () => {
     const doc = parseSliceDoc("---\npattern: state-view\nversion: 1\nstatus: draft\n---\n# Some Slice\n");
     const out = buildSliceOverlay(SVG, grid, rects, [doc, null]);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
-    const payload = JSON.parse(json.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"'));
+    // Single-pass entity decode (a real DOM does this via textContent) — sequential
+    // .replace() chains double-unescape (`&amp;lt;` would decode to `<`).
+    const entities: Record<string, string> = { "&lt;": "<", "&gt;": ">", "&amp;": "&", "&quot;": '"' };
+    const payload = JSON.parse(json.replace(/&(?:lt|gt|amp|quot);/g, (e) => entities[e]));
 
     expect(payload.slices[0].docHtml).toContain('<div class="doc-badge-row">');
     expect(payload.slices[0].docHtml).toContain('<span class="doc-badge doc-badge--pattern">State View</span>');
