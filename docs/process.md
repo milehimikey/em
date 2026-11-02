@@ -243,6 +243,10 @@ parallel builders:
 | **Separate doc PR required** | Public-contract-touching slices — a slice owning a `public` command, event or view, the same boundary `em slice ratify` already computes (`isPublicTouchingSlice`, [`src/catalog/apiFirst.ts`](https://github.com/milehimikey/em/blob/main/src/catalog/apiFirst.ts)) and gates on via `--meaning-unchanged`/`--contract-change` (see "Ratifying a slice" above) | The contract is a promise to consumers who never see the implementation diff; freezing it before code exists is the whole point of the API-first gate, and inline mode would let the two change together uninspected |
 | **Separate always** | Engagements (`em engagement`) | Structurally necessary, not a risk call: engagements dispatch N implementers against *already-frozen* contracts in parallel, so ratification has to precede every branch, not share one with it. (A slate doc-PR already amortizes the two-merge cost across every slice it covers, so this tier gives up little.) |
 
+When the rows overlap, the stricter row wins: a slice that is both internal and
+engagement-dispatched follows the engagement row — separate ratification always; engagement
+membership overrides the internal-inline allowance.
+
 `em` does not enforce the table mechanically — there is no flag that detects "this slice is
 public-touching, therefore refuse inline mode." The API-first gate already does the part that
 matters: `em slice ratify` on a public-touching slice refuses without

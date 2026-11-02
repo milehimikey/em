@@ -446,3 +446,104 @@ describe("em refs --check-order (CLI, real git): spec-first, retrofit, bundled-c
     git(dir, "checkout", "-q", "main");
   });
 });
+
+// GH #399 review blocker: `git diff-tree --name-only` prints REPO-ROOT-relative paths, so for a
+// model directory nested in a larger repository (`models/shop/model.em` — the documented
+// model-directory layout) the slice doc appears as `models/shop/slices/<key>.md`, never
+// `slices/<key>.md`. Comparing against the model-dir-relative path misread every doc-only commit
+// as touching code: a doc-only draft commit before ratification was falsely named the
+// code-before-ratification "earliest offender", and a doc-only ratification commit read
+// undecidable. Same four shapes as above, model nested under models/shop/.
+describe("em refs --check-order (CLI, real git): model directory nested in a larger repository", () => {
+  let root: string;
+  let modelDir: string;
+  const read = (k: string) => readFileSync(join(modelDir, "slices", `${k}.md`), "utf8");
+  const bodyTweak = (key: string, label: string) => writeFileSync(join(modelDir, "slices", `${key}.md`), read(key).replace(/Do the .*thing\./, `Do the ${label} thing.`));
+  const addSrcFile = (name: string) => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", name), "// impl\n");
+  };
+  const orderOf = (branch: string) => {
+    git(root, "checkout", "-q", branch);
+    const r = em(["refs", join("models", "shop", "model.em"), "--reachable-from", "main", "--check-order", "--json"], root);
+    return { status: r.status, doc: JSON.parse(r.stdout) };
+  };
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "em-gh399-nested-"));
+    modelDir = join(root, "models", "shop");
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    for (const key of ["doc-first", "code-first", "bundled"]) {
+      writeFileSync(join(modelDir, "slices", `${key}.md`), reviewed(key));
+    }
+    writeFileSync(join(modelDir, "model.em"), ORDER_MODEL.replace(/slice "Never Ratified" \{[\s\S]*?\}\n/, ""));
+    writeFileSync(join(root, "README.md"), "# host repo\n");
+    gitInitQuiet(root, "-b", "main");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "reviewed docs in nested model dir");
+
+    // doc-first: TWO doc-only commits (the reviewer's falsely-accused draft commit shape), then
+    // ratify, then code — must read ratified-first, with neither doc commit named an offender.
+    git(root, "checkout", "-q", "-b", "feature/doc-first");
+    bodyTweak("doc-first", "drafted");
+    git(root, "commit", "-qam", "doc-first: doc-only draft commit");
+    bodyTweak("doc-first", "redrafted");
+    git(root, "commit", "-qam", "doc-first: second doc-only draft commit");
+    let r = em(["slice", "ratify", join("models", "shop", "model.em"), "doc-first", "--by", "Alex", "--on", "2026-11-02"], root);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(root, "commit", "-qam", "ratify doc-first on branch");
+    addSrcFile("doc-first.ts");
+    git(root, "add", "-A");
+    git(root, "commit", "-qam", "implement doc-first (after ratify)");
+
+    // code-first: repo-root code commit first, then a doc-only commit that becomes ratifiedRef.
+    git(root, "checkout", "-q", "main");
+    git(root, "checkout", "-q", "-b", "feature/code-first");
+    addSrcFile("code-first.ts");
+    git(root, "add", "-A");
+    git(root, "commit", "-qam", "code-first: implementation before ratify");
+    bodyTweak("code-first", "code-first");
+    git(root, "commit", "-qam", "code-first: doc touch (becomes ratifiedRef)");
+    r = em(["slice", "ratify", join("models", "shop", "model.em"), "code-first", "--by", "Alex", "--on", "2026-11-02"], root);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(root, "commit", "-qam", "ratify code-first on branch");
+
+    // bundled: doc + code in the one commit that becomes ratifiedRef.
+    git(root, "checkout", "-q", "main");
+    git(root, "checkout", "-q", "-b", "feature/bundled");
+    addSrcFile("bundled.ts");
+    bodyTweak("bundled", "bundled");
+    git(root, "add", "-A");
+    git(root, "commit", "-qam", "bundled: doc + code together");
+    r = em(["slice", "ratify", join("models", "shop", "model.em"), "bundled", "--by", "Alex", "--on", "2026-11-02"], root);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(root, "commit", "-qam", "ratify bundled on branch");
+
+    git(root, "checkout", "-q", "main");
+  });
+  afterAll(() => rmTemp(root));
+
+  it("doc-only commits of a nested model are not offenders: doc-first reads ratified-first", () => {
+    const { doc } = orderOf("feature/doc-first");
+    expect(doc.orderResults).toEqual([expect.objectContaining({ sliceKey: "doc-first", path: "slices/doc-first.md", status: "ratified-first", commit: null, detail: null })]);
+  });
+
+  it("code-first names the TRUE earliest offender (the code commit), not a doc-only draft commit", () => {
+    const { doc } = orderOf("feature/code-first");
+    expect(doc.orderResults).toHaveLength(1);
+    const o = doc.orderResults[0];
+    expect(o.status).toBe("code-before-ratification");
+    // The named commit is the implementation commit — it touched src/, never the nested doc.
+    const touched = git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", o.commit);
+    expect(touched).toContain("src/code-first.ts");
+    expect(touched).not.toContain("models/shop/slices/code-first.md");
+    // The detail names the doc by its repo-relative path — what git itself prints.
+    expect(o.detail).toContain("touched code other than models/shop/slices/code-first.md");
+  });
+
+  it("bundled ratification commit of a nested model reads undecidable (not code-before-ratification)", () => {
+    const { doc } = orderOf("feature/bundled");
+    expect(doc.orderResults).toEqual([expect.objectContaining({ sliceKey: "bundled", status: "undecidable", commit: null })]);
+    expect(doc.orderResults[0].detail).toContain("no decidable order within itself");
+  });
+});

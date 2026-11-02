@@ -20,7 +20,8 @@
 //
 // Kinded `conformedAt:` values (`build:1234`, GH #261) are not git revisions and are skipped —
 // `parseConformedAt` decides. Docs with no ref fields are not reported.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
@@ -129,6 +130,13 @@ export interface OrderResult {
  * point and `ratifiedRef` are "before ratification" by construction (`ratifiedRef` is excluded
  * from that scan and checked separately, below, since a single commit that bundles the doc edit
  * with code has no decidable order *within itself*).
+ *
+ * `docPath` must be REPO-ROOT-relative (forward slashes), because that is what
+ * `git diff-tree --name-only` prints — for a model directory nested in a larger repository
+ * (`models/shop/model.em`), the slice doc shows up as `models/shop/slices/pay.md`, never
+ * `slices/pay.md`. `checkRatificationOrder` below resolves it (`repoRelativeDocPath`); a caller
+ * handing in the model-dir-relative path would misread every doc-only commit of a nested model
+ * as touching code.
  */
 export function classifyRatificationOrder(
   run: GitRunner,
@@ -189,13 +197,41 @@ export function classifyRatificationOrder(
   return { status: "ratified-first", commit: null, detail: null };
 }
 
+/** The repo-root-relative path of `docRelPath` (a path relative to the model's directory,
+ *  `slices/<key>.md`), in the forward-slash form `git diff-tree --name-only` prints. `repoRoot`
+ *  comes from `rev-parse --show-toplevel` and is already fully resolved; `baseDir` gets the same
+ *  `realpathSync` treatment before `relative()` can compare the two meaningfully (macOS's
+ *  `/tmp`/`$TMPDIR` are symlinks into `/private/...` — the exact discipline metrics.ts applies
+ *  for its own repo-relative paths). */
+export function repoRelativeDocPath(repoRoot: string, baseDir: string, docRelPath: string): string {
+  return relative(repoRoot, resolve(realpathSync(resolve(baseDir)), docRelPath)).split("\\").join("/");
+}
+
 /**
  * The GH #399 advisory ordering check, in `checkRefs`' own shape: one `OrderResult` per slice
  * doc that carries a `ratifiedRef` (the same docs `checkRefs` already reads), run against the
  * same `baseDir`/`reachableFrom`. Deliberately returns no `ok` field — nothing here is ever a
  * pass/fail gate (R5); the CLI never derives an exit code from this list.
+ *
+ * The reported `path` stays model-dir-relative (`slices/<key>.md`), the `RefResult.path`
+ * convention; the path handed to `classifyRatificationOrder` for comparison against
+ * `git diff-tree` output is repo-root-relative (see `repoRelativeDocPath`) — for a model whose
+ * directory is nested in a larger repository the two differ, and comparing the wrong one
+ * misreads every doc-only commit as touching code.
  */
 export function checkRatificationOrder(model: NormalizedModel, refs: RefsResult, baseDir: string, target: string, shallow: boolean, run: GitRunner = realGit): OrderResult[] {
+  // One toplevel resolution per run, not per slice. Skipped on a shallow clone — classify
+  // short-circuits to `undecidable` before ever comparing paths. A toplevel failure (outside a
+  // work tree — checkRefs normally refuses first, but this function is exported on its own)
+  // makes every result `undecidable` rather than guessing at a root.
+  let repoRoot: string | null = null;
+  let toplevelError: string | null = null;
+  if (!shallow) {
+    const top = git(run, baseDir, ["rev-parse", "--show-toplevel"]);
+    if (top.status === 0 && top.stdout.trim() !== "") repoRoot = top.stdout.trim();
+    else toplevelError = `git rev-parse --show-toplevel failed: ${top.stderr.trim() || `exit ${top.status}`}`;
+  }
+
   const results: OrderResult[] = [];
   const seen = new Set<string>();
   model.slices.forEach((_slice, i) => {
@@ -205,7 +241,12 @@ export function checkRatificationOrder(model: NormalizedModel, refs: RefsResult,
     const doc = readSliceDoc(baseDir, sliceKey);
     if (!doc || !hasUsableFrontmatter(doc) || doc.ratifiedRef === null) return;
     const path = `slices/${sliceKey}.md`;
-    const { status, commit, detail } = classifyRatificationOrder(run, baseDir, doc.ratifiedRef, target, path, shallow);
+    if (toplevelError !== null) {
+      results.push({ sliceKey, path, ratifiedRef: doc.ratifiedRef, commit: null, status: "undecidable", detail: toplevelError });
+      return;
+    }
+    const docPath = repoRoot !== null ? repoRelativeDocPath(repoRoot, baseDir, path) : path; // shallow: unused by classify
+    const { status, commit, detail } = classifyRatificationOrder(run, baseDir, doc.ratifiedRef, target, docPath, shallow);
     results.push({ sliceKey, path, ratifiedRef: doc.ratifiedRef, commit, status, detail });
   });
   return results;
