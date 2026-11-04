@@ -1,9 +1,9 @@
 {
-  "name": "em-1-19-7",
+  "name": "em-1-20-0",
   "owner": {
     "name": "Mike Key"
   },
-  "description": "em v1.19.7: the Event Modeling skill bundle and MCP server as a Claude Code plugin.",
+  "description": "em v1.20.0: the Event Modeling skill bundle and MCP server as a Claude Code plugin.",
   "plugins": [
     {
       "name": "em",

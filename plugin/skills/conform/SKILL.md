@@ -1,6 +1,6 @@
 ---
 name: conform
-em-version: 1.19.7
+em-version: 1.20.0
 description: >-
   Use when checking a ratified event model (and its slice docs) for drift against the codebase
   that implements it — advisory only, never a gate, never an unprompted edit — or when walking
