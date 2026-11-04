@@ -774,7 +774,7 @@ storyline "Retire a product" after "Bring a product to market" {
   (`storyline-clause-on-continuation`).
 - **Render:** the full-model diagram draws a labelled band above the slice-header row spanning each run of
   a storyline's columns (a storyline interrupted by another gets one band segment per run). A model with
-  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone
+  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone, and `em render model.em --map` puts every story's diagram on one draggable canvas with the flow between them (see [cli.md](cli.md#em-render-file))
   — see [cli.md](cli.md#em-render-file).
 - **Validation:** once any storyline exists, a slice outside every storyline is the advisory warning
   `slice-outside-storyline` (so a model can adopt storylines incrementally). `after` is checked as below. See [validation.md](validation.md#storylines).
