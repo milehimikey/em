@@ -28,6 +28,8 @@ em render <file> --keep-empty-lanes                                 # keep the A
 em export <file>                                                    # export a versioned JSON snapshot of the normalized model
 em export <file> -o, --out <path>                                   # write to a file instead of stdout
 em export <file> --slice <key>                                      # export only this slice's object (pattern/fields/doc) instead of the whole model (export key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage elsewhere in the model doesn't block it (see docs/cli.md)
+em export <file> --doc-json                                         # emit the structured slice-doc export (GH #401) instead of the model snapshot: per slice the frontmatter join plus the parsed sections as data (fields, invariants, scenarios, error flows, open questions) and a model-level invariant catalog. Own schema version; whole model only (does not combine with --slice)
+em export <file> --include-html                                     # with --doc-json, include each slice doc's rendered HTML body (excluded by default; the authored body never appears in a plain export)
 em api generate <file>                                              # write the TypeSpec contract for the model's public commands, events and views to <model dir>/contracts/<model key>.tsp
 em api generate <file> -o, --out <path>                             # write to this path instead of <model dir>/contracts/<model key>.tsp
 em api generate <file> --stdout                                     # print the contract instead of writing it

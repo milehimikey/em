@@ -218,6 +218,37 @@ describe("em export (CLI)", () => {
   });
 });
 
+describe("em export --doc-json (CLI, GH #401)", () => {
+  it("emits the structured doc export under its own schema version (1.0), not the model schema", () => {
+    const r = em(["export", "clean.em", "--doc-json"], dir);
+    expect(r.status).toBe(0);
+    const doc = JSON.parse(r.stdout); // throws if warning text leaked into stdout
+    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
+    expect(doc.model.slices[0]).toHaveProperty("errorFlows");
+    expect(doc.model.slices[0]).toHaveProperty("openQuestions");
+  });
+
+  it("--include-html adds a slice `html` key that is absent by default", () => {
+    const plain = JSON.parse(em(["export", "clean.em", "--doc-json"], dir).stdout);
+    expect("html" in plain.model.slices[0]).toBe(false);
+    const withHtml = JSON.parse(em(["export", "clean.em", "--doc-json", "--include-html"], dir).stdout);
+    expect("html" in withHtml.model.slices[0]).toBe(true);
+  });
+
+  it("does not combine with --slice — a clear usage error, non-zero exit", () => {
+    const r = em(["export", "clean.em", "--doc-json", "--slice", "place"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("does not combine with --slice");
+  });
+
+  it("refuses on errors with a non-zero exit, same gate as a full export", () => {
+    const r = em(["export", "error.em", "--doc-json"], dir);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("not exporting");
+  });
+});
+
 describe("em export --slice <key> (CLI, MIL-128)", () => {
   it("exports just the named slice's object — same pattern/fields/doc shape as the full export's slice entry", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);

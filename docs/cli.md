@@ -621,11 +621,14 @@ default (pipe-friendly); `-o` writes a file.
 |---|---|
 | `-o, --out <path>` | Write to a file instead of stdout |
 | `--slice <key>` | Export only this slice's object instead of the whole model ([slice key](#slice-keys)) — see below (MIL-128) |
+| `--doc-json` | Emit the **structured slice-doc export** (its own schema version) instead of the model snapshot — see below (GH #401) |
+| `--include-html` | With `--doc-json`, include each slice doc's rendered HTML body (excluded by default) |
 
 ```bash
 em export model.em                    # pretty JSON on stdout
 em export model.em -o model.json      # write to a file
 em export model.em --slice checkout   # just the "checkout" slice's object
+em export model.em --doc-json         # the parsed slice-doc structure, as data
 ```
 
 ### `--slice <key>` (MIL-128)
@@ -657,6 +660,90 @@ is printed to stderr as usual but never blocks. A full, unscoped `em export` sti
 as `model.slices[i]` there, so there's no separate schema to track for it. `diagnostics` is
 scoped to this slice's own refs only (same predicate as the refusal check above), not the whole
 model's. An unknown `--slice` key is a CLI usage error (non-zero exit, no JSON printed).
+
+### `--doc-json` (GH #401)
+
+A **separate export surface** for renderers (em-portal, the #396 doc-site layer, section-aware
+rendering in `em catalog`) that want the slice *docs'* structure without re-reading and
+re-parsing `slices/*.md` themselves. It serialises the parse em already does — nothing new is
+re-parsed ad hoc. Whole model only; it does not combine with `--slice` (that is a usage error).
+Refuses on errors, same gate as a full export.
+
+It carries its **own schema version**, `schemaVersion: "1.0"` (the `DOC_EXPORT_SCHEMA_VERSION`
+constant), independent of the model export's `schemaVersion` above: the doc-structure shape
+evolves on its own cadence, and a plain `em export` stays byte-for-byte unchanged. The authored
+markdown body still never appears in a plain export; here the rendered HTML is opt-in via
+`--include-html` (the existing `marked` path).
+
+```json
+{
+  "schemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "source": { "path": "model.em", "sha256": "…" },
+  "model": {
+    "name": "Shop",
+    "key": "shop",
+    "invariants": [
+      { "id": "INV-CHK-1", "owningSlice": "checkout", "source": "model", "referencingSlices": ["cancel"] }
+    ],
+    "slices": [
+      {
+        "key": "checkout",
+        "name": "Checkout",
+        "pattern": "state-change",
+        "frontmatter": { "found": true, "status": "ready-to-implement", "version": 2, "driftSignal": "…", "…": "…" },
+        "fields": [
+          { "element": "Submit Order", "kind": "command", "fields": [ { "name": "total", "type": "decimal", "notes": "yes · —" } ] }
+        ],
+        "invariants": [ { "id": "INV-CHK-1", "text": "the order total must be positive", "source": "model" } ],
+        "scenarios": [ { "title": "Happy path", "given": [ "…" ], "when": [ "…" ], "then": [ "…" ] } ],
+        "errorFlows": [ "Submitting the same basket twice records one order." ],
+        "openQuestions": [ { "text": "Should tax be included?", "checked": false, "deferredToVersion": null } ]
+      }
+    ]
+  },
+  "diagnostics": [ … ]
+}
+```
+
+- `model.invariants` — the model-level **invariant catalog**: each declared `INV-*` id, the slice
+  that declares it (`owningSlice`, with `source` saying how — see `invariants` below), and every
+  OTHER slice whose doc body mentions it (`referencingSlices`, using the same `INV-*` token
+  grammar `em coverage` reads), in declaration order.
+- `frontmatter` — the same doc-join object the model export's `slice.doc` carries (status, version,
+  `driftSignal`, the review/ratification/shipped/conformed keys, scenarios, …); see the schema
+  summary above.
+- `fields` — the generated field tables (`em slice sync`'s regions) read back as data, grouped by
+  element: `element` (its display name), `kind`, and `fields` of `{ name, type, notes }` where
+  `notes` is the table's trailing column(s) (Required+Rules for a command, Source/Notes for an
+  event or view) joined with `·`, verbatim. An alternatives event (`event A | B` / `oneof`,
+  GH #278) yields one group per alternative, each under its own element name.
+- `invariants` — the slice's declared invariants, `{ id, text, source }` (`text` `null` when the
+  declaration gives no rule text), deduped by id in declaration order. `source: "model"` for a
+  model `invariant` line (canonical); `source: "doc"` for the doc's own `**INV-X:**` declaring
+  label, the fallback for ids the model does not declare — the same model-first precedence
+  `em coverage`/`em query invariant` apply, so a 1.13-style estate with doc-only invariants still
+  exports them. A doc label restating a model-declared id is never a second entry.
+- `scenarios` — the authored `### Scenario:` Given/When/Then blocks (the same `parseScenarios`
+  `slice.doc.scenarios` uses).
+- `errorFlows` — the top-level bullets under the doc's `## Alternate & Error Flows` section, in
+  document order; a soft-wrapped bullet's indented continuation lines are joined into its text
+  with single spaces.
+- `openQuestions` — each `## Open Questions` item as `{ text, checked, deferredToVersion }` —
+  `deferredToVersion` is the `v<n>` an `em slice defer` `deferred to v<n>` marker names, else
+  `null`; wrapped items join their continuation lines the same way `errorFlows` does.
+- `html` — present on each slice only with `--include-html` (the rendered doc body, `null` when no
+  usable doc is bound).
+
+Two caveats worth knowing as a consumer:
+
+- `frontmatter` reuses the model export's `SliceDocExport` shape verbatim (one source of truth with
+  `slice.doc` there), so its **fields track the export `schemaVersion`** (currently `1.19`) while
+  the doc-json's own sections track `DOC_EXPORT_SCHEMA_VERSION` — a consumer reading both watches
+  two version numbers.
+- `scenarios` carries only the strict `### Scenario:` grammar blocks (`parseScenarios`) — a
+  pre-1.17 free-prose scenario style exports as `[]`, exactly as `slice.doc.scenarios` reports
+  `null` for it in the model export.
 
 **Determinism.** The same source text always exports to byte-identical JSON: no timestamps,
 no git data, no absolute paths, no environment-derived values. `source.sha256` is a hash of

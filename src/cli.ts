@@ -21,6 +21,7 @@ import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader } from "./model/validate.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
+import { buildDocJsonExport } from "./emit/docJson.js";
 import { generateContract, runApiCheck, formatApiCheckText } from "./cli/api.js";
 import { buildApiCheckJson } from "./emit/apiCheckJson.js";
 import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
@@ -431,9 +432,41 @@ program
       "key, MIL-128) — refuses only if THIS slice has an error; an unrelated slice's breakage " +
       "elsewhere in the model doesn't block it (see docs/cli.md)",
   )
-  .action((file: string, opts: { out?: string; slice?: string }) => {
+  .option(
+    "--doc-json",
+    "emit the structured slice-doc export (GH #401) instead of the model snapshot: per slice the " +
+      "frontmatter join plus the parsed sections as data (fields, invariants, scenarios, error " +
+      "flows, open questions) and a model-level invariant catalog. Own schema version; whole " +
+      "model only (does not combine with --slice)",
+  )
+  .option(
+    "--include-html",
+    "with --doc-json, include each slice doc's rendered HTML body (excluded by default; the " +
+      "authored body never appears in a plain export)",
+  )
+  .action((file: string, opts: { out?: string; slice?: string; docJson?: boolean; includeHtml?: boolean }) => {
     const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics);
+
+    if (opts.docJson) {
+      if (opts.slice) {
+        console.error("em export --doc-json: exports the whole model and does not combine with --slice");
+        process.exit(1);
+      }
+      if (hasErrors(diagnostics)) {
+        console.error("not exporting: fix the errors above");
+        process.exit(1);
+      }
+      const exportedDoc = buildDocJsonExport(model, refs, diagnostics, source, file, { includeHtml: opts.includeHtml });
+      printDiagnostics(newDiagnostics(exportedDoc.diagnostics, diagnostics));
+      if (opts.out) {
+        writeFileSync(opts.out, exportedDoc.text + "\n");
+        console.log(`wrote ${opts.out}`);
+      } else {
+        process.stdout.write(exportedDoc.text + "\n");
+      }
+      return;
+    }
 
     if (opts.slice) {
       // Scoped export deliberately does NOT reuse the whole-model error guard below: the
