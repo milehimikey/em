@@ -1131,6 +1131,30 @@ interface FieldClauses {
   derived?: boolean;
   /** The traced form's event name(s), when given (`derived from ...`); absent on the bare form. */
   derivedFrom?: string[];
+  /** The source path of the unquoted `derived from values[].attributeValueId` form (GH #383),
+   *  mutually exclusive with `derivedFrom`; absent on the bare and quoted-list forms. */
+  derivedPath?: string;
+}
+
+/** A `derived from` source PATH (GH #383): an identifier, optionally suffixed `[]`, with more
+ *  `.`-joined identifier (optionally `[]`) segments — `values[].attributeValueId`. Anchored
+ *  individually below so a bare segment or a flat `a.b` works too. */
+const DERIVED_PATH_SEGMENT = "[A-Za-z_][A-Za-z0-9_]*(?:\\[\\])?";
+const DERIVED_PATH = `${DERIVED_PATH_SEGMENT}(?:\\.${DERIVED_PATH_SEGMENT})*`;
+
+/**
+ * Pulls a trailing unquoted `derived from <path>` clause off `rest` (GH #383). The path form
+ * is the element-field flavour of `derived from`: instead of naming events (the quoted-list
+ * form, `extractQuotedListClause`), it names a dotted path into the collection field's source
+ * event (`values[].attributeValueId`). Only matched when the text after `from` is a bare path
+ * rather than a quoted string, so it never shadows the quoted-list form (checked first). Must be
+ * genuinely trailing. Returns `null` when the clause is absent (so the caller falls through to
+ * the bare `derived` check).
+ */
+function extractDerivedPathClause(rest: string, _line: number): { path: string; rest: string } | null {
+  const m = rest.match(new RegExp(`(?:^|\\s)derived\\s+from\\s+(${DERIVED_PATH})\\s*$`));
+  if (!m || m.index === undefined) return null;
+  return { path: m[1], rest: rest.slice(0, m.index).trim() };
 }
 
 /**
@@ -1225,7 +1249,7 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
     // `derived from "Event A", "Event B"` (view fields only, MIL-200) — checked before the
     // bare `derived` keyword below, same "two-word form first" discipline as `renamed from`
     // vs. plain `from` at the element level.
-    if (clauses.derived === undefined && clauses.derivedFrom === undefined) {
+    if (clauses.derived === undefined && clauses.derivedFrom === undefined && clauses.derivedPath === undefined) {
       const derivedFromClause = extractQuotedListClause(rest, "derived\\s+from", "derived from", line);
       if (derivedFromClause) {
         if (context !== "view" && context !== "type-decl") {
@@ -1239,6 +1263,25 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
         clauses.derivedFrom = derivedFromClause.values;
         rest = derivedFromClause.rest;
         progressed = true;
+      } else {
+        // GH #383: the unquoted path form `derived from values[].attributeValueId` — the same
+        // clause keyword, but naming a path into the collection field's source event instead of
+        // a quoted event list. Checked only after the quoted-list form declines, so the two
+        // never collide.
+        const derivedPathClause = extractDerivedPathClause(rest, line);
+        if (derivedPathClause) {
+          if (context !== "view" && context !== "type-decl") {
+            throw new ParseError(
+              "`derived from` is only valid on a view field or a `type` field — it names the events a computed " +
+                `value's arrival depends on, so it can't describe a ${context} field`,
+              line,
+            );
+          }
+          clauses.derived = true;
+          clauses.derivedPath = derivedPathClause.path;
+          rest = derivedPathClause.rest;
+          progressed = true;
+        }
       }
     }
 
@@ -1260,6 +1303,23 @@ function extractFieldClauses(raw: string, line: number, context: FieldClauseCont
     }
 
     if (!progressed) break;
+  }
+
+  // GH #383: the quoted event-list form and the unquoted path form of `derived from` are
+  // mutually exclusive on one field. Once a `derived` clause is extracted the fixpoint loop
+  // stops matching further ones, so a second `derived from` clause (either form, either order)
+  // survives in `rest` — where it would silently leak into the field's TYPE string. Catch it
+  // here instead: leftover text still shaped like a `derived from` clause is an error.
+  if (
+    clauses.derived &&
+    new RegExp(`(?:^|\\s)derived\\s+from\\s+(?:"|${DERIVED_PATH}\\s*$)`).test(rest)
+  ) {
+    throw new ParseError(
+      "a field may carry only one `derived from` clause — the quoted event-list form " +
+        '(`derived from "Event A"`) and the unquoted path form (`derived from values[].attributeValueId`) ' +
+        "are mutually exclusive",
+      line,
+    );
   }
 
   return { rest, clauses };
@@ -1359,6 +1419,7 @@ function parseFieldSpec(raw: string, line: number, context: FieldClauseContext):
   if (field && clauses.assigned) field.assigned = true;
   if (field && clauses.derived) field.derived = true;
   if (field && clauses.derivedFrom) field.derivedFrom = clauses.derivedFrom;
+  if (field && clauses.derivedPath) field.derivedPath = clauses.derivedPath;
   return field;
 }
 

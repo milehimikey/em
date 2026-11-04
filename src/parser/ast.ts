@@ -60,6 +60,14 @@ export interface Field {
    *  order — `undefined` on a bare `derived` (no traced source) or when the field carries no
    *  `derived` clause at all. See `Field.derived`. */
   derivedFrom?: string[];
+  /** The source path a `derived from values[].attributeValueId` clause names (GH #383): a
+   *  dotted path, each segment an identifier optionally suffixed `[]`, into the collection
+   *  field's named source event(s). Set only on a `type` field used as a collection element,
+   *  and only on the UNQUOTED path form — the quoted `derivedFrom` form and this one are
+   *  mutually exclusive. When set, `derived` is also `true`, and `model/validate.ts` resolves
+   *  the path against the view's named source events (the path must exist on an event and the
+   *  leaf field's type must match this field's). `undefined` otherwise. */
+  derivedPath?: string;
 }
 
 /** Kind of an element-level `tag` clause (`ElementNode.tags`) — the inline field `tag` (identity)
