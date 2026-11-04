@@ -124,10 +124,6 @@ export interface Slice {
   /** Name of the `storyline "…" { … }` block the slice was declared in (GH #277); absent for a
    *  slice outside any storyline. */
   storyline?: string;
-  /** True for a stub column of an `em render --storyline` subset diagram (render/
-   *  storylineDiagram.ts): an element the storyline reads from outside it, drawn dimmed so its
-   *  arrows still have a source. Never set on a compiled model's slices. */
-  stub?: boolean;
   /** GH #287: set on a continuation column synthesized from a `view X again` line written inside
    *  another slice (`host` = index of that slice). Such a slice has no source text of its own, no
    *  doc, and is not listed by `em slice index`; its export key is `<host-key>--again`. */

@@ -806,7 +806,7 @@ storyline "Retire a product" after "Bring a product to market" {
   (`storyline-clause-on-continuation`).
 - **Render:** the full-model diagram draws a labelled band above the slice-header row spanning each run of
   a storyline's columns (a storyline interrupted by another gets one band segment per run). A model with
-  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone
+  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone (its own slices, nothing from outside it)
   — see [cli.md](cli.md#em-render-file).
 - **Validation:** once any storyline exists, a slice outside every storyline is the advisory warning
   `slice-outside-storyline` (so a model can adopt storylines incrementally). `after` is checked as below. See [validation.md](validation.md#storylines).
@@ -841,8 +841,8 @@ as if its slices came after the referenced storyline's last slice:
   is declared *above* the one it comes after (`storyline-after-out-of-order`) — move the blocks into
   timeline order. There is no special render for that case; it is an error.
 - **Render:** the full-model render keeps file order (one timeline on the page).
-  `em render --storyline "<secondary>"` draws the referenced storyline's end state as dimmed stub columns on
-  the left, so the story reads left to right on its own.
+  `em render --storyline "<secondary>"` draws the secondary story's own slices only; what it continues
+  from the referenced storyline is not drawn in it.
 - `after` is optional. Without it, file order is the only timeline, exactly as before.
 
 ## Invariants
