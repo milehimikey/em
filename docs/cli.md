@@ -5087,6 +5087,23 @@ same reconcile, so either command gets a drifted vendored copy back to a clean l
 |---|---|
 | `-f, --force` | Overwrite an existing installation, reconciling added/updated/removed files within the bundle's managed directories the same way `em skill sync` does (sibling skills untouched) |
 | `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
+| `--skills-dir <dir>` | Where the vendored bundle lives, relative to the repo root (GH #412). Default `.claude/skills`; `.agents/skills` when that exists and `.claude/skills` does not |
+| `--agents-dir <dir>` | Where the four sub-agent definitions live (GH #412). Default `.claude/agents`, or `.agents/agents` beside an `.agents/skills` bundle |
+
+**A neutral skills folder (GH #412).** A repo that serves several coding agents keeps skills in a
+folder such as `.agents/skills/` rather than `.claude/skills/`. Three ways to point `em` there,
+all honoured by `install`, `sync`, `check` and `em upgrade`'s `skill-bundle` step alike:
+
+- **A symlink.** `.claude/skills -> .agents/skills` needs nothing: the bundle is written through
+  the link and `check` reads through it. The sub-agent definitions still go to `.claude/agents/`
+  (pass `--agents-dir` to move them).
+- **Detection.** With no `.claude/skills/` at all and an `.agents/skills/` folder present, the
+  commands use `.agents/skills/` and print `using .agents/skills/ (…)` once; the sub-agent
+  definitions go to `.agents/agents/`.
+- **Flags.** `--skills-dir .agents/skills --agents-dir .agents/agents` on every call, for any
+  other layout. Paths are relative to the repo root (`[path]` for `sync`/`check`).
+
+The `AGENTS.md` section is written at the repo root in every layout (`--no-agents-md` to skip).
 
 ## `em skill sync [path]`
 
@@ -5125,6 +5142,9 @@ an AI agent" below, MIL-129) — pass `--no-agents-md` to skip that.
 | Flag | Effect |
 |---|---|
 | `--no-agents-md` | Skip writing/updating the `AGENTS.md` agent-contract section |
+
+`sync` takes the same `--skills-dir` / `--agents-dir` flags and `.agents/skills` detection as
+`install` (GH #412, see there).
 
 ## `em skill check [path]`
 
@@ -5172,6 +5192,7 @@ it concerns. `[path]` defaults to the current directory, same convention as `syn
 |---|---|
 | `--json` | Print a JSON document instead of the text report |
 | `--ci` | Also exit 1 on `plugin-not-installed-locally` (implied by `CI=true` in the environment) |
+| `--skills-dir <dir>`, `--agents-dir <dir>` | Check the bundle and the sub-agent files at these locations (GH #412; same defaults and `.agents/skills` detection as `install`, detection silent here) |
 
 ```
 $ em skill check
@@ -5196,7 +5217,7 @@ same no-opt-in-flag-needed convention as `em ledger`.
 package and every other command's own schema; 1.1 added `plugin` and the plugin finding fields):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
-- `vendoredDir` — `[path]/.claude/skills`, the root the whole bundle was checked under.
+- `vendoredDir` — the root the whole bundle was checked under: `[path]/.claude/skills`, or the `--skills-dir` / detected `.agents/skills` location (GH #412).
 - `installedVersion` — the installed `em`'s own version (`em --version`).
 - `plugin` — `{ declared: true, name, ref, enabled }` when the repo declares the plugin, else `null`.
 - `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles, pluginName, pluginRef, installCommands }[]` across every

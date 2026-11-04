@@ -102,7 +102,7 @@ import { checkSkillSyncBundle, checkAgentFiles } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
-import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES } from "./cli/skillDirs.js";
+import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs, VendoredDirs } from "./cli/skillDirs.js";
 import { createServer as createMcpServer } from "./mcp/server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { syncAgentsMd, AgentsMdResult } from "./cli/agentsMd.js";
@@ -3652,17 +3652,29 @@ const scopeCommand = systemCommand
 function packagedSkillsRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", ".claude", "skills");
 }
-function vendoredSkillsRoot(repoRoot: string): string {
-  return join(resolve(repoRoot), ".claude", "skills");
-}
-// MIL-269 (R32): the four em sub-agent definitions live in `.claude/agents/`, a directory shared
+// GH #412: the consumer side is `.claude/skills/` + `.claude/agents/` by default, `--skills-dir` /
+// `--agents-dir` when given, or `.agents/skills/` (+ `.agents/agents/`) when that neutral folder
+// exists and `.claude/skills/` does not — see resolveVendoredDirs (src/cli/skillDirs.ts).
+// MIL-269 (R32): the four em sub-agent definitions live in the agents dir, a directory shared
 // with the consumer's own agents - install/sync/check only ever handle the fixed EM_AGENT_FILES.
 function packagedAgentsRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", ".claude", "agents");
 }
-function vendoredAgentsRoot(repoRoot: string): string {
-  return join(resolve(repoRoot), ".claude", "agents");
+interface SkillDirOpts {
+  skillsDir?: string;
+  agentsDir?: string;
 }
+function vendoredDirs(repoRoot: string, opts: SkillDirOpts): VendoredDirs {
+  const dirs = resolveVendoredDirs(repoRoot, opts);
+  if (dirs.detected) console.log(`using ${relative(resolve(repoRoot), dirs.skillsRoot)}/ (no .claude/skills/ here; pass --skills-dir to choose)`);
+  return dirs;
+}
+const SKILLS_DIR_HELP =
+  "where the vendored skill bundle lives, relative to the repo root (default .claude/skills; " +
+  ".agents/skills when that exists and .claude/skills does not — GH #412)";
+const AGENTS_DIR_HELP =
+  "where the four em sub-agent definitions live, relative to the repo root (default .claude/agents, " +
+  "or .agents/agents beside an .agents/skills bundle — GH #412)";
 
 program
   .command("contract")
@@ -3714,9 +3726,8 @@ const skill = program
 
 // MIL-269: reconcile the four `.claude/agents/em-*.md` files (create the directory if absent);
 // byte-exact restore, never touches any other file there.
-function installAgentFiles(repoRoot: string): void {
+function installAgentFiles(vendored: string): void {
   const packaged = packagedAgentsRoot();
-  const vendored = vendoredAgentsRoot(repoRoot);
   const plan = planAgentSync(packaged, vendored, EM_AGENT_FILES);
   if (plan.changes.length === 0) return;
   applySkillSync(plan, packaged, vendored);
@@ -3743,10 +3754,13 @@ skill
     "--no-agents-md",
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
   )
-  .action(async (opts: { force?: boolean; agentsMd?: boolean }) => {
+  .option("--skills-dir <dir>", SKILLS_DIR_HELP)
+  .option("--agents-dir <dir>", AGENTS_DIR_HELP)
+  .action(async (opts: { force?: boolean; agentsMd?: boolean } & SkillDirOpts) => {
     warnVendoredDeprecated();
     const srcRoot = packagedSkillsRoot();
-    const destRoot = vendoredSkillsRoot(process.cwd());
+    const dirs = vendoredDirs(process.cwd(), opts);
+    const destRoot = dirs.skillsRoot;
     const anchor = join(destRoot, EM_SKILL_ANCHOR_DIR);
 
     if (existsSync(anchor) && !opts.force) {
@@ -3779,7 +3793,7 @@ skill
         );
       }
       console.log("in Claude Code, run /event-modeling to start a guided session");
-      installAgentFiles(process.cwd());
+      installAgentFiles(dirs.agentsRoot);
     } else {
       await mkdir(destRoot, { recursive: true });
       for (const name of EM_ALL_SKILL_BUNDLE_DIRS) {
@@ -3787,7 +3801,7 @@ skill
       }
       console.log(`installed event-modeling skill bundle → ${destRoot}`);
       console.log("in Claude Code, run /event-modeling to start a guided session");
-      installAgentFiles(process.cwd());
+      installAgentFiles(dirs.agentsRoot);
     }
 
     if (opts.agentsMd !== false) {
@@ -3806,16 +3820,19 @@ skill
     "--no-agents-md",
     "skip writing/updating the AGENTS.md agent-contract section (on by default, MIL-129)",
   )
-  .action(async (path: string, opts: { agentsMd?: boolean }) => {
+  .option("--skills-dir <dir>", SKILLS_DIR_HELP)
+  .option("--agents-dir <dir>", AGENTS_DIR_HELP)
+  .action(async (path: string, opts: { agentsMd?: boolean } & SkillDirOpts) => {
     warnVendoredDeprecated();
     const packagedRoot = packagedSkillsRoot();
-    const vendoredRoot = vendoredSkillsRoot(path);
+    const dirs = vendoredDirs(path, opts);
+    const vendoredRoot = dirs.skillsRoot;
 
     const bundlePlan = planSkillSyncBundle(packagedRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
     const skillChanges = bundlePlan.reduce((n, { plan }) => n + plan.changes.length, 0);
     // MIL-269 (R32): the fixed agent-file list, never the shared .claude/agents/ directory as a whole.
     const packagedAgents = packagedAgentsRoot();
-    const vendoredAgents = vendoredAgentsRoot(path);
+    const vendoredAgents = dirs.agentsRoot;
     const agentPlan = planAgentSync(packagedAgents, vendoredAgents, EM_AGENT_FILES);
     const totalChanges = skillChanges + agentPlan.changes.length;
     const totalUnchanged = bundlePlan.reduce((n, { plan }) => n + plan.unchangedCount, 0) + agentPlan.unchangedCount;
@@ -3851,9 +3868,13 @@ skill
     "also fail (exit 1) when the declared plugin is not registered on this machine (implied by CI=true in the environment); " +
       "without it that finding prints the install commands on stderr and exits 0",
   )
-  .action((path: string, opts: { json?: boolean; ci?: boolean }) => {
+  .option("--skills-dir <dir>", SKILLS_DIR_HELP)
+  .option("--agents-dir <dir>", AGENTS_DIR_HELP)
+  .action((path: string, opts: { json?: boolean; ci?: boolean } & SkillDirOpts) => {
     const packagedRoot = packagedSkillsRoot();
-    const vendoredRoot = vendoredSkillsRoot(path);
+    // Detection is silent here: a check prints findings and one verdict line, nothing else.
+    const dirs = resolveVendoredDirs(path, opts);
+    const vendoredRoot = dirs.skillsRoot;
     const ciMode = !!opts.ci || process.env.CI === "true";
 
     // MIL-231: the plugin signal (a pinned marketplace in .claude/settings*.json) sits beside the
@@ -3868,7 +3889,7 @@ skill
     // MIL-269 (R32): the four agent files, only when the vendored bundle is present (a plugin-only
     // repo ships them via the plugin); checked by fixed name, never the shared directory.
     const agents = vendoredPresent
-      ? checkAgentFiles(packagedAgentsRoot(), vendoredAgentsRoot(path), EM_AGENT_FILES)
+      ? checkAgentFiles(packagedAgentsRoot(), dirs.agentsRoot, EM_AGENT_FILES)
       : { findings: [], ok: true };
     const findings = [...vendored.findings, ...agents.findings, ...(pluginCheck?.findings ?? [])];
     const failing = findings.filter((f) => f.code !== "plugin-not-installed-locally" || ciMode);
