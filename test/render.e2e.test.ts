@@ -114,8 +114,9 @@ slice "Ship Order" {
 
       expect(svg).toContain('class="em-status-legend"');
       expect(svg).toContain(">Reviewed<");
-      const placeOrderHeader = /<title>__hdr_0<\/title>[\s\S]*?<\/g>/.exec(svg)![0];
-      const shipOrderHeader = /<title>__hdr_1<\/title>[\s\S]*?<\/g>/.exec(svg)![0];
+      // the header cells' Graphviz ids are replaced by readable tooltips as the last render step
+      const placeOrderHeader = /<title>Place Order — [^<]*<\/title>[\s\S]*?<\/g>/.exec(svg)![0];
+      const shipOrderHeader = /<title>Ship Order — [^<]*<\/title>[\s\S]*?<\/g>/.exec(svg)![0];
       expect(placeOrderHeader).not.toMatch(/fill="#e3e7eb"/i); // recolored
       expect(shipOrderHeader).toMatch(/fill="#e3e7eb"/i); // untouched default
     } finally {
@@ -155,7 +156,9 @@ slice "Ship Order" {
       // row; the genuine note on "Ship Order" still did.
       expect(svg).toContain('class="em-notes"');
       expect(svg).toContain('href="notes/ship-order.md"');
-      expect(svg).not.toContain("slices/place-order.md");
+      // the only mentions of the doc path are the header cell's own link (xlink:href + href)
+      expect((svg.match(/slices\/place-order\.md/g) ?? []).length).toBe(2);
+      expect(svg).toContain('class="em-slice-link"><g id="node');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

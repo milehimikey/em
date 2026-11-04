@@ -20,7 +20,8 @@ import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
 import { Element, NormalizedModel } from "../model/model.js";
 import { SliceDoc } from "../catalog/sliceDoc.js";
-import { Grid } from "../layout/grid.js";
+import { Grid, headerCellId } from "../layout/grid.js";
+import { classifySlicePattern, slicePatternLabel } from "../catalog/classify.js";
 import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import {
@@ -31,7 +32,7 @@ import {
   appendNoteLegend,
 } from "./drawNotes.js";
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
-import { readSliceDocs } from "./sliceStatus.js";
+import { readSliceDocFiles } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
 import { buildStorylineBands, storylineBandIds } from "./storylineBands.js";
 
@@ -78,10 +79,12 @@ export function composeSvg(
   // relative to slices/, the doc's own directory) need the same baseDir->outDir rewrite
   // noteHref gives a `note` path — otherwise an embedded <img src="./foo.svg"> resolves
   // against the live viewer's own page URL instead of slices/, and 404s.
-  const docs = readSliceDocs(model, baseDir).map((doc) =>
-    doc ? { ...doc, html: rewriteDocLinks(doc.html, baseDir, outDir) } : null,
+  const files = readSliceDocFiles(model, baseDir);
+  const docs = files.map((f) =>
+    f ? { ...f.doc, html: rewriteDocLinks(f.doc.html, baseDir, outDir) } : null,
   );
-  return withOverlays(rawSvg, model, grid, hrefOf, docs);
+  const docHrefs = files.map((f) => (f ? noteHref(f.path, baseDir, outDir) : null));
+  return withOverlays(rawSvg, model, grid, hrefOf, docs, docHrefs);
 }
 
 /** Serialize a composed SVG string to `outPath` in the requested format — split out
@@ -223,6 +226,7 @@ function withOverlays(
   grid: Grid,
   hrefOf: (el: Element) => string,
   docs: (SliceDoc | null)[],
+  docHrefs: (string | null)[] = docs.map(() => null),
 ): string {
   const rects = parseNodeRects(
     svg,
@@ -274,7 +278,50 @@ function withOverlays(
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
   out = appendStatusLegend(out, grid, statuses);
+  // last: every slice header becomes a link to its doc with a readable tooltip — after every
+  // step that keys on the header's `<title>__hdr_N</title>` id (status colors, rect parsing)
+  out = linkSliceHeaders(out, model, grid, docs, docHrefs);
   return out;
+}
+
+/**
+ * Owner ruling 2026-11-03 ("slices easy to find"): wrap each slice's header cell in an `<a>`
+ * to its design doc (`slices/<key>.md`, relative to the SVG's own location) and replace the
+ * cell's Graphviz `<title>` (the `__hdr_N` id, which browsers showed as the tooltip) with a
+ * readable one: `<Slice> — <Pattern> · <status>`. A slice with no doc keeps the tooltip and
+ * gets no link. Must run last: everything else in this pipeline finds the header cell by that
+ * id. Links only work in a browser (raster output and image viewers ignore them), same as
+ * note markers.
+ */
+export function linkSliceHeaders(
+  svg: string,
+  model: NormalizedModel,
+  grid: Grid,
+  docs: (SliceDoc | null)[],
+  docHrefs: (string | null)[],
+): string {
+  let out = svg;
+  for (let c = 0; c < grid.cols; c++) {
+    const slice = model.slices[c];
+    if (!slice) continue;
+    const id = headerCellId(c);
+    const pattern = slicePatternLabel(classifySlicePattern(slice));
+    const status = docs[c]?.status ?? (docs[c] ? "no status" : "no doc yet");
+    const tip = escapeXml(`${slice.name} — ${pattern} · ${status}`);
+    const href = docHrefs[c];
+    const re = new RegExp(`(<g\\b[^>]*class="node"[^>]*>)(\\s*)<title>${id}</title>([\\s\\S]*?</g>)`);
+    out = out.replace(re, (_m, open: string, ws: string, rest: string) => {
+      const cell = `${open}${ws}<title>${tip}</title>${rest}`;
+      if (!href) return cell;
+      const h = escapeXml(href);
+      return `<a xlink:href="${h}" href="${h}" class="em-slice-link">${cell}</a>`;
+    });
+  }
+  return out;
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 /** Convert an SVG string to the requested format with an optional system rsvg-convert. */
