@@ -94,7 +94,9 @@ function columnsForStateView(model: NormalizedModel, i: number): SyntheticColumn
   const slice = model.slices[i];
   const cols: SyntheticColumn[] = [];
   for (const view of slice.elements.filter((e) => e.kind === "view")) {
+    const updates = new Set((view.updatesFrom ?? []).map(normalizeName));
     for (const name of view.from ?? []) {
+      if (updates.has(normalizeName(name))) continue; // `updates from`: legend only, no source column
       for (const src of resolveFromSources(model, view, name)) {
         cols.push({ sourceSliceIndex: src.sliceIndex, elements: [src] });
       }

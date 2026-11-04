@@ -275,7 +275,7 @@ arrow Alert Board -> Goods In
 describe("export, query and slice index", () => {
   it("export carries slice.storyline, model.storylines and schema 1.19", () => {
     const doc = exportDocOf(THREE);
-    expect(doc.schemaVersion).toBe("1.19");
+    expect(doc.schemaVersion).toBe("1.20");
     expect(doc.model.slices.map((s) => s.storyline)).toEqual(["Main", "Main", "Other", "Other", "Follow", "Follow"]);
     expect(doc.model.storylines).toEqual([
       { name: "Main", source: "docs/stock.md#one", after: null, sliceKeys: ["receive", "catalog"] },
