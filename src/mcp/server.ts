@@ -27,7 +27,8 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { compile } from "../pipeline.js";
+import { compileModelFile, compileModelText } from "../pipeline.js";
+import { ModelLoadError, SourceReader } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
 import { Diagnostic, hasErrors } from "../model/validate.js";
 import { NormalizedModel } from "../model/model.js";
@@ -163,10 +164,11 @@ function compileFile(file: string): CompiledSource | { error: string } {
     return { error: `cannot read ${file}` };
   }
   try {
-    const { model, refs, diagnostics } = compile(source);
+    const { model, refs, diagnostics } = compileModelFile(file); // GH #421: root + storyline model files
     return { model, refs, source, diagnostics };
   } catch (e) {
     if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
+    if (e instanceof ModelLoadError) return { error: e.message };
     throw e;
   }
 }
@@ -174,14 +176,24 @@ function compileFile(file: string): CompiledSource | { error: string } {
 /** Same as compileFile(), but for source text already in hand (e.g. `git show`'s stdout) rather
  *  than a path to read — shared by the `diff` tool's git-revision form, which never has a real
  *  file on disk for the revision side. `label` is used only for the parse-error message. */
-function compileText(source: string, label: string): CompiledSource | { error: string } {
+function compileText(source: string, label: string, read: SourceReader): CompiledSource | { error: string } {
   try {
-    const { model, refs, diagnostics } = compile(source);
+    const { model, refs, diagnostics } = compileModelText(source, read, label); // GH #421
     return { model, refs, source, diagnostics };
   } catch (e) {
     if (e instanceof ParseError) return { error: `parse error in ${label} ${e.message}` };
+    if (e instanceof ModelLoadError) return { error: e.message };
     throw e;
   }
+}
+
+/** GH #421: storyline model files of `file` as of git revision `rev` (throws when git cannot). */
+function gitReader(file: string, rev: string): SourceReader {
+  return (rel) => {
+    const r = resolveRevision(join(dirname(file), rel), rev);
+    if (!r.ok) throw new Error(r.message);
+    return r.content;
+  };
 }
 
 /** compileFile() plus the same fs-aware checks `em validate` folds into its own diagnostic set
@@ -712,13 +724,13 @@ export function createServer(): McpServer {
         const oldRev = resolveRevision(plan.file, plan.from);
         if (!oldRev.ok) return errorResult(oldRev.message);
         oldLabel = `${plan.file}@${plan.from}`;
-        oldResult = compileText(oldRev.content, oldLabel);
+        oldResult = compileText(oldRev.content, oldLabel, gitReader(plan.file, plan.from));
 
         if (plan.to) {
           const newRev = resolveRevision(plan.file, plan.to);
           if (!newRev.ok) return errorResult(newRev.message);
           newLabel = `${plan.file}@${plan.to}`;
-          newResult = compileText(newRev.content, newLabel);
+          newResult = compileText(newRev.content, newLabel, gitReader(plan.file, plan.to));
         } else {
           newLabel = plan.file;
           newResult = compileFile(plan.file);

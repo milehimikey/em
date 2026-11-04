@@ -5,7 +5,8 @@ import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { compile, CompileOptions, CompileResult } from "./pipeline.js";
+import { CompileOptions, CompileResult, compileModelFile, compileModelText } from "./pipeline.js";
+import { ModelLoadError, SourceReader, attributeDiagnosticFiles, diskReader } from "./model/loadModel.js";
 import { isMainModule } from "./util/isMainModule.js";
 import { localIsoDate } from "./util/localDate.js";
 import { NormalizedModel } from "./model/model.js";
@@ -21,7 +22,7 @@ import { resolveWatchStoryline, storylineFileFor, storylineVariants } from "./cl
 import { resolveSliceKey } from "./model/resolveSlice.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
-import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader } from "./model/validate.js";
+import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader, formatDiagnosticWithFile } from "./model/validate.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
 import { buildDocJsonExport } from "./emit/docJson.js";
 import { generateContract, runApiCheck, formatApiCheckText } from "./cli/api.js";
@@ -193,6 +194,7 @@ import {
 } from "./cli/ciInit.js";
 import { UpgradeContext, resolveRepoRoot, detectUpgrade, applyUpgrade, checkUpgrade } from "./cli/upgrade.js";
 import { buildStorylineSuggestion } from "./cli/storylineSuggest.js";
+import { planStorylineSplit } from "./cli/storylineSplit.js";
 import { buildUpgradeJson } from "./emit/upgradeJson.js";
 import { isOlder } from "./util/semver.js";
 import { RULES, RuleCode } from "./model/rules.js";
@@ -612,7 +614,10 @@ program
           oldDoc: (key) => readSliceDoc(dirname(plan.oldFile), key),
           newDoc: (key) => readSliceDoc(dirname(plan.newFile), key),
         };
-        runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode, opts.json, lineage);
+        runDiff(oldSource, plan.oldFile, newSource, plan.newFile, opts.exitCode, opts.json, lineage, {
+          old: diskReader(dirname(plan.oldFile)),
+          new: diskReader(dirname(plan.newFile)),
+        });
         return;
       }
       const oldSource = readAtRevision(plan.file, plan.from);
@@ -624,7 +629,10 @@ program
         newDoc: (key) =>
           plan.to ? resolveDocAtRevision(plan.file, key, plan.to) : readSliceDoc(dirname(plan.file), key),
       };
-      runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json, lineage);
+      runDiff(oldSource, oldLabel, newSource, newLabel, opts.exitCode, opts.json, lineage, {
+        old: gitReader(plan.file, plan.from),
+        new: plan.to ? gitReader(plan.file, plan.to) : diskReader(dirname(plan.file)),
+      });
     },
   );
 
@@ -660,7 +668,7 @@ program
       let anyErrors = false;
       for (const file of files) {
         const source = readFileOrExit(file);
-        const result = compileSource(source, file);
+        const result = compileSource(source, file, diskReader(dirname(file)));
         printDiagnosticsFor(file, result.diagnostics);
         if (hasErrors(result.diagnostics)) anyErrors = true;
         inputs.push({ label: file, model: result.model });
@@ -805,7 +813,7 @@ slice
     // Resolve (never write anything yet) BEFORE touching the doc file, so a --wire failure
     // (no matching slice, ambiguous primary element, already wired) leaves nothing written at
     // all rather than a doc with no wiring and a non-zero exit.
-    let wired: { content: string; sliceName: string; elementName: string } | null = null;
+    let wired: { content: string; sliceName: string; elementName: string; target: string } | null = null;
     // MIL-266: with a model in hand (--wire), the doc's generated regions are filled from it;
     // without one they carry the template's placeholders until `em slice sync` fills them.
     let regions: GeneratedRegion[] | undefined;
@@ -817,12 +825,17 @@ slice
         console.error(`em slice new --wire: not wiring — fix the errors in ${opts.wire} above`);
         process.exit(1);
       }
-      const result = wireSliceNote(source, model, refs, key, opts.pattern, path);
+      // GH #421: a slice declared in a storyline model file is wired in THAT file (its line
+      // numbers count there); a root slice in the root as before.
+      const sliceFile = model.slices[refs.sliceKeys.indexOf(key)]?.file;
+      const wireTarget = sliceFile ? resolve(dirname(opts.wire), sliceFile) : opts.wire;
+      const wireSource = sliceFile ? readFileSync(wireTarget, "utf8") : source;
+      const result = wireSliceNote(wireSource, model, refs, key, opts.pattern, path);
       if (!result.ok) {
         console.error(`em slice new --wire: ${result.message}`);
         process.exit(1);
       }
-      wired = result;
+      wired = { ...result, target: wireTarget };
       regions = buildSliceRegions(model, [refs.sliceKeys.indexOf(key)]);
       const sliceEvents = model.slices[refs.sliceKeys.indexOf(key)].elements.filter((e) => e.kind === "event");
       alternatives = sliceEvents.filter((e) => e.alternativeGroup !== undefined).map((e) => e.name);
@@ -836,8 +849,8 @@ slice
     console.log(`wrote ${path}`);
 
     if (wired) {
-      writeFileSync(opts.wire!, wired.content);
-      console.log(`wired ${path} onto ${wired.elementName} in slice "${wired.sliceName}" (${opts.wire})`);
+      writeFileSync(wired.target, wired.content);
+      console.log(`wired ${path} onto ${wired.elementName} in slice "${wired.sliceName}" (${wired.target})`);
     } else {
       console.log(`add this to the slice's primary element in the .em file:`);
       console.log(`  note "${path}"`);
@@ -1822,8 +1835,8 @@ state
     }
     const phases = sortUsagePhases(rawPhases);
 
-    const { model, diagnostics, refs, source } = compileFile(file);
-    const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
+    const { model, diagnostics, refs, hashSource } = compileFile(file);
+    const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, hashSource);
     const categorySet = new Set(allDiagnostics.map((d) => RULES[d.code as RuleCode].usageCategory));
     const categories = categorySet.size > 0 ? [...categorySet].sort() : ["none"];
 
@@ -1872,14 +1885,14 @@ modelVersionCmd
     const today = localIsoDate();
     const on = opts.on ?? today;
 
-    const { model: compiledModel, refs, diagnostics, source } = compileFile(file);
+    const { model: compiledModel, refs, diagnostics, hashSource } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
       console.error(`em model version bump: "${file}" has errors — fix them first`);
       process.exit(1);
     }
 
-    const result = runModelVersionBump(baseDir, basename(file), compiledModel, refs, source, opts.by, on, GENERATOR_VERSION, opts.force === true);
+    const result = runModelVersionBump(baseDir, basename(file), compiledModel, refs, hashSource, opts.by, on, GENERATOR_VERSION, opts.force === true);
     if (!result.ok) {
       console.error(`em model version bump: ${result.message}`);
       process.exit(1);
@@ -2253,7 +2266,17 @@ program
     // the .em file. Watching the directory (not a glob — chokidar 4 has none)
     // still fires for docs authored after watch starts; the filter keeps it to .md.
     const slicesDir = join(dirname(file), "slices");
-    watchFile([file, slicesDir], build, 80, (p) => p === file || p.endsWith(".md"));
+    // GH #421: a storyline model file is part of the model — watch each one the root declares
+    // (resolved once at start; a storyline added to the root mid-session needs a restart).
+    const storylineFiles = (() => {
+      try {
+        return compileModelFile(file).files.map((f) => resolve(dirname(file), f));
+      } catch {
+        return [] as string[];
+      }
+    })();
+    const watched = new Set([resolve(file), ...storylineFiles]);
+    watchFile([file, ...storylineFiles, slicesDir], build, 80, (p) => watched.has(resolve(p)) || p.endsWith(".md"));
     console.log(`watching ${file} … (ctrl-c to stop)`);
     if (!opts.serve) console.log("tip: add --serve for the live browser view");
   });
@@ -2362,9 +2385,9 @@ program
         console.error("em validate: --shape cannot be combined with --slice-ready, --list-*, --fail-on-issues or --check-signed-bodies");
         process.exit(1);
       }
-      const { model, diagnostics, refs, source } = compileFile(file);
+      const { model, diagnostics, refs, source, hashSource } = compileFile(file);
       if (opts.shape) {
-        const all = computeAllDiagnostics(file, model, refs, diagnostics, source);
+        const all = computeAllDiagnostics(file, model, refs, diagnostics, hashSource);
         const report = buildShapeReport(all, opts.waiveFile ? readWaiveFile(opts.waiveFile) : []);
         const modelErrors = all.filter((d) => d.severity === "error").length;
         for (const k of report.staleWaivers) console.error(`note: waiver "${k}" (${opts.waiveFile}) excuses no shape finding — ignored`);
@@ -2375,7 +2398,7 @@ program
       // GH #257: an opt-in addition to the unconditional set, so --json, the text report and the
       // exit code all see it the same way every other diagnostic is seen.
       const allDiagnostics = [
-        ...computeAllDiagnostics(file, model, refs, diagnostics, source),
+        ...computeAllDiagnostics(file, model, refs, diagnostics, hashSource),
         ...(opts.checkSignedBodies ? validateSignedBodies(model, refs, dirname(file)) : []),
       ];
       // GH #293: --strict promotes advisory lints to errors (the --slice-ready branch below does
@@ -2801,13 +2824,13 @@ program
         process.exit(1);
       }
 
-      const compiled: Array<{ file: string; model: NormalizedModel; refs: RefsResult; source: string }> = [];
+      const compiled: Array<{ file: string; model: NormalizedModel; refs: RefsResult; source: string; hashSource: string }> = [];
       let anyErrors = false;
       for (const file of files) {
-        const { model, refs, diagnostics, source } = compileFile(file);
+        const { model, refs, diagnostics, source, hashSource } = compileFile(file);
         printDiagnosticsFor(file, diagnostics);
         if (hasErrors(diagnostics)) anyErrors = true;
-        compiled.push({ file, model, refs, source });
+        compiled.push({ file, model, refs, source, hashSource });
       }
       if (anyErrors) {
         console.error("em status: not reporting status — fix the errors above");
@@ -2867,7 +2890,7 @@ program
         return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
       });
       // MIL-218: one model-version entry per input file.
-      const modelVersion = compiled.map(({ file, model, refs, source }) => resolveModelVersionStatusEntry(file, model, refs, source));
+      const modelVersion = compiled.map(({ file, model, refs, hashSource }) => resolveModelVersionStatusEntry(file, model, refs, hashSource));
       // MIL-219: one em-version entry per input file whose state file resolved.
       const emVersion = compiled
         .map(({ file }) => resolveEmVersionStatusEntry(file, PKG_VERSION))
@@ -3212,8 +3235,8 @@ function resolveSliceOrExit(command: string, model: NormalizedModel, refs: RefsR
 /** Compile `file` with the full `em validate` diagnostic set — what `engagement plan` needs for
  *  each slice's `--slice-ready` verdict (R34). */
 function engagementModelInput(file: string): EngagementModelInput {
-  const { model, refs, diagnostics, source } = compileFile(file);
-  const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, source);
+  const { model, refs, diagnostics, source, hashSource } = compileFile(file);
+  const allDiagnostics = computeAllDiagnostics(file, model, refs, diagnostics, hashSource);
   return { file, model, refs, baseDir: dirname(file), contract: { file, source, diagnostics }, allDiagnostics };
 }
 
@@ -3974,7 +3997,59 @@ ci.command("init")
     }
   });
 
-const storylineCmd = program.command("storyline").description("storyline blocks (GH #277): advisory helpers for adopting them");
+const storylineCmd = program.command("storyline").description("storylines (GH #277, #421): adopt storyline blocks, split them into storyline model files");
+
+storylineCmd
+  .command("split")
+  .description(
+    "move each inline `storyline \"X\" { … }` block into its own storyline model file <slug>/<slug>.em " +
+      "(a `storyline \"X\" [source]` header, then the block's slices) and leave the one-line declaration " +
+      "`storyline \"X\" [after \"Y\"]` in the root (GH #421). Slice docs stay under the root's slices/. " +
+      "A storyline declared in several blocks is left alone (merge them first)",
+  )
+  .argument("<file>", "the root .em model")
+  .option("--storyline <name>", "split only this storyline")
+  .option("--dry-run", "print what would be written without touching anything")
+  .option("-f, --force", "overwrite a storyline model file that already exists")
+  .action((file: string, opts: { storyline?: string; dryRun?: boolean; force?: boolean }) => {
+    const { model, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
+    if (hasErrors(diagnostics)) {
+      console.error("em storyline split: not splitting — fix the errors above");
+      process.exit(1);
+    }
+    if (opts.storyline !== undefined && !(model.storylines ?? []).some((s) => s.name.trim().toLowerCase() === opts.storyline!.trim().toLowerCase())) {
+      console.error(`em storyline split: no storyline "${opts.storyline}" (declared: ${(model.storylines ?? []).map((s) => `"${s.name}"`).join(", ") || "none"})`);
+      process.exit(1);
+    }
+    const plan = planStorylineSplit(model, source, opts.storyline);
+    for (const s of plan.skipped) console.log(`skip "${s.storyline}" — ${s.reason}`);
+    if (plan.files.length === 0) {
+      console.log("nothing to split");
+      return;
+    }
+    const rootDir = dirname(file);
+    for (const f of plan.files) {
+      const abs = resolve(rootDir, f.path);
+      if (existsSync(abs) && !opts.force) {
+        console.error(`em storyline split: ${f.path} already exists (use --force to overwrite)`);
+        process.exit(1);
+      }
+    }
+    if (opts.dryRun) {
+      for (const f of plan.files) console.log(`would write ${f.path} (storyline "${f.storyline}", ${f.content.split(/\r?\n/).filter((l) => /^slice\b/.test(l)).length} slice(s))`);
+      console.log(`would rewrite ${file}`);
+      return;
+    }
+    for (const f of plan.files) {
+      const abs = resolve(rootDir, f.path);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, f.content, "utf8");
+      console.log(`wrote ${f.path} (storyline "${f.storyline}")`);
+    }
+    writeFileSync(file, plan.rootText, "utf8");
+    console.log(`rewrote ${file}: ${plan.files.length} storyline declaration(s) now point at their files`);
+  });
 
 storylineCmd
   .command("suggest")
@@ -4118,8 +4193,8 @@ program
  *  stands, so an estate sees how many advisory shape findings it carries. Never writes a waive file:
  *  baselining shapes you accept is a decision (`--waive-file`, and a `shape-accepted:` Decisions-log bullet). */
 function printUpgradeShapeSection(file: string): void {
-  const { model, diagnostics, refs, source } = compileFile(file);
-  const all = computeAllDiagnostics(file, model, refs, diagnostics, source);
+  const { model, diagnostics, refs, hashSource } = compileFile(file);
+  const all = computeAllDiagnostics(file, model, refs, diagnostics, hashSource);
   const report = buildShapeReport(all, []);
   console.log("");
   console.log("Shape (em validate --shape, advisory):");
@@ -4154,20 +4229,25 @@ function compileFile(
   // One-shot commands keep the exit-with-message behavior.
   { survive = false } = {},
 ) {
-  let source: string;
-  try {
-    source = readFileSync(file, "utf8");
-  } catch {
+  if (!existsSync(file)) {
     if (survive) throw new Error(`cannot read ${file}`);
     console.error(`cannot read ${file}`);
     process.exit(1);
   }
   try {
-    return { ...compile(source, opts), source };
+    // GH #421: the root plus every storyline model file it declares, compiled as one model.
+    // `source` is the root text (line-based edits of root entities), `files`/`sources` the
+    // storyline files, `hashSource` what a model-level hash covers.
+    return compileModelFile(file, opts);
   } catch (e) {
     if (e instanceof ParseError) {
       if (survive) throw new Error(`parse error in ${file} ${e.message}`);
       console.error(`parse error in ${file} ${e.message}`);
+      process.exit(1);
+    }
+    if (e instanceof ModelLoadError) {
+      if (survive) throw new Error(e.message);
+      console.error(e.message);
       process.exit(1);
     }
     throw e;
@@ -4186,7 +4266,8 @@ function compileFile(
  *  report, since its whole job is logging which categories fired. `source` is the `.em` file's
  *  own text — only `validateModelVersionStale` reads it (the modelHash comparison). */
 function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsResult, diagnostics: Diagnostic[], source: string): Diagnostic[] {
-  return [
+  // GH #421: the fs-aware rules below point at elements too — give each its storyline file.
+  return attributeDiagnosticFiles(model, refs, [
     ...diagnostics,
     ...validateLineage(model, refs, dirname(file)),
     ...validateFrontmatterCoherence(model, refs, dirname(file)),
@@ -4195,7 +4276,7 @@ function computeAllDiagnostics(file: string, model: NormalizedModel, refs: RefsR
     ...validateOrphanedSliceDocs(model, refs, dirname(file)),
     ...validateModelVersionStale(model, refs, dirname(file), source),
     ...validateInvariants(model, refs, dirname(file)),
-  ];
+  ]);
 }
 
 /** Read a file's text, or exit with a clear error — shared by `em diff` (both forms) and
@@ -4210,16 +4291,31 @@ function readFileOrExit(file: string): string {
 }
 
 /** Parse+normalize source text for `em diff`, exiting with a labeled parse error on failure. */
-function compileSource(source: string, label: string): CompileResult {
+function compileSource(source: string, label: string, read: SourceReader): CompileResult {
   try {
-    return compile(source);
+    // GH #421: a split model's storyline files come through `read` (disk, or git at a revision).
+    return compileModelText(source, read, label);
   } catch (e) {
     if (e instanceof ParseError) {
       console.error(`parse error in ${label} ${e.message}`);
       process.exit(1);
     }
+    if (e instanceof ModelLoadError) {
+      console.error(e.message);
+      process.exit(1);
+    }
     throw e;
   }
+}
+
+/** GH #421: a reader for a text with no file behind it — a split root cannot be compiled from text alone. */
+const noStorylineFiles: SourceReader = (rel) => {
+  throw new ModelLoadError(`storyline model file ${rel} is not available for this text`);
+};
+
+/** GH #421: storyline model files of `file` as of git revision `rev`. */
+function gitReader(file: string, rev: string): SourceReader {
+  return (rel) => readAtRevision(join(dirname(file), rel), rev);
 }
 
 /** Resolve `file`'s content at a git revision, exiting with a clear error on any git failure. */
@@ -4241,9 +4337,11 @@ function runDiff(
   exitCode?: boolean,
   json?: boolean,
   lineage?: LineageResolvers,
+  // GH #421: how each side's storyline model files are read (disk, or git at a revision).
+  readers: { old: SourceReader; new: SourceReader } = { old: noStorylineFiles, new: noStorylineFiles },
 ): void {
-  const oldResult = compileSource(oldSource, oldLabel);
-  const newResult = compileSource(newSource, newLabel);
+  const oldResult = compileSource(oldSource, oldLabel, readers.old);
+  const newResult = compileSource(newSource, newLabel, readers.new);
 
   printDiagnostics(oldResult.diagnostics);
   printDiagnostics(newResult.diagnostics);
@@ -4341,7 +4439,7 @@ function newDiagnostics(all: Diagnostic[], already: Diagnostic[]): Diagnostic[] 
 function printDiagnostics(diags: Diagnostic[]): void {
   if (diags.length === 0) return;
   for (const d of diags) {
-    const line = formatDiagnostic(d);
+    const line = formatDiagnosticWithFile(d);
     if (d.severity === "error") console.error(line);
     else console.warn(line);
   }

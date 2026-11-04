@@ -34,6 +34,7 @@ import {
   TypeDeclNode,
 } from "./ast.js";
 import { autoContinuationName, isContinuationShaped, liftedAgainViews } from "./againSugar.js";
+import { kebabSlug } from "../util/slug.js";
 import {
   decodeQuoted,
   hasUnterminatedQuote,
@@ -330,12 +331,38 @@ export function parse(source: string): ModelNode {
     switch (keyword) {
       case "storyline": {
         const open = lastIndexOfUnquoted(remainder, "{");
-        if (open < 0) throw new ParseError("storyline must open a block with '{'", lineNo);
+        if (open < 0) {
+          // GH #421: no body — a storyline MODEL declaration. Its slices live in their own file
+          // (`in "path.em"`, default `<slug>/<slug>.em`), read by model/loadModel.ts and spliced
+          // in at this position of the timeline. Only the root declares storylines this way.
+          const node = parseStorylineHeader(remainder.trim(), lineNo);
+          const dup = model.storylines.find((s) => s.name.trim().toLowerCase() === node.name.trim().toLowerCase());
+          if (dup) {
+            throw new ParseError(
+              `storyline "${node.name}" is already declared at line ${dup.line} — a storyline model file is declared once; ` +
+                `a continuation block cannot reopen it`,
+              lineNo,
+            );
+          }
+          node.external = true;
+          node.file = node.file ?? `${kebabSlug(node.name)}/${kebabSlug(node.name)}.em`;
+          node.insertAt = model.slices.length;
+          model.storylines.push(node);
+          break;
+        }
         if (remainder.slice(open + 1).trim().length > 0) {
           throw new ParseError("a storyline's '{' must end its line — declare slices on the lines below", lineNo);
         }
         const node = parseStorylineHeader(remainder.slice(0, open).trim(), lineNo);
+        if (node.file !== undefined) throw new ParseError("`in \"path.em\"` belongs on a storyline declaration without a `{ … }` body", lineNo);
         const dup = model.storylines.find((s) => s.name.trim().toLowerCase() === node.name.trim().toLowerCase());
+        if (dup?.external) {
+          throw new ParseError(
+            `storyline "${dup.name}" is a storyline model (declared at line ${dup.line}, slices in ${dup.file}) — ` +
+              `its slices belong in that file, not in a block here`,
+            lineNo,
+          );
+        }
         if (dup) {
           // A second block with an already-declared name CONTINUES that storyline (its slices
           // join it, file order preserved). `source`/`after` belong to the first block: a later
@@ -534,6 +561,13 @@ function parseStorylineHeader(header: string, line: number): StorylineNode {
   if (afterClause) {
     node.after = afterClause.value;
     rest = afterClause.rest;
+  }
+  // GH #421: `in "path.em"` — where a storyline model's slices live (relative to the root).
+  const inClause = extractQuotedClause(rest, "in", line);
+  if (inClause) {
+    if (!inClause.value.trim()) throw new ParseError("`in` needs a non-empty file path", line);
+    node.file = inClause.value.trim();
+    rest = inClause.rest;
   }
   if (quotedName) {
     if (rest.length > 0) throw new ParseError(`unrecognized text in storyline header: '${rest}'`, line);
@@ -1541,4 +1575,45 @@ function splitFirstWord(line: string): string[] {
 
 function pushUnique(arr: string[], v: string): void {
   if (v && !arr.includes(v)) arr.push(v);
+}
+/** What a storyline model file holds (GH #421): its `storyline "Name" [source "url"]` header and
+ *  the slices declared under it, in order. */
+export interface StorylineFile {
+  header: StorylineNode;
+  slices: SliceNode[];
+}
+
+/**
+ * Parse a storyline model file (GH #421): the first significant line is a `storyline "Name"
+ * [source "url"]` header with no `{`, and everything after it is slice blocks at the top level
+ * (the file IS the block). `after` belongs to the root declaration — the flow between stories
+ * is the root's — so it is a parse error here; so is any declaration other than a slice
+ * (personas, contexts and types are the root's vocabulary). Implemented by wrapping the file in
+ * the inline block grammar (` {` on the header line, `}` after the last line) and running the
+ * ordinary parser, so slices parse identically either way and keep their own line numbers.
+ */
+export function parseStorylineFile(source: string): StorylineFile {
+  const lines = source.split(/\r?\n/);
+  const headerIdx = lines.findIndex((l) => stripComment(l).trim().length > 0);
+  if (headerIdx < 0) throw new ParseError("a storyline model file starts with a `storyline \"Name\"` header", 1);
+  const header = stripComment(lines[headerIdx]).trim();
+  const m = /^storyline\b/.exec(header);
+  if (!m) throw new ParseError("a storyline model file starts with a `storyline \"Name\"` header", headerIdx + 1);
+  if (lastIndexOfUnquoted(header, "{") >= 0) {
+    throw new ParseError("a storyline model file's header takes no `{` — the file is the block", headerIdx + 1);
+  }
+  const node = parseStorylineHeader(header.slice(m[0].length).trim(), headerIdx + 1);
+  if (node.after !== undefined) {
+    throw new ParseError("`after` belongs on the root model's `storyline` declaration, not in the storyline file", headerIdx + 1);
+  }
+  if (node.file !== undefined) throw new ParseError("`in` belongs on the root model's `storyline` declaration, not in the storyline file", headerIdx + 1);
+  const wrapped = [...lines];
+  wrapped[headerIdx] = `${lines[headerIdx]} {`;
+  wrapped.push("}");
+  const parsed = parse(wrapped.join("\n"));
+  if (parsed.nameDeclared || parsed.personas.length > 0 || parsed.contexts.length > 0 || parsed.types.length > 0 || parsed.arrows.length > 0) {
+    throw new ParseError("a storyline model file holds only its header and slices — personas, contexts, types and arrows are declared in the root model", headerIdx + 1);
+  }
+  const st = parsed.storylines[0];
+  return { header: { ...st, name: node.name, source: node.source }, slices: parsed.slices };
 }

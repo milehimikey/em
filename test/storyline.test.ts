@@ -124,7 +124,8 @@ describe("parser: storyline blocks", () => {
     expect(() => parse(`storyline "A" {\n storyline "B" {\n}\n}\n`)).toThrow(/do not nest/);
     expect(() => parse(`storyline "A" {\n persona X\n}\n`)).toThrow(/not valid inside a storyline/);
     expect(() => parse(`storyline "A" {\n slice "x" {\n }\n`)).toThrow(/missing a closing/);
-    expect(() => parse(`storyline "A"\n`)).toThrow(/must open a block/);
+    // GH #421: a `storyline` line without a body is a storyline MODEL declaration, not an error
+    expect(parse(`storyline "A"\n`).storylines[0]).toMatchObject({ name: "A", external: true, file: "a/a.em" });
     expect(() => parse(`storyline "A" after "" {\n}\n`)).toThrow(/non-empty/);
   });
 });
@@ -278,9 +279,9 @@ describe("export, query and slice index", () => {
     expect(doc.schemaVersion).toBe("1.19");
     expect(doc.model.slices.map((s) => s.storyline)).toEqual(["Main", "Main", "Other", "Other", "Follow", "Follow"]);
     expect(doc.model.storylines).toEqual([
-      { name: "Main", source: "docs/stock.md#one", after: null, sliceKeys: ["receive", "catalog"] },
-      { name: "Other", source: null, after: null, sliceKeys: ["adjust", "recount"] },
-      { name: "Follow", source: null, after: "Main", sliceKeys: ["watch", "alerts"] },
+      { name: "Main", source: "docs/stock.md#one", after: null, sliceKeys: ["receive", "catalog"], file: null },
+      { name: "Other", source: null, after: null, sliceKeys: ["adjust", "recount"], file: null },
+      { name: "Follow", source: null, after: "Main", sliceKeys: ["watch", "alerts"], file: null },
     ]);
   });
 

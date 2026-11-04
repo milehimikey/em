@@ -92,6 +92,8 @@ export interface TagClause {
 }
 
 export interface ElementNode {
+  /** GH #421: see `SliceNode.file`. Set by the loader. */
+  file?: string;
   kind: ElementKind;
   name: string;
   /** `event A | B @Ctx` (GH #278), parse-time only: the names after the first alternative,
@@ -172,6 +174,10 @@ export interface InvariantDecl {
 
 export interface SliceNode {
   name: string;
+  /** GH #421: the storyline model file this slice was read from (posix path relative to the
+   *  root model's directory); undefined for a slice declared in the root file itself. Set by
+   *  the loader, never by the parser. */
+  file?: string;
   /** `source "url"` — link to the ticket/conversation this slice traces back to. */
   source?: string;
   /** The enclosing `storyline "Name" { … }` block's name, when the slice is declared inside one
@@ -192,6 +198,14 @@ export interface StorylineNode {
    *  slice on the timeline. The name is as written; unknown/cyclic references are `em validate`
    *  errors, not parse errors. */
   after?: string;
+  /** GH #421 (storyline models): a declaration with no `{ … }` body — `storyline "Name" [after
+   *  "Other"] [in "path.em"]` — whose slices live in their own file. `file` is the path as
+   *  written (or the default `<kebab-slug>/<kebab-slug>.em`), relative to the root model's
+   *  directory; the loader (model/loadModel.ts) reads it. `insertAt` is the position among the
+   *  root's slices where the declaration sits, so the file's slices keep that timeline position. */
+  external?: boolean;
+  file?: string;
+  insertAt?: number;
   /** Names of the slices declared inside the block, in order. */
   sliceNames: string[];
   line: number;
