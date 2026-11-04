@@ -3,11 +3,10 @@
 //
 // Graphviz lays the storyline row out as one filled box per column belonging to a storyline
 // (emit/dot.ts). This reads those boxes' rectangles back out and draws one continuous labelled
-// band per run of columns — bridging the inter-column gaps — plus, for an `em render
-// --storyline` subset, dims the stub columns (elements the storyline reads from outside it).
+// band per run of columns — bridging the inter-column gaps.
 
 import { NormalizedModel } from "../model/model.js";
-import { Grid, STORYLINE_KEY, headerCellId, placeholderId } from "../layout/grid.js";
+import { Grid, STORYLINE_KEY, placeholderId } from "../layout/grid.js";
 import { storylineStyle } from "../emit/theme.js";
 import { storylineRuns } from "../model/storylines.js";
 import { Rect } from "./svgGeometry.js";
@@ -62,25 +61,4 @@ export function buildStorylineBands(model: NormalizedModel, grid: Grid, rects: M
     );
   }
   return parts.join("");
-}
-
-const STUB_OPACITY = 0.4;
-
-/** Dim every node of the stub columns (`Slice.stub`) — the header cell and each element — by
- *  adding an opacity attribute to its node group. */
-export function dimStubColumns(svg: string, model: NormalizedModel): string {
-  let out = svg;
-  model.slices.forEach((slice, c) => {
-    if (!slice.stub) return;
-    const ids = [headerCellId(c), ...slice.elements.map((e) => e.id)];
-    for (const id of ids) {
-      const re = new RegExp(`(<g\\b[^>]*class="node")([^>]*>\\s*<title>${escapeRe(id)}</title>)`);
-      out = out.replace(re, `$1 opacity="${STUB_OPACITY}"$2`);
-    }
-  });
-  return out;
-}
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

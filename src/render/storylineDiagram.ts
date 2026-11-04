@@ -2,19 +2,17 @@
 // Renders ONE storyline alone (`em render --storyline <name>`, GH #277): a subset of the
 // normal timeline's columns, not a redrawn pattern shape (that is `--slice`).
 //
-// The columns are the storyline's own slices, in order, preceded by dimmed STUB columns: every
-// element a slice of the storyline reads from outside it (so each arrow still has a source), and
-// for a storyline declared `after "<other>"` the referenced storyline's end state — the latest
-// earlier instance of each read model the storyline continues with `again`. A stub column holds
-// only the referenced elements of its origin slice, never the whole slice, so the picture can
-// never balloon into the rest of the model. Like render/sliceDiagram.ts this builds a small
-// synthetic NormalizedModel from shallow clones of the real Elements (same ids, fields, notes)
-// and runs it through the unmodified layout()/emitDot()/composeSvg() pipeline.
+// The columns are the storyline's own slices and nothing else (owner ruling 2026-11-03: a
+// storyline render shows only what is in the storyline — no dimmed "stub" columns borrowed from
+// the slices it reads from outside). An element the storyline reads from another storyline has
+// no box here, so its arrow is not drawn; the storyline map carries that flow between stories.
+// Like render/sliceDiagram.ts this builds a small synthetic NormalizedModel from shallow clones
+// of the real Elements (same ids, fields, notes) and runs it through the unmodified
+// layout()/emitDot()/composeSvg() pipeline.
 
 import { AUTOMATION_KINDS } from "../parser/ast.js";
 import { Element, NormalizedModel, Slice, Storyline, normalizeName } from "../model/model.js";
-import { semanticEdges } from "../model/edges.js";
-import { findStoryline, latestOnTimeline, composedRank } from "../model/storylines.js";
+import { findStoryline, composedRank } from "../model/storylines.js";
 import { Grid, LayoutOptions, layout } from "../layout/grid.js";
 import { emitDot } from "../emit/dot.js";
 
@@ -46,36 +44,24 @@ export function buildStorylineDiagram(
   storyline: Storyline,
   opts: LayoutOptions = {},
 ): StorylineDiagramResult {
-  const own = [...storyline.sliceIndexes].sort((a, b) => a - b);
-  const ownSet = new Set(own);
-  const stubs = collectStubs(model, storyline, ownSet);
-
-  // Left to right: the storyline's own slices and every stub column in ONE sequence ordered on
-  // the composed timeline (model/storylines.ts's relationOnTimeline — the ordering validation
-  // uses), file order as the fallback. The storylines this one comes `after` precede it on that
-  // timeline, so their end-state stubs land on the left naturally, while a stub from a slice
-  // between two blocks of this storyline is interleaved with its own columns: no arrow in the
-  // subset points right-to-left.
-  const columns = [
-    ...own.map((i) => ({ i, stub: false })),
-    ...[...stubs.keys()].map((i) => ({ i, stub: true })),
-  ].sort((x, y) => {
-    return composedRank(model, x.i) - composedRank(model, y.i);
-  });
+  // Left to right on the composed timeline (model/storylines.ts's relationOnTimeline — the
+  // ordering validation uses), file order as the fallback: a storyline's blocks stay in the
+  // order the whole model reads them.
+  const own = [...storyline.sliceIndexes].sort((a, b) => composedRank(model, a) - composedRank(model, b));
 
   const slices: Slice[] = [];
   const elements: Element[] = [];
   const byId = new Map<string, Element>();
   const byName = new Map<string, Element[]>();
-  const addColumn = (origin: Slice, els: Element[], isStub: boolean): void => {
+  for (const i of own) {
+    const origin = model.slices[i];
     const index = slices.length;
-    const cloned = els.map((el): Element => ({ ...el, sliceIndex: index }));
+    const cloned = origin.elements.map((el): Element => ({ ...el, sliceIndex: index }));
     slices.push({
       name: origin.name,
       index,
       source: origin.source,
-      storyline: isStub ? undefined : storyline.name,
-      stub: isStub || undefined,
+      storyline: storyline.name,
       elements: cloned,
       line: origin.line,
     });
@@ -87,9 +73,6 @@ export function buildStorylineDiagram(
       if (bucket) bucket.push(el);
       else byName.set(key, [el]);
     }
-  };
-  for (const { i, stub } of columns) {
-    addColumn(model.slices[i], stub ? [...stubs.get(i)!.values()] : model.slices[i].elements, stub);
   }
 
   const dedupe = (values: (string | undefined)[]): string[] => [...new Set(values.filter((v): v is string => !!v))];
@@ -105,7 +88,7 @@ export function buildStorylineDiagram(
         name: storyline.name,
         source: storyline.source,
         after: storyline.after,
-        sliceIndexes: slices.filter((s) => !s.stub).map((s) => s.index),
+        sliceIndexes: slices.map((s) => s.index),
         line: storyline.line,
       },
     ],
@@ -119,35 +102,4 @@ export function buildStorylineDiagram(
   };
   const grid = layout(synthetic, opts);
   return { model: synthetic, grid, dot: emitDot(synthetic, grid) };
-}
-
-/** origin slice index -> the elements of that slice the storyline needs as stubs. */
-function collectStubs(model: NormalizedModel, storyline: Storyline, ownSet: Set<number>): Map<number, Map<string, Element>> {
-  const stubs = new Map<number, Map<string, Element>>();
-  const add = (el: Element | undefined): void => {
-    if (!el || ownSet.has(el.sliceIndex)) return;
-    let bucket = stubs.get(el.sliceIndex);
-    if (!bucket) stubs.set(el.sliceIndex, (bucket = new Map()));
-    bucket.set(el.id, el);
-  };
-  for (const edge of semanticEdges(model)) {
-    const from = model.byId.get(edge.from);
-    const to = model.byId.get(edge.to);
-    if (!from || !to) continue;
-    if (edge.source === "loops-to") {
-      if (ownSet.has(from.sliceIndex)) add(to); // the earlier view a loop re-feeds
-    } else if (ownSet.has(to.sliceIndex)) {
-      add(from); // something the storyline reads
-    }
-  }
-  // The referenced storyline's end state: the latest earlier instance of every read model this
-  // storyline continues with `again`.
-  for (const i of storyline.sliceIndexes) {
-    for (const el of model.slices[i].elements) {
-      if (el.kind !== "view" || !el.again) continue;
-      const earlier = model.elements.filter((x) => x.kind === "view" && x.logicalId === el.logicalId && x.id !== el.id);
-      add(latestOnTimeline(model, earlier, el.sliceIndex, true));
-    }
-  }
-  return stubs;
 }
