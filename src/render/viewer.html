@@ -38,6 +38,15 @@
   the flyout. Like review state, which slice's doc is open lives outside the
   load pipeline, refreshed (or closed, if the slice vanished) after every
   reload rather than reset by one.
+
+  Storyline picker (GH #309, deferred from #277): whenever the model declares
+  storylines, `em watch --serve` writes the full model plus every storyline's own
+  `em render --storyline` subset side by side (src/cli.ts's watch action), each
+  carrying the same `<metadata id="em-storylines">` list of {name, file, current}
+  (src/render/storylinePicker.ts). The picker reads that list and lets a facilitator
+  switch which one is loaded — a plain navigation to this same page with a new `?svg=`,
+  so it needs no new fetch/reload machinery of its own. `--storyline <name>` just picks
+  which file is loaded first; the picker works the same with or without it.
 -->
 <html lang="en">
 <head>
@@ -66,6 +75,12 @@
     .btn:hover { background: #4b5763; }
     .btn:disabled { opacity: .4; cursor: default; }
     .btn.active { background: #2f6fed; }
+    #storylinePicker {
+      background: #3b4754; color: #fff; border: 0; border-radius: 4px;
+      padding: .3rem .5rem; font-size: 13px; cursor: pointer; font-family: inherit;
+    }
+    #storylinePicker[hidden] { display: none; }
+    #storylinePicker option { color: #000; }
     #errorBanner {
       display: flex; align-items: center; gap: .6rem; flex: none;
       padding: .45rem .9rem; background: #8c2f28; color: #fff; font-size: 13px;
@@ -179,6 +194,7 @@
     <span class="dot" id="dot"></span>
     <span>Event Model — live</span>
     <button class="btn" id="reviewToggle" title="Step through one slice at a time">Review mode</button>
+    <select id="storylinePicker" title="Filter the live view to one storyline" hidden></select>
     <span class="zoom">
       <button class="btn" id="zoomOut" aria-label="Zoom out" title="Zoom out (-)">−</button>
       <span id="zoomPct">100%</span>
@@ -222,6 +238,7 @@
     const banner = document.getElementById("errorBanner");
     const bannerText = document.getElementById("errorText");
     const reviewToggle = document.getElementById("reviewToggle");
+    const storylinePicker = document.getElementById("storylinePicker");
     const storyboard = document.getElementById("storyboard");
     const filmstrip = document.getElementById("filmstrip");
     const prevBtn = document.getElementById("prevSlice");
@@ -238,6 +255,11 @@
     let activeSlice = null; // slice index, or null for "show all"
     let slices = []; // [{index, name, x0, x1, docHtml}], from this load's <metadata>
     let rowLabels = null; // {x0, x1} | null, the swimlane label column's range
+
+    // --- storyline picker (GH #309): outside the load pipeline isn't needed here — unlike
+    // review/doc-flyout state, switching storylines navigates to a new page (see below), so
+    // there's nothing to preserve across a reload. ---
+    let storylineVariants = []; // [{name, file, current}], from this load's <metadata id="em-storylines">, or []
 
     // --- doc flyout state: independent of review mode, outside the load
     // pipeline for the same reason review state is — see the file comment. ---
@@ -413,6 +435,14 @@
       if (metaEl) { try { meta = JSON.parse(metaEl.textContent); } catch (err) { meta = null; } }
       slices = (meta && meta.slices) || [];
       rowLabels = (meta && meta.rowLabels) || null;
+
+      // GH #309: the storyline-picker list travels the same way em-slices does — read fresh
+      // on every load (no survives-a-reload state to preserve; picking an option navigates).
+      const storyMetaEl = document.getElementById("em-storylines");
+      let storyMeta = null;
+      if (storyMetaEl) { try { storyMeta = JSON.parse(storyMetaEl.textContent); } catch (err) { storyMeta = null; } }
+      storylineVariants = storyMeta || [];
+      renderStorylinePicker();
       // The model may have changed shape (slice removed) between loads. But a
       // reload with NO metadata at all (a transient bad render) must not eject
       // the facilitator from review mode or lose their place — review state
@@ -521,6 +551,21 @@
       return frameRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
     }
 
+    // Populates the storyline <select> from this load's em-storylines metadata — "Full
+    // model" plus one option per declared storyline, pre-selected on whichever is current.
+    // Hidden entirely when the model declares none (storylineVariants is []).
+    function renderStorylinePicker() {
+      storylinePicker.hidden = storylineVariants.length === 0;
+      storylinePicker.innerHTML = "";
+      for (const v of storylineVariants) {
+        const opt = document.createElement("option");
+        opt.value = v.file;
+        opt.textContent = v.name;
+        opt.selected = !!v.current;
+        storylinePicker.appendChild(opt);
+      }
+    }
+
     function renderChrome() {
       storyboard.hidden = slices.length === 0;
       reviewToggle.classList.toggle("active", reviewMode);
@@ -606,6 +651,12 @@
     });
     prevBtn.addEventListener("click", function () { step(-1); });
     nextBtn.addEventListener("click", function () { step(1); });
+    // GH #309: switching storylines is a plain navigation to this same page with a new
+    // ?svg= — the chosen file is already on disk (em watch --serve writes every variant on
+    // every build), so there's nothing to fetch or reload by hand.
+    storylinePicker.addEventListener("change", function () {
+      location.search = "svg=" + encodeURIComponent(storylinePicker.value);
+    });
     document.getElementById("zoomIn").addEventListener("click", function () { zoomStep(1.5); });
     document.getElementById("zoomOut").addEventListener("click", function () { zoomStep(1 / 1.5); });
     document.getElementById("fitBtn").addEventListener("click", goFit);

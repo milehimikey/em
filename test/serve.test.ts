@@ -56,6 +56,14 @@ describe("live server", () => {
     expect(body).toContain("em-slice-dim");
   });
 
+  it("GH #309: serves the storyline picker, reading em-storylines and navigating via ?svg=", async () => {
+    const res = await fetch(`${base}/`);
+    const body = await res.text();
+    expect(body).toContain('id="storylinePicker"');
+    expect(body).toContain('getElementById("em-storylines")');
+    expect(body).toContain('location.search = "svg=" + encodeURIComponent(storylinePicker.value)');
+  });
+
   it("sanitizes ?svg= and inlines the SVG via validate-before-swap (no <object>)", async () => {
     // Successor to the MIL-136 <object> regression test: the viewer now inlines
     // the SVG (fetch → DOMParser → validate → swap), so a truncated or malformed

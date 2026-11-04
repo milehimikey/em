@@ -16,6 +16,8 @@ import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from 
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
 import { resolveSliceArg, defaultSliceOut, defaultStorylineOut } from "./cli/render-inputs.js";
 import { buildStorylineDiagram, resolveStorylineArg } from "./render/storylineDiagram.js";
+import { embedStorylinePicker } from "./render/storylinePicker.js";
+import { resolveWatchStoryline, storylineFileFor, storylineVariants } from "./cli/watchStoryline.js";
 import { resolveSliceKey } from "./model/resolveSlice.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
@@ -2128,11 +2130,28 @@ program
   .option("--keep-empty-lanes", "keep the API lane even when empty")
   .option("--serve", "serve a live viewer with instant push-reload (no polling)")
   .option("--port <n>", "port for --serve (default 5173)", (v) => parseInt(v, 10))
+  .option(
+    "--storyline <name>",
+    "GH #309 (deferred from #277): filter the live view to one storyline's subset — the same " +
+      "subset `em render --storyline` draws (its own slices in order, plus dimmed stub columns " +
+      "for what they read from outside it and the `after` end state). Whenever the model " +
+      "declares any storylines the viewer also offers a picker to switch to the full model or " +
+      "another declared storyline, live, without restarting. An unknown name errors, listing " +
+      "the declared storylines; requires --serve",
+  )
   .action(async (file: string, opts) => {
     const out = opts.out ?? defaultOut(file, opts.format ?? "svg");
     const fmt = opts.format ?? formatFromPath(out);
+    if (opts.storyline !== undefined && !opts.serve) {
+      console.error("em watch: --storyline applies only with --serve");
+      process.exit(1);
+    }
 
     let server: LiveServer | undefined;
+    // The file the printed live-view URL points at — basename(out) (the full model) unless
+    // --storyline resolves, in which case build() below points it at that storyline's own
+    // subset file instead (GH #309).
+    let liveFile = basename(out);
 
     // serializeBuilds: chokidar can fire several events for one save (and an
     // editor's write can land while a slow png/pdf render is still in flight) —
@@ -2157,7 +2176,49 @@ program
           server?.notifyError(first ? formatDiagnostic(first).trim() : "model has errors — see terminal");
           return;
         }
-        await renderDot(dot, model, grid, out, fmt, dirname(file));
+
+        // GH #309: --storyline is validated on every build, same as `em render --storyline`
+        // (resolveWatchStoryline shares findStoryline's resolution) — a save that renames or
+        // drops the storyline must not kill the watcher.
+        const resolved = resolveWatchStoryline(model, opts.storyline);
+        if ("error" in resolved) {
+          console.error(resolved.error);
+          server?.notifyError(resolved.error);
+          return;
+        }
+
+        if (opts.serve && fmt === "svg") {
+          const baseDir = dirname(file);
+          const outDir = dirname(out);
+          const outFile = basename(out);
+          liveFile = "storyline" in resolved ? storylineFileFor(resolved.storyline.name) : outFile;
+
+          // The full model, always rendered to `out` (unchanged default) — carries the
+          // storyline-picker metadata (a no-op when the model declares none) so the viewer can
+          // offer it regardless of whether --storyline was passed.
+          const fullRaw = await layoutDot(dot);
+          const fullSvg = embedStorylinePicker(
+            composeSvg(fullRaw, model, grid, baseDir, outDir),
+            storylineVariants(model, outFile, liveFile),
+          );
+          await writeRendered(fullSvg, out, "svg");
+
+          // Every declared storyline's own subset (GH #277's `em render --storyline` subset,
+          // reused verbatim) — rendered alongside the full model on every build, independent of
+          // --storyline, so the viewer's picker always has somewhere to navigate to.
+          for (const st of model.storylines ?? []) {
+            const sub = buildStorylineDiagram(model, st, { keepEmptyLanes: opts.keepEmptyLanes });
+            const subFile = storylineFileFor(st.name);
+            const subRaw = await layoutDot(sub.dot);
+            const subSvg = embedStorylinePicker(
+              composeSvg(subRaw, sub.model, sub.grid, baseDir, outDir),
+              storylineVariants(model, outFile, subFile),
+            );
+            await writeRendered(subSvg, join(outDir, subFile), "svg");
+          }
+        } else {
+          await renderDot(dot, model, grid, out, fmt, dirname(file));
+        }
         console.log(`rendered ${out} (${Date.now() - started}ms)`);
         server?.notify();
       } catch (e) {
@@ -2176,7 +2237,7 @@ program
         // The viewer inlines SVG only — for png/pdf watches there's nothing
         // live to embed, so don't print a ?svg= URL that can't work.
         if (fmt === "svg") {
-          console.log(`→ live view: ${server.url}/?svg=${encodeURIComponent(basename(out))}`);
+          console.log(`→ live view: ${server.url}/?svg=${encodeURIComponent(liveFile)}`);
           console.log("  open it in a browser and share your screen");
         } else {
           console.log(`→ serving ${dirname(resolve(out))} at ${server.url}`);

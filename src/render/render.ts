@@ -260,7 +260,7 @@ function withOverlays(
   // viewer (`em watch --serve`) can highlight/zoom to one slice at a time
   // client-side, purely from what's already in the SVG.
   out = tagSliceAttrs(out, model);
-  const sliceOverlay = buildSliceOverlay(out, grid, rects, docs);
+  const sliceOverlay = buildSliceOverlay(out, model, grid, rects, docs);
   // arrowhead markers + slice metadata/style go just inside <svg …>
   out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}${sliceOverlay}`);
   // edges go under the boxes: just before the first node group

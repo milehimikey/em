@@ -276,8 +276,8 @@ dimmed: every element a slice of the storyline reads from outside it (so each ar
 and, for a storyline declared `after "<other>"`, the end state of the storyline it follows (the latest
 instance of each read model it continues with `again`). A stub column holds only the referenced elements
 of its origin slice. The name is matched case-insensitively (an unknown name lists every storyline);
-`--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch --serve` does not take a
-storyline filter yet (the live viewer shows the whole model, bands included).
+`--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch --serve` takes the same
+`--storyline` filter — see [`em watch`](#em-watch-file) below.
 
 `--slice` doesn't crop the full diagram — it classifies the slice into one of the 4 Event
 Modeling patterns (State Change, State View, Automation, Translation) and redraws just its
@@ -328,6 +328,7 @@ stop.
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 | `--serve` | Serve a live browser viewer with instant push-reload |
 | `--port <n>` | Port for `--serve` (default 5173; falls forward if taken) |
+| `--storyline <name>` | (GH #309, deferred from #277) Filter the live view to one storyline's subset — requires `--serve` |
 
 With `--serve`, `em` starts a loopback HTTP server on the output directory and prints a URL
 like `http://localhost:5173/?svg=model.svg`. After each successful re-render it pushes a
@@ -344,6 +345,20 @@ declaration order, panning/zooming each into view with everything else dimmed. I
 to the `.em` mid-session arrive over the same SSE push without leaving review mode; the
 event-modeling skill's `review` phase ([ai-workflow.md](ai-workflow.md)) runs a facilitated
 session on top of it.
+
+**Storyline filter (GH #309, deferred from #277).** `--storyline <name>` serves the same
+subset `em render --storyline` draws (see above) instead of the whole model — the storyline's
+own slices, in order, plus its dimmed stub columns — and Review mode then steps through that
+storyline's own slices only (stub columns are never part of the storyboard). The name is
+validated on every rebuild the same way `em render --storyline` validates it: an unknown name
+errors, listing the declared storylines, without killing the watcher.
+
+Independent of `--storyline`, whenever the model declares any storylines the viewer's header
+grows a **storyline picker** (a dropdown next to Review mode) listing "Full model" plus every
+declared storyline — `em watch --serve` writes all of them side by side on every build, so
+picking one is a plain navigation to the same page with a new `?svg=`, no restart needed.
+`--storyline <name>` just picks which one loads first; the picker works the same with or
+without it.
 
 ## `em validate <file>`
 
