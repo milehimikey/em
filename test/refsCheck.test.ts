@@ -13,7 +13,7 @@ import { rmTemp } from "./helpers/rmTemp.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyRefWaivers, classifyRef, readWaiveFile, RefsCheckResult, RefResult } from "../src/cli/refsCheck.js";
+import { applyRefWaivers, classifyRatificationOrder, classifyRef, OrderResult, readWaiveFile, RefsCheckResult, RefResult } from "../src/cli/refsCheck.js";
 import type { GitRunner } from "../src/cli/diff-inputs.js";
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -54,6 +54,119 @@ describe("classifyRef (fake git)", () => {
     };
     expect(classifyRef(counting, "/m", "abc", TARGET, true)).toMatchObject({ status: "undecidable", detail: expect.stringContaining("shallow clone") });
     expect(calls).toBe(0);
+  });
+});
+
+// GH #399: the advisory ratification-order check. Slate entry + R5 — advisory because history is
+// rewritable, never a validate gate, never folded into `em refs`' own exit code.
+describe("classifyRatificationOrder (fake git)", () => {
+  const DOC = "slices/pay.md";
+
+  it("shallow short-circuits before any git call", () => {
+    let calls = 0;
+    const counting: GitRunner = (args) => {
+      calls++;
+      return fakeGit({})(args);
+    };
+    expect(classifyRatificationOrder(counting, "/m", "abc", TARGET, DOC, true)).toEqual({
+      status: "undecidable",
+      commit: null,
+      detail: expect.stringContaining("shallow clone"),
+    });
+    expect(calls).toBe(0);
+  });
+
+  it("a ratifiedRef that no longer resolves is undecidable", () => {
+    const run = fakeGit({ "cat-file -e abc^{commit}": { status: 128 } });
+    expect(classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false)).toMatchObject({
+      status: "undecidable",
+      commit: null,
+      detail: expect.stringContaining("does not resolve"),
+    });
+  });
+
+  it("a failed merge-base is undecidable", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 128, stderr: "fatal: bad revision" },
+    });
+    expect(classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false)).toMatchObject({
+      status: "undecidable",
+      detail: expect.stringContaining("git merge-base failed"),
+    });
+  });
+
+  it("ratified directly on the target (fork point IS ratifiedRef): clean own commit reads ratified-first", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 0, stdout: "abc\n" },
+      "diff-tree --no-commit-id --name-only -r abc": { status: 0, stdout: `${DOC}\n` },
+    });
+    expect(classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false)).toEqual({ status: "ratified-first", commit: null, detail: null });
+  });
+
+  it("a failed rev-list is undecidable", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 0, stdout: "base1\n" },
+      "rev-list base1..abc": { status: 128, stderr: "fatal: bad range" },
+    });
+    expect(classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false)).toMatchObject({
+      status: "undecidable",
+      detail: expect.stringContaining("git rev-list failed"),
+    });
+  });
+
+  it("an earlier commit touching code before ratifiedRef is code-before-ratification, naming the earliest offender", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 0, stdout: "base1\n" },
+      "rev-list base1..abc": { status: 0, stdout: "abc\nc2\nc1\n" },
+      "diff-tree --no-commit-id --name-only -r c1": { status: 0, stdout: "src/foo.ts\n" },
+      // c2 and abc are never inspected: the oldest offender (c1) is reported first.
+    });
+    const r = classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false);
+    expect(r.status).toBe("code-before-ratification");
+    expect(r.commit).toBe("c1");
+    expect(r.detail).toContain(`touched code other than ${DOC}`);
+  });
+
+  it("a diff-tree failure on an earlier commit is undecidable, naming the commit", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 0, stdout: "base1\n" },
+      "rev-list base1..abc": { status: 0, stdout: "abc\nc1\n" },
+      "diff-tree --no-commit-id --name-only -r c1": { status: 128, stderr: "fatal: bad object" },
+    });
+    expect(classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false)).toMatchObject({
+      status: "undecidable",
+      detail: expect.stringContaining("git diff-tree failed on c1"),
+    });
+  });
+
+  it("earlier commits are doc-only, but the ratification commit itself bundles code: undecidable (no decidable order within one commit)", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 0, stdout: "base1\n" },
+      "rev-list base1..abc": { status: 0, stdout: "abc\nc1\n" },
+      "diff-tree --no-commit-id --name-only -r c1": { status: 0, stdout: `${DOC}\n` },
+      "diff-tree --no-commit-id --name-only -r abc": { status: 0, stdout: `${DOC}\nsrc/foo.ts\n` },
+    });
+    const r = classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false);
+    expect(r.status).toBe("undecidable");
+    expect(r.commit).toBe(null);
+    expect(r.detail).toContain("no decidable order within itself");
+  });
+
+  it("every commit up to and including ratifiedRef only touches the doc: ratified-first", () => {
+    const run = fakeGit({
+      "cat-file -e abc^{commit}": { status: 0 },
+      [`merge-base abc ${TARGET}`]: { status: 0, stdout: "base1\n" },
+      "rev-list base1..abc": { status: 0, stdout: "abc\nc1\n" },
+      "diff-tree --no-commit-id --name-only -r c1": { status: 0, stdout: `${DOC}\n` },
+      "diff-tree --no-commit-id --name-only -r abc": { status: 0, stdout: `${DOC}\n` },
+    });
+    expect(classifyRatificationOrder(run, "/m", "abc", TARGET, DOC, false)).toEqual({ status: "ratified-first", commit: null, detail: null });
   });
 });
 
@@ -203,5 +316,234 @@ describe("em refs (CLI, real git): squash-merged ratification, main ratification
     expect(doc.ok).toBe(false);
     expect(new Set(doc.results.map((x: RefResult) => x.status))).toEqual(new Set(["undecidable"]));
     expect(doc.results[0].detail).toContain("fetch-depth: 0");
+  });
+});
+
+// GH #399 (inline ratification): `em refs --check-order`, real git, four slices on four branches
+// forked from the same reviewed-docs commit — doc-first (ratified-first), code-first (a code
+// commit lands on the branch before the doc-only commit that becomes ratifiedRef:
+// code-before-ratification), bundled (doc + code land in the one commit that becomes
+// ratifiedRef: undecidable), never-ratified (no ratifiedRef — excluded from the report
+// entirely). The slate's R5 ("advisory only, never a gate"): proved by merging `bundled` for
+// real and showing `ok: true` / exit 0 even though its own order reads `undecidable`.
+const ORDER_MODEL = [
+  'slice "Doc First" {\n  command Do Doc First note "slices/doc-first.md"\n  event Doc First Done\n}',
+  'slice "Code First" {\n  command Do Code First note "slices/code-first.md"\n  event Code First Done\n}',
+  'slice "Bundled" {\n  command Do Bundled note "slices/bundled.md"\n  event Bundled Done\n}',
+  'slice "Never Ratified" {\n  command Do Never Ratified note "slices/never-ratified.md"\n  event Never Ratified Done\n}',
+].join("\n") + "\n";
+
+describe("em refs --check-order (CLI, real git): spec-first, retrofit, bundled-commit and never-ratified", () => {
+  let dir: string;
+  const read = (k: string) => readFileSync(join(dir, "slices", `${k}.md`), "utf8");
+  const bodyTweak = (key: string, label: string) => writeFileSync(join(dir, "slices", `${key}.md`), read(key).replace("Do the thing.", `Do the ${label} thing.`));
+  const addSrcFile = (name: string) => {
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", name), "// impl\n");
+  };
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-gh399-order-"));
+    mkdirSync(join(dir, "slices"));
+    for (const key of ["doc-first", "code-first", "bundled", "never-ratified"]) {
+      writeFileSync(join(dir, "slices", `${key}.md`), reviewed(key));
+    }
+    writeFileSync(join(dir, "model.em"), ORDER_MODEL);
+    gitInitQuiet(dir, "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "reviewed docs");
+
+    // doc-first: doc-only commit becomes ratifiedRef; the implementation lands AFTER —
+    // outside the checked range entirely, so it never factors in.
+    git(dir, "checkout", "-q", "-b", "feature/doc-first");
+    bodyTweak("doc-first", "doc-first");
+    git(dir, "commit", "-qam", "doc-first: body tweak");
+    let r = em(["slice", "ratify", "model.em", "doc-first", "--by", "Alex", "--on", "2026-11-01"], dir);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(dir, "commit", "-qam", "ratify doc-first on branch");
+    addSrcFile("doc-first.ts");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qam", "implement doc-first (after ratify)");
+
+    // code-first: a code commit lands FIRST, then a doc-only commit becomes ratifiedRef — the
+    // retrofit shape the issue names (code already exists when the spec commit is made).
+    git(dir, "checkout", "-q", "main");
+    git(dir, "checkout", "-q", "-b", "feature/code-first");
+    addSrcFile("code-first.ts");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qam", "code-first: add implementation before ratify");
+    bodyTweak("code-first", "code-first");
+    git(dir, "commit", "-qam", "code-first: doc touch (becomes ratifiedRef)");
+    r = em(["slice", "ratify", "model.em", "code-first", "--by", "Alex", "--on", "2026-11-01"], dir);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(dir, "commit", "-qam", "ratify code-first on branch");
+
+    // bundled: the doc edit and the code file land in the SAME commit, which becomes
+    // ratifiedRef — no decidable order within one commit.
+    git(dir, "checkout", "-q", "main");
+    git(dir, "checkout", "-q", "-b", "feature/bundled");
+    addSrcFile("bundled.ts");
+    bodyTweak("bundled", "bundled");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qam", "bundled: doc + code together");
+    r = em(["slice", "ratify", "model.em", "bundled", "--by", "Alex", "--on", "2026-11-01"], dir);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(dir, "commit", "-qam", "ratify bundled on branch");
+
+    // never-ratified stays `reviewed` on main — no ratifiedRef, so it never appears in the report.
+    git(dir, "checkout", "-q", "main");
+  });
+  afterAll(() => rmTemp(dir));
+
+  it("doc-first: ratified-first", () => {
+    git(dir, "checkout", "-q", "feature/doc-first");
+    const doc = JSON.parse(em(["refs", "model.em", "--reachable-from", "main", "--check-order", "--json"], dir).stdout);
+    expect(doc.orderResults).toEqual([expect.objectContaining({ sliceKey: "doc-first", status: "ratified-first", commit: null, detail: null })]);
+  });
+
+  it("code-first: code-before-ratification, naming the implementation commit", () => {
+    git(dir, "checkout", "-q", "feature/code-first");
+    const doc = JSON.parse(em(["refs", "model.em", "--reachable-from", "main", "--check-order", "--json"], dir).stdout);
+    expect(doc.orderResults).toHaveLength(1);
+    const o = doc.orderResults[0];
+    expect(o.sliceKey).toBe("code-first");
+    expect(o.status).toBe("code-before-ratification");
+    expect(o.commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(o.detail).toContain("touched code other than slices/code-first.md");
+  });
+
+  it("bundled: undecidable, and never affects the exit code even once the branch is really merged (R5)", () => {
+    git(dir, "checkout", "-q", "feature/bundled");
+    const unmerged = em(["refs", "model.em", "--reachable-from", "main", "--check-order", "--json"], dir);
+    const docUnmerged = JSON.parse(unmerged.stdout);
+    expect(docUnmerged.orderResults).toEqual([expect.objectContaining({ sliceKey: "bundled", status: "undecidable", commit: null })]);
+    expect(docUnmerged.orderResults[0].detail).toContain("no decidable order within itself");
+
+    // Real (non-squash) merge to main: ratifiedRef is now an `ancestor` (the ref check itself
+    // passes), but the order result is unchanged — `undecidable` either way, and `ok`/exit stay
+    // keyed on the ref check alone (R5: advisory, never a gate).
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge bundled", "feature/bundled");
+    const afterMerge = em(["refs", "model.em", "--reachable-from", "main", "--check-order", "--json"], dir);
+    expect(afterMerge.status).toBe(0);
+    const docMerged = JSON.parse(afterMerge.stdout);
+    expect(docMerged.ok).toBe(true);
+    expect(docMerged.orderResults.find((o: OrderResult) => o.sliceKey === "bundled")?.status).toBe("undecidable");
+  });
+
+  it("never-ratified has no ratifiedRef, so it is excluded from the order report entirely", () => {
+    git(dir, "checkout", "-q", "main");
+    const doc = JSON.parse(em(["refs", "model.em", "--reachable-from", "main", "--check-order", "--json"], dir).stdout);
+    expect(doc.orderResults.some((o: OrderResult) => o.sliceKey === "never-ratified")).toBe(false);
+  });
+
+  it("without --check-order, --json omits orderResults and the text report has no order section", () => {
+    git(dir, "checkout", "-q", "feature/doc-first");
+    const json = JSON.parse(em(["refs", "model.em", "--reachable-from", "main", "--json"], dir).stdout);
+    expect(json).not.toHaveProperty("orderResults");
+    const text = em(["refs", "model.em", "--reachable-from", "main"], dir);
+    expect(text.stdout).not.toContain("ratification order");
+    git(dir, "checkout", "-q", "main");
+  });
+});
+
+// GH #399 review blocker: `git diff-tree --name-only` prints REPO-ROOT-relative paths, so for a
+// model directory nested in a larger repository (`models/shop/model.em` — the documented
+// model-directory layout) the slice doc appears as `models/shop/slices/<key>.md`, never
+// `slices/<key>.md`. Comparing against the model-dir-relative path misread every doc-only commit
+// as touching code: a doc-only draft commit before ratification was falsely named the
+// code-before-ratification "earliest offender", and a doc-only ratification commit read
+// undecidable. Same four shapes as above, model nested under models/shop/.
+describe("em refs --check-order (CLI, real git): model directory nested in a larger repository", () => {
+  let root: string;
+  let modelDir: string;
+  const read = (k: string) => readFileSync(join(modelDir, "slices", `${k}.md`), "utf8");
+  const bodyTweak = (key: string, label: string) => writeFileSync(join(modelDir, "slices", `${key}.md`), read(key).replace(/Do the .*thing\./, `Do the ${label} thing.`));
+  const addSrcFile = (name: string) => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", name), "// impl\n");
+  };
+  const orderOf = (branch: string) => {
+    git(root, "checkout", "-q", branch);
+    const r = em(["refs", join("models", "shop", "model.em"), "--reachable-from", "main", "--check-order", "--json"], root);
+    return { status: r.status, doc: JSON.parse(r.stdout) };
+  };
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "em-gh399-nested-"));
+    modelDir = join(root, "models", "shop");
+    mkdirSync(join(modelDir, "slices"), { recursive: true });
+    for (const key of ["doc-first", "code-first", "bundled"]) {
+      writeFileSync(join(modelDir, "slices", `${key}.md`), reviewed(key));
+    }
+    writeFileSync(join(modelDir, "model.em"), ORDER_MODEL.replace(/slice "Never Ratified" \{[\s\S]*?\}\n/, ""));
+    writeFileSync(join(root, "README.md"), "# host repo\n");
+    gitInitQuiet(root, "-b", "main");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "reviewed docs in nested model dir");
+
+    // doc-first: TWO doc-only commits (the reviewer's falsely-accused draft commit shape), then
+    // ratify, then code — must read ratified-first, with neither doc commit named an offender.
+    git(root, "checkout", "-q", "-b", "feature/doc-first");
+    bodyTweak("doc-first", "drafted");
+    git(root, "commit", "-qam", "doc-first: doc-only draft commit");
+    bodyTweak("doc-first", "redrafted");
+    git(root, "commit", "-qam", "doc-first: second doc-only draft commit");
+    let r = em(["slice", "ratify", join("models", "shop", "model.em"), "doc-first", "--by", "Alex", "--on", "2026-11-02"], root);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(root, "commit", "-qam", "ratify doc-first on branch");
+    addSrcFile("doc-first.ts");
+    git(root, "add", "-A");
+    git(root, "commit", "-qam", "implement doc-first (after ratify)");
+
+    // code-first: repo-root code commit first, then a doc-only commit that becomes ratifiedRef.
+    git(root, "checkout", "-q", "main");
+    git(root, "checkout", "-q", "-b", "feature/code-first");
+    addSrcFile("code-first.ts");
+    git(root, "add", "-A");
+    git(root, "commit", "-qam", "code-first: implementation before ratify");
+    bodyTweak("code-first", "code-first");
+    git(root, "commit", "-qam", "code-first: doc touch (becomes ratifiedRef)");
+    r = em(["slice", "ratify", join("models", "shop", "model.em"), "code-first", "--by", "Alex", "--on", "2026-11-02"], root);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(root, "commit", "-qam", "ratify code-first on branch");
+
+    // bundled: doc + code in the one commit that becomes ratifiedRef.
+    git(root, "checkout", "-q", "main");
+    git(root, "checkout", "-q", "-b", "feature/bundled");
+    addSrcFile("bundled.ts");
+    bodyTweak("bundled", "bundled");
+    git(root, "add", "-A");
+    git(root, "commit", "-qam", "bundled: doc + code together");
+    r = em(["slice", "ratify", join("models", "shop", "model.em"), "bundled", "--by", "Alex", "--on", "2026-11-02"], root);
+    if (r.status !== 0) throw new Error(r.stderr);
+    git(root, "commit", "-qam", "ratify bundled on branch");
+
+    git(root, "checkout", "-q", "main");
+  });
+  afterAll(() => rmTemp(root));
+
+  it("doc-only commits of a nested model are not offenders: doc-first reads ratified-first", () => {
+    const { doc } = orderOf("feature/doc-first");
+    expect(doc.orderResults).toEqual([expect.objectContaining({ sliceKey: "doc-first", path: "slices/doc-first.md", status: "ratified-first", commit: null, detail: null })]);
+  });
+
+  it("code-first names the TRUE earliest offender (the code commit), not a doc-only draft commit", () => {
+    const { doc } = orderOf("feature/code-first");
+    expect(doc.orderResults).toHaveLength(1);
+    const o = doc.orderResults[0];
+    expect(o.status).toBe("code-before-ratification");
+    // The named commit is the implementation commit — it touched src/, never the nested doc.
+    const touched = git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", o.commit);
+    expect(touched).toContain("src/code-first.ts");
+    expect(touched).not.toContain("models/shop/slices/code-first.md");
+    // The detail names the doc by its repo-relative path — what git itself prints.
+    expect(o.detail).toContain("touched code other than models/shop/slices/code-first.md");
+  });
+
+  it("bundled ratification commit of a nested model reads undecidable (not code-before-ratification)", () => {
+    const { doc } = orderOf("feature/bundled");
+    expect(doc.orderResults).toEqual([expect.objectContaining({ sliceKey: "bundled", status: "undecidable", commit: null })]);
+    expect(doc.orderResults[0].detail).toContain("no decidable order within itself");
   });
 });

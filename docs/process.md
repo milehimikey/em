@@ -187,6 +187,90 @@ slice" are different decisions, made by different people, often days apart. Coll
 whoever facilitated the review also authorized the build — which is exactly the failure the
 one rule at the top of this document exists to prevent.
 
+## Inline ratification: approval as the ratification session
+
+GH #399, 1.20.0. Everything above describes ratification as its own PR: a doc-only change lands
+on `main` before the slice's implementation branch is even cut. That separation buys three things
+— a reviewer who reads the spec undiluted by implementation diff, a frozen contract before code
+exists, and an immutable ratified-on-`main` audit anchor — at the cost of two serialized human
+merges per slice instead of one. **Inline ratification** is the documented alternative: draft and
+implement the same slice on one branch, spec commits first, and let the human's review of that
+one PR *be* the ratification session.
+
+Nothing about the CLI changes. `em slice ratify` has never required a separate branch — its only
+demand is that the doc have no uncommitted changes (ratification records the exact commit, or
+hash, of the body it signs). Inline mode is a documented way of using the existing commands, not a
+new mode of any of them:
+
+1. Draft the slice doc and the implementation on one branch, doc commits first (same discipline as
+   always: don't write code before the thing it implements is specified).
+2. Open the PR. **The human's review of that PR is the ratification session.** They read the doc,
+   decide it's right, and the act of approving records it: run `em slice ratify --no-ref <model>.em
+   <key> --by <name>` (`--no-ref` because this branch is headed for a squash or rebase merge —
+   see [cli.md](cli.md#em-slice-ratify-file-slice-key---by-name) — `ratifiedHash:` alone still
+   verifies the exact body that was signed) as part of approving, or have a bot/check stamp it the
+   moment the approval lands. Either way, the ratifying edit is itself part of the PR, under the
+   same review.
+3. Merge. `em slice mark-implemented` runs at merge exactly as it always has (§"The slice
+   lifecycle gates" above, point 4).
+4. **Any doc edit after the sign-off trips the existing hash check and forces re-review** — inline
+   mode adds no new guardrail here because it needs none: `ratifiedHash` (MIL-284) already covers
+   exactly this. If conform or review surfaces a gap mid-build, the implement →
+   conform → adjust → re-sign loop (`em slice revise --withdraw`, re-ratify) works the same inline
+   as it does across two PRs. Running [`em slice conform <model>.em <key> --at <rev> --preview`](cli.md#em-slice-conform---preview-gh-400)
+   before the PR merges — the pre-ship advisory conform, waiving the shipped-status precondition —
+   is the inline loop's natural "did I drift from the doc I just signed" check: ephemeral by
+   default, never writes `conformedVersion`/`conformedAt`/`conformedOn`, and never blocks the
+   merge by itself.
+
+**Not a loosened rule.** Agents still never self-ratify — `em slice ratify`/`em slice
+mark-implemented` behave identically whether they're invoked from an inline branch or a doc-only
+one; there is no flag, mode, or heuristic anywhere in `em` that lets an agent flip a doc's status
+without a named human behind `--by`. The gate *moves* — it sits in the one PR review that's
+already happening, instead of a dedicated prior one — it does not disappear and nothing about it
+becomes mechanical.
+
+### Risk tiers: when inline is allowed
+
+Not every slice is a good candidate for folding the two merges into one. The risk being traded
+away is reviewer attention isolation and audit anchoring — cheap to give up for a slice nobody
+outside the team depends on, expensive for one that is itself a promise to other teams or to
+parallel builders:
+
+| Tier | Slices | Why |
+|---|---|---|
+| **Inline allowed** | Internal slices — the common case | No outside party is reading the diff for the spec alone; the one-PR review is sufficient |
+| **Separate doc PR required** | Public-contract-touching slices — a slice owning a `public` command, event or view, the same boundary `em slice ratify` already computes (`isPublicTouchingSlice`, [`src/catalog/apiFirst.ts`](https://github.com/milehimikey/em/blob/main/src/catalog/apiFirst.ts)) and gates on via `--meaning-unchanged`/`--contract-change` (see "Ratifying a slice" above) | The contract is a promise to consumers who never see the implementation diff; freezing it before code exists is the whole point of the API-first gate, and inline mode would let the two change together uninspected |
+| **Separate always** | Engagements (`em engagement`) | Structurally necessary, not a risk call: engagements dispatch N implementers against *already-frozen* contracts in parallel, so ratification has to precede every branch, not share one with it. (A slate doc-PR already amortizes the two-merge cost across every slice it covers, so this tier gives up little.) |
+
+When the rows overlap, the stricter row wins: a slice that is both internal and
+engagement-dispatched follows the engagement row — separate ratification always; engagement
+membership overrides the internal-inline allowance.
+
+`em` does not enforce the table mechanically — there is no flag that detects "this slice is
+public-touching, therefore refuse inline mode." The API-first gate already does the part that
+matters: `em slice ratify` on a public-touching slice refuses without
+`--meaning-unchanged`/`--contract-change`, inline or not, so the contract decision is still
+recorded either way. The table is a team's own judgment call about *when to choose* the inline
+shape, the same kind of judgment `docs/process.md` asks for everywhere else.
+
+### The ordering advisory: `em refs --check-order`
+
+Collapsing the two merges into one drops a property the separate-PR flow got for free: the spec
+was necessarily frozen before the code existed, because the code's PR couldn't have started
+without it on `main` already. Inline mode's real risk is **retrofit** — an agent builds first,
+then writes the doc to describe what it already built, undetectably, because nothing marks when
+in the branch's history the doc was actually decided.
+
+`em refs --check-order` (GH #399, see [cli.md](cli.md#--check-order-gh-399-the-inline-ratification-ordering-advisory))
+is a mechanical smoke-check for exactly that: for every slice doc carrying a `ratifiedRef:`, it
+walks the branch's commits up to the ratification point looking for a commit that already touched
+code before the doc was signed. **It is advisory, never a validate gate, and it never affects the
+exit code** — commit history is rewritable (a rebase can make any ordering look clean after the
+fact), so this can only ever be a signal for the human already reviewing the PR, the same person
+who is about to run `ratify` themselves. No em command gates on it, and none ever will under this
+design: the human's judgment in the one PR review inline mode keeps is still the actual gate.
+
 ## Model versions
 
 Every slice carries its own `version:`, but nothing above names *the model as a whole* — until

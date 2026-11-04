@@ -20,7 +20,8 @@
 //
 // Kinded `conformedAt:` values (`build:1234`, GH #261) are not git revisions and are skipped —
 // `parseConformedAt` decides. Docs with no ref fields are not reported.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
@@ -94,6 +95,161 @@ export function classifyRef(run: GitRunner, baseDir: string, ref: string, target
   if (anc.status === 0) return { status: "ancestor", detail: null };
   if (anc.status === 1) return { status: "not-ancestor", detail: `resolves but is not an ancestor of ${target.slice(0, 7)} — reachable only from a branch that was squash/rebase-merged and deleted` };
   return { status: "undecidable", detail: `git merge-base failed: ${anc.stderr.trim() || `exit ${anc.status}`}` };
+}
+
+// GH #399 (inline ratification): the ratify-then-implement split used to buy "spec frozen before
+// code exists" for free, because the two lived in different PRs. Inline mode (one branch, PR
+// approval IS the ratification act — docs/process.md's "Inline ratification" section) drops that
+// for free property, so the one thing worth checking mechanically is the *retrofit* risk the
+// issue names: an agent builds first, then writes the doc to describe what already exists. This
+// is that check, in `em refs`' own idiom — three outcomes, real git, nothing enforced.
+//
+// Deliberately advisory only (R5 of the 1.20.0 slate): commit history is rewritable (a rebase or
+// reorder can make any ordering look clean after the fact), so this can at best be a smoke
+// signal for the human in the PR review, never a fact `em validate`/`ratify`/`mark-implemented`
+// could safely gate on. It never touches `RefsCheckResult.ok` or the CLI exit code — see
+// `checkRatificationOrder` below and its lone call site in cli.ts.
+export type OrderStatus = "ratified-first" | "code-before-ratification" | "undecidable";
+
+export interface OrderResult {
+  sliceKey: string;
+  /** Same convention as `RefResult.path`: the doc the ratification was read from. */
+  path: string;
+  ratifiedRef: string;
+  /** The earliest commit found to touch something other than the slice's own doc before
+   *  `ratifiedRef`, when `status` is `code-before-ratification`; otherwise `null`. */
+  commit: string | null;
+  status: OrderStatus;
+  detail: string | null;
+}
+
+/**
+ * Walk from `target`'s merge-base with `ratifiedRef` up to `ratifiedRef` itself, looking for a
+ * commit that already touched a path other than `docPath` (the slice's own doc) — evidence that
+ * implementation work predates the sign-off it should follow. Commits strictly between the fork
+ * point and `ratifiedRef` are "before ratification" by construction (`ratifiedRef` is excluded
+ * from that scan and checked separately, below, since a single commit that bundles the doc edit
+ * with code has no decidable order *within itself*).
+ *
+ * `docPath` must be REPO-ROOT-relative (forward slashes), because that is what
+ * `git diff-tree --name-only` prints — for a model directory nested in a larger repository
+ * (`models/shop/model.em`), the slice doc shows up as `models/shop/slices/pay.md`, never
+ * `slices/pay.md`. `checkRatificationOrder` below resolves it (`repoRelativeDocPath`); a caller
+ * handing in the model-dir-relative path would misread every doc-only commit of a nested model
+ * as touching code.
+ */
+export function classifyRatificationOrder(
+  run: GitRunner,
+  baseDir: string,
+  ratifiedRef: string,
+  target: string,
+  docPath: string,
+  shallow: boolean,
+): { status: OrderStatus; commit: string | null; detail: string | null } {
+  if (shallow) {
+    return { status: "undecidable", commit: null, detail: "shallow clone — history is truncated, order cannot be decided (checkout with fetch-depth: 0)" };
+  }
+  const resolved = git(run, baseDir, ["cat-file", "-e", `${ratifiedRef}^{commit}`]);
+  if (resolved.status !== 0) {
+    return { status: "undecidable", commit: null, detail: "ratifiedRef does not resolve to a commit — see the ratifiedRef row above" };
+  }
+  const touchedFiles = (sha: string): { ok: true; files: string[] } | { ok: false; detail: string } => {
+    const diff = git(run, baseDir, ["diff-tree", "--no-commit-id", "--name-only", "-r", sha]);
+    if (diff.status !== 0) return { ok: false, detail: `git diff-tree failed on ${sha.slice(0, 7)}: ${diff.stderr.trim() || `exit ${diff.status}`}` };
+    return { ok: true, files: diff.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0) };
+  };
+  const base = git(run, baseDir, ["merge-base", ratifiedRef, target]);
+  if (base.status !== 0) {
+    return { status: "undecidable", commit: null, detail: `git merge-base failed: ${base.stderr.trim() || `exit ${base.status}`}` };
+  }
+  const forkPoint = base.stdout.trim();
+  if (forkPoint !== ratifiedRef) {
+    const list = git(run, baseDir, ["rev-list", `${forkPoint}..${ratifiedRef}`]);
+    if (list.status !== 0) {
+      return { status: "undecidable", commit: null, detail: `git rev-list failed: ${list.stderr.trim() || `exit ${list.status}`}` };
+    }
+    // rev-list orders newest first; drop the first entry (ratifiedRef itself, checked separately
+    // below) and walk the rest oldest-relevant-first so a reported commit is the earliest offender.
+    const before = list.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0).slice(1).reverse();
+    for (const sha of before) {
+      const files = touchedFiles(sha);
+      if (!files.ok) return { status: "undecidable", commit: null, detail: files.detail };
+      if (files.files.some((f) => f !== docPath)) {
+        return {
+          status: "code-before-ratification",
+          commit: sha,
+          detail: `commit ${sha.slice(0, 7)} touched code other than ${docPath} before ${ratifiedRef.slice(0, 7)} was ratified — the doc may describe code that already existed rather than the other way round`,
+        };
+      }
+    }
+  }
+  // No earlier commit touched anything but the doc. Last check: does the ratification commit
+  // itself bundle code alongside the doc edit? That commit has no decidable internal order.
+  const own = touchedFiles(ratifiedRef);
+  if (!own.ok) return { status: "undecidable", commit: null, detail: own.detail };
+  if (own.files.some((f) => f !== docPath)) {
+    return {
+      status: "undecidable",
+      commit: null,
+      detail: `${ratifiedRef.slice(0, 7)} (the ratification commit) also touches code other than ${docPath} — a single commit has no decidable order within itself`,
+    };
+  }
+  return { status: "ratified-first", commit: null, detail: null };
+}
+
+/** The repo-root-relative path of `docRelPath` (a path relative to the model's directory,
+ *  `slices/<key>.md`), in the forward-slash form `git diff-tree --name-only` prints. `repoRoot`
+ *  comes from `rev-parse --show-toplevel` and is already fully resolved; `baseDir` gets the same
+ *  `realpathSync` treatment before `relative()` can compare the two meaningfully (macOS's
+ *  `/tmp`/`$TMPDIR` are symlinks into `/private/...` — the exact discipline metrics.ts applies
+ *  for its own repo-relative paths). */
+export function repoRelativeDocPath(repoRoot: string, baseDir: string, docRelPath: string): string {
+  return relative(repoRoot, resolve(realpathSync(resolve(baseDir)), docRelPath)).split("\\").join("/");
+}
+
+/**
+ * The GH #399 advisory ordering check, in `checkRefs`' own shape: one `OrderResult` per slice
+ * doc that carries a `ratifiedRef` (the same docs `checkRefs` already reads), run against the
+ * same `baseDir`/`reachableFrom`. Deliberately returns no `ok` field — nothing here is ever a
+ * pass/fail gate (R5); the CLI never derives an exit code from this list.
+ *
+ * The reported `path` stays model-dir-relative (`slices/<key>.md`), the `RefResult.path`
+ * convention; the path handed to `classifyRatificationOrder` for comparison against
+ * `git diff-tree` output is repo-root-relative (see `repoRelativeDocPath`) — for a model whose
+ * directory is nested in a larger repository the two differ, and comparing the wrong one
+ * misreads every doc-only commit as touching code.
+ */
+export function checkRatificationOrder(model: NormalizedModel, refs: RefsResult, baseDir: string, target: string, shallow: boolean, run: GitRunner = realGit): OrderResult[] {
+  // One toplevel resolution per run, not per slice. Skipped on a shallow clone — classify
+  // short-circuits to `undecidable` before ever comparing paths. A toplevel failure (outside a
+  // work tree — checkRefs normally refuses first, but this function is exported on its own)
+  // makes every result `undecidable` rather than guessing at a root.
+  let repoRoot: string | null = null;
+  let toplevelError: string | null = null;
+  if (!shallow) {
+    const top = git(run, baseDir, ["rev-parse", "--show-toplevel"]);
+    if (top.status === 0 && top.stdout.trim() !== "") repoRoot = top.stdout.trim();
+    else toplevelError = `git rev-parse --show-toplevel failed: ${top.stderr.trim() || `exit ${top.status}`}`;
+  }
+
+  const results: OrderResult[] = [];
+  const seen = new Set<string>();
+  model.slices.forEach((_slice, i) => {
+    const sliceKey = refs.sliceKeys[i];
+    if (seen.has(sliceKey)) return;
+    seen.add(sliceKey);
+    const doc = readSliceDoc(baseDir, sliceKey);
+    if (!doc || !hasUsableFrontmatter(doc) || doc.ratifiedRef === null) return;
+    const path = `slices/${sliceKey}.md`;
+    if (toplevelError !== null) {
+      results.push({ sliceKey, path, ratifiedRef: doc.ratifiedRef, commit: null, status: "undecidable", detail: toplevelError });
+      return;
+    }
+    const docPath = repoRoot !== null ? repoRelativeDocPath(repoRoot, baseDir, path) : path; // shallow: unused by classify
+    const { status, commit, detail } = classifyRatificationOrder(run, baseDir, doc.ratifiedRef, target, docPath, shallow);
+    results.push({ sliceKey, path, ratifiedRef: doc.ratifiedRef, commit, status, detail });
+  });
+  return results;
 }
 
 /**

@@ -47,15 +47,82 @@ A warning whose code is in this list blocks; any other warning never does — `c
 
 Because of that list, `ready` can be `false` with every `gates` entry `true` (a `both-ends-of-a-flow/*` warning on one of the slice's own elements, say). Don't work it out from `gates`: read **`blockedBy`** (schema `1.5`, GH #377), the codes that flipped `ready`, `[]` exactly when it is `true`, and report those codes with the `false` gates when you hand the slice back.
 
-**`ready: false` means stop** — with one named exception: a slice already `status: implemented`
-with `driftSignal: in-sync` or `uncertified` (MIL-214) also reads `ready: false` (its
-`statusReady` gate fails because nothing is newly ratified), and that specific case is
-re-implementation/repair, not a blocker — see §3's third mode before treating it as one. For
+**`ready: false` means stop** — with two named exceptions. First: a slice already `status:
+implemented` with `driftSignal: in-sync` or `uncertified` (MIL-214) also reads `ready: false`
+(its `statusReady` gate fails because nothing is newly ratified), and that specific case is
+re-implementation/repair, not a blocker — see §3's third mode before treating it as one. Second:
+under **inline ratification** (§1a) a slice doc that's only `status: reviewed` — not yet
+`ready-to-implement` — is a sanctioned starting point for drafting code on the SAME branch, with
+the explicit, non-negotiable condition that you treat nothing as actually ratified, and open
+nothing for merge, until a human has run `em slice ratify` and `--slice-ready` reads `true` for
+real; §1a names exactly which slices qualify and what that condition requires in practice. For
 every other `false`, report which `gates`
 entries are `false` and what `blockedBy` names (and any `diagnostics` entries concerning this
 slice) and hand the slice back to the humans. Never make the gate pass yourself — checking an open-question box, flipping
-`status`, or editing frontmatter are ratification decisions, and ratification happens in a
-facilitated session, not in an implementation branch.
+`status`, or editing frontmatter are ratification decisions, made by a human in a ratification
+session, never by you running `em slice ratify` on their behalf. That session is usually a
+separate doc-only PR, merged before an implementation branch is even cut — but it doesn't have
+to be: **inline ratification** (GH #399, §1a below) lets the session be the PR review of the
+very branch you're implementing on, for internal slices. Either shape, the rule here is the
+same: you never flip the gate yourself, whatever branch you're on.
+
+### 1a. The inline variant: ratifying on the implementation branch
+
+Most of this document assumes the ordinary shape — a slice is already `ready-to-implement` when
+you start, ratified in its own prior PR, and §1's gate reads `true` before you write a line of
+code. **Inline ratification** is the documented alternative
+(`docs/process.md`'s
+["Inline ratification" section](https://github.com/milehimikey/em/blob/main/docs/process.md#inline-ratification-approval-as-the-ratification-session)):
+draft the slice doc *and* build it on the same branch, spec commits first, and let the human's
+review of that one PR be the ratification session — which means you are, deliberately and
+sanctioned, building for most of that branch's life against a doc that reads `ready: false`.
+What doesn't change: you still never flip `status` yourself, never run `em slice ratify` on the
+human's behalf, and never write a word of the ratification record — see §1's second named
+exception for the precise condition this depends on. What's different is sequencing and tiering:
+
+- **Draft the doc first, then build on the same branch.** Commit the slice doc (through the
+  normal `slice` phase), get it reviewed (`em slice review --by`, flipping it to `status:
+  reviewed` — a human has to do this part too, same as always) before any implementation code,
+  even though doc and code will both live on one branch and merge in one PR. Writing code before
+  the doc exists, or before a human has looked at it, is retrofit — the exact failure mode inline
+  mode is named after avoiding — whether or not anyone ever checks for it.
+- **You may keep building past a `reviewed`-but-not-yet-`ready-to-implement` doc, but nothing is
+  ratified until `em slice ratify` actually runs.** `--slice-ready` keeps reading `false` the
+  whole time you're building — that's expected, not a signal to stop, as long as the doc's
+  `status` is `reviewed` (not `draft`: an un-reviewed doc is never a valid base, inline or not).
+  On an inline branch the human typically runs `em slice ratify --no-ref` as part of approving
+  the PR (`--no-ref` because the branch is headed for a squash/rebase merge) — not something you
+  do for them, and not something you should expect to have happened before the PR is up for
+  review. Before you report the slice done, or treat §6's merge-time flip as legitimate,
+  re-check `--slice-ready` yourself and confirm it now reads `true` with `ratifiedBy:` set — if
+  it still doesn't, the slice isn't ratified yet and you say so instead of proceeding.
+- **A post-signature doc edit still trips the hash check.** `ratifiedHash` doesn't know or care
+  which branch it was computed on — if something changes the doc's body after the human has
+  signed it (a gap surfaces, §4), `--slice-ready` and `em slice ratify` both refuse the stale
+  signature exactly as they would across two PRs. Route it through `em slice revise --withdraw`,
+  review, re-ratify (§4) — inline doesn't shortcut that loop, it just means the re-sign happens
+  on the branch you're already on instead of a fresh one.
+- **Not every slice is a candidate.** A slice owning a `public` command, event or view
+  (`isPublicTouchingSlice`) keeps the separate doc PR — the contract is a promise to consumers
+  who never see your implementation diff, and `em slice ratify` already refuses a public-touching
+  slice without `--meaning-unchanged`/`--contract-change` regardless of which branch it runs on.
+  An engagement-dispatched slice is never inline either — engagements structurally need every
+  contract frozen before any implementer branch is cut, so the engagement skill never offers you
+  this shape (it is explicitly unchanged by GH #399 — this is a note for your own judgment
+  outside an engagement, not something to apply inside one).
+- **Pre-ship advisory conform is the loop's natural checkpoint.** Before the PR merges, a human
+  (or you, if asked) can run `em slice conform <model>.em <key> --at <rev> --preview` — the
+  pre-ship, non-certifying mode (GH #400): same doc-resolution and findings-check read as a real
+  certification, legal before the slice has shipped, never writes `conformedVersion:`/
+  `conformedAt:`/`conformedOn:`. It's advisory and ephemeral by default (nothing written unless
+  `--write-findings` is passed) — a cheap "did I just drift from the doc I signed" look before
+  asking for the PR review that will also be the ratification.
+- **The ordering advisory is informational, not yours to act on.** `em refs --check-order`
+  (GH #399) can report whether a commit on this branch touched code before the doc's
+  `ratifiedRef` — a retrofit smoke signal for the human reviewing the PR. It's advisory, never a
+  gate, and nothing in this skill asks you to run it or react to its output; if a human shows you
+  a `code-before-ratification` result, treat it the same as any other gap raised against your
+  work (§4), not as something to silence.
 
 ## 2. Read the spec
 
