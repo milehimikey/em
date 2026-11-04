@@ -174,7 +174,9 @@ an event directly.}}
      own rows, a lookup of some other entity's name/email/etc. so it can display it — that is the
      views-as-lookups smell (methodology reference, "Views as lookups"): the field belongs on the
      event that creates this view's row instead, copied from state the command/decider already
-     reads to enforce its own invariants. Fix the `.em`, not the prose. -->
+     reads to enforce its own invariants. Fix the `.em`, not the prose. The built-from list names
+     every source, trigger and housekeeping alike; in the `.em` only the triggering event(s) sit in
+     `from`, the rest in `updates from` (methodology reference, "trigger and housekeeping"). -->
 <!-- GENERATED:em-slice-view:start — generated from the model by `em slice sync`; do not hand-edit -->
 - **View:** `{{View Name}}` built from events: {{"Event A", "Event B"}}
 

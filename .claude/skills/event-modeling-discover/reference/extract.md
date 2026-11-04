@@ -103,7 +103,11 @@ it is fine to finish a round with `# TBD`s still parked.
   here, that would be inventing desired state. Note it as a finding in the Decisions log the same
   way as an unread event, and leave it for `model`/`slice` to apply the views-as-lookups rule
   (`../../event-modeling-shared/reference/methodology.md`, "Views as lookups") once the as-is
-  model is agreed.
+  model is agreed. **Housekeeping handlers are `updates from`, as-is:** when the projection code
+  handles an event only to update or delete a row it already holds (a status flip, a due date
+  moved, an address changed, a row removed), write that event in `updates from "…"`, not `from` —
+  that is what the code does today, it keeps the field tracing complete, and the as-is render then
+  shows the one line that puts work on the list instead of every handler.
 - **R5 — Boundaries & reactions.** Current automations and integrations as-is: schedulers,
   listeners, outbound syncs, inbound webhooks. Model each as a reaction sharing its slice with
   the `command` + `event` it triggers (`reaction → command → event`, per `em-dsl.md`) — the

@@ -317,12 +317,14 @@ context Name                     # an event swimlane row (bounded context / aggr
 storyline "Name" [source "url"] [after "Other"] {   # optional chapter grouping slices (see Storylines)
   slice "Name" { ... }
 }
+storyline "Name" [after "Other"] [in "path.em"]      # a storyline MODEL: its slices live in <slug>/<slug>.em (see Storylines)
 
 slice "Name" [source "url"] {    # one vertical time step (a column); source is optional
   ui   Free Text @Persona        # screen; @Persona picks its row (defaults to first/"User")
   command Free Text              # state-changing request (API band)
   invariant INV-ORD-1 "Rule"     # rule guarding the command/event just above (see Clauses)
   view Free Text from "Event A", "Event B"   # read model fed by event(s)
+  view Free Text from "Event A" updates from "Event B", "Event C"   # B, C keep rows current: read, never drawn (see Clauses)
   view Free Text again from "Event C"        # later instance of an evolving read model (see Clauses)
   event Free Text @Context       # recorded fact; @Context picks its row (defaults to "Domain")
   processor Free Text from "View"   # automation; aliases: automation | saga | translation
@@ -366,6 +368,14 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   previous instance of V that also reads E), and EVERY site needs a reader at or after it (add `view V again from "E"`
   after the last site, or `event-unread` warns for that site). The same name in a different context
   is still a `duplicate-name` warning.
+- **`updates from "Event", …`** (views only, GH #414): the subset of a view's sources that only keep a
+  row current or remove it (a due date moved, an address changed, a loan returned). They are folded
+  into the view's `from` for every check — `derived from`, completeness, the generated built-from
+  list — but never drawn as arrows: the diagram shows the line from the event that puts work on the
+  list, and lists the rest under "Kept current by". The author chooses the triggers: `view Holds To
+  Fulfill from "Hold Placed", "Tool Returned" updates from "Hold Collected", "Hold Cancelled"`.
+  Valid on an `again` instance too. A to-do view with more than one or two inbound arrows is missing
+  this split.
 - **`again`** (views only): `view <Name> again [from "Event", …]` declares a later instance of an
   already-declared read model — the forward-only device for a view that evolves as later events
   land. Instances are ONE logical view: the first declaration owns the `note` binding; each
@@ -556,8 +566,15 @@ type Name { field: Type, ... }      # named structured type, reusable from any f
   Slices keep their file-order timeline position; a slice outside any storyline is allowed;
   storylines don't nest and a repeated name continues that storyline (its slices join it; a continuation may not add or change
   `source`/`after` — parse error). The full render draws a
-  labelled band above the slice headers; `em render --storyline "Name"` draws one story alone, with the
-  elements it reads from outside as dimmed stub columns. `em export` carries `slice.storyline` and
+  labelled band above the slice headers; `em render --storyline "Name"` draws one story alone — its own
+  slices only, nothing from outside it — and `em render <root>.em --map` puts every story's real
+  diagram on one draggable canvas with the flow between stories (`after` thick, reads dashed and
+  labelled). **Storyline models (GH #421):** `storyline "Name" [after "Other"] [in "path.em"]` with no
+  body declares a storyline whose slices live in `<slug>/<slug>.em` — a file that starts with
+  `storyline "Name" [source "url"]` and holds slice blocks only — with its docs in `<slug>/slices/`;
+  the root is the compile unit (always give em the root), and `em storyline split <root>.em` turns
+  inline blocks into files, moving each story's docs. A storyline that reads another declares `after`
+  it (`storyline-reads-without-after`). `em export` carries `slice.storyline` and
   `model.storylines[]`; `em query slices --storyline`; `em slice index` adds a Storyline column. Once
   any storyline exists a slice outside every one is the advisory warning `slice-outside-storyline`.
   `after "<other>"` reads the storyline as if its slices followed the referenced storyline's last

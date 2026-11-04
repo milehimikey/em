@@ -72,7 +72,13 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    optional `after "<storyline>"` timeline clause: `em-dsl.md`) so the diagram gets a band per
    story and `em render --storyline "Name"` can show one alone; slices keep their file order, and
    a model can adopt storylines incrementally (`slice-outside-storyline` is only an advisory
-   warning) — but name them before you slice, not after. Then group events into **contexts** (bounded contexts /
+   warning) — but name them before you slice, not after. **Once the storylines are named, give
+   each its own file** (GH #421): run `em storyline split <root>.em` so the root keeps the
+   vocabulary and the storyline list with its flow (`storyline "Name" [after "Other"]`) and each
+   story's slices live in `<slug>/<slug>.em` with its docs in `<slug>/slices/` — do this before any
+   doc is wired, so nothing moves twice. **A storyline that reads another story's events declares
+   `after` it** (`storyline-reads-without-after` flags the ones you miss); two stories that run in
+   parallel read nothing from each other. Then group events into **contexts** (bounded contexts /
    aggregates) — ask which events share a consistency boundary and who owns them. Classify each
    slice as one of the 4 patterns. **Share the slice between every automation or translation and
    the command it triggers** (the reaction — processor/translation — together with the command
@@ -92,17 +98,26 @@ Goal: a structurally complete, **validated** model with correct patterns and swi
    read model; a child view only when its query needs what the parent view lacks), the
    **views-as-lookups check** per `from "E"` on a view (does E add, change or remove a row here? if
    it only fills a column, put the column on the event that creates the row and drop E — see
-   `${CLAUDE_PLUGIN_ROOT}/shared/reference/methodology.md`, "Views as lookups"), and the
+   `${CLAUDE_PLUGIN_ROOT}/shared/reference/methodology.md`, "Views as lookups"), then the
+   **trigger / housekeeping split** on what is left (*which event is the reason this row appears?*
+   that one stays in `from`; every event that only keeps a row current or removes it moves to
+   `updates from` — the view still reads it, the diagram no longer draws it; a to-do list with more
+   than one or two inbound arrows is missing this split), the **continuation check** per `view X
+   again` (it names only the events that changed the view since the previous instance, never the
+   first instance's list again), and the
    **conditional-invariant signal** (invariants or fields that apply only "if `<field>` is set"
-   mean two intents in one command: split it). The `timeline-entity-clustered`,
-   `command-second-intent`, `automation-split-by-outcome` and `view-lookup-source` lints are the
-   mechanical half (the last one only catches the cross-context cases — do the check by eye too); the
-   1.18.0 design exit gate is `em validate --shape`. Shape the model first, scaffold docs after: a rename,
+   mean two intents in one command: split it). Read each story on its own render and on the canvas
+   (`em render <root>.em --map`), not on the full timeline. The `timeline-entity-clustered`,
+   `command-second-intent`, `automation-split-by-outcome`, `view-lookup-source`,
+   `again-restates-sources` and `storyline-reads-without-after` lints are the
+   mechanical half (the lookup one only catches the cross-context cases — do the check by eye too); the
+   design exit gate is `em validate --shape`. Shape the model first, scaffold docs after: a rename,
    split or merge from the reshape would orphan docs already wired with `--wire`. The `slice` phase is unchanged (timeline order).
 3. **Elaborate scenarios — first pass (step 6).** Scaffold every slice's doc now, one per
    slice, none skipped: `em slice new "<slice name>" --pattern <state-change|state-view|
    automation|translation> --swimlane "<Persona> → <Context>" --wire <model>.em` writes
-   `slices/<slice-name>.md` at `status: draft` (the same command, flags, and `--wire`
+   `slices/<slice-name>.md` at `status: draft` (into the slice's own storyline folder when the model
+   is split — pass the ROOT model to `--wire`) (the same command, flags, and `--wire`
    note-binding the `slice` phase's step 2 below documents in full). A slice whose only element
    is a `view X again` instance is a **continuation** (MIL-208), not a slice to scaffold —
    `--wire` refuses it and names the originating slice holding `X`'s first declaration; its

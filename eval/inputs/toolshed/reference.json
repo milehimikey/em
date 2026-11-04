@@ -1,0 +1,105 @@
+{
+  "input": "toolshed",
+  "reactions": [
+    {
+      "name": "Send Overdue Notice",
+      "slices": [
+        "overdue-loans-to-notify",
+        "send-overdue-notice",
+        "my-loans-overdue-notice-sent"
+      ],
+      "events": [
+        "Overdue Notice Sent"
+      ]
+    },
+    {
+      "name": "Record Overdue Notice Failure",
+      "slices": [
+        "record-overdue-notice-failure",
+        "my-loans-overdue-notice-failed",
+        "undelivered-notices"
+      ],
+      "events": [
+        "Overdue Notice Failed"
+      ]
+    },
+    {
+      "name": "Collect Hold",
+      "slices": [
+        "holds-to-collect",
+        "collect-hold",
+        "my-holds-hold-collected",
+        "undelivered-notices-hold-collected",
+        "holds-to-fulfill",
+        "pickup-notices-to-send",
+        "pickups-to-expire"
+      ],
+      "events": [
+        "Hold Collected"
+      ]
+    },
+    {
+      "name": "Fulfill Hold",
+      "slices": [
+        "holds-to-fulfill",
+        "fulfill-hold",
+        "tool-catalog-hold-fulfilled",
+        "my-holds-hold-fulfilled",
+        "pickup-notices-to-send",
+        "pickups-to-expire"
+      ],
+      "events": [
+        "Hold Fulfilled"
+      ]
+    },
+    {
+      "name": "Send Pickup Notice",
+      "slices": [
+        "pickup-notices-to-send",
+        "send-pickup-notice",
+        "my-holds-pickup-notice-sent"
+      ],
+      "events": [
+        "Pickup Notice Sent"
+      ]
+    },
+    {
+      "name": "Record Pickup Notice Failure",
+      "slices": [
+        "record-pickup-notice-failure",
+        "my-holds-pickup-notice-failed",
+        "undelivered-notices-pickup-notice-failed"
+      ],
+      "events": [
+        "Pickup Notice Failed"
+      ]
+    },
+    {
+      "name": "Expire Hold",
+      "slices": [
+        "pickups-to-expire",
+        "expire-hold",
+        "my-loans-hold-expired",
+        "my-holds-hold-expired",
+        "tool-catalog-hold-expired",
+        "undelivered-notices-hold-expired",
+        "holds-to-fulfill",
+        "pickup-notices-to-send"
+      ],
+      "events": [
+        "Hold Expired"
+      ]
+    },
+    {
+      "name": "Flag Neighbor",
+      "slices": [
+        "neighbors-to-flag",
+        "flag-neighbor",
+        "neighbors-neighbor-flagged"
+      ],
+      "events": [
+        "Neighbor Flagged"
+      ]
+    }
+  ]
+}

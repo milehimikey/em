@@ -13,6 +13,11 @@
 //   - entityClusteredRate:   share of State Change slices inside a run of >= 3 consecutive same-context
 //                            State Change slices that ends in exactly one trailing State View reading only
 //                            from that run (0 = none)
+//   - todoInboundLines:      GH #423 — drawn `from` arrows into the read models that feed a reaction
+//                            (to-do lists), summed; `updates from` sources (schema 1.20, never drawn)
+//                            do not count. Per to-do view the ideal is 1 (the triggering event).
+//   - storylineReadsWithoutAfter: GH #423 — storyline pairs where B reads A's events and declares no
+//                            `after` chain reaching A (0 = every cross-story read is a declared flow)
 // plus businessEventRecall (reference business events found in the produced model) for convenience.
 // Reads only `em export` output (no em import), so it runs anywhere Node does.
 
@@ -76,6 +81,36 @@ export function entityClustered(slices) {
   return { clustered, stateChanges, rate: stateChanges ? clustered / stateChanges : 0 };
 }
 
+/** GH #423: drawn arrows into to-do lists. A to-do list is a view with a view->reaction edge; its
+ *  inbound lines are the `from` edges into it (source "from"; an `updates-from` edge is not drawn).
+ *  Returns the per-view counts and the sum. Reads `model.edges` (schema >= 1.10). */
+export function todoInboundLines(exported) {
+  const edges = exported.model.edges ?? [];
+  const kindOf = new Map();
+  for (const s of exported.model.slices) for (const e of s.elements) kindOf.set(e.ref, e.kind);
+  const reactionKinds = new Set(["automation", "processor", "saga", "translation"]);
+  const todo = new Set(edges.filter((e) => kindOf.get(e.from) === "view" && reactionKinds.has(kindOf.get(e.to))).map((e) => e.from));
+  const perView = {};
+  for (const v of todo) perView[v] = edges.filter((e) => e.to === v && e.source === "from").length;
+  return { perView, total: Object.values(perView).reduce((a, b) => a + b, 0), todoViews: todo.size };
+}
+
+/** GH #423: cross-storyline reads not declared as flow — mirrors the `storyline-reads-without-after`
+ *  lint from the export's `storylines[]` (`after`) and `storylineEdges` (schema >= 1.20). */
+export function storylineReadsWithoutAfter(exported) {
+  const storylines = exported.model.storylines ?? [];
+  const edges = exported.model.storylineEdges ?? [];
+  const afterOf = new Map(storylines.map((s) => [norm(s.name), s.after ? norm(s.after) : null]));
+  const chain = (name) => {
+    const out = new Set();
+    let cur = afterOf.get(norm(name));
+    while (cur && !out.has(cur)) { out.add(cur); cur = afterOf.get(cur) ?? null; }
+    return out;
+  };
+  const missing = edges.filter((e) => e.kind === "reads" && !chain(e.to).has(norm(e.from)) && !chain(e.from).has(norm(e.to)));
+  return { count: missing.length, pairs: missing.map((e) => `${e.from} -> ${e.to}`) };
+}
+
 export function score(exported, reference, aliases = {}) {
   const slices = exported.model.slices;
   const expected = new Set(reference.reactions.flatMap((r) => r.slices));
@@ -100,6 +135,8 @@ export function score(exported, reference, aliases = {}) {
   const found = expectedEvents.filter((e) => producedEvents.has(norm(e)));
 
   const cluster = entityClustered(slices);
+  const todo = todoInboundLines(exported);
+  const reads = storylineReadsWithoutAfter(exported);
   return {
     input: reference.input,
     reactions,
@@ -115,6 +152,11 @@ export function score(exported, reference, aliases = {}) {
     stateChangeSlices: cluster.stateChanges,
     entityClusteredSlices: cluster.clustered,
     entityClusteredRate: cluster.rate,
+    todoViews: todo.todoViews,
+    todoInboundLines: todo.total,
+    todoInboundLinesPerView: todo.perView,
+    storylineReadsWithoutAfter: reads.count,
+    storylineReadsWithoutAfterPairs: reads.pairs,
   };
 }
 
@@ -139,6 +181,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     console.log(`aliases used           ${result.aliasesUsed}`);
     console.log(`business-event recall  ${result.businessEventRecall.toFixed(2)}`);
     console.log(`entity-clustered rate  ${result.entityClusteredRate.toFixed(2)} (${result.entityClusteredSlices}/${result.stateChangeSlices} State Change slices)`);
+    console.log(`to-do inbound lines    ${result.todoInboundLines} over ${result.todoViews} to-do view(s) (ideal 1 each; GH #423)`);
+    console.log(`reads without after    ${result.storylineReadsWithoutAfter}${result.storylineReadsWithoutAfterPairs.length ? ` (${result.storylineReadsWithoutAfterPairs.join("; ")})` : ""}`);
     if (result.extraSlices.length) console.log(`extra slices           ${result.extraSlices.join(", ")}`);
     if (result.missingSlices.length) console.log(`missing slices         ${result.missingSlices.join(", ")}`);
   }
