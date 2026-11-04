@@ -886,12 +886,20 @@ slice "Overdue Loans To Notify" {
 - **Where lines point.** A diagnostic about an element in a storyline file prints as
   `warn :<file>:<line>`, and `em slice new --wire` writes the note into the file that declares the
   slice. `em watch` watches the root, its storyline files and `slices/`.
-- **Docs stay beside the root** in this first step: `note "slices/<key>.md"` in a storyline file is
-  relative to the root's directory, same as `slices/<key>.md` everywhere else. Moving each story's docs
-  into its folder is the next step of GH #421.
+- **Docs live beside the file that declares the slice.** A storyline model's slice doc is
+  `<dir>/slices/<key>.md`, and `note "slices/<key>.md"` in that file means exactly that: the path is
+  relative to the declaring file, so the clause, the export's `doc.path` and every check read the
+  same `slices/<key>.md` they always did. em finds a doc by its key across the root's `slices/` and
+  every storyline folder's (root first; a key is unique per model), so `em slice sync`, `ratify`,
+  `mark-implemented`, `defer`, `review`, `conform`, the catalog, the README index and the renders
+  all work on a split model without being told where a doc went. `em slice new --wire` writes a new
+  doc into the slice's own folder; the root README links through the folder
+  (`<dir>/slices/<key>.md`). A folder counts as a storyline folder only when it holds a storyline
+  model file, so a sibling model's directory is never mistaken for one.
 - **Upgrade path.** `em storyline split <root>.em` moves every inline block into its file, byte for
-  byte, and leaves the declaration behind ([cli.md](cli.md#em-storyline-split-file)). The model
-  reads the same before and after (`em export` differs only in each storyline's `file`).
+  byte, leaves the declaration behind, and moves each story's docs and per-slice diagrams into the
+  folder's `slices/` ([cli.md](cli.md#em-storyline-split-file)). The model reads the same before
+  and after (`em export` differs only in each storyline's `file`).
 - **Export:** `model.storylines[].file` (schema 1.20; `null` for an inline block).
 
 ## Invariants

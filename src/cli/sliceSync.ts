@@ -34,7 +34,6 @@
 // tool (check-only) share `buildSliceSyncJson`.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
@@ -42,6 +41,7 @@ import { buildSliceRegions, GeneratedRegion, regionEndLine, regionStartLine, sca
 import { isOldHashScope, parseSliceDoc, ratifiedHashScope, RatifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { replaceFieldValue } from "./frontmatterSurgery.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "../emit/json.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 // 1.0 (MIL-266): initial shape.
 export const SLICE_SYNC_SCHEMA_VERSION = "1.0";
@@ -210,7 +210,7 @@ export function runSliceSync(
     if (only !== null && path !== only) continue;
     const docKey = path.replace(/^slices\//, "").replace(/\.md$/, "");
     const ownerIdx = indices.find((i) => refs.sliceKeys[i] === docKey) ?? Math.min(...indices);
-    const abs = join(baseDir, path);
+    const abs = docAbsPath(baseDir, path); // GH #421: the doc may sit in a storyline folder
     const raw = readFileSync(abs, "utf8");
     // GH #368: the doc's own authored scenarios retire the collection stubs they cover.
     // The story region is the one region sync inserts (unsigned docs only). A doc that had no

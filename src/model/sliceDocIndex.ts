@@ -23,6 +23,7 @@ import { NOTE_SLICE_PATH } from "../catalog/docJoin.js";
 import { NormalizedModel, Slice } from "./model.js";
 import { RefsResult } from "./refs.js";
 import { continuationOf } from "./continuation.js";
+import { docDirs } from "../catalog/docLocate.js";
 
 /** Matches a slice-doc filename (`slices/<key>.md`) — same kebab-slug grammar
  *  `catalog/sliceDoc.ts`'s SLICE_REF and `docJoin.ts`'s NOTE_SLICE_PATH use for the key itself. */
@@ -36,14 +37,21 @@ const SLICE_DOC_FILENAME_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/i;
  *  same silent-miss convention `readSliceDoc()` uses for a missing file. */
 export function loadSliceDocsOnce(baseDir: string): Map<string, SliceDoc> {
   const docs = new Map<string, SliceDoc>();
+  // GH #421: every doc folder, root first; a key already seen in an earlier folder wins.
+  for (const slicesDir of docDirs(baseDir)) loadFolder(docs, slicesDir);
+  return docs;
+}
+
+function loadFolder(docs: Map<string, SliceDoc>, slicesDir: string): void {
   let entries: string[];
   try {
-    entries = readdirSync(join(baseDir, "slices"));
+    entries = readdirSync(slicesDir);
   } catch {
-    return docs;
+    return;
   }
   const names = new Set(entries);
   for (const name of entries) {
+    if (docs.has(name.toLowerCase().replace(/\.md$/, ""))) continue;
     const m = SLICE_DOC_FILENAME_RE.exec(name);
     if (!m) continue;
     const key = m[1].toLowerCase();
@@ -55,15 +63,15 @@ export function loadSliceDocsOnce(baseDir: string): Map<string, SliceDoc> {
     // on every platform.
     if (m[1] !== key) {
       if (names.has(`${key}.md`)) continue;
-      if (!existsSync(join(baseDir, "slices", `${key}.md`))) continue;
+      if (!existsSync(join(slicesDir, `${key}.md`))) continue;
     }
     try {
-      docs.set(key, parseSliceDoc(readFileSync(join(baseDir, "slices", name), "utf8")));
+      docs.set(key, parseSliceDoc(readFileSync(join(slicesDir, name), "utf8")));
     } catch {
       // unreadable — treated as "no doc" for this key, same as a fs error inside readSliceDoc().
     }
   }
-  return docs;
+
 }
 
 /** A slice's query-facing doc join — deliberately narrower than `SliceDocExport`

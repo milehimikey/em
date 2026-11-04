@@ -27,7 +27,6 @@
 // sign-off nor the old review describes the brand-new version.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -35,6 +34,7 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { parseSliceDoc, uncheckedOpenQuestions } from "../catalog/sliceDoc.js";
 import { isValidDateString } from "./stateFile.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 /** The status this command flips a slice doc to — the review gate
  *  (docs/process.md#the-slice-lifecycle-gates): the room walked the slice and every open question
@@ -211,7 +211,7 @@ export function runReview(
     };
   }
 
-  const absPath = join(baseDir, doc.path);
+  const absPath = docAbsPath(baseDir, doc.path); // GH #421: the doc may sit in a storyline folder
   const raw = readFileSync(absPath, "utf8");
   const result = applyReviewFrontmatter(raw, reviewedBy, reviewedOn, opts.again === true);
   if (!result.ok) {

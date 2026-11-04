@@ -49,6 +49,7 @@ import { STATE_FILE_NAME } from "./stateFile.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue, replaceFieldValue } from "./frontmatterSurgery.js";
 import { QueuedItem, parseQueuedBullet, queuedItems } from "../catalog/deferQueue.js";
 import { isOldHashScope, ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 const OPEN_QUESTIONS_HEADING = /^##\s+Open Questions\s*$/i;
 const TASK_ITEM = /^([ \t]*[-*]\s*)\[([ xX])\](.*)$/;
@@ -633,7 +634,7 @@ export function runDefer(
 ): RunDeferResult {
   const doc = resolveDeferDoc(model, refs, baseDir, sliceKey);
   if (!doc.ok) return doc;
-  const absDoc = join(baseDir, doc.path);
+  const absDoc = docAbsPath(baseDir, doc.path); // GH #421
   const docRaw = readFileSync(absDoc, "utf8");
 
   // GH #253: a signed doc has no `- [ ]` to rewrite (readiness required none) — the deferral is
@@ -679,7 +680,7 @@ export function runDeferFromIssue(
   if (text.trim() === "") return { ok: false, message: "--from-issue needs the issue's text (a case-sensitive substring)" };
   const doc = resolveDeferDoc(model, refs, baseDir, sliceKey);
   if (!doc.ok) return doc;
-  const absDoc = join(baseDir, doc.path);
+  const absDoc = docAbsPath(baseDir, doc.path); // GH #421
   const docRaw = readFileSync(absDoc, "utf8");
 
   const signed = isSignedDoc(docRaw);

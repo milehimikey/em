@@ -21,12 +21,13 @@
 // continuation.ts, just applied to this module's filename-convention resolution instead of
 // notes.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { relative, sep } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { computeRefs } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
-import { readCoverageDocs, CoveringDoc } from "../catalog/coverage.js";
+import { readCoverageDocsAll, CoveringDoc } from "../catalog/coverage.js";
+import { locateDoc } from "../catalog/docLocate.js";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
 /** Each slice's resolved design doc (own `slices/<key>.md`, the MIL-121 covering doc, the
@@ -47,20 +48,22 @@ export interface SliceDocFile {
 export function readSliceDocFiles(model: NormalizedModel, baseDir: string): (SliceDocFile | null)[] {
   const refs = computeRefs(model);
   const { sliceKeys } = refs;
-  const slicesDir = join(baseDir, "slices");
   let coverage: Map<string, CoveringDoc> | null = null; // built lazily, only if ever needed
+  // GH #421 step 2: a doc sits beside the file that declares its slice; docLocate finds it by key
+  // and `path` is where it IS, relative to the root (`<dir>/slices/<key>.md`), so a header link
+  // from any output location resolves to the real file.
   const file = (key: string): SliceDocFile | null => {
-    const abs = join(slicesDir, `${key}.md`);
-    return existsSync(abs) ? { path: `slices/${key}.md`, doc: parseSliceDoc(readFileSync(abs, "utf8")) } : null;
+    const abs = locateDoc(baseDir, `slices/${key}.md`);
+    return abs ? { path: relative(baseDir, abs).split(sep).join("/"), doc: parseSliceDoc(readFileSync(abs, "utf8")) } : null;
   };
 
   return model.slices.map((_slice, i) => {
     const sliceKey = sliceKeys[i];
     const own = file(sliceKey);
     if (own) return own;
-    coverage ??= readCoverageDocs(slicesDir);
+    coverage ??= readCoverageDocsAll(baseDir);
     const covering = coverage.get(sliceKey);
-    if (covering) return { path: `slices/${covering.key}.md`, doc: covering.doc };
+    if (covering) return file(covering.key) ?? { path: `slices/${covering.key}.md`, doc: covering.doc };
     const continuation = continuationOf(model, refs, i);
     if (continuation) return file(continuation.sliceKey);
     return null;

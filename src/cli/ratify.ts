@@ -49,7 +49,6 @@
 // The line goes directly after `ratifiedOn:`, replacing any earlier confirmation line.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -61,6 +60,7 @@ import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normaliz
 import { REVIEWED_STATUS } from "./review.js";
 import { isValidDateString } from "./stateFile.js";
 import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 /** MIL-238: the ratifier's API-first statement about this version of a public-touching slice. */
 export type MeaningConfirmation = { kind: "meaning-unchanged" } | { kind: "contract-change"; why: string };
@@ -553,7 +553,7 @@ export function runRatify(
     };
   }
 
-  const absPath = join(baseDir, doc.path);
+  const absPath = docAbsPath(baseDir, doc.path); // GH #421: the doc may sit in a storyline folder
   const raw = readFileSync(absPath, "utf8");
   // MIL-284: probe first without an identity. The idempotent re-run and every refusal need no
   // git at all — and must not be turned into a "uncommitted changes" refusal by a ratify edit

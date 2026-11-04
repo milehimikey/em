@@ -5328,13 +5328,18 @@ em validate orders/orders.em
 
 ## `em storyline split <file>`
 
+See [dsl.md, Storyline models](dsl.md#storyline-models--one-file-per-storyline-gh-421) for where
+a split model's docs live and how every command finds them.
+
 The upgrade path to storyline models (GH #421, [dsl.md](dsl.md#storyline-models--one-file-per-storyline-gh-421)).
 For every inline `storyline "X" { … }` block in the root it writes `<slug>/<slug>.em` — a
 `storyline "X" [source "…"]` header, a blank line, then the block's slice lines with the block's
-indentation removed, otherwise byte for byte — and replaces the block in the root with the one-line
-declaration `storyline "X" [after "Y"]`. Slice docs stay where they are (`slices/` under the root), so
-no binding, signature or ratification moves. The model reads the same before and after: `em export`
-differs only in each storyline's `file`.
+indentation removed, otherwise byte for byte — replaces the block in the root with the one-line
+declaration `storyline "X" [after "Y"]`, and moves each of the story's slice docs and per-slice
+diagrams (`slices/<key>.md`, `slices/<key>.svg`) into `<slug>/slices/`. Bindings, signatures and
+ratifications are untouched: a doc path is relative to the declaring file, so `slices/<key>.md`
+still names the same doc. The model reads the same before and after: `em export` differs only in
+each storyline's `file`.
 
 | Flag | Effect |
 |---|---|

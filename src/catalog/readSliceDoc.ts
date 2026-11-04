@@ -10,12 +10,13 @@
 // (catalog/lineageValidate.ts) — three callers with different reactions to
 // "no doc here," so the read itself stays opinion-free.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { parseSliceDoc, SliceDoc } from "./sliceDoc.js";
+import { locateDoc } from "./docLocate.js";
 
 export function readSliceDoc(baseDir: string, sliceKey: string): SliceDoc | null {
-  const path = join(baseDir, "slices", `${sliceKey}.md`);
-  if (!existsSync(path)) return null;
+  // GH #421 step 2: the key's doc may sit in a storyline folder — catalog/docLocate.ts finds it.
+  const path = locateDoc(baseDir, `slices/${sliceKey}.md`);
+  if (!path) return null;
   return parseSliceDoc(readFileSync(path, "utf8"));
 }

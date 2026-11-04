@@ -45,6 +45,7 @@ export function defaultStorylineOut(file: string, storylineName: string): string
   return join(dirname(file), "storylines", `${kebabSlug(storylineName)}.svg`);
 }
 
-export function defaultSliceOut(file: string, sliceName: string): string {
-  return join(dirname(file), "slices", `${kebabSlug(sliceName)}.svg`);
+export function defaultSliceOut(file: string, sliceName: string, dirPrefix = ""): string {
+  // GH #421: `dirPrefix` is the slice's storyline folder (`<dir>/`), "" for a root slice
+  return join(dirname(file), dirPrefix, "slices", `${kebabSlug(sliceName)}.svg`);
 }

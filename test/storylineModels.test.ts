@@ -178,7 +178,7 @@ describe("on disk: compileModelFile, export and em storyline split", () => {
     const x = em(dir, ["export", "shed.em"]);
     expect(x.status).toBe(0);
     expect(JSON.parse(x.stdout).model.slices).toHaveLength(6);
-  });
+   }, 60_000); // three CLI spawns: well over vitest's 5s default on a CI runner
 
   it("em storyline split moves the example model's inline blocks into files and the export reads the same (only `file` differs)", () => {
     const exDir = mkdtempSync(join(tmpdir(), "em-split-"));
