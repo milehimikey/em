@@ -80,7 +80,7 @@ describe("syncDocText (pure)", () => {
     const r = syncDocText(doc, buildSliceRegions(model, [0]));
     expect(r.status).toBe("ok");
     expect(r.next).toBe(doc);
-    expect(r.regions.map((x) => x.status)).toEqual(["ok", "ok", "ok", "ok"]);
+    expect(r.regions.map((x) => x.status)).toEqual(["ok", "ok", "ok", "ok", "ok"]); // story + command + event + view + invariants
   });
 
   it("reports orphan and missing regions without touching them", () => {
@@ -97,6 +97,7 @@ describe("syncDocText (pure)", () => {
     expect(r.regions).toEqual([
       { name: "em-slice-event-gone", status: "orphan" },
       { name: "em-slice-command", status: "stale" },
+      { name: "em-slice-story", status: "missing" },
       { name: "em-slice-event", status: "missing" },
       { name: "em-slice-view", status: "missing" },
       { name: "em-slice-invariants", status: "missing" },
@@ -159,10 +160,32 @@ describe("em slice sync (CLI)", () => {
     expect(again.stdout).toBe("ok: slices/pay.md\n");
   });
 
-  it("skips a doc without regions with a note (write) / no-regions (check), leaving it byte-identical", () => {
+  it("an unsigned doc without regions adopts the story line as its first region (write) / is stale (check); its field tables are still not inserted", () => {
     writeFileSync(join(dir, "m.em"), MODEL("couponCode"));
     mkdirSync(join(dir, "slices"));
     const doc = "---\nschemaVersion: 1\npattern: state-change\nswimlane: x\nstatus: draft\nversion: 1\n---\n# Slice: Pay\n\nfree prose\n";
+    writeFileSync(join(dir, "slices", "pay.md"), doc);
+    const c = em(["slice", "sync", "m.em", "--check"], dir);
+    expect(c.status).toBe(1);
+    expect(c.stdout).toBe("stale: slices/pay.md (em-slice-story)\n");
+    expect(readFileSync(join(dir, "slices", "pay.md"), "utf8")).toBe(doc);
+    const r = em(["slice", "sync", "m.em"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("synced: slices/pay.md (em-slice-story)\n");
+    expect(r.stderr).toBe("");
+    const after = readFileSync(join(dir, "slices", "pay.md"), "utf8");
+    expect(after).toContain("# Slice: Pay\n\n<!-- GENERATED:em-slice-story:start");
+    expect(after).toContain("\nStep 1 of 2 · the story starts here · before [Paid](./paid.md) · State Change\n<!-- GENERATED:em-slice-story:end -->\n\nfree prose\n");
+    expect(after).not.toContain("em-slice-command");
+    const again = em(["slice", "sync", "m.em", "--check"], dir);
+    expect(again.stdout).toBe("ok: slices/pay.md\n");
+    expect(again.stderr).toBe(""); // story-only doc: the never-generated tables are not reported missing
+  });
+
+  it("skips a SIGNED doc without regions with a note (write) / no-regions (check), leaving it byte-identical", () => {
+    writeFileSync(join(dir, "m.em"), MODEL("couponCode"));
+    mkdirSync(join(dir, "slices"));
+    const doc = "---\nschemaVersion: 1\npattern: state-change\nswimlane: x\nstatus: ready-to-implement\nversion: 1\nratifiedHash: sha256:0000\n---\n# Slice: Pay\n\nfree prose\n";
     writeFileSync(join(dir, "slices", "pay.md"), doc);
     const r = em(["slice", "sync", "m.em"], dir);
     expect(r.status).toBe(0);
@@ -190,6 +213,7 @@ describe("em slice sync (CLI)", () => {
           path: "slices/pay.md",
           status: "stale",
           regions: [
+            { name: "em-slice-story", status: "ok" },
             { name: "em-slice-command", status: "stale" },
             { name: "em-slice-event", status: "ok" },
             { name: "em-slice-view", status: "ok" },

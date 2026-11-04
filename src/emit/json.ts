@@ -184,7 +184,7 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // 1.19 (GH #278), same schema version: `element.alternativeGroup: string | null` — for the events
 // of one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (shared by all of them,
 // so a consumer groups by equal value); null on every other element. Additive-only.
-export const SCHEMA_VERSION = "1.19";
+export const SCHEMA_VERSION = "1.20";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -217,6 +217,9 @@ export interface ElementExport {
   issue: string | null;
   divergence: string | null;
   from: { name: string; ref: string | null }[] | null;
+  /** The `updates from` subset of `from` (schema 1.20, view only): events that keep rows current
+   *  or remove them; `from` still carries every source. `null` when the view declares none. */
+  updatesFrom: { name: string; ref: string | null }[] | null;
   persona: string | null;
   context: string | null;
   again: boolean;
@@ -621,6 +624,10 @@ export function buildExportDoc(
         issue: el.issue ?? null,
         divergence: el.divergence ?? null,
         from: fromOf(el),
+        updatesFrom:
+          el.updatesFrom && el.updatesFrom.length > 0
+            ? el.updatesFrom.map((name) => ({ name, ref: refOf(resolveByName(model.byName, name)) }))
+            : null,
         persona: el.persona ?? null,
         context: el.context ?? null,
         again: el.again === true,

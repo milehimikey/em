@@ -9,6 +9,10 @@ version: 1
 
 ![Diagram](./checkout.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+Step 1 of 3 · the story starts here · before [Order Confirmation](./order-confirmation.md) · State Change
+<!-- GENERATED:em-slice-story:end -->
+
 ## Intent
 A customer turns a filled basket into an order the warehouse can fulfil.
 

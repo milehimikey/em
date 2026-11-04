@@ -18,7 +18,7 @@ import { isLaterOnTimeline, latestOnTimeline } from "./storylines.js";
  *  as an arrow (`render/drawEdges.ts` skips this source explicitly; see `render/drawNotes.ts`'s
  *  legend instead). First-wins on a duplicate (from, to) pair in exactly this order — an
  *  `arrow` restating an inferred connection is the same line. */
-export type EdgeSource = "pattern" | "from" | "arrow" | "loops-to";
+export type EdgeSource = "pattern" | "from" | "arrow" | "loops-to" | "updates-from";
 
 export interface SemanticEdge {
   from: string;
@@ -102,9 +102,16 @@ export function semanticEdges(model: NormalizedModel): SemanticEdge[] {
   // Cross-slice `from` wiring:
   //   view       from event(s)      -> event -> view
   //   automation from read model(s) -> view  -> automation
+  // An `updates from` source (view only) is the same resolved event -> view connection with
+  // source "updates-from": the event keeps rows current or removes them instead of putting
+  // work on the list, so the renderer lists it in the legend and never draws it as an arrow
+  // (render/drawEdges.ts skips it like "loops-to"). `from` holds the union, with the
+  // `updates from` names last, so a name in both lists keeps its drawn "from" edge.
   for (const el of model.elements) {
+    const updates = new Set((el.updatesFrom ?? []).map(normalizeName));
     for (const name of el.from ?? []) {
-      for (const src of resolveFromSources(model, el, name)) add(src.id, el.id, "from");
+      const source: EdgeSource = updates.has(normalizeName(name)) ? "updates-from" : "from";
+      for (const src of resolveFromSources(model, el, name)) add(src.id, el.id, source);
     }
   }
 

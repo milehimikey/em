@@ -55,6 +55,7 @@ const DIVERGENCE_FILL = "#26A69A"; // muted teal (accepted divergences — settl
 const DIVERGENCE_STROKE = "#00695C"; // dark teal
 const LOOP_FILL = "#5C6BC0"; // indigo (MIL-199: loops-to — the one marker with no drawn arrow)
 const LOOP_STROKE = "#283593"; // dark indigo
+const UPDATES_STROKE = "#2E7D32"; // dark green (`updates from`: sources listed, never drawn)
 
 /**
  * Elements carrying a note, in document order, EXCLUDING an element whose `.note` is its
@@ -88,6 +89,12 @@ export function divergedElements(model: NormalizedModel): Element[] {
  *  every row sharing that same number (see `appendNoteLegend`'s "Loops" section). */
 export function loopedElements(model: NormalizedModel): Element[] {
   return model.elements.filter((el) => (el.loopsTo ?? []).length > 0);
+}
+
+/** Views carrying an `updates from` clause, in document order: the events that keep their rows
+ *  current or remove them. Listed in the legend's "Kept current by" section; no arrow, no marker. */
+export function updatedElements(model: NormalizedModel): Element[] {
+  return model.elements.filter((el) => (el.updatesFrom ?? []).length > 0);
 }
 
 /** How to turn an element's note into the link href (default: the raw note path). */
@@ -282,7 +289,8 @@ export function appendNoteLegend(
   const issued = issuedElements(model);
   const diverged = divergedElements(model);
   const loops = loopRows(model);
-  if (noted.length === 0 && issued.length === 0 && diverged.length === 0 && loops.length === 0) {
+  const updated = updatedElements(model);
+  if (noted.length === 0 && issued.length === 0 && diverged.length === 0 && loops.length === 0 && updated.length === 0) {
     return svg;
   }
 
@@ -299,7 +307,8 @@ export function appendNoteLegend(
   const issuesH = issued.length > 0 ? HEAD_H + issued.length * LINE_H : 0;
   const divergencesH = diverged.length > 0 ? HEAD_H + diverged.length * LINE_H : 0;
   const loopsH = loops.length > 0 ? HEAD_H + loops.length * LINE_H : 0;
-  const legendH = PAD_TOP + notesH + issuesH + divergencesH + loopsH + PAD_BOTTOM;
+  const updatedH = updated.length > 0 ? HEAD_H + updated.length * LINE_H : 0;
+  const legendH = PAD_TOP + notesH + issuesH + divergencesH + loopsH + updatedH + PAD_BOTTOM;
   const newVh = vh + legendH;
   const newHpt = (+hpt[1]) * (newVh / vh); // keep the pt:viewBox ratio (handles scaling)
   const top = minY + vh; // legend sits just below the diagram, in root coords
@@ -364,6 +373,16 @@ export function appendNoteLegend(
     sectionY += loopsH;
   }
 
+  if (updated.length > 0) {
+    sections +=
+      `<text x="${n(minX + PAD_X)}" y="${n(sectionY + 14)}" font-family="Helvetica" ` +
+      `font-weight="bold" font-size="12" fill="${UPDATES_STROKE}">Kept current by</text>`;
+    sections += updated
+      .map((el, i) => updatesRow(el, minX + PAD_X, sectionY + HEAD_H + i * LINE_H + 13))
+      .join("");
+    sectionY += updatedH;
+  }
+
   const legend =
     `<g class="em-note-legend">` +
     `<rect x="${n(minX)}" y="${n(top)}" width="${n(vw)}" height="${n(legendH)}" fill="#FFFFFF"/>` +
@@ -372,6 +391,17 @@ export function appendNoteLegend(
     `</g>`;
 
   return out.replace(/(<\/g>\s*)(<\/svg>)/, `$1${legend}$2`);
+}
+
+/** One "Kept current by" legend row: `<View> — Event A, Event B` (no number: nothing on the
+ *  diagram points here, the row stands for the arrows deliberately not drawn). */
+function updatesRow(el: Element, x: number, y: number): string {
+  return (
+    `<text x="${n(x)}" y="${n(y)}" font-family="Helvetica" font-size="11" fill="#202124">` +
+    `<tspan font-weight="bold" fill="${UPDATES_STROKE}">${esc(el.name)}</tspan>` +
+    `<tspan dx="6" fill="#5F6368">— ${esc((el.updatesFrom ?? []).join(", "))}</tspan>` +
+    `</text>`
+  );
 }
 
 /**
