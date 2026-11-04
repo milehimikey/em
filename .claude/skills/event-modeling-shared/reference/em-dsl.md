@@ -881,6 +881,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 <!-- GENERATED:validate-rules:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Code | Severity | Title | Fix |
 |---|---|---|---|
+| `again-restates-sources` | warning | Continuation restates sources an earlier instance already read | Name only the events that changed the view since the previous instance on the `again` line; the view's field sources are the union across instances, so nothing is lost (docs/dsl.md#view--again). |
 | `alternative-events-no-command` | error | Alternative events without a command | Add the command whose decision records one of the alternatives, in the same slice. |
 | `arrow-backward` | error | Backward arrow | Restructure so the target comes later. |
 | `arrow-unresolved-source` | error | Arrow source unresolved | Fix the arrow's source name. |
