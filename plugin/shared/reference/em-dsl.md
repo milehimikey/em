@@ -955,6 +955,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `view-again-without-earlier` | error | `again` without an earlier declaration | Declare the view plainly the first time it appears. |
 | `view-from-future-event` | error | Backward timeline (view reads a future event) | Move the source to a later `view X again` instance. |
 | `view-from-unresolved` | error | Unknown event source | Fix the `from` reference to name an existing event. |
+| `view-lookup-source` | warning | View reads an event only as a lookup | Carry the field on the event that creates this view's own row instead; if this is a genuine cross-context row change, accept it on the shape exit gate (docs/validation.md#the-shape-exit-gate) rather than fixing it (docs/patterns.md#state-view). |
 | `view-no-source` | warning | Read model without source | Add `from "Event"`, or place the view in a slice with an event. |
 <!-- GENERATED:validate-rules:end -->
 

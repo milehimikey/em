@@ -164,7 +164,12 @@ an event directly.}}
      line and field table are a GENERATED region (one per read model; `em-slice-view-<view-slug>`
      when there are several): Source / Notes names the source event a field is copied from, or
      `Derived` for a field marked `derived` in the `.em` (docs/dsl.md#derived-fields) — say how
-     it is derived in prose below the region. `{{ }}` marks a field the model cannot trace. -->
+     it is derived in prose below the region. `{{ }}` marks a field the model cannot trace.
+     If describing a field here needs a "Bookkeeping" paragraph — this view also keeps, beyond its
+     own rows, a lookup of some other entity's name/email/etc. so it can display it — that is the
+     views-as-lookups smell (methodology reference, "Views as lookups"): the field belongs on the
+     event that creates this view's row instead, copied from state the command/decider already
+     reads to enforce its own invariants. Fix the `.em`, not the prose. -->
 <!-- GENERATED:em-slice-view:start — generated from the model by `em slice sync`; do not hand-edit -->
 - **View:** `{{View Name}}` built from events: {{"Event A", "Event B"}}
 

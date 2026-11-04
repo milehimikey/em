@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// GH #292: automation-split-by-outcome and retry-slice-of.
+// GH #292: automation-split-by-outcome and retry-slice-of. GH #398: view-lookup-source.
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { validate } from "../src/model/validate.js";
 import { computeRefs } from "../src/model/refs.js";
 import { layout } from "../src/layout/grid.js";
 import { buildShapeReport } from "../src/cli/shape.js";
+import { RULES } from "../src/model/rules.js";
 
 const diagsFor = (src: string) => {
   const model = normalize(parse(src));
@@ -153,8 +154,79 @@ slice "Retry" {
   });
 });
 
+// GH #398: a view's other (non-row-creating) source is flagged when it's read from a different
+// @Context than the view's first source AND that other source is itself the first (row-creating)
+// source of some different view — i.e. it genuinely creates rows, just not here.
+describe("view-lookup-source", () => {
+  const LOOKUP = "view-lookup-source";
+
+  it("is registered as an advisory warning in the shape family (never changes em validate's default exit)", () => {
+    expect(RULES[LOOKUP].severity).toBe("warning");
+    expect(RULES[LOOKUP].family).toBe("shape");
+    // Not the --strict-promoted `advisory` family (GH #293) — a plain "warning" already never
+    // flips the exit code, which is all GH #398 requires.
+    expect((RULES[LOOKUP] as { advisory?: true }).advisory).toBeUndefined();
+  });
+
+  it("flags a cross-context source that is itself another view's row-creating source (toolshed-shaped repro)", () => {
+    const found = codes(fixture("view-lookup-source-fires.em"), LOOKUP);
+    expect(found).toHaveLength(1);
+    expect(found[0].severity).toBe("warning");
+    expect(found[0].message).toContain('view "My Loans" reads "Neighbor Registered"');
+    expect(found[0].message).toContain("docs/patterns.md#state-view");
+    expect(found[0].refs).toEqual(["my-loans/view.my-loans", "register-neighbor/event.neighbor-registered", "neighbors/view.neighbors"]);
+  });
+
+  it("does not flag the view's own same-context sources (Tool Checked Out, same @Tool as the first source)", () => {
+    const found = codes(fixture("view-lookup-source-fires.em"), LOOKUP);
+    expect(found.some((d) => d.message.includes("Tool Checked Out"))).toBe(false);
+  });
+
+  it("stays quiet for a same-context multi-source view and a cross-context source that is nobody's row-creating source", () => {
+    expect(codes(fixture("view-lookup-source-quiet.em"), LOOKUP)).toHaveLength(0);
+  });
+
+  it("both fixtures validate with zero errors, so the result is the lint's doing", () => {
+    for (const f of ["view-lookup-source-fires.em", "view-lookup-source-quiet.em"]) {
+      const errors = diagsFor(fixture(f)).filter((d) => d.severity === "error");
+      expect(errors.map((e) => e.message), f).toEqual([]);
+    }
+  });
+
+  it("stays quiet for a single-source view (nothing to compare against)", () => {
+    const src = `
+slice "Add Tool" {
+  ui Add Tool Form @Neighbor
+  command Add Tool
+  event Tool Added @Tool
+}
+slice "Tool Catalog" {
+  view Tool Catalog from "Tool Added"
+  ui Browse Catalog @Neighbor
+}`;
+    expect(codes(src, LOOKUP)).toHaveLength(0);
+  });
+
+  it("shows in the --shape report, grouped under its own rule code with docAnchor shape", () => {
+    const report = buildShapeReport(diagsFor(fixture("view-lookup-source-fires.em")), []);
+    const row = report.rules.find((r) => r.code === LOOKUP)!;
+    expect(row.findings).toHaveLength(1);
+    expect(row.docAnchor).toBe("shape");
+  });
+
+  it("is silenceable per the existing shape-family waive-file + Decisions-log mechanism — no new DSL clause (R4)", () => {
+    // Same existing waive-file rule every shape lint already uses (src/cli/shape.ts `under`):
+    // every ref on the finding needs a covering waiver line, one per distinct slice key.
+    const diags = diagsFor(fixture("view-lookup-source-fires.em"));
+    const waived = buildShapeReport(diags, [`${LOOKUP} my-loans`, `${LOOKUP} register-neighbor`, `${LOOKUP} neighbors`]);
+    const row = waived.rules.find((r) => r.code === LOOKUP)!;
+    expect(row.findings).toHaveLength(0);
+    expect(row.waived).toHaveLength(1);
+  });
+});
+
 describe("shape lints over shipped examples", () => {
-  it("raise nothing on examples/**/*.em", () => {
+  const exampleFiles = () => {
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -163,10 +235,30 @@ describe("shape lints over shipped examples", () => {
       }
     };
     walk("examples");
+    return files;
+  };
+
+  it("raise nothing on examples/**/*.em for the pre-existing lints (automation-split-by-outcome, retry-slice-of)", () => {
+    const files = exampleFiles();
     expect(files.length).toBeGreaterThan(0);
     for (const f of files) {
       const hits = diagsFor(readFileSync(f, "utf8")).filter((d) => d.code === SPLIT || d.code === "retry-slice-of");
       expect(hits, f).toEqual([]);
     }
+  });
+
+  it("view-lookup-source raises exactly one known, accepted false positive across examples (insurance-claim's Claims Dashboard)", () => {
+    // GH #398: "Payment Sent" (@Payment) genuinely changes the dashboard's existing row — the
+    // approved claim becomes a paid claim — the exact cross-context-row-change false-positive
+    // class the issue names (Tool Checked Out → My Holds). Advisory: never an error, so
+    // `em validate`'s default exit is unchanged on every shipped example.
+    const hits: string[] = [];
+    for (const f of exampleFiles()) {
+      for (const d of diagsFor(readFileSync(f, "utf8")).filter((x) => x.code === "view-lookup-source")) {
+        expect(d.severity, f).toBe("warning");
+        hits.push(`${f}: ${d.refs?.[0]}`);
+      }
+    }
+    expect(hits).toEqual([expect.stringContaining("insurance-claim.em: manager-dashboard/view.claims-dashboard")]);
   });
 });

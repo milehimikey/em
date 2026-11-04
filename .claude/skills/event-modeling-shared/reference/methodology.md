@@ -316,6 +316,22 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   view carries ids; child with its own data → embedded in the parent view; child queried without the
   parent id → its own view. Aggregate rules decide write-side consistency, never read models. *(em
   ruling)*
+- **Views as lookups: an event that creates a row carries what the row shows.** A view reads another
+  event only when that event adds, changes or removes a row the view already owns — never merely to
+  fill a column on a row some *other* event created. **Per-view check:** for each `from "E"` on a view,
+  ask *does E add, change or remove a row here? If it only fills a column, put the column on the event
+  that creates the row and drop E.* Generated models routinely come out wrong here — a wide fan-out of
+  "reference" events into every view that shows a name, and views keeping a lookup table ("every
+  neighbor's name and current email, every tool's name") beside their own rows. Fix: the decider
+  already read what it needed to enforce its own invariants (e.g. a checkout decider that reads Tool
+  Added and Neighbor Registered to validate the request already has `toolName`/`neighborName` in hand),
+  so have it assign those fields onto the event it records — the view then needs nothing beyond that
+  one event. A slice doc that needs a "Bookkeeping" paragraph (the view keeps, beyond its own rows, a
+  lookup of some other entity's fields) has this smell; see `docs/patterns.md#state-view` for the
+  worked overdue-notice example.
+  `view-lookup-source` is the mechanical, advisory half — it catches the cross-context cases with a few
+  false positives; a within-context lookup (`Tool Checked Out` read only to learn whose loan a later
+  event concerns) is invisible to it, so this check still has to be done by eye.
 - **Write side: children belong in the parent's context** when the child's invariants are checks against
   the parent. A sub-resource schema shared across parent types is one event per parent on the parent's
   context, not a shared aggregate — check the spec's event reference, not its resource section. Where
