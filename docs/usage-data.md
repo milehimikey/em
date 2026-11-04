@@ -128,6 +128,7 @@ affected lines written by hand.
 | ui shares slice with reaction |
 | ui with no view or command |
 | undeclared seam candidate |
+| unrecognized slice status |
 | view field no source |
 | view reads event as lookup |
 <!-- GENERATED:usage-categories-warnings:end -->

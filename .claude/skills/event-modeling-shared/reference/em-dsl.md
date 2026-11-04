@@ -940,6 +940,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `fields-completeness/view-field-no-source` | warning | View field with no source | Add the field to a source event, or remove it from the view. |
 | `frontmatter-coherence-implemented-without-link` | warning | Implemented without a link | Add `implementedIn` once the slice ships. |
 | `frontmatter-invalid` | warning | Invalid or missing frontmatter | Add the required frontmatter keys, or add a frontmatter block. |
+| `frontmatter-status-unrecognized` | warning | Unrecognized slice status | Set `status:` to one of draft, reviewed, ready-to-implement, implemented. |
 | `grid-collision` | error | Band collision | Split the colliding elements into separate slices. |
 | `invariant-without-scenario` | warning | Invariant cited by no scenario | Cite the INV id in the Given/When/Then (or title) of the scenario that exercises it, or add one. |
 | `invariants/declared-in-both` | warning | Invariant declared in the model and in a slice doc | Keep the model's `invariant` line; in the doc, cite the ID and elaborate instead of restating it as a `**INV-…:**` rule. |

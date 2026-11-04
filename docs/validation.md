@@ -129,6 +129,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A `view` field with no matching field on any source event, and not marked `derived` — or, for a collection field `T[] derived from "E1", …`, an element-type field of `T` that no named event carries and that is not itself marked `derived` on the `type`, as a top-level field or as a field of the declared element type of an array field on the event (one level, e.g. `optionValues: VariantOptionValue[]`); or a view field (plain, or a collection element) whose `derived from values[].attributeValueId` path source (GH #383) does not resolve on a source event (each segment's `[]` marker must match the event field's arrayness) or resolves only with a leaf type that does not match the field's | Add the field to the event, drop it from the view, mark it `derived` if it's genuinely computed, or give it a `derived from <path>` source if the event renamed/flattened it |
 | An `event` field not provided by any command in its slice | Add the field to the command, or drop it from the event |
 | A slice doc's `status: implemented` with no `implementedIn` link (`frontmatter-coherence-implemented-without-link`) | Add the `implementedIn` link, or move `status` back if it hasn't actually shipped |
+| A slice doc's `status:` that is not one of `draft`, `reviewed`, `ready-to-implement`, `implemented` (`frontmatter-status-unrecognized`, GH #411) | Set `status:` to one of the four — a legacy label or a typo reads as "unknown" to every status-driven reader and as not shipped to CI |
 
 Rendering also warns (without failing) when a `note "path.md"` points at a file that
 doesn't exist.
@@ -496,6 +497,20 @@ doc. A legacy body-label-dialect doc (MIL-86's accepted-input form, no `---` fen
 carries `implementedIn` at all, since that key has no legacy form; a doc with a fence but a
 missing required key (e.g. no `version`) is equally unreadable for this purpose. Either way this
 rule stays silent rather than flag an unreadable doc as incoherent.
+
+**Unrecognized status (`frontmatter-status-unrecognized`, GH #411).** The same pass warns when a
+bound doc's `status:` is not one of the four canonical values (`draft`, `reviewed`,
+`ready-to-implement`, `implemented` — case-insensitive, as every reader of `status` is). The
+reader stays lenient on purpose: `em export` still reports the value as written
+(`slice.doc.status: "active"`), `em status` buckets it as `unknown`, `em slice index` shows it
+as-is — nothing is dropped or rewritten. The warning exists because those readers, and any CI
+that decides what is built from `status`, treat an unknown value as not shipped, and `em
+validate` is often the only gate: a legacy label (`active`, `done`) or a typo (`implemnted`)
+used to pass silently. The message names the value and the four it could be. When this fires,
+the implemented-without-link check is skipped for that doc (an unrecognized status has no
+shipped record to be incoherent with), so a doc gets one warning, the one that names the fix.
+Warning severity keeps it non-breaking, as the report asked; there is no strict flag because the
+four values are the whole enum and every `em slice …` command writes one of them.
 
 **The non-obvious case, and the one this rule must never flag:** re-ratifying a shipped slice
 (bumping `version`, drafting a new delta) correctly flips `status` back off `implemented` —

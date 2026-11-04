@@ -28,7 +28,7 @@ import { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
 import { classifyImplementationDrift } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
-import { hasUsableFrontmatter } from "./sliceDoc.js";
+import { CANONICAL_STATUSES, hasUsableFrontmatter, isCanonicalStatus } from "./sliceDoc.js";
 
 /**
  * Resolve every slice's doc and flag genuine status/implementedIn incoherence. `baseDir` is the
@@ -41,6 +41,22 @@ export function validateFrontmatterCoherence(model: NormalizedModel, refs: RefsR
     const sliceKey = refs.sliceKeys[i];
     const doc = readSliceDoc(baseDir, sliceKey);
     if (!doc || !hasUsableFrontmatter(doc)) return;
+    // GH #411: the reader is lenient about `status:` (any string is read and exported as-is), so
+    // a typo or a legacy label — `active`, `done`, `implemnted` — used to pass `em validate`
+    // silently while every status-driven consumer treated it as "unknown" / not shipped. One
+    // warning names the value and the four values that are recognized; the match is
+    // case-insensitive (the reader lowercases), so `Draft` is fine. An unrecognized status has no
+    // shipped record to be incoherent with, so the implemented-without-link check is skipped.
+    if (!isCanonicalStatus(doc.status)) {
+      pushDiag(diags, "frontmatter-status-unrecognized", {
+        message:
+          `slice "${sliceKey}" has status: ${doc.status ?? "(empty)"} — not one of ` +
+          CANONICAL_STATUSES.join(", "),
+        line: slice.line,
+        refs: [sliceKey],
+      });
+      return;
+    }
 
     const drift = classifyImplementationDrift(doc);
     if (drift !== "implemented-without-link") return;

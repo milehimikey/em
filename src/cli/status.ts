@@ -39,10 +39,11 @@ import { findCertifiedVersion, latestModelVersionNumber, modelVersionDrift, Mode
 import { isOlder } from "../util/semver.js";
 import { slicePublicTouching } from "../catalog/apiFirst.js";
 
-/** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
- *  `em catalog`'s header coloring and `em render`'s status legend already recognize. */
-export const CANONICAL_STATUSES = ["draft", "reviewed", "ready-to-implement", "implemented"] as const;
-export type CanonicalStatus = (typeof CANONICAL_STATUSES)[number];
+// The 4 canonical slice-doc lifecycle statuses live with the doc reader (GH #411: `em validate`'s
+// frontmatter-status-unrecognized shares them); re-exported here for the rollup's own callers.
+import { CANONICAL_STATUSES, CanonicalStatus, isCanonicalStatus } from "../catalog/sliceDoc.js";
+export { CANONICAL_STATUSES };
+export type { CanonicalStatus };
 
 /** Bucket a slice's lifecycle status falls into for the rollup: one of the 4 canonical values,
  *  `"no-doc"` (no doc bound at all, or the binding names a missing file — `resolveSliceDocJoin`'s
@@ -57,7 +58,7 @@ export type StatusBucket = CanonicalStatus | "no-doc" | "frontmatter-invalid" | 
 export function classifyStatusBucket(found: boolean, reason: DocReason, status: string | null): StatusBucket {
   if (!found) return "no-doc";
   if (reason === "frontmatter-invalid") return "frontmatter-invalid";
-  if (status !== null && (CANONICAL_STATUSES as readonly string[]).includes(status)) return status as CanonicalStatus;
+  if (isCanonicalStatus(status)) return status;
   return "unknown";
 }
 
