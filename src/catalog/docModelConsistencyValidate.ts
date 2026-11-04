@@ -69,7 +69,7 @@ import { isSignedSliceDoc, SliceDoc } from "./sliceDoc.js";
 import { checkScenarioQuality } from "./scenarioQualityValidate.js";
 import { authoredTextOf, findStructuredSectionProblems, generatedRegionPlaceholders, splitCells } from "./sliceSections.js";
 import { duplicateScenarioTitles, parseScenariosLenient } from "./scenarios.js";
-import { viewSourceNames } from "../model/continuation.js";
+import { viewLoopedEventNames, viewSourceNames } from "../model/continuation.js";
 
 /** The three element kinds this rule's doc markers can name — the DSL has more (`ui`,
  *  `automation`/`processor`/`saga`/`translation`), but the slice.md template only gives
@@ -460,6 +460,9 @@ function checkFields(
 //   doc-names-unfed-event — the doc's field-table Source column (or, when the doc has exactly one
 //     view, a scenario Given/Then item) names an event that exists in the model but is not among
 //     the view's sources (the toolshed case: prose anticipated an edge the model never drew).
+//     An event reaching the view via a resolved `loops-to "<View>"` edge (MIL-199) counts as a
+//     source too (GH #397) — the DSL reference already says so, and `em export`'s `model.edges`
+//     carries the edge with `source: "loops-to"`.
 //   doc-omits-fed-event — the model feeds the view an event the doc body never mentions.
 // Event names are found by scanning text for the model's own event names (longest first, word-
 // bounded, case-insensitive), so a name embedded in a longer event name is not double-counted.
@@ -569,7 +572,11 @@ function checkViewFeeds(
   for (const marker of matched) {
     const view = modelViews.get(normalizeName(marker.name))!;
     const sources = viewSourceNames(model, view);
-    const fed = new Set(sources.map(normalizeName));
+    // GH #397: a `loops-to "<View>"` edge re-feeds this view just like an ordinary `from` —
+    // an event naming only a loop-back is still read by the view, so the doc isn't wrong to
+    // list it under the view's sources.
+    const looped = viewLoopedEventNames(model, view);
+    const fed = new Set([...sources, ...looped].map(normalizeName));
     const refsOut = [refs.sliceKeys[view.sliceIndex], refs.refById.get(view.id)!];
 
     let end = lines.length;

@@ -16,6 +16,7 @@
 // about docs at all.
 
 import { Element, NormalizedModel, normalizeName } from "./model.js";
+import { resolveLoopsToTarget } from "./edges.js";
 import { RefsResult } from "./refs.js";
 
 export interface ContinuationInfo {
@@ -84,6 +85,33 @@ export function viewSourceNames(model: NormalizedModel, view: Element): string[]
       if (seen.has(key)) continue;
       seen.add(key);
       names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Event names that re-feed the read model via a resolved `loops-to "<View>"` clause (MIL-199)
+ *  on ANY instance of this logical view — the loop-back counterpart to `viewSourceNames`'s
+ *  `from` union. The DSL reference and `model/edges.ts`'s `semanticEdges()` both treat a
+ *  resolved `loops-to` as the event being read by the view it targets; GH #397's
+ *  `doc-names-unfed-event` check honours the same rule so a slice doc naming such an event
+ *  under the view's sources is not flagged as unfed. `view` may be any instance. An unresolved
+ *  or forward-pointing `loops-to` (already its own diagnostic elsewhere) contributes nothing
+ *  here, matching `validate.ts`'s event-unread credit. */
+export function viewLoopedEventNames(model: NormalizedModel, view: Element): string[] {
+  const origin = model.byId.get(view.logicalId) ?? view;
+  const instanceIds = new Set<string>([origin.id, ...againInstancesOf(model, origin).map((v) => v.id)]);
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const el of model.elements) {
+    if (el.kind !== "event") continue;
+    for (const name of el.loopsTo ?? []) {
+      const target = resolveLoopsToTarget(model, el, name);
+      if (!target || !instanceIds.has(target.id)) continue;
+      const key = normalizeName(el.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      names.push(el.name);
     }
   }
   return names;
