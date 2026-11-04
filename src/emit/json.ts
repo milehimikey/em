@@ -19,6 +19,7 @@ import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { EdgeSource, resolveLoopsToTarget, semanticEdges } from "../model/edges.js";
+import { storylineMap } from "../model/storylineMap.js";
 import { classifySlicePattern } from "../catalog/classify.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { validateNoteBindings } from "../catalog/noteBindingValidate.js";
@@ -338,6 +339,10 @@ export interface ExportDoc {
     slices: SliceExport[];
     /** GH #277, schema 1.19: the `storyline` blocks in document order. */
     storylines: StorylineExport[];
+    /** Schema 1.20: the flow between storylines (model/storylineMap.ts) — a declared `after`
+     *  ("after", no elements) or elements of one storyline feeding another ("reads", the
+     *  crossing source elements as `{ name, ref }`). Empty for a model without storylines. */
+    storylineEdges: { from: string; to: string; kind: "after" | "reads"; elements: { name: string; ref: string }[] }[];
     arrows: unknown[];
     edges: EdgeExport[];
   };
@@ -686,6 +691,12 @@ export function buildExportDoc(
         after: st.after ?? null,
         sliceKeys: st.sliceIndexes.map((i) => sliceKeys[i]),
         file: st.file ?? null,
+      })),
+      storylineEdges: storylineMap(model).edges.map((e) => ({
+        from: e.from,
+        to: e.to,
+        kind: e.kind,
+        elements: e.elementIds.map((id) => ({ name: model.byId.get(id)?.name ?? id, ref: refOf(id)! })),
       })),
       arrows: model.arrows.map((a) => ({
         from: a.from,
