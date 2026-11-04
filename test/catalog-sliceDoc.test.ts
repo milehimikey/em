@@ -36,23 +36,20 @@ describe("parseSliceDoc", () => {
     expect(doc.supersededBy).toEqual([]);
   });
 
-  // MIL-156: the Scenarios/Invariants sections were flat single-line bullets that rendered as a
-  // dense run-on line/paragraph (soft line breaks collapse under marked's default, non-`breaks`
-  // options). The template now nests Given/When/Then (and an Invariant's optional elaboration)
-  // as their own list items — real markdown structure, not a wrapped sentence — which renders
-  // visibly separated without needing `breaks: true` (a doc-wide option change this test would
-  // also catch, since it isn't set — see sliceDoc.ts's `marked.parse` call).
-  it("renders the real template's Scenarios section as a nested list, not a run-on paragraph", () => {
+  // MIL-156/GH #402: the Scenarios/Invariants sections were flat single-line bullets that
+  // rendered as a dense run-on line/paragraph. The template nests Given/When/Then as their own
+  // list items, and since GH #402 (catalog/sliceDocRender.ts) a well-formed `### Scenario:`
+  // block renders as one bordered card — a Given/When/Then step per beat, not a heading
+  // followed by a loose bullet list.
+  it("renders the real template's Scenarios section as a scenario card, not a run-on paragraph", () => {
     const template = readFileSync(join(ROOT, ".claude/skills/event-modeling-shared/templates/slice.md"), "utf8");
     const withoutComment = template.replace(/^<!--[\s\S]*?-->\n\n/, "");
     const doc = parseSliceDoc(withoutComment);
-    // MIL-266: each case is a `### Scenario:` heading; each Given/When/Then label's own <li>
-    // contains a nested <ul> of beats — visible structure, not one collapsed sentence.
-    expect(doc.html).toMatch(/<h3[^>]*>Scenario: Happy path<\/h3>/);
-    expect(doc.html).toMatch(/<li><strong>Given:<\/strong><ul>/);
-    expect(doc.html).toContain("<strong>Given:</strong>");
-    expect(doc.html).toContain("<strong>When:</strong>");
-    expect(doc.html).toContain("<strong>Then:</strong>");
+    expect(doc.html).toMatch(/<div class="scenario-card"><h3 class="scenario-card-title">Happy path<\/h3>/);
+    expect(doc.html).toContain('<div class="scenario-step scenario-step--given">');
+    expect(doc.html).toContain('<div class="scenario-step scenario-step--when">');
+    expect(doc.html).toContain('<div class="scenario-step scenario-step--then">');
+    expect(doc.html).toContain('<span class="scenario-step-label">Given</span>');
   });
 
   it("returns null status when there's no recognizable status (freeform doc), but still renders", () => {
@@ -281,5 +278,150 @@ describe("parseSliceDoc: openQuestionsTotal / openQuestionsUnchecked (MIL-87)", 
     const doc = parseSliceDoc("## Open Questions\n- [ ] top-level question\n  - [ ] indented sub-question\n");
     expect(doc.openQuestionsTotal).toBe(2);
     expect(doc.openQuestionsUnchecked).toBe(2);
+  });
+});
+
+// GH #402: section-aware slice-doc rendering (src/catalog/sliceDocRender.ts) — Given/When/Then
+// scenario cards, anchored/linked INV-* chips, and styled field tables. Presentation only: none
+// of these change `status`/`version`/any other parsed field, only `html`.
+describe("parseSliceDoc: section-aware rendering (GH #402)", () => {
+  it("renders a well-formed `### Scenario:` block as one scenario card with a Given/When/Then step each", () => {
+    const doc = parseSliceDoc(
+      [
+        "## Scenarios",
+        "",
+        "### Scenario: Happy path",
+        "- **Given:** some precondition",
+        "- **When:** the thing happens",
+        "- **Then:** the result",
+      ].join("\n"),
+    );
+    expect(doc.html).toContain('<div class="scenario-card"><h3 class="scenario-card-title">Happy path</h3>');
+    expect(doc.html).toContain('<div class="scenario-step scenario-step--given">');
+    expect(doc.html).toContain("some precondition");
+    expect(doc.html).toContain('<div class="scenario-step scenario-step--when">');
+    expect(doc.html).toContain("the thing happens");
+    expect(doc.html).toContain('<div class="scenario-step scenario-step--then">');
+    expect(doc.html).toContain("the result");
+  });
+
+  it("preserves nested bullets and inline formatting inside a scenario step", () => {
+    const doc = parseSliceDoc(
+      [
+        "## Scenarios",
+        "",
+        "### Scenario: Nested detail",
+        "- **Given:**",
+        "  - `Order Placed` was recorded",
+        "- **When:** the **cancel** command runs",
+        "- **Then:** nothing changes",
+      ].join("\n"),
+    );
+    expect(doc.html).toContain("<code>Order Placed</code> was recorded");
+    expect(doc.html).toContain("the <strong>cancel</strong> command runs");
+  });
+
+  it("leaves a malformed scenario block (no list right after the heading) as a plain heading, not a card", () => {
+    const doc = parseSliceDoc(["## Scenarios", "", "### Scenario: Missing beats", "", "Just prose, no bullets."].join("\n"));
+    expect(doc.html).not.toContain("scenario-card");
+    expect(doc.html).toMatch(/<h3[^>]*>Scenario: Missing beats<\/h3>/);
+  });
+
+  // Round 3: card rendering converges on the strict grammar (catalog/scenarios.ts) — a block
+  // `slice-doc/structured-section-malformed` would flag, or that export/validate ignore, never
+  // card-renders.
+  it("leaves a missing-beat block (Given only — the strict grammar flags it) as plain rendering, not a card", () => {
+    const doc = parseSliceDoc(["## Scenarios", "", "### Scenario: Given only", "- **Given:** a zero total"].join("\n"));
+    expect(doc.html).not.toContain("scenario-card");
+    expect(doc.html).toMatch(/<h3[^>]*>Scenario: Given only<\/h3>/);
+    expect(doc.html).toContain("<strong>Given:</strong>");
+  });
+
+  it("leaves lowercase-labelled beats (the strict grammar's labels are case-sensitive) as plain rendering", () => {
+    const doc = parseSliceDoc(
+      ["## Scenarios", "", "### Scenario: lower", "- **given:** a", "- **when:** b", "- **then:** c"].join("\n"),
+    );
+    expect(doc.html).not.toContain("scenario-card");
+  });
+
+  it("leaves a block outside any `## Scenarios` section (which export/validate ignore) as plain rendering", () => {
+    const doc = parseSliceDoc(
+      ["## Read Model / View", "", "### Scenario: a copied stub", "- **Given:** a", "- **When:** b", "- **Then:** c"].join("\n"),
+    );
+    expect(doc.html).not.toContain("scenario-card");
+    expect(doc.html).toMatch(/<h3[^>]*>Scenario: a copied stub<\/h3>/);
+  });
+
+  it("anchors the first owned INV-* mention inside Invariants and links every later mention to it", () => {
+    const doc = parseSliceDoc(
+      [
+        "## Invariants / Business Rules",
+        "",
+        "- **INV-ORD-1** — total must be positive",
+        "",
+        "## Scenarios",
+        "",
+        "### Scenario: Rejects a non-positive total (INV-ORD-1)",
+        "- **Given:** a zero total",
+        "- **When:** the command runs",
+        "- **Then:** it is rejected, citing INV-ORD-1",
+      ].join("\n"),
+    );
+    expect(doc.html).toContain('<span class="inv-chip inv-chip--def" id="inv-inv-ord-1">INV-ORD-1</span>');
+    // Two later mentions (the scenario title and its Then beat) both link to the one anchor.
+    expect(doc.html.match(/<a class="inv-chip inv-chip--ref" href="#inv-inv-ord-1">INV-ORD-1<\/a>/g)).toHaveLength(2);
+  });
+
+  it("renders an INV-* id this doc never declares as a plain, unlinked chip", () => {
+    const doc = parseSliceDoc("## Dependencies\n\n- See also INV-SIB-3, owned by a sibling slice.\n");
+    expect(doc.html).toContain('<span class="inv-chip inv-chip--external">INV-SIB-3</span>');
+    expect(doc.html).not.toContain("href");
+  });
+
+  // Round 3: the definition anchor belongs to the occurrence inside the ownership section — the
+  // template's canonical order puts the Command field table (whose Rules column cites ids)
+  // BEFORE `## Invariants / Business Rules`, so "first rendered mention" would hang the anchor
+  // on a passing citation and demote the real declaration to a link pointing back up.
+  it("anchors the definition in the Invariants section even when a field table cites the id first (canonical order)", () => {
+    const doc = parseSliceDoc(
+      [
+        "## Command / Input",
+        "",
+        "| Field | Type | Required | Rules / Validation |",
+        "|---|---|---|---|",
+        "| total | Money | yes | INV-ORD-1 |",
+        "",
+        "## Invariants / Business Rules",
+        "",
+        "- **INV-ORD-1** — total must be positive",
+      ].join("\n"),
+    );
+    // exactly one anchor, and it sits AFTER the table — in the Invariants list, not the cell.
+    expect(doc.html.match(/inv-chip--def/g)).toHaveLength(1);
+    expect(doc.html.indexOf('<span class="inv-chip inv-chip--def" id="inv-inv-ord-1">')).toBeGreaterThan(doc.html.indexOf("</table>"));
+    // the table cell's citation is a link to that anchor.
+    expect(doc.html).toContain('<td class="col-notes"><a class="inv-chip inv-chip--ref" href="#inv-inv-ord-1">INV-ORD-1</a></td>');
+  });
+
+  // Round 3: INV_TOKEN_RE's \b semantics — an `INV-` run glued to a preceding word never chips.
+  it("does not chip an INV- run glued to a preceding word (\\b semantics, like INV_TOKEN_RE)", () => {
+    const doc = parseSliceDoc("# Slice\n\nsee REINV-2 and fooINV-3 here, but INV-4 chips.\n");
+    expect(doc.html).toContain("REINV-2");
+    expect(doc.html).toContain("fooINV-3");
+    expect(doc.html.match(/inv-chip/g)).toHaveLength(2); // INV-4's one chip, two class names
+    expect(doc.html).toContain('<span class="inv-chip inv-chip--external">INV-4</span>');
+  });
+
+  it("styles a generated field table's Type/Rules columns by header text, not position", () => {
+    const doc = parseSliceDoc(
+      ["| Field | Type | Required | Rules / Validation |", "|-------|------|----------|--------------------|", "| total | Money | yes | must be positive |"].join(
+        "\n",
+      ),
+    );
+    expect(doc.html).toContain('<table class="field-table">');
+    expect(doc.html).toContain('<th class="col-type">Type</th>');
+    expect(doc.html).toContain('<th class="col-flag">Required</th>');
+    expect(doc.html).toContain('<th class="col-notes">Rules / Validation</th>');
+    expect(doc.html).toContain('<td class="col-type">Money</td>');
   });
 });

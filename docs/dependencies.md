@@ -16,8 +16,11 @@
   [`svg-to-pdfkit`](https://www.npmjs.com/package/svg-to-pdfkit), both pure JS with no
   native bindings. No `librsvg`/`rsvg-convert` required for PDF.
 - **Markdown rendering** — [`marked`](https://www.npmjs.com/package/marked), pure JS with no
-  transitive dependencies. Used only by `em catalog` to render a slice's slice doc
-  (`slices/<name>.md`) to HTML for the per-slice page.
+  transitive dependencies. Renders a slice's slice doc (`slices/<name>.md`) to HTML for `em
+  catalog`'s per-slice page and the live viewer's doc flyout (`em watch --serve`) — one render
+  path, `src/catalog/sliceDocRender.ts`, driven entirely through marked's own custom-renderer
+  and inline-extension API (GH #402: Given/When/Then scenario cards, anchored `INV-*` chips,
+  styled field tables) — no dependency beyond `marked` itself was added for it.
 
 These are regular `dependencies`, so a global install pulls them automatically.
 
