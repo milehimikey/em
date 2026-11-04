@@ -380,6 +380,13 @@ export const RULES = {
     usageCategory: "implemented without link",
     docAnchor: "frontmatter-coherence",
   },
+  "frontmatter-status-unrecognized": {
+    severity: "warning",
+    title: "Unrecognized slice status",
+    fix: "Set `status:` to one of draft, reviewed, ready-to-implement, implemented.",
+    usageCategory: "unrecognized slice status",
+    docAnchor: "frontmatter-coherence",
+  },
   "binding-missing-file": {
     severity: "warning",
     title: "Doc binding points at a missing file",

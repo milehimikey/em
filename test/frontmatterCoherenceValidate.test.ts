@@ -47,6 +47,42 @@ describe("frontmatter-coherence-implemented-without-link", () => {
   });
 });
 
+describe("frontmatter-status-unrecognized (GH #411)", () => {
+  it("warns when a bound doc's status is not one of the four canonical values, naming the value and the four", () => {
+    writeDoc("legacy-label", "active", 1, null);
+    const diags = coherenceOf(`slice "Legacy Label" {\n  command Do Thing\n}`);
+    expect(diags).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "frontmatter-status-unrecognized",
+        refs: ["legacy-label"],
+        message: 'slice "legacy-label" has status: active — not one of draft, reviewed, ready-to-implement, implemented',
+      }),
+    ]);
+  });
+
+  it("is case-insensitive, like every reader of status: — `Draft` and `READY-TO-IMPLEMENT` are canonical", () => {
+    writeDoc("cased-draft", "Draft", 1, null);
+    expect(coherenceOf(`slice "Cased Draft" {\n  command Do Thing\n}`)).toEqual([]);
+    writeDoc("cased-ready", "READY-TO-IMPLEMENT", 1, null);
+    expect(coherenceOf(`slice "Cased Ready" {\n  command Do Thing\n}`)).toEqual([]);
+  });
+
+  it("an unrecognized status does not also trip the implemented-without-link check — one warning, the one that names the fix", () => {
+    writeDoc("typo-implemented", "implemnted", 1, null);
+    const diags = coherenceOf(`slice "Typo Implemented" {\n  command Do Thing\n}`);
+    expect(diags.map((d) => d.code)).toEqual(["frontmatter-status-unrecognized"]);
+  });
+
+  it("stays silent on a doc whose frontmatter is not usable — `frontmatter-invalid` already covers it", () => {
+    writeFileSync(
+      join(dir, "slices", "unusable-status.md"),
+      "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: active\n---\nbody\n",
+    );
+    expect(coherenceOf(`slice "Unusable Status" {\n  command Do Thing\n}`)).toEqual([]);
+  });
+});
+
 describe("no diagnostic: unpropagated delta is expected, not incoherence", () => {
   it("stays silent when a re-ratified slice's implementedIn still names prior work", () => {
     writeDoc("re-ratified", "ready-to-implement", 2, "https://github.com/example/pr/41");

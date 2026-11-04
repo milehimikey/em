@@ -250,6 +250,18 @@ export interface SliceDoc {
  *  parser has no access to and doesn't attempt to check. */
 export const REQUIRED_FRONTMATTER_KEYS = ["schemaversion", "pattern", "swimlane", "status", "version"] as const;
 
+/** The 4 canonical slice-doc lifecycle statuses (docs/slice-doc-schema.md) — the same enum
+ *  `em catalog`'s header coloring, `em render`'s status legend and `em status`'s rollup
+ *  recognize. The reader stays lenient (any string is read and exported as-is: GH #411 kept
+ *  that, so a consumer still sees what the doc says); `em validate` warns when the value is not
+ *  one of these (`frontmatter-status-unrecognized`), and `isCanonicalStatus` is the one test. */
+export const CANONICAL_STATUSES = ["draft", "reviewed", "ready-to-implement", "implemented"] as const;
+export type CanonicalStatus = (typeof CANONICAL_STATUSES)[number];
+
+export function isCanonicalStatus(status: string | null): status is CanonicalStatus {
+  return status !== null && (CANONICAL_STATUSES as readonly string[]).includes(status);
+}
+
 /** True when a doc's frontmatter is well-formed enough to trust its canonical fields: a closed
  *  fence was found AND every REQUIRED_FRONTMATTER_KEYS entry is present. The single gate `em
  *  export`'s doc join (MIL-91, `frontmatter-invalid`) and `em validate`'s frontmatter-coherence
