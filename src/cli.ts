@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -236,6 +236,8 @@ import { runCodeowners } from "./system/codeowners.js";
 import { buildCodeownersJson } from "./emit/codeownersJson.js";
 import { verifySystem, SystemDiagnostic } from "./system/verify.js";
 import { buildSystemJson } from "./emit/systemJson.js";
+import { docDirOf } from "./model/sliceDocPath.js";
+import { docDirs } from "./catalog/docLocate.js";
 
 /** GH #253: the trailing note `em slice defer` prints after `deferred: …` on a ratified/shipped
  *  doc — the item went into the signed body, outside `ratifiedHash`, and when the stamp was still
@@ -406,7 +408,7 @@ program
         console.error(lookup.error);
         process.exit(1);
       }
-      const out = opts.out ?? defaultSliceOut(file, opts.slice);
+      const out = opts.out ?? defaultSliceOut(file, opts.slice, docDirOf(model.slices[lookup.index]));
       const fmt = opts.format ?? formatFromPath(out);
       await mkdir(dirname(out), { recursive: true }); // slices/ may not exist yet
       const { model: sliceModel, grid: sliceGrid, dot: sliceDot } = buildSliceDiagram(model, lookup.index, {
@@ -803,8 +805,12 @@ slice
     }
 
     const key = sliceDocKey(name);
-    const dir = "slices";
-    const path = join(dir, `${key}.md`);
+    // The note clause written into the model is always `slices/<key>.md`, relative to the file
+    // that declares the slice (GH #421). Where the FILE goes: `slices/` under the cwd, or — with
+    // --wire naming a model whose slice sits in a storyline folder — that folder's `slices/`.
+    const notePath = `slices/${key}.md`;
+    let dir = "slices";
+    let path = join(dir, `${key}.md`);
     if (existsSync(path) && !opts.force) {
       console.error(`refusing to overwrite ${path} (use --force)`);
       process.exit(1);
@@ -830,7 +836,15 @@ slice
       const sliceFile = model.slices[refs.sliceKeys.indexOf(key)]?.file;
       const wireTarget = sliceFile ? resolve(dirname(opts.wire), sliceFile) : opts.wire;
       const wireSource = sliceFile ? readFileSync(wireTarget, "utf8") : source;
-      const result = wireSliceNote(wireSource, model, refs, key, opts.pattern, path);
+      if (sliceFile) {
+        dir = join(dirname(opts.wire), docDirOf(model.slices[refs.sliceKeys.indexOf(key)]), "slices");
+        path = join(dir, `${key}.md`);
+        if (existsSync(path) && !opts.force) {
+          console.error(`refusing to overwrite ${path} (use --force)`);
+          process.exit(1);
+        }
+      }
+      const result = wireSliceNote(wireSource, model, refs, key, opts.pattern, notePath);
       if (!result.ok) {
         console.error(`em slice new --wire: ${result.message}`);
         process.exit(1);
@@ -2276,7 +2290,9 @@ program
       }
     })();
     const watched = new Set([resolve(file), ...storylineFiles]);
-    watchFile([file, ...storylineFiles, slicesDir], build, 80, (p) => watched.has(resolve(p)) || p.endsWith(".md"));
+    // GH #421 step 2: docs live beside their declaring file — watch every existing doc folder
+    const docFoldersNow = docDirs(dirname(file));
+    watchFile([file, ...storylineFiles, slicesDir, ...docFoldersNow.filter((d) => resolve(d) !== resolve(slicesDir))], build, 80, (p) => watched.has(resolve(p)) || p.endsWith(".md"));
     console.log(`watching ${file} … (ctrl-c to stop)`);
     if (!opts.serve) console.log("tip: add --serve for the live browser view");
   });
@@ -4012,7 +4028,7 @@ storylineCmd
   .option("--dry-run", "print what would be written without touching anything")
   .option("-f, --force", "overwrite a storyline model file that already exists")
   .action((file: string, opts: { storyline?: string; dryRun?: boolean; force?: boolean }) => {
-    const { model, diagnostics, source } = compileFile(file);
+    const { model, refs, diagnostics, source } = compileFile(file);
     printDiagnostics(diagnostics.filter((d) => d.severity === "error"));
     if (hasErrors(diagnostics)) {
       console.error("em storyline split: not splitting — fix the errors above");
@@ -4046,6 +4062,20 @@ storylineCmd
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, f.content, "utf8");
       console.log(`wrote ${f.path} (storyline "${f.storyline}")`);
+      // GH #421 step 2: the story's docs (and per-slice diagrams) move beside its file
+      const st = (model.storylines ?? []).find((s) => s.name === f.storyline);
+      const folder = dirname(abs);
+      let moved = 0;
+      for (const i of st?.sliceIndexes ?? []) {
+        for (const ext of [".md", ".svg"]) {
+          const src = join(rootDir, "slices", `${refs.sliceKeys[i]}${ext}`);
+          if (!existsSync(src)) continue;
+          mkdirSync(join(folder, "slices"), { recursive: true });
+          renameSync(src, join(folder, "slices", `${refs.sliceKeys[i]}${ext}`));
+          moved++;
+        }
+      }
+      if (moved > 0) console.log(`  moved ${moved} doc/diagram file(s) into ${relative(rootDir, join(folder, "slices"))}/`);
     }
     writeFileSync(file, plan.rootText, "utf8");
     console.log(`rewrote ${file}: ${plan.files.length} storyline declaration(s) now point at their files`);

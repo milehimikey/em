@@ -19,7 +19,6 @@
 // with case, spacing and punctuation stripped, so `OrderPlaced` matches the event "Order Placed".
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { collectModelInvariants, Element, NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
@@ -27,6 +26,7 @@ import { pushDiag } from "../model/rules.js";
 import { INV_TOKEN_RE } from "../cli/coverage.js";
 import { LenientScenario, parseScenariosLenient } from "./scenarios.js";
 import { AUTOMATION_KINDS } from "../parser/ast.js";
+import { docAbsPath } from "./docLocate.js";
 
 // A stated outcome that is not an event: a rejection/error, or a deliberate no-op (an automation
 // or translation that correctly does nothing: "nothing is dispatched", "no second event", "no
@@ -86,7 +86,7 @@ export function checkScenarioQuality(
   let text = body;
   let located = false;
   try {
-    text = readFileSync(join(baseDir, docPath), "utf8"); // full file, so scenario lines are doc-file lines
+    text = readFileSync(docAbsPath(baseDir, docPath), "utf8"); // full file, so scenario lines are doc-file lines (GH #421: any folder)
     located = true;
   } catch {
     // unreadable: parse the body, lines unknown

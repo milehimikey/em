@@ -21,12 +21,12 @@
 // continuation.ts, just applied to this module's filename-convention resolution instead of
 // notes.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { NormalizedModel } from "../model/model.js";
 import { computeRefs } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
-import { readCoverageDocs, CoveringDoc } from "../catalog/coverage.js";
+import { readCoverageDocsAll, CoveringDoc } from "../catalog/coverage.js";
+import { locateDoc } from "../catalog/docLocate.js";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
 /** Each slice's resolved design doc (own `slices/<key>.md`, the MIL-121 covering doc, the
@@ -35,20 +35,20 @@ import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 export function readSliceDocs(model: NormalizedModel, baseDir: string): (SliceDoc | null)[] {
   const refs = computeRefs(model);
   const { sliceKeys } = refs;
-  const slicesDir = join(baseDir, "slices");
   let coverage: Map<string, CoveringDoc> | null = null; // built lazily, only if ever needed
 
+  // GH #421: a doc sits beside the file that declares its slice; docLocate finds it by key.
   return model.slices.map((_slice, i) => {
     const sliceKey = sliceKeys[i];
-    const docPath = join(slicesDir, `${sliceKey}.md`);
-    if (existsSync(docPath)) return parseSliceDoc(readFileSync(docPath, "utf8"));
-    coverage ??= readCoverageDocs(slicesDir);
+    const docPath = locateDoc(baseDir, `slices/${sliceKey}.md`);
+    if (docPath) return parseSliceDoc(readFileSync(docPath, "utf8"));
+    coverage ??= readCoverageDocsAll(baseDir);
     const covering = coverage.get(sliceKey)?.doc;
     if (covering) return covering;
     const continuation = continuationOf(model, refs, i);
     if (continuation) {
-      const originatingPath = join(slicesDir, `${continuation.sliceKey}.md`);
-      if (existsSync(originatingPath)) return parseSliceDoc(readFileSync(originatingPath, "utf8"));
+      const originatingPath = locateDoc(baseDir, `slices/${continuation.sliceKey}.md`);
+      if (originatingPath) return parseSliceDoc(readFileSync(originatingPath, "utf8"));
     }
     return null;
   });

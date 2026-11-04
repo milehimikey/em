@@ -43,7 +43,6 @@
 // every other lifecycle writer; the body is copied through verbatim.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -53,6 +52,7 @@ import { listAllFindingsFiles, unruledFindingsInScope } from "./findings.js";
 import { MEANING_CONFIRMATION_KEYS } from "./ratify.js";
 import { clearQueue, injectQueuedQuestions, readQueue, reopenDeferred } from "./defer.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 const DRAFT_STATUS = "draft";
 const RATIFIED_STATUS = "ready-to-implement";
@@ -308,7 +308,7 @@ export function runRevise(model: NormalizedModel, refs: RefsResult, baseDir: str
     return { ok: false, message: `slice doc "${doc.path}" has missing or invalid frontmatter — run \`em validate\` for details` };
   }
 
-  const absPath = join(baseDir, doc.path);
+  const absPath = docAbsPath(baseDir, doc.path); // GH #421: the doc may sit in a storyline folder
   const raw = readFileSync(absPath, "utf8");
   const result = applyReviseFrontmatter(raw, { withdraw, keepVersion, queuedFor: (v) => readQueue(baseDir, sliceKey, v).items });
   if (!result.ok) return { ok: false, message: `${doc.path}: ${result.message}` };

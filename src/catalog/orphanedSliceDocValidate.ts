@@ -40,6 +40,7 @@ import { continuationOf } from "../model/continuation.js";
 import { Diagnostic } from "../model/validate.js";
 import { pushDiag } from "../model/rules.js";
 import { hasUsableFrontmatter, parseSliceDoc } from "./sliceDoc.js";
+import { docDirs } from "./docLocate.js";
 
 /**
  * Scan `<baseDir>/slices/` for a doc file that no current slice's own key names by filename
@@ -56,20 +57,21 @@ import { hasUsableFrontmatter, parseSliceDoc } from "./sliceDoc.js";
  * — the note-bound sibling case is `noteBindingValidate.ts`'s to catch instead.
  */
 export function validateOrphanedSliceDocs(model: NormalizedModel, refs: RefsResult, baseDir: string): Diagnostic[] {
-  const slicesDir = join(baseDir, "slices");
-  let entries: string[];
-  try {
-    entries = readdirSync(slicesDir, { withFileTypes: true })
-      .filter((e) => e.isFile())
-      .map((e) => e.name);
-  } catch {
-    return []; // no slices/ directory (or unreadable) — nothing to orphan
+  // GH #421: every doc folder (the root's slices/ and each storyline folder's), root first.
+  const entries: Array<{ name: string; slicesDir: string }> = [];
+  for (const slicesDir of docDirs(baseDir)) {
+    try {
+      for (const e of readdirSync(slicesDir, { withFileTypes: true })) if (e.isFile()) entries.push({ name: e.name, slicesDir });
+    } catch {
+      // unreadable folder — nothing to orphan there
+    }
   }
+  if (entries.length === 0) return [];
 
   const liveKeys = new Set(refs.sliceKeys.map((k) => k.toLowerCase()));
   const diags: Diagnostic[] = [];
 
-  for (const entry of entries.slice().sort()) {
+  for (const { name: entry, slicesDir } of entries.slice().sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.toLowerCase().endsWith(".md")) continue; // not a slice-doc-shaped file at all
     const key = entry.slice(0, -".md".length);
     if (liveKeys.has(key.toLowerCase())) {

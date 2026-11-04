@@ -34,6 +34,7 @@ import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverla
 import { readSliceDocs } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
 import { buildStorylineBands, dimStubColumns, storylineBandIds } from "./storylineBands.js";
+import { docDirOf } from "../model/sliceDocPath.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -73,7 +74,9 @@ export function composeSvg(
   baseDir: string,
   outDir: string,
 ): string {
-  const hrefOf = (el: Element) => noteHref(el.note ?? "", baseDir, outDir);
+  // GH #421: a note path is relative to the file that declares the element — a storyline folder for
+  // a storyline model's slice, the root for a root slice.
+  const hrefOf = (el: Element) => noteHref(el.note ?? "", join(baseDir, docDirOf(model.slices[el.sliceIndex])), outDir);
   // MIL-153: a doc's own relative asset/link references (e.g. `![Diagram](./foo.svg)`, read
   // relative to slices/, the doc's own directory) need the same baseDir->outDir rewrite
   // noteHref gives a `note` path — otherwise an embedded <img src="./foo.svg"> resolves

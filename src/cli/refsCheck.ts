@@ -27,6 +27,7 @@ import { RefsResult } from "../model/refs.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { hasUsableFrontmatter, parseConformedAt } from "../catalog/sliceDoc.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
+import { sliceDocRel } from "../model/sliceDocPath.js";
 
 export type RefField = "ratifiedRef" | "shippedRef" | "conformedAt";
 export type RefStatus = "ancestor" | "not-ancestor" | "unresolved" | "undecidable";
@@ -240,7 +241,7 @@ export function checkRatificationOrder(model: NormalizedModel, refs: RefsResult,
     seen.add(sliceKey);
     const doc = readSliceDoc(baseDir, sliceKey);
     if (!doc || !hasUsableFrontmatter(doc) || doc.ratifiedRef === null) return;
-    const path = `slices/${sliceKey}.md`;
+    const path = sliceDocRel(model.slices[i], sliceKey); // GH #421: the slice's own folder
     if (toplevelError !== null) {
       results.push({ sliceKey, path, ratifiedRef: doc.ratifiedRef, commit: null, status: "undecidable", detail: toplevelError });
       return;
@@ -280,7 +281,7 @@ export function checkRefs(model: NormalizedModel, refs: RefsResult, baseDir: str
     seen.add(sliceKey);
     const doc = readSliceDoc(baseDir, sliceKey);
     if (!doc || !hasUsableFrontmatter(doc)) return;
-    const path = `slices/${sliceKey}.md`;
+    const path = sliceDocRel(model.slices[i], sliceKey); // GH #421: the slice's own folder
     const fields: Array<[RefField, string | null]> = [
       ["ratifiedRef", doc.ratifiedRef],
       ["shippedRef", doc.shippedRef],

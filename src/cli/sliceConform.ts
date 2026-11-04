@@ -58,6 +58,7 @@ import {
   serializeFindingsDoc,
   unruledFindingsInScope,
 } from "./findings.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 /**
  * `--at`'s shape check (GH #261's `<kind>:<id>` carve-out), factored out of
@@ -386,7 +387,7 @@ export function runSliceConform(
     skippedFindingsCheck = unruledByFile.flatMap((f) => f.unruled.map((x) => x.id));
   }
 
-  const absPath = join(baseDir, doc.path);
+  const absPath = docAbsPath(baseDir, doc.path); // GH #421: the doc may sit in a storyline folder
   const raw = readFileSync(absPath, "utf8");
   const result = applyConformFrontmatter(raw, sliceKey, at, on);
   if (!result.ok) {

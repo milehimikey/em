@@ -40,7 +40,6 @@
 // this run touches — a batch scaffold, not a record of N separate human sessions.
 
 import { existsSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NormalizedModel, Slice } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -51,6 +50,7 @@ import { buildStubDocContent, SlicePattern } from "./sliceNew.js";
 import { applyReviewFrontmatter } from "./review.js";
 import { applyRatifyFrontmatter } from "./ratify.js";
 import { applyImplementedFrontmatter } from "./markImplemented.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 /** `--status`'s exact 4-value enum — the same lifecycle values every slice doc already uses
  *  (docs/slice-doc-schema.md); `stub-all` never invents a 5th "backbone"/"existing" value. */
@@ -193,7 +193,7 @@ export function runStubAll(
     // string literals sliceNew.ts's SlicePattern enumerates too.
     const pattern = classified as SlicePattern;
 
-    const absPath = join(baseDir, doc.path);
+    const absPath = docAbsPath(baseDir, doc.path, slice); // GH #421: a new stub goes into the slice's own folder
     if (doc.reason === "no-doc-bound" && existsSync(absPath)) {
       outcomes.push({
         kind: "skip",

@@ -11,11 +11,12 @@
 // test/ledgerCheck.test.ts. Reuses resolveDocAtRevision/listSliceKeysAtRevision rather than
 // second, divergent git plumbing.
 
-import { existsSync, readdirSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { readdirSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { hasUsableFrontmatter, ratifiedBody, SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { GitRunner, realGit, listSliceKeysAtRevision, resolveDocAtRevision } from "./diff-inputs.js";
+import { docDirs } from "../catalog/docLocate.js";
 
 export type LedgerFindingCode =
   | "ledger-content-without-version-bump"
@@ -86,11 +87,12 @@ export interface LedgerCheckResult {
 /** Slice keys currently on disk under `<baseDir>/slices/*.md` — the working-tree counterpart to
  *  `listSliceKeysAtRevision`, used when `to` is null (compare against the working tree). */
 function listSliceKeysOnDisk(baseDir: string): string[] {
-  const dir = join(baseDir, "slices");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name.endsWith(".md"))
-    .map((name) => basename(name, ".md"));
+  // GH #421: every doc folder (the root's slices/ and each storyline folder's)
+  const keys: string[] = [];
+  for (const dir of docDirs(baseDir)) {
+    for (const name of readdirSync(dir)) if (name.endsWith(".md")) keys.push(basename(name, ".md"));
+  }
+  return keys;
 }
 
 /** True when two lineage refs (or their absence) carry the same declared text — compared on

@@ -17,6 +17,7 @@ import { Diagnostic } from "../model/validate.js";
 import { classifySlicePattern, slicePatternLabel } from "../catalog/classify.js";
 import { resolveSliceDocJoin, SliceDocExport } from "../catalog/docJoin.js";
 import { applyMarker } from "../util/markers.js";
+import { docDirOf } from "../model/sliceDocPath.js";
 
 /** The marker name wrapping the Slices table: `<!-- GENERATED:slices:start -->` /
  *  `<!-- GENERATED:slices:end -->`, matching templates/model-readme.md. */
@@ -132,7 +133,8 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
       implementedIn: continuationOf ? "—" : (doc.implementedIn ?? "—"),
       conformed: continuationOf ? "—" : conformedCell(doc),
       // GH #275: `no-doc-bound` carries a made-up `slices/<key>.md` path that nothing backs.
-      docPath: !doc.found && doc.reason === "no-doc-bound" ? null : doc.path,
+      // GH #421: the README sits beside the root, the doc beside its declaring file — link through the folder
+      docPath: !doc.found && doc.reason === "no-doc-bound" ? null : `${docDirOf(slice)}${doc.path}`,
     });
   });
 

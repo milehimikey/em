@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseSliceDoc, SliceDoc } from "./sliceDoc.js";
+import { docDirs } from "./docLocate.js";
 
 /** A covering doc, plus the covering slice's OWN key (its `slices/<key>.md` filename stem,
  *  stripped of the extension). Callers that need to link to or name the covering slice itself
@@ -37,6 +38,16 @@ export function readCoverageDocs(slicesDir: string): Map<string, CoveringDoc> {
     for (const coveredKey of doc.covers) {
       if (!coverage.has(coveredKey)) coverage.set(coveredKey, { doc, key });
     }
+  }
+  return coverage;
+}
+
+/** GH #421: the same sweep over every doc folder under the model's directory (the root's
+ *  `slices/` and each storyline folder's), root first, first claim wins. */
+export function readCoverageDocsAll(baseDir: string): Map<string, CoveringDoc> {
+  const coverage = new Map<string, CoveringDoc>();
+  for (const dir of docDirs(baseDir)) {
+    for (const [k, v] of readCoverageDocs(dir)) if (!coverage.has(k)) coverage.set(k, v);
   }
   return coverage;
 }

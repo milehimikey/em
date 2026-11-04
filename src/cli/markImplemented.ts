@@ -32,7 +32,6 @@
 // module rather than being copy-pasted a second time.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -41,6 +40,7 @@ import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./f
 import { openNextDraft } from "./revise.js";
 import { clearQueue, readQueue } from "./defer.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
+import { docAbsPath } from "../catalog/docLocate.js";
 
 export type ApplyFrontmatterResult =
   | { ok: true; content: string; changed: boolean }
@@ -279,7 +279,7 @@ export function runMarkImplemented(
     };
   }
 
-  const absPath = join(baseDir, doc.path);
+  const absPath = docAbsPath(baseDir, doc.path); // GH #421: the doc may sit in a storyline folder
   const raw = readFileSync(absPath, "utf8");
   const result = applyImplementedFrontmatter(raw, prUrl, shippedOn);
   if (!result.ok) {

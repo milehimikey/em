@@ -23,7 +23,8 @@ import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe, kebabSlug } from "../util/slug.js";
 import { classifySlicePattern } from "./classify.js";
-import { CoveringDoc, readCoverageDocs } from "./coverage.js";
+import { CoveringDoc, readCoverageDocsAll } from "./coverage.js";
+import { docAbsPath, locateDoc } from "./docLocate.js";
 import { detectSliceDocCollisions } from "./modelCollisionValidate.js";
 import { parseSliceDoc } from "./sliceDoc.js";
 import { renderIndexPage, renderSlicePage, CatalogModelSummary, CatalogSliceSummary } from "./pages.js";
@@ -130,7 +131,7 @@ export async function buildCatalog(
       let doc = ownDoc;
       let coveredBy: { key: string; name: string; kind: "covers" | "continuation" } | null = null;
       if (!ownDoc) {
-        coverageDocs ??= readCoverageDocs(join(dirname(file), "slices"));
+        coverageDocs ??= readCoverageDocsAll(dirname(file)); // GH #421: every doc folder
         const covering = coverageDocs.get(sliceKey);
         if (covering) {
           doc = covering.doc;
@@ -143,8 +144,8 @@ export async function buildCatalog(
           // the own-file and MIL-121 covers: lookups have already come up empty.
           const continuation = continuationOf(model, refs, i);
           if (continuation) {
-            const originatingPath = join(dirname(file), "slices", `${continuation.sliceKey}.md`);
-            if (existsSync(originatingPath)) {
+            const originatingPath = locateDoc(dirname(file), `slices/${continuation.sliceKey}.md`); // GH #421
+            if (originatingPath) {
               doc = parseSliceDoc(readFileSync(originatingPath, "utf8"));
               const originatingSlice = model.slices[continuation.sliceIndex];
               coveredBy = { key: continuation.sliceKey, name: originatingSlice.name, kind: "continuation" };
@@ -158,7 +159,7 @@ export async function buildCatalog(
       // is copied in as-is so the catalog stays self-contained; otherwise built
       // fresh via buildSliceDiagram, written only into the catalog's own output
       // tree — `em catalog` never writes back into the source tree.
-      const sliceSvgSrcPath = join(dirname(file), "slices", `${sliceKey}.svg`);
+      const sliceSvgSrcPath = docAbsPath(dirname(file), `slices/${sliceKey}.svg`, model.slices[i]); // GH #421
       const sliceDiagramFile = `${sliceKey}.svg`;
       if (existsSync(sliceSvgSrcPath)) {
         await copyFile(sliceSvgSrcPath, join(slicesDir, sliceDiagramFile));
