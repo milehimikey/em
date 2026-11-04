@@ -279,6 +279,13 @@ of its origin slice. The name is matched case-insensitively (an unknown name lis
 `--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch --serve` takes the same
 `--storyline` filter — see [`em watch`](#em-watch-file) below.
 
+**Slice headers are links.** In every rendered SVG (full, `--storyline`, `--slice`, the canvas),
+a slice's header cell is wrapped in an `<a>` to its design doc (`slices/<key>.md`, relative to
+the SVG's own location, the same rewrite note markers get) and its tooltip reads
+`<Slice> — <Pattern> · <status>` (`no doc yet` when nothing is bound). A continuation column
+links to the originating slice's doc. Links and tooltips work in a browser; raster output and
+image viewers ignore them, as with note markers.
+
 `--slice` doesn't crop the full diagram — it classifies the slice into one of the 4 Event
 Modeling patterns (State Change, State View, Automation, Translation) and redraws just its
 own canonical shape with a fresh layout, matched by an exact, case-sensitive `--slice` name
