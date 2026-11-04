@@ -129,7 +129,14 @@ import { listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runRevise } from "./cli/revise.js";
 import { runDefer, runDeferFromIssue } from "./cli/defer.js";
-import { runSliceConform, resolveFindingsForReport, findingsFilesOf, unruledAcrossFiles } from "./cli/sliceConform.js";
+import {
+  runSliceConform,
+  runSliceConformPreview,
+  writePreviewFindings,
+  resolveFindingsForReport,
+  findingsFilesOf,
+  unruledAcrossFiles,
+} from "./cli/sliceConform.js";
 import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, validatePrdTriage } from "./cli/prdTriage.js";
 import { checkFindingsFile, buildCheckFindingsJson, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
 import {
@@ -1394,7 +1401,10 @@ slice
       "later re-certification is normal — there's no way for em to tell 'later' from 'earlier' " +
       "for an arbitrary revision string, so there's no --force to reach for). Refuses when the " +
       "conformance/<date>[-<name>]-findings.json file matching --at still has an unruled finding in scope " +
-      "for this slice; --skip-findings-check overrides with a loud notice.",
+      "for this slice; --skip-findings-check overrides with a loud notice. GH #400: --preview runs the " +
+      "same doc-resolution and findings-check read for a slice that hasn't shipped yet — the shipped/" +
+      "implementedIn gates are waived and NOTHING is ever written to the doc; output is ephemeral " +
+      "(text or --json) unless --write-findings opts into persisting a normal findings file.",
   )
   .argument("<file>", "input .em file")
   .argument("<slice-key>", "slice export key (kebab-case)")
@@ -1406,13 +1416,36 @@ slice
   )
   .option("--on <date>", "certification date, YYYY-MM-DD (default: today, local date)")
   .option("--skip-findings-check", "certify even with unruled findings in scope — prints a loud notice on stderr")
-  .action((file: string, sliceKey: string, opts: { at: string; on?: string; skipFindingsCheck?: boolean }) => {
+  .option(
+    "--preview",
+    "GH #400: pre-ship advisory mode — waives the shipped-status/`implementedIn:` gates, writes NOTHING to the " +
+      "doc (no conformedVersion/conformedAt/conformedOn, ever); ephemeral by default, --write-findings opts " +
+      "into persisting a normal findings file. --skip-findings-check has no effect in this mode (preview " +
+      "never refuses on findings)",
+  )
+  .option("--write-findings", "with --preview: persist the preview's own unruled findings as conformance/<on>-<slice-key>-preview-findings.json")
+  .option("--json", "with --preview: print a JSON document instead of the text report")
+  .action((file: string, sliceKey: string, opts: { at: string; on?: string; skipFindingsCheck?: boolean; preview?: boolean; writeFindings?: boolean; json?: boolean }) => {
+    if (opts.writeFindings === true && opts.preview !== true) {
+      console.error("em slice conform: --write-findings only applies with --preview");
+      process.exit(1);
+    }
+    if (opts.json === true && opts.preview !== true) {
+      console.error("em slice conform: --json only applies with --preview");
+      process.exit(1);
+    }
+    if (opts.preview === true && opts.skipFindingsCheck === true) {
+      console.error("em slice conform: --skip-findings-check has no effect with --preview (preview never blocks on findings)");
+      process.exit(1);
+    }
+
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     sliceKey = resolveSliceOrExit("em slice conform", model, refs, sliceKey);
 
     // Scoped the same way `em slice ratify`/`em slice revise`/`em slice mark-implemented` are:
-    // only an error concerning THIS slice refuses.
+    // only an error concerning THIS slice refuses. Not waived by --preview — an erroring model
+    // isn't a fact worth previewing against either.
     const scopedErrors = diagnostics.filter(
       (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
     );
@@ -1426,6 +1459,50 @@ slice
     if (opts.on !== undefined && !isValidDateString(opts.on)) {
       console.error(`em slice conform: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
       process.exit(1);
+    }
+
+    if (opts.preview === true) {
+      const baseDir = dirname(file);
+      const result = runSliceConformPreview(model, refs, baseDir, sliceKey, opts.at);
+      if (!result.ok) {
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: false, message: result.message }, null, 2));
+        } else {
+          console.error(`em slice conform --preview: ${result.message}`);
+        }
+        process.exit(1);
+      }
+      const writtenTo = opts.writeFindings === true ? writePreviewFindings(baseDir, file, sliceKey, result.at, on, result.unruledFindings) : null;
+      if (opts.json) {
+        console.log(
+          JSON.stringify(
+            {
+              ok: true,
+              preview: true,
+              slice: sliceKey,
+              path: result.path,
+              status: result.status,
+              version: result.version,
+              at: result.at,
+              findingsFiles: result.findingsFiles,
+              unruledFindings: result.unruledFindings,
+              writtenTo,
+            },
+            null,
+            2,
+          ),
+        );
+      } else {
+        const findingsNote =
+          result.unruledFindings.length === 0
+            ? result.findingsFiles.length === 0
+              ? `no conformance findings file matches --at ${result.at} (conformance/<date>[-<name>]-findings.json with that revision)`
+              : `no unruled conformance findings in scope (checked: ${result.findingsFiles.join(", ")})`
+            : `${result.unruledFindings.length} unruled conformance finding(s) in scope (id ${result.unruledFindings.map((f) => f.id).join(", ")}) in ${result.findingsFiles.join(", ")}`;
+        console.log(`preview: ${result.path} (status: ${result.status ?? "(empty)"}) @ ${result.at} — ${findingsNote}`);
+        console.log(writtenTo !== null ? `wrote: ${writtenTo}` : "ephemeral — nothing written; pass --write-findings to persist a snapshot");
+      }
+      return;
     }
 
     const result = runSliceConform(model, refs, dirname(file), sliceKey, opts.at, on, opts.skipFindingsCheck === true);

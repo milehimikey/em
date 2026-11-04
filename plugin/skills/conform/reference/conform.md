@@ -40,7 +40,9 @@ difference is what you do with what you find: extract *builds* a model from the 
    (or the status the user says corresponds to shipped code) for whichever slices are in scope.
    Checking a `draft` or `ready-to-implement` slice against code is a wasted walk — ratified or
    not, nobody has built to it yet; tell the user and skip it rather than reporting "drift"
-   against it.
+   against it. (GH #400: the ONE exception is a deliberate pre-ship advisory run — see
+   `--preview` under step 5 below — not a reason to treat this precondition as optional for an
+   ordinary post-ship sweep.)
 3. The codebase to check: the state file's **Existing system refs** (populated during
    `extract`, if this model came from one) or ask the user for the repo path if not set. Record
    it if missing. In a headless/scheduled run with no user to ask, default to the repository
@@ -335,6 +337,32 @@ HEAD will dangle once the branch is deleted. Either pass a commit the target bra
 been through this) instead of just trusting `implementedIn`. Legal only for `status: implemented`
 with a link, and itself refuses if an unruled finding for that slice still exists at this
 revision — the mechanical proof this step comes only after rulings, not before.
+
+**Pre-ship advisory mode: `--preview` (GH #400).** The certify step above is legal only for a
+**shipped** slice (`status: implemented`/`shippedVersion:` + `implementedIn:`) — precondition 2
+reflects that this phase ordinarily walks shipped code. `--preview` is the deliberate exception:
+the SAME doc-resolution and findings-check read, legal for a slice that hasn't shipped yet
+(the shipped/`implementedIn:` preconditions are waived), and it **never writes anything** —
+no `conformedVersion`/`conformedAt`/`conformedOn`, ever, regardless of outcome:
+
+```
+em slice conform <model-name>.em <slice-key> --at <target-repo revision> --preview
+```
+
+Use this to run a conform sweep against your OWN implementing branch before it merges — catching
+spec/code drift while you can still fix it on the same branch, rather than after shipping. The
+walk itself (steps 1-4 above) is unchanged; only the certify step's preconditions differ. Output
+is ephemeral by default (nothing is written, not even to `conformance/`); pass
+`--write-findings` to persist the run's own unruled findings as a normal
+`conformance/<date>-<slice-key>-preview-findings.json` (this is deliberate — `docs/cli.md`'s
+`em slice conform --preview` section documents the exact shape and naming). Know before opting
+in: the written file has no sibling report (`report` is synthetic), so `em conform-supersede`
+refuses to rule on it — unruled entries in it gate certify/`set-conformance` at that revision
+until you rule them in the file by hand, delete the snapshot, or author the sibling report.
+`em state set-conformance` and the unruled-findings gates are unaffected by
+this mode either way: a default preview run writes nothing for them to read, so it can never
+block a later certify or `set-conformance` call. There is no `--slice-ready` integration for this
+mode yet.
 
 End of run: update the state file's `Last conformance:` marker with
 

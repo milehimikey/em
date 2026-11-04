@@ -40,28 +40,32 @@
 //    would be exactly the sequencing bug MIL-214 exists to close). `--skip-findings-check`
 //    escapes with a loud notice, never silently.
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { isValidDateString } from "./stateFile.js";
-import { FINDINGS_FILE_NAME_RE, FindingsDoc, listAllFindingsFiles, lookupFindingsBesideReport, unruledFindingsInScope } from "./findings.js";
-
-export type ApplyConformResult =
-  | { ok: true; content: string; changed: boolean; version: number }
-  | { ok: false; message: string };
+import {
+  FINDINGS_FILE_NAME_RE,
+  FINDINGS_SCHEMA_VERSION,
+  Finding,
+  FindingsDoc,
+  listAllFindingsFiles,
+  lookupFindingsBesideReport,
+  serializeFindingsDoc,
+  unruledFindingsInScope,
+} from "./findings.js";
 
 /**
- * Pure text transform: reads the SHIPPED version (`shippedVersion:`, else the doc's `version:`
- * for a pre-1.15 `implemented` doc — the same read-both rule as `shippedRecordOf`; never writes
- * either) and writes `conformedVersion:`/`conformedAt:`/`conformedOn:` in `raw`'s frontmatter block. See module
- * header for the full precondition/idempotency contract. No fs access — the caller reads/writes;
- * see `runSliceConform` below.
+ * `--at`'s shape check (GH #261's `<kind>:<id>` carve-out), factored out of
+ * `applyConformFrontmatter` below so GH #400's non-writing `--preview` path
+ * (`runSliceConformPreview`) validates the exact same way rather than keeping two copies of this
+ * regex in sync by hand — "kinded values supported as today" stays true by construction.
  */
-export function applyConformFrontmatter(raw: string, sliceKey: string, at: string, on: string): ApplyConformResult {
+export function validateAtRevision(at: string): { ok: true; value: string } | { ok: false; message: string } {
   const trimmedAt = at.trim();
   if (!trimmedAt) return { ok: false, message: "a target-repo revision is required (--at)" };
   if (/[\x00-\x1f\x7f\s]/.test(trimmedAt)) {
@@ -76,6 +80,24 @@ export function applyConformFrontmatter(raw: string, sliceKey: string, at: strin
       message: `--at "${trimmedAt}" is neither a git revision nor \`<kind>:<id>\` (kind = lowercase letters, digits, dashes — e.g. build:1234, deploy:eu-1-2026-10-15)`,
     };
   }
+  return { ok: true, value: trimmedAt };
+}
+
+export type ApplyConformResult =
+  | { ok: true; content: string; changed: boolean; version: number }
+  | { ok: false; message: string };
+
+/**
+ * Pure text transform: reads the SHIPPED version (`shippedVersion:`, else the doc's `version:`
+ * for a pre-1.15 `implemented` doc — the same read-both rule as `shippedRecordOf`; never writes
+ * either) and writes `conformedVersion:`/`conformedAt:`/`conformedOn:` in `raw`'s frontmatter block. See module
+ * header for the full precondition/idempotency contract. No fs access — the caller reads/writes;
+ * see `runSliceConform` below.
+ */
+export function applyConformFrontmatter(raw: string, sliceKey: string, at: string, on: string): ApplyConformResult {
+  const atResult = validateAtRevision(at);
+  if (!atResult.ok) return atResult;
+  const trimmedAt = atResult.value;
   if (!isValidDateString(on)) {
     return { ok: false, message: `invalid date "${on}" — expected YYYY-MM-DD` };
   }
@@ -374,4 +396,129 @@ export function runSliceConform(
     writeFileSync(absPath, result.content, "utf8");
   }
   return { ok: true, path: doc.path, changed: result.changed, version: result.version, skippedFindingsCheck, findingsFiles: found.map((f) => f.path) };
+}
+
+export type RunSliceConformPreviewResult =
+  | {
+      ok: true;
+      path: string;
+      status: string | null;
+      version: number | null;
+      at: string;
+      /** GH #385-style: every `conformance/<date>[-<name>]-findings.json` whose `revision`
+       *  matched `--at` — same lookup `runSliceConform`'s findings-check gate uses, reused
+       *  read-only here (empty when none match, same "note, not a refusal" shape). */
+      findingsFiles: string[];
+      /** The unruled (`locus: null`), in-scope-for-this-slice findings across `findingsFiles`,
+       *  flattened — what a real certify at this `--at` would currently refuse on. `--preview`
+       *  never refuses on this; it's reported for the human/agent to act on. */
+      unruledFindings: Finding[];
+    }
+  | { ok: false; message: string };
+
+/**
+ * GH #400: `em slice conform --preview` — the same doc-resolution and findings-check-gate READ
+ * `runSliceConform` performs, but legal for a slice that hasn't shipped (the shipped-status and
+ * `implementedIn:` preconditions are waived — there's no code to certify yet, which is exactly
+ * the pre-ship use this mode exists for) and NEVER writes anything: no `applyConformFrontmatter`
+ * call, no `conformedVersion`/`conformedAt`/`conformedOn`, ever. `status`/`version` come straight
+ * off the already-parsed doc join (`resolveSliceDocJoin`) rather than a second frontmatter read.
+ */
+export function runSliceConformPreview(
+  model: NormalizedModel,
+  refs: RefsResult,
+  baseDir: string,
+  sliceKey: string,
+  at: string,
+): RunSliceConformPreviewResult {
+  const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
+  if (sliceIndex === -1) {
+    return { ok: false, message: `no slice with export key "${sliceKey}" in this model` };
+  }
+  const slice = model.slices[sliceIndex];
+  const { doc, continuationOf: continuationOfKey } = resolveSliceDocJoin(
+    model,
+    refs,
+    slice,
+    sliceKey,
+    baseDir,
+    (id) => refs.refById.get(id)!,
+  );
+
+  // Same continuation refusal as runSliceConform — MIL-208: an again-view-only slice has no doc
+  // of its own to preview-conform either.
+  if (continuationOfKey) {
+    const continuation = continuationOf(model, refs, sliceIndex)!;
+    const viewName = model.byId.get(continuation.viewLogicalId)!.name;
+    return {
+      ok: false,
+      message:
+        `"${sliceKey}" is a continuation of "${continuationOfKey}" (view "${viewName}" again) — ` +
+        `it has no doc of its own; preview-conform "${continuationOfKey}" instead`,
+    };
+  }
+
+  if (doc.reason === "no-doc-bound") {
+    return {
+      ok: false,
+      message: `slice "${sliceKey}" has no doc bound via \`note "slices/${sliceKey}.md"\` — bind a slice doc before previewing conformance`,
+    };
+  }
+  if (doc.reason === "binding-missing-file") {
+    return { ok: false, message: `slice "${sliceKey}" notes "${doc.path}" but no such file exists` };
+  }
+  if (doc.reason === "frontmatter-invalid") {
+    return {
+      ok: false,
+      message: `slice doc "${doc.path}" has missing or invalid frontmatter — run \`em validate\` for details`,
+    };
+  }
+
+  const atResult = validateAtRevision(at);
+  if (!atResult.ok) return atResult;
+  const trimmedAt = atResult.value;
+
+  // Deliberately NO shipped-status / implementedIn precondition here (GH #400's whole point) and
+  // NO call to applyConformFrontmatter / writeFileSync anywhere in this function.
+  const found = findFindingsForRevision(baseDir, trimmedAt);
+  const unruledFindings = found.flatMap((f) => unruledFindingsInScope(f.doc.findings, new Set([sliceKey])));
+
+  return {
+    ok: true,
+    path: doc.path,
+    status: doc.status,
+    version: doc.version,
+    at: trimmedAt,
+    findingsFiles: found.map((f) => f.path),
+    unruledFindings,
+  };
+}
+
+/**
+ * GH #400's `--write-findings` opt-in: persists a preview run's own `unruledFindings` as a
+ * normal, schema-`1.0` `conformance/<on>-<sliceKey>-preview-findings.json` — the one write this
+ * command is allowed to make, and never on the slice doc. Ids are renumbered `1..N` in the order
+ * `runSliceConformPreview` returned them (deterministic: file order from `findFindingsForRevision`,
+ * each file's own ascending order) rather than kept from their source file, since several source
+ * files' ids are only unique WITHIN that file — this is its own, fresh findings record, not an
+ * edit to the files it read from. By default (no `--write-findings`) a preview run touches no
+ * file at all — "ephemeral" — so it can never add anything for `em state set-conformance` or
+ * `em status` to trip over; writing this file is what makes that gate interaction deliberate: a
+ * reserved `-preview-findings.json` suffix a hand-authored conform sweep never collides with, but
+ * still a `conformance/<date>[-<name>]-findings.json` like any other for every existing reader
+ * (`listAllFindingsFiles`, `em conform-findings check`, ...). Idempotent-by-recompute: always
+ * overwrites with freshly-derived content rather than refusing on an existing file of its own.
+ */
+export function writePreviewFindings(baseDir: string, modelFile: string, sliceKey: string, at: string, on: string, unruledFindings: Finding[]): string {
+  const relPath = `conformance/${on}-${sliceKey}-preview-findings.json`;
+  const doc: FindingsDoc = {
+    findingsSchemaVersion: FINDINGS_SCHEMA_VERSION,
+    model: basename(modelFile),
+    report: `em slice conform --preview ${sliceKey} --at ${at}`,
+    revision: at,
+    findings: unruledFindings.map((f, i) => ({ ...f, id: i + 1 })),
+  };
+  mkdirSync(join(baseDir, "conformance"), { recursive: true });
+  writeFileSync(join(baseDir, relPath), serializeFindingsDoc(doc), "utf8");
+  return relPath;
 }

@@ -5,11 +5,19 @@
 // test/ratify.test.ts's structure. CLI-level exit-code/process coverage lives in
 // test/cli.test.ts.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compile } from "../src/pipeline.js";
-import { applyConformFrontmatter, findFindingsForRevision, findLatestFindingsForRevision, runSliceConform } from "../src/cli/sliceConform.js";
+import {
+  applyConformFrontmatter,
+  findFindingsForRevision,
+  findLatestFindingsForRevision,
+  runSliceConform,
+  runSliceConformPreview,
+  validateAtRevision,
+  writePreviewFindings,
+} from "../src/cli/sliceConform.js";
 import { parseConformedAt } from "../src/catalog/sliceDoc.js";
 import { serializeFindingsDoc } from "../src/cli/findings.js";
 
@@ -391,6 +399,208 @@ describe("runSliceConform (note-binding resolution + fs orchestration)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.skippedFindingsCheck).toBeNull();
+  });
+});
+
+// GH #400: `em slice conform --preview` — the same doc-resolution and findings-check READ as
+// `runSliceConform`, legal for a slice that hasn't shipped, and never writing anything.
+describe("validateAtRevision (shared --at shape check)", () => {
+  it("accepts a bare git-shaped revision and a <kind>:<id> value, same as applyConformFrontmatter", () => {
+    expect(validateAtRevision("8f12ed8")).toEqual({ ok: true, value: "8f12ed8" });
+    expect(validateAtRevision("build:1234")).toEqual({ ok: true, value: "build:1234" });
+    expect(validateAtRevision("  8f12ed8  ")).toEqual({ ok: true, value: "8f12ed8" });
+  });
+
+  it("refuses blank, whitespace-bearing, and malformed-kind values with the same messages applyConformFrontmatter uses", () => {
+    expect(validateAtRevision("")).toEqual({ ok: false, message: "a target-repo revision is required (--at)" });
+    expect(validateAtRevision("a b").ok).toBe(false);
+    expect(validateAtRevision("Build:1")).toMatchObject({
+      ok: false,
+      message: expect.stringContaining("is neither a git revision nor `<kind>:<id>`"),
+    });
+  });
+});
+
+describe("runSliceConformPreview (GH #400)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-slice-conform-preview-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+
+    writeFileSync(join(dir, "slices", "draft-slice.md"), DRAFT_DOC);
+    writeFileSync(
+      join(dir, "draft.em"),
+      'slice "Draft Slice" {\n  command Do Thing note "slices/draft-slice.md"\n  event Thing Done\n}\n',
+    );
+
+    writeFileSync(join(dir, "slices", "shipped-slice.md"), IMPLEMENTED_DOC);
+    writeFileSync(
+      join(dir, "shipped.em"),
+      'slice "Shipped Slice" {\n  command Do Thing note "slices/shipped-slice.md"\n  event Thing Done\n}\n',
+    );
+
+    writeFileSync(join(dir, "unbound.em"), 'slice "Unbound" {\n  command Do Thing\n  event Thing Done\n}\n');
+    writeFileSync(
+      join(dir, "ghost.em"),
+      'slice "Ghost" {\n  command Do Thing note "slices/ghost.md"\n  event Thing Done\n}\n',
+    );
+    writeFileSync(join(dir, "slices", "invalid.md"), "# No Frontmatter\n\nbody\n");
+    writeFileSync(
+      join(dir, "invalid.em"),
+      'slice "Invalid" {\n  command Do Thing note "slices/invalid.md"\n  event Thing Done\n}\n',
+    );
+
+    writeFileSync(join(dir, "slices", "gated-slice.md"), DRAFT_DOC);
+    writeFileSync(
+      join(dir, "gated.em"),
+      'slice "Gated Slice" {\n  command Do Thing note "slices/gated-slice.md"\n  event Thing Done\n}\n',
+    );
+    writeFileSync(
+      join(dir, "conformance", "2026-09-01-findings.json"),
+      serializeFindingsDoc({
+        findingsSchemaVersion: "1.0",
+        model: "gated.em",
+        report: "conformance/2026-09-01-report.md",
+        revision: "8f12ed8",
+        findings: [
+          { id: 1, surface: "structural", class: "Real drift", slice: "gated-slice", evidence: "e1", locus: null, resolvedBy: null, resolvedOn: null },
+          { id: 2, surface: "spec", class: "Model gap", slice: "someone-else", evidence: "e2", locus: null, resolvedBy: null, resolvedOn: null },
+        ],
+      }),
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(file: string, sliceKey: string, at: string) {
+    const { model, refs } = compile(readFileSync(join(dir, file), "utf8"));
+    return runSliceConformPreview(model, refs, dir, sliceKey, at);
+  }
+
+  it("waives the shipped/implementedIn gates: a plain draft slice (never shipped) previews cleanly", () => {
+    // A distinct revision from the "gated" fixture's findings file below, so findingsFiles is
+    // genuinely empty here rather than matching a file that mentions a different slice.
+    const result = run("draft.em", "draft-slice", "unrelated-rev");
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/draft-slice.md",
+      status: "draft",
+      version: 1,
+      at: "unrelated-rev",
+      findingsFiles: [],
+      unruledFindings: [],
+    });
+  });
+
+  it("also previews a shipped slice (not restricted to unshipped ones)", () => {
+    const result = run("shipped.em", "shipped-slice", "8f12ed8");
+    expect(result).toMatchObject({ ok: true, path: "slices/shipped-slice.md", status: "implemented", version: 2 });
+  });
+
+  it("never writes the doc, regardless of outcome", () => {
+    const before = readFileSync(join(dir, "slices", "draft-slice.md"), "utf8");
+    run("draft.em", "draft-slice", "8f12ed8");
+    run("gated.em", "gated-slice", "8f12ed8"); // has unruled findings in scope too
+    expect(readFileSync(join(dir, "slices", "draft-slice.md"), "utf8")).toBe(before);
+    expect(before).not.toContain("conformedVersion");
+  });
+
+  it("surfaces unruled findings in scope for this slice at --at, but never refuses on them", () => {
+    const result = run("gated.em", "gated-slice", "8f12ed8");
+    expect(result).toEqual({
+      ok: true,
+      path: "slices/gated-slice.md",
+      status: "draft",
+      version: 1,
+      at: "8f12ed8",
+      findingsFiles: ["conformance/2026-09-01-findings.json"],
+      unruledFindings: [
+        { id: 1, surface: "structural", class: "Real drift", slice: "gated-slice", evidence: "e1", locus: null, resolvedBy: null, resolvedOn: null },
+      ],
+    });
+  });
+
+  it("a different --at with no matching findings file previews clean with empty findingsFiles", () => {
+    const result = run("gated.em", "gated-slice", "no-such-rev");
+    expect(result).toMatchObject({ ok: true, findingsFiles: [], unruledFindings: [] });
+  });
+
+  it("errors clearly for a key that names no slice in the model", () => {
+    expect(run("draft.em", "no-such-key", "8f12ed8")).toEqual({ ok: false, message: 'no slice with export key "no-such-key" in this model' });
+  });
+
+  it("errors clearly when no doc is bound via note", () => {
+    const result = run("unbound.em", "unbound", "8f12ed8");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain('no doc bound via `note "slices/unbound.md"`');
+  });
+
+  it("errors clearly when the bound note names a file that doesn't exist", () => {
+    const result = run("ghost.em", "ghost", "8f12ed8");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("no such file exists");
+  });
+
+  it("errors clearly when the bound doc has no usable frontmatter", () => {
+    const result = run("invalid.em", "invalid", "8f12ed8");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("invalid frontmatter");
+  });
+
+  it("rejects a malformed --at the same way applyConformFrontmatter does", () => {
+    const result = run("draft.em", "draft-slice", "Build:1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("is neither a git revision nor `<kind>:<id>`");
+  });
+});
+
+describe("writePreviewFindings (GH #400 --write-findings)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-slice-conform-write-findings-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("writes conformance/<on>-<slice>-preview-findings.json, renumbering ids 1..N", () => {
+    const findings = [
+      { id: 7, surface: "structural" as const, class: "Real drift", slice: "checkout", evidence: "e1", locus: null, resolvedBy: null, resolvedOn: null },
+      { id: 3, surface: "spec" as const, class: "Model gap", slice: "checkout", evidence: "e2", locus: null, resolvedBy: null, resolvedOn: null },
+    ];
+    const relPath = writePreviewFindings(dir, "checkout.em", "checkout", "8f12ed8", "2026-11-01", findings);
+    expect(relPath).toBe("conformance/2026-11-01-checkout-preview-findings.json");
+    const written = JSON.parse(readFileSync(join(dir, relPath), "utf8"));
+    expect(written.findingsSchemaVersion).toBe("1.0");
+    expect(written.model).toBe("checkout.em");
+    expect(written.revision).toBe("8f12ed8");
+    expect(written.findings.map((f: { id: number }) => f.id)).toEqual([1, 2]);
+    expect(written.findings[0]).toMatchObject({ evidence: "e1", slice: "checkout", locus: null });
+  });
+
+  it("creates conformance/ when it doesn't exist yet", () => {
+    const fresh = mkdtempSync(join(tmpdir(), "em-slice-conform-write-findings-fresh-"));
+    try {
+      expect(existsSync(join(fresh, "conformance"))).toBe(false);
+      writePreviewFindings(fresh, "m.em", "k", "rev", "2026-11-01", []);
+      expect(existsSync(join(fresh, "conformance", "2026-11-01-k-preview-findings.json"))).toBe(true);
+      const written = JSON.parse(readFileSync(join(fresh, "conformance", "2026-11-01-k-preview-findings.json"), "utf8"));
+      expect(written.findings).toEqual([]);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it("is idempotent-by-recompute: a second call with different findings overwrites rather than merging", () => {
+    writePreviewFindings(dir, "checkout.em", "overwrite-me", "revA", "2026-11-02", []);
+    writePreviewFindings(dir, "checkout.em", "overwrite-me", "revB", "2026-11-02", [
+      { id: 1, surface: "other", class: "Real drift", slice: "overwrite-me", evidence: "e", locus: null, resolvedBy: null, resolvedOn: null },
+    ]);
+    const written = JSON.parse(readFileSync(join(dir, "conformance", "2026-11-02-overwrite-me-preview-findings.json"), "utf8"));
+    expect(written.revision).toBe("revB");
+    expect(written.findings).toHaveLength(1);
   });
 });
 
