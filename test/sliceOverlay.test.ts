@@ -97,8 +97,8 @@ describe("buildSliceOverlay", () => {
   });
 
   it("returns '' when no slice has a header-cell rect", () => {
-    const { model, grid } = build();
-    const out = buildSliceOverlay("<svg></svg>", model, grid, new Map(), []);
+    const { grid } = build();
+    const out = buildSliceOverlay("<svg></svg>", grid, new Map(), []);
     expect(out).toBe("");
   });
 
