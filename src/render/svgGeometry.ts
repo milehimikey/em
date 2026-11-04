@@ -49,6 +49,28 @@ export function parseNodeRects(svg: string, ids: Set<string>): Map<string, Rect>
   return rects;
 }
 
+/** One `<text>` line inside a node group: its decoded text and baseline y (SVG user space). */
+export interface TextRow {
+  text: string;
+  y: number;
+}
+
+const TEXT = /<text\b[^>]*\by="(-?[\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+
+/** The text lines of one node, top to bottom, with their baselines — how a box that lists
+ *  alternatives (GH #278, one Graphviz HTML table per group) tells which row is which
+ *  alternative, so an arrow or a marker can anchor to that alternative's own row (GH #324). */
+export function parseNodeTextRows(svg: string, id: string): TextRow[] {
+  for (const m of svg.matchAll(NODE_GROUP)) {
+    const body = m[1];
+    if (decode(TITLE.exec(body)?.[1] ?? "") !== id) continue;
+    const rows: TextRow[] = [];
+    for (const t of body.matchAll(TEXT)) rows.push({ text: decode(t[2]).trim(), y: Number(t[1]) });
+    return rows.sort((a, b) => a.y - b.y);
+  }
+  return [];
+}
+
 /** A bounding box in the graph's own (post-transform) coordinate space. */
 export interface Box {
   minX: number;

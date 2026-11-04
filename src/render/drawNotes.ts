@@ -148,13 +148,17 @@ export function buildDivergenceMarkers(model: NormalizedModel, rects: Map<string
 /** SVG group with a numbered corner marker per event carrying a `loops-to` clause (MIL-199).
  *  Bottom-left — the one corner none of the other three marker families use — so it never
  *  overlaps a note/issue/divergence marker on the same box. */
-export function buildLoopsToMarkers(model: NormalizedModel, rects: Map<string, Rect>): string {
+export function buildLoopsToMarkers(
+  model: NormalizedModel,
+  rects: Map<string, Rect>,
+  anchors: Map<string, number> = new Map(),
+): string {
   const markers: string[] = [];
 
   loopedElements(model).forEach((el, i) => {
     const r = rects.get(el.id);
     if (!r) return;
-    markers.push(loopsToMarker(r, el, i + 1));
+    markers.push(loopsToMarker(r, el, i + 1, anchors.get(el.id)));
   });
 
   return `<g class="em-loops-to">${markers.join("")}</g>`;
@@ -175,12 +179,15 @@ function cornerGlyph(
   fill: string,
   stroke: string,
   glyph: string = "",
+  rowY?: number,
 ): string {
   const x = corner === "right" ? r.right - INSET : r.left + INSET;
   const foldX = corner === "right" ? x - FOLD : x + FOLD;
   // y grows downward: a top marker nudges down from the top edge and folds further down;
-  // a bottom marker nudges up from the bottom edge and folds further up.
-  const y = vAlign === "top" ? r.top + INSET : r.bottom - INSET;
+  // a bottom marker nudges up from the bottom edge and folds further up. GH #324: a marker
+  // for one row of a shared alternatives box sits on that row instead of the box's corner —
+  // a bottom-aligned glyph centred on the row.
+  const y = rowY !== undefined ? rowY + FOLD / 2 : vAlign === "top" ? r.top + INSET : r.bottom - INSET;
   const foldY = vAlign === "top" ? y + FOLD : y - FOLD;
   const tri = `M${n(foldX)},${n(y)} L${n(x)},${n(y)} L${n(x)},${n(foldY)} Z`;
   const crease = `M${n(foldX)},${n(y)} L${n(x)},${n(foldY)}`;
@@ -240,11 +247,14 @@ function divergenceMarker(r: Rect, divergence: string, num: number): string {
  * legend section, never as a drawn arrow. Tooltip-only, same reasoning as issue/divergence;
  * the tooltip lists every target this footnote number covers.
  */
-function loopsToMarker(r: Rect, el: Element, num: number): string {
+function loopsToMarker(r: Rect, el: Element, num: number, rowY?: number): string {
   const targets = (el.loopsTo ?? []).map((t) => `"${esc(t)}"`).join(", ");
+  // GH #324: on a shared alternatives box the marker sits on the looping alternative's own
+  // row and its tooltip names that alternative, so the badge says which one loops.
+  const who = rowY !== undefined ? `"${esc(el.name)}" ` : "";
   return (
-    `<g><title>${num}. loops back to ${targets}</title>` +
-    `${cornerGlyph(r, num, "left", "bottom", LOOP_FILL, LOOP_STROKE, "↩")}</g>`
+    `<g><title>${num}. ${who}loops back to ${targets}</title>` +
+    `${cornerGlyph(r, num, "left", "bottom", LOOP_FILL, LOOP_STROKE, "↩", rowY)}</g>`
   );
 }
 

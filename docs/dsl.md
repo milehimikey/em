@@ -126,7 +126,9 @@ Rules for both forms:
   alternative (one rule set, only the fact differs) and is declared once. Inside a `oneof` it binds to the
   alternative above it.
 - The alternatives **share one cell** in the context's event lane — no `grid-collision`. `em render` draws them
-  as one box, the names separated by an *or* line, with one arrow from the command.
+  as one box, the names separated by an *or* line, with one arrow from the command. Each alternative's
+  outgoing arrows leave that box from **its own row** (GH #324), so the diagram shows which alternative
+  feeds which read model, and an alternative's ↩ `loops-to` badge sits on its row, its tooltip naming it.
 - `model.edges` is unchanged: the command has an edge to each alternative. `em export` marks them with
   `alternativeGroup` (schema `1.19`).
 - `em slice sync` writes **one** event region headed `**Records one of:**` with an `**Event:**` marker and field
@@ -140,8 +142,9 @@ Rules for both forms:
   alternative is a shared repeat.
 - A quoted name keeps a literal `|` (`event "A | B"`). A `oneof` needs at least two `event`s and holds
   nothing else.
-- In the render the alternatives are one box, so every arrow into a later read model leaves it from one point:
-  the diagram does not show which alternative feeds which view (the model's `from` clauses do).
+- In the render the alternatives are one box; an arrow into a later read model leaves it at the row of the
+  alternative that feeds it (the box's right edge), so a view fed by both alternatives takes two arrows. When
+  that direct curve would cross an unrelated box, the arrow falls back to leaving the shared box as a whole.
 
 ## Wiring data flow
 
@@ -260,7 +263,8 @@ flow, and the forward-only law still reads the composed timeline.
 - **Several `again` lines in one continuation slice.** A slice whose non-`ui` elements are all
   `view … again` lines may hold more than one of them; the views stack in the slice's `api`
   cell (the api lane grows by one row for the stack) instead of colliding. Each instance keeps its
-  own `from`, and the slice's `ui` is the consumer of each. With several views over several `ui`s, every view must say which screen shows it with `view X again from "E" shown on "Screen"` (naming a `ui` of that slice; a parse error otherwise) — the view then wires only to that screen. A single-`ui` continuation needs nothing.
+  own `from`, and the slice's `ui` is the consumer of each. In the render each stacked view takes its own
+  arrow to its own screen, routed past the boxes between them in its own gutter lane (GH #324), never a shared trunk. With several views over several `ui`s, every view must say which screen shows it with `view X again from "E" shown on "Screen"` (naming a `ui` of that slice; a parse error otherwise) — the view then wires only to that screen. A single-`ui` continuation needs nothing.
 - **`view X again` inside a command's own slice is sugar.** Written in a slice that also holds a
   `command` or a plain `view` (the cases where the line would otherwise collide in the api cell), the line is lifted out into ONE **synthesized
   continuation column** immediately after that slice — all the slice's lifted lines stack in it — with the stable key

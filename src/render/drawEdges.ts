@@ -31,12 +31,24 @@ export interface EdgeOverlay {
   bbox: Box | null;
 }
 
-export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect>): EdgeOverlay {
+/** `anchors` (GH #324): for an event that shares its box with alternatives, the y of its own
+ *  row inside that box (render.ts's alternativeRowAnchors). An edge leaving such an event
+ *  departs from the box's right edge at that row, so "Done Jobs from Job Done" and "Failed
+ *  Jobs from Job Failed" leave from different rows instead of one shared point. */
+export function buildEdgeOverlay(
+  model: NormalizedModel,
+  rects: Map<string, Rect>,
+  anchors: Map<string, number> = new Map(),
+): EdgeOverlay {
   const paths: string[] = [];
   const colors = new Set<string>();
   const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 
-  const sideLaneBySource = new Map<string, number>();
+  // GH #324: gutter lanes are handed out per column, not per source — a stacked continuation
+  // column's views each route to their own screen past the boxes between, and two routes in
+  // one lane drew as one trunk nobody could follow. A command fanning to its 2nd/3rd event is
+  // the only other user and gets exactly the lanes it did before.
+  const sideLaneByColumn = new Map<number, number>();
   const drawn = new Set<string>();
   const rectKey = new Map<Rect, string>();
   for (const e of semanticEdges(model)) {
@@ -61,18 +73,31 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
     const fSlice = model.byId.get(e.from)?.sliceIndex;
     const tSlice = model.byId.get(e.to)?.sliceIndex;
     let d: string;
+    const rowY = anchors.get(e.from);
+    const fromRow = rowY !== undefined && fSlice !== tSlice ? rowExit(f, rowY, t, rects, e.from, e.to) : null;
     if (fSlice !== undefined && fSlice === tSlice) {
       // A straight vertical that would pass THROUGH another box in the column (the multi-event
       // fan case: command -> 2nd/3rd event) reads as a false event->event chain. Route those
       // around the column's right side instead, one gutter lane per fanned edge.
       if (isObstructed(model, rects, fSlice, e.from, e.to, f, t)) {
-        const lane = sideLaneBySource.get(e.from) ?? 0;
-        sideLaneBySource.set(e.from, lane + 1);
+        const lane = sideLaneByColumn.get(fSlice) ?? 0;
+        sideLaneByColumn.set(fSlice, lane + 1);
         d = sideRoute(f, t, lane);
       } else {
         d = straight(f, t);
       }
+    } else if (fromRow) {
+      // GH #324: leave the shared alternatives box from this alternative's own row, through
+      // the right edge, so the reader sees which alternative feeds which view. Only when that
+      // direct curve is clear; a blocked one falls back to the shared-box routing below, drawn
+      // once per box pair like any other edge out of the shared box.
+      d = cubic(...fromRow);
     } else {
+      if (rowY !== undefined) {
+        const sharedKey = `${rectKey.get(f) ?? (rectKey.set(f, e.from), e.from)}>${rectKey.get(t) ?? e.to}`;
+        if (drawn.has(sharedKey)) continue;
+        drawn.add(sharedKey);
+      }
       // Across columns the direct curve can still run through boxes in the slices between —
       // a long span, or (before the CQRS check) a flat same-band edge sailing through a
       // command. Any box on the line reads as a connection that isn't in the model, so when
@@ -183,6 +208,29 @@ function straight(f: Rect, t: Rect): string {
 
 /** Control points of the direct cubic between two boxes in different columns. */
 type Cubic = [number, number, number, number, number, number, number, number];
+
+/** GH #324: the direct curve out of an alternative's own row — leaving the shared box's right
+ *  edge horizontally at `rowY`, entering `t` by the face that points back at that row (the
+ *  same facing rule curvePoints uses). Null when the curve would pass through a box neither
+ *  end connects to; the caller then falls back to the shared-box routing. */
+function rowExit(f: Rect, rowY: number, t: Rect, rects: Map<string, Rect>, fromId: string, toId: string): Cubic | null {
+  if (t.cx < f.cx) return null; // alternatives feed views to their right on the timeline
+  const dy = t.cy - rowY;
+  let pts: Cubic;
+  if (Math.abs(dy) <= SAME_ROW_EPS) {
+    const k = clamp(0.5 * Math.abs(t.cx - f.cx), MIN_BOW, MAX_BOW);
+    pts = [f.right, rowY, f.right + k, rowY, t.left - k, t.cy, t.left, t.cy];
+  } else {
+    const k = clamp(0.6 * Math.abs(dy), MIN_BOW, MAX_BOW);
+    pts =
+      dy < 0
+        ? [f.right, rowY, f.right + k, rowY, t.cx, t.bottom + k, t.cx, t.bottom]
+        : [f.right, rowY, f.right + k, rowY, t.cx, t.top - k, t.cx, t.top];
+  }
+  const blockers: Rect[] = [];
+  for (const [id, r] of rects) if (id !== fromId && id !== toId && r !== f && r !== t) blockers.push(r);
+  return hits(pts, blockers).length ? null : pts;
+}
 
 function curvePoints(f: Rect, t: Rect): Cubic {
   const dy = t.cy - f.cy;

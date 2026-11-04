@@ -22,7 +22,7 @@ import { Element, NormalizedModel } from "../model/model.js";
 import { SliceDoc } from "../catalog/sliceDoc.js";
 import { Grid, headerCellId } from "../layout/grid.js";
 import { classifySlicePattern, slicePatternLabel } from "../catalog/classify.js";
-import { fitCanvas, parseNodeRects } from "./svgGeometry.js";
+import { fitCanvas, parseNodeRects, parseNodeTextRows, Rect } from "./svgGeometry.js";
 import { buildEdgeOverlay } from "./drawEdges.js";
 import {
   buildNoteMarkers,
@@ -222,6 +222,47 @@ function rewriteDocLinks(html: string, baseDir: string, outDir: string): string 
   });
 }
 
+/** GH #324: where each alternative's own row sits inside the group's shared box — the y the
+ *  box's title line for that alternative is drawn at (read back from the SVG's text rows, the
+ *  same way rects are read back), so an arrow leaving that alternative, or its loops-to
+ *  marker, can anchor to that row instead of to the shared box's edge. Only groups of two or
+ *  more alternatives get anchors; a lone event keeps the plain box routing byte for byte. A
+ *  row whose text can't be found (not something emit/dot.ts produces) simply gets no anchor
+ *  and falls back to the shared box. */
+function alternativeRowAnchors(
+  svg: string,
+  model: NormalizedModel,
+  leadByGroup: Map<string, string>,
+  rects: Map<string, Rect>,
+): Map<string, number> {
+  const anchors = new Map<string, number>();
+  const members = new Map<string, Element[]>();
+  for (const el of model.elements) {
+    if (el.alternativeGroup === undefined) continue;
+    const key = `${el.sliceIndex}:${el.alternativeGroup}`;
+    const list = members.get(key) ?? [];
+    list.push(el);
+    members.set(key, list);
+  }
+  for (const [key, alts] of members) {
+    if (alts.length < 2) continue;
+    const lead = leadByGroup.get(key);
+    if (!lead || !rects.has(lead)) continue;
+    const rows = parseNodeTextRows(svg, lead);
+    let at = 0;
+    for (const alt of alts) {
+      // Rows are in box order and so are the alternatives: scan forward, never back, so two
+      // alternatives with the same name (or a field named like an alternative) can't collide.
+      const i = rows.findIndex((r, idx) => idx >= at && r.text === alt.name);
+      if (i < 0) continue;
+      at = i + 1;
+      // The title line is 11pt bold; its baseline sits ~4px below the line's visual centre.
+      anchors.set(alt.id, rows[i].y - 4);
+    }
+  }
+  return anchors;
+}
+
 /** Draw the semantic edges and note markers into a Graphviz-rendered SVG. */
 function withOverlays(
   svg: string,
@@ -248,11 +289,12 @@ function withOverlays(
     const r = lead ? rects.get(lead) : undefined;
     if (lead && lead !== el.id && r) rects.set(el.id, r);
   }
-  const { defs, group, bbox } = buildEdgeOverlay(model, rects);
+  const anchors = alternativeRowAnchors(svg, model, leadByGroup, rects);
+  const { defs, group, bbox } = buildEdgeOverlay(model, rects, anchors);
   const notes = buildNoteMarkers(model, rects, hrefOf);
   const issues = buildIssueMarkers(model, rects);
   const divergences = buildDivergenceMarkers(model, rects);
-  const loopsTo = buildLoopsToMarkers(model, rects);
+  const loopsTo = buildLoopsToMarkers(model, rects, anchors);
   const bands = buildStorylineBands(model, grid, rects);
   const statuses = docs.map((doc) => doc?.status ?? null);
 

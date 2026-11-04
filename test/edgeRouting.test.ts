@@ -311,3 +311,128 @@ arrow "Complete Item" -> CompleteItem
     expect(ds[i]).toBe(BASE_PATH);
   });
 });
+
+// GH #324 (follow-up to #278): alternatives share one box, but each alternative's outgoing
+// arrows leave from ITS OWN row of that box, and its ↩ loops-to badge sits on that row — so
+// "Done Jobs from Job Done" and "Failed Jobs from Job Failed" no longer draw as one line out of
+// one point, and the badge says which alternative loops. Stacked continuation columns get one
+// gutter lane per route instead of one shared trunk.
+const ALTERNATIVES = `model "Alt"
+slice "Queue" {
+  ui Queue Screen @Ops
+  command Queue Job
+  event Job Queued @Ops
+}
+slice "Queued" {
+  view Queue from "Job Queued"
+  ui Queue Board @Ops
+}
+slice "Run Job" {
+  ui Job Screen @Ops
+  command Run Job
+  event Job Done loops-to "Queue" | Job Failed @Ops
+}
+slice "Done Jobs" {
+  view Done Jobs from "Job Done"
+  ui Done Screen @Ops
+}
+slice "Failed Jobs" {
+  view Failed Jobs from "Job Failed"
+  ui Failed Screen @Ops
+}
+`;
+
+const STACKED = `model "Stack"
+slice "Place Order" {
+  ui Order Form @Customer
+  command Place Order
+  event Order Placed @Sales
+}
+slice "Open Orders" {
+  view Open Orders from "Order Placed"
+  ui Orders Board @Customer
+}
+slice "Order Summary" {
+  view Order Summary from "Order Placed"
+  ui Summary Page @Customer
+}
+slice "Approve Order" {
+  ui Approval Screen @Customer
+  command Approve Order
+  event Order Approved @Sales
+}
+slice "After Approval" {
+  view Open Orders again from "Order Approved" shown on "Orders Board"
+  view Order Summary again from "Order Approved" shown on "Summary Page"
+  ui Orders Board @Customer
+  ui Summary Page @Customer
+}
+`;
+
+/** Every drawn edge path's start point, end point and raw `d`. */
+function edgeStarts(svg: string): { x: number; y: number; ex: number; ey: number; d: string }[] {
+  return [...svg.matchAll(/<path fill="none" stroke="[^"]+" stroke-width="1.5" d="M(-?[\d.]+),(-?[\d.]+)([^"]*)"/g)].map((m) => {
+    const d = `M${m[1]},${m[2]}${m[3]}`;
+    const end = /(-?[\d.]+),(-?[\d.]+)$/.exec(d)!;
+    return { x: Number(m[1]), y: Number(m[2]), ex: Number(end[1]), ey: Number(end[2]), d };
+  });
+}
+const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
+
+describe("GH #324: alternatives leave the shared box from their own row", () => {
+  it("two views fed by different alternatives have arrows leaving the box's right edge at different y", async () => {
+    const svg = await renderSource(ALTERNATIVES);
+    const { model } = compile(ALTERNATIVES);
+    const rects = parseNodeRects(svg, new Set(model.byId.keys()));
+    const box = rects.get("job_done")!;
+    expect(rects.get("job_failed")).toBeUndefined(); // still one shared box, drawn under the lead's id (GH #278)
+    const outOfBox = edgeStarts(svg).filter((e) => near(e.x, box.right));
+    expect(outOfBox).toHaveLength(2);
+    const [done, failed] = outOfBox.sort((a, b) => a.y - b.y);
+    expect(done.y).toBeGreaterThan(box.top);
+    expect(failed.y).toBeLessThan(box.bottom);
+    expect(failed.y - done.y).toBeGreaterThan(12); // a full text row apart, not one point
+    // The upper row is "Job Done" (first alternative) and feeds Done Jobs; the lower feeds Failed Jobs.
+    const doneView = rects.get("done_jobs")!;
+    const failedView = rects.get("failed_jobs")!;
+    // Each enters its view by the face that points back at the row (the api lane sits above the
+    // event lane here, so that is the view's bottom) — the established facing rule, unchanged.
+    const enters = (e: { ex: number; ey: number }, r: Rect) => near(e.ex, r.cx) && (near(e.ey, r.top) || near(e.ey, r.bottom));
+    expect(enters(done, doneView)).toBe(true);
+    expect(enters(failed, failedView)).toBe(true);
+    // Nothing else leaves the shared box: the command -> event edge enters it from above as before.
+    expect(edgeStarts(svg).filter((e) => near(e.x, box.cx) && near(e.y, box.bottom))).toHaveLength(0);
+  });
+
+  it("the ↩ loops-to badge sits on the looping alternative's row, clear of the text, and its tooltip names it", async () => {
+    const svg = await renderSource(ALTERNATIVES);
+    const { model } = compile(ALTERNATIVES);
+    const box = parseNodeRects(svg, new Set(model.byId.keys())).get("job_done")!;
+    const loops = /<g class="em-loops-to">([\s\S]*?)<\/g>/.exec(svg)![1];
+    expect(loops).toContain('<title>1. "Job Done" loops back to "Queue"</title>');
+    const tri = /d="M(-?[\d.]+),(-?[\d.]+) L(-?[\d.]+),(-?[\d.]+) L(-?[\d.]+),(-?[\d.]+) Z"/.exec(loops)!;
+    const badgeBottom = Number(tri[2]);
+    const badgeTop = Number(tri[6]);
+    // The badge spans the "Job Done" row — the top half of the box — not the box's bottom corner.
+    expect(badgeTop).toBeGreaterThan(box.top);
+    expect(badgeBottom).toBeLessThan(box.cy);
+    // And it never overlaps the alternative's own name: the glyph ends before the text starts.
+    const nameX = Number(/<text[^>]*x="(-?[\d.]+)"[^>]*>Job Done<\/text>/.exec(svg)![1]);
+    expect(Number(tri[1])).toBeLessThan(nameX);
+  });
+
+  it("a stacked continuation column routes each view to its own screen in its own gutter lane", async () => {
+    const svg = await renderSource(STACKED);
+    const { model } = compile(STACKED);
+    const rects = parseNodeRects(svg, new Set(model.byId.keys()));
+    const views = model.elements.filter((e) => e.kind === "view" && e.sliceIndex === 4);
+    expect(views).toHaveLength(2);
+    const starts = edgeStarts(svg);
+    const routes = views.map((v) => starts.find((e) => near(e.x, rects.get(v.id)!.right) && near(e.y, rects.get(v.id)!.cy))!);
+    expect(routes.every(Boolean)).toBe(true);
+    // The vertical run of each route: the x of its `L` segment. Distinct lanes, not one trunk.
+    const lanes = routes.map((r) => Number(/ L(-?[\d.]+),/.exec(r.d)![1]));
+    expect(new Set(lanes).size).toBe(2);
+    expect(lanes.every((x) => x > rects.get(views[0].id)!.right)).toBe(true);
+  });
+});
