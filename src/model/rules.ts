@@ -77,6 +77,14 @@ export const RULES = {
     docAnchor: "shape",
     family: "shape",
   },
+  "again-restates-sources": {
+    severity: "warning",
+    title: "Continuation restates sources an earlier instance already read",
+    fix: "Name only the events that changed the view since the previous instance on the `again` line; the view's field sources are the union across instances, so nothing is lost (docs/dsl.md#view--again).",
+    usageCategory: "continuation restates sources",
+    docAnchor: "shape",
+    family: "shape",
+  },
   "view-lookup-source": {
     severity: "warning",
     title: "View reads an event only as a lookup",

@@ -12,6 +12,7 @@ import { normalizeName } from "./model.js";
 import type { Element, NormalizedModel } from "./model.js";
 import type { RefsResult } from "./refs.js";
 import { viewSourceNames } from "./continuation.js";
+import { composedRank } from "./storylines.js";
 import { pushDiag } from "./rules.js";
 import type { Diagnostic } from "./validate.js";
 
@@ -216,6 +217,55 @@ export function shapeDiagnostics(model: NormalizedModel, refs: RefsResult, diags
           `(docs/patterns.md#state-view)`,
         line: v.line,
         refs: [refOf(v.id), refOf(srcEvent.id), ...rowCreators.map((rv) => refOf(rv.id))],
+      });
+    }
+  }
+
+  // --- again-restates-sources (GH #424) ---
+  // A `view X again` instance names only the events that changed the view since the previous
+  // instance. One that restates a source an earlier instance already read — with that event not
+  // recorded again between the two instances — draws the same arrow twice and reads as if the
+  // view were rebuilt. Field sources are the union across instances (GH #235), so restating is
+  // never needed for completeness. Advisory: one finding per instance, naming the restated events.
+  const rankOf = (sliceIndex: number): number => composedRank(model, sliceIndex);
+  const recordedAt = new Map<string, number[]>(); // normalized event name -> composed ranks of the slices recording it
+  for (const el of model.elements) {
+    if (el.kind !== "event") continue;
+    const k = normalizeName(el.name);
+    recordedAt.set(k, [...(recordedAt.get(k) ?? []), rankOf(el.sliceIndex)]);
+  }
+  const instancesByLogical = new Map<string, Element[]>();
+  for (const el of model.elements) {
+    if (el.kind !== "view") continue;
+    instancesByLogical.set(el.logicalId, [...(instancesByLogical.get(el.logicalId) ?? []), el]);
+  }
+  for (const instances of instancesByLogical.values()) {
+    const ordered = [...instances].sort((x, y) => rankOf(x.sliceIndex) - rankOf(y.sliceIndex));
+    for (let i = 1; i < ordered.length; i++) {
+      const v = ordered[i];
+      if (!v.again || (v.from ?? []).length === 0) continue;
+      const prev = ordered[i - 1];
+      const lo = rankOf(prev.sliceIndex);
+      const hi = rankOf(v.sliceIndex);
+      const readBefore = new Set(ordered.slice(0, i).flatMap((x) => (x.from ?? []).map(normalizeName)));
+      const restated: string[] = [];
+      for (const name of v.from ?? []) {
+        const k = normalizeName(name);
+        if (!readBefore.has(k)) continue;
+        const recordedBetween = (recordedAt.get(k) ?? []).some((r) => r > lo && r <= hi);
+        if (!recordedBetween) restated.push(name);
+      }
+      if (restated.length === 0) continue;
+      const events = restated
+        .map((n) => model.byName.get(normalizeName(n))?.find((e) => e.kind === "event"))
+        .filter((e): e is Element => e !== undefined);
+      pushDiag(diags, "again-restates-sources", {
+        message:
+          `view "${v.name}" again (slice ${v.sliceIndex + 1}) restates ${restated.map((n) => `"${n}"`).join(", ")} — ` +
+          `already read by its instance in slice ${prev.sliceIndex + 1}, and not recorded again between them; ` +
+          `a continuation names only the events that changed the view since the previous instance (docs/dsl.md#view--again)`,
+        line: v.line,
+        refs: [refOf(v.id), refOf(prev.id), ...events.map((e) => refOf(e.id))],
       });
     }
   }

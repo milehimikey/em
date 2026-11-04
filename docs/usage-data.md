@@ -71,6 +71,7 @@ affected lines written by hand.
 | command produces no event |
 | command repeated across slices |
 | consecutive same-context state changes |
+| continuation restates sources |
 | continuation slice has its own doc |
 | cross-slice note not ratified by target doc |
 | cross-slice note points nowhere |
