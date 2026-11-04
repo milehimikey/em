@@ -331,13 +331,19 @@ storyline "Two  Words" {
 
   it("em slice index adds a Storyline column only for a model that declares storylines", () => {
     const withStories = compile(THREE);
-    const table = buildSliceIndexTable(withStories.model, withStories.refs, ".");
+    const table = buildSliceIndexTable(withStories.model, withStories.refs, ".", { full: true });
     const lines = table.markdown.split("\n");
-    expect(lines[0]).toContain("| Slice | Storyline | Pattern |");
-    expect(lines[1].startsWith("|---|-------|-----------|")).toBe(true);
-    expect(lines[2]).toContain("| 1 | Receive | Main | ");
-    expect(lines[6]).toContain("| 5 | Watch | Follow | ");
+    // --full: one section per storyline, the full header with a Storyline column in each
+    expect(lines[0]).toBe("### Main");
+    expect(lines[3]).toContain("| Slice | Storyline | Pattern |");
+    expect(lines[4].startsWith("|---|-------|-----------|")).toBe(true);
+    expect(lines[5]).toContain("| 1 | Receive | Main | ");
     expect(table.rows.map((r) => r.storyline)).toEqual(["Main", "Main", "Other", "Other", "Follow", "Follow"]);
+    // the default (reader) table groups the same way, numbered within each story, five columns
+    const reader = buildSliceIndexTable(withStories.model, withStories.refs, ".");
+    expect(reader.markdown).toContain("### Follow\n_2 slices · [diagram](storylines/follow.svg)_\n\n| # | Slice | Pattern | Status | Design doc |");
+    expect(reader.markdown).toContain("| 1 | Watch | ");
+    expect(reader.storylinesMarkdown).toContain("| Main | 2 | 0 | [storylines/main.svg](storylines/main.svg) |");
 
     const plain = compile(`slice "a" {\n  ui U @P\n  command C\n  event E\n}\n`);
     const plainTable = buildSliceIndexTable(plain.model, plain.refs, ".");
