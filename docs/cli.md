@@ -349,10 +349,11 @@ stop.
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 | `--serve` | Serve a live browser viewer with instant push-reload |
 | `--port <n>` | Port for `--serve` (default 5173; falls forward if taken) |
-| `--storyline <name>` | (GH #309, deferred from #277) Filter the live view to one storyline's subset — requires `--serve` |
+| `--storyline <name>` | (GH #309, deferred from #277) Open the live view inside one storyline's subset — requires `--serve` |
 
 With `--serve`, `em` starts a loopback HTTP server on the output directory and prints a URL
-like `http://localhost:5173/?svg=model.svg`. After each successful re-render it pushes a
+like `http://localhost:5173/?svg=model.svg` — or, when the model declares storylines, the
+storyline canvas at `http://localhost:5173/map` (see below). After each successful re-render it pushes a
 reload over Server-Sent Events, so the browser updates the moment you save, with no polling
 and no flicker. The server serves the directory the SVG is written to, which is what keeps
 `note` links inside the SVG clickable. The viewer navigates like a map — drag to pan,
@@ -367,10 +368,23 @@ to the `.em` mid-session arrive over the same SSE push without leaving review mo
 event-modeling skill's `review` phase ([ai-workflow.md](ai-workflow.md)) runs a facilitated
 session on top of it.
 
-**Storyline filter (GH #309, deferred from #277).** `--storyline <name>` serves the same
-subset `em render --storyline` draws (see above) instead of the whole model — the storyline's
-own slices, in order, nothing from outside it — and Review mode steps through exactly those
-slices. The name is
+**The live canvas (GH #422).** When the model declares storylines, the live session opens on
+the **storyline canvas** — the same page `em render --map` writes (every storyline's own
+diagram in a draggable frame, the flow between storylines drawn between frames), served live at
+`/map` and rebuilt on every save: the page reloads itself after each successful render, and
+frame positions and the camera carry over (they live in the browser). A save that fails to
+render shows the error in the canvas's bar and leaves the frames on screen. Each frame's
+**open ›** drills into that storyline: the viewer on the storyline's own subset (its slices in
+order, nothing from outside it, as `em render --storyline` draws), where **Review mode** walks
+exactly that storyline's slices and a **‹ Storylines** breadcrumb in the header returns to the
+canvas. The full timeline is never the landing page of a storyline model; it stays one picker
+entry (or `?svg=<model>.svg`) away. The canvas is served from memory, not written beside the
+model — `em render --map` is the on-disk page. A model without storylines opens on the timeline
+as before, and `/map` answers 404.
+
+**Storyline filter (GH #309, deferred from #277).** `--storyline <name>` opens the session
+inside that storyline's subset instead of on the canvas — the storyline's own slices, in order,
+nothing from outside it — and Review mode steps through exactly those slices. The name is
 validated on every rebuild the same way `em render --storyline` validates it: an unknown name
 errors, listing the declared storylines, without killing the watcher.
 
@@ -378,8 +392,8 @@ Independent of `--storyline`, whenever the model declares any storylines the vie
 grows a **storyline picker** (a dropdown next to Review mode) listing "Full model" plus every
 declared storyline — `em watch --serve` writes all of them side by side on every build, so
 picking one is a plain navigation to the same page with a new `?svg=`, no restart needed.
-`--storyline <name>` just picks which one loads first; the picker works the same with or
-without it.
+`--storyline <name>` just picks which one loads first; the picker (and the breadcrumb back to
+the canvas) works the same with or without it.
 
 ## `em validate <file>`
 

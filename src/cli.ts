@@ -20,7 +20,7 @@ import { buildStorylineDiagram, resolveStorylineArg } from "./render/storylineDi
 import { StorylineFrame, buildStorylineMapHtml } from "./render/storylineMap.js";
 import { storylineMap } from "./model/storylineMap.js";
 import { embedStorylinePicker } from "./render/storylinePicker.js";
-import { resolveWatchStoryline, storylineFileFor, storylineVariants } from "./cli/watchStoryline.js";
+import { liveViewUrl, resolveWatchStoryline, storylineFileFor, storylineVariants } from "./cli/watchStoryline.js";
 import { resolveSliceKey } from "./model/resolveSlice.js";
 import { serializeBuilds, watchFile } from "./render/watch.js";
 import { startLiveServer, LiveServer } from "./render/serve.js";
@@ -2218,6 +2218,10 @@ program
     // --storyline resolves, in which case build() below points it at that storyline's own
     // subset file instead (GH #309).
     let liveFile = basename(out);
+    // GH #422: the storyline canvas (the page `em render --map` writes), rebuilt on every build
+    // and served live at /map — undefined while the model declares no storylines, so /map 404s.
+    let canvas: string | undefined;
+    let hasStorylines = false;
 
     // serializeBuilds: chokidar can fire several events for one save (and an
     // editor's write can land while a slow png/pdf render is still in flight) —
@@ -2271,7 +2275,10 @@ program
 
           // Every declared storyline's own subset (GH #277's `em render --storyline` subset,
           // reused verbatim) — rendered alongside the full model on every build, independent of
-          // --storyline, so the viewer's picker always has somewhere to navigate to.
+          // --storyline, so the viewer's picker always has somewhere to navigate to. The same
+          // subsets fill the live canvas's frames (GH #422), each frame opening into its
+          // storyline's viewer page.
+          const frames: StorylineFrame[] = [];
           for (const st of model.storylines ?? []) {
             const sub = buildStorylineDiagram(model, st, { keepEmptyLanes: opts.keepEmptyLanes });
             const subFile = storylineFileFor(st.name);
@@ -2281,7 +2288,16 @@ program
               storylineVariants(model, outFile, subFile),
             );
             await writeRendered(subSvg, join(outDir, subFile), "svg");
+            frames.push({
+              name: st.name,
+              slug: kebabSlug(st.name),
+              sliceCount: st.sliceIndexes.length,
+              svg: subSvg,
+              href: `/?svg=${encodeURIComponent(subFile)}`,
+            });
           }
+          hasStorylines = frames.length > 0;
+          canvas = hasStorylines ? buildStorylineMapHtml(model, frames, storylineMap(model), { live: true }) : undefined;
         } else {
           await renderDot(dot, model, grid, out, fmt, dirname(file));
         }
@@ -2299,11 +2315,16 @@ program
       try {
         // Serve the directory the SVG is written to — that's what the browser
         // fetches, and note "..." links inside the SVG resolve relative to it.
-        server = await startLiveServer({ dir: dirname(resolve(out)), port: opts.port });
+        server = await startLiveServer({ dir: dirname(resolve(out)), port: opts.port, canvas: () => canvas });
         // The viewer inlines SVG only — for png/pdf watches there's nothing
         // live to embed, so don't print a ?svg= URL that can't work.
         if (fmt === "svg") {
-          console.log(`→ live view: ${server.url}/?svg=${encodeURIComponent(liveFile)}`);
+          const pinned = opts.storyline !== undefined;
+          console.log(`→ live view: ${liveViewUrl(server.url, liveFile, hasStorylines, pinned)}`);
+          if (hasStorylines && !pinned) {
+            console.log("  the storyline canvas — click a storyline's “open ›” to step through it;");
+            console.log(`  the full timeline: ${server.url}/?svg=${encodeURIComponent(liveFile)}`);
+          }
           console.log("  open it in a browser and share your screen");
         } else {
           console.log(`→ serving ${dirname(resolve(out))} at ${server.url}`);

@@ -5,6 +5,12 @@
 // disk. Frame positions are remembered per model in the browser's localStorage ("Reset layout"
 // forgets them); the first layout places root storylines left and every `after` storyline one
 // column to the right of what it follows.
+//
+// GH #422: `em watch --serve` serves the same page live at /map (src/render/serve.ts) — built by
+// this one function with `live: true`: each frame's open link drills into that storyline's own
+// subset in the viewer (`/?svg=<frame.href>`), and the page listens on the server's /__events
+// stream and reloads itself after every successful render (positions and camera survive the
+// reload: they live in localStorage). No second canvas implementation.
 
 import { NormalizedModel } from "../model/model.js";
 import { StorylineMap } from "../model/storylineMap.js";
@@ -15,14 +21,42 @@ export interface StorylineFrame {
   sliceCount: number;
   /** The storyline's own rendered SVG (render/storylineDiagram.ts through composeSvg). */
   svg: string;
+  /** Where the frame's open link goes. Default `./<slug>.svg` (the file `em render --map` writes
+   *  beside the page); the live viewer passes `/?svg=<subset file>` (GH #422). */
+  href?: string;
 }
+
+export interface StorylineMapOptions {
+  /** GH #422: served by `em watch --serve` — open links drill down in the same tab, the page
+   *  reloads itself on the server's reload push and shows a render error in its bar. */
+  live?: boolean;
+}
+
+/** GH #422: the served canvas follows the same /__events stream the viewer does (serve.ts) — a
+ *  successful render reloads the page (positions and camera are in localStorage, so the layout
+ *  holds); a failed render lands in the bar without touching the frames on screen. */
+const LIVE_SCRIPT = `
+  // --- live (em watch --serve): reload on the server's push, keep the last good canvas on an error
+  const liveEl = document.getElementById("live"), errEl = document.getElementById("liveError");
+  const es = new EventSource("/__events");
+  es.onopen = () => { liveEl.textContent = "live"; };
+  es.onerror = () => { liveEl.textContent = "reconnecting…"; };
+  es.onmessage = () => { location.reload(); };
+  es.addEventListener("renderError", (e) => { errEl.textContent = e.data; errEl.hidden = false; errEl.title = e.data; });
+`;
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export function buildStorylineMapHtml(model: NormalizedModel, frames: StorylineFrame[], map: StorylineMap): string {
+export function buildStorylineMapHtml(
+  model: NormalizedModel,
+  frames: StorylineFrame[],
+  map: StorylineMap,
+  opts: StorylineMapOptions = {},
+): string {
   const title = `${model.name} — storylines`;
+  const live = opts.live === true;
   const data = {
     model: model.name,
     nodes: map.nodes.map((n) => ({ name: n.name, slug: n.slug, after: n.after })),
@@ -38,7 +72,9 @@ export function buildStorylineMapHtml(model: NormalizedModel, frames: StorylineF
       (f) =>
         `<section class="frame" data-name="${esc(f.name)}" data-slug="${esc(f.slug)}">` +
         `<header><span class="title">${esc(f.name)}</span><span class="meta">${f.sliceCount} slice${f.sliceCount === 1 ? "" : "s"}</span>` +
-        `<a class="open" href="./${esc(f.slug)}.svg" target="_blank" title="open this storyline's diagram">↗</a></header>` +
+        `<a class="open" href="${esc(f.href ?? `./${f.slug}.svg`)}"${live ? "" : ' target="_blank"'} title="${
+          live ? "open this storyline in the live viewer" : "open this storyline's diagram"
+        }">${live ? "open ›" : "↗"}</a></header>` +
         `<div class="body">${f.svg}</div></section>`,
     )
     .join("\n");
@@ -59,6 +95,10 @@ export function buildStorylineMapHtml(model: NormalizedModel, frames: StorylineF
   header.bar .hint { opacity: .7; margin-left: auto; }
   header.bar button { background: #334155; color: #fff; border: 0; border-radius: 4px; padding: .25rem .6rem; cursor: pointer; font-size: 13px; }
   header.bar button:hover { background: #475569; }
+  header.bar .live { opacity: .7; }
+  header.bar .error { background: #b91c1c; color: #fff; padding: .2rem .6rem; border-radius: 4px; max-width: 40%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header.bar .error[hidden] { display: none; }
   #viewport { position: absolute; inset: 40px 0 0 0; overflow: hidden; cursor: grab; }
   #viewport.panning { cursor: grabbing; }
   #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -80,8 +120,12 @@ export function buildStorylineMapHtml(model: NormalizedModel, frames: StorylineF
 <header class="bar">
   <span class="title">${esc(title)}</span>
   <button id="fit" type="button">Fit</button>
-  <button id="reset" type="button">Reset layout</button>
-  <span class="hint">drag a frame's title to move it · drag the background to pan · wheel to zoom</span>
+  <button id="reset" type="button">Reset layout</button>${
+    live ? `\n  <span class="live" id="live">live</span><span class="error" id="liveError" hidden></span>` : ""
+  }
+  <span class="hint">drag a frame's title to move it · drag the background to pan · wheel to zoom${
+    live ? " · click a storyline's “open ›” to step through it" : ""
+  }</span>
 </header>
 <div id="viewport"><div id="world"><svg class="links" width="1" height="1">
   <defs>
@@ -247,7 +291,7 @@ ${frameHtml}
 
   applyPositions();
   if (!localStorage.getItem(KEY)) fit(); else applyCamera();
-})();
+${live ? LIVE_SCRIPT : ""}})();
 </script>
 </body>
 </html>

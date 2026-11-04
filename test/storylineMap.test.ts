@@ -113,5 +113,32 @@ describe("buildStorylineMapHtml()", () => {
     expect(data.edges).toContainEqual({ from: "Borrow", to: "Chase", kind: "after", labels: [] });
     expect(data.edges).toContainEqual({ from: "Chase", to: "Audit", kind: "reads", labels: ["Overdue Notice Sent"] });
     expect(html).not.toMatch(/<(script|link)[^>]+(src|href)="https?:/);
+    // On disk the page stands alone: no live wiring, no server to talk to.
+    expect(html).not.toContain("EventSource");
+  });
+
+  it("GH #422: `live: true` is the same page served by em watch — frames open their storyline in the viewer, the page reloads on the server's push", async () => {
+    const { model } = compile(SRC);
+    const frames = [];
+    for (const st of model.storylines!) {
+      const sub = buildStorylineDiagram(model, st);
+      const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, ".", ".");
+      const slug = st.name.toLowerCase();
+      frames.push({ name: st.name, slug, sliceCount: st.sliceIndexes.length, svg, href: `/?svg=storyline-${slug}.svg` });
+    }
+    const html = buildStorylineMapHtml(model, frames, storylineMap(model), { live: true });
+    expect((html.match(/class="frame"/g) ?? []).length).toBe(3);
+    // Drill-down: the frame's open link is the viewer page on that storyline's subset, same tab.
+    expect(html).toContain('href="/?svg=storyline-chase.svg"');
+    expect(html).not.toContain('target="_blank"');
+    expect(html).not.toContain('href="./chase.svg"');
+    // Live: the canvas follows the viewer's own event stream and reloads on a successful render;
+    // a failed render lands in the bar.
+    expect(html).toContain('new EventSource("/__events")');
+    expect(html).toContain("location.reload()");
+    expect(html).toContain('addEventListener("renderError"');
+    expect(html).toContain('id="liveError"');
+    // Positions and camera are still kept in localStorage, so a reload holds the layout.
+    expect(html).toContain("localStorage.setItem(KEY");
   });
 });
