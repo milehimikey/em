@@ -24,6 +24,7 @@ em render <file> -o, --out <path>                                   # output pat
 em render <file> -T, --format <fmt>                                 # output format (svg, png, pdf, ...)
 em render <file> --slice <name>                                     # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
 em render <file> --storyline <name>                                 # render only this storyline: its own slices in order, nothing from outside it (default out: storylines/<kebab-slug>.svg)
+em render <file> --map                                              # render every storyline to storylines/<kebab-slug>.svg plus a draggable canvas of them all, with the flow between storylines, at storylines/map.html (-o picks the html path)
 em render <file> --emit-dot                                         # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes                                 # keep the API lane even when empty
 em export <file>                                                    # export a versioned JSON snapshot of the normalized model
@@ -882,6 +883,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 <!-- GENERATED:validate-rules:start -- run `npm run docs:generate` to refresh, do not hand-edit -->
 | Code | Severity | Title | Fix |
 |---|---|---|---|
+| `again-restates-sources` | warning | Continuation restates sources an earlier instance already read | Name only the events that changed the view since the previous instance on the `again` line; the view's field sources are the union across instances, so nothing is lost (docs/dsl.md#view--again). |
 | `alternative-events-no-command` | error | Alternative events without a command | Add the command whose decision records one of the alternatives, in the same slice. |
 | `arrow-backward` | error | Backward arrow | Restructure so the target comes later. |
 | `arrow-unresolved-source` | error | Arrow source unresolved | Fix the arrow's source name. |

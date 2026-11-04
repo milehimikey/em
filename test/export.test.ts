@@ -248,7 +248,7 @@ slice "Orders Again" {
   it("lists `edges` after `arrows` on `model`, and exports `[]` for a model with no connections", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc.model)).toEqual([
-      "name", "key", "owner", "personas", "contexts", "hasAutomation", "version", "types", "slices", "storylines", "arrows", "edges",
+      "name", "key", "owner", "personas", "contexts", "hasAutomation", "version", "types", "slices", "storylines", "storylineEdges", "arrows", "edges",
     ]);
     expect(docOf(`slice "Lonely" {
   event Nothing Happened

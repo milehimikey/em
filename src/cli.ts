@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync } from "node:fs";
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -17,6 +17,8 @@ import { renderDot, layoutDot, composeSvg, writeRendered, formatFromPath } from 
 import { buildSliceDiagram } from "./render/sliceDiagram.js";
 import { resolveSliceArg, defaultSliceOut, defaultStorylineOut } from "./cli/render-inputs.js";
 import { buildStorylineDiagram, resolveStorylineArg } from "./render/storylineDiagram.js";
+import { StorylineFrame, buildStorylineMapHtml } from "./render/storylineMap.js";
+import { storylineMap } from "./model/storylineMap.js";
 import { embedStorylinePicker } from "./render/storylinePicker.js";
 import { resolveWatchStoryline, storylineFileFor, storylineVariants } from "./cli/watchStoryline.js";
 import { resolveSliceKey } from "./model/resolveSlice.js";
@@ -346,9 +348,18 @@ program
     "render only this storyline: its own slices in order, nothing from outside it " +
       "(default out: storylines/<kebab-slug>.svg)",
   )
+  .option(
+    "--map",
+    "render every storyline to storylines/<kebab-slug>.svg plus a draggable canvas of them all, " +
+      "with the flow between storylines, at storylines/map.html (-o picks the html path)",
+  )
   .option("--emit-dot", "print the generated DOT instead of rendering")
   .option("--keep-empty-lanes", "keep the API lane even when empty")
   .action(async (file: string, opts) => {
+    if (opts.map && (opts.slice !== undefined || opts.storyline !== undefined || opts.emitDot)) {
+      console.error("em render: --map cannot be combined with --slice, --storyline or --emit-dot");
+      process.exit(1);
+    }
     if (opts.slice !== undefined && opts.emitDot) {
       console.error("em render: --slice cannot be combined with --emit-dot");
       process.exit(1);
@@ -382,6 +393,28 @@ program
     if (hasErrors(allDiagnostics)) {
       console.error("not rendering: fix the errors above");
       process.exit(1);
+    }
+
+    if (opts.map) {
+      const storylines = model.storylines ?? [];
+      if (storylines.length === 0) {
+        console.error("em render --map: this model declares no storylines");
+        process.exit(1);
+      }
+      const out = opts.out ?? join(dirname(file), "storylines", "map.html");
+      const outDir = dirname(out);
+      await mkdir(outDir, { recursive: true });
+      const frames: StorylineFrame[] = [];
+      for (const st of storylines) {
+        const sub = buildStorylineDiagram(model, st, { keepEmptyLanes: opts.keepEmptyLanes });
+        const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, dirname(file), outDir);
+        const slug = kebabSlug(st.name);
+        await writeRendered(svg, join(outDir, `${slug}.svg`), "svg");
+        frames.push({ name: st.name, slug, sliceCount: st.sliceIndexes.length, svg });
+      }
+      await writeFile(out, buildStorylineMapHtml(model, frames, storylineMap(model)), "utf8");
+      console.log(`rendered ${out} (+ ${frames.length} storyline svg${frames.length === 1 ? "" : "s"})`);
+      return;
     }
 
     if (opts.storyline !== undefined) {

@@ -256,6 +256,7 @@ renders.
 | `-T, --format <fmt>` | Output format (`svg`, `png`, `pdf`, …); takes precedence over the `-o` extension |
 | `--slice <name>` | Render only this slice, redrawn in its own canonical pattern shape (default out: `slices/<kebab-slug>.svg`) |
 | `--storyline <name>` | Render only this storyline (GH #277): its own slices in order, nothing from outside it (default out: `storylines/<kebab-slug>.svg`) |
+| `--map` | Render every storyline to `storylines/<kebab-slug>.svg` **and** the storyline canvas `storylines/map.html`: each storyline's real diagram in a draggable frame, the flow between storylines drawn between frames (`-o` picks the html path) |
 | `--emit-dot` | Print the generated Graphviz DOT instead of rendering (or write it with `-o`) |
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 
@@ -278,6 +279,19 @@ stories is the storyline map's job, not the storyline's. The name is matched cas
 name lists every storyline); `--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch
 --serve` takes the same `--storyline` filter — see [`em watch`](#em-watch-file) below — and draws the same
 stub-free subset.
+
+**The storyline canvas (`--map`).** `em render model.em --map` renders every storyline alone (as
+`--storyline` would, to `storylines/<kebab-slug>.svg`) and writes `storylines/map.html`: one
+self-contained page, no server and no external assets, with each storyline's real diagram inside a
+frame on a canvas. Drag a frame by its title to move it, drag the background to pan, wheel to zoom;
+**Fit** frames everything, **Reset layout** returns to the automatic layout (root storylines on the
+left, each `after` storyline one column right of the story it follows). Frame positions are
+remembered per model in the browser (localStorage), so a rearranged canvas survives a re-render. The
+connectors between frames are the storyline map `em export` carries as `model.storylineEdges`: a
+thick blue arrow for a declared `after`, a dashed amber arrow labelled with the source events for
+elements of one storyline feeding another (a `from`, an `updates from`, an `arrow` or a `loops-to`
+crossing the boundary). A frame's ↗ opens that storyline's own SVG. Refuses on a model with no
+storylines; can't be combined with `--slice`, `--storyline` or `--emit-dot`.
 
 **Slice headers are links.** In every rendered SVG (full, `--storyline`, `--slice`, the canvas),
 a slice's header cell is wrapped in an `<a>` to its design doc (`slices/<key>.md`, relative to
@@ -788,6 +802,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     subset of `from` declared with `updates from` (events that keep rows current or remove them,
     never drawn as arrows); `from` keeps the full source list. `null` on every other element and
     on a view without the clause. See [dsl.md](dsl.md#updates-from).
+  - `storylineEdges` (added in schema `1.20`) is the storyline map: `{ from, to, kind, elements }[]`
+    where `kind` is `"after"` (a declared `after`, `elements` empty) or `"reads"` (elements of
+    storyline `from` feeding storyline `to`, each `{ name, ref }`), `after` edges first, then reads
+    sorted by `(from, to)`. Empty for a model without storylines. `em render --map` draws it.
   - Each element carries `alternativeGroup` (added in schema `1.19`, GH #278): for the events of
     one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (equal on every
     alternative, so group by value); `null` on every other element. `model.edges` is unchanged —
