@@ -98,13 +98,11 @@ function docHtmlFor(doc: SliceDoc | null): string | null {
  *  see render/sliceStatus.ts's `readSliceDocs`, the same resolution that colors the
  *  slice's header by status.
  *
- *  GH #309: a stub column (`Slice.stub`, `em render --storyline`'s subset diagram) is excluded
- *  from the embedded list entirely — it's still tagged/dimmed in the SVG itself (dimStubColumns)
- *  so its arrows still have a source, but it isn't one of "this storyline's own slices," so
- *  Review mode's Prev/Next and filmstrip must never step onto it. */
+ *  GH #309 / 1.21: an `em render --storyline` subset holds only the storyline's own slices (no
+ *  stub columns since the 2026-11-03 ruling), so every column here is one Review mode may step
+ *  onto. */
 export function buildSliceOverlay(
   svg: string,
-  model: NormalizedModel,
   grid: Grid,
   rects: Map<string, Rect>,
   docs: (SliceDoc | null)[],
@@ -114,7 +112,6 @@ export function buildSliceOverlay(
 
   const slices: SliceRange[] = [];
   for (let c = 0; c < grid.cols; c++) {
-    if (model.slices[c]?.stub) continue;
     const r = rects.get(headerCellId(c));
     if (!r) continue;
     slices.push({
