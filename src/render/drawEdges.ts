@@ -46,6 +46,9 @@ export function buildEdgeOverlay(model: NormalizedModel, rects: Map<string, Rect
     // `semanticEdges()` for `em query`/`em export` (the one shared derivation, model/edges.ts),
     // so it must be skipped here explicitly rather than never emitted at all.
     if (e.source === "loops-to") continue;
+    // An `updates from` source keeps rows current; it is listed in the legend ("Kept current
+    // by", render/drawNotes.ts), never drawn — the picture shows what puts work on the list.
+    if (e.source === "updates-from") continue;
     const f = rects.get(e.from);
     const t = rects.get(e.to);
     if (!f || !t) continue;

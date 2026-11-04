@@ -775,6 +775,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     order: `{ name, source, after, sliceKeys }` — `source`/`after` are `null` when the block gives
     none, `sliceKeys` the member slices' export keys in order. Every slice also carries
     `storyline` (`string | null`, the block it is declared in).
+  - Each element carries `updatesFrom` (added in schema `1.20`): on a view, the `{ name, ref }[]`
+    subset of `from` declared with `updates from` (events that keep rows current or remove them,
+    never drawn as arrows); `from` keeps the full source list. `null` on every other element and
+    on a view without the clause. See [dsl.md](dsl.md#updates-from).
   - Each element carries `alternativeGroup` (added in schema `1.19`, GH #278): for the events of
     one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (equal on every
     alternative, so group by value); `null` on every other element. `model.edges` is unchanged —
@@ -941,7 +945,9 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     same-slice view only when that view has no `from` clause; self-loops are dropped). `source`
     is `"pattern"` (inferred from the slice's pattern shape), `"from"` (resolved from a `from
     "Name"` clause), `"arrow"` (a declared `arrow`), or `"loops-to"` (added in schema `1.11`,
-    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to))
+    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to)),
+    or `"updates-from"` (added in schema `1.20` — resolved from a view's `updates from "Event"`
+    clause, the sources that keep rows current or remove them; see [dsl.md](dsl.md#updates-from))
     — **first-wins** on a duplicate `(from, to)` pair in that order, so an `arrow` that restates
     an inferred connection appears once, tagged `pattern` (`arrows` still records it as
     authored). A `loops-to` edge is the one edge the renderer never draws as an arrow — see

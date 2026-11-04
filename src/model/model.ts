@@ -36,6 +36,8 @@ export interface Element {
   context?: string;
   /** Source event names (view only). */
   from?: string[];
+  /** See ast.ts: the `updates from` subset of `from` (view only). */
+  updatesFrom?: string[];
   /** Markdown file holding this element's notes, relative to the .em file. */
   note?: string;
   /** Open question text, flagged red on the diagram until resolved. */
@@ -272,6 +274,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         sliceIndex,
         line: el.line,
         from: el.from,
+        updatesFrom: el.updatesFrom,
         note: el.note,
         issue: el.issue,
         divergence: el.divergence,

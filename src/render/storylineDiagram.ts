@@ -134,6 +134,7 @@ function collectStubs(model: NormalizedModel, storyline: Storyline, ownSet: Set<
     const from = model.byId.get(edge.from);
     const to = model.byId.get(edge.to);
     if (!from || !to) continue;
+    if (edge.source === "updates-from") continue; // never drawn, so never a stub column
     if (edge.source === "loops-to") {
       if (ownSet.has(from.sliceIndex)) add(to); // the earlier view a loop re-feeds
     } else if (ownSet.has(to.sliceIndex)) {
