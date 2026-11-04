@@ -68,7 +68,7 @@ Goal: a draft model of events, storyboard, commands, and views. Loose is OK; str
    **Close the loop before leaving this step:** every event from step 3 must be read by at least one
    read model. Walk the event list and ask, for each one, *"who looks at this, and what do they do
    with it?"* An event with no answer is either missing its read model or shouldn't be recorded —
-   both are worth raising with the user rather than leaving dangling.
+   both are worth raising with the user rather than leaving dangling. Keep the draft in one file with inline `storyline` blocks; the design phase splits it into one file per story (`em storyline split`) once the names are settled.
 
 End of phase: write/refresh the `.em`, render it, update `.event-modeling.md` (steps done,
 decisions, open questions — run `em state set-phase model` rather than hand-editing `Current

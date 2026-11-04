@@ -218,7 +218,11 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   reorganize are **secondary storylines** (chapters; Dilger: "one linear flow from left to right. No
   exceptions… Linearize it!", "Model one process at a time, each with its own clear ending"). Never one
   lifecycle block per entity. Name the main and every secondary storyline; a `storyline "Name" { … }`
-  block groups the slices (`dsl.md`, Storylines).
+  block groups the slices (`dsl.md`, Storylines). **A storyline is the unit a reader consumes, so it
+  is the unit an author edits too (GH #421):** the root model lists the storylines and their flow
+  (`storyline "Name" [after "Other"]`), and each story's slices live in `<slug>/<slug>.em` with its
+  docs in `<slug>/slices/`. Draft with inline blocks if that is faster, then `em storyline split
+  <root>.em` once the storylines are named — before docs are wired, so nothing moves twice.
 - **Build from walkthroughs first.** The story already lives in the spec's walkthroughs, use cases and
   user journeys. Build the timeline from those; the resource/API reference (OpenAPI, endpoint tables,
   migrations) fills only the operations no walkthrough touches, and is read last. Headless: a persona
@@ -332,12 +336,41 @@ drift into **CRUD laid on a timeline**; these rules stop that. Quoted lines are 
   `view-lookup-source` is the mechanical, advisory half — it catches the cross-context cases with a few
   false positives; a within-context lookup (`Tool Checked Out` read only to learn whose loan a later
   event concerns) is invisible to it, so this check still has to be done by eye.
+  **Then split what is left into trigger and housekeeping** (Dilger: show the line from the event
+  that triggers the automation, not every event that touches its read model; GH #414). Of the
+  events a view legitimately reads, only the ones that **put work on the list** are the story — they
+  go in `from` and are drawn. Every event that merely **keeps a row current or removes it** (a due
+  date moved, an address changed, a loan returned) goes in `updates from`: still a source for
+  `derived from`, completeness and the generated built-from list, never an arrow. Write the to-do
+  list as `view Overdue Loans To Notify from "Tool Checked Out" updates from "Loan Extended",
+  "Neighbor Email Changed", "Tool Returned"`. The author chooses the triggers — `Holds To Fulfill`
+  keeps two (`from "Hold Placed", "Tool Returned"`) because both put a fulfillable hold on the
+  list. **Per-view check:** *which of these events is the reason this row appears? That is `from`;
+  everything else is `updates from`.* The render's "Kept current by" legend is the readback: if a
+  to-do view shows more than one or two inbound arrows, the split is missing. A State View that is
+  not a to-do list gets the same treatment — its screen's story is the event that creates the row.
 - **Write side: children belong in the parent's context** when the child's invariants are checks against
   the parent. A sub-resource schema shared across parent types is one event per parent on the parent's
   context, not a shared aggregate — check the spec's event reference, not its resource section. Where
   two slices record the same fact, repeat the event bare (same name, same context). *(em ruling)*
 - **Repeat the view after every command that changes it** (`again`, span-1 — see State View above), so
-  the reader sees the information arrive rather than a view at the end.
+  the reader sees the information arrive rather than a view at the end. **A continuation names only
+  what changed:** `view X again from "E"` lists the event(s) that changed the view since the previous
+  instance — never the originating instance's whole source list again. Field sources are the union
+  across instances, so restating loses nothing and only draws the same arrows twice;
+  `again-restates-sources` (GH #424) is the mechanical half.
+- **Storylines read as stories** (owner rulings 2026-11-03, after Dilger). (1) **A storyline that reads
+  another declares `after` it:** an event of story A feeding a view of story B means B comes after A
+  in the telling — write `storyline "B" after "A"` (or on a storyline between them); two stories that
+  really run in parallel read nothing from each other. `storyline-reads-without-after` (GH #420) is
+  the mechanical half. (2) **Review each story on its own render and on the canvas, never on the
+  full timeline:** `em render <root>.em --map` draws every storyline's real diagram as a frame with
+  the flow between stories (`after` thick, reads dashed and labelled by event); the full timeline is
+  for `em diff` and ordering checks, not for reading. A storyline render shows only the storyline —
+  nothing from outside it is drawn, so an inbound arrow you miss there is a connector on the canvas.
+  (3) **Housekeeping is not drawn** (`updates from`, above) and **continuations name only what
+  changed** (above): together these are what keeps a story's render to one line per cause. *(em
+  ruling, built on Dilger's "the line from the event that triggers it")*
 - **Outcomes are events of one slice** (Dilger: "One decision. One event. One state change."; one
   action with two outcomes is the legitimate exception): alternative events on one context in one slice
   (`event A | B @Ctx`, GH #278), failure as a scenario first, a chapter only when core (it changes what the user does next, or has

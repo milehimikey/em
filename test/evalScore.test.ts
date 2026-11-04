@@ -30,11 +30,13 @@ const names = readdirSync(INPUTS, { withFileTypes: true })
   .map((d) => d.name);
 
 describe("eval/score.mjs on the public input set", () => {
-  it("covers Meridian Goods, two PRDs and one API-spec input", () => {
-    expect(names.sort()).toEqual(["inventory-api", "library-lending", "meridian-goods", "support-desk"]);
+  it("covers Meridian Goods, two PRDs, one API-spec input and the toolshed reconstruction (GH #423)", () => {
+    expect(names.sort()).toEqual(["inventory-api", "library-lending", "meridian-goods", "support-desk", "toolshed"]);
   });
 
-  for (const name of names) {
+  // GH #423: toolshed's reference.json lists only its reaction-shaped slices (the input exists for
+  // the line-shape metrics, not for slicing granularity), so the self-score identity does not apply.
+  for (const name of names.filter((n) => n !== "toolshed")) {
     it(`${name}: reference scored against itself gives slice ratio 1.0, 0 entity-clustered`, () => {
       const emPath = join(INPUTS, name, "reference.em");
       const reference = JSON.parse(readFileSync(join(INPUTS, name, "reference.json"), "utf8"));
@@ -166,4 +168,17 @@ slice "Titles" {
       expect(lintFires(source)).toBe(entityClustered(exportOf(emPath, source).model.slices).rate > 0);
     });
   }
+});
+
+describe("GH #423: toolshed reconstruction (line-shape metrics only)", () => {
+  it("the committed reference carries 19 to-do inbound lines over 6 to-do views and 4 cross-story reads without after", () => {
+    const emPath = join(INPUTS, "toolshed", "reference.em");
+    const exported = exportOf(emPath, readFileSync(emPath, "utf8"));
+    const reference = JSON.parse(readFileSync(join(INPUTS, "toolshed", "reference.json"), "utf8"));
+    const result = score(exported, reference);
+    expect(result.todoViews).toBe(6);
+    expect(result.todoInboundLines).toBe(19);
+    expect(result.storylineReadsWithoutAfter).toBe(4);
+    expect(result.storylineReadsWithoutAfterPairs).toContain("Join the shed -> Chase an overdue loan");
+  });
 });

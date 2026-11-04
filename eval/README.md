@@ -27,6 +27,42 @@ eval/
 
 Public set: `meridian-goods` (PRD), `library-lending` and `support-desk` (synthetic PRDs), `inventory-api` (API-spec shape, with a `## Walkthroughs` section). Real pairs stay at the day job; only their summaries come back.
 
+## GH #423 — extraneous lines (1.21.0)
+
+A second question the same protocol answers: do generated models carry lines that should not be
+there? Two mechanical metrics, both read off `em export` (schema 1.20, `score.mjs`):
+
+- **`todoInboundLines`** — drawn `from` arrows into the read models that feed a reaction (to-do
+  lists), summed, with the per-view breakdown. An `updates from` source (housekeeping: a row kept
+  current or removed) is never drawn and does not count. Ideal: 1 per to-do view — the event that
+  puts work on the list.
+- **`storylineReadsWithoutAfter`** — storyline pairs where B reads A's events and declares no
+  `after` chain reaching A; the pairs are listed. Ideal: 0.
+
+Arm **E** = em 1.21.0 (`updates from`, storyline models, the `again-restates-sources` and
+`storyline-reads-without-after` lints, the canvas) with the 1.21.0 skill bundle (methodology
+"trigger and housekeeping", "Storylines read as stories"; design step 2's trigger/housekeeping split
+and continuation check). Inputs: `library-lending` (the public PRD closest to a to-do-driven
+process) and `toolshed` (a reconstruction of the toolshed-v2 model's slice docs into PRD prose, per
+story — step names echo the reference, so only the line-shape metrics apply to it; see its
+`input.md` header). Record before (arm B/C skills) and after (arm E skills) on the same input.
+
+Results (2026-11-04; one in-session sonnet worker run per cell, same setup for both arms with only
+the skills directory differing — the `recording-423-*.md` sheets beside each input carry the full
+`score.mjs --json` output and the deviation note):
+
+| Input | Arm | To-do inbound lines (ideal 1 per view) | Reads without `after` |
+|---|---|---|---|
+| library-lending | before (1.20.0 skills) | 2 over 1 view | 0 |
+| library-lending | after (1.21.0 skills) | 1 over 1 view | 0 |
+| toolshed | before (1.20.0 skills) | 9 over 6 views (Overdue Loans To Notify: 3) | 0 |
+| toolshed | after (1.21.0 skills) | 7 over 6 views (every list 1; Holds To Fulfill 2, both genuine triggers) | 0 |
+
+The toolshed reference itself, scored without any generation: the committed single-file model
+(`reference.em`, before `updates from`) has 19 to-do inbound lines over 6 to-do views; the same
+model after the owner's `updates from` split has 10; both have 4 cross-story reads without `after`
+(the `storyline-reads-without-after` lint now names them).
+
 ## Arms and setup recipe
 
 The 1.18.0 lints, storyline rules and outcome rule ship together with no per-feature toggle, so the issue's arms B and B' collapse into one. Always run A, B and C: they test different fixes. Only the rerun-agreement trigger decides whether D runs.
