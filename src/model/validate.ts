@@ -43,6 +43,10 @@ export interface Diagnostic {
   code: string;
   message: string;
   line?: number;
+  /** GH #421: the storyline model file `line` counts in (posix path relative to the root model's
+   *  directory), when the entity sits in one; absent for the root file. Attributed after
+   *  validation from the diagnostic's `refs` (model/loadModel.ts `attributeDiagnosticFiles`). */
+  file?: string;
   /** Export-stable refs/keys (from `computeRefs()`) of every entity this diagnostic concerns —
    *  0, 1, or more (e.g. a duplicate-name collision concerns two elements). Omitted, not `[]`,
    *  at sites with no specific entity to point at. Never a second identifier scheme — always
@@ -1522,6 +1526,14 @@ export function formatDiagnostic(d: Diagnostic): string {
   const where = d.line ? `:${d.line}` : "";
   const tag = d.severity === "error" ? "error" : "warn ";
   return `  ${tag}${where} ${d.message}`;
+}
+
+/** The root printer's form (GH #421): a diagnostic whose `line` counts in a storyline model file
+ *  reads `  warn :<file>:<line> <message>`; everything else exactly as `formatDiagnostic`. */
+export function formatDiagnosticWithFile(d: Diagnostic): string {
+  if (!d.file) return formatDiagnostic(d);
+  const tag = d.severity === "error" ? "error" : "warn ";
+  return `  ${tag}:${d.file}${d.line ? `:${d.line}` : ""} ${d.message}`;
 }
 
 /** JSON-shaped diagnostic — `line`/`refs` widened to explicit `null`/`[]`, same convention

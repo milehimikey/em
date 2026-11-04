@@ -845,6 +845,55 @@ as if its slices came after the referenced storyline's last slice:
   from the referenced storyline is not drawn in it.
 - `after` is optional. Without it, file order is the only timeline, exactly as before.
 
+### Storyline models — one file per storyline (GH #421)
+
+A storyline is the unit a reader consumes, and it can be the unit an author edits too. A root
+model may declare a storyline **without a body**, and its slices then live in their own file:
+
+```
+# toolshed.em — the ROOT model: vocabulary, the storyline list and the flow between stories
+model "Toolshed"
+persona Neighbor
+context Loans
+
+storyline "Join the shed"
+storyline "Borrow and return a tool" after "Join the shed"
+storyline "Chase an overdue loan" after "Borrow and return a tool"
+```
+
+```
+# chase-an-overdue-loan/chase-an-overdue-loan.em — a STORYLINE model
+storyline "Chase an overdue loan" source "docs/toolshed.md#walkthrough-4"
+
+slice "Overdue Loans To Notify" {
+  …
+}
+```
+
+- **Declaration.** `storyline "Name" [after "Other"] [in "path.em"]` with no `{` names a storyline
+  model. Its file is `<kebab-slug>/<kebab-slug>.em` under the root's directory unless `in "…"` says
+  otherwise (a path outside the root's directory is refused). Declaring the same name again, as a
+  block or a declaration, is a parse error.
+- **The storyline file** starts with `storyline "Name" [source "url"]` — the name must agree with the
+  root's declaration — and holds slice blocks, nothing else: `after` (the flow) and `in` belong on the
+  root's declaration; personas, contexts, types and arrows are the root's vocabulary. `source` may sit
+  on either side; the file's wins when the root has none.
+- **The root is the compile unit.** Every em command given the root reads it and every storyline file
+  it declares and compiles them as **one model**: the file's slices take the timeline position of the
+  declaration, so file order and `after` compose exactly as with inline blocks, and `from`/`again`
+  resolve across files as they do across blocks. A storyline file never compiles on its own — give em
+  the root. Inline blocks and storyline models may mix, so a model migrates one story at a time.
+- **Where lines point.** A diagnostic about an element in a storyline file prints as
+  `warn :<file>:<line>`, and `em slice new --wire` writes the note into the file that declares the
+  slice. `em watch` watches the root, its storyline files and `slices/`.
+- **Docs stay beside the root** in this first step: `note "slices/<key>.md"` in a storyline file is
+  relative to the root's directory, same as `slices/<key>.md` everywhere else. Moving each story's docs
+  into its folder is the next step of GH #421.
+- **Upgrade path.** `em storyline split <root>.em` moves every inline block into its file, byte for
+  byte, and leaves the declaration behind ([cli.md](cli.md#em-storyline-split-file)). The model
+  reads the same before and after (`em export` differs only in each storyline's `file`).
+- **Export:** `model.storylines[].file` (schema 1.20; `null` for an inline block).
+
 ## Invariants
 
 A `command` or `event` can declare the business rules that guard it, each on its own standalone

@@ -222,6 +222,11 @@ export function runStubAll(
     // `binding-missing-file`: a note already points at this exact path — re-wiring would refuse
     // ("already has a note clause"), and there's nothing to wire anyway.
     const needsWire = doc.reason !== "binding-missing-file";
+    if (needsWire && slice.file !== undefined) {
+      // GH #421: the note would go into a storyline model file, not the root text in hand.
+      outcomes.push({ kind: "skip", sliceKey, reason: `declared in storyline model file ${slice.file} — stub it with \`em slice new\` and wire it with \`--wire\`` });
+      continue;
+    }
     let elementName: string | null = null;
     if (needsWire) {
       const wired = wireSliceNote(workingSource, model, refs, sliceKey, pattern, doc.path);

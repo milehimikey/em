@@ -27,6 +27,8 @@ export const DEFAULT_PERSONA = "User";
 export const DEFAULT_CONTEXT = "Domain";
 
 export interface Element {
+  /** GH #421: see `Slice.file`. */
+  file?: string;
   id: string;
   kind: ElementKind;
   name: string;
@@ -128,6 +130,9 @@ export interface Slice {
    *  another slice (`host` = index of that slice). Such a slice has no source text of its own, no
    *  doc, and is not listed by `em slice index`; its export key is `<host-key>--again`. */
   synthesized?: { host: number };
+  /** GH #421: the storyline model file this slice came from (posix path relative to the root
+   *  model's directory); undefined for a slice in the root file. */
+  file?: string;
   elements: Element[];
   line: number;
 }
@@ -141,6 +146,8 @@ export interface Storyline {
   after?: string;
   /** Indexes (into `NormalizedModel.slices`) of the slices declared inside the block, in order. */
   sliceIndexes: number[];
+  /** GH #421: the storyline model file holding this storyline's slices; undefined for an inline block. */
+  file?: string;
   line: number;
 }
 
@@ -254,6 +261,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
       index: sliceIndex,
       source: sliceNode.source,
       storyline: sliceNode.storyline,
+      file: sliceNode.file,
       synthesized: sliceNode.synthesizedFrom !== undefined ? { host: sliceNode.synthesizedFrom } : undefined,
       elements: [],
       line: sliceNode.line,
@@ -269,6 +277,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         name: el.name,
         sliceIndex,
         line: el.line,
+        file: el.file ?? sliceNode.file,
         from: el.from,
         updatesFrom: el.updatesFrom,
         note: el.note,
@@ -360,6 +369,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
     source: st.source,
     after: st.after,
     sliceIndexes: slices.filter((sl) => sl.storyline === st.name).map((sl) => sl.index),
+    file: st.external ? st.file : undefined,
     line: st.line,
   }));
 

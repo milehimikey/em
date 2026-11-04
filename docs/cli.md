@@ -778,6 +778,8 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
 - `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `slices`, `arrows`, `edges`.
+  - `storylines[].file` (added in schema `1.20`, GH #421) is the storyline model file holding the storyline's
+    slices, posix and relative to the root's directory; `null` for an inline block.
   - `storylines` (added in schema `1.19`, GH #277) is the model's `storyline` blocks in document
     order: `{ name, source, after, sliceKeys }` — `source`/`after` are `null` when the block gives
     none, `sliceKeys` the member slices' export keys in order. Every slice also carries
@@ -5305,6 +5307,26 @@ em storyline suggest orders/orders.em > storylines.patch
 git apply storylines.patch
 em validate orders/orders.em
 ```
+
+## `em storyline split <file>`
+
+The upgrade path to storyline models (GH #421, [dsl.md](dsl.md#storyline-models--one-file-per-storyline-gh-421)).
+For every inline `storyline "X" { … }` block in the root it writes `<slug>/<slug>.em` — a
+`storyline "X" [source "…"]` header, a blank line, then the block's slice lines with the block's
+indentation removed, otherwise byte for byte — and replaces the block in the root with the one-line
+declaration `storyline "X" [after "Y"]`. Slice docs stay where they are (`slices/` under the root), so
+no binding, signature or ratification moves. The model reads the same before and after: `em export`
+differs only in each storyline's `file`.
+
+| Flag | Effect |
+|---|---|
+| `--storyline <name>` | Split only this storyline |
+| `--dry-run` | Print what would be written, touch nothing |
+| `-f, --force` | Overwrite a storyline model file that already exists |
+
+A storyline declared in several blocks (a reopened storyline) is skipped with a reason: moving its later
+slices next to the first block would change the timeline — merge the blocks by hand first, then split.
+Refuses on a model with errors.
 
 ## `em upgrade <file>`
 

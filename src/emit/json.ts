@@ -280,6 +280,9 @@ export interface StorylineExport {
   /** The storyline this one is declared `after`, as written; null when it declares none. */
   after: string | null;
   sliceKeys: string[];
+  /** GH #421 (schema 1.20): the storyline model file holding this storyline's slices, posix and
+   *  relative to the root model's directory; `null` for an inline block. */
+  file: string | null;
 }
 
 export interface SliceExport {
@@ -682,6 +685,7 @@ export function buildExportDoc(
         source: st.source ?? null,
         after: st.after ?? null,
         sliceKeys: st.sliceIndexes.map((i) => sliceKeys[i]),
+        file: st.file ?? null,
       })),
       arrows: model.arrows.map((a) => ({
         from: a.from,

@@ -70,7 +70,8 @@ import { planCollapseAlternativeEvents, planFoldContinuations, planStackContinua
 import { observeSigners } from "../roster/init.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
-import { compile } from "../pipeline.js";
+import { compile, compileModelText } from "../pipeline.js";
+import { diskReader } from "../model/loadModel.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { contractPathFor, generateContract } from "./api.js";
 import { hasErrors } from "../model/validate.js";
@@ -744,11 +745,18 @@ function readModelText(ctx: UpgradeContext): string {
 
 function freshCompile(ctx: UpgradeContext): { model: NormalizedModel; refs: RefsResult } | null {
   try {
-    const c = compile(readModelText(ctx));
+    const c = compileModelText(readModelText(ctx), diskReader(ctx.baseDir), ctx.modelFile);
     return { model: c.model, refs: c.refs };
   } catch {
     return null;
   }
+}
+
+/** GH #421: the reshape steps rewrite the ROOT text by line span; a model whose storylines live in
+ *  their own files has slices whose lines belong to other files, so those plans are not offered
+ *  (reshape before splitting, or by hand). */
+function isSplitModel(fresh: { model: NormalizedModel } | null): boolean {
+  return fresh !== null && fresh.model.slices.some((s) => s.file !== undefined);
 }
 
 /** Signed docs (ratified or shipped) whose generated regions would be stale against `nextText`, i.e. that
@@ -866,6 +874,7 @@ function droppedCommentsNote(dropped: Array<{ key: string; lines: string[] }>, a
 
 function detectCollapseAlternativeEvents(ctx: UpgradeContext): StepDetection {
   const fresh = freshCompile(ctx);
+  if (isSplitModel(fresh)) return { applicable: false, reason: "the model's storylines live in their own files (GH #421); the collapse rewrites the root text by line and is not offered on a split model — reshape before splitting, or by hand" };
   const plan = fresh ? planCollapseAlternativeEvents(fresh.model, fresh.refs, readModelText(ctx)) : null;
   if (plan === null) return { applicable: false, reason: "no run of adjacent slices repeats one command and differs only in the recorded event" };
   const desc = plan.groups.map((g) => `${g.slices.map((n) => `"${n}"`).join(" + ")} → "${g.slices[0]}" recording ${g.form === "inline" ? g.events.join(" | ") : `oneof { ${g.events.join(", ")} }`}`);
@@ -944,7 +953,7 @@ const FOLD_FLAG = "em upgrade --apply --fold-continuations";
 
 function foldPlan(ctx: UpgradeContext): { kind: "stack"; plan: ReturnType<typeof planStackContinuations> } | { kind: "sugar"; plan: ReturnType<typeof planFoldContinuations> } {
   const fresh = freshCompile(ctx);
-  if (!fresh) return { kind: "stack", plan: null };
+  if (!fresh || isSplitModel(fresh)) return { kind: "stack", plan: null };
   const text = readModelText(ctx);
   return ctx.toSugar === true
     ? { kind: "sugar", plan: planFoldContinuations(fresh.model, fresh.refs, text) }
