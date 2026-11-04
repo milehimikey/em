@@ -53,6 +53,7 @@ describe("resolveVendoredDirs (GH #412)", () => {
   });
 });
 
+// Each test below spawns several `em` runs under tsx; CI needs far more than vitest's 5s default.
 describe("em skill install / check / sync with a generic skills dir (CLI, GH #412)", () => {
   it("--skills-dir/--agents-dir: install writes there, check reads there, nothing lands under .claude/", () => {
     const repo = tmp();
@@ -72,7 +73,7 @@ describe("em skill install / check / sync with a generic skills dir (CLI, GH #41
     // And --json names the root that was checked.
     const j = JSON.parse(em(["skill", "check", "--json"], repo).stdout) as { vendoredDir: string };
     expect(realpathSync(j.vendoredDir)).toBe(realpathSync(join(repo, ".agents", "skills")));
-  });
+  }, 60_000);
 
   it("detection: with .agents/skills/ present and no .claude/skills/, install and sync go there without a flag and say so", () => {
     const repo = tmp();
@@ -94,7 +95,7 @@ describe("em skill install / check / sync with a generic skills dir (CLI, GH #41
     expect(s.stdout).toContain(`modified: agents/${EM_AGENT_FILES[0]}`);
     expect(readFileSync(agent, "utf8")).toBe(original);
     expect(em(["skill", "check"], repo).status).toBe(0);
-  });
+  }, 60_000);
 
   it("the documented symlink setup: .claude/skills -> .agents/skills installs through the link, with agents still under .claude/agents by default", () => {
     const repo = tmp();
@@ -107,5 +108,5 @@ describe("em skill install / check / sync with a generic skills dir (CLI, GH #41
     expect(existsSync(join(repo, ".agents", "skills", EM_SKILL_ANCHOR_DIR, "SKILL.md"))).toBe(true);
     expect(existsSync(join(repo, ".claude", "agents", EM_AGENT_FILES[0]))).toBe(true);
     expect(em(["skill", "check"], repo).status).toBe(0);
-  });
+  }, 60_000);
 });
