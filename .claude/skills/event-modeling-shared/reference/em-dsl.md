@@ -148,6 +148,7 @@ em watch <file> -T, --format <fmt>                                  # output for
 em watch <file> --keep-empty-lanes                                  # keep the API lane even when empty
 em watch <file> --serve                                             # serve a live viewer with instant push-reload (no polling)
 em watch <file> --port <n>                                          # port for --serve (default 5173)
+em watch <file> --storyline <name>                                  # GH #309 (deferred from #277): filter the live view to one storyline's subset — the same subset `em render --storyline` draws (its own slices in order, plus dimmed stub columns for what they read from outside it and the `after` end state). Whenever the model declares any storylines the viewer also offers a picker to switch to the full model or another declared storyline, live, without restarting. An unknown name errors, listing the declared storylines; requires --serve
 em validate <file>                                                  # check a model against event-modeling rules
 em validate <file> --list-issues                                    # print only open `issue` diagnostics (slice, element, line, text)
 em validate <file> --list-divergences                               # print only accepted-divergence annotations (slice, element, line, text) — never fails the build

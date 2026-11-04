@@ -70,7 +70,7 @@ describe("buildSliceOverlay", () => {
   it("emits one slice range per header cell, in index order", () => {
     const { model, grid } = build();
     const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
-    const out = buildSliceOverlay(SVG, grid, rects, [null, null]);
+    const out = buildSliceOverlay(SVG, model, grid, rects, [null, null]);
 
     expect(out).toContain('<metadata id="em-slices">');
     expect(out).toContain("<style>.em-slice-dim{opacity:.15");
@@ -85,7 +85,7 @@ describe("buildSliceOverlay", () => {
   it("unions the row-label column's x-range across every labeled row, skipping the label-less header row", () => {
     const { model, grid } = build();
     const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
-    const out = buildSliceOverlay(SVG, grid, rects, [null, null]);
+    const out = buildSliceOverlay(SVG, model, grid, rects, [null, null]);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     const payload = JSON.parse(json);
 
@@ -97,8 +97,8 @@ describe("buildSliceOverlay", () => {
   });
 
   it("returns '' when no slice has a header-cell rect", () => {
-    const { grid } = build();
-    const out = buildSliceOverlay("<svg></svg>", grid, new Map(), []);
+    const { model, grid } = build();
+    const out = buildSliceOverlay("<svg></svg>", model, grid, new Map(), []);
     expect(out).toBe("");
   });
 
@@ -116,7 +116,7 @@ describe("buildSliceOverlay", () => {
     );
     const { model, grid } = build();
     const rects = parseNodeRects(TRANSFORMED, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
-    const out = buildSliceOverlay(TRANSFORMED, grid, rects, [null, null]);
+    const out = buildSliceOverlay(TRANSFORMED, model, grid, rects, [null, null]);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     const payload = JSON.parse(json);
 
@@ -134,7 +134,7 @@ describe("buildSliceOverlay", () => {
     const { model, grid } = build();
     const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
     const docs = [{ html: "<p>Place Order doc</p>" } as SliceDoc, null];
-    const out = buildSliceOverlay(SVG, grid, rects, docs);
+    const out = buildSliceOverlay(SVG, model, grid, rects, docs);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     // Real XML/DOM parsing decodes entities on the way back out of a text node
     // (viewer.html reads it via metaEl.textContent); mirror that unescaping here
@@ -151,7 +151,7 @@ describe("buildSliceOverlay", () => {
     const { model, grid } = build();
     const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
     const doc = parseSliceDoc("---\npattern: state-view\nversion: 1\nstatus: draft\n---\n# Some Slice\n");
-    const out = buildSliceOverlay(SVG, grid, rects, [doc, null]);
+    const out = buildSliceOverlay(SVG, model, grid, rects, [doc, null]);
     const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
     // Single-pass entity decode (a real DOM does this via textContent) — sequential
     // .replace() chains double-unescape (`&amp;lt;` would decode to `<`).
@@ -161,5 +161,19 @@ describe("buildSliceOverlay", () => {
     expect(payload.slices[0].docHtml).toContain('<div class="doc-badge-row">');
     expect(payload.slices[0].docHtml).toContain('<span class="doc-badge doc-badge--pattern">State View</span>');
     expect(payload.slices[0].docHtml.endsWith(doc.html)).toBe(true);
+  });
+
+  // GH #309: a stub column (`em render --storyline`'s subset diagram, and the `em watch
+  // --serve --storyline` live subset built the same way) is excluded from the embedded list —
+  // Review mode's Prev/Next and filmstrip must step through a storyline's own slices only,
+  // never the dimmed stub columns drawn alongside them so their arrows still have a source.
+  it("GH #309: excludes a stub column (Slice.stub) from the embedded slices list", () => {
+    const { model, grid } = build();
+    model.slices[1].stub = true;
+    const rects = parseNodeRects(SVG, new Set([...model.byId.keys(), ...sliceOverlayIds(grid)]));
+    const out = buildSliceOverlay(SVG, model, grid, rects, [null, null]);
+    const json = /<metadata id="em-slices">([\s\S]*?)<\/metadata>/.exec(out)![1];
+    const payload = JSON.parse(json);
+    expect(payload.slices).toEqual([{ index: 0, name: "Place Order", x0: 0, x1: 100, docHtml: null }]);
   });
 });
