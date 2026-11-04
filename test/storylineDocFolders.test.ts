@@ -96,9 +96,11 @@ describe("docs in storyline folders", () => {
   });
 
   it("em slice sync, ratify and mark-implemented rewrite the doc where it is", () => {
-    const sync = em(dir, ["slice", "sync", "shed.em", "check-out-tool", "--check"]);
-    expect(sync.status, sync.stderr).toBe(0); // found the folder doc (a missing doc would refuse)
-    expect(sync.stdout + sync.stderr).toContain("slices/check-out-tool.md");
+    // sync found the folder doc and rewrote it there (it adopts the story line, GH #418)
+    const sync = em(dir, ["slice", "sync", "shed.em", "check-out-tool"]);
+    expect(sync.status, sync.stderr).toBe(0);
+    expect(sync.stdout).toContain("synced: slices/check-out-tool.md");
+    expect(readFileSync(join(dir, "borrow-and-return-a-tool", "slices", "check-out-tool.md"), "utf8")).toContain("<!-- GENERATED:em-slice-story:start");
     expect(existsSync(join(dir, "slices", "check-out-tool.md"))).toBe(false);
     const mi = em(dir, ["slice", "mark-implemented", "shed.em", "check-out-tool", "https://example.test/pr/1"]);
     expect(mi.status, mi.stderr).toBe(0);
