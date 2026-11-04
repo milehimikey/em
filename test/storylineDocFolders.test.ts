@@ -90,8 +90,10 @@ describe("docs in storyline folders", () => {
     expect(readSliceDocs(c.model, dir).map((d) => d?.status ?? null)).toEqual(["implemented", "ready-to-implement", null]);
     const table = buildSliceIndexTable(c.model, c.refs, dir);
     expect(table.rows.map((r) => r.docPath)).toEqual(["slices/register.md", "borrow-and-return-a-tool/slices/check-out-tool.md", null]);
-    // the rendered SVG still composes with docs in folders (its status colouring read them)
+    // the rendered SVG links a storyline slice's header to its folder doc (relative to the output dir)
     const svg = composeSvg(await layoutDot(c.dot), c.model, c.grid, dir, dir);
+    expect(svg).toContain('href="borrow-and-return-a-tool/slices/check-out-tool.md"');
+    expect(svg).toContain('href="slices/register.md"');
     expect(svg).toContain('class="em-status-legend"');
   });
 

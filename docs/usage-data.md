@@ -122,6 +122,7 @@ affected lines written by hand.
 | slice-ready slice has no doc bound |
 | slice-ready slice has unchecked open questions |
 | slice-ready slice not ready-to-implement |
+| storyline reads another without after |
 | translation name collision |
 | ui shares slice with reaction |
 | ui with no view or command |
