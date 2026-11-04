@@ -87,6 +87,8 @@ export function buildSliceDocContent(
     ``,
     `![Diagram](./${key}.svg)`,
     ``,
+    ...block("story"),
+    ``,
     `## Intent`,
     `{{Why this slice exists — the user or business goal it serves, in one or two sentences. Note the`,
     `originating ticket/conversation link here if one exists.}}`,

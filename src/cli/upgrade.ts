@@ -762,8 +762,9 @@ function isSplitModel(fresh: { model: NormalizedModel } | null): boolean {
 /** Signed docs (ratified or shipped) whose generated regions would be stale against `nextText`, i.e. that
  *  a rewrite leaves behind a signature the regions no longer match. Read-only. */
 function signedDocsStaleAfter(ctx: UpgradeContext, nextText: string): string[] {
-  const staleSigned = (src: string): Map<string, string> => {
-    const out = new Map<string, string>();
+  // path -> the names of its stale regions (signed docs only)
+  const staleSigned = (src: string): Map<string, string[]> => {
+    const out = new Map<string, string[]>();
     let c;
     try {
       c = compile(src);
@@ -774,13 +775,21 @@ function signedDocsStaleAfter(ctx: UpgradeContext, nextText: string): string[] {
     if (!r.ok) return out;
     for (const d of r.docs) {
       if (d.status === "stale" && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8"))) {
-        out.set(d.path, `${d.path} (${d.regions.filter((g) => g.status === "stale").map((g) => g.name).join(", ")})`);
+        out.set(d.path, d.regions.filter((g) => g.status === "stale").map((g) => g.name));
       }
     }
     return out;
   };
   const before = staleSigned(readModelText(ctx));
-  return [...staleSigned(nextText)].filter(([path]) => !before.has(path)).map(([, label]) => label); // newly stale only
+  // newly stale only — judged per REGION: a region already stale before the rewrite (a story
+  // line waiting for its first sync, a table the model moved on from) is not this step's doing
+  const labels: string[] = [];
+  for (const [path, regions] of staleSigned(nextText)) {
+    const was = new Set(before.get(path) ?? []);
+    const fresh = regions.filter((g) => !was.has(g));
+    if (fresh.length > 0) labels.push(`${path} (${fresh.join(", ")})`);
+  }
+  return labels;
 }
 
 const CARRIED_SECTIONS = /^##\s+(Scenarios|Invariants|Open Questions|Decisions(?: log)?)\s*$/i;
@@ -1005,17 +1014,19 @@ function staleViewDocs(ctx: UpgradeContext): StaleDoc[] {
 }
 
 function hasStaleViewRegion(d: { regions: Array<{ name: string; status: string }> }): boolean {
-  return d.regions.some((g) => g.status === "stale" && g.name.startsWith("em-slice-view"));
+  // the story line rides this step too (2026-11-03): sync inserts it on an unsigned doc and
+  // refreshes it anywhere, both mechanical and both signature-safe
+  return d.regions.some((g) => g.status === "stale" && (g.name.startsWith("em-slice-view") || g.name === "em-slice-story"));
 }
 
 function detectViewDocSourcesStale(ctx: UpgradeContext): StepDetection {
   const open = staleViewDocs(ctx);
   if (open.length === 0) {
-    return { applicable: false, reason: "no bound slice doc's view region is stale against the model" };
+    return { applicable: false, reason: "no bound slice doc's view region or story line is stale against the model" };
   }
   return {
     applicable: true,
-    reason: `em slice sync --check would change the view region of ${open.length} doc(s): ${open.map((d) => d.path).join(", ")} — em upgrade will run em slice sync on them (a ratified or shipped doc keeps its signature)`,
+    reason: `em slice sync --check would change the view region or story line of ${open.length} doc(s): ${open.map((d) => d.path).join(", ")} — em upgrade will run em slice sync on them (a ratified or shipped doc keeps its signature)`,
   };
 }
 

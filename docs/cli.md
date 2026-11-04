@@ -255,7 +255,7 @@ renders.
 | `-o, --out <path>` | Output path; the extension picks the format |
 | `-T, --format <fmt>` | Output format (`svg`, `png`, `pdf`, …); takes precedence over the `-o` extension |
 | `--slice <name>` | Render only this slice, redrawn in its own canonical pattern shape (default out: `slices/<kebab-slug>.svg`) |
-| `--storyline <name>` | Render only this storyline (GH #277): its slices in order, preceded by dimmed stub columns for what they read from outside it (default out: `storylines/<kebab-slug>.svg`) |
+| `--storyline <name>` | Render only this storyline (GH #277): its own slices in order, nothing from outside it (default out: `storylines/<kebab-slug>.svg`) |
 | `--emit-dot` | Print the generated Graphviz DOT instead of rendering (or write it with `-o`) |
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
 
@@ -271,13 +271,13 @@ em render model.em --storyline "Retire a product"   # -> storylines/retire-a-pro
 the full diagram gains a labelled band above the slice-header row spanning each run of a storyline's
 columns (one segment per run when a storyline is interrupted by another). A model without storylines
 renders exactly as before. `--storyline <name>` is not `--slice`: it keeps the normal timeline's columns
-but only a subset of them — the storyline's own slices, in order, plus **stub columns** on the left drawn
-dimmed: every element a slice of the storyline reads from outside it (so each arrow still has a source),
-and, for a storyline declared `after "<other>"`, the end state of the storyline it follows (the latest
-instance of each read model it continues with `again`). A stub column holds only the referenced elements
-of its origin slice. The name is matched case-insensitively (an unknown name lists every storyline);
-`--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch --serve` takes the same
-`--storyline` filter — see [`em watch`](#em-watch-file) below.
+but only a subset of them — the storyline's own slices, in order, and **nothing from outside it**: an
+element the storyline reads from another storyline (an event feeding its to-do list, the end state of the
+storyline it comes `after`) has no box in this picture, so that arrow is not drawn here. The flow between
+stories is the storyline map's job, not the storyline's. The name is matched case-insensitively (an unknown
+name lists every storyline); `--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch
+--serve` takes the same `--storyline` filter — see [`em watch`](#em-watch-file) below — and draws the same
+stub-free subset.
 
 `--slice` doesn't crop the full diagram — it classifies the slice into one of the 4 Event
 Modeling patterns (State Change, State View, Automation, Translation) and redraws just its
@@ -348,8 +348,8 @@ session on top of it.
 
 **Storyline filter (GH #309, deferred from #277).** `--storyline <name>` serves the same
 subset `em render --storyline` draws (see above) instead of the whole model — the storyline's
-own slices, in order, plus its dimmed stub columns — and Review mode then steps through that
-storyline's own slices only (stub columns are never part of the storyboard). The name is
+own slices, in order, nothing from outside it — and Review mode steps through exactly those
+slices. The name is
 validated on every rebuild the same way `em render --storyline` validates it: an unknown name
 errors, listing the declared storylines, without killing the watcher.
 
@@ -777,6 +777,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     order: `{ name, source, after, sliceKeys }` — `source`/`after` are `null` when the block gives
     none, `sliceKeys` the member slices' export keys in order. Every slice also carries
     `storyline` (`string | null`, the block it is declared in).
+  - Each element carries `updatesFrom` (added in schema `1.20`): on a view, the `{ name, ref }[]`
+    subset of `from` declared with `updates from` (events that keep rows current or remove them,
+    never drawn as arrows); `from` keeps the full source list. `null` on every other element and
+    on a view without the clause. See [dsl.md](dsl.md#updates-from).
   - Each element carries `alternativeGroup` (added in schema `1.19`, GH #278): for the events of
     one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (equal on every
     alternative, so group by value); `null` on every other element. `model.edges` is unchanged —
@@ -943,7 +947,9 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     same-slice view only when that view has no `from` clause; self-loops are dropped). `source`
     is `"pattern"` (inferred from the slice's pattern shape), `"from"` (resolved from a `from
     "Name"` clause), `"arrow"` (a declared `arrow`), or `"loops-to"` (added in schema `1.11`,
-    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to))
+    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to)),
+    or `"updates-from"` (added in schema `1.20` — resolved from a view's `updates from "Event"`
+    clause, the sources that keep rows current or remove them; see [dsl.md](dsl.md#updates-from))
     — **first-wins** on a duplicate `(from, to)` pair in that order, so an `arrow` that restates
     an inferred connection appears once, tagged `pattern` (`arrows` still records it as
     authored). A `loops-to` edge is the one edge the renderer never draws as an arrow — see
@@ -3397,13 +3403,30 @@ elements.
 |---|---|---|
 | every region current | `ok: <path>` | `ok: <path>` |
 | a region differs from the model | `synced: <path> (<regions>)` | `stale: <path> (<regions>)`, exit 1 |
-| no `em-slice-*` marker at all (e.g. a pre-1.14 doc) | stderr `note: <path> has no generated regions — re-create with em slice new --force to adopt them` | `no-regions: <path>` |
+| no `em-slice-*` marker at all (e.g. a pre-1.14 doc), unsigned | adopts the story line (below): `synced: <path> (em-slice-story)`; its field tables are still not inserted | `stale: <path> (em-slice-story)`, exit 1 |
+| no `em-slice-*` marker at all, signed (`ratifiedHash:`) | stderr `note: <path> has no generated regions — re-create with em slice new --force to adopt them` | `no-regions: <path>` |
 | unbalanced markers | stderr `malformed: <path> (<problem>) — nothing in it was rewritten`, exit 1 | same |
 
 A region the doc has but the model no longer needs (an element renamed or removed) is left
 untouched with a `note:`; a region the model needs but the doc lacks is not inserted (that would
 be an edit outside the markers) — add its marker pair, or re-create the doc with `em slice new
---force`.
+--force`. **One exception: the story line.**
+
+**The story line (`em-slice-story`).** Every doc carries, right under its `![Diagram](…)` line, a
+one-line generated region saying where the slice sits in its story:
+
+```
+Step 3 of 12 in **Borrow and return a tool** · after [Check Out Tool](./check-out-tool.md) · before [Return Tool](./return-tool.md) · State Change
+```
+
+The steps are the storyline's slices on the composed timeline (a model without storylines counts
+the whole timeline; a continuation column synthesized from an inline `again` is not a step). A
+neighbour that is a continuation slice has no doc of its own and is named, not linked. The line
+carries no lifecycle status on purpose: a status flip must never make it stale. `em slice new` and
+the template write the region; `em slice sync` **inserts it when missing** on an unsigned doc (a
+signed doc's marker lines are under its `ratifiedHash`, so there it stays `missing` with a note
+until the next revision adds the pair) — that is the upgrade path for docs written before it
+existed, including a doc with no regions at all, which adopts just this one line.
 
 **Ratified and shipped docs (GH #347, 1.19.0).** A doc that records a `ratifiedHash:` is synced
 like any other and keeps its signature: `ratifiedHash` covers the authored text only (the text
@@ -3519,14 +3542,26 @@ README or missing markers is a clear error naming the expected path/fix rather t
 file write. New models scaffolded from `templates/model-readme.md` already carry the marker
 pair around an empty table.
 
+**The reader's table (default since 1.21).** Five columns: `#`, `Slice`, `Pattern`, `Status`,
+`Design doc` — what a person needs to find a slice. The lifecycle columns below are `em status`'s
+job and come back with `--full`. For a model that declares storylines the table is written **per
+storyline**: one `### <Storyline>` section each, in document order, with a `_N slices ·
+[diagram](storylines/<slug>.svg)_` line (the file `em render --map` or `--storyline` writes),
+the storyline's slices on the composed timeline and numbered within the story (the same "Step N
+of M" the doc's story line states), then a `### Outside any storyline` section if needed. The
+README's **`GENERATED:storylines`** block, when the README has the marker pair (the template
+does; an older README gets a `note:` telling you to add the section), receives the storyline
+table — `| Storyline | Slices | Implemented | Diagram |` plus the canvas link — so the root
+README lists stories and each story lists its slices.
+
 | Column | Source |
 |---|---|
-| `#` | Row position (declaration order) |
+| `#` | Row position: declaration order, or the position within the storyline's section |
 | `Slice` | Slice name |
-| `Storyline` | (GH #277) the `storyline` block the slice is declared in, or `—`. **Only present when the model declares at least one `storyline`** — a model without storylines keeps its table, and so its `--check`, byte-identical. Sits right after `Slice` |
+| `Storyline` | (GH #277, `--full` only) the `storyline` block the slice is declared in, or `—`. **Only present when the model declares at least one `storyline`**. Sits right after `Slice` |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
 | `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" — or, for a continuation slice (MIL-208, no legacy doc of its own), `` continuation of `<originating-key>` `` with the Design doc column pointing at the originating slice's doc. A continuation row's `Reviewed by`, `Ratified by`, `Tracking`, `Implemented in` and `Conformed` cells are `—` (GH #275): those facts belong to the originating slice's own row |
-| `Reviewed by` | The doc's `reviewedBy` (MIL-201), or `—` |
+| `Reviewed by` | (`--full`) The doc's `reviewedBy` (MIL-201), or `—` |
 | `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
 | `Owner` | The doc's `owner` (MIL-171), or `—` |
 | `Tracking` | The doc's `tracking` (MIL-171), or `—` |

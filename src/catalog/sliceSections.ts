@@ -25,7 +25,10 @@
 // out. The CLI (`em slice new`, cli/sliceSync.ts) owns every read and write.
 
 import { Element, NormalizedModel, normalizeName, recordingCommandsOf, resolveTypeRef } from "../model/model.js";
-import { againInstancesOf, viewSourceNames } from "../model/continuation.js";
+import { againInstancesOf, continuationOf, viewSourceNames } from "../model/continuation.js";
+import { RefsResult, computeRefs } from "../model/refs.js";
+import { composedRank, storylineOfSlice } from "../model/storylines.js";
+import { classifySlicePattern, slicePatternLabel } from "./classify.js";
 import { alternativesOf } from "../layout/grid.js";
 import { kebabSlug } from "../util/slug.js";
 import { LenientScenario, parseScenariosLenient } from "./scenarios.js";
@@ -33,7 +36,7 @@ import { parseScenarios } from "./scenarios.js";
 
 export const SLICE_REGION_PREFIX = "em-slice-";
 
-export type RegionKind = "command" | "event" | "view" | "invariants";
+export type RegionKind = "story" | "command" | "event" | "view" | "invariants";
 
 /** The template's table header for each element kind's generated field table — the exact
  *  header `slice-doc/structured-section-malformed` compares a region's table against. */
@@ -66,9 +69,10 @@ export function regionEndLine(name: string): string {
 
 /** The region kind a region name belongs to, or null for a name outside the vocabulary. */
 export function regionKindOf(name: string): RegionKind | null {
-  const m = /^em-slice-(command|event|view|invariants)(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/.exec(name);
+  const m = /^em-slice-(story|command|event|view|invariants)(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/.exec(name);
   if (!m) return null;
   if (m[1] === "invariants" && name !== "em-slice-invariants") return null;
+  if (m[1] === "story" && name !== "em-slice-story") return null;
   return m[1] as RegionKind;
 }
 
@@ -154,6 +158,11 @@ function alternativesBody(model: NormalizedModel, lead: Element): string[] {
 }
 
 export interface RegionBuildOptions {
+  /** The slice the doc belongs to (its own `slices/<key>.md`), for the `em-slice-story` line:
+   *  where that slice sits in its storyline. Defaults to the lowest index in `sliceIndices`. */
+  storyOwner?: number;
+  /** Precomputed refs (slice keys for the story line's prev/next links); computed when absent. */
+  refs?: RefsResult;
   /** GH #368: the text of the doc being synced. Its authored scenario blocks retire the collection
    *  scenario stubs they cover (`coversCollectionStub`), so a stub is a prompt only until it is
    *  answered. Omitted for a doc that does not exist yet (`em slice new --wire`). */
@@ -290,7 +299,9 @@ export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]
   const elements: Element[] = [];
   for (const i of ordered) elements.push(...model.slices[i].elements);
 
-  const regions: GeneratedRegion[] = [];
+  const regions: GeneratedRegion[] = [
+    { name: `${SLICE_REGION_PREFIX}story`, kind: "story", body: [storyLine(model, opts.storyOwner ?? ordered[0], opts.refs)] },
+  ];
   for (const kind of ["command", "event", "view"] as const) {
     const seenLogical = new Set<string>();
     const seenSlug = new Set<string>();
@@ -357,10 +368,37 @@ export function buildSliceRegions(model: NormalizedModel, sliceIndices: number[]
   return regions;
 }
 
+/**
+ * The `em-slice-story` line (owner ruling 2026-11-03, "In the story"): where this slice sits in
+ * its storyline, with prev/next links, so a reader opening the doc knows what came before and
+ * what comes next. `Step 3 of 12 in **Borrow and return a tool** · after [Check Out Tool](./check-out-tool.md)
+ * · before [Return Tool](./return-tool.md) · State Change`. The steps are the storyline's slices
+ * on the composed timeline (continuation columns synthesized from an inline `again` excluded); a
+ * neighbour that is a continuation slice (no doc of its own) is named, not linked. A model with
+ * no storylines counts the whole timeline. No lifecycle status here: that is frontmatter, and a
+ * status flip must never make this generated line stale.
+ */
+export function storyLine(model: NormalizedModel, ownerIdx: number, refs: RefsResult = computeRefs(model)): string {
+  const slice = model.slices[ownerIdx];
+  const storyline = storylineOfSlice(model, ownerIdx);
+  const members = (storyline ? [...storyline.sliceIndexes] : model.slices.map((_, i) => i))
+    .filter((i) => !model.slices[i].synthesized)
+    .sort((a, b) => composedRank(model, a) - composedRank(model, b));
+  const pos = members.indexOf(ownerIdx);
+  const mention = (i: number): string =>
+    continuationOf(model, refs, i) ? model.slices[i].name : `[${model.slices[i].name}](./${refs.sliceKeys[i]}.md)`;
+  const parts = [`Step ${pos + 1} of ${members.length}${storyline ? ` in **${storyline.name}**` : ""}`];
+  parts.push(pos > 0 ? `after ${mention(members[pos - 1])}` : "the story starts here");
+  parts.push(pos < members.length - 1 ? `before ${mention(members[pos + 1])}` : "the story ends here");
+  parts.push(slicePatternLabel(classifySlicePattern(slice)));
+  return parts.join(" · ");
+}
+
 /** The template's placeholder regions — what `em slice new` writes when it has no model to fill
  *  them from (no `--wire`). `em slice sync` fills them once the doc is bound. */
 export function placeholderRegions(): GeneratedRegion[] {
   return [
+    { name: "em-slice-story", kind: "story", body: ["_Run `em slice sync` to place this slice in its story._"] },
     {
       name: "em-slice-command",
       kind: "command",
@@ -439,7 +477,7 @@ export function scanSliceRegions(text: string): RegionScan {
       }
       if (seen.has(name)) problems.push(`region "${name}" appears more than once`);
       seen.add(name);
-      if (regionKindOf(name) === null) problems.push(`region "${name}" is not a known generated region (em-slice-command|event|view[-<slug>], em-slice-invariants)`);
+      if (regionKindOf(name) === null) problems.push(`region "${name}" is not a known generated region (em-slice-story, em-slice-command|event|view[-<slug>], em-slice-invariants)`);
       open = { name, innerStart: lineStart + m[0].length };
     } else {
       if (!open) {
@@ -502,6 +540,7 @@ function tableHeaderProblem(region: RegionSpan): string | null {
     if (!/^\s*\|/.test(lines[i]) || !/^\s*\|/.test(lines[i + 1])) continue;
     if (!splitCells(lines[i + 1]).every((c) => /^:?-+:?$/.test(c))) continue;
     const got = splitCells(lines[i]);
+    if (kind === "story") return null; // no table in the story region
     const want = REGION_TABLE_HEADERS[kind];
     if (got.length === want.length && got.every((c, j) => c === want[j])) return null;
     return `region "${region.name}"'s table header is "| ${got.join(" | ")} |" — expected "| ${want.join(" | ")} |"`;
