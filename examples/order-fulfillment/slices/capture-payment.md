@@ -9,6 +9,10 @@ version: 1
 
 ![Diagram](./capture-payment.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+Step 6 of 7 · after [Payments To Process](./payments-to-process.md) · before [Show Receipt](./show-receipt.md) · Automation
+<!-- GENERATED:em-slice-story:end -->
+
 ## Intent
 
 Once a payment has been requested (checkout), the system itself — not a person — should go

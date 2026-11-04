@@ -9,6 +9,10 @@ version: 1
 
 ![Diagram](./view-open-orders.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+Step 2 of 7 · after [Browse Catalog](./browse-catalog.md) · before [Checkout](./checkout.md) · State View
+<!-- GENERATED:em-slice-story:end -->
+
 ## Intent
 
 Once a customer has placed an order, they need somewhere to see it — this is that screen.

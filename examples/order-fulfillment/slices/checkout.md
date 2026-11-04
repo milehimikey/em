@@ -12,6 +12,10 @@ version: 1
 
 ![Diagram](./checkout.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+Step 3 of 7 · after [View Open Orders](./view-open-orders.md) · before [Manager Review](./manager-review.md) · State Change
+<!-- GENERATED:em-slice-story:end -->
+
 ## Intent
 
 Once a customer has decided to buy what's in their open order, they need to actually pay
