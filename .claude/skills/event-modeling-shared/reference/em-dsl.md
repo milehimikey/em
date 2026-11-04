@@ -960,6 +960,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `storyline-after-cycle` | error | Storyline `after` cycle | Remove an `after` clause so no storyline comes after itself. |
 | `storyline-after-out-of-order` | error | Backward timeline (storyline declared above the one it comes after) | Move the storyline block below the storyline it comes `after`, or restructure the feed. |
 | `storyline-after-unknown` | error | `after` names an unknown storyline | Name a storyline declared in this model, or drop the `after` clause. |
+| `storyline-reads-without-after` | warning | Storyline reads another without declaring `after` it | Add `after "<the storyline it reads>"` to the reading storyline (or to one between them); if the two stories are parallel on purpose, accept it on the shape exit gate (docs/storyline.md). |
 | `system-manifest-invalid` | error | Seam manifest invalid | Fix the manifest: `systemSchemaVersion: "2.0"`, `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`). |
 | `system-manifest-outdated` | warning | Seam manifest is schema 1.0 | Run `em upgrade <model>.em --apply` once: it moves `seams:` into `consumes` clauses and `owner:` onto each model header, and rewrites the manifest to 2.0. |
 | `system-model-key-mismatch` | error | Manifest model key differs from the export's `model.key` | Rename the manifest's `models:` key to the computed key the message prints. |
