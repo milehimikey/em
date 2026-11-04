@@ -55,7 +55,8 @@ describe("buildSliceDocContent", () => {
   it("body starts with the # Slice: heading and the diagram-image stub (MIL-266: then the skeleton)", () => {
     const content = buildSliceDocContent("Request Payment", "request-payment", "automation", "System → Payment");
     const body = content.slice(content.indexOf("---\n", 4) + 4);
-    expect(body.startsWith("# Slice: Request Payment\n\n![Diagram](./request-payment.svg)\n\n## Intent\n")).toBe(true);
+    expect(body.startsWith("# Slice: Request Payment\n\n![Diagram](./request-payment.svg)\n\n<!-- GENERATED:em-slice-story:start")).toBe(true);
+    expect(body).toContain("<!-- GENERATED:em-slice-story:end -->\n\n## Intent\n");
   });
 
   it("carries no commented-out lineage/implementedIn cruft anywhere in the file", () => {

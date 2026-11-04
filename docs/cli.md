@@ -3395,13 +3395,30 @@ elements.
 |---|---|---|
 | every region current | `ok: <path>` | `ok: <path>` |
 | a region differs from the model | `synced: <path> (<regions>)` | `stale: <path> (<regions>)`, exit 1 |
-| no `em-slice-*` marker at all (e.g. a pre-1.14 doc) | stderr `note: <path> has no generated regions — re-create with em slice new --force to adopt them` | `no-regions: <path>` |
+| no `em-slice-*` marker at all (e.g. a pre-1.14 doc), unsigned | adopts the story line (below): `synced: <path> (em-slice-story)`; its field tables are still not inserted | `stale: <path> (em-slice-story)`, exit 1 |
+| no `em-slice-*` marker at all, signed (`ratifiedHash:`) | stderr `note: <path> has no generated regions — re-create with em slice new --force to adopt them` | `no-regions: <path>` |
 | unbalanced markers | stderr `malformed: <path> (<problem>) — nothing in it was rewritten`, exit 1 | same |
 
 A region the doc has but the model no longer needs (an element renamed or removed) is left
 untouched with a `note:`; a region the model needs but the doc lacks is not inserted (that would
 be an edit outside the markers) — add its marker pair, or re-create the doc with `em slice new
---force`.
+--force`. **One exception: the story line.**
+
+**The story line (`em-slice-story`).** Every doc carries, right under its `![Diagram](…)` line, a
+one-line generated region saying where the slice sits in its story:
+
+```
+Step 3 of 12 in **Borrow and return a tool** · after [Check Out Tool](./check-out-tool.md) · before [Return Tool](./return-tool.md) · State Change
+```
+
+The steps are the storyline's slices on the composed timeline (a model without storylines counts
+the whole timeline; a continuation column synthesized from an inline `again` is not a step). A
+neighbour that is a continuation slice has no doc of its own and is named, not linked. The line
+carries no lifecycle status on purpose: a status flip must never make it stale. `em slice new` and
+the template write the region; `em slice sync` **inserts it when missing** on an unsigned doc (a
+signed doc's marker lines are under its `ratifiedHash`, so there it stays `missing` with a note
+until the next revision adds the pair) — that is the upgrade path for docs written before it
+existed, including a doc with no regions at all, which adopts just this one line.
 
 **Ratified and shipped docs (GH #347, 1.19.0).** A doc that records a `ratifiedHash:` is synced
 like any other and keeps its signature: `ratifiedHash` covers the authored text only (the text
