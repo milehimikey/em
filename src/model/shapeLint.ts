@@ -256,6 +256,8 @@ export function shapeDiagnostics(model: NormalizedModel, refs: RefsResult, diags
       line: c.line,
       refs: [...c.sources.map((s) => refOf(s.id)), ...c.targets.map((s) => refOf(s.id))],
     });
+  }
+
   // --- again-restates-sources (GH #424) ---
   // A `view X again` instance names only the events that changed the view since the previous
   // instance. One that restates a source an earlier instance already read — with that event not
