@@ -86,7 +86,7 @@ describe("em watch --serve --storyline: the subset endpoint", () => {
     }
   });
 
-  it("a storyline's subset excludes its own stub columns from Review mode's em-slices list, but still draws and dims them", async () => {
+  it("a storyline's subset holds the storyline's own slices only — nothing from outside it is drawn (2026-11-03 ruling)", async () => {
     dir = mkdtempSync(join(tmpdir(), "em-watch-storyline-"));
     const currentFile = await renderVariant(dir, "model.svg", "Retire a product");
     expect(currentFile).toBe("storyline-retire-a-product.svg");
@@ -95,12 +95,11 @@ describe("em watch --serve --storyline: the subset endpoint", () => {
 
     const sub = await (await fetch(`${base}/${currentFile}`)).text();
     const subSlices = metadataOf(sub, "em-slices") as { slices: { name: string }[] };
-    // "Retire a product"'s own two slices only — the dimmed stub column carrying the main
-    // storyline's end state ("List Published Products") is drawn but not one of Review mode's
-    // steps (GH #309's sliceOverlay.ts fix).
+    // "Retire a product"'s own two slices only — the main storyline's end state ("List Published
+    // Products") is not drawn at all: a storyline render shows nothing from outside the storyline.
     expect(subSlices.slices.map((s) => s.name)).toEqual(["Archive Product", "List Active Products"]);
-    expect(sub).toContain("List Published"); // the stub's header is still drawn (word-wrapped)
-    expect(sub).toMatch(/opacity="0\.4"/); // dimStubColumns' stub opacity
+    expect(sub).not.toContain("List Published");
+    expect(sub).not.toMatch(/opacity="0\.4"/);
 
     const subPicker = metadataOf(sub, "em-storylines") as { name: string; file: string; current: boolean }[];
     expect(subPicker.find((v) => v.name === "Retire a product")!.current).toBe(true);

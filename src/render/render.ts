@@ -33,7 +33,7 @@ import {
 import { sliceOverlayIds, tagSliceAttrs, buildSliceOverlay } from "./sliceOverlay.js";
 import { readSliceDocs } from "./sliceStatus.js";
 import { applyStatusColors, appendStatusLegend } from "./statusOverlay.js";
-import { buildStorylineBands, dimStubColumns, storylineBandIds } from "./storylineBands.js";
+import { buildStorylineBands, storylineBandIds } from "./storylineBands.js";
 
 const RSVG_BIN = process.env.EM_RSVG || "rsvg-convert";
 
@@ -260,7 +260,7 @@ function withOverlays(
   // viewer (`em watch --serve`) can highlight/zoom to one slice at a time
   // client-side, purely from what's already in the SVG.
   out = tagSliceAttrs(out, model);
-  const sliceOverlay = buildSliceOverlay(out, model, grid, rects, docs);
+  const sliceOverlay = buildSliceOverlay(out, grid, rects, docs);
   // arrowhead markers + slice metadata/style go just inside <svg …>
   out = out.replace(/(<svg\b[^>]*>)/, `$1${defs}${sliceOverlay}`);
   // edges go under the boxes: just before the first node group
@@ -271,7 +271,6 @@ function withOverlays(
   // transform group (so they share the box coordinate space) but after every node, as the
   // last children of that group, making them the topmost clickable layer.
   out = out.replace(/(<\/g>\s*)(<\/svg>)/, `${bands}${notes}${issues}${divergences}${loopsTo}$1$2`);
-  out = dimStubColumns(out, model);
   // grow the canvas and append the legend below the diagram (root coords)
   out = appendNoteLegend(out, model, hrefOf);
   out = appendStatusLegend(out, grid, statuses);
