@@ -17,14 +17,23 @@ import { Diagnostic } from "../model/validate.js";
 import { classifySlicePattern, slicePatternLabel } from "../catalog/classify.js";
 import { resolveSliceDocJoin, SliceDocExport } from "../catalog/docJoin.js";
 import { applyMarker } from "../util/markers.js";
+import { composedRank } from "../model/storylines.js";
+import { kebabSlug } from "../util/slug.js";
 
 /** The marker name wrapping the Slices table: `<!-- GENERATED:slices:start -->` /
  *  `<!-- GENERATED:slices:end -->`, matching templates/model-readme.md. */
 export const SLICE_INDEX_MARKER = "slices";
 
+/** The full table (`--full`): every lifecycle column. */
 const TABLE_HEADER =
   "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Conformed | Design doc |\n" +
   "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|-----------|------------|";
+/** The reader's table (default since the 2026-11-03 ruling): what a person needs to find a slice.
+ *  The lifecycle columns are `em status`'s job; `--full` brings them back. */
+const READER_HEADER = "| # | Slice | Pattern | Status | Design doc |\n|---|-------|---------|--------|------------|";
+/** The root README's storyline table (`GENERATED:storylines`). */
+export const STORYLINE_INDEX_MARKER = "storylines";
+const STORYLINE_HEADER = "| Storyline | Slices | Implemented | Diagram |\n|-----------|--------|-------------|---------|";
 
 /** MIL-214: `v<N> @ <rev>` when this slice's current version has a conformance certification
  *  (`doc.conformedVersion`/`doc.conformedAt` both set — always set together, `em slice conform`'s
@@ -65,6 +74,8 @@ function statusCell(doc: SliceDocExport, continuationOf: string | null): string 
 
 export interface SliceIndexRow {
   index: number;
+  /** The slice's position in `model.slices` (the timeline), for grouping and ordering. */
+  sliceIndex: number;
   name: string;
   /** GH #277: the `storyline` block the slice is declared in, or `—`. The column is only
    *  rendered when the model declares at least one storyline (see `buildSliceIndexTable`), so a
@@ -87,17 +98,27 @@ export interface SliceIndexRow {
 
 export interface SliceIndexTable {
   /** The full replacement body for the GENERATED:slices block — header + one row per slice
-   *  (or just the header when the model has no slices yet). */
+   *  (or just the header when the model has no slices yet). For a model that declares
+   *  storylines: one `### <Storyline>` section per storyline, its slices in timeline order and
+   *  numbered within the story, then any slice outside every storyline. */
   markdown: string;
+  /** The GENERATED:storylines body for the root README: one row per storyline (slice count,
+   *  implemented count, diagram link) and the canvas link. Empty string without storylines. */
+  storylinesMarkdown: string;
   rows: SliceIndexRow[];
   /** binding-missing-file / frontmatter-invalid warnings from resolveSliceDocJoin — the same
    *  diagnostics `em export` surfaces for a broken doc binding. */
   diagnostics: Diagnostic[];
 }
 
+export interface SliceIndexOptions {
+  /** Every lifecycle column (the pre-2026-11 table) instead of the reader's five. */
+  full?: boolean;
+}
+
 /** Build the Slices table body for `model`. `baseDir` is the `.em` file's directory — same
  *  doc-resolution convention `em export`/`em catalog` use for `slices/<key>.md`. */
-export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, baseDir: string): SliceIndexTable {
+export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, baseDir: string, opts: SliceIndexOptions = {}): SliceIndexTable {
   const diagnostics: Diagnostic[] = [];
 
   // GH #287: a continuation column synthesized from `view X again` inside another slice has no
@@ -118,6 +139,7 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
     diagnostics.push(...docDiags);
     rows.push({
       index: rows.length + 1,
+      sliceIndex: i,
       name: slice.name,
       storyline: slice.storyline ?? "—",
       pattern: slicePatternLabel(pattern),
@@ -136,23 +158,67 @@ export function buildSliceIndexTable(model: NormalizedModel, refs: RefsResult, b
     });
   });
 
-  // GH #277: a Storyline column right after Slice, only for a model that declares storylines.
-  const withStoryline = (model.storylines ?? []).length > 0;
-  const header = withStoryline
-    ? TABLE_HEADER.split("\n").map((l, n) => (n === 0 ? l.replace("| Slice |", "| Slice | Storyline |") : l.replace("|-------|", "|-------|-----------|"))).join("\n")
-    : TABLE_HEADER;
-  const lines = rows.map(
-    (r) =>
-      `| ${r.index} | ${escapeCell(r.name)} | ${withStoryline ? `${escapeCell(r.storyline)} | ` : ""}${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
+  const storylines = model.storylines ?? [];
+  const withStoryline = storylines.length > 0;
+  const full = opts.full === true;
+  // `--full` keeps the pre-2026-11 table: every lifecycle column, plus (GH #277) a Storyline
+  // column right after Slice when the model declares storylines.
+  const header = !full
+    ? READER_HEADER
+    : withStoryline
+      ? TABLE_HEADER.split("\n").map((l, n) => (n === 0 ? l.replace("| Slice |", "| Slice | Storyline |") : l.replace("|-------|", "|-------|-----------|"))).join("\n")
+      : TABLE_HEADER;
+  const line = (r: SliceIndexRow, n: number): string => {
+    const doc = r.docPath ? `[${r.docPath}](${r.docPath})` : "—";
+    if (!full) return `| ${n} | ${escapeCell(r.name)} | ${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ${doc} |`;
+    return (
+      `| ${n} | ${escapeCell(r.name)} | ${withStoryline ? `${escapeCell(r.storyline)} | ` : ""}${escapeCell(r.pattern)} | ${escapeCell(r.status)} | ` +
       `${escapeCell(r.reviewedBy)} | ${escapeCell(r.ratifiedBy)} | ${escapeCell(r.owner)} | ` +
-      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | ${escapeCell(r.conformed)} | ${r.docPath ? `[${r.docPath}](${r.docPath})` : "—"} |`,
-  );
+      `${escapeCell(r.tracking)} | ${escapeCell(r.implementedIn)} | ${escapeCell(r.conformed)} | ${doc} |`
+    );
+  };
 
-  return { markdown: [header, ...lines].join("\n"), rows, diagnostics };
+  let markdown: string;
+  let storylinesMarkdown = "";
+  if (!withStoryline) {
+    markdown = [header, ...rows.map((r) => line(r, r.index))].join("\n");
+  } else {
+    // One section per storyline (document order), its slices on the composed timeline and
+    // numbered within the story — the same "Step N of M" the doc's story line states — then
+    // any slice outside every storyline. The storyline's own diagram is `em render --map`'s
+    // (or `--storyline`'s) default output.
+    const byIndex = new Map(rows.map((r) => [r.sliceIndex, r]));
+    const sections: string[] = [];
+    const placed = new Set<number>();
+    const storyRows: string[] = [];
+    for (const st of storylines) {
+      const members = [...st.sliceIndexes].sort((a, b) => composedRank(model, a) - composedRank(model, b)).map((i) => byIndex.get(i)).filter((r): r is SliceIndexRow => r !== undefined);
+      for (const r of members) placed.add(r.sliceIndex);
+      const svg = `storylines/${kebabSlug(st.name)}.svg`;
+      sections.push(`### ${st.name}`, `_${members.length} slice${members.length === 1 ? "" : "s"} · [diagram](${svg})_`, "", header, ...members.map((r, n) => line(r, n + 1)), "");
+      const implemented = members.filter((r) => r.status === "implemented").length;
+      storyRows.push(`| ${escapeCell(st.name)} | ${members.length} | ${implemented} | [${svg}](${svg}) |`);
+    }
+    const outside = rows.filter((r) => !placed.has(r.sliceIndex));
+    if (outside.length > 0) sections.push("### Outside any storyline", "", header, ...outside.map((r, n) => line(r, n + 1)), "");
+    markdown = sections.join("\n").trimEnd();
+    storylinesMarkdown = [STORYLINE_HEADER, ...storyRows, "", "Canvas: [storylines/map.html](storylines/map.html) (`em render --map`)"].join("\n");
+  }
+
+  return { markdown, storylinesMarkdown, rows, diagnostics };
 }
 
 export type SliceIndexResult =
-  | { ok: true; readmePath: string; wrote: boolean; changed: boolean; table: SliceIndexTable }
+  | {
+      ok: true;
+      readmePath: string;
+      wrote: boolean;
+      changed: boolean;
+      table: SliceIndexTable;
+      /** `GENERATED:storylines` outcome: `absent` (the README has no such markers — add the
+       *  section from templates/model-readme.md), `written`, `current`, or `n/a` (no storylines). */
+      storylines: "absent" | "written" | "current" | "n/a";
+    }
   | { ok: false; kind: "missing-readme" | "missing-markers" | "stale"; message: string; table: SliceIndexTable };
 
 /**
@@ -170,10 +236,11 @@ export function runSliceIndex(
   refs: RefsResult,
   emFilePath: string,
   check: boolean,
+  opts: SliceIndexOptions = {},
 ): SliceIndexResult {
   const baseDir = dirname(emFilePath);
   const readmePath = join(baseDir, "README.md");
-  const table = buildSliceIndexTable(model, refs, baseDir);
+  const table = buildSliceIndexTable(model, refs, baseDir, opts);
 
   if (!existsSync(readmePath)) {
     return {
@@ -201,8 +268,21 @@ export function runSliceIndex(
     };
   }
 
-  const changed = updated !== original;
-  if (!changed) return { ok: true, readmePath, wrote: false, changed: false, table };
+  // The storyline table is optional: a README scaffolded before 2026-11 has no
+  // GENERATED:storylines markers, and that is a hint, never an error.
+  let storylines: "absent" | "written" | "current" | "n/a" = "n/a";
+  let next = updated;
+  if (table.storylinesMarkdown !== "") {
+    const withStorylines = applyMarker(updated, STORYLINE_INDEX_MARKER, table.storylinesMarkdown);
+    if (withStorylines === null) storylines = "absent";
+    else {
+      storylines = withStorylines === updated ? "current" : "written";
+      next = withStorylines;
+    }
+  }
+
+  const changed = next !== original;
+  if (!changed) return { ok: true, readmePath, wrote: false, changed: false, table, storylines };
 
   if (check) {
     return {
@@ -215,6 +295,6 @@ export function runSliceIndex(
     };
   }
 
-  writeFileSync(readmePath, updated, "utf8");
-  return { ok: true, readmePath, wrote: true, changed: true, table };
+  writeFileSync(readmePath, next, "utf8");
+  return { ok: true, readmePath, wrote: true, changed: true, table, storylines };
 }

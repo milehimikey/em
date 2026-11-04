@@ -3523,14 +3523,26 @@ README or missing markers is a clear error naming the expected path/fix rather t
 file write. New models scaffolded from `templates/model-readme.md` already carry the marker
 pair around an empty table.
 
+**The reader's table (default since 1.21).** Five columns: `#`, `Slice`, `Pattern`, `Status`,
+`Design doc` — what a person needs to find a slice. The lifecycle columns below are `em status`'s
+job and come back with `--full`. For a model that declares storylines the table is written **per
+storyline**: one `### <Storyline>` section each, in document order, with a `_N slices ·
+[diagram](storylines/<slug>.svg)_` line (the file `em render --map` or `--storyline` writes),
+the storyline's slices on the composed timeline and numbered within the story (the same "Step N
+of M" the doc's story line states), then a `### Outside any storyline` section if needed. The
+README's **`GENERATED:storylines`** block, when the README has the marker pair (the template
+does; an older README gets a `note:` telling you to add the section), receives the storyline
+table — `| Storyline | Slices | Implemented | Diagram |` plus the canvas link — so the root
+README lists stories and each story lists its slices.
+
 | Column | Source |
 |---|---|
-| `#` | Row position (declaration order) |
+| `#` | Row position: declaration order, or the position within the storyline's section |
 | `Slice` | Slice name |
-| `Storyline` | (GH #277) the `storyline` block the slice is declared in, or `—`. **Only present when the model declares at least one `storyline`** — a model without storylines keeps its table, and so its `--check`, byte-identical. Sits right after `Slice` |
+| `Storyline` | (GH #277, `--full` only) the `storyline` block the slice is declared in, or `—`. **Only present when the model declares at least one `storyline`**. Sits right after `Slice` |
 | `Pattern` | `em export`'s `pattern` (State Change / State View / Automation / Translation / Unclassified) |
 | `Status` | The bound doc's `status`, `"unknown"` for a found-but-unusable doc (no/invalid frontmatter), `"no doc yet"` when no doc is bound at all — same found/status split `em catalog`'s Status column uses, just with "no doc yet" instead of "no doc" — or, for a continuation slice (MIL-208, no legacy doc of its own), `` continuation of `<originating-key>` `` with the Design doc column pointing at the originating slice's doc. A continuation row's `Reviewed by`, `Ratified by`, `Tracking`, `Implemented in` and `Conformed` cells are `—` (GH #275): those facts belong to the originating slice's own row |
-| `Reviewed by` | The doc's `reviewedBy` (MIL-201), or `—` |
+| `Reviewed by` | (`--full`) The doc's `reviewedBy` (MIL-201), or `—` |
 | `Ratified by` | The doc's `ratifiedBy` (MIL-165), or `—` |
 | `Owner` | The doc's `owner` (MIL-171), or `—` |
 | `Tracking` | The doc's `tracking` (MIL-171), or `—` |
