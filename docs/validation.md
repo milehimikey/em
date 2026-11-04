@@ -334,9 +334,8 @@ The gate passes only when **every remaining finding, waived or not,** has such a
 on that key) only silences the CLI count for an estate that carries shapes it has decided to keep; it is
 never a substitute for the record. The skill refuses to move to the slice phase otherwise. `em engagement plan` lists the same findings on the engagement's slices in its pre-flight.
 A rule joins the family by registering `family: "shape"`; today that includes `timeline-entity-clustered`,
-`slice-outside-storyline`, `automation-split-by-outcome`, `retry-slice-of`, `view-lookup-source` and
-`storyline-reads-without-after`.
-`again-restates-sources`.
+`slice-outside-storyline`, `automation-split-by-outcome`, `retry-slice-of`, `view-lookup-source`,
+`storyline-reads-without-after` and `again-restates-sources`.
 
 `command-second-intent` (GH #286) is an advisory lint for a command carrying a second intent:
 it fires when a command has at least 2 invariants (model-declared, or from its bound slice doc

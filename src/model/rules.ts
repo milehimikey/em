@@ -82,6 +82,9 @@ export const RULES = {
     title: "Storyline reads another without declaring `after` it",
     fix: "Add `after \"<the storyline it reads>\"` to the reading storyline (or to one between them); if the two stories are parallel on purpose, accept it on the shape exit gate (docs/storyline.md).",
     usageCategory: "storyline reads another without after",
+    docAnchor: "shape",
+    family: "shape",
+  },
   "again-restates-sources": {
     severity: "warning",
     title: "Continuation restates sources an earlier instance already read",
