@@ -147,7 +147,7 @@ reconciled by `em skill install|sync|check` and `em upgrade` without touching yo
 The original route copies the bundle into the repo instead:
 
 ```bash
-em skill install     # copies the skill bundle into .claude/skills/
+em skill install     # copies the skill bundle into .claude/skills/ (or .agents/skills/, GH #412 — see cli.md)
 ```
 
 then run `/event-modeling` (the vendored names are `event-modeling`, `event-modeling-discover`,

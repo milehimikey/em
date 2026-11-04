@@ -33,7 +33,7 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.js";
 import { planMigration, verifyMigration, MigrationPlan } from "./migrateReactionShape.js";
 import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./skillSync.js";
-import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES } from "./skillDirs.js";
+import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs } from "./skillDirs.js";
 import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, pluginInstallCommands, pluginSettingsEntries } from "./pluginPin.js";
 import { syncAgentsMd } from "./agentsMd.js";
 import {
@@ -125,12 +125,14 @@ export interface UpgradeStepDef {
 
 // ---- Step 1: skill-bundle — delegates to `em skill sync`'s own plan/apply. ----
 
+// GH #412: the same resolution `em skill install|sync|check` use — `.claude/skills/` + `.claude/agents/`,
+// or the neutral `.agents/skills/` (+ `.agents/agents/`) when that is where the repo keeps them.
 function vendoredSkillsRootOf(repoRoot: string): string {
-  return join(repoRoot, ".claude", "skills");
+  return resolveVendoredDirs(repoRoot).skillsRoot;
 }
 
 function vendoredAgentsRootOf(repoRoot: string): string {
-  return join(repoRoot, ".claude", "agents");
+  return resolveVendoredDirs(repoRoot).agentsRoot;
 }
 
 function packagedAgentsRootOf(ctx: UpgradeContext): string {
@@ -145,7 +147,7 @@ function detectSkillBundle(ctx: UpgradeContext): StepDetection {
   // MIL-232: the vendored bundle is about to be removed by `skill-plugin` (ordered first) — syncing it would be a throwaway commit.
   if (detectSkillPlugin(ctx).applicable) return { applicable: false, reason: "the vendored bundle is migrated to the plugin by skill-plugin — nothing to sync" };
   if (!existsSync(join(vendoredRoot, EM_SKILL_ANCHOR_DIR))) {
-    return { applicable: false, reason: "no vendored skill bundle installed at .claude/skills/ — run `em skill install` first if you want one" };
+    return { applicable: false, reason: `no vendored skill bundle installed at ${relative(ctx.repoRoot, vendoredRoot) || "."}/ — run \`em skill install\` first if you want one` };
   }
   const bundlePlan = planSkillSyncBundle(ctx.packagedSkillsRoot, vendoredRoot, EM_ALL_SKILL_BUNDLE_DIRS);
   const agentPlan = planAgentSync(packagedAgentsRootOf(ctx), vendoredAgentsRootOf(ctx.repoRoot), EM_AGENT_FILES);
@@ -163,9 +165,11 @@ function applySkillBundle(ctx: UpgradeContext): StepApplyOutcome {
   if (totalChanges === 0) return { ok: false, message: "nothing to sync" };
   applySkillSyncBundle(bundlePlan, ctx.packagedSkillsRoot, vendoredRoot);
   applySkillSync(agentPlan, packagedAgentsRootOf(ctx), vendoredAgents);
+  const skillsRel = relative(ctx.repoRoot, vendoredRoot);
+  const agentsRel = relative(ctx.repoRoot, vendoredAgents);
   const changedFiles = [
-    ...bundlePlan.flatMap(({ dirName, plan }) => plan.changes.map((c) => join(".claude", "skills", dirName, c.relPath))),
-    ...agentPlan.changes.map((c) => join(".claude", "agents", c.relPath)),
+    ...bundlePlan.flatMap(({ dirName, plan }) => plan.changes.map((c) => join(skillsRel, dirName, c.relPath))),
+    ...agentPlan.changes.map((c) => join(agentsRel, c.relPath)),
   ];
   return { ok: true, changedFiles };
 }
