@@ -1,6 +1,6 @@
 ---
 name: event-modeling-implement
-em-version: 1.20.0
+em-version: 1.21.0
 description: >-
   Use when building a single ratified event-modeling slice (status: ready-to-implement) into
   merged, tested code — the one phase where the agent builds rather than facilitates. Gates on
