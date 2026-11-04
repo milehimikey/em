@@ -114,7 +114,7 @@ describe("collapse-alternative-events (GH #278)", () => {
     const signedBytes = readFileSync(doc, "utf8");
     const hash = /ratifiedHash: (\S+)/.exec(signedBytes)![1];
     expect(step(dir, "collapse-alternative-events").reason).toContain(
-      "signed doc(s) whose generated regions go stale: slices/cancel-order-customer.md (em-slice-event) — em upgrade syncs the kept slice's doc",
+      "signed doc(s) whose generated regions go stale: slices/cancel-order-customer.md (em-slice-story, em-slice-event) — em upgrade syncs the kept slice's doc",
     );
     const result = applyUpgrade(ctxOf(dir));
     expect(result.ok).toBe(true);
@@ -242,7 +242,14 @@ describe("fold-continuations (GH #287) — opt-in", () => {
     for (const name of ["Shipments after ship", "Shipments after ship, again", "Orders after ship"]) expect(after).toContain(`slice "${name}"`);
     expect(after).not.toContain("shown on");
     expect(compile(after).refs.sliceKeys).not.toContain("ship-order--again");
-    expect(readFileSync(doc, "utf8")).toBe(signedBytes);
+    // The collapse removed a slice, so the doc's generated story line ("Step N of M") was
+    // re-synced under the signature; the authored text and the signature itself are untouched.
+    const afterDoc = readFileSync(doc, "utf8");
+    expect(sliceDocBodyHash(afterDoc)).toBe(sliceDocBodyHash(signedBytes));
+    expect(/ratifiedHash: \S+/.exec(afterDoc)![0]).toBe(/ratifiedHash: \S+/.exec(signedBytes)![0]);
+    expect(afterDoc.replace(/<!-- GENERATED:em-slice-story:start[\s\S]*?<!-- GENERATED:em-slice-story:end -->/, "")).toBe(
+      signedBytes.replace(/<!-- GENERATED:em-slice-story:start[\s\S]*?<!-- GENERATED:em-slice-story:end -->/, ""),
+    );
     for (const code of compile(after).diagnostics.map((x) => x.code)) expect(diagsBefore).toContain(code); // no new diagnostic (the collapse only removes one)
   });
 

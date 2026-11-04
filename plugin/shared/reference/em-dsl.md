@@ -23,7 +23,7 @@ em render <file>                                                    # transpile 
 em render <file> -o, --out <path>                                   # output path (extension picks the format)
 em render <file> -T, --format <fmt>                                 # output format (svg, png, pdf, ...)
 em render <file> --slice <name>                                     # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
-em render <file> --storyline <name>                                 # render only this storyline: its slices in order, preceded by dimmed stub columns for what they read from outside it (and the end state of a storyline it comes `after`) (default out: storylines/<kebab-slug>.svg)
+em render <file> --storyline <name>                                 # render only this storyline: its own slices in order, nothing from outside it (default out: storylines/<kebab-slug>.svg)
 em render <file> --emit-dot                                         # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes                                 # keep the API lane even when empty
 em export <file>                                                    # export a versioned JSON snapshot of the normalized model
@@ -71,6 +71,7 @@ em slice stub-all <file> --implemented-in <url>                     # PR/commit 
 em slice stub-all <file> --dry-run                                  # list what would be stubbed/wired without writing anything
 em slice index <file>                                               # rewrite the model's sibling README.md's GENERATED Slices table from `em export`'s slice facts (key, pattern, doc status/implementedIn) — the hand-maintained table is deprecated
 em slice index <file> --check                                       # verify the table is current; exit non-zero on drift without writing (CI)
+em slice index <file> --full                                        # every lifecycle column (reviewed/ratified/owner/tracking/implemented/conformed) instead of the reader's five
 em slice mark-implemented <file> <slice-key> <pr-url>               # flip a slice doc's frontmatter to `status: implemented` / `implementedIn: <pr-url>` — the one edit an implementing agent makes to a ratified doc at merge (MIL-103, replaces the em-sdd-bridge `em-sdd-mark-implemented` script; see reference/implement.md §6). Applies only to a `ready-to-implement` doc (MIL-277: a `draft`/`reviewed` doc refuses — ratify first). Also records the shipped version beside the link (MIL-284): `shippedVersion:`, `shippedRef:` (the doc's `ratifiedRef:`, when it has one) and `shippedOn:`, and opens the next version as a `draft` when an Open Question was deferred to it (MIL-283). Idempotent on the same URL — also after that draft opened; refuses to overwrite a different one; never touches the doc body except to re-open those deferred questions
 em slice mark-implemented <file> <slice-key> <pr-url> --on <date>   # merge date recorded as `shippedOn:`, YYYY-MM-DD (default: today, local date; MIL-284)
 em slice mark-implemented <file> <slice-key> <pr-url> --json        # print a JSON document instead of text: { path, changed, implementedIn, nextDraft: { version, reopened[] } | null } (GH #285)
@@ -961,6 +962,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `storyline-after-cycle` | error | Storyline `after` cycle | Remove an `after` clause so no storyline comes after itself. |
 | `storyline-after-out-of-order` | error | Backward timeline (storyline declared above the one it comes after) | Move the storyline block below the storyline it comes `after`, or restructure the feed. |
 | `storyline-after-unknown` | error | `after` names an unknown storyline | Name a storyline declared in this model, or drop the `after` clause. |
+| `storyline-reads-without-after` | warning | Storyline reads another without declaring `after` it | Add `after "<the storyline it reads>"` to the reading storyline (or to one between them); if the two stories are parallel on purpose, accept it on the shape exit gate (docs/storyline.md). |
 | `system-manifest-invalid` | error | Seam manifest invalid | Fix the manifest: `systemSchemaVersion: "2.0"`, `models:` with a readable `source` per model, and nothing else (`seams:`/`owner:` moved into the models — run `em upgrade`). |
 | `system-manifest-outdated` | warning | Seam manifest is schema 1.0 | Run `em upgrade <model>.em --apply` once: it moves `seams:` into `consumes` clauses and `owner:` onto each model header, and rewrites the manifest to 2.0. |
 | `system-model-key-mismatch` | error | Manifest model key differs from the export's `model.key` | Rename the manifest's `models:` key to the computed key the message prints. |

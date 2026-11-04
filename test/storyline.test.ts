@@ -275,7 +275,7 @@ arrow Alert Board -> Goods In
 describe("export, query and slice index", () => {
   it("export carries slice.storyline, model.storylines and schema 1.19", () => {
     const doc = exportDocOf(THREE);
-    expect(doc.schemaVersion).toBe("1.19");
+    expect(doc.schemaVersion).toBe("1.20");
     expect(doc.model.slices.map((s) => s.storyline)).toEqual(["Main", "Main", "Other", "Other", "Follow", "Follow"]);
     expect(doc.model.storylines).toEqual([
       { name: "Main", source: "docs/stock.md#one", after: null, sliceKeys: ["receive", "catalog"] },
@@ -331,13 +331,19 @@ storyline "Two  Words" {
 
   it("em slice index adds a Storyline column only for a model that declares storylines", () => {
     const withStories = compile(THREE);
-    const table = buildSliceIndexTable(withStories.model, withStories.refs, ".");
+    const table = buildSliceIndexTable(withStories.model, withStories.refs, ".", { full: true });
     const lines = table.markdown.split("\n");
-    expect(lines[0]).toContain("| Slice | Storyline | Pattern |");
-    expect(lines[1].startsWith("|---|-------|-----------|")).toBe(true);
-    expect(lines[2]).toContain("| 1 | Receive | Main | ");
-    expect(lines[6]).toContain("| 5 | Watch | Follow | ");
+    // --full: one section per storyline, the full header with a Storyline column in each
+    expect(lines[0]).toBe("### Main");
+    expect(lines[3]).toContain("| Slice | Storyline | Pattern |");
+    expect(lines[4].startsWith("|---|-------|-----------|")).toBe(true);
+    expect(lines[5]).toContain("| 1 | Receive | Main | ");
     expect(table.rows.map((r) => r.storyline)).toEqual(["Main", "Main", "Other", "Other", "Follow", "Follow"]);
+    // the default (reader) table groups the same way, numbered within each story, five columns
+    const reader = buildSliceIndexTable(withStories.model, withStories.refs, ".");
+    expect(reader.markdown).toContain("### Follow\n_2 slices · [diagram](storylines/follow.svg)_\n\n| # | Slice | Pattern | Status | Design doc |");
+    expect(reader.markdown).toContain("| 1 | Watch | ");
+    expect(reader.storylinesMarkdown).toContain("| Main | 2 | 0 | [storylines/main.svg](storylines/main.svg) |");
 
     const plain = compile(`slice "a" {\n  ui U @P\n  command C\n  event E\n}\n`);
     const plainTable = buildSliceIndexTable(plain.model, plain.refs, ".");
@@ -436,27 +442,23 @@ storyline "A" {
     expect(svg).not.toContain("em-storyline-band");
   });
 
-  it("--storyline: own slices in order, preceded by dimmed stub columns for what they read from outside", async () => {
+  it("--storyline: own slices in order and nothing from outside the storyline (no stub columns)", async () => {
     const { model } = compile(THREE);
     const found = resolveStorylineArg(model, "Follow");
     if ("error" in found) throw new Error(found.error);
     const sub = buildStorylineDiagram(model, found.storyline);
-    // Main's end-state view (the reaction's `from`) is the only outside source: one stub column,
-    // placed left of Follow's own two slices.
-    expect(sub.model.slices.map((s) => [s.name, s.stub === true])).toEqual([
-      ["Catalog", true],
-      ["Watch", false],
-      ["Alerts", false],
-    ]);
-    expect(sub.model.slices[0].elements.map((e) => e.name)).toEqual(["Availability"]); // only the referenced element
-    // Other's instance is NOT the stub: the composed timeline resolves to Main's.
+    // Main's end-state view (the reaction's `from`) is read from outside: it gets NO column here,
+    // so the reaction's inbound arrow is simply not drawn (the storyline map carries that flow).
+    expect(sub.model.slices.map((s) => s.name)).toEqual(["Watch", "Alerts"]);
+    expect(sub.model.elements.map((e) => e.name)).not.toContain("Availability");
     const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, ".", ".");
-    expect(svg).toContain('opacity="0.4"');
+    expect(svg).not.toContain('opacity="0.4"');
+    expect(svg).not.toContain(">Catalog<");
     expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(1);
     expect(svg).toContain(">Follow</text>");
   });
 
-  it("--storyline keeps stubs from between a storyline's blocks in timeline position (no right-to-left edge)", async () => {
+  it("--storyline joins a storyline's separated blocks into one run, without the slices between them", async () => {
     const src = `storyline "A" {
   slice "a1" {
     ui U1 @P
@@ -486,22 +488,17 @@ storyline "A" {
     const found = resolveStorylineArg(model, "A");
     if ("error" in found) throw new Error(found.error);
     const sub = buildStorylineDiagram(model, found.storyline);
-    expect(sub.model.slices.map((sl) => [sl.name, sl.stub === true])).toEqual([
-      ["a1", false],
-      ["b1", true],
-      ["b2", true],
-      ["a2", false],
-    ]);
+    expect(sub.model.slices.map((sl) => sl.name)).toEqual(["a1", "a2"]);
     for (const e of semanticEdges(sub.model)) {
       const from = sub.model.byId.get(e.from)!;
       const to = sub.model.byId.get(e.to)!;
       expect(from.sliceIndex, `${from.name} -> ${to.name}`).toBeLessThanOrEqual(to.sliceIndex);
     }
     const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, ".", ".");
-    expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(2); // a1 | (stubs) | a2
+    expect((svg.match(/class="em-storyline-band"/g) ?? []).length).toBe(1); // a1 | a2, one run
   });
 
-  it("--storyline orders after-chain stubs and unrelated stubs together on the composed timeline", () => {
+  it("--storyline for an `after` storyline draws only its own slices, on the composed timeline", () => {
     const { model, diagnostics } = compile(`storyline "S" {
   slice "s1" {
     ui U1 @P
@@ -535,7 +532,7 @@ storyline "C" after "A" {
     const found = resolveStorylineArg(model, "C");
     if ("error" in found) throw new Error(found.error);
     const sub = buildStorylineDiagram(model, found.storyline);
-    expect(sub.model.slices.map((sl) => sl.name)).toEqual(["s1", "a1", "c1", "c2", "c3"]);
+    expect(sub.model.slices.map((sl) => sl.name)).toEqual(["c1", "c2", "c3"]);
     for (const e of semanticEdges(sub.model)) {
       const from = sub.model.byId.get(e.from)!;
       const to = sub.model.byId.get(e.to)!;
@@ -546,7 +543,7 @@ storyline "C" after "A" {
   describe("the composed rank is a real total order (cyclic file-order vs after constraints)", () => {
     const files = ["test/fixtures/storyline-cyc.em", "test/fixtures/storyline-cyc2.em"];
     for (const file of files) {
-      it(`${file}: strict total order, end-state stub left of the \`again\` that continues it, stable under input permutations`, () => {
+      it(`${file}: strict total order, the storyline's own columns in composed order, stable under input permutations`, () => {
         const { model, diagnostics } = compile(readFileSync(file, "utf8"));
         expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
         const n = model.slices.length;
@@ -562,7 +559,7 @@ storyline "C" after "A" {
         if ("error" in found) throw new Error(found.error);
         const order = () => buildStorylineDiagram(model, found.storyline).model.slices.map((sl) => sl.name);
         const base = order();
-        expect(base.indexOf("a2")).toBeLessThan(base.indexOf("c0b"));
+        expect(base).toEqual(["c0", "c0b", "c3"]);
         const original = [...model.elements];
         const perms = [
           [...original].reverse(),
@@ -612,13 +609,12 @@ storyline "Main" {
     expect(d.message).toContain('move this storyline block below slice "Board"');
   });
 
-  it("--storyline for a storyline with no outside reads has no stub columns", () => {
+  it("--storyline for a storyline with no outside reads is just its own slices", () => {
     const { model } = compile(THREE);
     const found = resolveStorylineArg(model, "Main");
     if ("error" in found) throw new Error(found.error);
     const sub = buildStorylineDiagram(model, found.storyline);
     expect(sub.model.slices.map((s) => s.name)).toEqual(["Receive", "Catalog"]);
-    expect(sub.model.slices.some((s) => s.stub)).toBe(false);
   });
 
   it("--storyline names an unknown storyline in its error", () => {
@@ -640,9 +636,9 @@ storyline "Main" {
       const svg = composeSvg(await layoutDot(sub.dot), sub.model, sub.grid, "examples", ".");
       expect(svg).toContain(`data-storyline="${st.name}"`);
     }
-    // The `after` storyline carries the main storyline's end state as its dimmed stub.
+    // The `after` storyline draws its own slices only; the main storyline's end state is not in it.
     const retire = buildStorylineDiagram(model, model.storylines!.find((s) => s.name === "Retire a product")!);
-    expect(retire.model.slices.filter((s) => s.stub).map((s) => s.name)).toEqual(["List Published Products"]);
+    expect(retire.model.slices.map((s) => s.name)).toEqual(["Archive Product", "List Active Products"]);
   });
 });
 

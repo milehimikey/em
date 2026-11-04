@@ -166,6 +166,38 @@ the view is the automation's to-do list, and it lives in the slice *before* the 
 — the reaction shares its slice with the command it triggers instead (see the Automation
 pattern in [patterns.md](patterns.md)).
 
+### `updates from`
+
+`view X from "Event A" updates from "Event B", "Event C"` splits a read model's sources into
+the events that **put work on the list** (`from`) and the events that **keep rows current or
+remove them** (`updates from`). A to-do list such as `Overdue Loans To Notify` gets a row when a
+tool is checked out; a loan extension moves the row's due date, an address change updates where
+the notice goes, and a return takes the row off the list. Only the first of those is the story
+(Dilger: show the line from the event that triggers the automation, not every event that
+touches its read model); the other three are housekeeping.
+
+```
+view Overdue Loans To Notify
+  from "Tool Checked Out"
+  updates from "Loan Extended", "Neighbor Email Changed", "Tool Returned" { … }
+```
+
+- View only — a parse error on any other kind. Either order relative to `from`; before or after
+  an inline `{ fields }` block's closing `}`. Works on a `view … again` instance too.
+- The author chooses which sources are triggers; it is not "the first source". `Holds To
+  Fulfill` keeps `from "Hold Placed", "Tool Returned"` (a hold placed, and a tool coming back,
+  both make a hold fulfillable) and `updates from "Hold Collected", "Hold Cancelled", "Tool Checked Out"`.
+- **The model still knows every source.** `updates from` names are folded into the view's
+  `from` list (after the `from` names), so `derived from`, the fields-completeness checks,
+  [both-ends-of-a-flow](validation.md#both-ends-of-a-flow), `em slice sync`'s built-from list,
+  `em query` and drift all see them exactly as before. A model with no `updates from` is unchanged.
+- **No arrow is drawn for an `updates from` source.** The diagram's legend gains a "Kept
+  current by" section: `<View> — Event B, Event C`. `em render --slice` and `--storyline` draw
+  no source column for one either, the same treatment `loops-to` gets.
+- `em export` (schema `1.20`): the element gains `updatesFrom: { name, ref }[] | null`, the
+  same shape as `from`; `from` keeps the union. The resolved connection is in `model.edges`
+  with `source: "updates-from"`.
+
 ### One event recorded by several commands
 
 Two commands may record the same event. Declare the event in each slice, bare, with the same
@@ -774,7 +806,7 @@ storyline "Retire a product" after "Bring a product to market" {
   (`storyline-clause-on-continuation`).
 - **Render:** the full-model diagram draws a labelled band above the slice-header row spanning each run of
   a storyline's columns (a storyline interrupted by another gets one band segment per run). A model with
-  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone
+  no storylines renders exactly as before. `em render model.em --storyline "Name"` draws one story alone (its own slices, nothing from outside it)
   — see [cli.md](cli.md#em-render-file).
 - **Validation:** once any storyline exists, a slice outside every storyline is the advisory warning
   `slice-outside-storyline` (so a model can adopt storylines incrementally). `after` is checked as below. See [validation.md](validation.md#storylines).
@@ -809,8 +841,8 @@ as if its slices came after the referenced storyline's last slice:
   is declared *above* the one it comes after (`storyline-after-out-of-order`) — move the blocks into
   timeline order. There is no special render for that case; it is an error.
 - **Render:** the full-model render keeps file order (one timeline on the page).
-  `em render --storyline "<secondary>"` draws the referenced storyline's end state as dimmed stub columns on
-  the left, so the story reads left to right on its own.
+  `em render --storyline "<secondary>"` draws the secondary story's own slices only; what it continues
+  from the referenced storyline is not drawn in it.
 - `after` is optional. Without it, file order is the only timeline, exactly as before.
 
 ## Invariants

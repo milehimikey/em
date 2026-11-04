@@ -12,6 +12,10 @@ version: 1
 
 ![Diagram](./browse-catalog.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+Step 1 of 7 · the story starts here · before [View Open Orders](./view-open-orders.md) · State Change
+<!-- GENERATED:em-slice-story:end -->
+
 ## Intent
 
 A shopper has picked items from the product catalog and wants to commit to buying them.

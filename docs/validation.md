@@ -123,6 +123,7 @@ command deliberately never touches. See [cli.md#em-ledger-file](cli.md#em-ledger
 | A slice outside every storyline, once the model declares any `storyline` block (`slice-outside-storyline`, GH #277 — advisory so a model can adopt storylines incrementally) | Move the slice inside one of the storylines — see [Storylines](#storylines) |
 | A run of 3 or more consecutive State Change slices that all write one context, with the next view reading only that context (`timeline-entity-clustered`, GH #281) | If they are create/update/archive operations on one entity, order the slices by the business journey, interleaving contexts; if they are steps of one journey, show a screen after each step — see [Shape](#shape) |
 | A view reads another context's event only to fill a column, not because that event changes a row it owns (`view-lookup-source`, GH #398) — see [Shape](#shape) | Carry the field on the event that creates this view's own row instead, or accept a genuine cross-context row change on the shape exit gate |
+| A storyline reads another storyline's events (a `from`, `arrow` or `loops-to` crossing the boundary) without an `after` chain reaching it (`storyline-reads-without-after`, GH #420) — see [Shape](#shape) | Add `after "<that storyline>"` to the reading storyline, or accept the parallel stories on the shape exit gate |
 | A `view … again` instance restates an event an earlier instance already read, with that event not recorded again between them (`again-restates-sources`, GH #424) — see [Shape](#shape) | Name only the events that changed the view since the previous instance; field sources are the union across instances |
 | An element carries an open `issue "text"` | Resolve the question, then remove the clause |
 | A `view` field with no matching field on any source event, and not marked `derived` — or, for a collection field `T[] derived from "E1", …`, an element-type field of `T` that no named event carries and that is not itself marked `derived` on the `type`, as a top-level field or as a field of the declared element type of an array field on the event (one level, e.g. `optionValues: VariantOptionValue[]`); or a view field (plain, or a collection element) whose `derived from values[].attributeValueId` path source (GH #383) does not resolve on a source event (each segment's `[]` marker must match the event field's arrayness) or resolves only with a leaf type that does not match the field's | Add the field to the event, drop it from the view, mark it `derived` if it's genuinely computed, or give it a `derived from <path>` source if the event renamed/flattened it |
@@ -295,6 +296,16 @@ row-creating event, or accept the finding on the shape exit gate like any other 
 new DSL clause, the same `--waive-file`/Decisions-log mechanism every shape lint already uses.
 Carries the `shape` family.
 
+`storyline-reads-without-after` (GH #420) is an advisory lint for the flow between stories: a
+storyline that reads another storyline's events (any `from`, `arrow` or `loops-to` whose source
+sits in storyline A and target in storyline B) is, in story terms, after it, and the storyline
+canvas (`em render --map`) draws that read as a connector between the two frames. It fires once
+per (A, B) pair when B declares no `after` chain reaching A, naming the crossing events; `refs`
+are the crossing source elements then the reading elements. A pair related the other way round
+(A comes after B yet B reads A) is a backward feed the forward-only rules already report, so it
+is skipped. Fix: `storyline "B" after "A"` (or on a storyline between them); two stories that are
+parallel on purpose stay so — accept the finding on the shape exit gate. Carries the `shape`
+family.
 `again-restates-sources` (GH #424) is an advisory lint for continuations: a `view X again from
 …` instance names only the events that changed the view since the previous instance. It fires
 once per instance that restates a source an earlier instance of the same view already read, when
@@ -324,6 +335,7 @@ on that key) only silences the CLI count for an estate that carries shapes it ha
 never a substitute for the record. The skill refuses to move to the slice phase otherwise. `em engagement plan` lists the same findings on the engagement's slices in its pre-flight.
 A rule joins the family by registering `family: "shape"`; today that includes `timeline-entity-clustered`,
 `slice-outside-storyline`, `automation-split-by-outcome`, `retry-slice-of`, `view-lookup-source` and
+`storyline-reads-without-after`.
 `again-restates-sources`.
 
 `command-second-intent` (GH #286) is an advisory lint for a command carrying a second intent:

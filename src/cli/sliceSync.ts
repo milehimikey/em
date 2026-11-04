@@ -38,7 +38,7 @@ import { join } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
-import { buildSliceRegions, GeneratedRegion, scanSliceRegions } from "../catalog/sliceSections.js";
+import { buildSliceRegions, GeneratedRegion, regionEndLine, regionStartLine, scanSliceRegions } from "../catalog/sliceSections.js";
 import { isOldHashScope, parseSliceDoc, ratifiedHashScope, RatifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
 import { replaceFieldValue } from "./frontmatterSurgery.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "../emit/json.js";
@@ -95,6 +95,28 @@ export function syncDocText(raw: string, expected: GeneratedRegion[]): DocTextSy
   let next = raw;
   for (const e of [...edits].sort((a, b) => b.start - a.start)) next = next.slice(0, e.start) + e.text + next.slice(e.end);
   return { status: edits.length > 0 ? "stale" : "ok", regions, problems: [], next };
+}
+
+/**
+ * The one region `em slice sync` DOES insert when missing: `em-slice-story` (owner ruling
+ * 2026-11-03), placed right after the doc's `![Diagram](…)` line (else after its `# Slice:`
+ * title). Only on a doc that has regions and no `ratifiedHash:` — marker lines are authored
+ * text under the signature (catalog/sliceDoc.ts `stripGeneratedRegions`), so on a signed doc
+ * the region stays `missing` with its note until the next revision adds the pair. Pure.
+ */
+export function adoptStoryRegion(raw: string): { text: string; inserted: boolean; hadRegions: boolean } {
+  const scan = scanSliceRegions(raw);
+  const hadRegions = scan.regions.length > 0;
+  if (scan.problems.length > 0) return { text: raw, inserted: false, hadRegions };
+  if (scan.regions.some((r) => r.name === "em-slice-story")) return { text: raw, inserted: false, hadRegions };
+  if (parseSliceDoc(raw).ratifiedHash) return { text: raw, inserted: false, hadRegions };
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const lines = raw.split(eol);
+  let at = lines.findIndex((l) => /^!\[[^\]]*\]\(/.test(l));
+  if (at < 0) at = lines.findIndex((l) => /^# /.test(l));
+  if (at < 0) return { text: raw, inserted: false, hadRegions };
+  lines.splice(at + 1, 0, "", regionStartLine("em-slice-story"), regionEndLine("em-slice-story"));
+  return { text: lines.join(eol), inserted: true, hadRegions };
 }
 
 /** GH #347: what a region rewrite did to a doc's `ratifiedHash:` — `kept` (current scope, the
@@ -191,7 +213,19 @@ export function runSliceSync(
     const abs = join(baseDir, path);
     const raw = readFileSync(abs, "utf8");
     // GH #368: the doc's own authored scenarios retire the collection stubs they cover.
-    const result = syncDocText(raw, buildSliceRegions(model, indices, { authoredDoc: raw }));
+    // The story region is the one region sync inserts (unsigned docs only). A doc that had no
+    // regions at all — written before em slice sync existed — adopts just that line: its field
+    // tables are not inserted (still `em slice new --force`'s job), so it is synced against the
+    // story region alone and the other regions are not reported missing.
+    const adopted = adoptStoryRegion(raw);
+    const all = buildSliceRegions(model, indices, { authoredDoc: raw, storyOwner: ownerIdx, refs });
+    // A story-only doc (adopted now, or on an earlier run) is synced against the story line alone:
+    // its field tables were never generated, so they are not "missing" — `em slice new --force`
+    // is still how a doc adopts them.
+    const present = scanSliceRegions(adopted.text).regions.map((r) => r.name);
+    const storyOnly = present.length === 1 && present[0] === "em-slice-story";
+    const expected = storyOnly ? all.filter((r) => r.kind === "story") : all;
+    const result = syncDocText(adopted.text, expected);
     let status: DocSyncStatus = result.status;
     let regions = result.regions;
     let problems = result.problems;

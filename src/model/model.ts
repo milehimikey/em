@@ -36,6 +36,8 @@ export interface Element {
   context?: string;
   /** Source event names (view only). */
   from?: string[];
+  /** See ast.ts: the `updates from` subset of `from` (view only). */
+  updatesFrom?: string[];
   /** Markdown file holding this element's notes, relative to the .em file. */
   note?: string;
   /** Open question text, flagged red on the diagram until resolved. */
@@ -122,10 +124,6 @@ export interface Slice {
   /** Name of the `storyline "…" { … }` block the slice was declared in (GH #277); absent for a
    *  slice outside any storyline. */
   storyline?: string;
-  /** True for a stub column of an `em render --storyline` subset diagram (render/
-   *  storylineDiagram.ts): an element the storyline reads from outside it, drawn dimmed so its
-   *  arrows still have a source. Never set on a compiled model's slices. */
-  stub?: boolean;
   /** GH #287: set on a continuation column synthesized from a `view X again` line written inside
    *  another slice (`host` = index of that slice). Such a slice has no source text of its own, no
    *  doc, and is not listed by `em slice index`; its export key is `<host-key>--again`. */
@@ -272,6 +270,7 @@ export function normalize(ast: ModelNode): NormalizedModel {
         sliceIndex,
         line: el.line,
         from: el.from,
+        updatesFrom: el.updatesFrom,
         note: el.note,
         issue: el.issue,
         divergence: el.divergence,

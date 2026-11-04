@@ -339,8 +339,7 @@ program
   )
   .option(
     "--storyline <name>",
-    "render only this storyline: its slices in order, preceded by dimmed stub columns for what " +
-      "they read from outside it (and the end state of a storyline it comes `after`) " +
+    "render only this storyline: its own slices in order, nothing from outside it " +
       "(default out: storylines/<kebab-slug>.svg)",
   )
   .option("--emit-dot", "print the generated DOT instead of rendering")
@@ -949,7 +948,8 @@ slice
   )
   .argument("<file>", "input .em file")
   .option("--check", "verify the table is current; exit non-zero on drift without writing (CI)")
-  .action((file: string, opts: { check?: boolean }) => {
+  .option("--full", "every lifecycle column (reviewed/ratified/owner/tracking/implemented/conformed) instead of the reader's five")
+  .action((file: string, opts: { check?: boolean; full?: boolean }) => {
     const { model, diagnostics, refs } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
@@ -957,7 +957,7 @@ slice
       process.exit(1);
     }
 
-    const result = runSliceIndex(model, refs, file, !!opts.check);
+    const result = runSliceIndex(model, refs, file, !!opts.check, { full: !!opts.full });
     printDiagnostics(newDiagnostics(result.table.diagnostics, diagnostics));
 
     if (!result.ok) {
@@ -968,6 +968,12 @@ slice
       console.log(`wrote ${result.readmePath}`);
     } else {
       console.log(`ok — ${result.readmePath}'s Slices table is already up to date`);
+    }
+    if (result.storylines === "absent") {
+      console.log(
+        `note: ${result.readmePath} has no <!-- GENERATED:storylines:start --> / :end markers, so the storyline table ` +
+          "was not written — add the ## Storylines section from templates/model-readme.md to get it",
+      );
     }
   });
 

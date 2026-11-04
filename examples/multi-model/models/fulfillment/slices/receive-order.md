@@ -9,6 +9,10 @@ version: 1
 
 ![Diagram](./receive-order.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+Step 1 of 4 · the story starts here · before [Orders To Fulfil](./orders-to-fulfil.md) · Translation
+<!-- GENERATED:em-slice-story:end -->
+
 ## Intent
 Every order checkout submits reaches the warehouse as an order to fulfil.
 

@@ -79,6 +79,10 @@ implementedIn: {{PR/commit link — fill in once status is `implemented`}}
 
 ![Diagram](./{{slice-name}}.svg)
 
+<!-- GENERATED:em-slice-story:start — generated from the model by `em slice sync`; do not hand-edit -->
+_Run `em slice sync` to place this slice in its story._
+<!-- GENERATED:em-slice-story:end -->
+
 <!-- Only on re-ratification of an already-`implemented` slice — omit this whole section on a
      slice's first version (v1 has no delta yet). The heading is always the literal `## Delta`,
      never `## Delta: vX → vY` — hop metadata is a display line inside the section instead (see
