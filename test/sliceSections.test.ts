@@ -48,7 +48,9 @@ const MODEL = [
 
 function regionsOf(sliceIndex: number) {
   const { model } = compile(MODEL);
-  return buildSliceRegions(model, [sliceIndex]);
+  // the `em-slice-story` line always comes first (test/storyNav.test.ts covers it); these tests
+  // are about the table regions that follow it
+  return buildSliceRegions(model, [sliceIndex]).filter((r) => r.kind !== "story");
 }
 
 describe("buildSliceRegions", () => {
@@ -144,7 +146,7 @@ describe("scanSliceRegions / findStructuredSectionProblems", () => {
     ).toEqual(['region "em-slice-event" starts inside region "em-slice-command" (no end marker for "em-slice-command" before it)']);
     expect(scanSliceRegions(`${ok}\n${ok}\n`).problems).toEqual(['region "em-slice-command" appears more than once']);
     expect(scanSliceRegions("<!-- GENERATED:em-slice-notes:start -->\n<!-- GENERATED:em-slice-notes:end -->\n").problems).toEqual([
-      'region "em-slice-notes" is not a known generated region (em-slice-command|event|view[-<slug>], em-slice-invariants)',
+      'region "em-slice-notes" is not a known generated region (em-slice-story, em-slice-command|event|view[-<slug>], em-slice-invariants)',
     ]);
   });
 

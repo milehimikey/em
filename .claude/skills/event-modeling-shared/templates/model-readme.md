@@ -31,14 +31,22 @@ Change slice is paired with the State View slice that projects its event. A read
 along the timeline (`view X again`) shows the same projection at a later point; the instances are
 never connected to one another.
 
+## Storylines
+<!-- Generated — `em slice index {{model-name}}.em` writes one row per storyline between the
+     markers (count, implemented, diagram); the canvas is `em render {{model-name}}.em --map`. -->
+<!-- GENERATED:storylines:start -->
+| Storyline | Slices | Implemented | Diagram |
+|-----------|--------|-------------|---------|
+<!-- GENERATED:storylines:end -->
+
 ## Slices
 <!-- The canonical slice index — the ONE place slices are enumerated (the state file
      points here rather than keeping its own copy). Generated — run
      `em slice index {{model-name}}.em` to (re)write the table below from the model and its
      slice docs; never hand-edit between the markers. -->
 <!-- GENERATED:slices:start -->
-| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |
-|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|
+| # | Slice | Pattern | Status | Design doc |
+|---|-------|---------|--------|------------|
 <!-- GENERATED:slices:end -->
 
 ## Status

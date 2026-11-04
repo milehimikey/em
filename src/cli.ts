@@ -981,7 +981,8 @@ slice
   )
   .argument("<file>", "input .em file")
   .option("--check", "verify the table is current; exit non-zero on drift without writing (CI)")
-  .action((file: string, opts: { check?: boolean }) => {
+  .option("--full", "every lifecycle column (reviewed/ratified/owner/tracking/implemented/conformed) instead of the reader's five")
+  .action((file: string, opts: { check?: boolean; full?: boolean }) => {
     const { model, diagnostics, refs } = compileFile(file);
     printDiagnostics(diagnostics);
     if (hasErrors(diagnostics)) {
@@ -989,7 +990,7 @@ slice
       process.exit(1);
     }
 
-    const result = runSliceIndex(model, refs, file, !!opts.check);
+    const result = runSliceIndex(model, refs, file, !!opts.check, { full: !!opts.full });
     printDiagnostics(newDiagnostics(result.table.diagnostics, diagnostics));
 
     if (!result.ok) {
@@ -1000,6 +1001,12 @@ slice
       console.log(`wrote ${result.readmePath}`);
     } else {
       console.log(`ok — ${result.readmePath}'s Slices table is already up to date`);
+    }
+    if (result.storylines === "absent") {
+      console.log(
+        `note: ${result.readmePath} has no <!-- GENERATED:storylines:start --> / :end markers, so the storyline table ` +
+          "was not written — add the ## Storylines section from templates/model-readme.md to get it",
+      );
     }
   });
 

@@ -1974,8 +1974,8 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     expect(readme).toContain("em watch order-fulfillment.em -o order-fulfillment.svg --serve");
     expect(readme).toContain(
       "<!-- GENERATED:slices:start -->\n" +
-        "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Design doc |\n" +
-        "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|------------|\n" +
+        "| # | Slice | Pattern | Status | Design doc |\n" +
+        "|---|-------|---------|--------|------------|\n" +
         "<!-- GENERATED:slices:end -->",
     );
 
@@ -3395,7 +3395,7 @@ describe("em slice index (CLI, MIL-98)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote README.md");
     const readme = readFileSync(join(sliceIndexDir, "README.md"), "utf8");
-    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — | — | — | — | — | — | — |");
+    expect(readme).toContain("| 1 | Place | State Change | no doc yet | — |");
     expect(readme).toContain("Open Orders");
   });
 

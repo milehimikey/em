@@ -77,6 +77,14 @@ export const RULES = {
     docAnchor: "shape",
     family: "shape",
   },
+  "storyline-reads-without-after": {
+    severity: "warning",
+    title: "Storyline reads another without declaring `after` it",
+    fix: "Add `after \"<the storyline it reads>\"` to the reading storyline (or to one between them); if the two stories are parallel on purpose, accept it on the shape exit gate (docs/storyline.md).",
+    usageCategory: "storyline reads another without after",
+    docAnchor: "shape",
+    family: "shape",
+  },
   "view-lookup-source": {
     severity: "warning",
     title: "View reads an event only as a lookup",

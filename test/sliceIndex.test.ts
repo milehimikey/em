@@ -77,12 +77,13 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 describe("buildSliceIndexTable", () => {
   it("builds a header + one row per slice, using em export's own key/pattern/doc facts", () => {
     const { model, refs } = compile(MODEL);
-    const { markdown, rows, diagnostics } = buildSliceIndexTable(model, refs, dir);
+    const { markdown, rows, diagnostics } = buildSliceIndexTable(model, refs, dir, { full: true });
 
     expect(diagnostics).toEqual([]);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       index: 1,
+      sliceIndex: 0,
       name: "Place Order",
       storyline: "—",
       pattern: "State Change",
@@ -100,6 +101,11 @@ describe("buildSliceIndexTable", () => {
         "https://tracker.example/issue/42 | https://github.com/example/repo/pull/42 | v2 @ 8f12ed8 | " +
         "[slices/place-order.md](slices/place-order.md) |",
     );
+    // the default table is the reader's: five columns, no lifecycle facts (2026-11-03 ruling)
+    const reader = buildSliceIndexTable(model, refs, dir);
+    expect(reader.markdown.split("\n")[0]).toBe("| # | Slice | Pattern | Status | Design doc |");
+    expect(reader.markdown).toContain("| 1 | Place Order | State Change | implemented | [slices/place-order.md](slices/place-order.md) |");
+    expect(reader.storylinesMarkdown).toBe("");
   });
 
   it("renders a slice with no bound doc as 'no doc yet', with an em-dash for Reviewed by/Ratified by/Owner/Tracking/Implemented in/Conformed", () => {
@@ -108,6 +114,7 @@ describe("buildSliceIndexTable", () => {
 
     expect(rows[1]).toEqual({
       index: 2,
+      sliceIndex: 1,
       name: "Open Orders",
       storyline: "—",
       pattern: "State View",
@@ -124,7 +131,7 @@ describe("buildSliceIndexTable", () => {
 
   it("GH #275: a doc-less slice gets an em-dash in the Design doc cell, not a link to a file that does not exist", () => {
     const { model, refs } = compile(MODEL);
-    const { markdown } = buildSliceIndexTable(model, refs, dir);
+    const { markdown } = buildSliceIndexTable(model, refs, dir, { full: true });
     const row = markdown.split("\n").find((l) => l.includes("Open Orders"))!;
     expect(row.endsWith("| — | — | — | — | — | — |")).toBe(true);
     expect(row).not.toContain("slices/open-orders.md");
@@ -173,7 +180,8 @@ slice "Show Again" {
     const { model, refs } = compile("persona Customer\n");
     const { markdown, rows } = buildSliceIndexTable(model, refs, dir);
     expect(rows).toEqual([]);
-    expect(markdown).toBe(
+    expect(markdown).toBe("| # | Slice | Pattern | Status | Design doc |\n|---|-------|---------|--------|------------|");
+    expect(buildSliceIndexTable(model, refs, dir, { full: true }).markdown).toBe(
       "| # | Slice | Pattern | Status | Reviewed by | Ratified by | Owner | Tracking | Implemented in | Conformed | Design doc |\n" +
         "|---|-------|---------|--------|-------------|-------------|-------|----------|----------------|-----------|------------|",
     );
