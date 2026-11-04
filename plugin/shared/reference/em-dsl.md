@@ -23,7 +23,7 @@ em render <file>                                                    # transpile 
 em render <file> -o, --out <path>                                   # output path (extension picks the format)
 em render <file> -T, --format <fmt>                                 # output format (svg, png, pdf, ...)
 em render <file> --slice <name>                                     # render only this slice, redrawn in its own canonical pattern shape (default out: slices/<kebab-slug>.svg)
-em render <file> --storyline <name>                                 # render only this storyline: its slices in order, preceded by dimmed stub columns for what they read from outside it (and the end state of a storyline it comes `after`) (default out: storylines/<kebab-slug>.svg)
+em render <file> --storyline <name>                                 # render only this storyline: its own slices in order, nothing from outside it (default out: storylines/<kebab-slug>.svg)
 em render <file> --emit-dot                                         # print the generated DOT instead of rendering
 em render <file> --keep-empty-lanes                                 # keep the API lane even when empty
 em export <file>                                                    # export a versioned JSON snapshot of the normalized model
