@@ -339,8 +339,7 @@ program
   )
   .option(
     "--storyline <name>",
-    "render only this storyline: its slices in order, preceded by dimmed stub columns for what " +
-      "they read from outside it (and the end state of a storyline it comes `after`) " +
+    "render only this storyline: its own slices in order, nothing from outside it " +
       "(default out: storylines/<kebab-slug>.svg)",
   )
   .option("--emit-dot", "print the generated DOT instead of rendering")
