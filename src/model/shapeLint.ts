@@ -12,6 +12,8 @@ import { normalizeName } from "./model.js";
 import type { Element, NormalizedModel } from "./model.js";
 import type { RefsResult } from "./refs.js";
 import { viewSourceNames } from "./continuation.js";
+import { semanticEdges } from "./edges.js";
+import { afterChain, storylineOfSlice } from "./storylines.js";
 import { pushDiag } from "./rules.js";
 import type { Diagnostic } from "./validate.js";
 
@@ -218,5 +220,40 @@ export function shapeDiagnostics(model: NormalizedModel, refs: RefsResult, diags
         refs: [refOf(v.id), refOf(srcEvent.id), ...rowCreators.map((rv) => refOf(rv.id))],
       });
     }
+  }
+
+  // --- storyline-reads-without-after (GH #420) ---
+  // A storyline that reads another storyline's events is, in story terms, after it. The canvas
+  // (`em render --map`) shows such reads as dashed connectors; this advisory lint asks for the
+  // declaration: one finding per (source storyline, reading storyline) pair whose reading side
+  // declares no `after` chain reaching the source. A pair related the other way round (the
+  // source comes after the reader) is a backward feed the forward-only rules already report, so
+  // it is skipped here. Parallel storylines that read nothing from each other stay quiet.
+  const crossings = new Map<string, { from: string; to: string; line: number; sources: Element[]; targets: Element[] }>();
+  for (const e of semanticEdges(model)) {
+    const src = model.byId.get(e.from);
+    const dst = model.byId.get(e.to);
+    if (!src || !dst) continue;
+    const a = storylineOfSlice(model, src.sliceIndex);
+    const b = storylineOfSlice(model, dst.sliceIndex);
+    if (!a || !b || a === b) continue;
+    if (afterChain(model, b).includes(a) || afterChain(model, a).includes(b)) continue;
+    const key = `${a.name}\u0000${b.name}`;
+    let c = crossings.get(key);
+    if (!c) crossings.set(key, (c = { from: a.name, to: b.name, line: b.line, sources: [], targets: [] }));
+    if (!c.sources.some((s) => s.id === src.id)) c.sources.push(src);
+    if (!c.targets.some((s) => s.id === dst.id)) c.targets.push(dst);
+  }
+  const ordered = [...crossings.values()].sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to));
+  for (const c of ordered) {
+    const names = c.sources.map((s) => `"${s.name}"`).join(", ");
+    pushDiag(diags, "storyline-reads-without-after", {
+      message:
+        `storyline "${c.to}" reads ${names} from storyline "${c.from}" but declares no \`after\` reaching it — ` +
+        `a story that reads another comes after it: add \`after "${c.from}"\` to storyline "${c.to}" (or to a ` +
+        `storyline between them), or keep them parallel on purpose and accept this on the shape exit gate (docs/storyline.md)`,
+      line: c.line,
+      refs: [...c.sources.map((s) => refOf(s.id)), ...c.targets.map((s) => refOf(s.id))],
+    });
   }
 }
