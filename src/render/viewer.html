@@ -47,6 +47,14 @@
   switch which one is loaded — a plain navigation to this same page with a new `?svg=`,
   so it needs no new fetch/reload machinery of its own. `--storyline <name>` just picks
   which file is loaded first; the picker works the same with or without it.
+
+  Storyline canvas (GH #422): when the model declares storylines the live session opens on
+  the canvas the server serves at /map (src/render/storylineMap.ts, built live) and a frame's
+  "open ›" lands here inside that storyline's subset. The "‹ Storylines" breadcrumb in the
+  header goes back to /map; it shows exactly when the em-storylines metadata is present,
+  which is exactly when the server has a canvas to serve. Review mode needs nothing new:
+  a subset's em-slices metadata holds that storyline's slices only, so Prev/Next walk the
+  chosen storyline and nothing else.
 -->
 <html lang="en">
 <head>
@@ -80,6 +88,8 @@
       padding: .3rem .5rem; font-size: 13px; cursor: pointer; font-family: inherit;
     }
     #storylinePicker[hidden] { display: none; }
+    #canvasLink { text-decoration: none; }
+    #canvasLink[hidden] { display: none; }
     #storylinePicker option { color: #000; }
     #errorBanner {
       display: flex; align-items: center; gap: .6rem; flex: none;
@@ -194,6 +204,7 @@
     <span class="dot" id="dot"></span>
     <span>Event Model — live</span>
     <button class="btn" id="reviewToggle" title="Step through one slice at a time">Review mode</button>
+    <a class="btn" id="canvasLink" href="/map" title="Back to the storyline canvas" hidden>‹ Storylines</a>
     <select id="storylinePicker" title="Filter the live view to one storyline" hidden></select>
     <span class="zoom">
       <button class="btn" id="zoomOut" aria-label="Zoom out" title="Zoom out (-)">−</button>
@@ -239,6 +250,7 @@
     const bannerText = document.getElementById("errorText");
     const reviewToggle = document.getElementById("reviewToggle");
     const storylinePicker = document.getElementById("storylinePicker");
+    const canvasLink = document.getElementById("canvasLink");
     const storyboard = document.getElementById("storyboard");
     const filmstrip = document.getElementById("filmstrip");
     const prevBtn = document.getElementById("prevSlice");
@@ -556,6 +568,8 @@
     // Hidden entirely when the model declares none (storylineVariants is []).
     function renderStorylinePicker() {
       storylinePicker.hidden = storylineVariants.length === 0;
+      // GH #422: the breadcrumb back to the canvas comes and goes with the picker.
+      canvasLink.hidden = storylineVariants.length === 0;
       storylinePicker.innerHTML = "";
       for (const v of storylineVariants) {
         const opt = document.createElement("option");

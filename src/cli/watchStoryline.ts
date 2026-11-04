@@ -58,3 +58,13 @@ export function resolveWatchStoryline(model: NormalizedModel, name: string | und
         : `em watch --storyline: no storyline "${name}" (declared: ${known})`,
   };
 }
+
+/** GH #422: the URL `em watch --serve` prints. A model that declares storylines opens on the
+ *  storyline canvas (`/map`, the page `em render --map` builds, served live) unless
+ *  `--storyline` pinned one storyline, in which case the viewer opens inside that storyline as
+ *  before (#309). `--storyline` aside, the full timeline is one picker entry away, never the
+ *  landing page (owner ruling 2026-11-03). */
+export function liveViewUrl(base: string, liveFile: string, hasStorylines: boolean, pinned: boolean): string {
+  if (hasStorylines && !pinned) return `${base}/map`;
+  return `${base}/?svg=${encodeURIComponent(liveFile)}`;
+}

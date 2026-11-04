@@ -64,6 +64,13 @@ describe("live server", () => {
     expect(body).toContain('location.search = "svg=" + encodeURIComponent(storylinePicker.value)');
   });
 
+  it("GH #422: serves the breadcrumb back to the storyline canvas, shown with the picker", async () => {
+    const body = await (await fetch(`${base}/`)).text();
+    expect(body).toContain('id="canvasLink" href="/map"');
+    expect(body).toContain("‹ Storylines");
+    expect(body).toContain("canvasLink.hidden = storylineVariants.length === 0");
+  });
+
   it("sanitizes ?svg= and inlines the SVG via validate-before-swap (no <object>)", async () => {
     // Successor to the MIL-136 <object> regression test: the viewer now inlines
     // the SVG (fetch → DOMParser → validate → swap), so a truncated or malformed

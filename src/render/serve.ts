@@ -59,6 +59,11 @@ export interface StartOptions {
   dir: string;
   /** Preferred port; falls forward to the next free one if taken. */
   port?: number;
+  /** GH #422: the storyline canvas to serve at /map (src/render/storylineMap.ts built with
+   *  `live: true`), read on every request so each rebuild's page is what the next load gets.
+   *  Returning undefined (or no provider at all) makes /map a 404: the model declares no
+   *  storylines, so there is no canvas. */
+  canvas?: () => string | undefined;
 }
 
 /**
@@ -68,7 +73,7 @@ export async function startLiveServer(opts: StartOptions): Promise<LiveServer> {
   const root = resolve(opts.dir);
   const clients = new Set<ServerResponse>();
 
-  const server = createServer((req, res) => handle(req, res, root, clients));
+  const server = createServer((req, res) => handle(req, res, root, clients, opts.canvas));
 
   const port = await listen(server, opts.port ?? DEFAULT_PORT);
 
@@ -130,6 +135,7 @@ function handle(
   res: ServerResponse,
   root: string,
   clients: Set<ServerResponse>,
+  canvas?: () => string | undefined,
 ): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   let pathname: string;
@@ -153,6 +159,23 @@ function handle(
       "cache-control": "no-store",
     });
     res.end(VIEWER_HTML);
+    return;
+  }
+
+  // GH #422: the storyline canvas, live. Built in memory by the watch action on every render
+  // (never written to disk — `em render --map` is the on-disk page) and read here per request.
+  if (pathname === "/map") {
+    const html = canvas?.();
+    if (html === undefined) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("no storyline canvas: this model declares no storylines");
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    res.end(html);
     return;
   }
 

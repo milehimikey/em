@@ -15,8 +15,16 @@ description: >-
 Start the watcher with `--serve` in the background:
 `em watch <model-name>.em -o <model-name>.svg --serve` (run_in_background). It re-renders on every
 save and pushes an instant reload to the browser over Server-Sent Events. Tell the user to open the
-URL it prints (e.g. `http://localhost:5173/?svg=<model-name>.svg`) and share their screen — updates
-appear the moment you save, with no polling and no idle churn between edits.
+URL it prints and share their screen — updates appear the moment you save, with no polling and no
+idle churn between edits.
+
+What that URL opens depends on the model. A model that declares storylines opens on the
+**storyline canvas** (`http://localhost:5173/map`): every storyline's own diagram in a draggable
+frame, the flow between storylines drawn between frames, reloaded live on every save with the
+layout kept. A frame's **open ›** drills into that storyline — the viewer on its own slices and
+nothing from outside it — and **‹ Storylines** in the header returns to the canvas. A model
+without storylines opens on the timeline (`http://localhost:5173/?svg=<model-name>.svg`). Never
+send a room to the full timeline of a storyline model; the storyline is the unit people read.
 
 The viewer navigates like a map — drag to pan, scroll/pinch to zoom, **Fit** to reset — and its
 **Review mode** steps through slices one at a time (see the `review` phase below). A save that
@@ -34,10 +42,14 @@ speculation.** Don't propose this phase proactively; it exists for facilitated r
 non-engineer stakeholders in the room, not routine model editing.
 
 Start the same live server as `watch`: `em watch <model-name>.em -o <model-name>.svg --serve`
-(run_in_background). Open the printed URL, click **Review mode** in the header, and share the
-screen. Use Prev/Next (or the left/right arrow keys) to step through slices in declaration
-order — each one pans/zooms into view with everything else dimmed, so the room's attention
-tracks one slice at a time.
+(run_in_background). Open the printed URL and share the screen. With storylines, review one
+storyline at a time: open it from the canvas (or start inside it with `--storyline "<name>"`),
+then click **Review mode** in the header — Prev/Next walk that storyline's slices only. Between
+storylines, **‹ Storylines** returns to the canvas, where the arrows between frames are the
+order to take them in. Without storylines, click **Review mode** on the timeline. Use Prev/Next
+(or the left/right arrow keys) to step through slices in declaration order — each one
+pans/zooms into view with everything else dimmed, so the room's attention tracks one slice at
+a time.
 
 **When a State View slice is on screen, ask who reads it (MIL-215):** a person or client in the
 room → the `ui` should draw it; another system → `public`; only an automation → nothing, it's
