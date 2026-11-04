@@ -107,6 +107,11 @@ export interface ElementNode {
   context?: string;
   /** `from "Event", "Event2"` — only meaningful for `view`. */
   from?: string[];
+  /** `updates from "Event A", "Event B"` (view only): the subset of `from` that keeps rows
+   *  current or removes them rather than putting work on the list. The parser folds these
+   *  names into `from` too, so every source-reading consumer sees them unchanged; only the
+   *  renderer (no arrow, legend row) and the export (`updatesFrom`) tell them apart. */
+  updatesFrom?: string[];
   /** `note "path.md"` — markdown file holding this element's notes. */
   note?: string;
   /** `issue "text"` — an open question, flagged red on the diagram until resolved. */

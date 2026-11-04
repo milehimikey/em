@@ -843,6 +843,23 @@ function extractClauses(
     rest = shownOnClause.rest;
   }
 
+  // `updates from "A", "B"` clause (view only): the events that change or remove rows the view
+  // already owns, as opposed to `from`, the events that put work on the list. Extracted here,
+  // before the plain `from` clause below, for the same reason `renamed from` is — it ends in
+  // the word `from`. Non-greedy, so `view X from "A" updates from "B"` and the reverse order
+  // both leave a clean `from "A"` behind. The names are folded into `node.from` after that
+  // clause is read (see `node.updatesFrom` in ast.ts): the model keeps knowing every source.
+  const updatesFromClause = extractQuotedListClause(rest, "updates\\s+from", "updates from", line);
+  if (updatesFromClause) {
+    if (node.kind !== "view")
+      throw new ParseError(
+        "`updates from` is only valid on view — only a read model has rows for an event to keep current",
+        line,
+      );
+    node.updatesFrom = updatesFromClause.values;
+    rest = updatesFromClause.rest;
+  }
+
   // `from "A", "B"` clause (views and reactions). The keyword is case-sensitive
   // and its operand must open with a quote, so a capitalized `From` — or a bare
   // lowercase `from` — inside an element name (`event Widget Removed From
@@ -859,6 +876,14 @@ function extractClauses(
       throw new ParseError("unterminated string literal in 'from' clause", line);
     node.from = splitQuotedList(fromMatch[1]);
     rest = rest.slice(0, fromMatch.index).trim();
+  }
+  // Fold the `updates from` names into `from` (after the `from` names, once each): clauses are
+  // extracted from the header line and again from whatever trails an inline `{ … }` block,
+  // so only the call that found the clause folds, and a name already in `from` is not repeated.
+  if (updatesFromClause) {
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+    const have = new Set((node.from ?? []).map(norm));
+    for (const v of updatesFromClause.values) if (!have.has(norm(v))) (node.from ??= []).push(v);
   }
 
   // `public` clause (command, event or view): marks this element as part of the published

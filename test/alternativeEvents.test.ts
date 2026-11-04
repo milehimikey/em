@@ -98,7 +98,7 @@ describe("alternative events (GH #278)", () => {
     const els = (doc as any).model.slices[0].elements;
     const cmd = els.find((e: any) => e.kind === "command");
     const [a, b] = els.filter((e: any) => e.kind === "event");
-    expect((doc as any).schemaVersion).toBe("1.19");
+    expect((doc as any).schemaVersion).toBe("1.20");
     expect(a.alternativeGroup).toBe(a.ref);
     expect(b.alternativeGroup).toBe(a.ref);
     expect(cmd.alternativeGroup).toBeNull();

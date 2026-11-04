@@ -255,7 +255,7 @@ renders.
 | `-o, --out <path>` | Output path; the extension picks the format |
 | `-T, --format <fmt>` | Output format (`svg`, `png`, `pdf`, …); takes precedence over the `-o` extension |
 | `--slice <name>` | Render only this slice, redrawn in its own canonical pattern shape (default out: `slices/<kebab-slug>.svg`) |
-| `--storyline <name>` | Render only this storyline (GH #277): its slices in order, preceded by dimmed stub columns for what they read from outside it (default out: `storylines/<kebab-slug>.svg`) |
+| `--storyline <name>` | Render only this storyline (GH #277): its own slices in order, nothing from outside it (default out: `storylines/<kebab-slug>.svg`) |
 | `--map` | Render every storyline to `storylines/<kebab-slug>.svg` **and** the storyline canvas `storylines/map.html`: each storyline's real diagram in a draggable frame, the flow between storylines drawn between frames (`-o` picks the html path) |
 | `--emit-dot` | Print the generated Graphviz DOT instead of rendering (or write it with `-o`) |
 | `--keep-empty-lanes` | Keep the API lane even when no slice uses it |
@@ -272,13 +272,13 @@ em render model.em --storyline "Retire a product"   # -> storylines/retire-a-pro
 the full diagram gains a labelled band above the slice-header row spanning each run of a storyline's
 columns (one segment per run when a storyline is interrupted by another). A model without storylines
 renders exactly as before. `--storyline <name>` is not `--slice`: it keeps the normal timeline's columns
-but only a subset of them — the storyline's own slices, in order, plus **stub columns** on the left drawn
-dimmed: every element a slice of the storyline reads from outside it (so each arrow still has a source),
-and, for a storyline declared `after "<other>"`, the end state of the storyline it follows (the latest
-instance of each read model it continues with `again`). A stub column holds only the referenced elements
-of its origin slice. The name is matched case-insensitively (an unknown name lists every storyline);
-`--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch --serve` takes the same
-`--storyline` filter — see [`em watch`](#em-watch-file) below.
+but only a subset of them — the storyline's own slices, in order, and **nothing from outside it**: an
+element the storyline reads from another storyline (an event feeding its to-do list, the end state of the
+storyline it comes `after`) has no box in this picture, so that arrow is not drawn here. The flow between
+stories is the storyline map's job, not the storyline's. The name is matched case-insensitively (an unknown
+name lists every storyline); `--storyline` can't be combined with `--slice` or `--emit-dot`. `em watch
+--serve` takes the same `--storyline` filter — see [`em watch`](#em-watch-file) below — and draws the same
+stub-free subset.
 
 **The storyline canvas (`--map`).** `em render model.em --map` renders every storyline alone (as
 `--storyline` would, to `storylines/<kebab-slug>.svg`) and writes `storylines/map.html`: one
@@ -362,8 +362,8 @@ session on top of it.
 
 **Storyline filter (GH #309, deferred from #277).** `--storyline <name>` serves the same
 subset `em render --storyline` draws (see above) instead of the whole model — the storyline's
-own slices, in order, plus its dimmed stub columns — and Review mode then steps through that
-storyline's own slices only (stub columns are never part of the storyboard). The name is
+own slices, in order, nothing from outside it — and Review mode steps through exactly those
+slices. The name is
 validated on every rebuild the same way `em render --storyline` validates it: an unknown name
 errors, listing the declared storylines, without killing the watcher.
 
@@ -789,6 +789,10 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     order: `{ name, source, after, sliceKeys }` — `source`/`after` are `null` when the block gives
     none, `sliceKeys` the member slices' export keys in order. Every slice also carries
     `storyline` (`string | null`, the block it is declared in).
+  - Each element carries `updatesFrom` (added in schema `1.20`): on a view, the `{ name, ref }[]`
+    subset of `from` declared with `updates from` (events that keep rows current or remove them,
+    never drawn as arrows); `from` keeps the full source list. `null` on every other element and
+    on a view without the clause. See [dsl.md](dsl.md#updates-from).
   - `storylineEdges` (added in schema `1.20`) is the storyline map: `{ from, to, kind, elements }[]`
     where `kind` is `"after"` (a declared `after`, `elements` empty) or `"reads"` (elements of
     storyline `from` feeding storyline `to`, each `{ name, ref }`), `after` edges first, then reads
@@ -959,7 +963,9 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     same-slice view only when that view has no `from` clause; self-loops are dropped). `source`
     is `"pattern"` (inferred from the slice's pattern shape), `"from"` (resolved from a `from
     "Name"` clause), `"arrow"` (a declared `arrow`), or `"loops-to"` (added in schema `1.11`,
-    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to))
+    MIL-199 — resolved from an event's `loops-to "View"` clause; see [dsl.md](dsl.md#loops-to)),
+    or `"updates-from"` (added in schema `1.20` — resolved from a view's `updates from "Event"`
+    clause, the sources that keep rows current or remove them; see [dsl.md](dsl.md#updates-from))
     — **first-wins** on a duplicate `(from, to)` pair in that order, so an `arrow` that restates
     an inferred connection appears once, tagged `pattern` (`arrows` still records it as
     authored). A `loops-to` edge is the one edge the renderer never draws as an arrow — see
