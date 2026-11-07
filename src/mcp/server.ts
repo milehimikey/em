@@ -88,6 +88,8 @@ import { buildMetricsJson } from "../emit/metricsJson.js";
 import { runSystemScope } from "../cli/scopeInputs.js";
 import { buildScopeJson } from "../emit/scopeJson.js";
 import { checkFindingsFile, buildCheckFindingsJson } from "../cli/findings.js";
+import { runBindingsCheck, buildBindingsCheckJson } from "../cli/bindings.js";
+import { resolveSliceKey } from "../model/resolveSlice.js";
 import { checkPrdTriage, buildCheckPrdTriageJson } from "../cli/prdTriage.js";
 import { compileForQuery } from "../query/pipeline.js";
 import type { ModelIndex } from "../model/queryIndex.js";
@@ -974,6 +976,41 @@ export function createServer(): McpServer {
     },
     async ({ path }) => {
       return textResult(buildCheckFindingsJson(checkFindingsFile(path)));
+    },
+  );
+
+  server.registerTool(
+    "conform_bindings_check",
+    {
+      title: "Verify per-slice bindings manifests against a target repo",
+      description:
+        "Return the same JSON document `em conform bindings check <file> --repo <repo> --json` " +
+        "prints (GH #449): for each conformance/bindings/<slice-key>.yaml beside `file` (or just " +
+        "`slice`'s), whether each bound element's `ref` resolves against the compiled model and " +
+        "each bound `file`/`identifier` exists/is found under `repo` (plain substring, never " +
+        "code-parsed). Distinct failure kinds: an unknown `slice` key (tool error), a missing " +
+        "bindings file, malformed YAML, an unknown slice named inside a file, and an unknown " +
+        "element ref. Advisory only — read-only, never wired into `validate`/`slice_ready`.",
+      inputSchema: {
+        file: z.string().describe("input .em model file"),
+        repo: z.string().describe("path to the target codebase (bound files resolve relative to it; not required to be a git repository)"),
+        slice: z.string().optional().describe("check only this slice's bindings file (default: every conformance/bindings/*.yaml)"),
+      },
+    },
+    async ({ file, repo, slice }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const { model, refs, diagnostics } = compiled;
+      if (hasErrors(diagnostics)) {
+        return errorResult(`not checking bindings: "${file}" has errors — run \`validate\` first and fix them`);
+      }
+      let sliceKey: string | undefined;
+      if (slice !== undefined) {
+        const resolved = resolveSliceKey(model, refs, slice);
+        if (!resolved.ok) return errorResult(resolved.message);
+        sliceKey = resolved.key;
+      }
+      return textResult(buildBindingsCheckJson(runBindingsCheck(refs, dirname(file), repo, sliceKey)));
     },
   );
 

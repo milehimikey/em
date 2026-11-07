@@ -145,6 +145,7 @@ import {
 } from "./cli/sliceConform.js";
 import { checkPrdTriage, buildCheckPrdTriageJson, renderPrdTriageMarkdown, validatePrdTriage } from "./cli/prdTriage.js";
 import { checkFindingsFile, buildCheckFindingsJson, FindingLocus, FINDING_LOCI } from "./cli/findings.js";
+import { runBindingsCheck, buildBindingsCheckJson, renderBindingsCheckText } from "./cli/bindings.js";
 import {
   STATE_FILE_NAME,
   PHASES,
@@ -2147,6 +2148,46 @@ conformFindings
       for (const e of result.errors) console.error(`  - ${e}`);
     }
     if (!result.ok) process.exit(1);
+  });
+
+const conform = program.command("conform").description("file-contract conformance checks (advisory only, GH #449 — never wired into validate/--slice-ready)");
+const conformBindings = conform.command("bindings").description("per-slice bindings manifests (conformance/bindings/<slice-key>.yaml, see docs/bindings.md)");
+
+conformBindings
+  .command("check")
+  .description(
+    "verify every per-slice bindings manifest (conformance/bindings/<slice-key>.yaml, see " +
+      "docs/bindings.md): each bound element's `ref` resolves against the compiled model, and " +
+      "each bound `file` exists under --repo and contains its `identifier` as a plain substring " +
+      "(grep-level only, never code-parsed — language-agnostic). Distinct failure kinds: an " +
+      "unknown `--slice` key, a missing bindings file, malformed YAML, an unknown slice named " +
+      "inside a file, and an unknown element ref. Advisory only — exit code stays 0 unless " +
+      "--exit-code is given and a binding failed (the opt-in CI gate, same posture as `em refs " +
+      "--reachable-from`).",
+  )
+  .argument("<file>", "input .em file")
+  .requiredOption("--repo <path>", "path to the target codebase (bound `file`s resolve relative to it; never required to be a git repository)")
+  .option("--slice <key>", "check only this slice's bindings file (default: every conformance/bindings/*.yaml)")
+  .option("--json", "print a JSON document instead of the text report")
+  .option("--exit-code", "exit 1 if any binding failed (git-diff convention) — the opt-in CI gate")
+  .action((file: string, opts: { repo: string; slice?: string; json?: boolean; exitCode?: boolean }) => {
+    const { model, diagnostics, refs } = compileFile(file);
+    printDiagnostics(diagnostics);
+    if (hasErrors(diagnostics)) {
+      console.error("em conform bindings check: fix the model's errors above first");
+      process.exit(1);
+    }
+    const sliceKey = opts.slice !== undefined ? resolveSliceOrExit("em conform bindings check", model, refs, opts.slice) : undefined;
+    const result = runBindingsCheck(refs, dirname(file), opts.repo, sliceKey);
+    if (opts.json) {
+      console.log(buildBindingsCheckJson(result));
+    } else {
+      console.log(renderBindingsCheckText(result));
+    }
+    // Same rationale as `em diff`/`em api check`'s --exit-code: set the code rather than
+    // process.exit() so a large --json document piped downstream isn't truncated, and so this
+    // advisory check NEVER fails a run by default (GH #449 — opt-in CI gate only).
+    if (opts.exitCode && !result.ok) process.exitCode = 1;
   });
 
 const discover = program.command("discover").description("checks for the discover skill's records (GH #295)");

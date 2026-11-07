@@ -304,13 +304,14 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the documented tools (GH #240 adds engagement_foundation)", async () => {
+  it("exposes exactly the documented tools (GH #240 adds engagement_foundation; GH #449 adds conform_bindings_check)", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
       [
         "api_check",
         "changelog",
+        "conform_bindings_check",
         "conform_findings_check",
         "conform_scope",
         "contract",
@@ -945,6 +946,80 @@ describe("conform_findings_check tool (MIL-214)", () => {
     const cli = em(["conform-findings", "check", findingsPath, "--json"], dir);
     expect(cli.status).toBe(1);
     expect(JSON.parse(cli.stdout)).toEqual(doc);
+  });
+});
+
+describe("conform_bindings_check tool (GH #449)", () => {
+  // Own fixture: a model with one slice and a target repo with a matching source file — kept
+  // separate from `dir`'s broader fixture so the bindings directory's presence/absence never
+  // interacts with any other tool's tests.
+  let bindingsDir: string;
+  let bindingsRepo: string;
+  beforeAll(() => {
+    bindingsDir = mkdtempSync(join(tmpdir(), "em-mcp-bindings-"));
+    writeFileSync(
+      join(bindingsDir, "model.em"),
+      'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n',
+    );
+    mkdirSync(join(bindingsDir, "conformance", "bindings"), { recursive: true });
+    writeFileSync(
+      join(bindingsDir, "conformance", "bindings", "place-order.yaml"),
+      'bindingsSchemaVersion: "1.0"\nslice: place-order\nelements:\n  - ref: command.place-order\n    file: src/handler.ts\n    identifier: placeOrder\ninvariants: []\n',
+    );
+    bindingsRepo = mkdtempSync(join(tmpdir(), "em-mcp-bindings-repo-"));
+    mkdirSync(join(bindingsRepo, "src"), { recursive: true });
+    writeFileSync(join(bindingsRepo, "src", "handler.ts"), "export function placeOrder() {}\n");
+  });
+  afterAll(() => {
+    rmTemp(bindingsDir);
+    rmTemp(bindingsRepo);
+  });
+
+  it("returns the same document `em conform bindings check <file> --repo <repo> --json` prints, byte-identical", async () => {
+    const { doc } = await callJson(client, "conform_bindings_check", { file: join(bindingsDir, "model.em"), repo: bindingsRepo });
+    expect(doc).toMatchObject({ ok: true, slice: null });
+    expect(doc.files[0]).toMatchObject({ path: "conformance/bindings/place-order.yaml", slice: "place-order", kind: "checked", ok: true });
+
+    const cli = em(["conform", "bindings", "check", "model.em", "--repo", bindingsRepo, "--json"], bindingsDir);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout)).toEqual(doc);
+  });
+
+  it("scopes to one slice with `slice`, byte-identical to --slice", async () => {
+    const { doc } = await callJson(client, "conform_bindings_check", {
+      file: join(bindingsDir, "model.em"),
+      repo: bindingsRepo,
+      slice: "place-order",
+    });
+    expect(doc.slice).toBe("place-order");
+
+    const cli = em(["conform", "bindings", "check", "model.em", "--repo", bindingsRepo, "--slice", "place-order", "--json"], bindingsDir);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout)).toEqual(doc);
+  });
+
+  it("is a tool error for an unknown slice key", async () => {
+    const { result } = await callJson(client, "conform_bindings_check", {
+      file: join(bindingsDir, "model.em"),
+      repo: bindingsRepo,
+      slice: "no-such-slice",
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  it("is a tool error when the model has validation errors, same as the CLI", async () => {
+    const { result } = await callJson(client, "conform_bindings_check", { file: join(dir, "error.em"), repo: bindingsRepo });
+    expect(result.isError).toBe(true);
+  });
+
+  it("reports an identifier-not-found failure without being a tool error", async () => {
+    const brokenRepo = mkdtempSync(join(tmpdir(), "em-mcp-bindings-broken-"));
+    mkdirSync(join(brokenRepo, "src"), { recursive: true });
+    writeFileSync(join(brokenRepo, "src", "handler.ts"), "export function somethingElse() {}\n");
+    const { doc } = await callJson(client, "conform_bindings_check", { file: join(bindingsDir, "model.em"), repo: brokenRepo });
+    expect(doc.ok).toBe(false);
+    expect(doc.files[0].elements[0]).toMatchObject({ ref: "command.place-order", fileExists: true, identifierFound: false, ok: false });
+    rmTemp(brokenRepo);
   });
 });
 
