@@ -100,7 +100,7 @@ slice "S" {
     expect(byName.get("c")).toEqual({ kind: "scalar", scalar: "long", tsType: "int64", array: false });
     expect(byName.get("d")).toEqual({ kind: "scalar", scalar: "decimal", tsType: "decimal", array: false });
     expect(byName.get("e")).toEqual({ kind: "scalar", scalar: "boolean", tsType: "boolean", array: false });
-    expect(byName.get("f")).toEqual({ kind: "scalar", scalar: "uuid", tsType: "string", array: false });
+    expect(byName.get("f")).toEqual({ kind: "scalar", scalar: "uuid", tsType: "Uuid", array: false });
     expect(byName.get("g")).toEqual({ kind: "scalar", scalar: "date", tsType: "plainDate", array: false });
     expect(byName.get("h")).toEqual({ kind: "scalar", scalar: "datetime", tsType: "utcDateTime", array: false });
     expect(byName.get("i")).toEqual({ kind: "scalar", scalar: "duration", tsType: "duration", array: false });
