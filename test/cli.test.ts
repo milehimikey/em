@@ -1815,6 +1815,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "coverage",
           "diff",
           "discover_triage_check",
+          "engagement_brief",
           "engagement_foundation",
           "engagement_plan",
           "engagement_status",

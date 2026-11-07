@@ -130,8 +130,10 @@ export function buildUnitIndex(model: NormalizedModel, refs: RefsResult, baseDir
   return { unitOfSlice, units, sliceIndexOf, pattern, docStatus, docShipped, docTracking };
 }
 
-/** Unit of one element: an `again` view instance belongs to its originating declaration. */
-function unitOfElement(model: NormalizedModel, idx: UnitIndex, id: string): string | null {
+/** Unit of one element: an `again` view instance belongs to its originating declaration. Exported
+ *  for `engagementBrief.ts` (GH #454), which needs the same fold to attribute a cross-slice edge's
+ *  endpoints to engagement units when building a slice's "model context" section. */
+export function unitOfElement(model: NormalizedModel, idx: UnitIndex, id: string): string | null {
   const el = model.byId.get(id);
   if (!el) return null;
   const origin = el.again ? model.byId.get(el.logicalId) ?? el : el;

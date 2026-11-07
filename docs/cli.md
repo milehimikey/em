@@ -2743,6 +2743,99 @@ untaggedInModel, identifiers }]`, `counts: { present, incomplete, missingEvent }
 runs this in its precondition step instead of asking for the foundation PR: `missing-event`
 stops; `incomplete` is one question to the human, with the gaps named, not one per implementer.
 
+### `em engagement brief <file> <slug> [--slice <key>] [--inline-context] [--json]`
+
+GH #454: a **deterministic, self-contained per-slice work brief** for implementers em does not
+control — a ticket-driven cloud agent fed by Jira/Linear tickets that has never run `em` and may
+not even have the repo checked out at context-assembly time. `em implement` hands an em-aware
+session the slice doc plus a running conversation's worth of context; this hands such a ticket
+*everything it needs in one paste*, assembled entirely from machinery `plan`/the bindings manifest
+([bindings.md](bindings.md))/the contract gate already own — nothing here is re-derived or
+re-judged. Without `--slice`, prints one brief per engagement slice (model/Ledger order); `--slice
+<key>` (export key, display name, or unique prefix — [resolved the way every other `<slice-key>`
+argument is](#slice-keys)) narrows it to one. An unknown `--slice` is refused the same way
+`em engagement set` refuses a slice key the Ledger doesn't hold:
+`em engagement brief: slice "<key>" is not in engagement "<slug>"`.
+
+Each brief has six sections:
+
+1. **Header.** The engagement slug, the slice's key and display name, the resolved tracking key
+   and PR title (`resolvePrTitle`, the same helper `plan` uses), the MIL-280 branch/base convention
+   (`impl/<key>` on `main`), and the Ledger's own recorded state — plus its branch/base/pr *when
+   the Ledger has them* (null until `em engagement set` records them; the convention above is what
+   to use before that).
+2. **The spec.** The bound slice doc's body, embedded **verbatim** under a clearly marked
+   `<!-- BEGIN SPEC -->` / `<!-- END SPEC -->` region — it IS the spec, read the same way every
+   other doc-aware command reads it (`readSliceDoc`). No bound doc: the brief says so loudly
+   (`**NO BOUND DOC FOUND for slice "<key>"...**`) and lists the slice's own elements and fields
+   from the model instead, so the brief is still useful but visibly incomplete.
+3. **Model context.** What this slice consumes and produces, and its neighbor slices — derived
+   from `model.edges` (`loops-to` excluded, the same exclusion the engagement's whole unit graph
+   already uses) and folded to engagement units exactly as the build plan folds them: an `again`
+   view instance's edges count as its originating unit's, never a separate PR. A view this slice
+   owns that is read again later, in another textual slice, is named under "repeated view
+   instances" (informational — that other slice is not a dependency).
+4. **Contract surface.** Whether the slice is public-touching (`slicePublicTouching`,
+   `catalog/apiFirst.ts` — the same gate `--slice-ready` and `em slice ratify` enforce) and, when
+   it is, the contract file path (`<model dir>/contracts/<modelKey>.tsp`) and the slice's own
+   `public` elements.
+5. **Definition of done.** The slice's own `INV-*` ids (from the doc's `## Invariants / Business
+   Rules`/`## Delta`, or from the model when there is no doc) and authored `### Scenario:` titles,
+   to make tests traceable to; a filled-in skeleton of the per-slice bindings manifest
+   ([bindings.md](bindings.md)) scoped to this slice's own elements/invariants (`file`/`identifier`
+   left as `TODO` — only the implementer who writes the code knows them) plus the exact verify
+   line (`em conform bindings check <file> --repo <path-to-target-repo> --slice <key>
+   --exit-code`); the slice-isolation rule (touch nothing outside this slice's own scope); and the
+   PR title to use.
+6. **Context documents.** The engagement's `context:` list (GH #455) — a pointer (the path) by
+   default; `--inline-context` embeds each file's full text under its own heading instead. A
+   context path that doesn't exist is never a crash: it's a loud `**MISSING: context document
+   "<path>" was not found on disk...**` marker, the same spirit as `plan`'s `context-missing`
+   pre-flight (which is where a missing path is caught before `--inline-context` is even tried).
+
+```bash
+em engagement brief checkout.em demo
+# -> # Work brief: demo / place-order — "Place Order"
+#
+#    - Tracking: PROJ-1
+#    - PR title to use: "PROJ-1: Place Order"
+#    - Branch: `impl/place-order` on `main` (MIL-280: every slice PR targets main, ...)
+#    - Ledger: planned
+#    - Pattern: state-change · doc status: ready-to-implement
+#
+#    ## The spec
+#    ...
+#    ========================================================================
+#    # Work brief: demo / order-list — "Order List"
+#    ...
+em engagement brief checkout.em demo --slice order-list --inline-context
+em engagement brief checkout.em demo --json
+```
+
+Text is plain markdown, no ANSI — pasteable straight into a ticket. More than one brief (no
+`--slice`) is separated by a plain `====...` rule rather than nested under one shared heading, so
+each chunk still reads as its own self-contained document (each repeats the engagement's context
+documents in full, under its own slice — there is no shared place for an external ticket to read
+them from otherwise).
+
+`--json` prints `engagementBriefSchemaVersion: "1.0"`, `generator`, `file`, `engagement` (the
+engagement file's path), `slug`, `inlineContext`, and `slices: [...]` — **always an array**, one
+entry per brief, length 1 when `--slice` narrowed it: one schema serves both modes, so a consumer
+never branches on whether it's reading a single-slice or whole-engagement response. Each entry
+carries every field the text form renders: `key`, `sliceName`, `pattern`, `docStatus`, `tracking`,
+`prTitle`, `branch`, `base`, `ledgerState`, `ledgerBranch`, `ledgerBase`, `ledgerPr`, `doc: {
+found, path, content }`, `fallbackElements` (non-null only when `doc.found` is false),
+`modelContext: { consumes, produces, neighborUnits, repeatedViews }`, `contract: {
+publicTouching, contractPath, publicElements }`, `definitionOfDone: { invariantIds,
+scenarioTitles, bindingsPath, bindingsExample, conformCheckCommand, isolationNote, prTitle }`,
+and `context: [{ path, inline, content, missing }]` (`missing` is `null`, not checked, when
+`inline` is false — context paths are stored as given and only `--inline-context` ever touches
+the filesystem for them). The MCP `engagement_brief` tool returns the same document (see
+[mcp.md](mcp.md)).
+
+Refusals (exit 1, stderr) match `plan`'s posture — no partial brief: an unreadable/invalid
+engagement file, an engagement naming a slice the model no longer has, or an unknown `--slice`.
+
 ### `em engagement set <file> <slug> [<key>] [--state <state>] [--branch <b>] [--base <b>] [--pr <url>] [--context-doc <path>]...`
 
 This is the only write path to the Ledger. States: `planned | building | validating | review |

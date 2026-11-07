@@ -65,8 +65,9 @@ import {
   formatEngagementStatusText,
 } from "./cli/engagement.js";
 import { LEDGER_STATES, engagementPath, loadEngagement, readOpenEngagements } from "./cli/engagementFile.js";
-import { buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
+import { buildEngagementBriefJson, buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
 import { checkFoundation, formatFoundationText } from "./cli/engagementFoundation.js";
+import { engagementBriefFor, formatEngagementBriefText } from "./cli/engagementBrief.js";
 import { detectSliceDocCollisions } from "./catalog/modelCollisionValidate.js";
 import { checkLedger, readLedgerWaiverTrailers, applyLedgerWaivers, LedgerWaiveSource } from "./cli/ledgerCheck.js";
 import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
@@ -3457,6 +3458,38 @@ engagement
     const check = checkFoundation(model, members.members, members.idx, opts.code);
     process.stdout.write((opts.json ? buildEngagementFoundationJson(file, slug, check) : formatFoundationText(slug, check)) + "\n");
     if (!check.ok) process.exitCode = 1;
+  });
+
+engagement
+  .command("brief")
+  .description(
+    "GH #454: a deterministic, self-contained per-slice work brief for implementers em does not " +
+      "control (a ticket-driven cloud agent) — the bound slice doc verbatim (or the model's own " +
+      "elements when there is none), model context from the edge list, the public-contract " +
+      "surface, a definition-of-done (bindings manifest skeleton + conform check + isolation + PR " +
+      "title), and the engagement's context: documents. One brief per engagement slice unless " +
+      "--slice narrows it",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slug>", "engagement slug")
+  .option("--slice <key>", "only this slice's brief (export key, display name, or unique prefix)")
+  .option("--inline-context", "embed each context document's full text instead of just its path")
+  .option("--json", "print a JSON document instead of text (same document as the MCP engagement_brief tool)")
+  .action((file: string, slug: string, opts: { slice?: string; inlineContext?: boolean; json?: boolean }) => {
+    const { model, refs } = compileFile(file);
+    // GH #237: an input that resolves to no slice goes through as typed, so the engagement's own
+    // "is not in engagement" refusal (which names what the Ledger holds) still speaks.
+    let sliceKey: string | null = null;
+    if (opts.slice !== undefined) {
+      const resolved = resolveSliceKey(model, refs, opts.slice);
+      sliceKey = resolved.ok ? resolved.key : opts.slice;
+    }
+    const result = engagementBriefFor({ file, model, refs, baseDir: dirname(file) }, slug, { sliceKey, inlineContext: opts.inlineContext === true });
+    if (!result.ok) {
+      console.error(`em engagement brief: ${result.message}`);
+      process.exit(1);
+    }
+    process.stdout.write((opts.json ? buildEngagementBriefJson(result.brief) : formatEngagementBriefText(result.brief)) + "\n");
   });
 
 engagement
