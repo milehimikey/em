@@ -23,11 +23,13 @@ agent can carry with human review.
 | Keep a model a story, not a CRUD schema | [storyline.md](storyline.md) |
 | Look up DSL syntax (keywords, `from`, `again`, fields, notes, issues) | [dsl.md](dsl.md) |
 | Look up the slice-doc frontmatter schema (version, lineage, required-vs-optional keys) | [slice-doc-schema.md](slice-doc-schema.md) |
+| Look up the per-slice bindings manifest schema (`conformance/bindings/<slice-key>.yaml`) | [bindings.md](bindings.md) |
 | Look up a command or flag | [cli.md](cli.md) |
 | Understand a validation error or warning | [validation.md](validation.md) |
 | Understand why arrows can't point backward | [timeline.md](timeline.md) |
 | Run a guided modeling session with Claude (install the `em` plugin) | [ai-workflow.md](ai-workflow.md#the-plugin-route) |
 | Check whether the code still matches the model | [workflow.md](workflow.md#6-check-the-model-against-the-code) |
+| Verify a per-slice bindings manifest against a target repo (advisory, opt-in CI gate) | [cli.md#em-conform-bindings-check-file---repo-path](cli.md#em-conform-bindings-check-file---repo-path) |
 | Feed a model to other tooling (JSON export, structural diff) | [cli.md](cli.md#em-export-file) |
 | Give an MCP client (Claude Code, Cursor, ...) structured tool access to a model | [mcp.md](mcp.md) |
 | Check vocabulary consistency across multiple models | [cli.md](cli.md#em-glossary-files) |

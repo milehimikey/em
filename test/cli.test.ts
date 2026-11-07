@@ -1808,6 +1808,7 @@ describe("em mcp (CLI, MIL-21)", () => {
           "api_check",
           "api_surface",
           "changelog",
+          "conform_bindings_check",
           "conform_findings_check",
           "conform_scope",
           "contract",
