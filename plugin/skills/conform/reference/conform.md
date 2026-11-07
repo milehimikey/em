@@ -95,7 +95,7 @@ e.g. a PR link, deterministically matches nothing). It prints one JSON document
 ```json
 { "lastConformance": { "date": "...", "revision": "..." } | null,
   "changedPaths": ["..."],
-  "candidateSlices": [ { "key": "checkout", "matchedBy": "implementedIn", "paths": ["..."] } ],
+  "candidateSlices": [ { "key": "checkout", "matchedBy": "implementedIn", "paths": ["..."], "file": null } ],
   "unmappedPaths": ["..."] }
 ```
 
@@ -104,6 +104,20 @@ your in-scope set for step 2. If `lastConformance` is `null` (first run) or you 
 `em conform-scope` scopes every `implemented` slice instead (`matchedBy: "full"`,
 `changedPaths`/`unmappedPaths` both empty) — the tool makes this call for you, no need to
 special-case it yourself.
+
+**Storyline models (GH #451).** A model may split its storylines into their own files — a root
+declares `storyline "Name" [after "Other"]` with no body, and the storyline's slices live in
+`<slug>/<slug>.em` (`docs/dsl.md`'s "Storyline models" section). `em conform-scope` already
+compiles the root plus every storyline file it declares as ONE model
+(the same way every other `em` command does — a storyline file never compiles on its own), so
+scoping via `implementedIn` needs no special handling. What DOES change: each `candidateSlice`'s
+`file` names the storyline file that slice's body lives in — posix, relative to the model's
+directory — or `null` for a slice in the root file. This is which physical file you anchor on in
+step 2 and which scratch file you write the as-is picture into in step 3 (`--seed-asis` seeds one
+scratch file per physical file, not just the root — see there). Don't confuse a slice's `file`
+with its doc's path: slice docs for a storyline model live under that storyline's own
+`slices/` folder, but `em` finds them by key across every folder regardless, so doc resolution
+itself needs no extra care.
 
 **`unmappedPaths` is your judgment queue, not a dead end.** A changed path the tool couldn't
 place mechanically (`implementedIn` stale, a URL-only link, code that moved) still might belong
@@ -140,6 +154,20 @@ For each slice in scope:
      as missing. This is the *general*, idiom-level version of the next bullet — prefer citing
      an actual `divergence` annotation when the element carries one; fall back to this idiom
      note only when it doesn't.
+   - **`updates from` sources (GH #451) — housekeeping evidence, not trigger evidence.** A view
+     declared `view X from "A" updates from "B", "C"` (`docs/dsl.md`'s `updates from` section)
+     splits its sources into what put a row on the list (`from`) and what keeps an existing row
+     current or removes it (`updates from`). The two need different evidence: a `from` source is
+     what an automation/processor reacting to this view should fire on, or what a reader expects
+     to see a NEW row appear for — missing evidence there is the usual structural/spec drift. A
+     `updates from` source is expected to have an update/delete handler for the SAME row, never a
+     "new item created" or "automation triggered" site — don't report the absence of trigger-type
+     evidence for an `updates from` source as drift; that is literally what the clause says it
+     isn't. `em export`'s `from` list is the union of both (so `em diff`'s structural comparison
+     sees every source regardless of which list it's in — folding `from`/`updates from` into each
+     other is NOT itself a structural change `em diff` would catch), but the *diagram* draws no
+     arrow for an `updates from` source and the *evidence walk* above should read the same way:
+     check it as "does this row get kept current/removed", not "does this cause a new row".
    - **Accepted divergences:** before treating any finding as drift, check whether the
      relevant canonical element already carries a `divergence "..."` annotation (visible in
      the `.em`, in `em export --json`'s `divergence` field, or — for a structural finding — as
@@ -162,8 +190,15 @@ For each slice in scope:
 3. Write what you found into the scratch model (`<model-name>-asis.em`, see below) — start it
    with `em conform-scope <model-name>.em --repo <target-repo-path> --seed-asis`, which
    byte-copies the canonical `.em` to `<model-name>-asis.em` and ensures `*-asis.em` is
-   gitignored (idempotent — safe to pass on every run). **Then replace only the in-scope
-   slices** with the as-is picture, leaving out-of-scope slices byte-identical. This is not an optimization:
+   gitignored (idempotent — safe to pass on every run). **Storyline models (GH #451):** when the
+   slice you're rewriting has a non-null `file` in step 1's `candidateSlices` (its body lives in
+   a storyline file, not the root), `--seed-asis` also wrote a scratch copy of THAT file — the
+   `seeded.storylineFiles` entry naming it — and the copied root's declaration already points at
+   it. Edit that storyline file's own `-asis` sibling, never `<model-name>-asis.em` (it has no
+   body for that slice to rewrite) and never the canonical storyline file (that corrupts the
+   real model, not a scratch copy). **Then replace only the in-scope slices** with the as-is
+   picture, leaving out-of-scope slices byte-identical, in whichever scratch file(s) hold them.
+   This is not an optimization:
    `em diff` matches slices by name, so a scratch model containing *only* the in-scope slices
    reports every other canonical slice as `slice-removed` plus one `element-removed` per
    element — a phantom-removal flood on every diff-scoped run, which is the exact false drift
@@ -406,7 +441,12 @@ each call adds its own stamp rather than overwriting the last.
   directory as `.event-modeling.md`). Always seeded as a copy of the canonical model with only
   the in-scope slices rewritten (step 2) — `em conform-scope --seed-asis` does the seeding and
   the gitignoring (`*-asis.em`, idempotent) mechanically, never built up from nothing and never
-  hand-maintained. It's regenerated every conform run.
+  hand-maintained. It's regenerated every conform run. **Storyline models (GH #451):** a split
+  model gets ONE scratch file per physical file — `<model-name>-asis.em` for the root, plus a
+  `-asis` sibling for every storyline file the root declares (`seeded.storylineFiles` names
+  them) — never just the root; the copied root's `in` clause already points at each sibling, so
+  `em diff <model-name>.em <model-name>-asis.em` reads the whole scratch set as one model, same
+  as the canonical root reads the whole canonical set.
 - **Report location:** `conformance/<YYYY-MM-DD>-report.md` in the model directory. One file
   per run; don't overwrite a prior date's report. Its findings go in the same-stem `-findings.json`; gates read every same-revision findings file, so per-slice runs may write `<date>-<name>-findings.json`, and a ruling is written to the file the report names. The same-revision lookup uses the report's OWN revision (its `Target repo: … @ <rev>` header line; the caller's `<rev>` / `--as-of` only when the report has none).
 - **Red note wording:** `issue "conformance: <what's wrong, plainly>"` — plain enough that
@@ -448,6 +488,13 @@ whatever cadence the user wants (see `docs/ci.md` for a scheduled-run recipe).
 - **A scratch model holding only the in-scope slices** — `em diff` reads every omitted
   canonical slice as removed, so a diff-scoped run drowns in phantom removals. Seed from the
   canonical model and rewrite only the slices you walked.
+- **Editing a storyline file's canonical copy as if it were the scratch model (GH #451)** — for
+  a slice whose `file` isn't the root, the scratch copy is that storyline file's OWN `-asis`
+  sibling (`seeded.storylineFiles`), never `<model-name>-asis.em` (no body there to rewrite) and
+  never the canonical storyline file itself (that's the model, not a scratch copy of it).
+- **Treating an `updates from` source like a `from` source during the evidence walk** — a
+  missing "new row appears" or "automation fires" site is not drift for a source the view only
+  lists under `updates from`; check it for row-update/removal evidence instead (step 2).
 - **Reporting uncertainty as drift** — "I couldn't find the enforcement site" is an
   uncertainty, never a finding against the model.
 - **Editing the model or a slice doc without ratification** — conform proposes; the user

@@ -4952,7 +4952,7 @@ so the agent no longer does this by hand. Prints one JSON document to stdout:
   "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
   "changedPaths": ["src/checkout/CheckoutHandler.kt", "README.md"],
   "candidateSlices": [
-    { "key": "checkout", "matchedBy": "implementedIn", "paths": ["src/checkout/CheckoutHandler.kt"] }
+    { "key": "checkout", "matchedBy": "implementedIn", "paths": ["src/checkout/CheckoutHandler.kt"], "file": null }
   ],
   "unmappedPaths": ["README.md"]
 }
@@ -4962,7 +4962,7 @@ so the agent no longer does this by hand. Prints one JSON document to stdout:
 |---|---|
 | `lastConformance` | The state file's `Last conformance:` marker, parsed via `em state read`'s same `stateFile.ts` (`{ "date", "revision" }`), or `null` for the `never` marker (first run). Always echoed back as parsed, even under `--full`. |
 | `changedPaths` | `git diff --name-only <lastConformance.revision>..HEAD` in `--repo`, repo-root-relative. `[]` when scoping in full mode (see below) — not omitted, so the JSON shape stays stable across modes. |
-| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. |
+| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. `file` (GH #451) is the storyline model file this slice's body lives in — posix, relative to the model's directory — or `null` for a slice declared in the root file; tells the agent which `--seed-asis` scratch file to edit for this slice (`<model>-asis.em` when `null`, else that file's own `-asis` sibling) without a second lookup against the model. |
 | `unmappedPaths` | `changedPaths` matched by no slice — hand to agent judgment (grep fallback, evidence walks per `reference/conform.md`). Always `[]` in full mode. |
 
 **Scoping mode.** Diff-scoped by default: when `lastConformance` is set and `--full` isn't
@@ -4998,8 +4998,35 @@ line, only if it isn't already present anywhere in it — never duplicated). Rep
 as an additional `seeded` key in the JSON, omitted entirely when the flag isn't passed:
 
 ```json
-{ "seeded": { "asisPath": "my-model-asis.em", "gitignoreUpdated": true } }
+{ "seeded": { "asisPath": "my-model-asis.em", "gitignoreUpdated": true, "storylineFiles": [] } }
 ```
+
+**Storyline models (GH #451).** A root that declares a storyline without a body
+([dsl.md#storyline-models](dsl.md#storyline-models--one-file-per-storyline-gh-421)) has no slice
+bodies of its own in `<model>-asis.em` for an in-scope slice that lives in one of its storyline
+files — so `--seed-asis` also byte-copies each storyline file the root declares to its own
+`-asis` sibling (`<slug>/<slug>.em` -> `<slug>/<slug>-asis.em`), and rewrites the COPIED root's
+`storyline "…" in "…"` declaration to point at that sibling instead of the canonical file:
+
+```json
+{
+  "seeded": {
+    "asisPath": "checkout-asis.em",
+    "gitignoreUpdated": true,
+    "storylineFiles": [
+      { "file": "chase-an-overdue-loan/chase-an-overdue-loan.em", "asisFile": "chase-an-overdue-loan/chase-an-overdue-loan-asis.em" }
+    ]
+  }
+}
+```
+
+`storylineFiles` is `[]`, not omitted, for a model with no storyline files — every non-storyline
+model's `seeded` output is otherwise unchanged. Edit the slice's OWN scratch file for an in-scope
+slice: `<model>-asis.em` when its `candidateSlices[].file` (below) is `null`, else that file's
+`-asis` sibling — never the canonical storyline file, which `--seed-asis` never touches.
+`em diff <model>.em <model>-asis.em` then reads the canonical root (and, through it, every
+canonical storyline file) on one side and every scratch copy on the other, exactly as the
+inline-block case always has.
 
 Any input-model error (parse/validation) is reported and exits 1 before any git call or file
 write, same as every other command. A missing state file, an unparsable `Last conformance:`

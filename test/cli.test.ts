@@ -2364,7 +2364,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
     expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: baseRev });
     expect(doc.changedPaths.sort()).toEqual(["README.md", "src/checkout/Handler.kt"]);
     expect(doc.candidateSlices).toEqual([
-      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"], file: null },
     ]);
     expect(doc.unmappedPaths).toEqual(["README.md"]);
   });
@@ -2582,7 +2582,7 @@ describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
     expect(doc.lastConformance).toBeNull();
     expect(doc.changedPaths).toEqual([]);
     expect(doc.unmappedPaths).toEqual([]);
-    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [], file: null }]);
     expect(doc.stateFile).toEqual({
       error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record',
     });

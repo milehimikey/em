@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitResult, GitRunner } from "../src/cli/diff-inputs.js";
+import { compileModelFile } from "../src/pipeline.js";
 import {
   buildConformScope,
   changedPathsSince,
@@ -64,9 +65,9 @@ describe("matchImplementedInToPaths", () => {
 
 describe("buildConformScope", () => {
   const slices: SliceDocFacts[] = [
-    { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true },
-    { key: "billing", status: "implemented", implementedIn: "https://github.com/example/repo/pull/9", shipped: true },
-    { key: "draft-slice", status: "draft", implementedIn: null, shipped: false },
+    { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true, file: null },
+    { key: "billing", status: "implemented", implementedIn: "https://github.com/example/repo/pull/9", shipped: true, file: "billing/billing.em" },
+    { key: "draft-slice", status: "draft", implementedIn: null, shipped: false, file: null },
   ];
   const lastConformance: LastConformance = {
     date: "2026-08-01",
@@ -81,7 +82,7 @@ describe("buildConformScope", () => {
     expect(result).toEqual({
       lastConformance: { date: "2026-08-01", revision: "abc123", partial: false },
       changedPaths,
-      candidateSlices: [{ key: "checkout", matchedBy: "implementedIn", paths: ["src/checkout/CheckoutHandler.kt"] }],
+      candidateSlices: [{ key: "checkout", matchedBy: "implementedIn", paths: ["src/checkout/CheckoutHandler.kt"], file: null }],
       unmappedPaths: ["src/billing/Invoice.kt", "README.md"],
     });
   });
@@ -92,8 +93,8 @@ describe("buildConformScope", () => {
       lastConformance: null,
       changedPaths: [],
       candidateSlices: [
-        { key: "checkout", matchedBy: "full", paths: [] },
-        { key: "billing", matchedBy: "full", paths: [] },
+        { key: "checkout", matchedBy: "full", paths: [], file: null },
+        { key: "billing", matchedBy: "full", paths: [], file: "billing/billing.em" },
       ],
       unmappedPaths: [],
     });
@@ -105,8 +106,8 @@ describe("buildConformScope", () => {
       lastConformance: { date: "2026-08-01", revision: "abc123", partial: false },
       changedPaths: [],
       candidateSlices: [
-        { key: "checkout", matchedBy: "full", paths: [] },
-        { key: "billing", matchedBy: "full", paths: [] },
+        { key: "checkout", matchedBy: "full", paths: [], file: null },
+        { key: "billing", matchedBy: "full", paths: [], file: "billing/billing.em" },
       ],
       unmappedPaths: [],
     });
@@ -152,6 +153,8 @@ describe("seedAsisModel", () => {
       expect(readFileSync(result.asisPath, "utf8")).toBe(readFileSync(modelPath, "utf8"));
       expect(result.gitignoreUpdated).toBe(true);
       expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe("*-asis.em\n");
+      // GH #451: a model with no storyline files reports an empty list, not omitted.
+      expect(result.storylineFiles).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -200,6 +203,67 @@ describe("seedAsisModel", () => {
       expect(readFileSync(join(repoRoot, ".gitignore"), "utf8")).toBe("*-asis.em\n");
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+// GH #451: a root that declares a storyline without a body (GH #421) has no slice bodies of its
+// own — `seedAsisModel` must also copy each storyline file to its own `-asis` sibling and point
+// the copied root `in` at it, or the agent has nowhere to write an in-scope storyline slice's
+// as-is picture without touching the canonical file.
+describe("seedAsisModel (storyline models, GH #451)", () => {
+  const ROOT_EM = 'model "Shed"\npersona Neighbor\ncontext Loans\n\nstoryline "Join the shed" {\n  slice "Register" {\n    ui Sign Up @Neighbor\n    command Register Neighbor\n    event Neighbor Registered @Loans\n  }\n}\n\nstoryline "Chase an overdue loan" after "Join the shed" in "stories/chase.em"\n';
+  const CHASE_EM = 'storyline "Chase an overdue loan" source "docs/shed.md#chase"\n\nslice "Overdue Loans To Notify" {\n  view Overdue Loans To Notify from "Neighbor Registered"\n}\n';
+
+  const setup = () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-conform-scope-seed-storyline-"));
+    writeFileSync(join(dir, "shed.em"), ROOT_EM);
+    mkdirSync(join(dir, "stories"));
+    writeFileSync(join(dir, "stories", "chase.em"), CHASE_EM);
+    return dir;
+  };
+
+  it("copies each storyline file to its own -asis sibling and rewrites the copied root's declaration to `in` it", () => {
+    const dir = setup();
+    try {
+      const modelPath = join(dir, "shed.em");
+      const git = fakeGit([{ status: 1, stdout: "", stderr: "fatal: not a git repository" }]);
+      const result = seedAsisModel(modelPath, git);
+
+      expect(result.asisPath).toBe(join(dir, "shed-asis.em"));
+      expect(result.storylineFiles).toEqual([{ file: "stories/chase.em", asisFile: "stories/chase-asis.em" }]);
+
+      // The root's inline storyline ("Join the shed") is byte-identical; only the external
+      // storyline's declaration line changes, to `in` the new asis sibling.
+      const asisRoot = readFileSync(result.asisPath, "utf8");
+      expect(asisRoot).toContain('storyline "Join the shed" {\n');
+      expect(asisRoot).toContain('storyline "Chase an overdue loan" after "Join the shed" in "stories/chase-asis.em"');
+      expect(asisRoot).not.toContain("stories/chase.em");
+
+      // The storyline file itself is copied byte-for-byte, and the canonical one is untouched.
+      const chaseAsis = readFileSync(join(dir, "stories", "chase-asis.em"), "utf8");
+      expect(chaseAsis).toBe(CHASE_EM);
+      expect(readFileSync(join(dir, "stories", "chase.em"), "utf8")).toBe(CHASE_EM);
+
+      // The asis root + its rewritten sibling still compile as one model (em diff needs this).
+      const { diagnostics } = compileModelFile(result.asisPath);
+      expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is idempotent and re-seeds cleanly on a second run", () => {
+    const dir = setup();
+    try {
+      const modelPath = join(dir, "shed.em");
+      const git = fakeGit([ok(`${dir}\n`), ok(`${dir}\n`)]);
+      seedAsisModel(modelPath, git);
+      const second = seedAsisModel(modelPath, git);
+      expect(second.storylineFiles).toEqual([{ file: "stories/chase.em", asisFile: "stories/chase-asis.em" }]);
+      expect(second.gitignoreUpdated).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
