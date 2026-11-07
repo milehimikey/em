@@ -1,0 +1,43 @@
+{
+  "expectedSchemaVersion": "1.0",
+  "case": "helpdesk — full scope (em conform-scope --full, or first run)",
+  "model": "helpdesk.em",
+  "mustReport": [
+    {
+      "id": "a",
+      "surface": "structural",
+      "class": "Real drift",
+      "slice": "escalate-ticket",
+      "summary": "The code's `Escalate Ticket` command and `Ticket Escalated` event both carry an `escalationReason` field the `.em` never declared.",
+      "evidenceHint": "repo-head/src/support/escalation/EscalateTicketHandler.ts",
+      "mechanicalCheck": "node eval/conform/score.mjs expects an as-is scratch model rewriting only escalate-ticket with the extra field; `em diff helpdesk.em <that>.em --json` then reports 2 field-added entries on escalate-ticket with acceptedDivergence: null — see eval/conform/helpdesk/model/helpdesk-asis.em for a reference scratch model and test/evalConformFixture.test.ts for the assertion."
+    },
+    {
+      "id": "b",
+      "surface": "spec",
+      "class": "Real drift",
+      "slice": "open-ticket",
+      "summary": "slices/open-ticket.md's INV-OPEN-1 (\"subject must not be empty\") has no enforcement site — `OpenTicketHandler.handle` never checks `cmd.subject` before recording `Ticket Opened`.",
+      "evidenceHint": "repo/src/support/open-ticket/OpenTicketHandler.ts",
+      "mechanicalCheck": "none — judgment only, the reason this case exists. An agent conform walk must cite the handler file and the absence of a validation branch."
+    },
+    {
+      "id": "c",
+      "surface": "internal",
+      "class": "Internal inconsistency",
+      "slice": "ticket-board",
+      "summary": "slices/ticket-board.md's frontmatter says `pattern: automation`; the `.em`'s Ticket Board slice (view + ui, no command/processor) classifies as state-view.",
+      "evidenceHint": "em validate helpdesk.em --json: doc-model-pattern-mismatch",
+      "mechanicalCheck": "em validate eval/conform/helpdesk/model/helpdesk.em --json produces exactly one diagnostic, code doc-model-pattern-mismatch, refs [\"ticket-board\"] — see test/evalConformFixture.test.ts."
+    }
+  ],
+  "mustNotReport": [
+    {
+      "id": "d",
+      "slice": "tickets-awaiting-escalation",
+      "wouldLookLike": "\"the Tickets Awaiting Escalation view has no materialized projection\" / \"add a TicketsAwaitingEscalation table\" / any Real-drift or Model-gap finding proposing to build one",
+      "reason": "repo/src/support/escalation/EscalationWatcher.ts is the legitimate non-materialized-view idiom reference/conform.md names explicitly under \"Legitimate non-materialized views\": a direct @EventHandler keeping criteria-sourced state IS the view, expressed in the code's idiom. The MIL-215 read-model-exposure ruling applies too — this view has no `ui` and isn't `public`, so it's an internal view that should never be flagged as dead code or a missing endpoint either. The only correct outcome for this slice is NO finding at all."
+    }
+  ],
+  "notes": "Case (a) is deliberately the one seed on a changed path between the fixture's two git commits — see eval/conform/README.md's diff-scoped section and the helpdesk/expected/diff-scoped.json sibling file, which expects ONLY (a) and the (d) bait on a diff-scoped run, with (b)/(c) correctly absent (out of scope, not missed)."
+}

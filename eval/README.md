@@ -200,3 +200,13 @@ Two separate questions, answered separately:
 ## Smoke test
 
 `test/evalScore.test.ts` runs `score.mjs` over the public set in CI: each reference model scored against its own `reference.json` must give a slice ratio of 1.0 (and a slices-per-reaction equal to the reference's), full event recall, no aliases and an entity-clustered rate of 0. The `support-desk` reference deliberately contains a three-slice same-context run followed by a board view that also reads `Ticket Escalated`, an event on another context, so the clustered metric's negative case is exercised on a real reference. The test also checks, per reference and on a clustered fixture, that `score.mjs` and the real lint agree.
+
+## GH #452 — conform eval (1.22.0)
+
+This protocol covers discover/slicing quality only — it never touches the `event-modeling-conform`
+skill (checking an already-implemented model against its codebase for drift). That's a separate,
+documentation-driven protocol at `eval/conform/README.md`: seeded-drift fixtures (structural, spec,
+internal-inconsistency and a false-positive-bait case), one of them exercising the diff-scoped
+`em conform-scope` path on purpose, scored for catch rate / classification accuracy / false-positive
+count instead of slices-per-reaction. `test/evalConformFixture.test.ts` is its mechanical floor,
+same relationship this file's smoke test has to the discover protocol above.
