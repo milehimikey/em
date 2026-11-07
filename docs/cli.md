@@ -1132,8 +1132,13 @@ Refuses (exits 1, prints the diagnostics, writes nothing) when the model has err
 What it emits — one `namespace <ModelName>`, no imports, no decorators, no `@versioned` (one
 release train; versioning is not modeled):
 
-- **`public` commands** → `interface Commands { op <command>(<fields>): void; }` — the write API.
-  An optional field (`name?: Type`) becomes an optional parameter (`name?: T`).
+- **`public` commands** → one `model` (the request payload, same shape as an event's) plus
+  `interface Commands { op <command>(payload: <Model>): void; }` — the write API (GH #445). The
+  payload model carries the command's fields, field notes and invariants exactly as an event's
+  or view's model does; the op just takes it by name. (TypeSpec `@@` augment decorators can
+  target a model or a model property, never a positional op parameter, so this is also what
+  makes a command's fields decoratable from a binding file.) An optional field (`name?: Type`)
+  becomes an optional field on the payload model (`name?: T`).
 - **`public` events** → one `model` each — the async payloads (schema only, no channel semantics).
 - **`public` views** → one `model` each plus `interface Views { op get<View>(): <View>; }` — the
   read API. A repeated view (`view X again`) contributes its first public instance only.
@@ -1142,8 +1147,9 @@ release train; versioning is not modeled):
 Every `model` carries the doc comment `Consumers tolerate unknown fields; additive changes do not
 break them.` `tag`, `renamed from` and `assigned` become `/** ... */` doc comments, never
 decorators. A public element's model-declared invariants (MIL-265) become one `/** INV-X: rule */`
-line each, in declaration order — inside the event's `model`, or above the command's `op` — so
-tightening a rule changes the committed contract; an internal element's invariants never appear. Field types map through the fixed public type table only:
+line each, in declaration order, inside the element's `model` — a command's payload model
+included — so tightening a rule changes the committed contract; an internal element's
+invariants never appear. Field types map through the fixed public type table only:
 
 | em type | TypeSpec |
 |---|---|

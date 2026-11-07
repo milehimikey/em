@@ -5,8 +5,16 @@
 namespace Fulfillment {
   @format("uuid") scalar Uuid extends string;
 
-  interface Commands {
+  /**
+   * Consumers tolerate unknown fields; additive changes do not break them.
+   */
+  model AcceptOrder {
     /** INV-FUL-1: An order is accepted at most once per checkout order id */
-    op acceptOrder(orderId: Uuid, total: decimal): void;
+    orderId: Uuid;
+    total: decimal;
+  }
+
+  interface Commands {
+    op acceptOrder(payload: AcceptOrder): void;
   }
 }

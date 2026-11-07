@@ -4,7 +4,9 @@
 // plain `model`/`interface`/`op` declarations, core scalars only, no imports, no decorators,
 // no `@versioned` (one release train; versions are Backlog).
 //
-//  - public commands -> `interface Commands { op <name>(<params>): void; }` (the write API)
+//  - public commands -> `model` (payload) + `interface Commands { op <name>(payload: <Model>): void; }`
+//    (the write API; GH #445 — same payload-model shape as events/views, so field notes and
+//    `INV-*` lines ride along and the payload is decoratable by a binding file's `@@`)
 //  - public events   -> `model` (async payloads)
 //  - public views    -> `model` + `interface Views { op get<View>(): <View>; }` (the read API)
 //  - declared `type`s reachable from any of those -> `model`
@@ -244,20 +246,23 @@ export function buildApiContract(
     sections.push(["interface Views {", ...indent(viewOps, 1), "}"].join("\n"));
   }
 
+  // GH #445 (#443 ask 2): a command's payload rides the same `renderModel` path as an event's or
+  // a view's — so field notes and `INV-*` lines live on the payload model, the same home
+  // events/views already use, not the op. That is also what makes the fields decoratable at
+  // all: TypeSpec `@@` augment decorators target models and model properties, never positional
+  // op parameters.
   const opNames = new Set<string>();
+  const commandModelBlocks: string[] = [];
   const commandOps: string[] = [];
   for (const el of surface.commands) {
     const opName = dedupe(camelCase(pascalCase(el.name)), opNames, "_");
-    const notes = elementNotes(el);
-    if (notes.length > 0) commandOps.push(`/** ${notes.join("; ")} */`);
-    commandOps.push(...invariantLines(el));
-    const params = (el.fields ?? []).map((f) => {
-      const n = fieldNotes(f);
-      const line = member(f, `command "${el.name}"`);
-      return n ? `/** ${n} */ ${line}` : line;
-    });
-    commandOps.push(`op ${opName}(${params.join(", ")}): void;`);
+    const payloadName = dedupe(pascalCase(el.name), usedNames, "_");
+    commandModelBlocks.push(
+      renderModel(payloadName, el.fields, `command "${el.name}"`, elementNotes(el), invariantLines(el)),
+    );
+    commandOps.push(`op ${opName}(payload: ${payloadName}): void;`);
   }
+  if (commandModelBlocks.length > 0) sections.push(commandModelBlocks.join("\n\n"));
   if (commandOps.length > 0) sections.push(["interface Commands {", ...indent(commandOps, 1), "}"].join("\n"));
 
   // Scalar declarations go first, in table order (not order of first use) — every field type
