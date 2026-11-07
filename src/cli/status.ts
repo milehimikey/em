@@ -111,6 +111,11 @@ export interface SliceStatusFact {
   /** MIL-238: the bound doc records an API-first meaning confirmation — `meaningConfirmed: true`
    *  or a `contractChange:` reason. False when neither (or no doc). */
   meaningConfirmationRecorded: boolean;
+  /** GH #451 (storyline models): same meaning as `Slice.file` (model/model.ts) — the storyline
+   *  model file this slice's body lives in, or `null` for a slice in the root file. Carried
+   *  through so `resolveSlicePRsBehindHead`'s `SliceDocFacts[]` input (built from these facts)
+   *  can echo it on `CandidateSlice` without a second lookup against the model. */
+  sliceFile: string | null;
 }
 
 export interface SliceStatusFactsResult {
@@ -177,6 +182,7 @@ export function resolveSliceStatusFacts(file: string, model: NormalizedModel, re
       continuationOf: continuationOfKey,
       publicTouching: slicePublicTouching(slice),
       meaningConfirmationRecorded: doc.meaningConfirmed || doc.contractChange !== null,
+      sliceFile: slice.file ?? null,
     };
   });
   return { facts, diagnostics };

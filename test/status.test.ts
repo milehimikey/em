@@ -448,7 +448,7 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
         ),
       );
       const runGit = fakeGit([ok(`${d10}\n`), ok("0\n"), ok(`${d10}\n`), ok("")]);
-      const sliceDocFacts = [{ key: "checkout", status: "implemented", implementedIn: "pr#1", shipped: true }];
+      const sliceDocFacts = [{ key: "checkout", status: "implemented", implementedIn: "pr#1", shipped: true, file: null }];
       const entry = resolveConformanceEntry(join(d10, "model.em"), undefined, sliceDocFacts, runGit);
       // Finding 1 (checkout, in scope, unruled) counts; finding 2 (billing, NOT in scope — its
       // doc isn't `implemented` per sliceDocFacts) doesn't; finding 3 is already ruled.
@@ -488,8 +488,8 @@ describe("resolveConformanceEntry (real fs, fake git)", () => {
       );
       const runGit = fakeGit([ok(`${d9}\n`), ok("3\n"), ok(`${d9}\n`), ok("src/checkout/handler.ts\nREADME.md\n")]);
       const facts = [
-        { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true },
-        { key: "billing", status: "implemented", implementedIn: "src/billing", shipped: true },
+        { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true, file: null },
+        { key: "billing", status: "implemented", implementedIn: "src/billing", shipped: true, file: null },
       ];
       const entry = resolveConformanceEntry(join(d9, "model.em"), undefined, facts, runGit);
       expect(entry.commitsBehindHead).toBe(3);
@@ -511,8 +511,8 @@ describe("resolveSlicePRsBehindHead", () => {
       "/repo",
       "abc123",
       [
-        { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true },
-        { key: "billing", status: "implemented", implementedIn: "src/billing", shipped: true },
+        { key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true, file: null },
+        { key: "billing", status: "implemented", implementedIn: "src/billing", shipped: true, file: null },
       ],
       runGit,
     );
@@ -521,7 +521,7 @@ describe("resolveSlicePRsBehindHead", () => {
 
   it("returns 0, not an error, when nothing changed since the revision", () => {
     const runGit = fakeGit([ok("/repo\n"), ok("")]);
-    const result = resolveSlicePRsBehindHead("/repo", "abc123", [{ key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true }], runGit);
+    const result = resolveSlicePRsBehindHead("/repo", "abc123", [{ key: "checkout", status: "implemented", implementedIn: "src/checkout", shipped: true, file: null }], runGit);
     expect(result).toEqual({ ok: true, count: 0 });
   });
 
@@ -534,7 +534,7 @@ describe("resolveSlicePRsBehindHead", () => {
 
   it("a URL-only implementedIn (a PR link) never matches any changed path", () => {
     const runGit = fakeGit([ok("/repo\n"), ok("src/checkout/handler.ts\n")]);
-    const result = resolveSlicePRsBehindHead("/repo", "abc123", [{ key: "checkout", status: "implemented", implementedIn: "https://github.com/x/y/pull/1", shipped: true }], runGit);
+    const result = resolveSlicePRsBehindHead("/repo", "abc123", [{ key: "checkout", status: "implemented", implementedIn: "https://github.com/x/y/pull/1", shipped: true, file: null }], runGit);
     expect(result).toEqual({ ok: true, count: 0 });
   });
 });
@@ -652,9 +652,9 @@ describe("findSpecifyRoot / resolveConstitution", () => {
 
 describe("buildStatusReport", () => {
   const facts: SliceStatusFact[] = [
-    { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", shipped: true, implementedIn: null, owner: null, bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
-    { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/s2.md", rawStatus: "draft", shipped: false, implementedIn: null, owner: "Alex Rivera", bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 2, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
-    { file: "a.em", key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, shipped: false, implementedIn: null, owner: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+    { file: "a.em", sliceFile: null, key: "s1", docFound: true, docReason: null, docPath: "/a/slices/s1.md", rawStatus: "implemented", shipped: true, implementedIn: null, owner: null, bucket: "implemented", driftSignal: "in-sync", openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+    { file: "a.em", sliceFile: null, key: "s2", docFound: true, docReason: null, docPath: "/a/slices/s2.md", rawStatus: "draft", shipped: false, implementedIn: null, owner: "Alex Rivera", bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 2, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+    { file: "a.em", sliceFile: null, key: "s3", docFound: false, docReason: "no-doc-bound", docPath: null, rawStatus: null, shipped: false, implementedIn: null, owner: null, bucket: "no-doc", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
   ];
   const conformance: ConformanceEntry[] = [
     {
@@ -723,7 +723,7 @@ describe("buildStatusReport", () => {
   it("tallies a frontmatter-invalid slice coherently: same count in byStatus and driftSignal, distinct from no-doc/notApplicable", () => {
     const withBroken: SliceStatusFact[] = [
       ...facts,
-      { file: "a.em", key: "broken", docFound: true, docReason: "frontmatter-invalid", docPath: "/a/slices/broken.md", rawStatus: null, shipped: false, implementedIn: null, owner: null, bucket: "frontmatter-invalid", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+      { file: "a.em", sliceFile: null, key: "broken", docFound: true, docReason: "frontmatter-invalid", docPath: "/a/slices/broken.md", rawStatus: null, shipped: false, implementedIn: null, owner: null, bucket: "frontmatter-invalid", driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
     ];
     const report = buildStatusReport(["a.em"], withBroken, 0, null, conformance, []);
     expect(report.slices.byStatus.frontmatterInvalid).toBe(1);
@@ -738,8 +738,8 @@ describe("buildStatusReport", () => {
   // Open Questions ONCE, not once per covering slice.
   it("dedupes Open Questions by resolved docPath — a covers:-shared doc counts once, not per slice", () => {
     const sharedFacts: SliceStatusFact[] = [
-      { file: "a.em", key: "owner", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", shipped: false, implementedIn: null, owner: "Alex Rivera", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
-      { file: "a.em", key: "other", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", shipped: false, implementedIn: null, owner: "Alex Rivera", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+      { file: "a.em", sliceFile: null, key: "owner", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", shipped: false, implementedIn: null, owner: "Alex Rivera", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+      { file: "a.em", sliceFile: null, key: "other", docFound: true, docReason: null, docPath: "/a/slices/shared.md", rawStatus: "reviewed", shipped: false, implementedIn: null, owner: "Alex Rivera", bucket: "reviewed", driftSignal: "never-implemented", openQuestionsTotal: 3, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
     ];
     const report = buildStatusReport(["a.em"], sharedFacts, 0, null, conformance, []);
     expect(report.issues.openQuestionsTotal).toBe(3); // not 6
@@ -758,8 +758,8 @@ describe("buildStatusReport", () => {
 
   it("does not dedupe two DIFFERENT docs that happen to have distinct paths", () => {
     const distinctFacts: SliceStatusFact[] = [
-      { file: "a.em", key: "s1", docFound: true, docReason: null, docPath: "/a/slices/one.md", rawStatus: "draft", shipped: false, implementedIn: null, owner: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
-      { file: "a.em", key: "s2", docFound: true, docReason: null, docPath: "/a/slices/two.md", rawStatus: "draft", shipped: false, implementedIn: null, owner: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+      { file: "a.em", sliceFile: null, key: "s1", docFound: true, docReason: null, docPath: "/a/slices/one.md", rawStatus: "draft", shipped: false, implementedIn: null, owner: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
+      { file: "a.em", sliceFile: null, key: "s2", docFound: true, docReason: null, docPath: "/a/slices/two.md", rawStatus: "draft", shipped: false, implementedIn: null, owner: null, bucket: "draft", driftSignal: "never-implemented", openQuestionsTotal: 1, openQuestionsUnchecked: 1, queuedForNext: 0, continuationOf: null, publicTouching: false, meaningConfirmationRecorded: false },
     ];
     const report = buildStatusReport(["a.em"], distinctFacts, 0, null, conformance, []);
     expect(report.issues.openQuestionsTotal).toBe(2);
@@ -769,7 +769,7 @@ describe("buildStatusReport", () => {
   // MIL-238: public-touching slices at ready-to-implement/implemented with no recorded meaning
   // confirmation; drafts, non-public slices, confirmed slices and continuations don't count.
   it("counts publicSlicesUnconfirmed — public-touching, ratified or shipped, no confirmation", () => {
-    const base = { file: "a.em", docFound: true as const, docReason: null, implementedIn: null, owner: null, driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0 };
+    const base = { file: "a.em", sliceFile: null, docFound: true as const, docReason: null, implementedIn: null, owner: null, driftSignal: null, openQuestionsTotal: 0, openQuestionsUnchecked: 0, queuedForNext: 0 };
     const pub: SliceStatusFact[] = [
       { ...base, key: "p1", docPath: "/a/slices/p1.md", rawStatus: "implemented", shipped: true, bucket: "implemented", continuationOf: null, publicTouching: true, meaningConfirmationRecorded: false },
       { ...base, key: "p2", docPath: "/a/slices/p2.md", rawStatus: "ready-to-implement", shipped: false, bucket: "ready-to-implement", continuationOf: null, publicTouching: true, meaningConfirmationRecorded: false },

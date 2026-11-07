@@ -1137,7 +1137,7 @@ describe("conform_scope tool", () => {
     expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: conformBaseRev });
     expect(doc.changedPaths).toEqual(["src/checkout/Handler.kt"]);
     expect(doc.candidateSlices).toEqual([
-      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"], file: null },
     ]);
     expect(doc.unmappedPaths).toEqual([]);
 
@@ -1155,7 +1155,7 @@ describe("conform_scope tool", () => {
     const doc = JSON.parse((result.content[0] as { text: string }).text);
     expect(doc.changedPaths).toEqual([]);
     expect(doc.unmappedPaths).toEqual([]);
-    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [], file: null }]);
   });
 
   it("never writes: the CLI's --seed-asis isn't exposed, so no scratch model appears on disk", async () => {
@@ -1194,7 +1194,7 @@ describe("conform_scope tool", () => {
       const text = (result.content[0] as { type: "text"; text: string }).text;
       const doc = JSON.parse(text);
       expect(doc.lastConformance).toBeNull();
-      expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+      expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [], file: null }]);
       expect(doc.stateFile).toEqual({ error: 'state file describes "model.em", not "model-asis.em" — not attributing its conformance record' });
 
       const cli = em(["conform-scope", "model-asis.em", "--repo", conformTargetRepo], conformDir);
