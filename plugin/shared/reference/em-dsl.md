@@ -38,6 +38,8 @@ em api generate <file> --stdout                                     # print the 
 em api check <file>                                                 # is the committed contract current? With --base, annotate each public-surface change since that revision additive or breaking (annotation only — exits 1 only when stale)
 em api check <file> --base <rev>                                    # git revision to diff the public surface against
 em api check <file> --json                                          # print a JSON document instead of the text report (see docs/cli.md)
+em api surface <file>                                               # the model's public commands, events, views and reachable declared types as a versioned JSON document for companion tools (GH #448, see docs/cli.md)
+em api surface <file> --json                                        # print a JSON document instead of the text listing (see docs/cli.md)
 em typespec <file>                                                  # DEPRECATED alias of `em api generate --stdout` (use em api generate)
 em typespec <file> -o, --out <path>                                 # write to a file instead of stdout
 em diff <old> [new]                                                 # compare two models structurally (two files, or one file across git revisions)

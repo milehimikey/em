@@ -27,7 +27,7 @@ import { NormalizedModel, resolvePublicType } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe } from "../util/slug.js";
-import { buildExportDoc, ElementExport, FieldExport } from "./json.js";
+import { buildExportDoc, ElementExport, FieldExport, TypeExport } from "./json.js";
 
 /** The sentence every generated `model` carries (MIL-239 relies on it verbatim). */
 export const CONSUMER_TOLERANCE_SENTENCE = "Consumers tolerate unknown fields; additive changes do not break them.";
@@ -51,6 +51,27 @@ function pascalCase(name: string): string {
 
 function camelCase(pascal: string): string {
   return pascal.length > 0 ? pascal[0].toLowerCase() + pascal.slice(1) : pascal;
+}
+
+/** Declared types reachable (transitively) from any of the given elements' fields, as the set of
+ *  their export refs — same walk `em api generate`'s contract body and `em api surface` (GH #448)
+ *  use to decide which declared types belong on the public surface, shared so neither re-derives
+ *  it with a subtly different recursion. */
+export function reachableTypeRefs(
+  elements: { fields: FieldExport[] | null }[],
+  typesByRef: Map<string, TypeExport>,
+): Set<string> {
+  const reachable = new Set<string>();
+  const walk = (fields: FieldExport[] | null) => {
+    for (const f of fields ?? []) {
+      if (f.typeRef && !reachable.has(f.typeRef.ref)) {
+        reachable.add(f.typeRef.ref);
+        walk(typesByRef.get(f.typeRef.ref)?.fields ?? null);
+      }
+    }
+  };
+  for (const el of elements) walk(el.fields);
+  return reachable;
 }
 
 /** A field name that isn't a bare TypeSpec identifier is backtick-quoted (TypeSpec's own escape). */
@@ -144,16 +165,7 @@ export function buildApiContract(
   const surface = publicSurfaceOf(doc.model.slices);
 
   // Declared types reachable (transitively) from a public element's fields.
-  const reachable = new Set<string>();
-  const walk = (fields: FieldExport[] | null) => {
-    for (const f of fields ?? []) {
-      if (f.typeRef && !reachable.has(f.typeRef.ref)) {
-        reachable.add(f.typeRef.ref);
-        walk(typesByRef.get(f.typeRef.ref)?.fields ?? null);
-      }
-    }
-  };
-  for (const el of [...surface.commands, ...surface.events, ...surface.views]) walk(el.fields);
+  const reachable = reachableTypeRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
 
   const usedNames = new Set<string>();
   const typeNameByRef = new Map<string, string>();
