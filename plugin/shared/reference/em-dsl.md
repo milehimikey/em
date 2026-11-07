@@ -16,7 +16,7 @@ Keep `.em` files focused on **structure**; put deep design in markdown linked vi
 em --version                                                        # print the installed em version
 em init [file]                                                      # scaffold a starter .em model
 em init [file] -f, --force                                          # overwrite if the file exists
-em scaffold <name>                                                  # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and constitution.md (the implementation constitution — skipped, with a note, in a spec-kit project, where `.specify/memory/constitution.md` IS that document) (see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, pass --under to nest it under a shared parent directory)
+em scaffold <name>                                                  # scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and constitution.md (the implementation constitution — skipped, with a note, in a spec-kit project, where `.specify/memory/constitution.md` IS that document), plus the standard slices/, contracts/, model-versions/ and conformance/bindings/ directories (each seeded with a one-line README naming what lands there and which command writes it, instead of a .gitkeep) (see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, pass --under to nest it under a shared parent directory)
 em scaffold <name> -f, --force                                      # overwrite the directory's contents if it already exists
 em scaffold <name> --under <dir>                                    # parent directory to scaffold into — writes <dir>/<slug>/ instead of ./<slug>/, the supported multi-model layout (docs/cli.md, "Multi-model projects"): one directory per model, so each model's slices/ never collides with a sibling model's
 em render <file>                                                    # transpile a model and render it (or emit DOT)
@@ -38,6 +38,8 @@ em api generate <file> --stdout                                     # print the 
 em api check <file>                                                 # is the committed contract current? With --base, annotate each public-surface change since that revision additive or breaking (annotation only — exits 1 only when stale)
 em api check <file> --base <rev>                                    # git revision to diff the public surface against
 em api check <file> --json                                          # print a JSON document instead of the text report (see docs/cli.md)
+em api surface <file>                                               # the model's public commands, events, views and reachable declared types as a versioned JSON document for companion tools (GH #448, see docs/cli.md)
+em api surface <file> --json                                        # print a JSON document instead of the text listing (see docs/cli.md)
 em typespec <file>                                                  # DEPRECATED alias of `em api generate --stdout` (use em api generate)
 em typespec <file> -o, --out <path>                                 # write to a file instead of stdout
 em diff <old> [new]                                                 # compare two models structurally (two files, or one file across git revisions)

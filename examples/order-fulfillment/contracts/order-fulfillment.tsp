@@ -3,13 +3,15 @@
 // Scope: the model's `public` commands (write API), events (async) and views (read API).
 
 namespace OrderFulfillment {
+  @format("uuid") scalar Uuid extends string;
+
   /**
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
   model OrderPlaced {
     /** system-assigned — not supplied by the triggering command */
-    orderId: string;
-    customerId: string;
+    orderId: Uuid;
+    customerId: Uuid;
     total: decimal;
     /** system-assigned — not supplied by the triggering command */
     placedAt: utcDateTime;
@@ -19,7 +21,7 @@ namespace OrderFulfillment {
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
   model OpenOrders {
-    orderId: string;
+    orderId: Uuid;
     total: decimal;
     status: string;
   }

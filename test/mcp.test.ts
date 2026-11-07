@@ -310,6 +310,7 @@ describe("tools/list", () => {
     expect(names).toEqual(
       [
         "api_check",
+        "api_surface",
         "changelog",
         "conform_bindings_check",
         "conform_findings_check",
@@ -1212,7 +1213,7 @@ describe("conform_scope tool", () => {
     expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: conformBaseRev });
     expect(doc.changedPaths).toEqual(["src/checkout/Handler.kt"]);
     expect(doc.candidateSlices).toEqual([
-      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"], file: null },
     ]);
     expect(doc.unmappedPaths).toEqual([]);
 
@@ -1230,7 +1231,7 @@ describe("conform_scope tool", () => {
     const doc = JSON.parse((result.content[0] as { text: string }).text);
     expect(doc.changedPaths).toEqual([]);
     expect(doc.unmappedPaths).toEqual([]);
-    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [], file: null }]);
   });
 
   it("never writes: the CLI's --seed-asis isn't exposed, so no scratch model appears on disk", async () => {
@@ -1269,7 +1270,7 @@ describe("conform_scope tool", () => {
       const text = (result.content[0] as { type: "text"; text: string }).text;
       const doc = JSON.parse(text);
       expect(doc.lastConformance).toBeNull();
-      expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+      expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [], file: null }]);
       expect(doc.stateFile).toEqual({ error: 'state file describes "model.em", not "model-asis.em" — not attributing its conformance record' });
 
       const cli = em(["conform-scope", "model-asis.em", "--repo", conformTargetRepo], conformDir);
@@ -1312,6 +1313,35 @@ describe("api_check tool (MIL-237)", () => {
       const cli = em(["api", "check", file, "--base", "HEAD", "--json"], dir);
       expect(cli.status).toBe(1);
       expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      rmTemp(dir);
+    }
+  });
+});
+
+describe("api_surface tool (GH #448)", () => {
+  const exampleDir = join(ROOT, "examples", "multi-model");
+
+  it("byte-identical to `em api surface <file> --json` for a shipped multi-model model", async () => {
+    const file = join(exampleDir, "models", "checkout", "checkout.em");
+    const { result, doc } = await callJson(client, "api_surface", { file });
+    expect(result.isError).toBeFalsy();
+    expect(doc).toMatchObject({ apiSurfaceSchemaVersion: "1.0", modelKey: "checkout" });
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["api", "surface", file, "--json"], exampleDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("refuses (tool error) when the model has a public-field-type-unresolved error, same as the CLI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-mcp-api-surface-"));
+    try {
+      writeFileSync(join(dir, "shop.em"), `slice "S" {\n  command Buy public { sku: Sku }\n  event Bought @D\n}\n`);
+      const file = join(dir, "shop.em");
+      const { result } = await callJson(client, "api_surface", { file });
+      expect(result.isError).toBe(true);
+      const cli = em(["api", "surface", file], dir);
+      expect(cli.status).toBe(1);
     } finally {
       rmTemp(dir);
     }

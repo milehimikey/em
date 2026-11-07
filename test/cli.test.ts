@@ -13,6 +13,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { localIsoDate } from "../src/util/localDate.js";
 import { writeInvariantFixture } from "./helpers/invariantFixture.js";
+import {
+  SLICES_DIR_README,
+  CONTRACTS_DIR_README,
+  MODEL_VERSIONS_DIR_README,
+  CONFORMANCE_BINDINGS_DIR_README,
+} from "../src/templates.js";
 
 // Every test in this file spawns the real CLI (`em(...)` below) at least once, several spawn
 // it more than once — each spawn is a fresh `tsx` process costing ~0.9-1.0s on a GitHub
@@ -1800,6 +1806,7 @@ describe("em mcp (CLI, MIL-21)", () => {
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "api_check",
+          "api_surface",
           "changelog",
           "conform_bindings_check",
           "conform_findings_check",
@@ -1995,6 +2002,30 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     }
   });
 
+  // GH #453: the full standardized model-directory family, not just the four files above —
+  // every doc-aware command eventually writes into one of these. Git doesn't track empty
+  // directories, so each one gets a one-line README (never a .gitkeep).
+  it("creates the full directory family — slices/, contracts/, model-versions/, conformance/bindings/ — each seeded with a README byte-identical to its template", () => {
+    const dir = join(cwd, "order-fulfillment");
+
+    expect(existsSync(join(dir, "slices"))).toBe(true);
+    expect(existsSync(join(dir, "contracts"))).toBe(true);
+    expect(existsSync(join(dir, "model-versions"))).toBe(true);
+    expect(existsSync(join(dir, "conformance"))).toBe(true);
+    expect(existsSync(join(dir, "conformance", "bindings"))).toBe(true);
+
+    expect(readFileSync(join(dir, "slices", "README.md"), "utf8")).toBe(SLICES_DIR_README);
+    expect(readFileSync(join(dir, "contracts", "README.md"), "utf8")).toBe(CONTRACTS_DIR_README);
+    expect(readFileSync(join(dir, "model-versions", "README.md"), "utf8")).toBe(MODEL_VERSIONS_DIR_README);
+    expect(readFileSync(join(dir, "conformance", "bindings", "README.md"), "utf8")).toBe(CONFORMANCE_BINDINGS_DIR_README);
+
+    // Each README names what lands there and which command writes it — never a bare .gitkeep.
+    expect(SLICES_DIR_README).toContain("em slice new");
+    expect(CONTRACTS_DIR_README).toContain("em api generate");
+    expect(MODEL_VERSIONS_DIR_README).toContain("em model version bump");
+    expect(CONFORMANCE_BINDINGS_DIR_README).toContain("em conform bindings check");
+  });
+
   // MIL-147: the starter model once hard-coded the pre-MIL-120 two-slice Automation split
   // (a bare `processor` in the read-model slice, paired with a same-named command slice) —
   // `em validate` rejected it out of the box. Gate on the merged single-slice shape so a
@@ -2042,6 +2073,20 @@ describe("em scaffold (CLI, real fs, MIL-97 item 2)", () => {
     const r = em(["scaffold", "Order Fulfillment", "--force"], cwd);
     expect(r.status).toBe(0);
     expect(readFileSync(path, "utf8")).toContain("# Order Fulfillment — implementation constitution");
+  });
+
+  // GH #453: --force rewrites the directory family's READMEs too, and leaves any real content
+  // a prior run (or the user) already put in those directories alone — only the README itself
+  // is ever written.
+  it("--force rewrites the directory family's READMEs, without touching other files already there", () => {
+    const dir = join(cwd, "order-fulfillment");
+    writeFileSync(join(dir, "slices", "README.md"), "hand-edited, should be clobbered");
+    writeFileSync(join(dir, "slices", "checkout.md"), "a real slice doc, must survive --force");
+
+    const r = em(["scaffold", "Order Fulfillment", "--force"], cwd);
+    expect(r.status).toBe(0);
+    expect(readFileSync(join(dir, "slices", "README.md"), "utf8")).toBe(SLICES_DIR_README);
+    expect(readFileSync(join(dir, "slices", "checkout.md"), "utf8")).toBe("a real slice doc, must survive --force");
   });
 
   it("kebab-slugs an already-slug-shaped name to itself, and a messy name into a clean slug", () => {
@@ -2320,7 +2365,7 @@ describe("em conform-scope (CLI, real git repo)", () => {
     expect(doc.lastConformance).toEqual({ date: expect.any(String), partial: false, revision: baseRev });
     expect(doc.changedPaths.sort()).toEqual(["README.md", "src/checkout/Handler.kt"]);
     expect(doc.candidateSlices).toEqual([
-      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"] },
+      { key: "place-order", matchedBy: "implementedIn", paths: ["src/checkout/Handler.kt"], file: null },
     ]);
     expect(doc.unmappedPaths).toEqual(["README.md"]);
   });
@@ -2538,7 +2583,7 @@ describe("em conform-scope (CLI, MIL-179 state-file model mismatch)", () => {
     expect(doc.lastConformance).toBeNull();
     expect(doc.changedPaths).toEqual([]);
     expect(doc.unmappedPaths).toEqual([]);
-    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [] }]);
+    expect(doc.candidateSlices).toEqual([{ key: "place-order", matchedBy: "full", paths: [], file: null }]);
     expect(doc.stateFile).toEqual({
       error: 'state file describes "checkout.em", not "checkout-asis.em" — not attributing its conformance record',
     });
@@ -5136,6 +5181,12 @@ describe("em scaffold --under (CLI, real fs, MIL-160)", () => {
     expect(readFileSync(join(dir, "checkout.em"), "utf8").startsWith('model "Checkout"\n')).toBe(true);
     expect(readFileSync(join(dir, "README.md"), "utf8")).toContain("em watch checkout.em -o checkout.svg --serve");
     expect(readFileSync(join(dir, ".event-modeling.md"), "utf8")).toContain("- **Model file:** `checkout.em`");
+
+    // GH #453: --under scaffolds the exact same directory family, at the --under path.
+    expect(readFileSync(join(dir, "slices", "README.md"), "utf8")).toBe(SLICES_DIR_README);
+    expect(readFileSync(join(dir, "contracts", "README.md"), "utf8")).toBe(CONTRACTS_DIR_README);
+    expect(readFileSync(join(dir, "model-versions", "README.md"), "utf8")).toBe(MODEL_VERSIONS_DIR_README);
+    expect(readFileSync(join(dir, "conformance", "bindings", "README.md"), "utf8")).toBe(CONFORMANCE_BINDINGS_DIR_README);
   });
 
   it("a second model scaffolded under the same parent gets its own sibling directory", () => {
@@ -5158,6 +5209,37 @@ describe("em scaffold --under (CLI, real fs, MIL-160)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("scaffolded standalone/");
     expect(existsSync(join(cwd, "standalone", "standalone.em"))).toBe(true);
+  });
+});
+
+// GH #453: `em init` (the single-file starter) is explicitly UNCHANGED by the full-family
+// scaffold — it never creates a directory at all, let alone the slices/contracts/model-versions/
+// conformance family.
+describe("em init (CLI, real fs) — unaffected by GH #453's full-family scaffold", () => {
+  let cwd: string;
+
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "em-cli-init-"));
+  });
+  afterEach(() => rmTemp(cwd));
+
+  it("writes exactly one file (the default model.em), no directories at all", () => {
+    const r = em(["init"], cwd);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toContain("wrote model.em");
+    expect(existsSync(join(cwd, "model.em"))).toBe(true);
+    expect(readdirSync(cwd)).toEqual(["model.em"]);
+  });
+
+  it("with an explicit output path, still writes only that one file", () => {
+    const r = em(["init", "widget-returns.em"], cwd);
+    expect(r.status).toBe(0);
+    expect(readdirSync(cwd)).toEqual(["widget-returns.em"]);
+    expect(existsSync(join(cwd, "slices"))).toBe(false);
+    expect(existsSync(join(cwd, "contracts"))).toBe(false);
+    expect(existsSync(join(cwd, "model-versions"))).toBe(false);
+    expect(existsSync(join(cwd, "conformance"))).toBe(false);
   });
 });
 

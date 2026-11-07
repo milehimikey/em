@@ -99,6 +99,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `engagement_foundation` | `{ file, slug, code }` | The `em engagement foundation <file> <slug> --code <dir> --json` document (GH #240): per event the engagement's slices emit or consume, `present` / `incomplete` (`missingFields`, `missingTagFields`) / `missing-event`, from a text scan of `code`. Read-only |
 | `engagement_status` | `{ file, slug }` | The `em engagement status <file> <slug> --json` document (MIL-268): the Ledger joined with each doc's status, plus `closable`. Read-only: the Ledger is written only by `em engagement set` |
 | `api_check` | `{ file, base? }` (git when `base` is given — see below) | The `em api check <file> [--base <rev>] --json` document (MIL-237): is the committed contract current, plus each public-surface change since `base` annotated additive/breaking |
+| `api_surface` | `{ file }` | The `em api surface <file> --json` document (GH #448): the model's public commands/events/views plus reachable declared types, each field's public type resolved — the companion-tool interface to the surface |
 | `diff` | `{ oldFile, newFile? }` or `{ oldFile, from, to? }` (git — see below) | The `em diff --json` document: structural changes between two models, or one model across git revisions |
 | `glossary` | `{ files, waive_file? }` | The `em glossary --json` document: cross-model term aggregation plus kind/field-type conflicts; `waive_file` moves deliberate field-type conflicts to a `waived` array |
 | `changelog` | `{ file, from?, to? }` (git — see below) | The exact markdown `em changelog` prints: the model's git history as a business-readable ledger |
@@ -270,6 +271,17 @@ A stale or missing contract is **not** a tool error: the document comes back wit
 `current: false` (the CLI prints the same document and exits 1). Refuses (tool error) when the
 model has errors, the file is not in a git repository (with `base`), or the revision does not
 exist. See [`em api check`](cli.md#em-api-check) for the classification rules and JSON shape.
+
+### `api_surface`
+
+Same document as `em api surface <file> --json` (GH #448), built by the same
+`runApiSurface` + `buildApiSurfaceJson` (`src/cli/api.ts`, `src/emit/apiSurfaceJson.ts`) the CLI
+calls: the model's public commands, events and views plus every declared type reachable from
+their fields, each field's type resolved through the fixed scalar table or a declared type —
+the companion-tool interface to the public surface, so a bridge or generator never re-derives
+it from `export_model`. Refuses (tool error) when the model has errors — including
+`public-field-type-unresolved` — same as `em api generate`. See
+[`em api surface`](cli.md#em-api-surface) for the full JSON shape.
 
 ### `diff`
 

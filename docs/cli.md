@@ -3,13 +3,14 @@
 | Command | What it does |
 |---|---|
 | `em init [file]` | Scaffold a starter model (default `model.em`) |
-| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md`, `constitution.md` |
+| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md`, `constitution.md`, plus the standard `slices/`, `contracts/`, `model-versions/`, `conformance/bindings/` directories (each with a short README) |
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em api generate <file>` | Write the model-owned TypeSpec contract for its `public` commands, events and views to `<model dir>/contracts/<model key>.tsp` |
 | `em api check <file>` | Is the committed contract current? With `--base <rev>`, annotate each public-surface change additive or breaking |
+| `em api surface <file>` | The model's public surface — commands, events, views and reachable declared types — as a versioned JSON document for companion tools (`--json`) |
 | `em typespec <file>` | **Deprecated** alias of `em api generate --stdout` |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
@@ -65,6 +66,27 @@ a single `-`); the display name you passed is used as-is for titles/prose. Creat
 | `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Em version:` = the installed em, `Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
 | `<slug>/constitution.md` | The implementation constitution (MIL-202) — the project's house rules (stack + pattern→skill routing, code style, testing norms, NFR baselines, review/merge norms). Only the project name is filled: every section keeps the elicitation question it opens with and its `{{...}}` answer block, and `ratifiedBy:`/`ratifiedOn:` ship empty, because an unanswered, unratified constitution must read as one. **Not written in a spec-kit project** — see below |
 
+**The directory family (GH #453).** Alongside those four files, `em scaffold` creates the full
+standardized model-directory shape every doc-aware command eventually writes into — the same
+layout [Multi-model projects](#multi-model-projects) below documents as the convention, now
+created rather than merely described:
+
+| Directory | What lands there |
+|---|---|
+| `<slug>/slices/` | Slice docs, written by `em slice new` (see below) |
+| `<slug>/contracts/` | The generated TypeSpec contract, written by `em api generate` — never hand-edit (see below) |
+| `<slug>/model-versions/` | Design-version snapshots, written by `em model version bump` (see below) |
+| `<slug>/conformance/bindings/` | Per-slice bindings manifests (GH #449), checked by `em conform bindings check` |
+
+Git doesn't track empty directories, so each one is seeded with a one-line `README.md` rather
+than a `.gitkeep` — naming what belongs there and which command writes it is worth the one extra
+line, and nothing in this repo's own worked examples
+([examples/multi-model/](../examples/multi-model/),
+[examples/order-fulfillment/](../examples/order-fulfillment/)) established a `.gitkeep`
+convention to follow instead. `--force` rewrites these READMEs exactly like the four files
+above; an existing `slices/<key>.md` or `contracts/<model key>.tsp` a prior run already wrote is
+untouched (only the README itself is written, never anything else already in the directory).
+
 This is the machinery behind the bundled `event-modeling` Claude Code skill's "scaffold the
 project layout" setup step (see [ai-workflow.md](ai-workflow.md)) — the skill runs this
 command rather than hand-copying its `templates/*` files.
@@ -75,8 +97,8 @@ command rather than hand-copying its `templates/*` files.
 | `--under <dir>` | Scaffold into `<dir>/<slug>/` instead of `./<slug>/` — the supported multi-model layout, see [Multi-model projects](#multi-model-projects) below |
 
 ```bash
-em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md,constitution.md}
-em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md,constitution.md}
+em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md,constitution.md} + slices/,contracts/,model-versions/,conformance/bindings/ (each with a README)
+em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md,constitution.md} + the same directory family
 ```
 
 **The constitution and spec-kit.** There is exactly one implementation constitution per project,
@@ -148,7 +170,7 @@ my-project/
         checkout.tsp           # `em api generate`; never hand-edited
       model-versions/          # `em model version bump`
       conformance/             # conform reports + findings
-        bindings/              # optional: per-slice bindings manifests (GH #449, see bindings.md)
+        bindings/              # per-slice bindings manifests (`em conform bindings check`, GH #449, see bindings.md)
           add-item.yaml
     fulfillment/
       fulfillment.em           # translation Order Intake consumes checkout:event.order-submitted
@@ -1125,7 +1147,8 @@ tightening a rule changes the committed contract; an internal element's invarian
 
 | em type | TypeSpec |
 |---|---|
-| `string`, `text`, `uuid` | `string` |
+| `string`, `text` | `string` |
+| `uuid` | `Uuid` |
 | `int` | `int32` |
 | `long` | `int64` |
 | `decimal` | `decimal` |
@@ -1136,6 +1159,13 @@ tightening a rule changes the committed contract; an internal element's invarian
 | `bytes` | `bytes` |
 | `X[]` | `<mapped X>[]` |
 | a declared `type` name | that type's `model` |
+
+`uuid` maps to a declared scalar, not a bare core type (GH #444, #443 ask 1): the first time any
+public field resolves to `uuid`, the namespace gets one prepended declaration,
+`@format("uuid") scalar Uuid extends string;`, ahead of every `model`/`interface` block — a
+model with no `uuid` field in its public surface emits no such declaration. `@format` is a
+TypeSpec built-in decorator (no import needed), so the file stays dependency-free; the openapi3
+emitter turns it into `type: string, format: uuid` natively.
 
 There is no alias table, no generic-wrapper handling, and no `unknown` fallback — `em validate`
 guarantees every public field resolves. Teams compile the TypeSpec to OpenAPI / JSON Schema /
@@ -1203,6 +1233,76 @@ breaking: command.submit-order invariant INV-CHK-2 added
 change. Refuses (exit 1, no document) when the working-tree model has errors, the file is not in
 a git repository, or the revision does not exist. `em ci init` wires `em api check --base` as a
 PR job (see [ci.md](ci.md)).
+
+### `em api surface`
+
+The public surface as **data** (GH #448): the same `public` commands, events, views and
+reachable declared types `em api generate` renders as TypeSpec, as a versioned JSON document a
+companion tool (a contract bridge, an augment generator) can consume directly — instead of
+re-deriving the surface from the full `em export --json` document and risking silent drift from
+em's own notion of it. Built on the same `publicSurfaceOf`/`resolvePublicType` the emitter and
+`em api check` share: one notion of the surface, three renderings (TypeSpec text, additive/
+breaking diff, this document).
+
+```bash
+em api surface models/checkout/checkout.em          # terse text listing
+em api surface models/checkout/checkout.em --json   # the document
+```
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print the JSON document instead of the text listing |
+
+Refuses (exits 1, prints the diagnostics) when the model has errors — including
+`public-field-type-unresolved` — same posture as `em api generate`. Deterministic: no
+timestamps, no absolute paths (`file` is the path as given on the command line). A repeated
+view (`view X again`) contributes one entry. Without `--json`, a terse listing: one line per
+element with its field count.
+
+`--json` (`apiSurfaceSchemaVersion` `"1.0"`; MCP tool `api_surface` returns the same document
+byte-for-byte):
+
+```json
+{
+  "apiSurfaceSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "models/checkout/checkout.em",
+  "modelKey": "checkout",
+  "commands": [
+    {
+      "name": "Submit Order",
+      "slug": "submit-order",
+      "fields": [
+        {
+          "name": "note",
+          "type": { "kind": "scalar", "scalar": "text", "tsType": "string", "array": false },
+          "optional": true,
+          "tag": false,
+          "assigned": false,
+          "renamedFrom": null
+        }
+      ],
+      "invariants": [{ "id": "INV-CHK-1", "rule": "An order is submitted with a positive total" }]
+    }
+  ],
+  "events": [],
+  "views": [],
+  "types": [
+    { "name": "Line Item", "slug": "line-item", "fields": [] }
+  ]
+}
+```
+
+- `commands`/`events`/`views` — the public elements, in export (timeline) order; `types` — every
+  declared `type` reachable (transitively) from their fields, in declaration order. Each element
+  carries its `name` as written and its kebab `slug` (the same slugging `em api check`'s element
+  ids use).
+- `type` — the field's resolved public type: `kind` is `"scalar"` (one of the fixed table's
+  entries — `scalar` names the matched entry, `tsType` the TypeSpec core scalar `em api
+  generate` emits for it) or `"declared"` (`scalar` is `null`, `tsType` is the declared type's
+  name — find its own fields under `types`); `array` is the `[]` arity.
+- Absent optionals are explicit `null`s (`renamedFrom`, `invariants`, a type's `scalar`) —
+  consumers destructure, never sniff.
 
 ## `em typespec <file>` (deprecated)
 
@@ -4913,7 +5013,7 @@ so the agent no longer does this by hand. Prints one JSON document to stdout:
   "lastConformance": { "date": "2026-08-01", "revision": "abc123f" },
   "changedPaths": ["src/checkout/CheckoutHandler.kt", "README.md"],
   "candidateSlices": [
-    { "key": "checkout", "matchedBy": "implementedIn", "paths": ["src/checkout/CheckoutHandler.kt"] }
+    { "key": "checkout", "matchedBy": "implementedIn", "paths": ["src/checkout/CheckoutHandler.kt"], "file": null }
   ],
   "unmappedPaths": ["README.md"]
 }
@@ -4923,7 +5023,7 @@ so the agent no longer does this by hand. Prints one JSON document to stdout:
 |---|---|
 | `lastConformance` | The state file's `Last conformance:` marker, parsed via `em state read`'s same `stateFile.ts` (`{ "date", "revision" }`), or `null` for the `never` marker (first run). Always echoed back as parsed, even under `--full`. |
 | `changedPaths` | `git diff --name-only <lastConformance.revision>..HEAD` in `--repo`, repo-root-relative. `[]` when scoping in full mode (see below) — not omitted, so the JSON shape stays stable across modes. |
-| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. |
+| `candidateSlices` | Slices the tool placed deterministically. `matchedBy: "implementedIn"` (diff-scoped mode) carries the subset of `changedPaths` that slice's doc `implementedIn` names; `matchedBy: "full"` (full mode) carries an empty `paths` — every `status: implemented` slice is in scope, not a specific changed path. `file` (GH #451) is the storyline model file this slice's body lives in — posix, relative to the model's directory — or `null` for a slice declared in the root file; tells the agent which `--seed-asis` scratch file to edit for this slice (`<model>-asis.em` when `null`, else that file's own `-asis` sibling) without a second lookup against the model. |
 | `unmappedPaths` | `changedPaths` matched by no slice — hand to agent judgment (grep fallback, evidence walks per `reference/conform.md`). Always `[]` in full mode. |
 
 **Scoping mode.** Diff-scoped by default: when `lastConformance` is set and `--full` isn't
@@ -4959,8 +5059,35 @@ line, only if it isn't already present anywhere in it — never duplicated). Rep
 as an additional `seeded` key in the JSON, omitted entirely when the flag isn't passed:
 
 ```json
-{ "seeded": { "asisPath": "my-model-asis.em", "gitignoreUpdated": true } }
+{ "seeded": { "asisPath": "my-model-asis.em", "gitignoreUpdated": true, "storylineFiles": [] } }
 ```
+
+**Storyline models (GH #451).** A root that declares a storyline without a body
+([dsl.md#storyline-models](dsl.md#storyline-models--one-file-per-storyline-gh-421)) has no slice
+bodies of its own in `<model>-asis.em` for an in-scope slice that lives in one of its storyline
+files — so `--seed-asis` also byte-copies each storyline file the root declares to its own
+`-asis` sibling (`<slug>/<slug>.em` -> `<slug>/<slug>-asis.em`), and rewrites the COPIED root's
+`storyline "…" in "…"` declaration to point at that sibling instead of the canonical file:
+
+```json
+{
+  "seeded": {
+    "asisPath": "checkout-asis.em",
+    "gitignoreUpdated": true,
+    "storylineFiles": [
+      { "file": "chase-an-overdue-loan/chase-an-overdue-loan.em", "asisFile": "chase-an-overdue-loan/chase-an-overdue-loan-asis.em" }
+    ]
+  }
+}
+```
+
+`storylineFiles` is `[]`, not omitted, for a model with no storyline files — every non-storyline
+model's `seeded` output is otherwise unchanged. Edit the slice's OWN scratch file for an in-scope
+slice: `<model>-asis.em` when its `candidateSlices[].file` (below) is `null`, else that file's
+`-asis` sibling — never the canonical storyline file, which `--seed-asis` never touches.
+`em diff <model>.em <model>-asis.em` then reads the canonical root (and, through it, every
+canonical storyline file) on one side and every scratch copy on the other, exactly as the
+inline-block case always has.
 
 Any input-model error (parse/validation) is reported and exits 1 before any git call or file
 write, same as every other command. A missing state file, an unparsable `Last conformance:`

@@ -23,11 +23,11 @@
 // edit leaves the contract byte-identical and neither CODEOWNERS routing nor the API-first
 // gate fires on it.
 
-import { NormalizedModel, resolvePublicType } from "../model/model.js";
+import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES, PUBLIC_SCALAR_TYPES, resolvePublicType } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe } from "../util/slug.js";
-import { buildExportDoc, ElementExport, FieldExport } from "./json.js";
+import { buildExportDoc, ElementExport, FieldExport, TypeExport } from "./json.js";
 
 /** The sentence every generated `model` carries (MIL-239 relies on it verbatim). */
 export const CONSUMER_TOLERANCE_SENTENCE = "Consumers tolerate unknown fields; additive changes do not break them.";
@@ -51,6 +51,27 @@ function pascalCase(name: string): string {
 
 function camelCase(pascal: string): string {
   return pascal.length > 0 ? pascal[0].toLowerCase() + pascal.slice(1) : pascal;
+}
+
+/** Declared types reachable (transitively) from any of the given elements' fields, as the set of
+ *  their export refs — same walk `em api generate`'s contract body and `em api surface` (GH #448)
+ *  use to decide which declared types belong on the public surface, shared so neither re-derives
+ *  it with a subtly different recursion. */
+export function reachableTypeRefs(
+  elements: { fields: FieldExport[] | null }[],
+  typesByRef: Map<string, TypeExport>,
+): Set<string> {
+  const reachable = new Set<string>();
+  const walk = (fields: FieldExport[] | null) => {
+    for (const f of fields ?? []) {
+      if (f.typeRef && !reachable.has(f.typeRef.ref)) {
+        reachable.add(f.typeRef.ref);
+        walk(typesByRef.get(f.typeRef.ref)?.fields ?? null);
+      }
+    }
+  };
+  for (const el of elements) walk(el.fields);
+  return reachable;
 }
 
 /** A field name that isn't a bare TypeSpec identifier is backtick-quoted (TypeSpec's own escape). */
@@ -144,22 +165,17 @@ export function buildApiContract(
   const surface = publicSurfaceOf(doc.model.slices);
 
   // Declared types reachable (transitively) from a public element's fields.
-  const reachable = new Set<string>();
-  const walk = (fields: FieldExport[] | null) => {
-    for (const f of fields ?? []) {
-      if (f.typeRef && !reachable.has(f.typeRef.ref)) {
-        reachable.add(f.typeRef.ref);
-        walk(typesByRef.get(f.typeRef.ref)?.fields ?? null);
-      }
-    }
-  };
-  for (const el of [...surface.commands, ...surface.events, ...surface.views]) walk(el.fields);
+  const reachable = reachableTypeRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
 
   const usedNames = new Set<string>();
   const typeNameByRef = new Map<string, string>();
   for (const t of doc.model.types) {
     if (reachable.has(t.ref)) typeNameByRef.set(t.ref, dedupe(pascalCase(t.name), usedNames, "_"));
   }
+
+  // GH #444 (#443 ask 1): which table entries this contract actually uses, so the namespace
+  // declares exactly the scalars its own fields need — never a dead declaration.
+  const usedScalars = new Set<string>();
 
   const fieldType = (f: FieldExport, owner: string): string => {
     if (f.typeRef) {
@@ -172,6 +188,7 @@ export function buildApiContract(
         `em api generate: ${owner} field "${f.name}" has no public type — em validate's public-field-type-unresolved should have refused this model`,
       );
     }
+    usedScalars.add(r.scalar);
     return r.array ? `${r.tsType}[]` : r.tsType;
   };
 
@@ -242,6 +259,16 @@ export function buildApiContract(
     commandOps.push(`op ${opName}(${params.join(", ")}): void;`);
   }
   if (commandOps.length > 0) sections.push(["interface Commands {", ...indent(commandOps, 1), "}"].join("\n"));
+
+  // Scalar declarations go first, in table order (not order of first use) — every field type
+  // above is already computed by this point, so `usedScalars` is complete.
+  const scalarDecls: string[] = [];
+  for (const name of PUBLIC_SCALAR_TYPE_NAMES) {
+    if (!usedScalars.has(name)) continue;
+    const decl = PUBLIC_SCALAR_TYPES[name].scalarDecl;
+    if (decl) scalarDecls.push(decl);
+  }
+  if (scalarDecls.length > 0) sections.unshift(scalarDecls.join("\n"));
 
   const namespaceName = pascalCase(doc.model.name ?? "Model");
   const header = [

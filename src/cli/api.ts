@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: MIT
-// `em api generate | check` (MIL-237): the contract path convention (briefing R6), the
-// "is the committed contract current" text comparison, and the structural public-surface diff
-// that annotates each change additive or breaking (briefing R8/R12). Pure where it can be —
+// `em api generate | check | surface` (MIL-237, GH #448): the contract path convention
+// (briefing R6), the "is the committed contract current" text comparison, the structural
+// public-surface diff that annotates each change additive or breaking (briefing R8/R12), and the
+// public surface as a structured document for companion tools (GH #448). Pure where it can be —
 // fs/git reads go through injectable readers so the diff and the classification are unit-
-// testable without a repository; cli.ts and the MCP `api_check` tool share `runApiCheck`.
+// testable without a repository; cli.ts and the MCP `api_check`/`api_surface` tools share
+// `runApiCheck`/`runApiSurface`.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { normalizeName } from "../model/model.js";
+import { NormalizedModel, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { hasErrors, Diagnostic } from "../model/validate.js";
 import { compile } from "../pipeline.js";
 import { ParseError } from "../parser/parser.js";
-import { buildApiContract, publicSurfaceOf } from "../emit/api.js";
+import { buildApiContract, publicSurfaceOf, reachableTypeRefs } from "../emit/api.js";
 import { buildExportDoc, ElementExport, FieldExport, TypeExport } from "../emit/json.js";
+import { RefsResult } from "../model/refs.js";
 import { kebabSlug } from "../util/slug.js";
 import { GitRunner, realGit, resolveRevision } from "./diff-inputs.js";
 
@@ -368,6 +371,180 @@ export function formatApiCheckText(r: ApiCheckReport): string[] {
     for (const c of r.changes) {
       lines.push(`${c.kind}: ${c.element}${c.field !== null ? ` field "${c.field}"` : ""} ${c.what}`);
     }
+  }
+  return lines;
+}
+
+// ---- `em api surface` (GH #448) ---------------------------------------------------------
+
+/** A public field's resolved type (R7's fixed table or a declared type), the same shape
+ *  `resolvePublicType` (model/model.ts) computes — scalar carries the matched table entry's
+ *  key and the TypeSpec core scalar `em api generate` emits for it; declared carries the
+ *  reachable type's own name (see `ApiSurfaceType` below for its full field shape). */
+export interface ApiSurfaceFieldType {
+  kind: "scalar" | "declared";
+  scalar: string | null;
+  tsType: string;
+  array: boolean;
+}
+
+export interface ApiSurfaceField {
+  name: string;
+  type: ApiSurfaceFieldType;
+  optional: boolean;
+  tag: boolean;
+  assigned: boolean;
+  renamedFrom: string[] | null;
+}
+
+/** One public command/event/view on the surface. `slug` is the kebab-slug of `name` — a stable,
+ *  human-legible identity a companion tool can use without re-deriving it (same slugging `em api
+ *  check`'s element ids use, minus the `<kind>.` prefix since commands/events/views are already
+ *  separated into their own arrays here). */
+export interface ApiSurfaceElement {
+  name: string;
+  slug: string;
+  fields: ApiSurfaceField[];
+  invariants: { id: string; rule: string | null }[] | null;
+}
+
+/** One declared `type` reachable from a public command/event/view's fields. */
+export interface ApiSurfaceType {
+  name: string;
+  slug: string;
+  fields: ApiSurfaceField[];
+}
+
+export interface ApiSurfaceReport {
+  file: string;
+  modelKey: string;
+  commands: ApiSurfaceElement[];
+  events: ApiSurfaceElement[];
+  views: ApiSurfaceElement[];
+  types: ApiSurfaceType[];
+}
+
+export type ApiSurfaceOutcome =
+  | { ok: true; report: ApiSurfaceReport; diagnostics: Diagnostic[] }
+  | { ok: false; message: string; diagnostics: Diagnostic[] };
+
+/** Resolve one field's public type exactly as `em api generate`'s own `fieldType()` does
+ *  (emit/api.ts) — declared types win (same precedence `resolvePublicType` already gives), else
+ *  the fixed scalar table. A model with errors never reaches here (both CLI callers refuse
+ *  first), so an unresolved type is a programming error, not a user-facing case — same posture
+ *  as `buildApiContract`'s own throw. */
+function surfaceFieldType(f: FieldExport, typesByName: Map<string, TypeDecl>, owner: string): ApiSurfaceFieldType {
+  const r = resolvePublicType(f.type ?? undefined, typesByName);
+  if (!r) {
+    throw new Error(
+      `em api surface: ${owner} field "${f.name}" has no public type — em validate's ` +
+        "public-field-type-unresolved should have refused this model",
+    );
+  }
+  return r.kind === "scalar"
+    ? { kind: "scalar", scalar: r.scalar, tsType: r.tsType, array: r.array }
+    : { kind: "declared", scalar: null, tsType: r.typeDecl.name, array: r.array };
+}
+
+function surfaceField(f: FieldExport, typesByName: Map<string, TypeDecl>, owner: string): ApiSurfaceField {
+  return {
+    name: f.name,
+    type: surfaceFieldType(f, typesByName, owner),
+    optional: f.optional,
+    tag: f.tag,
+    assigned: f.assigned,
+    renamedFrom: f.renamedFrom,
+  };
+}
+
+function surfaceElement(el: ElementExport, typesByName: Map<string, TypeDecl>): ApiSurfaceElement {
+  return {
+    name: el.name,
+    slug: kebabSlug(el.name),
+    fields: (el.fields ?? []).map((f) => surfaceField(f, typesByName, `${el.kind} "${el.name}"`)),
+    invariants: el.invariants ?? null,
+  };
+}
+
+/**
+ * Build the `em api surface` report for an already-validated (error-free) model: the `public`
+ * commands/events/views (`publicSurfaceOf`, same as `em api generate`/`em api check`) plus every
+ * declared type reachable from their fields (`reachableTypeRefs`, same walk `em api generate`'s
+ * contract body uses), each field's type resolved through `resolvePublicType` — the one notion
+ * of the public surface every em surface shares, so a companion tool never re-derives it from
+ * `em export --json` and risks drifting from it.
+ */
+export function buildApiSurfaceReport(
+  model: NormalizedModel,
+  refs: RefsResult,
+  diagnostics: Diagnostic[],
+  source: string,
+  file: string,
+): ApiSurfaceReport {
+  const { doc } = buildExportDoc(model, refs, diagnostics, source, file);
+  const surface = publicSurfaceOf(doc.model.slices);
+  const typesByRef = new Map(doc.model.types.map((t) => [t.ref, t]));
+  const reachable = reachableTypeRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
+  return {
+    file,
+    modelKey: doc.model.key,
+    commands: surface.commands.map((el) => surfaceElement(el, model.typesByName)),
+    events: surface.events.map((el) => surfaceElement(el, model.typesByName)),
+    views: surface.views.map((el) => surfaceElement(el, model.typesByName)),
+    types: doc.model.types
+      .filter((t) => reachable.has(t.ref))
+      .map((t) => ({
+        name: t.name,
+        slug: kebabSlug(t.name),
+        fields: t.fields.map((f) => surfaceField(f, model.typesByName, `type "${t.name}"`)),
+      })),
+  };
+}
+
+/**
+ * Run `em api surface <file>`: compile, refuse on errors (same posture as `em api generate` —
+ * `public-field-type-unresolved` included), build the report. Self-contained (reads + compiles
+ * `file` itself) so the MCP `api_surface` tool can call it with just a path, same shape as
+ * `runApiCheck`.
+ */
+export function runApiSurface(file: string): ApiSurfaceOutcome {
+  let source: string;
+  try {
+    source = readFileSync(file, "utf8");
+  } catch {
+    return { ok: false, message: `em api surface: cannot read ${file}`, diagnostics: [] };
+  }
+  let compiled;
+  try {
+    compiled = compile(source);
+  } catch (e) {
+    if (e instanceof ParseError) {
+      return { ok: false, message: `em api surface: parse error in ${file} ${e.message}`, diagnostics: [] };
+    }
+    throw e;
+  }
+  if (hasErrors(compiled.diagnostics)) {
+    return { ok: false, message: "em api surface: not generating — fix the errors above", diagnostics: compiled.diagnostics };
+  }
+  const report = buildApiSurfaceReport(compiled.model, compiled.refs, compiled.diagnostics, source, file);
+  return { ok: true, report, diagnostics: compiled.diagnostics };
+}
+
+/** The text listing: one line per command/event/view/type, with its field count. */
+export function formatApiSurfaceText(r: ApiSurfaceReport): string[] {
+  const lines: string[] = [`model ${r.modelKey} (${r.file})`];
+  const fieldCount = (n: number) => `${n} field${n === 1 ? "" : "s"}`;
+  const section = (label: string, elements: { slug: string; fields: unknown[] }[]) => {
+    if (elements.length === 0) return;
+    lines.push(`${label}:`);
+    for (const el of elements) lines.push(`  ${el.slug} (${fieldCount(el.fields.length)})`);
+  };
+  section("commands", r.commands);
+  section("events", r.events);
+  section("views", r.views);
+  section("types", r.types);
+  if (r.commands.length === 0 && r.events.length === 0 && r.views.length === 0 && r.types.length === 0) {
+    lines.push("(no public surface)");
   }
   return lines;
 }

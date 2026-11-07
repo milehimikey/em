@@ -27,8 +27,9 @@ import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader, formatDiagnosticWithFile } from "./model/validate.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
 import { buildDocJsonExport } from "./emit/docJson.js";
-import { generateContract, runApiCheck, formatApiCheckText } from "./cli/api.js";
+import { generateContract, runApiCheck, formatApiCheckText, runApiSurface, formatApiSurfaceText } from "./cli/api.js";
 import { buildApiCheckJson } from "./emit/apiCheckJson.js";
+import { buildApiSurfaceJson } from "./emit/apiSurfaceJson.js";
 import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
@@ -169,7 +170,17 @@ import {
   runCertifyModelVersion,
   runModelVersionBump,
 } from "./cli/modelVersion.js";
-import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile, scaffoldConstitution } from "./templates.js";
+import {
+  STARTER_EM,
+  starterEmFor,
+  scaffoldReadme,
+  scaffoldStateFile,
+  scaffoldConstitution,
+  SLICES_DIR_README,
+  CONTRACTS_DIR_README,
+  MODEL_VERSIONS_DIR_README,
+  CONFORMANCE_BINDINGS_DIR_README,
+} from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
 import {
   ciWorkflowPath,
@@ -288,7 +299,10 @@ program
   .description(
     "scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and " +
       "constitution.md (the implementation constitution — skipped, with a note, in a spec-kit " +
-      "project, where `.specify/memory/constitution.md` IS that document) " +
+      "project, where `.specify/memory/constitution.md` IS that document), plus the standard " +
+      "slices/, contracts/, model-versions/ and conformance/bindings/ directories (each seeded " +
+      "with a one-line README naming what lands there and which command writes it, instead of " +
+      "a .gitkeep) " +
       "(see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, " +
       "pass --under to nest it under a shared parent directory)",
   )
@@ -318,6 +332,20 @@ program
     writeFileSync(join(dirPath, `${slugName}.em`), starterEmFor(name));
     writeFileSync(join(dirPath, "README.md"), scaffoldReadme(name, slugName));
     writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today, PKG_VERSION));
+    // GH #453: the full standardized model-directory family, not just the four files above —
+    // every doc-aware command eventually writes into one of these. Git doesn't track empty
+    // directories, so each gets a one-line README (never a .gitkeep) naming what lands there
+    // and which command writes it.
+    await mkdir(join(dirPath, "slices"), { recursive: true });
+    writeFileSync(join(dirPath, "slices", "README.md"), SLICES_DIR_README);
+    await mkdir(join(dirPath, "contracts"), { recursive: true });
+    writeFileSync(join(dirPath, "contracts", "README.md"), CONTRACTS_DIR_README);
+    await mkdir(join(dirPath, "model-versions"), { recursive: true });
+    writeFileSync(join(dirPath, "model-versions", "README.md"), MODEL_VERSIONS_DIR_README);
+    // conformance/bindings/ (GH #449) — creating it also creates its conformance/ parent, which
+    // otherwise only appears once the conform phase writes its first report/findings file.
+    await mkdir(join(dirPath, "conformance", "bindings"), { recursive: true });
+    writeFileSync(join(dirPath, "conformance", "bindings", "README.md"), CONFORMANCE_BINDINGS_DIR_README);
     // MIL-202: the implementation constitution. One document per project, never two — in a
     // spec-kit project `.specify/memory/constitution.md` already IS that slot, so em defers to it
     // and writes nothing rather than seeding a second, competing copy beside the model. Same
@@ -610,6 +638,25 @@ api
     if (opts.json) process.stdout.write(buildApiCheckJson(outcome.report) + "\n");
     else for (const line of formatApiCheckText(outcome.report)) console.log(line);
     if (!outcome.report.current) process.exitCode = 1;
+  });
+
+api
+  .command("surface")
+  .description(
+    "the model's public commands, events, views and reachable declared types as a versioned " +
+      "JSON document for companion tools (GH #448, see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--json", "print a JSON document instead of the text listing (see docs/cli.md)")
+  .action((file: string, opts: { json?: boolean }) => {
+    const outcome = runApiSurface(file);
+    printDiagnostics(outcome.diagnostics);
+    if (!outcome.ok) {
+      console.error(outcome.message);
+      process.exit(1);
+    }
+    if (opts.json) process.stdout.write(buildApiSurfaceJson(outcome.report) + "\n");
+    else for (const line of formatApiSurfaceText(outcome.report)) console.log(line);
   });
 
 program
@@ -3003,7 +3050,7 @@ program
       // merged `sliceFacts` above (which spans every input file when several are given).
       const conformance = compiled.map(({ file }) => {
         const facts = factsByFile.get(file) ?? [];
-        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped }));
+        const sliceDocFacts: SliceDocFacts[] = facts.map((f) => ({ key: f.key, status: f.rawStatus, implementedIn: f.implementedIn, shipped: f.shipped, file: f.sliceFile }));
         return resolveConformanceEntry(file, opts.repo, sliceDocFacts);
       });
       // MIL-218: one model-version entry per input file.

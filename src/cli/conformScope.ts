@@ -27,6 +27,7 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
+import { parse } from "../parser/parser.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { ParsedState } from "./stateFile.js";
 
@@ -45,12 +46,20 @@ export interface SliceDocFacts {
    *  pre-1.15 `status: implemented`). The scope predicate, in place of `status === "implemented"`:
    *  a slice whose next version is an open `draft` still has shipped code to check. */
   shipped: boolean;
+  /** GH #451 (storyline models): the storyline model file this slice's body lives in — posix,
+   *  relative to the root model's directory (`Slice.file` from model/model.ts) — or `null` for a
+   *  slice declared in the root file. Echoed on `CandidateSlice` below so the agent knows which
+   *  scratch file to edit without a second lookup against the model: `<model>-asis.em` when
+   *  `null`, else that file's own `-asis` sibling (`seedAsisModel`, below). */
+  file: string | null;
 }
 
 export interface CandidateSlice {
   key: string;
   matchedBy: "implementedIn" | "full";
   paths: string[];
+  /** GH #451: see `SliceDocFacts.file`. */
+  file: string | null;
 }
 
 /** The `em conform-scope` JSON document (ticket MIL-100). `lastConformance` echoes what was
@@ -106,7 +115,7 @@ export function buildConformScope(
   if (full || lastConformance === null) {
     const candidateSlices: CandidateSlice[] = slices
       .filter((s) => s.shipped)
-      .map((s) => ({ key: s.key, matchedBy: "full" as const, paths: [] as string[] }));
+      .map((s) => ({ key: s.key, matchedBy: "full" as const, paths: [] as string[], file: s.file }));
     return { lastConformance: lastConformanceOut, changedPaths: [], candidateSlices, unmappedPaths: [] };
   }
 
@@ -115,7 +124,7 @@ export function buildConformScope(
   for (const s of slices) {
     const paths = matchImplementedInToPaths(s.implementedIn, changedPaths);
     if (paths.length === 0) continue;
-    candidateSlices.push({ key: s.key, matchedBy: "implementedIn", paths });
+    candidateSlices.push({ key: s.key, matchedBy: "implementedIn", paths, file: s.file });
     for (const p of paths) matched.add(p);
   }
   const unmappedPaths = changedPaths.filter((p) => !matched.has(p));
@@ -151,7 +160,7 @@ export function resolveSliceDocFacts(model: NormalizedModel, refs: RefsResult, b
     // under two different keys for one actual change. The originating slice's own fact already
     // covers it.
     if (continuationOfKey !== null) return;
-    facts.push({ key, status: doc.status, implementedIn: doc.implementedIn, shipped: doc.shipped !== null });
+    facts.push({ key, status: doc.status, implementedIn: doc.implementedIn, shipped: doc.shipped !== null, file: slice.file ?? null });
   });
   return { facts, diagnostics };
 }
@@ -268,9 +277,26 @@ export function changedPathsStaged(repo: string, runGit: GitRunner = realGit, la
 export interface SeedAsisResult {
   asisPath: string;
   gitignoreUpdated: boolean;
+  /** GH #451 (storyline models): one entry per storyline model file the root declares (`in` or
+   *  the default `<slug>/<slug>.em`) — the file byte-copied to its own `-asis` sibling, and the
+   *  path written into `asisPath`'s own `storyline … in "…"` declaration (see below). `[]` for a
+   *  model with no storyline files — not omitted, so the JSON shape stays stable either way. */
+  storylineFiles: { file: string; asisFile: string }[];
 }
 
 const ASIS_GITIGNORE_PATTERN = "*-asis.em";
+
+/** `<dir>/a/b.em` -> `<dir>/a/b-asis.em`: the same `-asis` stem transform `seedAsisModel` applies
+ *  to the root, applied to a storyline file's own path (posix, relative to the root's directory). */
+function asisSiblingOf(relPath: string): string {
+  const slash = relPath.lastIndexOf("/");
+  const dir = slash < 0 ? "" : relPath.slice(0, slash + 1);
+  const name = slash < 0 ? relPath : relPath.slice(slash + 1);
+  const dot = name.lastIndexOf(".");
+  const stem = dot < 0 ? name : name.slice(0, dot);
+  const ext = dot < 0 ? "" : name.slice(dot);
+  return `${dir}${stem}-asis${ext}`;
+}
 
 /**
  * `--seed-asis`: byte-copy `modelFile` to `<dirname(modelFile)>/<stem>-asis.em`, and make sure
@@ -282,12 +308,61 @@ const ASIS_GITIGNORE_PATTERN = "*-asis.em";
  * model the repo holds. Falls back to a `.gitignore` right next to the model when the model
  * isn't inside a git repo at all. Idempotent: never appends a second `*-asis.em` line if one
  * (exactly, on its own line) is already present anywhere in the file.
+ *
+ * GH #451 (storyline models): a root that declares a storyline without a body (GH #421 — its
+ * slices live in their own `<slug>/<slug>.em` file) has NO slice bodies of its own to rewrite in
+ * `<model>-asis.em` for an in-scope slice that lives in one of those files — editing the root
+ * copy alone leaves the agent nowhere to write the as-is picture, and editing the CANONICAL
+ * storyline file directly (the only other file that exists) would corrupt it, not scratch it.
+ * So this also byte-copies each storyline file the root declares to its own `-asis` sibling and
+ * rewrites the copied root's declaration line to `in` that sibling instead of the canonical file
+ * — `em diff <model>.em <model>-asis.em` then reads the canonical file on one side and the
+ * scratch copies on the other, exactly as the inline-block case always has. Reparses the root
+ * text itself (not a caller-supplied `NormalizedModel`) specifically so `source`/`after` come
+ * back exactly as the root declares them, never as the cross-file inheritance
+ * `loadModelAst`/`compileModelFile` apply when the root's own declaration omits `source` (a
+ * storyline file's own header fills that gap on the COMPILED model, which would otherwise get
+ * redundantly copied onto the rewritten root line). A model with no external storylines (the
+ * common case) is byte-copied exactly as before — a no-op change for every non-storyline model.
  */
 export function seedAsisModel(modelFile: string, runGit: GitRunner = realGit): SeedAsisResult {
   const dir = dirname(modelFile);
   const stem = basename(modelFile, extname(modelFile));
   const asisPath = join(dir, `${stem}-asis.em`);
-  copyFileSync(modelFile, asisPath);
+  const rootText = readFileSync(modelFile, "utf8");
+
+  // The root's OWN declarations, as written — before any storyline-file source inheritance. By
+  // the time `--seed-asis` runs, the CLI has already validated the model (compileFile's error
+  // check); a parse failure here means some OTHER caller handed in text that was never a real
+  // model in the first place — fall back to the byte-copy (pre-GH-#451) behavior rather than
+  // throwing from a flag whose whole job is "copy the file", not "parse it".
+  let externalStorylines: ReturnType<typeof parse>["storylines"] = [];
+  try {
+    externalStorylines = parse(rootText).storylines.filter((st) => st.external === true && st.file !== undefined);
+  } catch {
+    externalStorylines = [];
+  }
+
+  const storylineFiles: SeedAsisResult["storylineFiles"] = [];
+  if (externalStorylines.length === 0) {
+    copyFileSync(modelFile, asisPath);
+  } else {
+    const eol = rootText.includes("\r\n") ? "\r\n" : "\n";
+    const lines = rootText.split(/\r?\n/);
+    for (const st of externalStorylines) {
+      const file = st.file!;
+      const asisFile = asisSiblingOf(file);
+      copyFileSync(join(dir, file), join(dir, asisFile));
+      storylineFiles.push({ file, asisFile });
+      const q = (s: string): string => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+      const parts = [`storyline ${q(st.name)}`];
+      if (st.source !== undefined) parts.push(`source ${q(st.source)}`);
+      if (st.after !== undefined) parts.push(`after ${q(st.after)}`);
+      parts.push(`in ${q(asisFile)}`);
+      lines[st.line - 1] = parts.join(" ");
+    }
+    writeFileSync(asisPath, lines.join(eol));
+  }
 
   const toplevel = runGit(["-C", resolve(dir), "rev-parse", "--show-toplevel"]);
   const gitignoreDir = toplevel.status === 0 ? toplevel.stdout.trim() : dir;
@@ -307,5 +382,5 @@ export function seedAsisModel(modelFile: string, runGit: GitRunner = realGit): S
     gitignoreUpdated = true;
   }
 
-  return { asisPath, gitignoreUpdated };
+  return { asisPath, gitignoreUpdated, storylineFiles };
 }

@@ -3,8 +3,10 @@
 // Scope: the model's `public` commands (write API), events (async) and views (read API).
 
 namespace Fulfillment {
+  @format("uuid") scalar Uuid extends string;
+
   interface Commands {
     /** INV-FUL-1: An order is accepted at most once per checkout order id */
-    op acceptOrder(orderId: string, total: decimal): void;
+    op acceptOrder(orderId: Uuid, total: decimal): void;
   }
 }
