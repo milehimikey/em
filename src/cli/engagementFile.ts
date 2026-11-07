@@ -55,6 +55,10 @@ export interface EngagementFile {
   tracking: string | null;
   /** GH #334: the PR title template (`{key}`, `{slice}`); null when absent (the default title applies). */
   prTitle: string | null;
+  /** GH #455: repo-relative paths to documents an implementer needs beyond the slice doc
+   *  (constitution, NFR docs, ADRs) — stored exactly as given, `[]` when absent. Not checked
+   *  against the filesystem here; `plan`'s pre-flight does that. */
+  context: string[];
   parallel: number;
   status: "open" | "closed";
   slices: EngagementSliceEntry[];
@@ -72,6 +76,12 @@ export function detectEol(text: string): "\r\n" | "\n" {
 }
 
 const q = (s: string | null): string => (s === null ? "null" : JSON.stringify(s));
+
+/** GH #455: `context:`'s value — a one-line JSON-style flow sequence, so the whole field stays a
+ *  single splice-able line like every other frontmatter field here. */
+function formatContextList(paths: string[]): string {
+  return `[${paths.map((p) => JSON.stringify(p)).join(", ")}]`;
+}
 
 /** One `slices:` entry as its single frontmatter line (no EOL). Key order is fixed. */
 export function formatSliceEntryLine(e: EngagementSliceEntry): string {
@@ -119,6 +129,7 @@ export function renderEngagementFile(fm: EngagementFile, ledgerLines: string[]):
     `createdBy: ${q(fm.createdBy)}`,
     ...(fm.tracking === null ? [] : [`tracking: ${q(fm.tracking)}`]),
     ...(fm.prTitle === null ? [] : [`prTitle: ${q(fm.prTitle)}`]),
+    ...(fm.context.length === 0 ? [] : [`context: ${formatContextList(fm.context)}`]),
     `parallel: ${fm.parallel}`,
     `status: ${fm.status}`,
     "slices:",
@@ -164,6 +175,15 @@ export function parseEngagementFile(text: string): ParseResult {
   if (!model) return { ok: false, message: "model must name the model file (path relative to the engagement file)" };
   const status = str(d.status);
   if (status !== "open" && status !== "closed") return { ok: false, message: `status must be open or closed, got "${status ?? "(missing)"}"` };
+  const context: string[] = [];
+  if (d.context !== undefined && d.context !== null) {
+    if (!Array.isArray(d.context)) return { ok: false, message: "context must be a list of repo-relative paths" };
+    for (const item of d.context) {
+      const s = str(item);
+      if (s === null || s.trim() === "") return { ok: false, message: "every context entry must be a non-empty string (a repo-relative path)" };
+      context.push(s);
+    }
+  }
   const parallel = Number(d.parallel);
   if (!Number.isInteger(parallel) || parallel < 1) return { ok: false, message: "parallel must be a positive integer" };
   if (!Array.isArray(d.slices)) return { ok: false, message: "slices must be a list" };
@@ -189,6 +209,7 @@ export function parseEngagementFile(text: string): ParseResult {
       createdBy: str(d.createdBy),
       tracking: str(d.tracking),
       prTitle: str(d.prTitle),
+      context,
       parallel,
       status,
       slices,
@@ -218,6 +239,39 @@ export function spliceStatus(text: string, status: "open" | "closed"): string | 
   if (!re.test(inner)) return null;
   const next = inner.replace(re, (_m, prefix: string) => `${prefix}${status}`);
   return text.slice(0, loc.innerStart) + next + text.slice(loc.innerEnd);
+}
+
+/** GH #455: a `--context-doc` value (or a `context:` entry) must be a non-empty single line.
+ *  Never checked against the filesystem — paths are stored exactly as given. */
+export function validateContextPaths(paths: string[]): string | null {
+  for (const p of paths) {
+    if (p.trim() === "") return "--context-doc must be a non-empty path";
+    if (/[\r\n]/.test(p)) return "--context-doc must be a single line (no newlines)";
+  }
+  return null;
+}
+
+/** Replace (or insert) the frontmatter's whole `context:` list — `set --context-doc` replaces
+ *  the list wholesale, same as every other `set` input. When the line already exists, only its
+ *  value is replaced (same splice discipline as every other field here); when it doesn't, it is
+ *  inserted right before `parallel:` (the schema's fixed field order: tracking?, prTitle?,
+ *  context?, parallel). A no-op for an empty list on a file with no existing `context:` line.
+ *  `null` when the frontmatter is missing or malformed (no `parallel:` line to anchor on). */
+export function spliceContextList(text: string, context: string[]): string | null {
+  const loc = locateFrontmatterInner(text);
+  if (!loc) return null;
+  const inner = text.slice(loc.innerStart, loc.innerEnd);
+  const existing = fieldLineRegex("context").exec(inner);
+  if (existing) {
+    const at = loc.innerStart + existing.index;
+    return text.slice(0, at) + existing[1] + formatContextList(context) + text.slice(at + existing[0].length);
+  }
+  if (context.length === 0) return text;
+  const anchor = fieldLineRegex("parallel").exec(inner);
+  if (!anchor) return null;
+  const eol = detectEol(text);
+  const at = loc.innerStart + anchor.index;
+  return text.slice(0, at) + `context: ${formatContextList(context)}` + eol + text.slice(at);
 }
 
 /** Regenerate the Ledger region's body in the file's own EOL. Null when the marker pair is

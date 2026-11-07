@@ -15,6 +15,7 @@ import {
   Selector,
   applyEngagementClose,
   applyEngagementSet,
+  applyEngagementSetContext,
   buildNewEngagement,
   buildUnitIndex,
   computePreflight,
@@ -630,7 +631,7 @@ describe("engagement tracking key (GH #241)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "cli", "--slices", "order-list", "--tracking", "PROJ-7"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "cli"), "utf8")).toContain('tracking: "PROJ-7"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
-    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.4", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.5", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
     const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
     expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
   }, 60_000);
@@ -725,10 +726,146 @@ describe("engagement prTitle template (GH #334)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "titled-cli", "--slices", "order-list", "--tracking", "PROJ-7", "--pr-title", "feat: {slice} [{key}]"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "titled-cli"), "utf8")).toContain('prTitle: "feat: {slice} [{key}]"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "titled-cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.4");
+    expect(p.engagementPlanSchemaVersion).toBe("1.5");
     expect(p.prTitle).toBe("feat: {slice} [{key}]");
     expect(p.slices[0].prTitle).toMatch(/^feat: .+ \[PROJ-7\]$/);
   }, 60_000);
+});
+
+// GH #455: the engagement-level `context:` list — repo-relative document paths an implementer
+// needs beyond the slice doc (constitution, NFR docs, ADRs).
+describe("engagement context documents (GH #455)", () => {
+  it("new writes the list when given and no context line when absent; plan carries it ([] when absent); text prints a context: line only when non-empty", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    create(file, "plain", { kind: "slices", keys: ["order-list"] });
+    expect(readFileSync(engagementPath(file, "plain"), "utf8")).not.toContain("context:");
+    const p0 = plan(file, "plain");
+    expect(p0.context).toEqual([]);
+    expect(formatEngagementPlanText(p0)).not.toContain("context:");
+
+    const r = buildNewEngagement(input(file), {
+      slug: "withctx",
+      selector: { kind: "slices", keys: ["order-list"] },
+      parallel: 3,
+      createdBy: null,
+      context: ["docs/constitution.md", "docs/nfr/latency.md"],
+      created: "2026-10-08",
+    });
+    if (!r.ok) throw new Error(r.message);
+    mkdirSync(join(dirname(file), "engagements"), { recursive: true });
+    writeFileSync(engagementPath(file, "withctx"), r.text);
+    expect(r.text).toContain('\ncontext: ["docs/constitution.md", "docs/nfr/latency.md"]\n');
+    const parsed = parseEngagementFile(r.text);
+    expect(parsed.ok && parsed.file.context).toEqual(["docs/constitution.md", "docs/nfr/latency.md"]);
+    const p = plan(file, "withctx");
+    expect(p.context).toEqual(["docs/constitution.md", "docs/nfr/latency.md"]);
+    expect(formatEngagementPlanText(p)).toContain("context: docs/constitution.md, docs/nfr/latency.md");
+  });
+
+  it("rejects an empty or multi-line --context-doc value", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    for (const bad of ["", "   ", "a\nb"]) {
+      const r = buildNewEngagement(input(file), { slug: "bad", selector: { kind: "slices", keys: ["order-list"] }, parallel: 3, createdBy: null, context: ["ok.md", bad], created: "2026-10-08" });
+      expect(r.ok).toBe(false);
+    }
+  });
+
+  it('writes 1.1 with neither feature, 1.2 with --pr-title only, 1.3 with --context-doc (regardless of --pr-title); a literal 1.1 file still reads context: []', () => {
+    const { file } = writeLifecyclesFixture(dir);
+    const sel: Selector = { kind: "slices", keys: ["order-list"] };
+    const base = { slug: "v", selector: sel, parallel: 3, createdBy: null, created: "2026-10-08" };
+    const bare = buildNewEngagement(input(file), base);
+    const titled = buildNewEngagement(input(file), { ...base, prTitle: "feat: {sliceKey}" });
+    const ctx = buildNewEngagement(input(file), { ...base, context: ["a.md"] });
+    const both = buildNewEngagement(input(file), { ...base, prTitle: "feat: {sliceKey}", context: ["a.md"] });
+    if (!bare.ok || !titled.ok || !ctx.ok || !both.ok) throw new Error("new failed");
+    expect(bare.text).toContain('engagementSchemaVersion: "1.1"');
+    expect(titled.text).toContain('engagementSchemaVersion: "1.2"');
+    expect(ctx.text).toContain('engagementSchemaVersion: "1.3"');
+    expect(both.text).toContain('engagementSchemaVersion: "1.3"');
+    const parsed = parseEngagementFile(bare.text);
+    expect(parsed.ok && parsed.file.context).toEqual([]);
+  });
+
+  it("set --context-doc replaces the whole list and is idempotent; refuses combined with a slice key or slice fields", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    create(file, "three", { kind: "slices", keys: ["account-list", "order-list"] });
+    const path = engagementPath(file, "three");
+    const loaded1 = loadEngagement(file, "three");
+    if (!loaded1.ok) throw new Error(loaded1.message);
+    const first = applyEngagementSetContext("three", loaded1.text, loaded1.file, ["docs/a.md", "docs/b.md"]);
+    expect(first).toMatchObject({ ok: true, changed: true, context: ["docs/a.md", "docs/b.md"] });
+    if (first.ok) writeFileSync(path, first.text);
+    expect(readFileSync(path, "utf8")).toContain('context: ["docs/a.md", "docs/b.md"]');
+
+    // Idempotent.
+    const loaded2 = loadEngagement(file, "three");
+    if (!loaded2.ok) throw new Error(loaded2.message);
+    expect(applyEngagementSetContext("three", loaded2.text, loaded2.file, ["docs/a.md", "docs/b.md"])).toMatchObject({ ok: true, changed: false });
+
+    // Replaces, does not append.
+    const replaced = applyEngagementSetContext("three", loaded2.text, loaded2.file, ["docs/c.md"]);
+    expect(replaced).toMatchObject({ ok: true, changed: true, context: ["docs/c.md"] });
+    if (replaced.ok) {
+      expect(replaced.text).not.toContain("docs/a.md");
+      writeFileSync(path, replaced.text);
+    }
+
+    // Clears back to [] by passing nothing... (splice only inserts/replaces; emptying out via the
+    // CLI exclusivity gate is covered in the CLI test below.)
+    const loaded3 = loadEngagement(file, "three");
+    expect(loaded3.ok && loaded3.file.context).toEqual(["docs/c.md"]);
+  });
+
+  it("the CLI: writes --context-doc (repeatable), plan --json carries it and flags a missing path in pre-flight; set --context-doc replaces and is exclusive with a slice key/--state", () => {
+    const { file } = writeLifecyclesFixture(dir);
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "docs", "constitution.md"), "# Constitution\n");
+    const rel = "lifecycles.em";
+    const created = em(
+      ["engagement", "new", rel, "docd", "--slices", "order-list", "--context-doc", "docs/constitution.md", "--context-doc", "docs/missing.md"],
+      dir,
+    );
+    expect(created.status).toBe(0);
+    expect(readFileSync(engagementPath(file, "docd"), "utf8")).toContain('context: ["docs/constitution.md", "docs/missing.md"]');
+
+    const p = JSON.parse(em(["engagement", "plan", rel, "docd", "--json"], dir).stdout);
+    expect(p.engagementPlanSchemaVersion).toBe("1.5");
+    expect(p.context).toEqual(["docs/constitution.md", "docs/missing.md"]);
+    expect(p.preflight).toEqual([
+      {
+        kind: "context-missing",
+        subject: "docs/missing.md",
+        slices: ["order-list"],
+        message: 'context document "docs/missing.md" does not exist — add it before fan-out, or remove it from the engagement\'s context: list',
+      },
+    ]);
+    const planText = em(["engagement", "plan", rel, "docd"], dir);
+    expect(planText.stdout).toContain("context: docs/constitution.md, docs/missing.md");
+    expect(planText.stdout).toContain("context-missing: context document \"docs/missing.md\" does not exist");
+
+    const setOk = em(["engagement", "set", rel, "docd", "--context-doc", "docs/only.md"], dir);
+    expect(setOk.stdout).toBe("set context: 1 path (engagements/docd.md)\n");
+    expect(readFileSync(engagementPath(file, "docd"), "utf8")).toContain('context: ["docs/only.md"]');
+    const setSame = em(["engagement", "set", rel, "docd", "--context-doc", "docs/only.md"], dir);
+    expect(setSame.stdout).toBe("no change: context is already [docs/only.md] (engagements/docd.md)\n");
+
+    const exclusiveWithKey = em(["engagement", "set", rel, "docd", "order-list", "--context-doc", "docs/x.md"], dir);
+    expect(exclusiveWithKey.status).toBe(1);
+    expect(exclusiveWithKey.stderr).toBe(
+      "em engagement set: --context-doc sets the engagement-level context: list on its own — pass it without a slice key or --state/--branch/--base/--pr\n",
+    );
+    const exclusiveWithState = em(["engagement", "set", rel, "docd", "--context-doc", "docs/x.md", "--state", "building"], dir);
+    expect(exclusiveWithState.status).toBe(1);
+    expect(exclusiveWithState.stderr).toContain("--context-doc sets the engagement-level context: list on its own");
+
+    const noKeyNoState = em(["engagement", "set", rel, "docd"], dir);
+    expect(noKeyNoState.status).toBe(1);
+    expect(noKeyNoState.stderr).toBe("em engagement set: a slice export key is required (or pass --context-doc to set the engagement-level context: list)\n");
+    const noState = em(["engagement", "set", rel, "docd", "order-list"], dir);
+    expect(noState.status).toBe(1);
+    expect(noState.stderr).toBe("em engagement set: --state is required when setting a slice\n");
+  }, 90_000);
 });
 
 // MIL-283: the Ledger's inferred `merged` and the outside-upstream hold read the shipped record.
@@ -861,7 +998,7 @@ describe("plan pre-flight (GH #239)", () => {
     const file = write();
     create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
     const p = JSON.parse(em(["engagement", "plan", "orders.em", "cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.4");
+    expect(p.engagementPlanSchemaVersion).toBe("1.5");
     expect(p.preflight.map((f: { kind: string }) => f.kind)).toEqual(["repeated-invariant", "event-without-tag", "shared-trigger"]);
     expect(em(["engagement", "plan", "orders.em", "cli"], dir).stdout).toContain("pre-flight: 3 model-wide gap(s)");
   }, 60_000);

@@ -12,11 +12,13 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 /** The engagement FILE's frontmatter contract (`engagementSchemaVersion`, docs/engagement-schema.md).
  *  1.0 (MIL-268): slug, created, createdBy, parallel, status, slices[{key, state, branch, base, pr, heldBy?}].
  *  1.1 (GH #241): optional `tracking` — the engagement-level ticket key or URL. A 1.0 file still reads.
- *  1.2 (GH #334): optional `prTitle` — the PR title template (`{key}`, `{slice}`). 1.0 and 1.1 files still read. */
-export const ENGAGEMENT_SCHEMA_VERSION = "1.2";
+ *  1.2 (GH #334): optional `prTitle` — the PR title template (`{key}`, `{slice}`). 1.0 and 1.1 files still read.
+ *  1.3 (GH #455): optional `context` — a list of repo-relative paths to documents an implementer
+ *    needs beyond the slice doc (constitution, NFR docs, ADRs). 1.0, 1.1 and 1.2 files still read. */
+export const ENGAGEMENT_SCHEMA_VERSION = "1.3";
 
 /** Every `engagementSchemaVersion` this em reads; it always writes {@link ENGAGEMENT_SCHEMA_VERSION}. */
-export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1.2"];
+export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1.2", "1.3"];
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
@@ -28,7 +30,10 @@ export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1
 // 1.4 (GH #334): additive `prTitle` on the document (the engagement's template, or `null`) and on
 //   each slice (the resolved PR title the implementer is handed), and a `preflight[].kind:
 //   "pr-title-fallback"` per keyless slice whose `{key}` template fell back to the default.
-export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.4";
+// 1.5 (GH #455): additive `context` on the document — the engagement's repo-relative document
+//   paths, `[]` when absent — and a `preflight[].kind: "context-missing"` per context path that
+//   does not exist on disk at plan time.
+export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.5";
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
@@ -45,6 +50,7 @@ export function buildEngagementPlanJson(plan: EngagementPlan): string {
     parallel: plan.parallel,
     tracking: plan.tracking,
     prTitle: plan.prTitle,
+    context: plan.context,
     levels: plan.levels,
     slices: plan.slices,
     preflight: plan.preflight,
