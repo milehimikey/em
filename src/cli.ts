@@ -27,8 +27,9 @@ import { startLiveServer, LiveServer } from "./render/serve.js";
 import { formatDiagnostic, hasErrors, Diagnostic, publicViewsWithoutInModelReader, formatDiagnosticWithFile } from "./model/validate.js";
 import { buildExport, buildSliceExport, GENERATOR_VERSION } from "./emit/json.js";
 import { buildDocJsonExport } from "./emit/docJson.js";
-import { generateContract, runApiCheck, formatApiCheckText } from "./cli/api.js";
+import { generateContract, runApiCheck, formatApiCheckText, runApiSurface, formatApiSurfaceText } from "./cli/api.js";
 import { buildApiCheckJson } from "./emit/apiCheckJson.js";
+import { buildApiSurfaceJson } from "./emit/apiSurfaceJson.js";
 import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "./emit/validateJson.js";
 import { buildDiffJson } from "./emit/diffJson.js";
 import { diffModels, formatModelDiff, hasChanges, LineageResolvers } from "./model/diff.js";
@@ -636,6 +637,25 @@ api
     if (opts.json) process.stdout.write(buildApiCheckJson(outcome.report) + "\n");
     else for (const line of formatApiCheckText(outcome.report)) console.log(line);
     if (!outcome.report.current) process.exitCode = 1;
+  });
+
+api
+  .command("surface")
+  .description(
+    "the model's public commands, events, views and reachable declared types as a versioned " +
+      "JSON document for companion tools (GH #448, see docs/cli.md)",
+  )
+  .argument("<file>", "input .em file")
+  .option("--json", "print a JSON document instead of the text listing (see docs/cli.md)")
+  .action((file: string, opts: { json?: boolean }) => {
+    const outcome = runApiSurface(file);
+    printDiagnostics(outcome.diagnostics);
+    if (!outcome.ok) {
+      console.error(outcome.message);
+      process.exit(1);
+    }
+    if (opts.json) process.stdout.write(buildApiSurfaceJson(outcome.report) + "\n");
+    else for (const line of formatApiSurfaceText(outcome.report)) console.log(line);
   });
 
 program

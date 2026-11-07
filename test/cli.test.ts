@@ -1806,6 +1806,7 @@ describe("em mcp (CLI, MIL-21)", () => {
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "api_check",
+          "api_surface",
           "changelog",
           "conform_findings_check",
           "conform_scope",

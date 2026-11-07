@@ -310,6 +310,7 @@ describe("tools/list", () => {
     expect(names).toEqual(
       [
         "api_check",
+        "api_surface",
         "changelog",
         "conform_findings_check",
         "conform_scope",
@@ -1237,6 +1238,35 @@ describe("api_check tool (MIL-237)", () => {
       const cli = em(["api", "check", file, "--base", "HEAD", "--json"], dir);
       expect(cli.status).toBe(1);
       expect(cli.stdout).toBe(mcpText + "\n");
+    } finally {
+      rmTemp(dir);
+    }
+  });
+});
+
+describe("api_surface tool (GH #448)", () => {
+  const exampleDir = join(ROOT, "examples", "multi-model");
+
+  it("byte-identical to `em api surface <file> --json` for a shipped multi-model model", async () => {
+    const file = join(exampleDir, "models", "checkout", "checkout.em");
+    const { result, doc } = await callJson(client, "api_surface", { file });
+    expect(result.isError).toBeFalsy();
+    expect(doc).toMatchObject({ apiSurfaceSchemaVersion: "1.0", modelKey: "checkout" });
+    const mcpText = (result.content[0] as { type: "text"; text: string }).text;
+    const cli = em(["api", "surface", file, "--json"], exampleDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText + "\n");
+  });
+
+  it("refuses (tool error) when the model has a public-field-type-unresolved error, same as the CLI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-mcp-api-surface-"));
+    try {
+      writeFileSync(join(dir, "shop.em"), `slice "S" {\n  command Buy public { sku: Sku }\n  event Bought @D\n}\n`);
+      const file = join(dir, "shop.em");
+      const { result } = await callJson(client, "api_surface", { file });
+      expect(result.isError).toBe(true);
+      const cli = em(["api", "surface", file], dir);
+      expect(cli.status).toBe(1);
     } finally {
       rmTemp(dir);
     }

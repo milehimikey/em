@@ -38,8 +38,9 @@ import { buildExport, buildSliceExport, GENERATOR_VERSION } from "../emit/json.j
 import { buildDocJsonExport } from "../emit/docJson.js";
 import { buildValidateJson, buildShapeJson, buildSliceReadyJson, buildValidateListJson, collectMarkers } from "../emit/validateJson.js";
 import { buildDiffJson } from "../emit/diffJson.js";
-import { runApiCheck } from "../cli/api.js";
+import { runApiCheck, runApiSurface } from "../cli/api.js";
 import { buildApiCheckJson } from "../emit/apiCheckJson.js";
+import { buildApiSurfaceJson } from "../emit/apiSurfaceJson.js";
 import { buildShapeReport, readWaiveFile } from "../cli/shape.js";
 import { validateLineage } from "../catalog/lineageValidate.js";
 import { validateFrontmatterCoherence } from "../catalog/frontmatterCoherenceValidate.js";
@@ -1213,6 +1214,27 @@ export function createServer(): McpServer {
       const outcome = runApiCheck(file, base);
       if (!outcome.ok) return errorResult(outcome.message);
       return textResult(buildApiCheckJson(outcome.report));
+    },
+  );
+
+  server.registerTool(
+    "api_surface",
+    {
+      title: "The model's public surface as a JSON document",
+      description:
+        "Return the same JSON document `em api surface <file> --json` prints (GH #448): the " +
+        "model's public commands, events and views, plus every declared type reachable from " +
+        "their fields, each field's type resolved through the fixed scalar table or a declared " +
+        "type (`resolvePublicType`) — the same notion of the public surface `em api generate`/ " +
+        "`em api check` already share, so a companion tool reads it directly instead of " +
+        "re-deriving it from `em export --json`. Refuses (tool error) when the model has errors, " +
+        "same as `em api generate`.",
+      inputSchema: { file: fileParam },
+    },
+    async ({ file }) => {
+      const outcome = runApiSurface(file);
+      if (!outcome.ok) return errorResult(outcome.message);
+      return textResult(buildApiSurfaceJson(outcome.report));
     },
   );
 

@@ -10,6 +10,7 @@
 | `em export <file>` | Export a versioned JSON snapshot of the normalized model |
 | `em api generate <file>` | Write the model-owned TypeSpec contract for its `public` commands, events and views to `<model dir>/contracts/<model key>.tsp` |
 | `em api check <file>` | Is the committed contract current? With `--base <rev>`, annotate each public-surface change additive or breaking |
+| `em api surface <file>` | The model's public surface — commands, events, views and reachable declared types — as a versioned JSON document for companion tools (`--json`) |
 | `em typespec <file>` | **Deprecated** alias of `em api generate --stdout` |
 | `em diff <old> <new>` | Compare two models structurally (or one file across git revisions) |
 | `em ledger <file>` | Check slice docs' `version:` field agrees with their content across two git revisions (opt-in CI check) |
@@ -1231,6 +1232,76 @@ breaking: command.submit-order invariant INV-CHK-2 added
 change. Refuses (exit 1, no document) when the working-tree model has errors, the file is not in
 a git repository, or the revision does not exist. `em ci init` wires `em api check --base` as a
 PR job (see [ci.md](ci.md)).
+
+### `em api surface`
+
+The public surface as **data** (GH #448): the same `public` commands, events, views and
+reachable declared types `em api generate` renders as TypeSpec, as a versioned JSON document a
+companion tool (a contract bridge, an augment generator) can consume directly — instead of
+re-deriving the surface from the full `em export --json` document and risking silent drift from
+em's own notion of it. Built on the same `publicSurfaceOf`/`resolvePublicType` the emitter and
+`em api check` share: one notion of the surface, three renderings (TypeSpec text, additive/
+breaking diff, this document).
+
+```bash
+em api surface models/checkout/checkout.em          # terse text listing
+em api surface models/checkout/checkout.em --json   # the document
+```
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print the JSON document instead of the text listing |
+
+Refuses (exits 1, prints the diagnostics) when the model has errors — including
+`public-field-type-unresolved` — same posture as `em api generate`. Deterministic: no
+timestamps, no absolute paths (`file` is the path as given on the command line). A repeated
+view (`view X again`) contributes one entry. Without `--json`, a terse listing: one line per
+element with its field count.
+
+`--json` (`apiSurfaceSchemaVersion` `"1.0"`; MCP tool `api_surface` returns the same document
+byte-for-byte):
+
+```json
+{
+  "apiSurfaceSchemaVersion": "1.0",
+  "generator": { "name": "@milehimikey/em", "version": "…" },
+  "file": "models/checkout/checkout.em",
+  "modelKey": "checkout",
+  "commands": [
+    {
+      "name": "Submit Order",
+      "slug": "submit-order",
+      "fields": [
+        {
+          "name": "note",
+          "type": { "kind": "scalar", "scalar": "text", "tsType": "string", "array": false },
+          "optional": true,
+          "tag": false,
+          "assigned": false,
+          "renamedFrom": null
+        }
+      ],
+      "invariants": [{ "id": "INV-CHK-1", "rule": "An order is submitted with a positive total" }]
+    }
+  ],
+  "events": [],
+  "views": [],
+  "types": [
+    { "name": "Line Item", "slug": "line-item", "fields": [] }
+  ]
+}
+```
+
+- `commands`/`events`/`views` — the public elements, in export (timeline) order; `types` — every
+  declared `type` reachable (transitively) from their fields, in declaration order. Each element
+  carries its `name` as written and its kebab `slug` (the same slugging `em api check`'s element
+  ids use).
+- `type` — the field's resolved public type: `kind` is `"scalar"` (one of the fixed table's
+  entries — `scalar` names the matched entry, `tsType` the TypeSpec core scalar `em api
+  generate` emits for it) or `"declared"` (`scalar` is `null`, `tsType` is the declared type's
+  name — find its own fields under `types`); `array` is the `[]` arity.
+- Absent optionals are explicit `null`s (`renamedFrom`, `invariants`, a type's `scalar`) —
+  consumers destructure, never sniff.
 
 ## `em typespec <file>` (deprecated)
 
