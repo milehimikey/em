@@ -22,6 +22,11 @@ namespace Checkout {
    */
   model OrderCancelled {}
 
+  interface Events {
+    op onOrderSubmitted(payload: OrderSubmitted): void;
+    op onOrderCancelled(payload: OrderCancelled): void;
+  }
+
   /**
    * Consumers tolerate unknown fields; additive changes do not break them.
    */

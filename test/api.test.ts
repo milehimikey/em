@@ -312,6 +312,71 @@ slice "S2" {
   });
 });
 
+// GH #446: a public event gets an `interface Events` op symmetric with `interface Views` —
+// one `op on<Event>(payload: <Event>): void;` per public event, placed directly after the
+// event model blocks, referencing the exact (already-deduped) event model name.
+describe("Events interface (GH #446)", () => {
+  it("emits one op per public event, each referencing the event's own model name", () => {
+    const { text } = generate(`
+slice "S" {
+  command Place Order public { orderId: uuid }
+  event Order Placed @Domain public { orderId: uuid }
+  event Order Shipped @Domain public { orderId: uuid }
+}
+`);
+    expect(text).toContain(
+      "interface Events {\n    op onOrderPlaced(payload: OrderPlaced): void;\n" +
+        "    op onOrderShipped(payload: OrderShipped): void;\n  }",
+    );
+  });
+
+  it("places interface Events directly after the event model blocks, before any view blocks", () => {
+    const { text } = generate(`
+slice "Emit" {
+  command Do Thing public
+  event Thing Done @Domain public
+}
+slice "Read It" {
+  view Things public from "Thing Done" { a: string }
+}
+`);
+    const eventModelEnd = text.indexOf("model ThingDone {}") + "model ThingDone {}".length;
+    const eventsIfaceStart = text.indexOf("interface Events {");
+    const viewModelStart = text.indexOf("model Things {");
+    expect(eventsIfaceStart).toBeGreaterThan(eventModelEnd);
+    expect(viewModelStart).toBeGreaterThan(eventsIfaceStart);
+  });
+
+  it("a deduped event model name carries through to its op's name and payload reference", () => {
+    const { text } = generate(`
+slice "S1" {
+  command Do Thing public
+  event Order Placed @Domain public { a: string }
+}
+slice "S2" {
+  command Do Other Thing public
+  event order-placed @Domain public
+}
+`);
+    expect(text).toContain("model OrderPlaced {");
+    expect(text).toContain("model OrderPlaced_2 {}");
+    expect(text).toContain(
+      "interface Events {\n    op onOrderPlaced(payload: OrderPlaced): void;\n" +
+        "    op onOrderPlaced_2(payload: OrderPlaced_2): void;\n  }",
+    );
+  });
+
+  it("no public events means no Events interface", () => {
+    const { text } = generate(`
+slice "S" {
+  command Do Thing public
+  event Thing Done @Domain
+}
+`);
+    expect(text).not.toContain("interface Events");
+  });
+});
+
 // GH #445 (#443 ask 2): a command's fields render as a named payload `model`, the same
 // `renderModel` path events/views use — so field notes and `INV-*` lines ride along — and the
 // op takes it by name instead of positional params. This is what makes the fields decoratable
@@ -384,6 +449,10 @@ namespace OrderFulfillment {
     total: decimal;
     /** system-assigned — not supplied by the triggering command */
     placedAt: utcDateTime;
+  }
+
+  interface Events {
+    op onOrderPlaced(payload: OrderPlaced): void;
   }
 
   /**

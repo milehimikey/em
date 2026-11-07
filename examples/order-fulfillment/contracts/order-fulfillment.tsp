@@ -17,6 +17,10 @@ namespace OrderFulfillment {
     placedAt: utcDateTime;
   }
 
+  interface Events {
+    op onOrderPlaced(payload: OrderPlaced): void;
+  }
+
   /**
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
