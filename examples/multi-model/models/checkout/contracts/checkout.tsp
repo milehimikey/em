@@ -22,8 +22,16 @@ namespace Checkout {
    */
   model OrderCancelled {}
 
-  interface Commands {
+  /**
+   * Consumers tolerate unknown fields; additive changes do not break them.
+   */
+  model SubmitOrder {
     /** INV-CHK-1: An order is submitted with a positive total */
-    op submitOrder(total: decimal, note?: string): void;
+    total: decimal;
+    note?: string;
+  }
+
+  interface Commands {
+    op submitOrder(payload: SubmitOrder): void;
   }
 }

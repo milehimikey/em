@@ -98,7 +98,8 @@ slice "S" {
   event Thing Done @Domain public { a: string }
 }
 `);
-    expect(text).toContain("interface Commands {\n    op doThing(a: string): void;\n  }");
+    expect(text).toContain("model DoThing {");
+    expect(text).toContain("interface Commands {\n    op doThing(payload: DoThing): void;\n  }");
     expect(text).not.toContain("otherThing");
     expect(text).toContain("model ThingDone {");
   });
@@ -249,7 +250,7 @@ slice "S" {
 });
 
 describe("optional fields (R8)", () => {
-  it("emits `name?: T` on models and on command op parameters", () => {
+  it("emits `name?: T` on models, including a command's payload model", () => {
     const { text } = generate(`
 slice "S" {
   ui Screen @Customer
@@ -263,8 +264,9 @@ slice "S" {
   }
 }
 `);
-    expect(text).toContain("op place(total: decimal, note?: string): void;");
-    expect(text).toContain("    note?: string;");
+    expect(text).toContain("model Place {\n    total: decimal;\n    note?: string;\n  }");
+    expect(text).toContain("op place(payload: Place): void;");
+    expect((text.match(/note\?: string;/g) ?? []).length).toBe(2);
   });
 });
 
@@ -304,8 +306,60 @@ slice "S2" {
 `);
     expect(text).toContain("model OrderPlaced {");
     expect(text).toContain("model OrderPlaced_2 {}");
-    expect(text).toContain("op doTheThing(): void;");
+    expect(text).toContain("model DoTheThing {}");
+    expect(text).toContain("op doTheThing(payload: DoTheThing): void;");
     expect(text).toContain("`weird field`: string;");
+  });
+});
+
+// GH #445 (#443 ask 2): a command's fields render as a named payload `model`, the same
+// `renderModel` path events/views use — so field notes and `INV-*` lines ride along — and the
+// op takes it by name instead of positional params. This is what makes the fields decoratable
+// by a binding file's TypeSpec `@@` augment decorators at all (they can't target op params).
+describe("command payload models (GH #445)", () => {
+  it("emits the command's fields on a named payload model, with notes, and the op references it", () => {
+    const { text } = generate(`
+slice "S" {
+  command Place Order public {
+    orderId: uuid
+    note?: string renamed from "memo"
+  }
+  invariant INV-PO-1 "orderId is set"
+  event Order Placed @Domain public { orderId: uuid }
+}
+`);
+    expect(text).toContain(
+      "model PlaceOrder {\n    /** INV-PO-1: orderId is set */\n" +
+        "    orderId: Uuid;\n" +
+        '    /** renamed from "memo" */\n    note?: string;\n  }',
+    );
+    expect(text).toContain("interface Commands {\n    op placeOrder(payload: PlaceOrder): void;\n  }");
+  });
+
+  it("dedupes a command payload model name that collides with an event (or other) model", () => {
+    const { text } = generate(`
+slice "S" {
+  command Order Placed public { orderId: string }
+  event Order Placed @Domain public { orderId: string }
+}
+`);
+    const models = text.match(/model \w+/g) ?? [];
+    expect(models).toEqual(["model OrderPlaced", "model OrderPlaced_2"]);
+    // The event (export/timeline order first) keeps the bare name; the command dedupes.
+    expect(text).toContain("model OrderPlaced {\n");
+    expect(text).toContain("model OrderPlaced_2 {\n    orderId: string;\n  }");
+    expect(text).toContain("op orderPlaced(payload: OrderPlaced_2): void;");
+  });
+
+  it("an empty-field public command still emits a payload model and an op that takes it", () => {
+    const { text } = generate(`
+slice "S" {
+  command Do Thing public
+  event Thing Done @Domain
+}
+`);
+    expect(text).toContain("model DoThing {}");
+    expect(text).toContain("interface Commands {\n    op doThing(payload: DoThing): void;\n  }");
   });
 });
 
@@ -480,7 +534,11 @@ describe("invariants on the public surface (MIL-265)", () => {
       withInv(`  invariant INV-DO-1 "x is set"\n  invariant INV-DO-2\n`, `  invariant INV-DO-3 "never */ closes early"\n`),
     );
     expect(text).toContain("  model Done {\n    /** INV-DO-3: never *\\/ closes early */\n    x: string;\n  }");
-    expect(text).toContain("  interface Commands {\n    /** INV-DO-1: x is set */\n    /** INV-DO-2 */\n    op do(x: string): void;\n  }");
+    // GH #445: a command's invariants ride on its payload model, the same home events/views use.
+    expect(text).toContain(
+      "  model Do {\n    /** INV-DO-1: x is set */\n    /** INV-DO-2 */\n    x: string;\n  }",
+    );
+    expect(text).toContain("  interface Commands {\n    op do(payload: Do): void;\n  }");
   });
 });
 
