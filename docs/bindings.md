@@ -1,5 +1,9 @@
 # Bindings manifest schema (`bindingsSchemaVersion` 1.0)
 
+**Not [`contract-bindings.md`](contract-bindings.md).** That page documents hand-authored
+TypeSpec binding files that extend an `em api generate` contract with routes, envelopes and
+channel bindings — an unrelated namesake. This page is the per-slice YAML manifest below.
+
 A bindings manifest is `<model dir>/conformance/bindings/<slice-key>.yaml`, one file per slice,
 beside the model (GH #449). It records where a slice's model elements and invariants actually
 live in the code: which file and which identifier string anchors each one. `em conform bindings
