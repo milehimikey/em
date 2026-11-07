@@ -3,7 +3,7 @@
 | Command | What it does |
 |---|---|
 | `em init [file]` | Scaffold a starter model (default `model.em`) |
-| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md`, `constitution.md` |
+| `em scaffold <name>` | Scaffold a full project directory: `<slug>/<slug>.em`, `README.md`, `.event-modeling.md`, `constitution.md`, plus the standard `slices/`, `contracts/`, `model-versions/`, `conformance/bindings/` directories (each with a short README) |
 | `em render <file>` | Render a model to SVG/PNG/PDF, or emit Graphviz DOT |
 | `em watch <file>` | Re-render on every save; `--serve` adds a live browser view |
 | `em validate <file>` | Check the model against event-modeling rules |
@@ -65,6 +65,27 @@ a single `-`); the display name you passed is used as-is for titles/prose. Creat
 | `<slug>/.event-modeling.md` | Resumable session state — mechanical fields filled (`Em version:` = the installed em, `Current phase: discover`, `Current step: 1`, today's date, `Last conformance`/`Last stakeholder review: never`); judgment sections (Session inputs, Participants, Decisions log, Usage log, Open questions) are left as empty headers, not guessed |
 | `<slug>/constitution.md` | The implementation constitution (MIL-202) — the project's house rules (stack + pattern→skill routing, code style, testing norms, NFR baselines, review/merge norms). Only the project name is filled: every section keeps the elicitation question it opens with and its `{{...}}` answer block, and `ratifiedBy:`/`ratifiedOn:` ship empty, because an unanswered, unratified constitution must read as one. **Not written in a spec-kit project** — see below |
 
+**The directory family (GH #453).** Alongside those four files, `em scaffold` creates the full
+standardized model-directory shape every doc-aware command eventually writes into — the same
+layout [Multi-model projects](#multi-model-projects) below documents as the convention, now
+created rather than merely described:
+
+| Directory | What lands there |
+|---|---|
+| `<slug>/slices/` | Slice docs, written by `em slice new` (see below) |
+| `<slug>/contracts/` | The generated TypeSpec contract, written by `em api generate` — never hand-edit (see below) |
+| `<slug>/model-versions/` | Design-version snapshots, written by `em model version bump` (see below) |
+| `<slug>/conformance/bindings/` | Per-slice bindings manifests (GH #449), checked by `em conform bindings check` |
+
+Git doesn't track empty directories, so each one is seeded with a one-line `README.md` rather
+than a `.gitkeep` — naming what belongs there and which command writes it is worth the one extra
+line, and nothing in this repo's own worked examples
+([examples/multi-model/](../examples/multi-model/),
+[examples/order-fulfillment/](../examples/order-fulfillment/)) established a `.gitkeep`
+convention to follow instead. `--force` rewrites these READMEs exactly like the four files
+above; an existing `slices/<key>.md` or `contracts/<model key>.tsp` a prior run already wrote is
+untouched (only the README itself is written, never anything else already in the directory).
+
 This is the machinery behind the bundled `event-modeling` Claude Code skill's "scaffold the
 project layout" setup step (see [ai-workflow.md](ai-workflow.md)) — the skill runs this
 command rather than hand-copying its `templates/*` files.
@@ -75,8 +96,8 @@ command rather than hand-copying its `templates/*` files.
 | `--under <dir>` | Scaffold into `<dir>/<slug>/` instead of `./<slug>/` — the supported multi-model layout, see [Multi-model projects](#multi-model-projects) below |
 
 ```bash
-em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md,constitution.md}
-em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md,constitution.md}
+em scaffold "Order Fulfillment"                    # writes order-fulfillment/{order-fulfillment.em,README.md,.event-modeling.md,constitution.md} + slices/,contracts/,model-versions/,conformance/bindings/ (each with a README)
+em scaffold "Checkout" --under models               # writes models/checkout/{checkout.em,README.md,.event-modeling.md,constitution.md} + the same directory family
 ```
 
 **The constitution and spec-kit.** There is exactly one implementation constitution per project,
@@ -148,6 +169,7 @@ my-project/
         checkout.tsp           # `em api generate`; never hand-edited
       model-versions/          # `em model version bump`
       conformance/             # conform reports + findings
+        bindings/              # per-slice bindings manifests (`em conform bindings check`, GH #449)
     fulfillment/
       fulfillment.em           # translation Order Intake consumes checkout:event.order-submitted
       README.md

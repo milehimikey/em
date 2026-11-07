@@ -168,7 +168,17 @@ import {
   runCertifyModelVersion,
   runModelVersionBump,
 } from "./cli/modelVersion.js";
-import { STARTER_EM, starterEmFor, scaffoldReadme, scaffoldStateFile, scaffoldConstitution } from "./templates.js";
+import {
+  STARTER_EM,
+  starterEmFor,
+  scaffoldReadme,
+  scaffoldStateFile,
+  scaffoldConstitution,
+  SLICES_DIR_README,
+  CONTRACTS_DIR_README,
+  MODEL_VERSIONS_DIR_README,
+  CONFORMANCE_BINDINGS_DIR_README,
+} from "./templates.js";
 import { kebabSlug } from "./util/slug.js";
 import {
   ciWorkflowPath,
@@ -287,7 +297,10 @@ program
   .description(
     "scaffold a full project: <slug>/<slug>.em, README.md, .event-modeling.md, and " +
       "constitution.md (the implementation constitution — skipped, with a note, in a spec-kit " +
-      "project, where `.specify/memory/constitution.md` IS that document) " +
+      "project, where `.specify/memory/constitution.md` IS that document), plus the standard " +
+      "slices/, contracts/, model-versions/ and conformance/bindings/ directories (each seeded " +
+      "with a one-line README naming what lands there and which command writes it, instead of " +
+      "a .gitkeep) " +
       "(see docs/cli.md — for just a starter .em, use `em init`; for a multi-model project, " +
       "pass --under to nest it under a shared parent directory)",
   )
@@ -317,6 +330,20 @@ program
     writeFileSync(join(dirPath, `${slugName}.em`), starterEmFor(name));
     writeFileSync(join(dirPath, "README.md"), scaffoldReadme(name, slugName));
     writeFileSync(join(dirPath, STATE_FILE_NAME), scaffoldStateFile(name, slugName, today, PKG_VERSION));
+    // GH #453: the full standardized model-directory family, not just the four files above —
+    // every doc-aware command eventually writes into one of these. Git doesn't track empty
+    // directories, so each gets a one-line README (never a .gitkeep) naming what lands there
+    // and which command writes it.
+    await mkdir(join(dirPath, "slices"), { recursive: true });
+    writeFileSync(join(dirPath, "slices", "README.md"), SLICES_DIR_README);
+    await mkdir(join(dirPath, "contracts"), { recursive: true });
+    writeFileSync(join(dirPath, "contracts", "README.md"), CONTRACTS_DIR_README);
+    await mkdir(join(dirPath, "model-versions"), { recursive: true });
+    writeFileSync(join(dirPath, "model-versions", "README.md"), MODEL_VERSIONS_DIR_README);
+    // conformance/bindings/ (GH #449) — creating it also creates its conformance/ parent, which
+    // otherwise only appears once the conform phase writes its first report/findings file.
+    await mkdir(join(dirPath, "conformance", "bindings"), { recursive: true });
+    writeFileSync(join(dirPath, "conformance", "bindings", "README.md"), CONFORMANCE_BINDINGS_DIR_README);
     // MIL-202: the implementation constitution. One document per project, never two — in a
     // spec-kit project `.specify/memory/constitution.md` already IS that slot, so em defers to it
     // and writes nothing rather than seeding a second, competing copy beside the model. Same
