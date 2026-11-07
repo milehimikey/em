@@ -12,7 +12,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { NormalizedModel, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { hasErrors, Diagnostic } from "../model/validate.js";
-import { compile } from "../pipeline.js";
+import { compile, compileModelFile } from "../pipeline.js";
+import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
 import { buildApiContract, publicSurfaceOf, reachableTypeRefs } from "../emit/api.js";
 import { buildExportDoc, ElementExport, FieldExport, TypeExport } from "../emit/json.js";
@@ -297,25 +298,30 @@ export type ApiCheckOutcome =
  * model and compare to the committed contract file's text; (b) with `base`, compile the model
  * at that revision (`resolveRevision`) and diff the public surfaces structurally. A model
  * absent at `base` (new model) reports every public element as additive.
+ *
+ * GH #473: the HEAD side compiles through `compileModelFile` — the same storyline-aware loader
+ * `em api generate` uses (root plus every storyline model file it declares, GH #421) — so a
+ * public element declared in a storyline file is part of the surface instead of making the
+ * contract stale forever. `--base` has no multi-file-at-revision loader (`resolveRevision` reads
+ * one file at one rev); rather than silently diff a partial surface, a base revision that itself
+ * declares storyline files is refused.
  */
 export function runApiCheck(file: string, base: string | undefined, runGit: GitRunner = realGit): ApiCheckOutcome {
-  let source: string;
-  try {
-    source = readFileSync(file, "utf8");
-  } catch {
+  if (!existsSync(file)) {
     return { ok: false, message: `em api check: cannot read ${file}`, diagnostics: [] };
   }
   let head;
   try {
-    head = compile(source);
+    head = compileModelFile(file);
   } catch (e) {
     if (e instanceof ParseError) return { ok: false, message: `em api check: parse error in ${file} ${e.message}`, diagnostics: [] };
+    if (e instanceof ModelLoadError) return { ok: false, message: `em api check: ${e.message}`, diagnostics: [] };
     throw e;
   }
   if (hasErrors(head.diagnostics)) {
     return { ok: false, message: "em api check: not checking — fix the errors above", diagnostics: head.diagnostics };
   }
-  const generated = generateContract(file, source, head);
+  const generated = generateContract(file, head.source, head);
   const missing = !existsSync(generated.contractPath);
   const current = !missing && readFileSync(generated.contractPath, "utf8") === generated.text;
 
@@ -329,7 +335,7 @@ export function runApiCheck(file: string, base: string | undefined, runGit: GitR
     if (verify.status !== 0) {
       return { ok: false, message: `em api check: unknown revision "${base}" (needed for --base)`, diagnostics: head.diagnostics };
     }
-    const headDoc = buildExportDoc(head.model, head.refs, head.diagnostics, source, file).doc;
+    const headDoc = buildExportDoc(head.model, head.refs, head.diagnostics, head.source, file).doc;
     const headSurface = surfaceOf(headDoc.model.slices, headDoc.model.types);
     const atBase = resolveRevision(file, base, runGit);
     let baseSurface: Surface | null = null;
@@ -342,6 +348,17 @@ export function runApiCheck(file: string, base: string | undefined, runGit: GitR
           return { ok: false, message: `em api check: parse error in ${file}@${base} ${e.message}`, diagnostics: head.diagnostics };
         }
         throw e;
+      }
+      // GH #473: resolveRevision reads one file at one revision — there is no multi-file-at-
+      // revision loader yet. A base root that itself declares storyline files would silently
+      // diff a surface missing every element those files carry, so refuse loudly instead.
+      if ((baseCompiled.model.storylines ?? []).some((st) => st.file !== undefined)) {
+        return {
+          ok: false,
+          message:
+            "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #474-candidate",
+          diagnostics: head.diagnostics,
+        };
       }
       // Base-side validate errors (e.g. a pre-1.14 free-text public type) do not block the
       // structural diff — the diff reads shapes, not strictness.
@@ -506,27 +523,30 @@ export function buildApiSurfaceReport(
  * `public-field-type-unresolved` included), build the report. Self-contained (reads + compiles
  * `file` itself) so the MCP `api_surface` tool can call it with just a path, same shape as
  * `runApiCheck`.
+ *
+ * GH #473: compiles through `compileModelFile` (storyline-aware, GH #421) — a single-file
+ * `compile()` here silently omitted every public element declared in a storyline file.
  */
 export function runApiSurface(file: string): ApiSurfaceOutcome {
-  let source: string;
-  try {
-    source = readFileSync(file, "utf8");
-  } catch {
+  if (!existsSync(file)) {
     return { ok: false, message: `em api surface: cannot read ${file}`, diagnostics: [] };
   }
   let compiled;
   try {
-    compiled = compile(source);
+    compiled = compileModelFile(file);
   } catch (e) {
     if (e instanceof ParseError) {
       return { ok: false, message: `em api surface: parse error in ${file} ${e.message}`, diagnostics: [] };
+    }
+    if (e instanceof ModelLoadError) {
+      return { ok: false, message: `em api surface: ${e.message}`, diagnostics: [] };
     }
     throw e;
   }
   if (hasErrors(compiled.diagnostics)) {
     return { ok: false, message: "em api surface: not generating — fix the errors above", diagnostics: compiled.diagnostics };
   }
-  const report = buildApiSurfaceReport(compiled.model, compiled.refs, compiled.diagnostics, source, file);
+  const report = buildApiSurfaceReport(compiled.model, compiled.refs, compiled.diagnostics, compiled.source, file);
   return { ok: true, report, diagnostics: compiled.diagnostics };
 }
 
