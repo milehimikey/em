@@ -788,6 +788,88 @@ describe("em api generate / check (CLI)", () => {
   });
 });
 
+// ---- GH #473: check/surface on a storyline model (GH #421) -----------------------------
+//
+// `em api generate` always compiled through `compileFile`'s storyline-aware `compileModelFile`
+// (root plus every storyline model file it declares); `check`/`surface` used to compile the root
+// alone, so a public element declared in a storyline file never made it into the surface — check
+// reported the correctly-generated contract stale forever, and surface silently omitted it.
+describe("em api check / surface on a storyline model (GH #473)", () => {
+  const ROOT_EM = `model "Shop"
+persona Customer
+context Sales
+
+slice "Browse" {
+  ui Catalog @Customer
+  command Browse { sessionId: uuid }
+  event Browsed @Sales { sessionId: uuid }
+}
+
+storyline "Checkout" in "checkout/checkout.em"
+`;
+  const CHECKOUT_EM = `storyline "Checkout"
+
+slice "Place Order" {
+  command Place Order public { orderId: uuid, sessionId: uuid }
+  event Order Placed @Sales public { orderId: uuid, sessionId: uuid }
+}
+slice "Order Status" {
+  view Order Status public from "Order Placed" { orderId: uuid }
+}
+`;
+
+  function writeStorylineFixture(dir: string): void {
+    writeFileSync(join(dir, "shop.em"), ROOT_EM);
+    mkdirSync(join(dir, "checkout"));
+    writeFileSync(join(dir, "checkout", "checkout.em"), CHECKOUT_EM);
+  }
+
+  it("generate writes the storyline file's public elements into the contract; check then reports current; surface carries them too", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-api-storyline-"));
+    try {
+      writeStorylineFixture(dir);
+      const g = em(["api", "generate", "shop.em"], dir);
+      expect(g.status).toBe(0);
+      const contract = readFileSync(join(dir, "contracts", "shop.tsp"), "utf8");
+      expect(contract).toContain("model PlaceOrder {");
+      expect(contract).toContain("model OrderPlaced {");
+      expect(contract).toContain("model OrderStatus {");
+
+      // Before the fix this reported "stale" forever: the single-file regenerate inside
+      // `check` never saw the storyline file's public command/event/view.
+      const c = em(["api", "check", "shop.em"], dir);
+      expect(c.status).toBe(0);
+      expect(c.stdout).toBe(`contract ${join("contracts", "shop.tsp")} is current\n`);
+
+      const s = em(["api", "surface", "shop.em", "--json"], dir);
+      expect(s.status).toBe(0);
+      const doc = JSON.parse(s.stdout) as { commands: { slug: string }[]; events: { slug: string }[]; views: { slug: string }[] };
+      expect(doc.commands.map((x) => x.slug)).toEqual(["place-order"]);
+      expect(doc.events.map((x) => x.slug)).toEqual(["order-placed"]);
+      expect(doc.views.map((x) => x.slug)).toEqual(["order-status"]);
+    } finally {
+      rmTemp(dir);
+    }
+  });
+
+  it("check --base refuses on a storyline model — the base revision's storyline files cannot be loaded (no multi-file-at-revision loader yet)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-api-storyline-"));
+    try {
+      writeStorylineFixture(dir);
+      gitInitQuiet(dir);
+      git(dir, "add", "-A");
+      git(dir, "commit", "-q", "-m", "seed");
+      const r = em(["api", "check", "shop.em", "--base", "HEAD"], dir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(
+        "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #475",
+      );
+    } finally {
+      rmTemp(dir);
+    }
+  });
+});
+
 // ---- Optional compile-verification (skip-if-absent) ------------------------------------
 //
 // `@typespec/compiler` is a devDependency only; it needs Node >= its own `engines.node`

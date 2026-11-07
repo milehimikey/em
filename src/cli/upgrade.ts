@@ -70,7 +70,7 @@ import { planCollapseAlternativeEvents, planFoldContinuations, planStackContinua
 import { observeSigners } from "../roster/init.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
-import { compile, compileModelText } from "../pipeline.js";
+import { compile, compileModelFile, compileModelText } from "../pipeline.js";
 import { diskReader } from "../model/loadModel.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { contractPathFor, generateContract } from "./api.js";
@@ -458,21 +458,21 @@ function contractPlan(ctx: UpgradeContext): { missing: MissingContract[]; blocke
   const blocked: BlockedContract[] = [];
   for (const rel of paths) {
     const modelFile = resolve(ctx.repoRoot, rel);
-    let source: string;
-    try {
-      source = readFileSync(modelFile, "utf8");
-    } catch {
+    if (!existsSync(modelFile)) {
       blocked.push({ model: rel, why: "the model file can't be read" });
       continue;
     }
     try {
-      const compiled = compile(source);
+      // GH #473: storyline-aware, same loader `em api generate` itself uses — a single-file
+      // `compile()` here would miss public elements declared in a storyline file and report
+      // the contract permanently missing/stale for them.
+      const compiled = compileModelFile(modelFile);
       if (hasErrors(compiled.diagnostics)) {
         // Only blocked when the contract is actually absent (a model mid-edit that already has one is fine).
         if (!existsSync(contractPathFor(modelFile, computeModelKey(compiled.model, modelFile)))) blocked.push({ model: rel, why: "it has compile errors" });
         continue;
       }
-      const g = generateContract(modelFile, source, compiled);
+      const g = generateContract(modelFile, compiled.source, compiled);
       if (!existsSync(g.contractPath)) missing.push({ modelFile, contractPath: g.contractPath, modelKey: g.modelKey });
     } catch (e) {
       blocked.push({ model: rel, why: `it does not parse (${(e as Error).message})` });
@@ -503,8 +503,8 @@ function applyApiContractMissing(ctx: UpgradeContext): StepApplyOutcome {
   if (missing.length === 0) return { ok: false, message: "nothing to generate" };
   const changedFiles: string[] = [];
   for (const m of missing) {
-    const source = readFileSync(m.modelFile, "utf8");
-    const generated = generateContract(m.modelFile, source, compile(source));
+    const compiled = compileModelFile(m.modelFile);
+    const generated = generateContract(m.modelFile, compiled.source, compiled);
     mkdirSync(dirname(generated.contractPath), { recursive: true });
     writeFileSync(generated.contractPath, generated.text);
     changedFiles.push(generated.contractPath);
