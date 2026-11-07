@@ -304,7 +304,7 @@ describe("MCP server identity", () => {
 });
 
 describe("tools/list", () => {
-  it("exposes exactly the documented tools (GH #240 adds engagement_foundation; GH #449 adds conform_bindings_check)", async () => {
+  it("exposes exactly the documented tools (GH #240 adds engagement_foundation; GH #449 adds conform_bindings_check; GH #454 adds engagement_brief)", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual(
@@ -319,6 +319,7 @@ describe("tools/list", () => {
         "coverage",
         "diff",
         "discover_triage_check",
+        "engagement_brief",
         "engagement_foundation",
       "engagement_plan",
         "engagement_status",
@@ -1822,5 +1823,34 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     const { result } = await callJson(client, "engagement_plan", { file: join(lendDir, "lending.em"), slug: "ghost" });
     expect(result.isError).toBe(true);
     expect(mcpText(result)).toContain('em engagement plan: no engagement "ghost"');
+  });
+
+  // GH #454: `engagement_brief` mirrors `em engagement brief --json` byte-for-byte, including the
+  // optional `slice`/`inlineContext` params and the "not in engagement" tool error.
+  it("engagement_brief is byte-identical to `em engagement brief --json`", async () => {
+    const file = join(lendDir, "lending.em");
+    const { result, doc } = await callJson(client, "engagement_brief", { file, slug: "loans" });
+    expect(result.isError).toBeFalsy();
+    expect(doc.engagementBriefSchemaVersion).toBe("1.0");
+    expect(doc.slices.length).toBeGreaterThan(1);
+    const cli = em(["engagement", "brief", file, "loans", "--json"], lendDir);
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(mcpText(result) + "\n");
+  });
+
+  it("engagement_brief with `slice` narrows to one, byte-identical to the CLI's --slice", async () => {
+    const file = join(lendDir, "lending.em");
+    const { result, doc } = await callJson(client, "engagement_brief", { file, slug: "loans", slice: "reservations" });
+    expect(result.isError).toBeFalsy();
+    expect(doc.slices).toHaveLength(1);
+    expect(doc.slices[0].key).toBe("reservations");
+    const cli = em(["engagement", "brief", file, "loans", "--slice", "reservations", "--json"], lendDir);
+    expect(cli.stdout).toBe(mcpText(result) + "\n");
+  });
+
+  it("engagement_brief with an unknown `slice` is a tool error naming the engagement", async () => {
+    const { result } = await callJson(client, "engagement_brief", { file: join(lendDir, "lending.em"), slug: "loans", slice: "ghost" });
+    expect(result.isError).toBe(true);
+    expect(mcpText(result)).toBe('em engagement brief: slice "ghost" is not in engagement "loans"');
   });
 });

@@ -7,6 +7,7 @@
 
 import type { EngagementPlan, EngagementStatus } from "../cli/engagement.js";
 import type { FoundationCheck } from "../cli/engagementFoundation.js";
+import type { EngagementBrief } from "../cli/engagementBrief.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 /** The engagement FILE's frontmatter contract (`engagementSchemaVersion`, docs/engagement-schema.md).
@@ -76,6 +77,29 @@ export function buildEngagementFoundationJson(file: string, slug: string, check:
     events: check.events,
     counts: check.counts,
     ok: check.ok,
+  };
+  return JSON.stringify(doc, null, 2);
+}
+
+// 1.0 (GH #454): `{ engagementBriefSchemaVersion, generator, file, engagement, slug,
+//   inlineContext, slices[{ key, sliceName, pattern, docStatus, tracking, prTitle, branch, base,
+//   ledgerState, ledgerBranch, ledgerBase, ledgerPr, doc: { found, path, content }, fallbackElements,
+//   modelContext: { consumes, produces, neighborUnits, repeatedViews }, contract: { publicTouching,
+//   contractPath, publicElements }, definitionOfDone: { invariantIds, scenarioTitles, bindingsPath,
+//   bindingsExample, conformCheckCommand, isolationNote, prTitle }, context[{ path, inline, content,
+//   missing }] }] }` — one brief per engagement slice (model/Ledger order), `slices` has exactly one
+//   entry when `--slice` narrowed it. The MCP `engagement_brief` tool returns the same document.
+export const ENGAGEMENT_BRIEF_SCHEMA_VERSION = "1.0";
+
+export function buildEngagementBriefJson(brief: EngagementBrief): string {
+  const doc = {
+    engagementBriefSchemaVersion: ENGAGEMENT_BRIEF_SCHEMA_VERSION,
+    generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
+    file: brief.file,
+    engagement: brief.engagement,
+    slug: brief.slug,
+    inlineContext: brief.inlineContext,
+    slices: brief.slices,
   };
   return JSON.stringify(doc, null, 2);
 }

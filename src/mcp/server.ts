@@ -54,7 +54,8 @@ import { computeSliceReadiness } from "../catalog/sliceReadyValidate.js";
 import { engagementMembersFor, engagementPlanFor, engagementStatusFor } from "../cli/engagement.js";
 import { checkFoundation } from "../cli/engagementFoundation.js";
 import { readOpenEngagements } from "../cli/engagementFile.js";
-import { buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "../emit/engagementJson.js";
+import { engagementBriefFor } from "../cli/engagementBrief.js";
+import { buildEngagementBriefJson, buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "../emit/engagementJson.js";
 import { buildSliceSyncJson, runSliceSync } from "../cli/sliceSync.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "../cli/coverage.js";
 import { buildCoverageJson } from "../emit/coverageJson.js";
@@ -1346,6 +1347,47 @@ export function createServer(): McpServer {
       const members = engagementMembersFor({ file, model: compiled.model, refs: compiled.refs, baseDir: dirname(file) }, slug);
       if (!members.ok) return errorResult(`em engagement foundation: ${members.message}`);
       return textResult(buildEngagementFoundationJson(file, slug, checkFoundation(compiled.model, members.members, members.idx, code)));
+    },
+  );
+
+  server.registerTool(
+    "engagement_brief",
+    {
+      title: "Self-contained per-slice work brief for an engagement",
+      description:
+        "Return the same JSON document `em engagement brief <file> <slug> --json` prints (GH #454): a " +
+        "deterministic, self-contained work brief for implementers em does not control (a ticket-driven " +
+        "cloud agent) — the bound slice doc verbatim, or the model's own elements when there is none; " +
+        "model context (events/elements consumed and produced, neighbor units, repeated view instances) " +
+        "folded from model.edges the same way the build plan is; the public-contract surface " +
+        "(slicePublicTouching, the contract file path, public elements); a definition-of-done " +
+        "(INV-*/scenario ids to test, a filled bindings-manifest skeleton plus the exact `em conform " +
+        "bindings check` verify line, the slice-isolation rule, the resolved PR title); and the " +
+        "engagement's context: documents (GH #455) — pointers, or full text with `inlineContext`. One " +
+        "brief per engagement slice unless `slice` narrows it to one. Read-only. Tool error when the " +
+        "engagement is missing, the model no longer has one of its slices, or `slice` names a key not " +
+        "in the engagement.",
+      inputSchema: {
+        file: fileParam,
+        slug: slugParam,
+        slice: z.string().optional().describe("only this slice's brief (export key, display name, or unique prefix)"),
+        inlineContext: z.boolean().optional().describe("embed each context document's full text instead of just its path"),
+      },
+    },
+    async ({ file, slug, slice, inlineContext }) => {
+      const compiled = compileFile(file);
+      if ("error" in compiled) return errorResult(compiled.error);
+      const { model, refs } = compiled;
+      // GH #237: an input that resolves to no slice goes through as typed, so the engagement's own
+      // "is not in engagement" refusal (which names what the Ledger holds) still speaks.
+      let sliceKey: string | null = null;
+      if (slice !== undefined) {
+        const resolved = resolveSliceKey(model, refs, slice);
+        sliceKey = resolved.ok ? resolved.key : slice;
+      }
+      const result = engagementBriefFor({ file, model, refs, baseDir: dirname(file) }, slug, { sliceKey, inlineContext: inlineContext === true });
+      if (!result.ok) return errorResult(`em engagement brief: ${result.message}`);
+      return textResult(buildEngagementBriefJson(result.brief));
     },
   );
 
