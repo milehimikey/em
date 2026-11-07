@@ -1,0 +1,37 @@
+{
+  "expectedSchemaVersion": "1.0",
+  "case": "helpdesk — diff-scoped (em conform-scope with Last conformance pinned to the baseline commit)",
+  "model": "helpdesk.em",
+  "setup": "node eval/conform/helpdesk/setup.mjs --pin-last-conformance pins Last conformance to the baseline commit (before the repo-head overlay). `em conform-scope helpdesk.em --repo <scratch-repo>` (no --full) then reports candidateSlices: [tickets-awaiting-escalation, escalate-ticket] only — both anchored at implementedIn: src/support/escalation, the one directory the overlay touches. open-ticket and ticket-board are OUT OF SCOPE: their implementation paths never changed.",
+  "mustReport": [
+    {
+      "id": "a",
+      "surface": "structural",
+      "class": "Real drift",
+      "slice": "escalate-ticket",
+      "summary": "Same as the full-scope case: escalationReason is on the code's command/event, not the .em. This is the one seed a diff-scoped run is REQUIRED to catch — GH #452's hard requirement.",
+      "mechanicalCheck": "same as full-scope.json#mustReport[0]"
+    }
+  ],
+  "mustNotReport": [
+    {
+      "id": "d",
+      "slice": "tickets-awaiting-escalation",
+      "wouldLookLike": "same as full-scope.json#mustNotReport[0]",
+      "reason": "tickets-awaiting-escalation IS in the diff-scoped candidate set (same implementedIn directory as escalate-ticket), so the bait is live in this run too — a diff-scoped walk doesn't get a pass on it just because the scope is smaller."
+    }
+  ],
+  "outOfScope": [
+    {
+      "id": "b",
+      "slice": "open-ticket",
+      "reason": "Not a candidate slice in this run (em conform-scope's candidateSlices omits it — src/support/open-ticket never changed between the two commits). Correctly ABSENT from this run's findings, not a miss — a full-scope sweep is what surfaces it. This is the GH #452 / 2026-07 Wave-4 lesson this fixture exists to exercise: a diff-scoped-only cadence would never catch case (b) on its own."
+    },
+    {
+      "id": "c",
+      "slice": "ticket-board",
+      "reason": "Same reasoning as (b): src/support/board never changed, so ticket-board is out of scope for this run. The doc/model pattern mismatch is real and present at every revision — only a --full sweep (or one that happens to touch that slice's path) surfaces it."
+    }
+  ],
+  "notes": "Score THIS file's mustReport/mustNotReport for the diff-scoped run; score full-scope.json separately for a --full run on the same fixture. Do not merge the two scores — a diff-scoped run that 'misses' (b)/(c) is behaving correctly, not failing."
+}
