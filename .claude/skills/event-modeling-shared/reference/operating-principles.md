@@ -173,25 +173,36 @@ including sessions started from bare `/event-modeling`.
   <model-name>.svg         # render target for em watch
   README.md                # overview + slice index (from templates/model-readme.md)
   .event-modeling.md       # resumable state (from templates/state.md)
+  constitution.md          # implementation constitution (skipped, with a note, in a spec-kit project)
   slices/<slice-name>.md   # one rich slice doc per slice (from templates/slice.md)
-  conformance/<date>-report.md
-                           # conform-phase reports (from templates/conformance-report.md)
+  contracts/<model-name>.tsp
+                           # `em api generate`'s generated TypeSpec contract — never hand-edit
+  model-versions/v<N>.json # `em model version bump`'s design-version snapshots
+  conformance/
+    <date>-report.md       # conform-phase reports (from templates/conformance-report.md)
+    bindings/<slice-key>.yaml
+                           # per-slice bindings manifests (`em conform bindings check`, GH #449)
   <model-name>-asis.em     # conform-phase scratch model, regenerated per run — git-ignore this
 ```
 
-When creating a new model, run `em scaffold <model-name>` — it creates `<model-name>/` and
-writes all three starter files in one step (`<model-name>.em`, `README.md`,
-`.event-modeling.md`), filling the Model Name/model-name placeholders and the state file's
-mechanical fields (model path, `Current phase: discover`, `Current step: 1`, dates) for you, so
-there's nothing left to hand-copy or fill in. Refuses if `<model-name>/` already exists; pass
-`--force` to overwrite. You'll
-usually replace the scaffolded `.em`'s content as the discovery conversation builds up the real
-model — it starts out as the same starter model `em init` writes, titled from `<model-name>`.
-`slices/*.md` and `conformance/` aren't part of `em scaffold`; they come from the `slice` and
-`conform` phases (`event-modeling-design` and `event-modeling-conform`). The `conformance/`
-directory and `<model-name>-asis.em` only appear once the `conform` phase runs; `em conform-scope
---seed-asis` creates `<model-name>-asis.em` and gitignores `*-asis.em` for you (see
-`event-modeling-conform`'s `reference/conform.md`) — it's scratch, never committed.
+When creating a new model, run `em scaffold <model-name>` — it creates `<model-name>/`, writes
+the four starter files in one step (`<model-name>.em`, `README.md`, `.event-modeling.md`,
+`constitution.md`), filling the Model Name/model-name placeholders and the state file's
+mechanical fields (model path, `Current phase: discover`, `Current step: 1`, dates) for you, and
+also creates the standard `slices/`, `contracts/`, `model-versions/` and `conformance/bindings/`
+directories — each seeded with a one-line README (never a `.gitkeep`) naming what lands there and
+which command writes it. There's nothing left to hand-copy or fill in. Refuses if
+`<model-name>/` already exists; pass `--force` to overwrite. You'll usually replace the
+scaffolded `.em`'s content as the discovery conversation builds up the real model — it starts out
+as the same starter model `em init` writes, titled from `<model-name>`.
+Those directories exist from the start, but their real content doesn't — `slices/*.md` slice
+docs come from the `slice` phase (`event-modeling-design`), `conformance/<date>-report.md`
+reports from the `conform` phase (`event-modeling-conform`), and `contracts/*.tsp` /
+`model-versions/*.json` / `conformance/bindings/*.yaml` only once `em api generate` / `em model
+version bump` / an implementing agent's bindings manifest actually run. `<model-name>-asis.em` is
+separate conform-phase scratch, not part of the scaffold at all; `em conform-scope --seed-asis`
+creates it and gitignores `*-asis.em` for you (see `event-modeling-conform`'s
+`reference/conform.md`) — it's scratch, never committed.
 
 ### Multi-model projects
 
