@@ -356,7 +356,7 @@ export function runApiCheck(file: string, base: string | undefined, runGit: GitR
         return {
           ok: false,
           message:
-            "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #474-candidate",
+            "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #475",
           diagnostics: head.diagnostics,
         };
       }

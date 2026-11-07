@@ -862,7 +862,7 @@ slice "Order Status" {
       const r = em(["api", "check", "shop.em", "--base", "HEAD"], dir);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain(
-        "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #474-candidate",
+        "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #475",
       );
     } finally {
       rmTemp(dir);
