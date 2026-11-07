@@ -1139,7 +1139,12 @@ release train; versioning is not modeled):
   target a model or a model property, never a positional op parameter, so this is also what
   makes a command's fields decoratable from a binding file.) An optional field (`name?: Type`)
   becomes an optional field on the payload model (`name?: T`).
-- **`public` events** → one `model` each — the async payloads (schema only, no channel semantics).
+- **`public` events** → one `model` each (the async payloads, schema only — no channel
+  semantics) plus `interface Events { op on<Event>(payload: <Model>): void; }` (GH #446),
+  symmetric with `Views`: one op per public event, taking that event's payload model by name.
+  The ops carry no protocol facts; a binding file declares those as TypeSpec `@@` augments
+  against the generated declarations (`@@channel(M.Events.onOrderPlaced, "orders.lifecycle")`,
+  `@@publish(...)`) and an AsyncAPI document falls out of the downstream toolchain.
 - **`public` views** → one `model` each plus `interface Views { op get<View>(): <View>; }` — the
   read API. A repeated view (`view X again`) contributes its first public instance only.
 - **Declared `type`s** reachable from any of the above → one `model` each.

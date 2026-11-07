@@ -7,7 +7,9 @@
 //  - public commands -> `model` (payload) + `interface Commands { op <name>(payload: <Model>): void; }`
 //    (the write API; GH #445 — same payload-model shape as events/views, so field notes and
 //    `INV-*` lines ride along and the payload is decoratable by a binding file's `@@`)
-//  - public events   -> `model` (async payloads)
+//  - public events   -> `model` (async payload) + `interface Events { op on<Event>(payload): void; }`
+//    (GH #446 — one op per public event, so a binding file has a declaration to `@@channel`/
+//    `@@publish` against instead of re-stating the payload shape)
 //  - public views    -> `model` + `interface Views { op get<View>(): <View>; }` (the read API)
 //  - declared `type`s reachable from any of those -> `model`
 //
@@ -227,12 +229,27 @@ export function buildApiContract(
   }
   if (typeBlocks.length > 0) sections.push(typeBlocks.join("\n\n"));
 
+  // GH #446: an event op's payload reuses the exact model name chosen above for its `model`
+  // block — never re-derived — so the op always points at the declaration a binding file would
+  // `@@channel`/`@@publish` against. Op names dedupe through their own set (like `opNames` does
+  // for commands), even though in practice they can only collide if the (already-deduped) model
+  // names do too.
   const eventBlocks: string[] = [];
+  const eventNames: string[] = [];
   for (const el of surface.events) {
     const name = dedupe(pascalCase(el.name), usedNames, "_");
+    eventNames.push(name);
     eventBlocks.push(renderModel(name, el.fields, `event "${el.name}"`, elementNotes(el), invariantLines(el)));
   }
   if (eventBlocks.length > 0) sections.push(eventBlocks.join("\n\n"));
+
+  const eventOpNames = new Set<string>();
+  const eventOps: string[] = [];
+  for (const name of eventNames) {
+    const opName = dedupe(`on${name}`, eventOpNames, "_");
+    eventOps.push(`op ${opName}(payload: ${name}): void;`);
+  }
+  if (eventOps.length > 0) sections.push(["interface Events {", ...indent(eventOps, 1), "}"].join("\n"));
 
   const viewBlocks: string[] = [];
   const viewOps: string[] = [];
