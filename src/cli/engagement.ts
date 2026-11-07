@@ -22,6 +22,7 @@
 // Determinism: units and every list derived from them are in model (slice) order; no sort by
 // anything but that order and plain string order for stable tie-breaks.
 
+import { existsSync } from "node:fs";
 import { NormalizedModel, collectModelInvariants, collectTags } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceKey } from "../model/resolveSlice.js";
@@ -50,9 +51,11 @@ import {
   modelRefFor,
   engagementPath,
   renderEngagementFile,
+  spliceContextList,
   spliceLedger,
   spliceSliceEntry,
   spliceStatus,
+  validateContextPaths,
 } from "./engagementFile.js";
 import { shapeRuleCodes } from "./shape.js";
 import { ENGAGEMENT_SCHEMA_VERSION } from "../emit/engagementJson.js";
@@ -430,7 +433,7 @@ export interface EngagementPlanLevel {
  *  implementer would otherwise rediscover and report on its own. Advisory: never a hold, never
  *  written to the Ledger; the lead puts the whole list to the human in ONE question round before
  *  fan-out (skill §2). Each finding names the slices it spans so the answer lands once. */
-export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch" | "shape" | "pr-title-fallback";
+export type PreflightKind = "repeated-invariant" | "event-without-tag" | "shared-trigger" | "doc-model-mismatch" | "shape" | "pr-title-fallback" | "context-missing";
 
 export interface PreflightFinding {
   kind: PreflightKind;
@@ -449,6 +452,8 @@ export interface EngagementPlan {
   tracking: string | null;
   /** GH #334: the engagement's `prTitle` template; null when absent. */
   prTitle: string | null;
+  /** GH #455: the engagement's `context:` document paths, `[]` when absent. */
+  context: string[];
   parallel: number;
   levels: EngagementPlanLevel[];
   slices: EngagementPlanSlice[];
@@ -663,7 +668,19 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       });
     }
   }
-  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, parallel: eng.parallel, levels, slices, preflight } };
+  // GH #455: a context document the engagement names but which does not exist on disk, resolved
+  // relative to the current working directory (the same assumption every other em invocation
+  // makes about a repo-relative path). Advisory — never a hold, never written to the Ledger.
+  for (const path of eng.context) {
+    if (existsSync(path)) continue;
+    preflight.push({
+      kind: "context-missing",
+      subject: path,
+      slices: members.slice().sort(order),
+      message: `context document "${path}" does not exist — add it before fan-out, or remove it from the engagement's context: list`,
+    });
+  }
+  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, context: eng.context, parallel: eng.parallel, levels, slices, preflight } };
 }
 
 /** Walk predecessors among the unlevelled nodes until one repeats: `a -> b -> a` (upstream
@@ -683,6 +700,7 @@ function describeCycle(remaining: string[], inPreds: Map<string, string[]>): str
 
 export function formatEngagementPlanText(p: EngagementPlan): string {
   const lines = [`engagement "${p.slug}" (${p.status}) — ${p.slices.length} slice(s) in ${p.levels.length} level(s), parallel ${p.parallel}${p.tracking ? `, tracking ${p.tracking}` : ""}`];
+  if (p.context.length > 0) lines.push(`context: ${p.context.join(", ")}`);
   for (const lvl of p.levels) {
     lines.push(`level ${lvl.level}: ${lvl.width} slice${lvl.width === 1 ? "" : "s"} (ceiling ${lvl.ceiling})`);
     for (const s of p.slices.filter((x) => x.level === lvl.level)) {
@@ -751,6 +769,8 @@ export interface NewEngagementOptions {
   tracking?: string | null;
   /** GH #334: `--pr-title` — a PR title template using `{key}` and `{slice}`; null/absent when not given. */
   prTitle?: string | null;
+  /** GH #455: `--context-doc` (repeatable) — repo-relative document paths; `[]`/absent when not given. */
+  context?: string[] | null;
   created: string;
 }
 
@@ -785,6 +805,9 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
   if (tracking !== null && (tracking === "" || /[\r\n]/.test(tracking))) return { ok: false, message: "--tracking must be a non-empty single line (a ticket key or URL)" };
   const prTitle = opts.prTitle === undefined || opts.prTitle === null ? null : opts.prTitle.trim();
   if (prTitle !== null && (prTitle === "" || /[\r\n]/.test(prTitle))) return { ok: false, message: "--pr-title must be a non-empty single line (a template using {key} and {slice})" };
+  const context = (opts.context ?? []).map((p) => p.trim());
+  const badContext = validateContextPaths(context);
+  if (badContext) return { ok: false, message: badContext };
   const idx = buildUnitIndex(input.model, input.refs, input.baseDir);
   const sel = resolveSelection(input, idx, opts.selector);
   if (!sel.ok) return sel;
@@ -794,14 +817,16 @@ export function buildNewEngagement(input: { file: string; model: NormalizedModel
   const notes = opts.selector.kind === "storyline" ? continuationNotes(input.model, input.refs, idx, opts.selector.name) : [];
   const warnings = [...notes, ...(components.length > 1 ? [formatComponentsWarning(components)] : [])];
   const fm: EngagementFile = {
-    // A file that does not use `prTitle` stays 1.1, so a teammate or CI on an older em still reads it.
-    engagementSchemaVersion: prTitle === null ? "1.1" : ENGAGEMENT_SCHEMA_VERSION,
+    // A file that does not use a feature stays at the version before it, so a teammate or CI on
+    // an older em still reads it. Each feature's presence is additive on top of the one before.
+    engagementSchemaVersion: context.length > 0 ? ENGAGEMENT_SCHEMA_VERSION : prTitle === null ? "1.1" : "1.2",
     slug: opts.slug,
     model: modelRefFor(engagementPath(input.file, opts.slug), input.file),
     created: opts.created,
     createdBy: opts.createdBy,
     tracking,
     prTitle,
+    context,
     parallel: opts.parallel,
     status: "open",
     slices: sel.units.map((key) => ({ key, state: "planned", branch: null, base: null, pr: null })),
@@ -855,6 +880,26 @@ export function applyEngagementSet(
   const withLedger = spliceLedger(spliced, buildLedgerLines(slices, ledgerFacts(idx, slices.map((e) => e.key))));
   if (withLedger === null) return { ok: false, message: `the Ledger markers (<!-- GENERATED:${LEDGER_MARKER}:start/end -->) are missing — the file was hand-edited` };
   return { ok: true, changed: true, text: withLedger, entry: next };
+}
+
+export type SetContextResult = { ok: true; changed: boolean; text: string; context: string[] } | { ok: false; message: string };
+
+/** GH #455: `set --context-doc` replaces the engagement-level `context:` list wholesale — the
+ *  same "a given value replaces" semantics every other `set` input uses. Paths are stored
+ *  exactly as given (trimmed only); never checked against the filesystem (`plan`'s pre-flight
+ *  does that). A separate write path from `applyEngagementSet`: `context:` lives on the document,
+ *  not on one slice's Ledger entry, so it takes no slice key and never touches the Ledger region. */
+export function applyEngagementSetContext(slug: string, text: string, eng: EngagementFile, rawPaths: string[]): SetContextResult {
+  if (eng.status === "closed") return { ok: false, message: `engagement "${slug}" is closed` };
+  const paths = rawPaths.map((p) => p.trim());
+  const bad = validateContextPaths(paths);
+  if (bad) return { ok: false, message: bad };
+  if (paths.length === eng.context.length && paths.every((p, i) => p === eng.context[i])) {
+    return { ok: true, changed: false, text, context: eng.context };
+  }
+  const spliced = spliceContextList(text, paths);
+  if (spliced === null) return { ok: false, message: "the engagement file's frontmatter has no parallel: line to anchor on — the file was hand-edited" };
+  return { ok: true, changed: true, text: spliced, context: paths };
 }
 
 export type CloseResult = { ok: true; changed: boolean; text: string } | { ok: false; message: string };

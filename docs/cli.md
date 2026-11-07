@@ -2518,7 +2518,7 @@ slice's doc through a ratified `covers:` entry folds into that slice.
 every to-do list and its reaction a cycle. Edges are lifted from elements to units, and an
 upstream whose doc is already `implemented` imposes nothing.
 
-### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --storyline <name> | --downstream-of <ref>) [--parallel N] [--by <name>] [--tracking <key>] [--pr-title <template>] [--force]`
+### `em engagement new <file> <slug> (--slices a,b,c | --context <C> | --storyline <name> | --downstream-of <ref>) [--parallel N] [--by <name>] [--tracking <key>] [--pr-title <template>] [--context-doc <path>]... [--force]`
 
 Writes `engagements/<slug>.md` with every selected slice at state `planned`, and records the
 model it belongs to (`model:`, relative to the file). Every other subcommand refuses a model
@@ -2558,9 +2558,22 @@ without. A template that uses `{key}` on a slice with no tracking key falls back
 slice as a `pr-title-fallback` pre-flight entry (advisory, never a hold). So `feat({slice}): add it [{key}]`
 falls back to the bare slice name on a keyless slice and would fail such a lint; give those slices a key
 or use a key-free template (`feat: {sliceKey}`). Free text, one non-empty line
-(`--pr-title must be a non-empty single line (a template using {key} and {slice})`). `new` writes
-`engagementSchemaVersion: "1.1"` unless `--pr-title` is given (then `"1.2"`), so older tooling still
-reads files that do not use it. Refusals (exit 1, stderr): `pass exactly one of --slices,
+(`--pr-title must be a non-empty single line (a template using {key} and {slice})`).
+
+`--context-doc <path>` (repeatable; GH #455) records `context:` in the frontmatter — repo-relative
+paths to the documents an implementer needs beyond the slice doc (the constitution, an NFR doc, an
+ADR). **Not** the same flag as the selector `--context <C>` above — `--context` picks slices by an
+event's `@Context`, `--context-doc` names a document path; both exist on `new` at once with no
+conflict. Stored exactly as given — posix separators, never resolved or checked for existence at
+write time (the engagement file may predate the docs it names; `plan`'s pre-flight is where a
+missing path is caught, see below). Each value must be a non-empty single line
+(`--context-doc must be a non-empty path` / `--context-doc must be a single line (no newlines)`).
+`[]`/absent when `--context-doc` is never given.
+
+`new` writes the lowest `engagementSchemaVersion` that covers what was actually given:
+`"1.1"` with neither `--pr-title` nor `--context-doc`, `"1.2"` with `--pr-title` but no
+`--context-doc`, `"1.3"` with `--context-doc` (regardless of `--pr-title`) — so older tooling
+still reads a file that does not use a feature it predates. Refusals (exit 1, stderr): `pass exactly one of --slices,
 --context, --storyline, --downstream-of`; `the selection is empty — nothing to engage`; `invalid slug "<s>"
 — expected kebab-case (a-z, 0-9, -)`; `--parallel must be a positive integer`; `engagement
 "<slug>" already exists (<path>) — pass --force to overwrite`.
@@ -2633,10 +2646,18 @@ Plan schema **`1.3`** (GH #282) adds one more `preflight[].kind`:
 |---|---|
 | `shape` | A shape-family lint ([`em validate --shape`](#--shape-gh-282)) fires on at least one of the engagement's slices. One finding per rule, `subject` = the rule code, `slices` = the engagement slices its refs name. Fix the model, or confirm a `shape-accepted: <rule> <refs> — <reason>` bullet is already in `.event-modeling.md` `## Decisions log` (pre-flight does not read the log) before fan-out |
 
-The text form prints one block per level with its width against the ceiling:
+Plan schema **`1.5`** (GH #455) adds one more `preflight[].kind`:
+
+| `preflight[].kind` | When |
+|---|---|
+| `context-missing` | One of the engagement's `context:` paths does not exist on disk at plan time, resolved against the current working directory. `subject` = the path, `slices` = every slice in the engagement (a context document is engagement-wide, not per-slice). Add the file before fan-out, or drop it from `context:` |
+
+The text form prints one block per level with its width against the ceiling, with a `context:`
+line first when the engagement has one:
 
 ```
 engagement "loans" (open) — 26 slice(s) in 3 level(s), parallel 3
+context: docs/constitution.md, docs/nfr/latency.md
 level 0: 23 slices (ceiling 3)
   catalog-view-1 [state-view] impl/catalog-view-1 on main · state: planned
   …
@@ -2647,8 +2668,8 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.4"`, `generator`, `file`, `engagement` (the
-file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
+`--json` prints `engagementPlanSchemaVersion: "1.5"`, `generator`, `file`, `engagement` (the
+file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `context` (the engagement's `context:` paths, `[]` when absent, added in `1.5`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
 (added in `1.2`, GH #239 — see above). The MCP
 `engagement_plan` tool returns the same document. Two kinds of edge never order a build and are
@@ -2709,20 +2730,33 @@ untaggedInModel, identifiers }]`, `counts: { present, incomplete, missingEvent }
 runs this in its precondition step instead of asking for the foundation PR: `missing-event`
 stops; `incomplete` is one question to the human, with the gaps named, not one per implementer.
 
-### `em engagement set <file> <slug> <key> --state <state> [--branch <b>] [--base <b>] [--pr <url>]`
+### `em engagement set <file> <slug> [<key>] [--state <state>] [--branch <b>] [--base <b>] [--pr <url>] [--context-doc <path>]...`
 
 This is the only write path to the Ledger. States: `planned | building | validating | review |
-awaiting-merge | merged | held | gap`. Any state can be set. `set` rewrites that slice's one
-frontmatter entry line and regenerates the Ledger table. Every other byte is kept, the file's
-line ending included. `--branch`/`--base`/`--pr` replace their values, and omitted ones are
-kept.
+awaiting-merge | merged | held | gap`. Any state can be set. With `<key>` and `--state`, `set`
+rewrites that slice's one frontmatter entry line and regenerates the Ledger table. Every other
+byte is kept, the file's line ending included. `--branch`/`--base`/`--pr` replace their values,
+and omitted ones are kept.
 
 - **Idempotent:** the same state and values are a no-op (`no change: <key> is already <state>`).
 - **`merged` is terminal:** any different `set` afterwards is refused (`slice "<key>" is merged —
   merged is terminal`).
 - **`--state held`** records `heldBy: human`. Setting any other state drops it.
 - Refusals: `slice "<key>" is not in engagement "<slug>"`, `invalid --state "<s>" — expected one
-  of: …`, `engagement "<slug>" is closed`, `no engagement "<slug>" (expected <path>)`.
+  of: …`, `engagement "<slug>" is closed`, `no engagement "<slug>" (expected <path>)`, `a slice
+  export key is required (or pass --context-doc to set the engagement-level context: list)`,
+  `--state is required when setting a slice`.
+
+**`--context-doc <path>` (repeatable; GH #455), with no `<key>` and none of
+`--state`/`--branch`/`--base`/`--pr`:** replaces the whole `context:` list (the same
+"a given value replaces" rule the other flags use for a slice's fields) — a document-level write,
+not a Ledger one, so it takes no slice key and never touches the Ledger table. Paths are stored
+exactly as given and validated the same way as `new`'s (non-empty, one line); `plan`'s pre-flight
+is what checks them against disk. Combining `--context-doc` with a slice key or any of
+`--state`/`--branch`/`--base`/`--pr` in one invocation is refused (`--context-doc sets the
+engagement-level context: list on its own — pass it without a slice key or
+--state/--branch/--base/--pr`) — run `set` twice for the two kinds of change. Idempotent: the
+same list is a no-op (`no change: context is already [...] (<path>)`).
 
 ### `em engagement status <file> <slug> [--json]`
 

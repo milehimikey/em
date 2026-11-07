@@ -250,17 +250,19 @@ em engagement new <file> <slug> --parallel <n>                      # how many s
 em engagement new <file> <slug> --by <name>                         # who created the engagement (createdBy)
 em engagement new <file> <slug> --tracking <key>                    # an issue-tracker key or URL the slice PRs cite (a slice doc's own tracking: wins)
 em engagement new <file> <slug> --pr-title <template>               # PR title template for the slice PRs; {key} = tracking key, {slice} = slice name, {sliceKey} = slice key (default "{key}: {slice}", or "{slice}" without a key)
+em engagement new <file> <slug> --context-doc <path>                # repo-relative path to a document implementers need beyond the slice doc — the constitution, an NFR doc, an ADR (repeatable; GH #455)
 em engagement new <file> <slug> --force                             # overwrite an existing engagement file with this slug
 em engagement plan <file> <slug>                                    # the engagement's build plan: dependency levels over model.edges (loops-to excluded), and per slice its readiness, branch impl/<key>, base (always main — MIL-280), and any hold
 em engagement plan <file> <slug> --json                             # print a JSON document instead of text (same document as the MCP engagement_plan tool)
 em engagement foundation <file> <slug>                              # GH #240: is the foundation PR (implement.md §8) actually in the code for the events this engagement's slices emit and consume? A text scan of --code: an event is present when a file carries an identifier derived from its name (OrderPlaced / order_placed / ORDER_PLACED / order-placed), its model fields and tag fields are then looked for in those files. Per event: present | incomplete (missing-field / missing-tag, named) | missing-event — so "foundation absent" and "foundation incomplete" are different reports. Exits 1 unless every event is present. Proves the contract was written down, not that it type-checks
 em engagement foundation <file> <slug> --code <dir>                 # the target repository (or the directory the constitution's "where a slice's code lives" rule points at)
 em engagement foundation <file> <slug> --json                       # print a JSON document instead of text (same document as the MCP engagement_foundation tool)
-em engagement set <file> <slug> <key>                               # the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); idempotent; merged is terminal; --state held records a human hold
-em engagement set <file> <slug> <key> --state <state>               # one of: planned | building | validating | review | awaiting-merge | merged | held | gap
-em engagement set <file> <slug> <key> --branch <name>               # the slice's branch
-em engagement set <file> <slug> <key> --base <name>                 # the branch the slice's PR targets
-em engagement set <file> <slug> <key> --pr <url>                    # the slice's PR URL
+em engagement set <file> <slug> [key]                               # the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); idempotent; merged is terminal; --state held records a human hold. Or, on its own (no slice key), --context-doc replaces the engagement-level context: list (GH #455)
+em engagement set <file> <slug> [key] --state <state>               # one of: planned | building | validating | review | awaiting-merge | merged | held | gap
+em engagement set <file> <slug> [key] --branch <name>               # the slice's branch
+em engagement set <file> <slug> [key] --base <name>                 # the branch the slice's PR targets
+em engagement set <file> <slug> [key] --pr <url>                    # the slice's PR URL
+em engagement set <file> <slug> [key] --context-doc <path>          # repo-relative path to a document implementers need beyond the slice doc (repeatable; replaces the whole engagement-level context: list; GH #455)
 em engagement status <file> <slug>                                  # the Ledger joined with each slice doc's current status, plus whether the engagement is closable
 em engagement status <file> <slug> --json                           # print a JSON document instead of text (same document as the MCP engagement_status tool)
 em engagement close <file> <slug>                                   # set status: closed — refuses unless every slice is merged (recorded or inferred) or gap

@@ -54,6 +54,7 @@ import {
   Selector,
   applyEngagementClose,
   applyEngagementSet,
+  applyEngagementSetContext,
   buildNewEngagement,
   buildUnitIndex,
   effectiveTracking,
@@ -3339,12 +3340,18 @@ engagement
   .option("--by <name>", "who created the engagement (createdBy)")
   .option("--tracking <key>", "an issue-tracker key or URL the slice PRs cite (a slice doc's own tracking: wins)")
   .option("--pr-title <template>", "PR title template for the slice PRs; {key} = tracking key, {slice} = slice name, {sliceKey} = slice key (default \"{key}: {slice}\", or \"{slice}\" without a key)")
+  .option(
+    "--context-doc <path>",
+    "repo-relative path to a document implementers need beyond the slice doc — the constitution, an NFR doc, an ADR (repeatable; GH #455)",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option("--force", "overwrite an existing engagement file with this slug")
   .action(
     (
       file: string,
       slug: string,
-      opts: { slices?: string; context?: string; storyline?: string; downstreamOf?: string; parallel: string; by?: string; tracking?: string; prTitle?: string; force?: boolean },
+      opts: { slices?: string; context?: string; storyline?: string; downstreamOf?: string; parallel: string; by?: string; tracking?: string; prTitle?: string; contextDoc: string[]; force?: boolean },
     ) => {
       const fail = (m: string): never => {
         console.error(`em engagement new: ${m}`);
@@ -3365,7 +3372,7 @@ engagement
       const path = engagementPath(file, slug);
       const result = buildNewEngagement(
         { file, model, refs, baseDir: dirname(file) },
-        { slug, selector, parallel, createdBy: opts.by ?? null, tracking: opts.tracking ?? null, prTitle: opts.prTitle ?? null, created: localIsoDate() },
+        { slug, selector, parallel, createdBy: opts.by ?? null, tracking: opts.tracking ?? null, prTitle: opts.prTitle ?? null, context: opts.contextDoc, created: localIsoDate() },
       );
       if (!result.ok) return fail(result.message);
       if (existsSync(path) && !opts.force) fail(`engagement "${slug}" already exists (${path}) — pass --force to overwrite`);
@@ -3456,20 +3463,46 @@ engagement
   .command("set")
   .description(
     "the only write path to the Ledger: set one slice's state (and optionally branch/base/pr); " +
-      "idempotent; merged is terminal; --state held records a human hold",
+      "idempotent; merged is terminal; --state held records a human hold. Or, on its own (no slice " +
+      "key), --context-doc replaces the engagement-level context: list (GH #455)",
   )
   .argument("<file>", "input .em file")
   .argument("<slug>", "engagement slug")
-  .argument("<key>", "slice export key")
-  .requiredOption("--state <state>", `one of: ${LEDGER_STATES.join(" | ")}`)
+  .argument("[key]", "slice export key (omit when using --context-doc alone)")
+  .option("--state <state>", `one of: ${LEDGER_STATES.join(" | ")}`)
   .option("--branch <name>", "the slice's branch")
   .option("--base <name>", "the branch the slice's PR targets")
   .option("--pr <url>", "the slice's PR URL")
-  .action((file: string, slug: string, key: string, opts: { state: string; branch?: string; base?: string; pr?: string }) => {
+  .option(
+    "--context-doc <path>",
+    "repo-relative path to a document implementers need beyond the slice doc (repeatable; replaces the whole engagement-level context: list; GH #455)",
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
+  .action((file: string, slug: string, key: string | undefined, opts: { state?: string; branch?: string; base?: string; pr?: string; contextDoc: string[] }) => {
     const fail = (m: string): never => {
       console.error(`em engagement set: ${m}`);
       process.exit(1);
     };
+    const sliceFields = opts.state !== undefined || opts.branch !== undefined || opts.base !== undefined || opts.pr !== undefined;
+    if (opts.contextDoc.length > 0) {
+      if (key !== undefined || sliceFields) {
+        return fail("--context-doc sets the engagement-level context: list on its own — pass it without a slice key or --state/--branch/--base/--pr");
+      }
+      const loaded = loadEngagement(file, slug);
+      if (!loaded.ok) return fail(loaded.message);
+      const result = applyEngagementSetContext(slug, loaded.text, loaded.file, opts.contextDoc);
+      if (!result.ok) return fail(result.message);
+      if (!result.changed) {
+        console.log(`no change: context is already [${result.context.join(", ")}] (${loaded.path})`);
+        return;
+      }
+      writeFileSync(loaded.path, result.text);
+      console.log(`set context: ${result.context.length} path${result.context.length === 1 ? "" : "s"} (${loaded.path})`);
+      return;
+    }
+    if (!key) return fail("a slice export key is required (or pass --context-doc to set the engagement-level context: list)");
+    if (!opts.state) return fail("--state is required when setting a slice");
     const loaded = loadEngagement(file, slug);
     if (!loaded.ok) return fail(loaded.message);
     const { model, refs } = compileFile(file);
@@ -3477,7 +3510,7 @@ engagement
     // "is not in engagement" refusal (which names what the Ledger holds) still speaks.
     const resolved = resolveSliceKey(model, refs, key);
     if (resolved.ok) key = resolved.key;
-    const result = applyEngagementSet({ file, model, refs, baseDir: dirname(file) }, slug, loaded.text, loaded.file, { key, ...opts });
+    const result = applyEngagementSet({ file, model, refs, baseDir: dirname(file) }, slug, loaded.text, loaded.file, { key, state: opts.state, branch: opts.branch, base: opts.base, pr: opts.pr });
     if (!result.ok) return fail(result.message);
     if (!result.changed) {
       console.log(`no change: ${key} is already ${result.entry.state} (${loaded.path})`);
