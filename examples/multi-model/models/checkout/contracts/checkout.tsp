@@ -3,12 +3,14 @@
 // Scope: the model's `public` commands (write API), events (async) and views (read API).
 
 namespace Checkout {
+  @format("uuid") scalar Uuid extends string;
+
   /**
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
   model OrderSubmitted {
     /** system-assigned — not supplied by the triggering command */
-    orderId: string;
+    orderId: Uuid;
     total: decimal;
     /** system-assigned — not supplied by the triggering command */
     placedAt: utcDateTime;

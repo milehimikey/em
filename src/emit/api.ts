@@ -23,7 +23,7 @@
 // edit leaves the contract byte-identical and neither CODEOWNERS routing nor the API-first
 // gate fires on it.
 
-import { NormalizedModel, resolvePublicType } from "../model/model.js";
+import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES, PUBLIC_SCALAR_TYPES, resolvePublicType } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { dedupe } from "../util/slug.js";
@@ -161,6 +161,10 @@ export function buildApiContract(
     if (reachable.has(t.ref)) typeNameByRef.set(t.ref, dedupe(pascalCase(t.name), usedNames, "_"));
   }
 
+  // GH #444 (#443 ask 1): which table entries this contract actually uses, so the namespace
+  // declares exactly the scalars its own fields need — never a dead declaration.
+  const usedScalars = new Set<string>();
+
   const fieldType = (f: FieldExport, owner: string): string => {
     if (f.typeRef) {
       const name = typeNameByRef.get(f.typeRef.ref) ?? pascalCase(f.typeRef.name);
@@ -172,6 +176,7 @@ export function buildApiContract(
         `em api generate: ${owner} field "${f.name}" has no public type — em validate's public-field-type-unresolved should have refused this model`,
       );
     }
+    usedScalars.add(r.scalar);
     return r.array ? `${r.tsType}[]` : r.tsType;
   };
 
@@ -242,6 +247,16 @@ export function buildApiContract(
     commandOps.push(`op ${opName}(${params.join(", ")}): void;`);
   }
   if (commandOps.length > 0) sections.push(["interface Commands {", ...indent(commandOps, 1), "}"].join("\n"));
+
+  // Scalar declarations go first, in table order (not order of first use) — every field type
+  // above is already computed by this point, so `usedScalars` is complete.
+  const scalarDecls: string[] = [];
+  for (const name of PUBLIC_SCALAR_TYPE_NAMES) {
+    if (!usedScalars.has(name)) continue;
+    const decl = PUBLIC_SCALAR_TYPES[name].scalarDecl;
+    if (decl) scalarDecls.push(decl);
+  }
+  if (scalarDecls.length > 0) sections.unshift(scalarDecls.join("\n"));
 
   const namespaceName = pascalCase(doc.model.name ?? "Model");
   const header = [

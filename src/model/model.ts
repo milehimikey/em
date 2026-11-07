@@ -434,26 +434,39 @@ export function resolveTypeRef(
   return typeDecl ? { typeDecl, array } : null;
 }
 
+/** One `PUBLIC_SCALAR_TYPES` entry: the TypeSpec type a field of this em type emits as, plus —
+ *  when the entry narrows a TypeSpec core type with `@format` (GH #444, #443 ask 1) — the one
+ *  scalar declaration `em api generate` must prepend to the namespace, verbatim, before any
+ *  field names it. `scalarDecl: null` means the entry maps straight to a TypeSpec core type
+ *  with no declaration of its own (the common case). */
+export interface PublicScalarEntry {
+  /** The TypeSpec type a field of this em type is emitted as (bare, before any `[]`). */
+  tsType: string;
+  /** The scalar declaration to prepend when this entry is used, or null for a bare core type. */
+  scalarDecl: string | null;
+}
+
 /**
  * The fixed public-surface scalar table (MIL-237, briefing R7) — exactly these eleven names,
- * matched case-insensitively, each with the one TypeSpec core scalar `em api generate` emits
- * for it. Deliberately small and closed: this is NOT a type mapper (no aliases, no generics, no
- * configurable entries). A field of a `public` element must name one of these, `X[]` of one of
- * these or of a declared `type`, or a declared `type` — else `em validate` raises
+ * matched case-insensitively, each with the one TypeSpec type `em api generate` emits for it
+ * (and, for `uuid`, the `@format` scalar declaration that narrows it — GH #444). Deliberately
+ * small and closed: this is NOT a type mapper (no aliases, no generics, no configurable
+ * entries). A field of a `public` element must name one of these, `X[]` of one of these or of a
+ * declared `type`, or a declared `type` — else `em validate` raises
  * `public-field-type-unresolved`. Internal elements keep free-text types.
  */
-export const PUBLIC_SCALAR_TYPES: Readonly<Record<string, string>> = Object.freeze({
-  string: "string",
-  text: "string",
-  int: "int32",
-  long: "int64",
-  decimal: "decimal",
-  boolean: "boolean",
-  uuid: "string",
-  date: "plainDate",
-  datetime: "utcDateTime",
-  duration: "duration",
-  bytes: "bytes",
+export const PUBLIC_SCALAR_TYPES: Readonly<Record<string, PublicScalarEntry>> = Object.freeze({
+  string: { tsType: "string", scalarDecl: null },
+  text: { tsType: "string", scalarDecl: null },
+  int: { tsType: "int32", scalarDecl: null },
+  long: { tsType: "int64", scalarDecl: null },
+  decimal: { tsType: "decimal", scalarDecl: null },
+  boolean: { tsType: "boolean", scalarDecl: null },
+  uuid: { tsType: "Uuid", scalarDecl: '@format("uuid") scalar Uuid extends string;' },
+  date: { tsType: "plainDate", scalarDecl: null },
+  datetime: { tsType: "utcDateTime", scalarDecl: null },
+  duration: { tsType: "duration", scalarDecl: null },
+  bytes: { tsType: "bytes", scalarDecl: null },
 });
 
 /** The table's names in declaration order, as printed in diagnostics and docs. */
@@ -479,8 +492,8 @@ export function resolvePublicType(
   const trimmed = typeStr.trim();
   const array = trimmed.endsWith("[]");
   const base = (array ? trimmed.slice(0, -2) : trimmed).trim().toLowerCase();
-  const tsType = Object.prototype.hasOwnProperty.call(PUBLIC_SCALAR_TYPES, base) ? PUBLIC_SCALAR_TYPES[base] : undefined;
-  return tsType ? { kind: "scalar", scalar: base, tsType, array } : null;
+  const entry = Object.prototype.hasOwnProperty.call(PUBLIC_SCALAR_TYPES, base) ? PUBLIC_SCALAR_TYPES[base] : undefined;
+  return entry ? { kind: "scalar", scalar: base, tsType: entry.tsType, array } : null;
 }
 
 /** Resolve an arrow endpoint (given by display name) to an element id. */

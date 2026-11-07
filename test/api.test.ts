@@ -151,17 +151,17 @@ slice "S" {
 describe("fixed public type table (R7)", () => {
   it("maps exactly the eleven table entries, case-insensitively", () => {
     expect(PUBLIC_SCALAR_TYPES).toEqual({
-      string: "string",
-      text: "string",
-      int: "int32",
-      long: "int64",
-      decimal: "decimal",
-      boolean: "boolean",
-      uuid: "string",
-      date: "plainDate",
-      datetime: "utcDateTime",
-      duration: "duration",
-      bytes: "bytes",
+      string: { tsType: "string", scalarDecl: null },
+      text: { tsType: "string", scalarDecl: null },
+      int: { tsType: "int32", scalarDecl: null },
+      long: { tsType: "int64", scalarDecl: null },
+      decimal: { tsType: "decimal", scalarDecl: null },
+      boolean: { tsType: "boolean", scalarDecl: null },
+      uuid: { tsType: "Uuid", scalarDecl: '@format("uuid") scalar Uuid extends string;' },
+      date: { tsType: "plainDate", scalarDecl: null },
+      datetime: { tsType: "utcDateTime", scalarDecl: null },
+      duration: { tsType: "duration", scalarDecl: null },
+      bytes: { tsType: "bytes", scalarDecl: null },
     });
     const { text } = generate(`
 slice "S" {
@@ -184,10 +184,46 @@ slice "S" {
 `);
     for (const line of [
       "a: string;", "b: string;", "c: int32;", "d: int64;", "e: decimal;", "f: boolean;",
-      "g: string;", "h: plainDate;", "i: utcDateTime;", "j: duration;", "k: bytes;", "l: string[];",
+      "g: Uuid;", "h: plainDate;", "i: utcDateTime;", "j: duration;", "k: bytes;", "l: Uuid[];",
     ]) {
       expect(text).toContain(line);
     }
+    expect((text.match(/@format\("uuid"\) scalar Uuid extends string;/g) ?? []).length).toBe(1);
+  });
+
+  it("emits no scalar declaration when the public surface has no uuid field", () => {
+    const { text } = generate(`
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public {
+    a: string
+    b: int
+  }
+}
+`);
+    expect(text).not.toContain("scalar Uuid");
+    expect(text).not.toContain("@format");
+  });
+
+  it("emits the scalar declaration exactly once for a model with multiple uuid fields, before the first model block", () => {
+    const { text } = generate(`
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public {
+    a: uuid
+    b: uuid
+    c: uuid[]
+  }
+}
+`);
+    expect((text.match(/scalar Uuid extends string;/g) ?? []).length).toBe(1);
+    expect(text).toContain("a: Uuid;");
+    expect(text).toContain("b: Uuid;");
+    expect(text).toContain("c: Uuid[];");
+    const declIndex = text.indexOf("@format(\"uuid\") scalar Uuid extends string;");
+    const modelIndex = text.indexOf("model ThingDone");
+    expect(declIndex).toBeGreaterThan(-1);
+    expect(modelIndex).toBeGreaterThan(declIndex);
   });
 
   it("maps a declared type reference (bare and array) to its generated model, reachable types only", () => {
@@ -282,13 +318,15 @@ describe("golden: examples/order-fulfillment", () => {
 // Scope: the model's \`public\` commands (write API), events (async) and views (read API).
 
 namespace OrderFulfillment {
+  @format("uuid") scalar Uuid extends string;
+
   /**
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
   model OrderPlaced {
     /** system-assigned — not supplied by the triggering command */
-    orderId: string;
-    customerId: string;
+    orderId: Uuid;
+    customerId: Uuid;
     total: decimal;
     /** system-assigned — not supplied by the triggering command */
     placedAt: utcDateTime;
@@ -298,7 +336,7 @@ namespace OrderFulfillment {
    * Consumers tolerate unknown fields; additive changes do not break them.
    */
   model OpenOrders {
-    orderId: string;
+    orderId: Uuid;
     total: decimal;
     status: string;
   }

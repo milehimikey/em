@@ -1123,7 +1123,8 @@ tightening a rule changes the committed contract; an internal element's invarian
 
 | em type | TypeSpec |
 |---|---|
-| `string`, `text`, `uuid` | `string` |
+| `string`, `text` | `string` |
+| `uuid` | `Uuid` |
 | `int` | `int32` |
 | `long` | `int64` |
 | `decimal` | `decimal` |
@@ -1134,6 +1135,13 @@ tightening a rule changes the committed contract; an internal element's invarian
 | `bytes` | `bytes` |
 | `X[]` | `<mapped X>[]` |
 | a declared `type` name | that type's `model` |
+
+`uuid` maps to a declared scalar, not a bare core type (GH #444, #443 ask 1): the first time any
+public field resolves to `uuid`, the namespace gets one prepended declaration,
+`@format("uuid") scalar Uuid extends string;`, ahead of every `model`/`interface` block — a
+model with no `uuid` field in its public surface emits no such declaration. `@format` is a
+TypeSpec built-in decorator (no import needed), so the file stays dependency-free; the openapi3
+emitter turns it into `type: string, format: uuid` natively.
 
 There is no alias table, no generic-wrapper handling, and no `unknown` fallback — `em validate`
 guarantees every public field resolves. Teams compile the TypeSpec to OpenAPI / JSON Schema /
