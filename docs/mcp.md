@@ -107,6 +107,7 @@ working directory — the same working-directory convention every `em` CLI comma
 | `metrics` | `{ file, from, to? }` (git — see below) | The `em metrics <file> --from <rev> --json` document: ratification turnaround, conform cadence + findings, status-vs-reality disagreement, computed from git history over the range |
 | `discover_triage_check` | `{ path, source? }` | The `em discover triage-check <path> --json` document: validates a `discovery/prd-triage.json` PRD/spec triage record (GH #295) |
 | `conform_findings_check` | `{ path }` | The `em conform-findings check <path> --json` document: shape-validates a `conformance/<date>-findings.json` file (MIL-214; `em slice conform` also reads `<date>-<name>-findings.json`) |
+| `conform_bindings_check` | `{ file, repo, slice? }` | The `em conform bindings check <file> --repo <repo> [--slice <key>] --json` document (GH #449): verifies each `conformance/bindings/<slice-key>.yaml` against the compiled model and the target repo. Read-only; advisory only |
 | `model_version_show` | `{ file }` | The `em model version show <file> --json` document: the model's design version and most recently certified version (MIL-218) — reads only `model-versions/*.json`, never compiles the model |
 | `upgrade` | `{ file }` (git — see below) | The `em upgrade <file> --json` document (MIL-219): dry-run only, never applies anything |
 | `contract` | *(none)* | The packaged implementation contract (`reference/implement.md`), same as `em contract` |
@@ -350,6 +351,19 @@ count when valid. Read-only; the file itself is written by the conform skill dir
 MCP write tool for it, same as every other write/mutate command). See
 [`em conform-findings check`](cli.md#em-conform-findings-check-path) for the full JSON shape.
 
+### `conform_bindings_check`
+
+Same document as `em conform bindings check <file> --repo <repo> [--slice <key>] --json` (GH
+#449): verifies each per-slice bindings manifest (`conformance/bindings/<slice-key>.yaml`, see
+[bindings.md](bindings.md)) — every bound element's `ref` resolves against the compiled model,
+and every bound `file`/`identifier` exists/is found under `repo` (plain substring, never
+code-parsed — language-agnostic). Refuses (tool error) when `file` has validation errors, or
+`slice` doesn't resolve to a slice in the model. Read-only and advisory only: never wired into
+`validate`/`slice_ready`, and (unlike the CLI's `--exit-code`) this tool never fails on a binding
+problem — the document's own `ok` field carries that. See
+[`em conform bindings check`](cli.md#em-conform-bindings-check-file---repo-path)
+for the full JSON shape.
+
 ### `discover_triage_check`
 
 Same document as `em discover triage-check <path> --json` (GH #295): validates a
@@ -407,7 +421,7 @@ MCP tool error (`isError: true`, with a message explaining what went wrong) — 
 crash and never a bare protocol-level error. A model *with validation errors* is not a tool
 error for `validate`/`slice_ready`/`list_markers`/`upgrade`: those (plus `upgrade`, MIL-219 — see
 its own section above for why) are exactly the tools built to work on a broken model.
-`export_model`/`export_slice`/`diff`/`glossary`/`conform_scope`/`status`/`query`/`system` do refuse on
+`export_model`/`export_slice`/`diff`/`glossary`/`conform_scope`/`conform_bindings_check`/`status`/`query`/`system` do refuse on
 errors (as tool errors), matching each command's own CLI behavior (`system` refuses only when the
 manifest or a model source can't be loaded — a failing *seam* is reported inside the document). The four git-backed tools
 (`diff`'s revision form, `changelog`, `conform_scope`, `upgrade`) surface every git failure mode

@@ -148,6 +148,8 @@ my-project/
         checkout.tsp           # `em api generate`; never hand-edited
       model-versions/          # `em model version bump`
       conformance/             # conform reports + findings
+        bindings/              # optional: per-slice bindings manifests (GH #449, see bindings.md)
+          add-item.yaml
     fulfillment/
       fulfillment.em           # translation Order Intake consumes checkout:event.order-submitted
       README.md
@@ -4561,6 +4563,66 @@ Exit 1 (with each shape error printed, one per line) on any problem — this is 
 conform run verifies what it just wrote. `--json` shape: `{ ok, path, findingsCount, errors }` —
 `findingsCount` is `null` on failure, `errors` is `[]` on success. Also exposed as the MCP
 `conform_findings_check` tool (see [mcp.md](mcp.md)).
+
+## `em conform bindings check <file> --repo <path>`
+
+GH #449: deterministic, grep-level verification of a **per-slice bindings manifest** —
+`<model dir>/conformance/bindings/<slice-key>.yaml`, one file per slice, declaring every model
+element and `INV-*` invariant's code site. The schema is a **file contract, not a CLI feature**:
+any implementer that can commit a file can author one by hand — see
+[bindings.md](bindings.md) for the full schema, written so an agent with no `em` installed can
+produce a valid file from it alone. This command is the read side only; `em` never writes a
+bindings file.
+
+For each bindings file (or just `--slice`'s), checks: every bound element's `ref` resolves
+against the compiled model's own export refs for that slice; every bound `file` exists under
+`--repo`, and contains its `identifier` as a **plain substring** — never parsed as code, so the
+check is language-agnostic by construction, the same posture `em refs --reachable-from` holds.
+
+| Flag | Effect |
+|---|---|
+| `--repo <path>` | Required. Bound `file`s resolve relative to this path — it does not need to be a git repository; this check never shells out to git |
+| `--slice <key>` | Check only this slice's bindings file (default: every `conformance/bindings/*.yaml` beside the model, sorted) |
+| `--json` | Print a JSON document instead of the text report |
+| `--exit-code` | Exit 1 if any binding failed (git-diff convention) — the opt-in CI gate. Without it, this command **always exits 0**: it is advisory only, never wired into `em validate` or `--slice-ready`, and a failing binding alone must never fail a build that didn't ask for the gate |
+
+Five distinct failure kinds, so a failure is never ambiguous about which half of the contract
+broke:
+
+| Kind | Meaning |
+|---|---|
+| Unknown `--slice` key | The given key isn't a slice in the model — a usage error, refused immediately (exit 1 regardless of `--exit-code`) |
+| `missing` | `--slice` named a real slice, but `conformance/bindings/<key>.yaml` doesn't exist |
+| `malformed` | The YAML failed to parse, or failed shape validation (see [bindings.md](bindings.md)) — every problem listed, line-numbered where possible |
+| `unknown-slice` | The file's own `slice:` field names a key the compiled model doesn't have (a renamed/removed slice left an orphaned file behind) |
+| unknown element ref | An `elements[].ref` isn't among the model's own `<kind>.<slug>` refs for that slice |
+
+A bound file/identifier pair that resolves cleanly but doesn't check out (the file is missing, or
+the identifier isn't found in it) fails with `file not found` / `identifier not found` — the plain
+evidence-walk failure the whole feature exists to make incremental instead of re-derived from
+scratch every run.
+
+```bash
+em conform bindings check checkout.em --repo ../checkout-service
+# conformance/bindings/place-order.yaml (slice "place-order")
+#   [ok] command.place-order -> src/orders/Handler.kt ("placeOrder")
+#   [FAIL] event.order-placed -> src/orders/Handler.kt ("OrderPlaced") — identifier not found
+#
+# summary: 1 file(s) checked, 1 failed; 2 element binding(s), 1 failed; 0 invariant binding(s), 0 failed
+em conform bindings check checkout.em --repo ../checkout-service --slice place-order --exit-code
+em conform bindings check checkout.em --repo ../checkout-service --json
+```
+
+`--json` shape (`bindingsCheckSchemaVersion` `"1.0"`): `{ bindingsCheckSchemaVersion, slice,
+ok, files: [{ path, slice, kind, ok, errors, elements: [{ ref, file, identifier, note,
+knownRef, fileExists, identifierFound, ok }], invariants: [{ id, enforcedIn: { file,
+identifier, fileExists, identifierFound, ok }, testedIn: { ... }, ok }] }], summary: {
+filesChecked, filesOk, filesFailed, elementsChecked, elementsOk, elementsFailed,
+invariantsChecked, invariantsOk, invariantsFailed } }`. `slice` is `null` when every bindings
+file was scanned. `fileExists`/`identifierFound` are `null` on an element whose `ref` is
+unknown (`knownRef: false`) — never even looked at. Deterministic: byte-identical JSON for the
+same model/repo/bindings content. Also exposed as the MCP `conform_bindings_check` tool (see
+[mcp.md](mcp.md)).
 
 ## `em changelog <file>`
 

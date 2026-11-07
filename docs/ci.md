@@ -363,6 +363,27 @@ new dangling refs; waived results still print in the log. The lasting fix is ups
 `--no-ref` and certify with `--at <kind>:<id>` in a squash/rebase repo — the hash identifies the
 signed content, the ref was only ever an address.
 
+## `em conform bindings check` (opt-in)
+
+GH #449: verifies every per-slice bindings manifest (`conformance/bindings/<slice-key>.yaml`,
+see [bindings.md](bindings.md)) against the checked-out code — each bound element's `ref`
+resolves against the model, each bound `file`/`identifier` exists/is found (plain substring,
+never code-parsed). Same posture as `em refs` above: advisory by default (exit 0 always), and
+`--exit-code` is what turns a binding failure into a job failure, so adopting the check and
+turning it into a gate are two separate, deliberate steps.
+
+```yaml
+      - name: Check per-slice bindings manifests
+        run: npx @milehimikey/em conform bindings check model.em --repo . --exit-code
+```
+
+Needs no git history and no `fetch-depth: 0` — `--repo` just needs to be the checked-out
+working tree (it doesn't even need to be a git repository). Bindings files are themselves opt-in
+per slice: a model with none yet still passes (`0 file(s) checked`), so this step is safe to add
+before any slice has one. See
+[cli.md](cli.md#em-conform-bindings-check-file---repo-path) for the full flag/output reference
+and `--json` shape.
+
 ## `em coverage` (opt-in)
 
 Same "opt-in unless you install the preset" story as `em ledger` above — `--strict` is on by
