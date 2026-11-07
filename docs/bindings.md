@@ -25,7 +25,10 @@ the slice's code is the one who knows the sites, so writing or updating
 [process.md](process.md#handing-a-slice-to-an-agent) for the human-facing hand-off and the
 [`event-modeling-implement`](../.claude/skills/event-modeling-implement/reference/implement.md)
 skill's §5 for the agent-facing one. Because it's a file contract (see above), an implementer
-with no `em` installed authors it the same way — directly, from this page, as part of the PR.
+with no `em` installed authors it the same way — directly, from this page, as part of the PR. For
+the specific case of a ticket-driven cloud agent that never runs `em` — fed a ticket body instead
+of a worktree — see [external-implementers.md](external-implementers.md): this file lands as the
+ticket's definition-of-done, seeded by `em engagement brief`.
 
 A slice that ships without one isn't broken. Its first **scoped conform walk**
 (`event-modeling-conform`'s `reference/conform.md`) backfills the file from the same evidence

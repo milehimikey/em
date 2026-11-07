@@ -164,6 +164,11 @@ and the lead never merges. The roles are in
 [process.md](process.md#engagements-who-operates-the-agents); the commands are in
 [cli.md](cli.md#em-engagement).
 
+**Handing a slice to an implementer that can't run `em` at all.** A ticket-driven cloud agent gets
+none of the above — no worktree, no sub-agents, often no repo until a PR is open. `em engagement
+brief` composes a self-contained ticket instead, and conform, not a reviewing agent, becomes the
+spec-fidelity check: see [external-implementers.md](external-implementers.md) for the recipe.
+
 For anything programmatic — a generator, a dashboard, an MCP server, your own scripts —
 consume `em export` rather than parsing the DSL:
 

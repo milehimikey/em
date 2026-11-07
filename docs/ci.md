@@ -384,6 +384,13 @@ before any slice has one. See
 [cli.md](cli.md#em-conform-bindings-check-file---repo-path) for the full flag/output reference
 and `--json` shape.
 
+**Gating a ticket-driven agent's PR, end to end.** The job above is one step of a longer loop for
+an implementer that can't run `em` at all — a cloud agent fed by Jira/Linear tickets. See
+[external-implementers.md](external-implementers.md) for the whole five-step recipe: the brief
+that composes the ticket, the bindings file as the ticket's definition-of-done, this gate plus
+`em validate`/`em api check` on the agent's PR, the scoped conform walk after it merges, and
+certification with a kinded `conformedAt`.
+
 ## `em coverage` (opt-in)
 
 Same "opt-in unless you install the preset" story as `em ledger` above — `--strict` is on by

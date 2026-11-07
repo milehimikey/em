@@ -531,6 +531,11 @@ templates and prompt overlays that make spec-kit's plan/tasks phases read a slic
 natively. Both are separate, versioned packages; their READMEs are the reference — `em`'s own
 docs deliberately don't duplicate them.
 
+**None of the above holds for an implementer that cannot run `em` at all** — a ticket-driven cloud
+agent fed by Jira/Linear tickets, with no guarantee it ever has the repo checked out. That case
+gets its own recipe, built from `em engagement brief` and the bindings manifest rather than a
+worktree and a skill install: see [external-implementers.md](external-implementers.md).
+
 ### Engagements: who operates the agents
 
 When the work is a whole chunk of the model rather than one slice,
