@@ -509,10 +509,16 @@ for the human doing the handing:
    [Seams between models](#seams-between-models-who-does-what)).
 2. Point the agent at the slice doc and the guide. If the repo pins the `em` plugin (or still
    vendors the skill bundle), the guide is already there; otherwise `em contract` prints it.
-3. Review the PR like any other — plus two model-side checks: the slice doc's only edits are
+3. Part of the guide's definition of done (GH #450): the agent writes or updates the slice's
+   `conformance/bindings/<key>.yaml` in the same PR — [bindings.md](bindings.md) is a file
+   contract, so this applies whether or not the agent ever runs `em`. Verify it the way the
+   guide does: `em conform bindings check <model>.em --repo <path> --slice <key> --exit-code`
+   exits 0. A slice that ships without one gets it backfilled by its first scoped conform walk
+   (bindings.md's "Who writes this file").
+4. Review the PR like any other — plus two model-side checks: the slice doc's only edits are
    the merge-time `status`/`implementedIn` flip, and no new spec-shaped artifacts got
    committed as sources of truth.
-4. The implementing agent stays on its side of the seam: it never edits another model's
+5. The implementing agent stays on its side of the seam: it never edits another model's
    directory, slice docs or contract file. A change it needs from a producer goes back to the
    design session as a seam change request (see
    [Where humans are required](#where-humans-are-required-and-why)).

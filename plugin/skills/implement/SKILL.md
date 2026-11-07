@@ -29,8 +29,10 @@ ships in the originating doc's PR); ship the endpoint a
 model doesn't show; surface every gap to the user instead of deciding it silently; cover every
 `INV-<MNEMONIC>-n` and every scenario with tests, proving the citations before merge with
 `em coverage <model>.em --slice <key> --tests <dir> --strict` (the default form skips a
-`ready-to-implement` slice); in spec-kit projects, allocate via
-em-sdd-bridge (redirect mode) and never run `/speckit.specify`.
+`ready-to-implement` slice); write or update the slice's `conformance/bindings/<key>.yaml`
+(GH #450, `docs/bindings.md`'s schema) and verify it with `em conform bindings check <model>.em
+--repo <path> --slice <key> --exit-code` before calling the slice done; in spec-kit projects,
+allocate via em-sdd-bridge (redirect mode) and never run `/speckit.specify`.
 
 **Gate: no constitution, no first slice.** The constitution is the project's ratified house rules
 — stack and architectural shape (including which implementation skill each slice pattern routes

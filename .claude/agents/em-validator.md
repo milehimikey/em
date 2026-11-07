@@ -22,6 +22,7 @@ Run each one and record pass or fail:
 5. No diff under `slices/**`, `*.em`, `constitution.md`, or `engagements/`. Use `git diff --name-only <base>...HEAD`.
 6. The pull request body cites the slice doc.
 7. The pull request title equals the title you were given, exactly (`gh pr view <pr> --json title`). A mismatch fails the check and quotes both. If no title was given, skip this check and say so.
+8. `conformance/bindings/<key>.yaml` exists beside the model, and `em conform bindings check <model.em> --repo <worktree path> --slice <key> --exit-code` exits 0 (GH #450).
 
 ## Output
 

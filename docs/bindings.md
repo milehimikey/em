@@ -13,6 +13,24 @@ author one directly from this page. `em` only ever *reads* this file
 ([`em conform bindings check`](cli.md#em-conform-bindings-check-file---repo-path)); there is no
 `em`-provided writer.
 
+## Who writes this file
+
+Any implementer, at implement time — `em`-aware or not (GH #450). The implementer who just wrote
+the slice's code is the one who knows the sites, so writing or updating
+`conformance/bindings/<slice-key>.yaml` is part of that slice's definition of done: see
+[process.md](process.md#handing-a-slice-to-an-agent) for the human-facing hand-off and the
+[`event-modeling-implement`](../.claude/skills/event-modeling-implement/reference/implement.md)
+skill's §5 for the agent-facing one. Because it's a file contract (see above), an implementer
+with no `em` installed authors it the same way — directly, from this page, as part of the PR.
+
+A slice that ships without one isn't broken. Its first **scoped conform walk**
+(`event-modeling-conform`'s `reference/conform.md`) backfills the file from the same evidence
+that walk already gathers — written once, from the code, instead of from the implementer's own
+knowledge of it. Every walk after that **verifies** the existing file first
+(`em conform bindings check`) and scopes the rest of the walk through it, re-reading only what
+broke or changed — the file is what turns a recurring conform run incremental rather than a full
+re-derivation every time.
+
 ## Why per-slice
 
 One file per slice, named after the slice, so two slices being implemented in parallel never

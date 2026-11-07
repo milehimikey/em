@@ -29,9 +29,12 @@ duplicating them.
 In short: run `em conform-scope <model-name>.em --repo <target-repo-path> --seed-asis` to
 compute the in-scope slice set (diff-scoped by default, via `Last conformance:` + the target
 repo's changed paths mapped through each slice doc's `implementedIn:`) and seed the scratch
-model in one step; for each in-scope slice, gather code evidence *before* comparing to the model
-or doc; write the as-is picture into that scratch model (`<model-name>-asis.em`, reusing the
-canonical model's names wherever the code matches them); run `em diff <model-name>.em
+model in one step; for each in-scope slice, check for a `conformance/bindings/<key>.yaml` first
+(GH #450) — verify it with `em conform bindings check` and scope the walk through it when it
+exists, backfill it from this walk's own evidence when it doesn't — then gather code evidence
+*before* comparing to the model or doc; write the as-is picture into that scratch model
+(`<model-name>-asis.em`, reusing the canonical model's names wherever the code matches them);
+run `em diff <model-name>.em
 <model-name>-asis.em --json` and let `em` decide the structural deltas; classify every finding
 (real drift / model gap / internal inconsistency / uncertainty) with cited evidence; write
 `conformance/<date>-report.md` **and its structured twin `conformance/<date>-findings.json`**
