@@ -1182,6 +1182,14 @@ There is no alias table, no generic-wrapper handling, and no `unknown` fallback 
 guarantees every public field resolves. Teams compile the TypeSpec to OpenAPI / JSON Schema /
 AsyncAPI in their own toolchain.
 
+**Binding files.** There is no emitter config to make this output vary by team — `em api check`
+byte-compares a fresh regeneration against the committed contract, so a configurable emitter
+would make "current" ambiguous. Routes, envelopes, channel bindings and per-field decorators
+(`@@format`, `@@visibility`, ...) belong in a separate, hand-authored TypeSpec file that imports
+this generated contract and never edits it. See
+[contract-bindings.md](contract-bindings.md) for the convention and worked OpenAPI/AsyncAPI
+examples.
+
 ### `em api check`
 
 | Flag | Effect |
