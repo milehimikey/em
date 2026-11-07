@@ -1026,7 +1026,7 @@ field with no type) is an `em validate` error, `public-field-type-unresolved`
 | `long` | 64-bit integer | `int64` |
 | `decimal` | exact decimal (money, quantities) | `decimal` |
 | `boolean` | true/false | `boolean` |
-| `uuid` | identifier | `string` |
+| `uuid` | identifier | `Uuid` (`@format("uuid") scalar Uuid extends string;`) |
 | `date` | calendar date | `plainDate` |
 | `datetime` | instant in time (UTC) | `utcDateTime` |
 | `duration` | length of time | `duration` |
@@ -1034,6 +1034,13 @@ field with no type) is an `em validate` error, `public-field-type-unresolved`
 
 The table is closed on purpose: em is not a type mapper. A domain type (`Money`, `Address`)
 is a declared `type` block whose fields use the table; `List<X>` is written `X[]`.
+
+`uuid`'s TypeSpec type is a scalar declaration, not a core type: `em api generate` prepends
+`@format("uuid") scalar Uuid extends string;` to the namespace, once, the first time any field
+in the public surface resolves to `uuid` — never when a model has no `uuid` field (GH #444).
+`@format` is a TypeSpec built-in decorator, so the generated file stays dependency-free (no
+imports, no decorator library); the openapi3 emitter turns it into `type: string, format: uuid`
+natively.
 
 ```
 type Money { amount: decimal, currency: string }
