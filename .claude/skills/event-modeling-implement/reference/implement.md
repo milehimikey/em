@@ -300,6 +300,20 @@ or seem small — see §10.
   you didn't touch the `.em`, so this only fails if something else broke).
 - Nothing between the slice doc and the code was committed as a source of truth (see §9 —
   work containers are ephemeral; generated or symlinked specs are renderings).
+- **The slice's bindings file is written or updated** (GH #450): `conformance/bindings/<slice-
+  key>.yaml`, beside the model, per [`docs/bindings.md`](https://github.com/milehimikey/em/blob/main/docs/bindings.md)'s
+  schema. You just wrote the code — you know which file and identifier anchors each element
+  this slice's doc declares (`ref: <kind>.<slug>`, bare, no `<slice-key>/` prefix) and each
+  `INV-<MNEMONIC>-n` invariant's enforcement and test sites. This is a file contract, not an
+  `em`-run write: author or hand-edit the YAML directly, the same way you'd write any other file
+  in your PR. Verify it before calling the slice done:
+  ```bash
+  em conform bindings check <model>.em --repo <path> --slice <slice-key> --exit-code
+  ```
+  Exit 0 is required — fix the file (a wrong `ref`, a stale `file`/`identifier` pair) rather than
+  shipping a binding that doesn't check out. A continuation key (§5, an `again` view instance)
+  has no bindings file of its own; its elements and invariants are bound inside the originating
+  slice's file alongside the rest of that doc's bindings.
 
 ## 6. At merge: the lifecycle flip
 

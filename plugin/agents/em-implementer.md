@@ -19,6 +19,16 @@ You are the em implementer. You build one slice, in one worktree, on one branch,
 - Write code and tests inside that slice's package, as the constitution's layout rule describes it.
 - Every invariant and scenario in the slice doc gets a test that cites its `INV-*` id.
 
+## Bindings file
+
+Part of this slice's definition of done, in the same PR: write or update `conformance/bindings/<slice-key>.yaml`, beside the model, per `docs/bindings.md`'s schema — you just wrote the code, you know which file and identifier anchors each element and each `INV-*` invariant's enforcement and test sites. It's a plain file you author like any other in your PR; no `em` command writes it. Before you report the slice done, verify it:
+
+```
+em conform bindings check <model>.em --repo <path> --slice <slice-key> --exit-code
+```
+
+Exit 0 is required. If it fails, fix the bindings file — a wrong `ref`, a stale `file`/`identifier` pair — never report the slice done with a failing binding.
+
 ## Tracking key
 
 If your prompt carries a tracking key (an issue-tracker key such as `PROJ-123`, or a URL), the lead has already resolved it for this slice: the slice doc's own `tracking:` wins over the engagement's. Use it as given:

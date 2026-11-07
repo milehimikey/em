@@ -134,6 +134,31 @@ keeps a recurring conform run cheap; don't invent a smarter trigger.
 
 For each slice in scope:
 
+**Check for an existing bindings file first (GH #450).** `conformance/bindings/<slice-key>.yaml`,
+beside the model, records this slice's own prior evidence — file and identifier per model
+element, and per `INV-*` invariant's enforcement/test sites (`docs/bindings.md`'s schema). Two
+cases, mutually exclusive:
+
+- **It exists:** verify it before walking anything by hand —
+  `em conform bindings check <model-name>.em --repo <target-repo-path> --slice <slice-key>`.
+  A binding that still checks out is evidence you don't need to re-derive; **scope the rest of
+  this slice's walk through it** — re-read only what the check reports failing (`file not
+  found`/`identifier not found`, an unknown `ref`) plus whatever `em conform-scope`'s
+  `changedPaths` (step 1) says moved since `implementedIn`. This is what turns a recurring
+  conform walk incremental instead of a full re-derivation every time — don't throw that away by
+  re-walking evidence the file already gives you clean.
+- **It doesn't exist:** the common shape for a slice an external or ticket-driven implementer
+  shipped without ever running `em` (`docs/bindings.md` is written so that implementer can still
+  author one by hand from its own ticket spec; this backfill is the safety net for the ones that
+  didn't, or for any slice that shipped before GH #450). Walk the slice normally (the numbered
+  steps below) and, once you've gathered that evidence, **write
+  `conformance/bindings/<slice-key>.yaml` from it** — the same file an implementer would have
+  written, now backfilled from your conform evidence instead of from the implementer's own
+  knowledge of the code. This is advisory tooling catching up a gap, not a model or doc edit: it
+  needs no ratification and doesn't change this phase's advisory-only stance (see "Stance"
+  above) — you're recording where code already lives, not deciding what it should do. From the
+  next conform run on, this slice follows the "it exists" branch above.
+
 1. Read the slice's **doc** (`slices/<slice-name>.md`) alongside its elements in the `.em`.
    This tells you the vocabulary to anchor on and the claims to check — not the answer.
 2. Walk the code and **record evidence before comparing**:
@@ -505,6 +530,12 @@ whatever cadence the user wants (see `docs/ci.md` for a scheduled-run recipe).
 - **Re-deriving what `em diff` already decided** — once you have the JSON, use it; don't
   eyeball the two `.em` files yourself looking for structural differences the tool already
   computed for you.
+- **Re-deriving evidence a verified bindings file already gives you (GH #450)** — when
+  `em conform bindings check` passes for a slice's `conformance/bindings/<key>.yaml`, walking
+  every element and invariant by hand anyway defeats the point of the file; scope through it
+  (step 2) instead.
+- **Skipping the backfill because a slice has no bindings file** — the absence is the signal to
+  write one from this walk's own evidence, not a reason to leave the gap for next time.
 - **Re-litigating an accepted divergence** — a non-null `acceptedDivergence` on a diff entry
   (or a `divergence` annotation on the element behind a spec/internal finding) means this exact
   question was already reasoned through and ratified. Classify it as Accepted divergence and

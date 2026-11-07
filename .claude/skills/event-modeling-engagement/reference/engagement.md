@@ -47,6 +47,7 @@ Validator (em-validator, <model>):
 | diff footprint inside the slice package | PASS |
 | no diff under `slices/**`, `*.em`, `constitution.md`, `engagements/` | PASS |
 | PR body cites the slice doc | PASS |
+| `conformance/bindings/<key>.yaml` exists + `em conform bindings check --slice <key> --exit-code` | PASS |
 
 Reviewer (em-reviewer, <model>): <findings list verbatim, or NO FINDINGS>
 Critic (em-critic, <model>): <findings list verbatim, or NO FINDINGS>
