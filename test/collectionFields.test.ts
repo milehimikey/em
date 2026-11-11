@@ -68,7 +68,7 @@ describe("collection fields (GH #288)", () => {
     const { doc, view } = exported(ok);
     const byName = Object.fromEntries((view.fields as { name: string; collection: boolean }[]).map((f) => [f.name, f.collection]));
     expect(byName).toEqual({ attributeId: false, values: true });
-    expect(doc.schemaVersion).toBe("1.20");
+    expect(doc.schemaVersion).toBe("1.21");
   });
 
   it("does not mark a bare-derived Type[] field as a collection", () => {
@@ -375,7 +375,7 @@ slice "Shop View" {
     const { model: m, refs, diagnostics } = compile(src);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const doc: any = JSON.parse(buildExport(m, refs, diagnostics, src, "repro.em").text);
-    expect(doc.schemaVersion).toBe("1.20");
+    expect(doc.schemaVersion).toBe("1.21");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const option = doc.model.types.find((t: any) => t.name === "Option");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

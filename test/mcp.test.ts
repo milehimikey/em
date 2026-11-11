@@ -537,7 +537,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.20");
+    expect(doc.schemaVersion).toBe("1.21");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -1327,7 +1327,7 @@ describe("api_surface tool (GH #448)", () => {
     const file = join(exampleDir, "models", "checkout", "checkout.em");
     const { result, doc } = await callJson(client, "api_surface", { file });
     expect(result.isError).toBeFalsy();
-    expect(doc).toMatchObject({ apiSurfaceSchemaVersion: "1.0", modelKey: "checkout" });
+    expect(doc).toMatchObject({ apiSurfaceSchemaVersion: "1.1", modelKey: "checkout" });
     const mcpText = (result.content[0] as { type: "text"; text: string }).text;
     const cli = em(["api", "surface", file, "--json"], exampleDir);
     expect(cli.status).toBe(0);

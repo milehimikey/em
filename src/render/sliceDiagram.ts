@@ -207,6 +207,9 @@ function assembleSyntheticModel(model: NormalizedModel, columns: SyntheticColumn
     // broken/empty maps for no benefit.
     types: model.types,
     typesByName: model.typesByName,
+    // Same passthrough reasoning as `types`/`typesByName` above (GH #477).
+    scalars: model.scalars,
+    scalarsByName: model.scalarsByName,
   };
 }
 

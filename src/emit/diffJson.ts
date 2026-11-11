@@ -25,7 +25,12 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // field's own on `*field-added`/`*field-removed`, the new side's on the two new ChangeTypes
 // `field-optionality-changed`/`type-field-optionality-changed`; null elsewhere). Additive-only.
 // `event-marked-public`/`event-unmarked-public` may now carry `kind: "command"`.
-export const DIFF_SCHEMA_VERSION = "1.8";
+// 1.9 (GH #477, "identity scalars"): three new ChangeTypes — `scalar-added`/`scalar-removed`
+// (declared `scalar Name: base` additions/removals, `name`/`ref` populated) and
+// `scalar-base-changed` (a surviving scalar's `base` changed, `name`/`ref` plus `oldType`/
+// `newType` carrying the old/new base). No new fields; existing ones widen their meaning for
+// the new types (documented on `ChangeEntry` itself). Additive-only.
+export const DIFF_SCHEMA_VERSION = "1.9";
 
 /**
  * The `## Delta` section's own vocabulary (MIL-88): four Title Case operations, matching the
@@ -74,6 +79,9 @@ const CHANGE_TYPE_TO_OP: Record<ChangeType, DeltaOp> = {
   "type-field-removed": "Removed",
   "type-field-changed": "Modified",
   "type-field-optionality-changed": "Modified",
+  "scalar-added": "Added",
+  "scalar-removed": "Removed",
+  "scalar-base-changed": "Modified",
 };
 
 /** One side of the diff: what it was called, its source text, and its warnings. */

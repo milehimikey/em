@@ -249,6 +249,131 @@ slice "S" {
   });
 });
 
+describe("identity scalars (GH #477)", () => {
+  it("extends the formatted table scalar when the base has one (uuid -> Uuid), after the Uuid decl", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { orderId: OrderId }
+}
+`);
+    expect(text).toContain("scalar OrderId extends Uuid;");
+    expect(text).toContain("orderId: OrderId;");
+    const uuidIndex = text.indexOf('@format("uuid") scalar Uuid extends string;');
+    const orderIdIndex = text.indexOf("scalar OrderId extends Uuid;");
+    expect(uuidIndex).toBeGreaterThan(-1);
+    expect(orderIdIndex).toBeGreaterThan(uuidIndex);
+  });
+
+  it("extends the core type directly when the base has no formatted scalar (string -> string)", () => {
+    const { text } = generate(`
+scalar Sku: string
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { sku: Sku }
+}
+`);
+    expect(text).toContain("scalar Sku extends string;");
+    expect(text).toContain("sku: Sku;");
+  });
+
+  it("co-emits the Uuid table decl even when no field uses bare uuid", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { orderId: OrderId }
+}
+`);
+    expect((text.match(/@format\("uuid"\) scalar Uuid extends string;/g) ?? []).length).toBe(1);
+  });
+
+  it("emits the array form on the field, the scalar decl unsuffixed", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { ids: OrderId[] }
+}
+`);
+    expect(text).toContain("ids: OrderId[];");
+    expect((text.match(/scalar OrderId extends Uuid;/g) ?? []).length).toBe(1);
+  });
+
+  it("declares identity scalars in DECLARATION order, after every table scalar", () => {
+    const { text } = generate(`
+scalar Sku: string
+scalar OrderId: uuid
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { sku: Sku, orderId: OrderId, note: text }
+}
+`);
+    const uuidIndex = text.indexOf('@format("uuid") scalar Uuid extends string;');
+    const skuIndex = text.indexOf("scalar Sku extends string;");
+    const orderIdIndex = text.indexOf("scalar OrderId extends Uuid;");
+    expect(uuidIndex).toBeLessThan(skuIndex);
+    expect(skuIndex).toBeLessThan(orderIdIndex);
+  });
+
+  it("declares no dead scalar: a declared but unreferenced-from-the-public-surface scalar emits nothing", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { note: text }
+}
+`);
+    expect(text).not.toContain("OrderId");
+    expect(text).not.toContain("scalar Uuid");
+  });
+
+  it("dedupes a colliding generated identifier through the same shared `usedNames` set the scalar is allocated from first", () => {
+    // Identity scalars are allocated (dedupe(pascalCase(name), usedNames, "_")) before any
+    // command/event/view model name — same precedent `typeNameByRef` already sets for declared
+    // types — so a later command whose own PascalCase name collides (`Order Id` -> `OrderId`)
+    // gets the `_2` suffix, never the scalar.
+    const { text } = generate(`
+scalar OrderId: uuid
+slice "S1" {
+  command Do Thing
+  event Thing Done @Domain public { orderId: OrderId }
+}
+slice "S2" {
+  command Order Id public
+}
+`);
+    expect(text).toContain("scalar OrderId extends Uuid;");
+    expect(text).toContain("model OrderId_2 {}");
+    // The op's own name dedupes against a separate set (command ops only), so it keeps the
+    // plain name — only the payload model name collided with the scalar.
+    expect(text).toContain("op orderId(payload: OrderId_2): void;");
+  });
+
+  it("a declared type's own field may also use an identity scalar", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+type Ref { orderId: OrderId }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { ref: Ref }
+}
+`);
+    expect(text).toContain("scalar OrderId extends Uuid;");
+    expect(text).toContain("orderId: OrderId;");
+  });
+
+  it("refuses (throws) when an identity scalar's own base is unresolvable — same posture as any other invalid model", () => {
+    // scalar-unknown-base is a validate ERROR; buildApiContract assumes an already-validated,
+    // error-free model (same contract every other throw in this describe block relies on), so
+    // this exercises the guard rather than a real CLI path (the CLI refuses before generating).
+    expect(() =>
+      generate(`scalar OrderId: Money\nslice "S" {\n  command Do Thing\n  event Thing Done @Domain public { orderId: OrderId }\n}\n`),
+    ).toThrow();
+  });
+});
+
 describe("optional fields (R8)", () => {
   it("emits `name?: T` on models, including a command's payload model", () => {
     const { text } = generate(`
@@ -572,6 +697,47 @@ describe("diffSurfaces", () => {
   });
 });
 
+// GH #477: a field's type naming an identity scalar is a type change by NAME IDENTITY (same
+// posture `typeIdentity` already gives a declared `type`) — and a surviving scalar's own `base`
+// changing is breaking on every field that uses it, even though the field's own declaration
+// (the `OrderId` name) didn't change at all.
+describe("diffSurfaces: identity scalars (GH #477)", () => {
+  it("a bare table type naming an identity scalar instead (uuid -> OrderId) is a breaking type change", () => {
+    const withScalar = `scalar OrderId: uuid\n${ev("a: OrderId")}`;
+    expect(changes(ev("a: uuid"), withScalar)).toEqual([
+      { kind: "breaking", element: "event.done", field: "a", what: "type changed uuid → OrderId" },
+    ]);
+  });
+
+  it("the reverse direction (OrderId -> uuid) is also breaking", () => {
+    const withScalar = `scalar OrderId: uuid\n${ev("a: OrderId")}`;
+    expect(changes(withScalar, ev("a: uuid"))).toEqual([
+      { kind: "breaking", element: "event.done", field: "a", what: "type changed OrderId → uuid" },
+    ]);
+  });
+
+  it("a scalar's own base changing is breaking on every field that uses it, phrased distinctly from a type change", () => {
+    const before = `scalar OrderId: uuid\n${ev("a: OrderId")}`;
+    const after = `scalar OrderId: string\n${ev("a: OrderId")}`;
+    expect(changes(before, after)).toEqual([
+      { kind: "breaking", element: "event.done", field: "a", what: "scalar \"OrderId\" base changed uuid → string" },
+    ]);
+  });
+
+  it("no change when the scalar and its usage are identical on both sides", () => {
+    const src = `scalar OrderId: uuid\n${ev("a: OrderId")}`;
+    expect(changes(src, src)).toEqual([]);
+  });
+
+  it("renaming the scalar itself (same base) is a breaking type change on every field using it", () => {
+    const before = `scalar OrderId: uuid\n${ev("a: OrderId")}`;
+    const after = `scalar CustomerOrderId: uuid\n${ev("a: CustomerOrderId")}`;
+    expect(changes(before, after)).toEqual([
+      { kind: "breaking", element: "event.done", field: "a", what: "type changed OrderId → CustomerOrderId" },
+    ]);
+  });
+});
+
 // MIL-265: invariants on public elements are part of the contract.
 describe("invariants on the public surface (MIL-265)", () => {
   const withInv = (cmdInv: string, evInv = "", internalInv = "") =>
@@ -621,6 +787,37 @@ function tmpMultiModelRepo(): string {
   git(dir, "commit", "-q", "-m", "seed");
   return dir;
 }
+
+describe("em api generate / check (CLI): identity scalars (GH #477)", () => {
+  it("generate writes the extends line for a declared identity scalar via the real CLI; check reports current and --base reports the uuid -> OrderId change breaking", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-api-scalar-"));
+    try {
+      writeFileSync(join(dir, "shop.em"), `model "Shop"\nslice "S" {\n  command Buy public { sku: string }\n  event Bought @D public { orderId: uuid }\n}\n`);
+      gitInitQuiet(dir);
+      git(dir, "add", "-A");
+      git(dir, "commit", "-q", "-m", "seed");
+      let g = em(["api", "generate", "shop.em"], dir);
+      expect(g.status).toBe(0);
+      writeFileSync(
+        join(dir, "shop.em"),
+        `model "Shop"\nscalar OrderId: uuid\nslice "S" {\n  command Buy public { sku: string }\n  event Bought @D public { orderId: OrderId }\n}\n`,
+      );
+      g = em(["api", "generate", "shop.em"], dir);
+      expect(g.status).toBe(0);
+      const contract = readFileSync(join(dir, "contracts", "shop.tsp"), "utf8");
+      expect(contract).toContain("scalar OrderId extends Uuid;");
+      expect(contract).toContain("orderId: OrderId;");
+      const c = em(["api", "check", "shop.em", "--base", "HEAD", "--json"], dir);
+      expect(c.status).toBe(0); // just regenerated, so current — --base annotation never affects the exit code
+      const doc = JSON.parse(c.stdout);
+      expect(doc.changes).toEqual([
+        { kind: "breaking", element: "event.bought", field: "orderId", what: "type changed uuid → OrderId" },
+      ]);
+    } finally {
+      rmTemp(dir);
+    }
+  });
+});
 
 describe("em api generate / check (CLI)", () => {
   it("generate writes <model dir>/contracts/<key>.tsp, creating the dir; check reports current", () => {
@@ -945,6 +1142,24 @@ slice "View Widgets" {
   view Widget List public from "Widget Thinged" {
     widgetId: uuid
     amount: Money2
+  }
+}
+`);
+    const { status, out } = tspCompile(text);
+    expect(status, `tsp compile failed:\n${out}`).toBe(0);
+  });
+
+  it("a fixture with declared identity scalars (uuid-based and string-based) compiles (GH #477)", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+scalar Sku: string
+slice "S" {
+  command Place Order public {
+    orderId: OrderId
+    skus: Sku[]
+  }
+  event Order Placed @Domain public {
+    orderId: OrderId
   }
 }
 `);

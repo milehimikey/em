@@ -352,6 +352,7 @@ slice "Name" [source "url"] {    # one vertical time step (a column); source is 
 arrow From Element -> To Element    # explicit cross-slice edge (overrides inferred flow)
 
 type Name { field: Type, ... }      # named structured type, reusable from any field (see Named types)
+scalar Name: base                   # identity alias over a public scalar table entry (see Named types)
 ```
 
 ### Element kinds (8 keywords, nothing else)
@@ -619,6 +620,18 @@ how tree/recursive data (categories, org charts, comment threads, BOMs) gets exp
 `types/quote-accepted-line`) and adds an additive `typeRef` key to every field (declared-type
 fields and ordinary element fields alike) — `{ name, ref, array }` when resolved, `null`
 otherwise. `em diff` tracks types added/removed and field changes on surviving types.
+
+**Identity scalars** (GH #477): `scalar Name: base` declares an identity alias over one public
+scalar table entry (`base`, case-insensitive) — so a `public` field can carry a domain name on
+the wire (`orderId: OrderId`) instead of degrading to the bare table type (`uuid`) to satisfy
+[Strict public types](#strict-public-types). Reference it bare or `Name[]`, same as a declared
+`type`; on a `public` element it satisfies the strict table directly, on an internal element it
+resolves opportunistically. `em validate` errors on an unknown `base`, a redeclared name, or a
+name colliding with a declared `type` (either direction). `em api generate` declares a used
+scalar once, after the table scalars, extending the formatted table scalar
+(`scalar OrderId extends Uuid;`) or the core type (`scalar Sku extends string;`) — a model with
+no `scalar` emits unchanged. `em export` adds `model.scalars[]` and an additive `scalarRef` field
+key, mutually exclusive with `typeRef`.
 
 ### Swimlane band order (top → bottom)
 Header row → **Automation** (only if used) → **persona** rows (in declared order) → **API**
@@ -952,6 +965,7 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `duplicate-element-ref` | warning | Duplicate element ref | Rename the element so its export ref is unique. |
 | `duplicate-model-key` | warning | Duplicate model key | Give each model a unique `model "Name"` so its key (and every cross-model ref) is stable. |
 | `duplicate-name` | warning | Duplicate name | Rename one of the duplicates. |
+| `duplicate-scalar-ref` | warning | Duplicate scalar ref | Rename the scalar so its export ref is unique. |
 | `duplicate-slice-name` | warning | Duplicate slice name | Rename the slice so its export key is unique. |
 | `duplicate-type-name` | warning | Duplicate type name | Rename one of the duplicate `type` declarations. |
 | `duplicate-type-ref` | warning | Duplicate type ref | Rename the type so its export ref is unique. |
@@ -987,6 +1001,9 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `reaction-from-future-view` | error | Backward timeline (reaction reads a future view) | Declare the view in or before the reaction's slice. |
 | `reaction-from-unresolved` | error | Unknown read-model source | Project the event into a view first, or fix the `from` reference. |
 | `retry-slice-of` | warning | Slice only retries another command | Re-fire the same reaction via `view … again from` the retry-scheduled event; a different actor's override is its own slice with its own command (docs/patterns.md#automation). |
+| `scalar-duplicate-name` | error | Scalar duplicate name | Declare the scalar once; rename or remove the duplicate `scalar` line. |
+| `scalar-type-name-collision` | error | Scalar/type name collision | Rename the `scalar` or the `type` so the two names no longer collide — a name can't mean both at once. |
+| `scalar-unknown-base` | error | Scalar unknown base | Point `base` at one of the public scalar table's names (string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes), case-insensitive. |
 | `scenario-then-not-outcome` | warning | Scenario's Then names no event or rejection | Make the Then bullets name the event(s) the command records, or the rejection/error it returns. |
 | `scenario-when-not-command` | warning | Scenario's When does not name the slice's command | Make the When bullet name the slice's command (for a reaction slice: the command, the reaction element, or a view of the slice) — each scenario exercises exactly one command. For a Translation, naming the translation element satisfies it. |
 | `seam-consumer-not-reaction` | error | Seam consumer is not a reaction | Point `to` at a translation/automation element (or a slice containing exactly one). |

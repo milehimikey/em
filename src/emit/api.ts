@@ -78,6 +78,33 @@ export function reachableTypeRefs(
   return reachable;
 }
 
+/** Declared identity scalars (GH #477) reachable from any of the given elements' fields,
+ *  directly or through a reachable declared type's own fields — the scalar-namespace sibling of
+ *  `reachableTypeRefs` above, same "no dead declarations" rule (#444's rule extended to GH #477):
+ *  only a scalar some field on the public surface actually uses gets declared. Scalars have no
+ *  fields of their own (always a leaf alias over a table entry), so there's no recursion through
+ *  a scalar itself — only through the declared types `reachableTypeRefs` already walks. Shared
+ *  with `em api surface` (`cli/api.ts`'s `buildApiSurfaceReport`), same reasoning as
+ *  `reachableTypeRefs`. */
+export function reachableScalarRefs(
+  elements: { fields: FieldExport[] | null }[],
+  typesByRef: Map<string, TypeExport>,
+): Set<string> {
+  const reachable = new Set<string>();
+  const seenTypes = new Set<string>();
+  const walk = (fields: FieldExport[] | null) => {
+    for (const f of fields ?? []) {
+      if (f.scalarRef) reachable.add(f.scalarRef.ref);
+      if (f.typeRef && !seenTypes.has(f.typeRef.ref)) {
+        seenTypes.add(f.typeRef.ref);
+        walk(typesByRef.get(f.typeRef.ref)?.fields ?? null);
+      }
+    }
+  };
+  for (const el of elements) walk(el.fields);
+  return reachable;
+}
+
 /** A field name that isn't a bare TypeSpec identifier is backtick-quoted (TypeSpec's own escape). */
 function fieldIdentifier(name: string): string {
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name;
@@ -177,8 +204,22 @@ export function buildApiContract(
     if (reachable.has(t.ref)) typeNameByRef.set(t.ref, dedupe(pascalCase(t.name), usedNames, "_"));
   }
 
+  // GH #477: identity scalars reachable from the public surface, named through the SAME
+  // `usedNames` dedup set as types/events/views/commands (one TypeSpec namespace, one set of
+  // identifiers — a scalar named the same as a model/event would otherwise silently collide),
+  // allocated up front in declaration order like `typeNameByRef` above (not at first use —
+  // scalars never nest, so there's no walk-order dependency, but staying consistent with the
+  // type precedent keeps this predictable too).
+  const reachableScalars = reachableScalarRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
+  const scalarNameByRef = new Map<string, string>();
+  for (const s of doc.model.scalars) {
+    if (reachableScalars.has(s.ref)) scalarNameByRef.set(s.ref, dedupe(pascalCase(s.name), usedNames, "_"));
+  }
+
   // GH #444 (#443 ask 1): which table entries this contract actually uses, so the namespace
-  // declares exactly the scalars its own fields need — never a dead declaration.
+  // declares exactly the scalars its own fields need — never a dead declaration. GH #477: an
+  // identity scalar's own base counts as "used" too (via the branch below), so the base's
+  // table scalar declaration (e.g. `Uuid`) co-emits even when no field uses the bare table type.
   const usedScalars = new Set<string>();
 
   const fieldType = (f: FieldExport, owner: string): string => {
@@ -186,7 +227,12 @@ export function buildApiContract(
       const name = typeNameByRef.get(f.typeRef.ref) ?? pascalCase(f.typeRef.name);
       return f.typeRef.array ? `${name}[]` : name;
     }
-    const r = resolvePublicType(f.type ?? undefined, model.typesByName);
+    if (f.scalarRef) {
+      const name = scalarNameByRef.get(f.scalarRef.ref) ?? pascalCase(f.scalarRef.name);
+      usedScalars.add(f.scalarRef.base);
+      return f.scalarRef.array ? `${name}[]` : name;
+    }
+    const r = resolvePublicType(f.type ?? undefined, model.typesByName, model.scalarsByName);
     if (!r || r.kind !== "scalar") {
       throw new Error(
         `em api generate: ${owner} field "${f.name}" has no public type — em validate's public-field-type-unresolved should have refused this model`,
@@ -283,12 +329,24 @@ export function buildApiContract(
   if (commandOps.length > 0) sections.push(["interface Commands {", ...indent(commandOps, 1), "}"].join("\n"));
 
   // Scalar declarations go first, in table order (not order of first use) — every field type
-  // above is already computed by this point, so `usedScalars` is complete.
+  // above is already computed by this point, so `usedScalars` is complete. GH #477: identity
+  // scalars follow, in DECLARATION order, each extending either the formatted table scalar
+  // (`scalar OrderId extends Uuid;`, the table entry's own `tsType` when it has a `scalarDecl`)
+  // or the bare core type (`scalar Sku extends string;`) — `PublicTypeResolution`'s `identity`
+  // kind and `ScalarExport.base` both already resolve to the table KEY, not the TypeSpec name,
+  // so `PUBLIC_SCALAR_TYPES[s.base].tsType` is the one lookup that picks the right target either
+  // way. Pinned by test: a model declaring no `scalar` contributes nothing here — byte-identical
+  // to before GH #477.
   const scalarDecls: string[] = [];
   for (const name of PUBLIC_SCALAR_TYPE_NAMES) {
     if (!usedScalars.has(name)) continue;
     const decl = PUBLIC_SCALAR_TYPES[name].scalarDecl;
     if (decl) scalarDecls.push(decl);
+  }
+  for (const s of doc.model.scalars) {
+    const name = scalarNameByRef.get(s.ref);
+    if (!name) continue; // not reachable from the public surface — no dead declaration
+    scalarDecls.push(`scalar ${name} extends ${PUBLIC_SCALAR_TYPES[s.base].tsType};`);
   }
   if (scalarDecls.length > 0) sections.unshift(scalarDecls.join("\n"));
 

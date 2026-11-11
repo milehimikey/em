@@ -2463,6 +2463,74 @@ slice "S" {
   it("leaves internal elements' free-text types alone", () => {
     expect(codes(`slice "S" {\n  command Do { total: Money, items: List<LineItem> }\n  event Done @D { x }\n}\n`)).toEqual([]);
   });
+
+  it("a declared identity scalar satisfies the strict table directly, bare and as an array", () => {
+    expect(
+      codes(`scalar OrderId: uuid\nslice "S" {\n  command Do\n  event Done @D public { a: OrderId, b: OrderId[] }\n}\n`),
+    ).toEqual([]);
+  });
+});
+
+describe("scalar declarations (GH #477)", () => {
+  const codesOf = (src: string, code: string) => diagsFor(src).filter((d) => d.code === code);
+
+  it("scalar-unknown-base: errors when the base isn't a public scalar table entry, naming the table", () => {
+    const TABLE = "string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes";
+    const d = codesOf(`scalar OrderId: Money\nslice "S" {\n  command Do\n}\n`, "scalar-unknown-base");
+    expect(d).toEqual([
+      {
+        severity: "error",
+        code: "scalar-unknown-base",
+        message: `scalar "OrderId" names base "Money", which is not a public scalar table entry — use ${TABLE} (case-insensitive)`,
+        line: 1,
+        refs: ["scalars/orderid"],
+      },
+    ]);
+  });
+
+  it("scalar-unknown-base: accepts every table entry case-insensitively", () => {
+    const src = `
+scalar A: STRING
+scalar B: Text
+scalar C: int
+scalar D: long
+scalar E: decimal
+scalar F: boolean
+scalar G: UUID
+scalar H: date
+scalar I: DateTime
+scalar J: duration
+scalar K: bytes
+slice "S" {
+  command Do
+}
+`;
+    expect(codesOf(src, "scalar-unknown-base")).toEqual([]);
+  });
+
+  it("scalar-duplicate-name: errors when the same scalar name is declared twice, naming both lines", () => {
+    const d = codesOf(`scalar OrderId: uuid\nscalar OrderId: string\nslice "S" {\n  command Do\n}\n`, "scalar-duplicate-name");
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ severity: "error", line: 1, message: expect.stringContaining('scalar "OrderId" is declared 2 times') });
+    expect(d[0].refs).toHaveLength(2);
+  });
+
+  it("scalar-type-name-collision: errors when a scalar and a declared type share a name", () => {
+    const d = codesOf(`scalar Money: string\ntype Money { amount: int }\nslice "S" {\n  command Do\n}\n`, "scalar-type-name-collision");
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe("error");
+    expect(d[0].refs).toEqual(expect.arrayContaining(["types/money", "scalars/money"]));
+  });
+
+  it("scalar-type-name-collision: fires the same way when the `type` is declared first (checked both directions)", () => {
+    const d = codesOf(`type Money { amount: int }\nscalar Money: string\nslice "S" {\n  command Do\n}\n`, "scalar-type-name-collision");
+    expect(d).toHaveLength(1);
+  });
+
+  it("a model with no scalar/type collision and a valid base is clean", () => {
+    const d = diagsFor(`scalar OrderId: uuid\nslice "S" {\n  command Do public { a: OrderId }\n}\n`);
+    expect(d.filter((x) => x.severity === "error")).toEqual([]);
+  });
 });
 
 describe("owner-not-a-handle (MIL-234)", () => {

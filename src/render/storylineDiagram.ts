@@ -99,6 +99,9 @@ export function buildStorylineDiagram(
     arrows: [],
     types: model.types,
     typesByName: model.typesByName,
+    // Same passthrough reasoning as `types`/`typesByName` above (GH #477).
+    scalars: model.scalars,
+    scalarsByName: model.scalarsByName,
   };
   const grid = layout(synthetic, opts);
   return { model: synthetic, grid, dot: emitDot(synthetic, grid) };

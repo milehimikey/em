@@ -85,6 +85,7 @@ affected lines written by hand.
 | duplicate element ref |
 | duplicate model key |
 | duplicate name referenced |
+| duplicate scalar ref |
 | duplicate seam |
 | duplicate slice name |
 | duplicate type name |
@@ -165,6 +166,9 @@ affected lines written by hand.
 | reaction references unknown read model |
 | reviewedBy not in roster |
 | same-band collision |
+| scalar duplicate name |
+| scalar type name collision |
+| scalar unknown base |
 | seam consumer not a reaction |
 | seam crossing |
 | seam endpoint unresolved |

@@ -10,7 +10,7 @@
 // reported once, not as add+remove.
 
 import { RefsResult } from "./refs.js";
-import { Element, NormalizedModel, Slice, TypeDecl, normalizeName } from "./model.js";
+import { Element, NormalizedModel, ScalarDecl, Slice, TypeDecl, normalizeName } from "./model.js";
 import { ElementKind } from "../parser/ast.js";
 import { SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
 
@@ -44,7 +44,10 @@ export type ChangeType =
   | "type-field-added"
   | "type-field-removed"
   | "type-field-changed"
-  | "type-field-optionality-changed";
+  | "type-field-optionality-changed"
+  | "scalar-added"
+  | "scalar-removed"
+  | "scalar-base-changed";
 
 /**
  * One reported change. Not every field applies to every `type` — see
@@ -73,6 +76,10 @@ export interface ChangeEntry {
   /** MIL-237: the field's optionality (`name?: Type`) — on `*field-added`/`*field-removed`, that
    *  field's own; on `*field-optionality-changed`, the NEW side's (the old side is its negation). */
   optional?: boolean;
+  /** On `type-field-changed`/`type-field-optionality-changed`/`field-changed`/
+   *  `field-optionality-changed`, the field's old/new type. On `scalar-base-changed` (GH #477),
+   *  the scalar's old/new `base` (a `PUBLIC_SCALAR_TYPES` key) instead — same two keys, no new
+   *  ones needed for a declaration that has no fields of its own. */
   oldType?: string | null;
   newType?: string | null;
   source?: string;
@@ -138,6 +145,11 @@ export interface DiffCounts {
   typesAdded: number;
   typesRemoved: number;
   typeFieldChanges: number;
+  /** Declared `scalar Name: base` (GH #477) additions/removals and `base` changes on surviving
+   *  scalars (same ref). No move detection, same reasoning as `typesAdded`/`typesRemoved`. */
+  scalarsAdded: number;
+  scalarsRemoved: number;
+  scalarBaseChanges: number;
   /** `slice-added` entries whose new-side doc resolved with a non-null `splitFrom` (MIL-84). */
   slicesSplit: number;
   /** `slice-added` entries whose new-side doc resolved with a non-empty `mergedFrom` (MIL-84). */
@@ -176,6 +188,9 @@ function emptyCounts(): DiffCounts {
     typesAdded: 0,
     typesRemoved: 0,
     typeFieldChanges: 0,
+    scalarsAdded: 0,
+    scalarsRemoved: 0,
+    scalarBaseChanges: 0,
     slicesSplit: 0,
     slicesMerged: 0,
     slicesSuperseded: 0,
@@ -415,6 +430,34 @@ export function diffModels(
     if (newTypeByRef.has(ref)) continue; // matched pair, already diffed above
     removals.push({ type: "type-removed", name: t.name, ref });
     counts.typesRemoved++;
+  }
+
+  // --- declared identity scalars (GH #477): same export-ref identity and no-move-detection
+  // posture as declared types above, just no fields of their own to diff — the only thing that
+  // can change on a surviving scalar is its `base`.
+  const oldScalarByRef = new Map<string, ScalarDecl>();
+  oldModel.scalars.forEach((s, i) => oldScalarByRef.set(oldRefs.refByScalarId.get(s.id) ?? String(i), s));
+  const newScalarByRef = new Map<string, ScalarDecl>();
+  newModel.scalars.forEach((s, i) => newScalarByRef.set(newRefs.refByScalarId.get(s.id) ?? String(i), s));
+
+  for (const s of newModel.scalars) {
+    const ref = newRefs.refByScalarId.get(s.id)!;
+    const oldScalar = oldScalarByRef.get(ref);
+    if (oldScalar) {
+      if (normalizeName(oldScalar.base) !== normalizeName(s.base)) {
+        changes.push({ type: "scalar-base-changed", name: s.name, ref, oldType: oldScalar.base, newType: s.base });
+        counts.scalarBaseChanges++;
+      }
+    } else {
+      changes.push({ type: "scalar-added", name: s.name, ref });
+      counts.scalarsAdded++;
+    }
+  }
+  for (const s of oldModel.scalars) {
+    const ref = oldRefs.refByScalarId.get(s.id)!;
+    if (newScalarByRef.has(ref)) continue; // matched pair, already diffed above
+    removals.push({ type: "scalar-removed", name: s.name, ref });
+    counts.scalarsRemoved++;
   }
 
   return { changes, removals, counts };
@@ -746,6 +789,9 @@ function formatSummary(c: DiffCounts): string {
   push(c.typesAdded, "type added", "types added");
   push(c.typesRemoved, "type removed", "types removed");
   push(c.typeFieldChanges, "type field change", "type field changes");
+  push(c.scalarsAdded, "scalar added", "scalars added");
+  push(c.scalarsRemoved, "scalar removed", "scalars removed");
+  push(c.scalarBaseChanges, "scalar base change", "scalar base changes");
   push(c.acceptedDivergences, "accepted divergence", "accepted divergences");
   push(c.slicesSplit, "slice split", "slices split");
   push(c.slicesMerged, "slice merged", "slices merged");
@@ -850,6 +896,12 @@ function formatEntry(e: ChangeEntry): string {
       return `~ field "${e.field}" type changed on type "${e.name}": ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}`;
     case "type-field-optionality-changed":
       return `~ field "${e.field}" ${optionalityLabel(e)} on type "${e.name}"`;
+    case "scalar-added":
+      return `+ scalar "${e.name}"`;
+    case "scalar-removed":
+      return `- scalar "${e.name}"`;
+    case "scalar-base-changed":
+      return `~ scalar "${e.name}" base changed: ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}`;
   }
 }
 

@@ -345,6 +345,32 @@ export const RULES = {
     usageCategory: "public field type unresolved",
     docAnchor: "strict-public-types",
   },
+  // GH #477: `scalar Name: base` declarations. Unlike `duplicate-type-name` (a warning — a
+  // declared type's references always resolve unambiguously to the first occurrence), these
+  // three are errors in the house style: a scalar is a wire-identity declaration, so a
+  // redeclaration, an unresolvable base, or a name that silently means two different things
+  // (a scalar here, a type there) is a contract defect, not a cosmetic duplicate.
+  "scalar-unknown-base": {
+    severity: "error",
+    title: "Scalar unknown base",
+    fix: "Point `base` at one of the public scalar table's names (string, text, int, long, decimal, boolean, uuid, date, datetime, duration, bytes), case-insensitive.",
+    usageCategory: "scalar unknown base",
+    docAnchor: "strict-public-types",
+  },
+  "scalar-duplicate-name": {
+    severity: "error",
+    title: "Scalar duplicate name",
+    fix: "Declare the scalar once; rename or remove the duplicate `scalar` line.",
+    usageCategory: "scalar duplicate name",
+    docAnchor: "strict-public-types",
+  },
+  "scalar-type-name-collision": {
+    severity: "error",
+    title: "Scalar/type name collision",
+    fix: "Rename the `scalar` or the `type` so the two names no longer collide — a name can't mean both at once.",
+    usageCategory: "scalar type name collision",
+    docAnchor: "strict-public-types",
+  },
   "lineage-ref-malformed": {
     severity: "error",
     title: "Malformed lineage ref",
@@ -546,6 +572,12 @@ export const RULES = {
     title: "Duplicate type ref",
     fix: "Rename the type so its export ref is unique.",
     usageCategory: "duplicate type ref",
+  },
+  "duplicate-scalar-ref": {
+    severity: "warning",
+    title: "Duplicate scalar ref",
+    fix: "Rename the scalar so its export ref is unique.",
+    usageCategory: "duplicate scalar ref",
   },
   // MIL-193: two models in one multi-model invocation whose model keys (kebab-slugged declared
   // names, model/qualifiedRef.ts) collide — the later one takes a `~n` suffix, exactly as

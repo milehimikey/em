@@ -9,13 +9,13 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { NormalizedModel, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
+import { NormalizedModel, ScalarDecl, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { hasErrors, Diagnostic } from "../model/validate.js";
 import { compile, compileModelFile } from "../pipeline.js";
 import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
-import { buildApiContract, publicSurfaceOf, reachableTypeRefs } from "../emit/api.js";
+import { buildApiContract, publicSurfaceOf, reachableScalarRefs, reachableTypeRefs } from "../emit/api.js";
 import { buildExportDoc, ElementExport, FieldExport, TypeExport } from "../emit/json.js";
 import { RefsResult } from "../model/refs.js";
 import { kebabSlug } from "../util/slug.js";
@@ -142,14 +142,24 @@ export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeEx
   return { entries, allElements };
 }
 
-/** A field's type as the contract sees it: a declared type's name or the raw string,
- *  normalized, with its array arity. */
-export function typeLabel(f: Pick<FieldExport, "type" | "typeRef">): string {
+/** A field's type as the contract sees it: a declared type's or identity scalar's name, or the
+ *  raw string, normalized, with its array arity. */
+export function typeLabel(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef">): string {
   if (f.typeRef) return `${f.typeRef.name}${f.typeRef.array ? "[]" : ""}`;
+  if (f.scalarRef) return `${f.scalarRef.name}${f.scalarRef.array ? "[]" : ""}`;
   return f.type ?? "(none)";
 }
-export function typeIdentity(f: Pick<FieldExport, "type" | "typeRef">): string {
+/**
+ * GH #477: a `scalarRef` folds its `base` into the identity string too, not just `ref`/`array` —
+ * so a surviving scalar DECLARATION's base changing (`OrderId: uuid` -> `OrderId: string`)
+ * registers as a type change on every field that uses it, even though the scalar's own ref and
+ * the field's array arity are unchanged. This reuses `diffFields`' existing per-field
+ * `compare()` rather than adding a second comparison path — see its `scalarRef`-aware branch
+ * below for the breaking-change message this produces.
+ */
+export function typeIdentity(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef">): string {
   if (f.typeRef) return `ref:${f.typeRef.ref}:${f.typeRef.array}`;
+  if (f.scalarRef) return `ref:${f.scalarRef.ref}:${f.scalarRef.array}:${f.scalarRef.base}`;
   return `raw:${(f.type ?? "").replace(/\s+/g, "").toLowerCase()}`;
 }
 
@@ -174,7 +184,26 @@ function diffFields(base: SurfaceEntry, head: SurfaceEntry, element: string, out
   }
   const compare = (b: FieldExport, h: FieldExport) => {
     if (typeIdentity(b) !== typeIdentity(h)) {
-      out.push({ kind: "breaking", element, field: h.name, what: `type changed ${typeLabel(b)} → ${typeLabel(h)}` });
+      // GH #477: same scalar declaration, same array arity, different `base` — the field's own
+      // reference didn't change, but what it resolves to on the wire did (every consumer
+      // deserializing this field as the old base now gets the new one). Phrased distinctly from
+      // an ordinary type change so the report doesn't read as "OrderId -> OrderId" (no visible
+      // difference) when the real story is the scalar's declaration.
+      if (
+        b.scalarRef && h.scalarRef &&
+        b.scalarRef.ref === h.scalarRef.ref &&
+        b.scalarRef.array === h.scalarRef.array &&
+        b.scalarRef.base !== h.scalarRef.base
+      ) {
+        out.push({
+          kind: "breaking",
+          element,
+          field: h.name,
+          what: `scalar "${h.scalarRef.name}" base changed ${b.scalarRef.base} → ${h.scalarRef.base}`,
+        });
+      } else {
+        out.push({ kind: "breaking", element, field: h.name, what: `type changed ${typeLabel(b)} → ${typeLabel(h)}` });
+      }
     }
     if (b.optional !== h.optional) {
       if (h.optional) {
@@ -394,13 +423,19 @@ export function formatApiCheckText(r: ApiCheckReport): string[] {
 
 // ---- `em api surface` (GH #448) ---------------------------------------------------------
 
-/** A public field's resolved type (R7's fixed table or a declared type), the same shape
- *  `resolvePublicType` (model/model.ts) computes — scalar carries the matched table entry's
- *  key and the TypeSpec core scalar `em api generate` emits for it; declared carries the
- *  reachable type's own name (see `ApiSurfaceType` below for its full field shape). */
+/** A public field's resolved type (R7's fixed table, a declared identity scalar, or a declared
+ *  type), the same shape `resolvePublicType` (model/model.ts) computes — `scalar` carries the
+ *  matched table entry's key and the TypeSpec core scalar `em api generate` emits for it;
+ *  `declared` carries the reachable type's own name (see `ApiSurfaceType` below for its full
+ *  field shape); `scalar-alias` (GH #477, schema 1.1) carries the declared identity scalar's own
+ *  name in `tsType` (what actually appears in the generated contract, same convention
+ *  `declared` already uses) and the table key it extends in `base` — `scalar`/`declared` leave
+ *  `base` `null`. */
 export interface ApiSurfaceFieldType {
-  kind: "scalar" | "declared";
+  kind: "scalar" | "declared" | "scalar-alias";
   scalar: string | null;
+  /** The `PUBLIC_SCALAR_TYPES` key a `scalar-alias` extends; `null` for `scalar`/`declared`. */
+  base: string | null;
   tsType: string;
   array: boolean;
 }
@@ -432,6 +467,14 @@ export interface ApiSurfaceType {
   fields: ApiSurfaceField[];
 }
 
+/** One declared `scalar Name: base` identity alias reachable from a public command/event/view's
+ *  fields (GH #477, schema 1.1) — `base` is the `PUBLIC_SCALAR_TYPES` key it extends. */
+export interface ApiSurfaceScalar {
+  name: string;
+  slug: string;
+  base: string;
+}
+
 export interface ApiSurfaceReport {
   file: string;
   modelKey: string;
@@ -439,6 +482,7 @@ export interface ApiSurfaceReport {
   events: ApiSurfaceElement[];
   views: ApiSurfaceElement[];
   types: ApiSurfaceType[];
+  scalars: ApiSurfaceScalar[];
 }
 
 export type ApiSurfaceOutcome =
@@ -446,27 +490,39 @@ export type ApiSurfaceOutcome =
   | { ok: false; message: string; diagnostics: Diagnostic[] };
 
 /** Resolve one field's public type exactly as `em api generate`'s own `fieldType()` does
- *  (emit/api.ts) — declared types win (same precedence `resolvePublicType` already gives), else
- *  the fixed scalar table. A model with errors never reaches here (both CLI callers refuse
- *  first), so an unresolved type is a programming error, not a user-facing case — same posture
- *  as `buildApiContract`'s own throw. */
-function surfaceFieldType(f: FieldExport, typesByName: Map<string, TypeDecl>, owner: string): ApiSurfaceFieldType {
-  const r = resolvePublicType(f.type ?? undefined, typesByName);
+ *  (emit/api.ts) — declared types win (same precedence `resolvePublicType` already gives), then
+ *  a declared identity scalar (GH #477), else the fixed scalar table. A model with errors never
+ *  reaches here (both CLI callers refuse first), so an unresolved type is a programming error,
+ *  not a user-facing case — same posture as `buildApiContract`'s own throw. */
+function surfaceFieldType(
+  f: FieldExport,
+  typesByName: Map<string, TypeDecl>,
+  scalarsByName: Map<string, ScalarDecl>,
+  owner: string,
+): ApiSurfaceFieldType {
+  const r = resolvePublicType(f.type ?? undefined, typesByName, scalarsByName);
   if (!r) {
     throw new Error(
       `em api surface: ${owner} field "${f.name}" has no public type — em validate's ` +
         "public-field-type-unresolved should have refused this model",
     );
   }
-  return r.kind === "scalar"
-    ? { kind: "scalar", scalar: r.scalar, tsType: r.tsType, array: r.array }
-    : { kind: "declared", scalar: null, tsType: r.typeDecl.name, array: r.array };
+  if (r.kind === "scalar") return { kind: "scalar", scalar: r.scalar, base: null, tsType: r.tsType, array: r.array };
+  if (r.kind === "identity") {
+    return { kind: "scalar-alias", scalar: null, base: r.base, tsType: r.scalarDecl.name, array: r.array };
+  }
+  return { kind: "declared", scalar: null, base: null, tsType: r.typeDecl.name, array: r.array };
 }
 
-function surfaceField(f: FieldExport, typesByName: Map<string, TypeDecl>, owner: string): ApiSurfaceField {
+function surfaceField(
+  f: FieldExport,
+  typesByName: Map<string, TypeDecl>,
+  scalarsByName: Map<string, ScalarDecl>,
+  owner: string,
+): ApiSurfaceField {
   return {
     name: f.name,
-    type: surfaceFieldType(f, typesByName, owner),
+    type: surfaceFieldType(f, typesByName, scalarsByName, owner),
     optional: f.optional,
     tag: f.tag,
     assigned: f.assigned,
@@ -474,11 +530,15 @@ function surfaceField(f: FieldExport, typesByName: Map<string, TypeDecl>, owner:
   };
 }
 
-function surfaceElement(el: ElementExport, typesByName: Map<string, TypeDecl>): ApiSurfaceElement {
+function surfaceElement(
+  el: ElementExport,
+  typesByName: Map<string, TypeDecl>,
+  scalarsByName: Map<string, ScalarDecl>,
+): ApiSurfaceElement {
   return {
     name: el.name,
     slug: kebabSlug(el.name),
-    fields: (el.fields ?? []).map((f) => surfaceField(f, typesByName, `${el.kind} "${el.name}"`)),
+    fields: (el.fields ?? []).map((f) => surfaceField(f, typesByName, scalarsByName, `${el.kind} "${el.name}"`)),
     invariants: el.invariants ?? null,
   };
 }
@@ -487,9 +547,10 @@ function surfaceElement(el: ElementExport, typesByName: Map<string, TypeDecl>): 
  * Build the `em api surface` report for an already-validated (error-free) model: the `public`
  * commands/events/views (`publicSurfaceOf`, same as `em api generate`/`em api check`) plus every
  * declared type reachable from their fields (`reachableTypeRefs`, same walk `em api generate`'s
- * contract body uses), each field's type resolved through `resolvePublicType` — the one notion
- * of the public surface every em surface shares, so a companion tool never re-derives it from
- * `em export --json` and risks drifting from it.
+ * contract body uses) and every declared identity scalar reachable the same way
+ * (`reachableScalarRefs`, GH #477), each field's type resolved through `resolvePublicType` — the
+ * one notion of the public surface every em surface shares, so a companion tool never re-derives
+ * it from `em export --json` and risks drifting from it.
  */
 export function buildApiSurfaceReport(
   model: NormalizedModel,
@@ -502,19 +563,23 @@ export function buildApiSurfaceReport(
   const surface = publicSurfaceOf(doc.model.slices);
   const typesByRef = new Map(doc.model.types.map((t) => [t.ref, t]));
   const reachable = reachableTypeRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
+  const reachableScalars = reachableScalarRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
   return {
     file,
     modelKey: doc.model.key,
-    commands: surface.commands.map((el) => surfaceElement(el, model.typesByName)),
-    events: surface.events.map((el) => surfaceElement(el, model.typesByName)),
-    views: surface.views.map((el) => surfaceElement(el, model.typesByName)),
+    commands: surface.commands.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName)),
+    events: surface.events.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName)),
+    views: surface.views.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName)),
     types: doc.model.types
       .filter((t) => reachable.has(t.ref))
       .map((t) => ({
         name: t.name,
         slug: kebabSlug(t.name),
-        fields: t.fields.map((f) => surfaceField(f, model.typesByName, `type "${t.name}"`)),
+        fields: t.fields.map((f) => surfaceField(f, model.typesByName, model.scalarsByName, `type "${t.name}"`)),
       })),
+    scalars: doc.model.scalars
+      .filter((s) => reachableScalars.has(s.ref))
+      .map((s) => ({ name: s.name, slug: kebabSlug(s.name), base: s.base })),
   };
 }
 
@@ -563,7 +628,14 @@ export function formatApiSurfaceText(r: ApiSurfaceReport): string[] {
   section("events", r.events);
   section("views", r.views);
   section("types", r.types);
-  if (r.commands.length === 0 && r.events.length === 0 && r.views.length === 0 && r.types.length === 0) {
+  if (r.scalars.length > 0) {
+    lines.push("scalars:");
+    for (const s of r.scalars) lines.push(`  ${s.slug} extends ${s.base}`);
+  }
+  if (
+    r.commands.length === 0 && r.events.length === 0 && r.views.length === 0 &&
+    r.types.length === 0 && r.scalars.length === 0
+  ) {
     lines.push("(no public surface)");
   }
   return lines;

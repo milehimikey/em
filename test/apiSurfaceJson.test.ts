@@ -38,7 +38,7 @@ const report = (src: string, path = "model.em") => {
 describe("buildApiSurfaceReport: shape", () => {
   it("carries file, modelKey, and empty arrays for a model with no public element", () => {
     const r = report(`slice "Internal" {\n  command Do Thing\n  event Thing Done @Domain\n}\n`, "m.em");
-    expect(r).toEqual({ file: "m.em", modelKey: "m", commands: [], events: [], views: [], types: [] });
+    expect(r).toEqual({ file: "m.em", modelKey: "m", commands: [], events: [], views: [], types: [], scalars: [] });
   });
 
   it("names the model's own key", () => {
@@ -60,7 +60,7 @@ slice "T" {
       {
         name: "Do Thing",
         slug: "do-thing",
-        fields: [{ name: "a", type: { kind: "scalar", scalar: "string", tsType: "string", array: false }, optional: false, tag: false, assigned: false, renamedFrom: null }],
+        fields: [{ name: "a", type: { kind: "scalar", scalar: "string", base: null, tsType: "string", array: false }, optional: false, tag: false, assigned: false, renamedFrom: null }],
         invariants: null,
       },
     ]);
@@ -95,17 +95,17 @@ slice "S" {
 }
 `);
     const byName = new Map(r.events[0].fields.map((f) => [f.name, f.type]));
-    expect(byName.get("a")).toEqual({ kind: "scalar", scalar: "string", tsType: "string", array: false });
-    expect(byName.get("b")).toEqual({ kind: "scalar", scalar: "int", tsType: "int32", array: false });
-    expect(byName.get("c")).toEqual({ kind: "scalar", scalar: "long", tsType: "int64", array: false });
-    expect(byName.get("d")).toEqual({ kind: "scalar", scalar: "decimal", tsType: "decimal", array: false });
-    expect(byName.get("e")).toEqual({ kind: "scalar", scalar: "boolean", tsType: "boolean", array: false });
-    expect(byName.get("f")).toEqual({ kind: "scalar", scalar: "uuid", tsType: "Uuid", array: false });
-    expect(byName.get("g")).toEqual({ kind: "scalar", scalar: "date", tsType: "plainDate", array: false });
-    expect(byName.get("h")).toEqual({ kind: "scalar", scalar: "datetime", tsType: "utcDateTime", array: false });
-    expect(byName.get("i")).toEqual({ kind: "scalar", scalar: "duration", tsType: "duration", array: false });
-    expect(byName.get("j")).toEqual({ kind: "scalar", scalar: "bytes", tsType: "bytes", array: false });
-    expect(byName.get("k")).toEqual({ kind: "scalar", scalar: "string", tsType: "string", array: true });
+    expect(byName.get("a")).toEqual({ kind: "scalar", scalar: "string", base: null, tsType: "string", array: false });
+    expect(byName.get("b")).toEqual({ kind: "scalar", scalar: "int", base: null, tsType: "int32", array: false });
+    expect(byName.get("c")).toEqual({ kind: "scalar", scalar: "long", base: null, tsType: "int64", array: false });
+    expect(byName.get("d")).toEqual({ kind: "scalar", scalar: "decimal", base: null, tsType: "decimal", array: false });
+    expect(byName.get("e")).toEqual({ kind: "scalar", scalar: "boolean", base: null, tsType: "boolean", array: false });
+    expect(byName.get("f")).toEqual({ kind: "scalar", scalar: "uuid", base: null, tsType: "Uuid", array: false });
+    expect(byName.get("g")).toEqual({ kind: "scalar", scalar: "date", base: null, tsType: "plainDate", array: false });
+    expect(byName.get("h")).toEqual({ kind: "scalar", scalar: "datetime", base: null, tsType: "utcDateTime", array: false });
+    expect(byName.get("i")).toEqual({ kind: "scalar", scalar: "duration", base: null, tsType: "duration", array: false });
+    expect(byName.get("j")).toEqual({ kind: "scalar", scalar: "bytes", base: null, tsType: "bytes", array: false });
+    expect(byName.get("k")).toEqual({ kind: "scalar", scalar: "string", base: null, tsType: "string", array: true });
   });
 
   it("resolves a declared type (bare and array) as kind declared, scalar null", () => {
@@ -120,8 +120,24 @@ slice "S" {
 }
 `);
     const byName = new Map(r.events[0].fields.map((f) => [f.name, f.type]));
-    expect(byName.get("a")).toEqual({ kind: "declared", scalar: null, tsType: "Money2", array: false });
-    expect(byName.get("b")).toEqual({ kind: "declared", scalar: null, tsType: "Money2", array: true });
+    expect(byName.get("a")).toEqual({ kind: "declared", scalar: null, base: null, tsType: "Money2", array: false });
+    expect(byName.get("b")).toEqual({ kind: "declared", scalar: null, base: null, tsType: "Money2", array: true });
+  });
+
+  it("resolves a declared identity scalar (bare and array) as kind scalar-alias, carrying the base it extends (GH #477)", () => {
+    const r = report(`
+scalar OrderId: uuid
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public {
+    a: OrderId
+    b: OrderId[]
+  }
+}
+`);
+    const byName = new Map(r.events[0].fields.map((f) => [f.name, f.type]));
+    expect(byName.get("a")).toEqual({ kind: "scalar-alias", scalar: null, base: "uuid", tsType: "OrderId", array: false });
+    expect(byName.get("b")).toEqual({ kind: "scalar-alias", scalar: null, base: "uuid", tsType: "OrderId", array: true });
   });
 
   it("throws rather than falling back to unknown when handed an unvalidated model (same posture as em api generate)", () => {
@@ -187,13 +203,32 @@ slice "S" {
 `);
     expect(r.types.map((t) => t.name).sort()).toEqual(["Nested", "Used"]);
     expect(r.types.find((t) => t.name === "Nested")?.fields).toEqual([
-      { name: "n", type: { kind: "scalar", scalar: "string", tsType: "string", array: false }, optional: false, tag: false, assigned: false, renamedFrom: null },
+      { name: "n", type: { kind: "scalar", scalar: "string", base: null, tsType: "string", array: false }, optional: false, tag: false, assigned: false, renamedFrom: null },
     ]);
   });
 
   it("lists no types when nothing public references a declared type", () => {
     const r = report(`type Money2 { cents: long }\nslice "S" {\n  command Do public\n  event Done @D\n}\n`);
     expect(r.types).toEqual([]);
+  });
+});
+
+describe("reachable declared scalars (GH #477)", () => {
+  it("lists only identity scalars reachable from a public element's fields, in declaration order", () => {
+    const r = report(`
+scalar OrderId: uuid
+scalar Sku: string
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { a: OrderId }
+}
+`);
+    expect(r.scalars).toEqual([{ name: "OrderId", slug: "orderid", base: "uuid" }]);
+  });
+
+  it("lists no scalars when nothing public references a declared scalar", () => {
+    const r = report(`scalar OrderId: uuid\nslice "S" {\n  command Do public\n  event Done @D\n}\n`);
+    expect(r.scalars).toEqual([]);
   });
 });
 
@@ -221,7 +256,7 @@ describe("buildApiSurfaceJson: envelope + determinism", () => {
     const r = report(`model "Shop"\nslice "S" {\n  command Buy public { sku: string }\n  event Bought @D\n}\n`);
     const text = buildApiSurfaceJson(r);
     const doc = JSON.parse(text);
-    expect(Object.keys(doc)).toEqual(["apiSurfaceSchemaVersion", "generator", "file", "modelKey", "commands", "events", "views", "types"]);
+    expect(Object.keys(doc)).toEqual(["apiSurfaceSchemaVersion", "generator", "file", "modelKey", "commands", "events", "views", "types", "scalars"]);
     expect(doc.apiSurfaceSchemaVersion).toBe(API_SURFACE_SCHEMA_VERSION);
     expect(doc.generator.name).toBe("@milehimikey/em");
     expect(doc.modelKey).toBe("shop");

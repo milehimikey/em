@@ -10,6 +10,8 @@ import {
   MODEL_INVARIANT_ID_RE,
   NormalizedModel,
   PUBLIC_SCALAR_TYPE_NAMES,
+  PUBLIC_SCALAR_TYPES,
+  ScalarDecl,
   TypeDecl,
   normalizeName,
   recordingCommandsOf,
@@ -1099,6 +1101,58 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     }
   }
 
+  // GH #477: `scalar Name: base` declarations — unlike a duplicate `type` name (a warning,
+  // first-wins), these three are errors in the house style: a scalar is a wire-identity
+  // declaration, so getting it wrong is a contract defect, not a cosmetic duplicate.
+  const scalarsByNormalizedName = new Map<string, ScalarDecl[]>();
+  for (const s of model.scalars) {
+    const key = normalizeName(s.name);
+    const bucket = scalarsByNormalizedName.get(key);
+    if (bucket) bucket.push(s);
+    else scalarsByNormalizedName.set(key, [s]);
+  }
+  for (const decls of scalarsByNormalizedName.values()) {
+    if (decls.length > 1) {
+      pushDiag(diags, "scalar-duplicate-name", {
+        message: `scalar "${decls[0].name}" is declared ${decls.length} times (lines ${decls.map((d) => d.line).join(", ")}) — declare it once`,
+        line: decls[0].line,
+        refs: decls.map((s) => refs.refByScalarId.get(s.id)!),
+      });
+    }
+  }
+  for (const s of model.scalars) {
+    const base = normalizeName(s.base);
+    if (!Object.prototype.hasOwnProperty.call(PUBLIC_SCALAR_TYPES, base)) {
+      pushDiag(diags, "scalar-unknown-base", {
+        message:
+          `scalar "${s.name}" names base "${s.base}", which is not a public scalar table entry — ` +
+          `use ${PUBLIC_TYPE_TABLE_TEXT} (case-insensitive)`,
+        line: s.line,
+        refs: [refs.refByScalarId.get(s.id)!],
+      });
+    }
+  }
+  // A scalar and a declared `type` can never legitimately share a name — each resolves a field
+  // to a different kind of thing (a wire-level identity alias vs. a nested structured shape).
+  // Checked once per colliding name (not once per side), `refs` naming every entity involved.
+  for (const [key, typeDecls] of typesByNormalizedName) {
+    const scalarDecls = scalarsByNormalizedName.get(key);
+    if (!scalarDecls) continue;
+    const firstType = typeDecls[0];
+    const firstScalar = scalarDecls[0];
+    const firstLine = Math.min(firstType.line, firstScalar.line);
+    pushDiag(diags, "scalar-type-name-collision", {
+      message:
+        `"${firstType.name}" names both a \`scalar\` (line ${firstScalar.line}) and a \`type\` ` +
+        `(line ${firstType.line}) — a name can't mean both; rename one`,
+      line: firstLine,
+      refs: [
+        ...typeDecls.map((t) => refs.refByTypeId.get(t.id)!),
+        ...scalarDecls.map((s) => refs.refByScalarId.get(s.id)!),
+      ],
+    });
+  }
+
   // Cyclic type references: recursion through declared types is allowed as a DAG (e.g. a
   // shared `Address` referenced twice is fine), but a cycle — a type transitively nesting
   // itself with no array to terminate it at runtime — can never be satisfied and is an error.
@@ -1268,7 +1322,7 @@ export function findUnresolvedPublicFieldTypes(model: NormalizedModel): Unresolv
   const reachedFrom = new Map<string, { elementKind: ElementKind; name: string }>();
   const check = (fields: Field[] | undefined, owner: UnresolvedPublicField["owner"], line: number, origin: { elementKind: ElementKind; name: string }) => {
     for (const f of fields ?? []) {
-      const resolved = resolvePublicType(f.type, model.typesByName);
+      const resolved = resolvePublicType(f.type, model.typesByName, model.scalarsByName);
       if (!resolved) {
         out.push({ owner, field: f.name, type: f.type ?? null, line });
         continue;
@@ -1282,7 +1336,7 @@ export function findUnresolvedPublicFieldTypes(model: NormalizedModel): Unresolv
     // Walk the type's own references now (so transitive reach is complete); its findings are
     // collected in a second pass below, in declaration order.
     for (const f of t.fields) {
-      const r = resolvePublicType(f.type, model.typesByName);
+      const r = resolvePublicType(f.type, model.typesByName, model.scalarsByName);
       if (r && r.kind === "declared") reach(r.typeDecl, origin);
     }
   };
@@ -1295,7 +1349,7 @@ export function findUnresolvedPublicFieldTypes(model: NormalizedModel): Unresolv
     const origin = reachedFrom.get(t.id);
     if (!origin) continue;
     for (const f of t.fields) {
-      if (resolvePublicType(f.type, model.typesByName)) continue;
+      if (resolvePublicType(f.type, model.typesByName, model.scalarsByName)) continue;
       out.push({ owner: { kind: "type", id: t.id, name: t.name, reachedFrom: origin }, field: f.name, type: f.type ?? null, line: t.line });
     }
   }
