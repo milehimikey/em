@@ -7,6 +7,7 @@ import {
   collectModelInvariants,
   collectTags,
   Element,
+  EnumDecl,
   MODEL_INVARIANT_ID_RE,
   NormalizedModel,
   PUBLIC_SCALAR_TYPE_NAMES,
@@ -1153,6 +1154,85 @@ export function validate(model: NormalizedModel, grid: Grid, refs: RefsResult): 
     });
   }
 
+  // GH #478: `enum Name { member, … }` declarations — same house-style posture as #477's
+  // scalar errors above (a wire-identity value-set declaration, not a cosmetic duplicate).
+  const enumsByNormalizedName = new Map<string, EnumDecl[]>();
+  for (const e of model.enums) {
+    const key = normalizeName(e.name);
+    const bucket = enumsByNormalizedName.get(key);
+    if (bucket) bucket.push(e);
+    else enumsByNormalizedName.set(key, [e]);
+  }
+  for (const decls of enumsByNormalizedName.values()) {
+    if (decls.length > 1) {
+      pushDiag(diags, "enum-duplicate-name", {
+        message: `enum "${decls[0].name}" is declared ${decls.length} times (lines ${decls.map((d) => d.line).join(", ")}) — declare it once`,
+        line: decls[0].line,
+        refs: decls.map((e) => refs.refByEnumId.get(e.id)!),
+      });
+    }
+  }
+  for (const e of model.enums) {
+    if (e.members.length === 0) {
+      pushDiag(diags, "enum-empty", {
+        message: `enum "${e.name}" has no members — give it at least one`,
+        line: e.line,
+        refs: [refs.refByEnumId.get(e.id)!],
+      });
+    }
+    const seen = new Map<string, string>();
+    for (const m of e.members) {
+      const key = normalizeName(m);
+      const earlier = seen.get(key);
+      if (earlier) {
+        pushDiag(diags, "enum-duplicate-member", {
+          message: `enum "${e.name}" has duplicate member "${earlier}"/"${m}" (case-insensitive) — remove or rename one`,
+          line: e.line,
+          refs: [refs.refByEnumId.get(e.id)!],
+        });
+      } else {
+        seen.set(key, m);
+      }
+    }
+  }
+  // An enum can never legitimately share a name with a declared `type` or a declared `scalar`
+  // — each resolves a field to a different kind of thing. Checked once per colliding name (not
+  // once per side), `refs` naming every entity involved, both directions.
+  for (const [key, typeDecls] of typesByNormalizedName) {
+    const enumDecls = enumsByNormalizedName.get(key);
+    if (!enumDecls) continue;
+    const firstType = typeDecls[0];
+    const firstEnum = enumDecls[0];
+    const firstLine = Math.min(firstType.line, firstEnum.line);
+    pushDiag(diags, "enum-name-collision", {
+      message:
+        `"${firstType.name}" names both an \`enum\` (line ${firstEnum.line}) and a \`type\` ` +
+        `(line ${firstType.line}) — a name can't mean both; rename one`,
+      line: firstLine,
+      refs: [
+        ...typeDecls.map((t) => refs.refByTypeId.get(t.id)!),
+        ...enumDecls.map((e) => refs.refByEnumId.get(e.id)!),
+      ],
+    });
+  }
+  for (const [key, scalarDecls] of scalarsByNormalizedName) {
+    const enumDecls = enumsByNormalizedName.get(key);
+    if (!enumDecls) continue;
+    const firstScalar = scalarDecls[0];
+    const firstEnum = enumDecls[0];
+    const firstLine = Math.min(firstScalar.line, firstEnum.line);
+    pushDiag(diags, "enum-name-collision", {
+      message:
+        `"${firstScalar.name}" names both an \`enum\` (line ${firstEnum.line}) and a \`scalar\` ` +
+        `(line ${firstScalar.line}) — a name can't mean both; rename one`,
+      line: firstLine,
+      refs: [
+        ...scalarDecls.map((s) => refs.refByScalarId.get(s.id)!),
+        ...enumDecls.map((e) => refs.refByEnumId.get(e.id)!),
+      ],
+    });
+  }
+
   // Cyclic type references: recursion through declared types is allowed as a DAG (e.g. a
   // shared `Address` referenced twice is fine), but a cycle — a type transitively nesting
   // itself with no array to terminate it at runtime — can never be satisfied and is an error.
@@ -1322,7 +1402,7 @@ export function findUnresolvedPublicFieldTypes(model: NormalizedModel): Unresolv
   const reachedFrom = new Map<string, { elementKind: ElementKind; name: string }>();
   const check = (fields: Field[] | undefined, owner: UnresolvedPublicField["owner"], line: number, origin: { elementKind: ElementKind; name: string }) => {
     for (const f of fields ?? []) {
-      const resolved = resolvePublicType(f.type, model.typesByName, model.scalarsByName);
+      const resolved = resolvePublicType(f.type, model.typesByName, model.scalarsByName, model.enumsByName);
       if (!resolved) {
         out.push({ owner, field: f.name, type: f.type ?? null, line });
         continue;
@@ -1336,7 +1416,7 @@ export function findUnresolvedPublicFieldTypes(model: NormalizedModel): Unresolv
     // Walk the type's own references now (so transitive reach is complete); its findings are
     // collected in a second pass below, in declaration order.
     for (const f of t.fields) {
-      const r = resolvePublicType(f.type, model.typesByName, model.scalarsByName);
+      const r = resolvePublicType(f.type, model.typesByName, model.scalarsByName, model.enumsByName);
       if (r && r.kind === "declared") reach(r.typeDecl, origin);
     }
   };
@@ -1349,7 +1429,7 @@ export function findUnresolvedPublicFieldTypes(model: NormalizedModel): Unresolv
     const origin = reachedFrom.get(t.id);
     if (!origin) continue;
     for (const f of t.fields) {
-      if (resolvePublicType(f.type, model.typesByName, model.scalarsByName)) continue;
+      if (resolvePublicType(f.type, model.typesByName, model.scalarsByName, model.enumsByName)) continue;
       out.push({ owner: { kind: "type", id: t.id, name: t.name, reachedFrom: origin }, field: f.name, type: f.type ?? null, line: t.line });
     }
   }

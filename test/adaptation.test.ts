@@ -27,6 +27,7 @@ const f = (name: string, type: string | null = "string", renamedFrom: string[] |
   type,
   typeRef: null,
   scalarRef: null,
+  enumRef: null,
   renamedFrom,
 });
 

@@ -102,6 +102,9 @@ export function buildStorylineDiagram(
     // Same passthrough reasoning as `types`/`typesByName` above (GH #477).
     scalars: model.scalars,
     scalarsByName: model.scalarsByName,
+    // Same passthrough reasoning as `types`/`typesByName` above (GH #478).
+    enums: model.enums,
+    enumsByName: model.enumsByName,
   };
   const grid = layout(synthetic, opts);
   return { model: synthetic, grid, dot: emitDot(synthetic, grid) };

@@ -10,7 +10,7 @@
 // reported once, not as add+remove.
 
 import { RefsResult } from "./refs.js";
-import { Element, NormalizedModel, ScalarDecl, Slice, TypeDecl, normalizeName } from "./model.js";
+import { Element, EnumDecl, NormalizedModel, ScalarDecl, Slice, TypeDecl, normalizeName } from "./model.js";
 import { ElementKind } from "../parser/ast.js";
 import { SliceDoc, SliceRef } from "../catalog/sliceDoc.js";
 
@@ -47,7 +47,11 @@ export type ChangeType =
   | "type-field-optionality-changed"
   | "scalar-added"
   | "scalar-removed"
-  | "scalar-base-changed";
+  | "scalar-base-changed"
+  | "enum-added"
+  | "enum-removed"
+  | "enum-member-added"
+  | "enum-member-removed";
 
 /**
  * One reported change. Not every field applies to every `type` — see
@@ -73,6 +77,9 @@ export interface ChangeEntry {
   toSliceKey?: string;
   field?: string;
   fieldType?: string | null;
+  /** On `enum-member-added`/`enum-member-removed` (GH #478), the member string, raw (unquoted).
+   *  A dedicated key rather than reusing `field` — a member is a value, not a field name. */
+  member?: string;
   /** MIL-237: the field's optionality (`name?: Type`) — on `*field-added`/`*field-removed`, that
    *  field's own; on `*field-optionality-changed`, the NEW side's (the old side is its negation). */
   optional?: boolean;
@@ -150,6 +157,12 @@ export interface DiffCounts {
   scalarsAdded: number;
   scalarsRemoved: number;
   scalarBaseChanges: number;
+  /** Declared `enum Name { member, … }` (GH #478) additions/removals and member changes on
+   *  surviving enums (same ref). No move detection, same reasoning as `typesAdded`/
+   *  `typesRemoved`. */
+  enumsAdded: number;
+  enumsRemoved: number;
+  enumMemberChanges: number;
   /** `slice-added` entries whose new-side doc resolved with a non-null `splitFrom` (MIL-84). */
   slicesSplit: number;
   /** `slice-added` entries whose new-side doc resolved with a non-empty `mergedFrom` (MIL-84). */
@@ -191,6 +204,9 @@ function emptyCounts(): DiffCounts {
     scalarsAdded: 0,
     scalarsRemoved: 0,
     scalarBaseChanges: 0,
+    enumsAdded: 0,
+    enumsRemoved: 0,
+    enumMemberChanges: 0,
     slicesSplit: 0,
     slicesMerged: 0,
     slicesSuperseded: 0,
@@ -460,6 +476,31 @@ export function diffModels(
     counts.scalarsRemoved++;
   }
 
+  // --- declared enums (GH #478): same export-ref identity and no-move-detection posture as
+  // declared types/scalars above. A rename is never detected — same convention the file header
+  // documents for everything else — so it reads as remove+add, not a member change.
+  const oldEnumByRef = new Map<string, EnumDecl>();
+  oldModel.enums.forEach((e, i) => oldEnumByRef.set(oldRefs.refByEnumId.get(e.id) ?? String(i), e));
+  const newEnumByRef = new Map<string, EnumDecl>();
+  newModel.enums.forEach((e, i) => newEnumByRef.set(newRefs.refByEnumId.get(e.id) ?? String(i), e));
+
+  for (const e of newModel.enums) {
+    const ref = newRefs.refByEnumId.get(e.id)!;
+    const oldEnum = oldEnumByRef.get(ref);
+    if (oldEnum) {
+      pushEnumMemberChanges(changes, counts, oldEnum, e, ref);
+    } else {
+      changes.push({ type: "enum-added", name: e.name, ref });
+      counts.enumsAdded++;
+    }
+  }
+  for (const e of oldModel.enums) {
+    const ref = oldRefs.refByEnumId.get(e.id)!;
+    if (newEnumByRef.has(ref)) continue; // matched pair, already diffed above
+    removals.push({ type: "enum-removed", name: e.name, ref });
+    counts.enumsRemoved++;
+  }
+
   return { changes, removals, counts };
 }
 
@@ -532,6 +573,34 @@ function pushTypeFieldChanges(
     if (oldF && (oldF.optional === true) !== (newF.optional === true)) {
       changes.push({ type: "type-field-optionality-changed", name: newType.name, ref, field: newF.name, optional: newF.optional === true });
       counts.typeFieldChanges++;
+    }
+  }
+}
+
+/** Diff a declared enum's own members for an enum present on both sides (same ref, GH #478) —
+ *  a members-only subset of `pushTypeFieldChanges()` above (no type/optionality dimension — a
+ *  member is just a value). A rename is never detected (file header's convention) — it reads
+ *  as remove+add, HEAD order for additions, base order for removals, same as a type's fields. */
+function pushEnumMemberChanges(
+  changes: ChangeEntry[],
+  counts: DiffCounts,
+  oldEnum: EnumDecl,
+  newEnum: EnumDecl,
+  ref: string,
+): void {
+  const oldMembers = new Set(oldEnum.members.map((m) => normalizeName(m)));
+  const newMembers = new Map(newEnum.members.map((m) => [normalizeName(m), m]));
+
+  for (const [key, m] of newMembers) {
+    if (!oldMembers.has(key)) {
+      changes.push({ type: "enum-member-added", name: newEnum.name, ref, member: m });
+      counts.enumMemberChanges++;
+    }
+  }
+  for (const m of oldEnum.members) {
+    if (!newMembers.has(normalizeName(m))) {
+      changes.push({ type: "enum-member-removed", name: newEnum.name, ref, member: m });
+      counts.enumMemberChanges++;
     }
   }
 }
@@ -792,6 +861,9 @@ function formatSummary(c: DiffCounts): string {
   push(c.scalarsAdded, "scalar added", "scalars added");
   push(c.scalarsRemoved, "scalar removed", "scalars removed");
   push(c.scalarBaseChanges, "scalar base change", "scalar base changes");
+  push(c.enumsAdded, "enum added", "enums added");
+  push(c.enumsRemoved, "enum removed", "enums removed");
+  push(c.enumMemberChanges, "enum member change", "enum member changes");
   push(c.acceptedDivergences, "accepted divergence", "accepted divergences");
   push(c.slicesSplit, "slice split", "slices split");
   push(c.slicesMerged, "slice merged", "slices merged");
@@ -902,6 +974,14 @@ function formatEntry(e: ChangeEntry): string {
       return `- scalar "${e.name}"`;
     case "scalar-base-changed":
       return `~ scalar "${e.name}" base changed: ${typeLabel(e.oldType)} -> ${typeLabel(e.newType)}`;
+    case "enum-added":
+      return `+ enum "${e.name}"`;
+    case "enum-removed":
+      return `- enum "${e.name}"`;
+    case "enum-member-added":
+      return `~ member "${e.member}" added to enum "${e.name}"`;
+    case "enum-member-removed":
+      return `~ member "${e.member}" removed from enum "${e.name}"`;
   }
 }
 

@@ -210,6 +210,9 @@ function assembleSyntheticModel(model: NormalizedModel, columns: SyntheticColumn
     // Same passthrough reasoning as `types`/`typesByName` above (GH #477).
     scalars: model.scalars,
     scalarsByName: model.scalarsByName,
+    // Same passthrough reasoning as `types`/`typesByName` above (GH #478).
+    enums: model.enums,
+    enumsByName: model.enumsByName,
   };
 }
 

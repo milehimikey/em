@@ -20,7 +20,14 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // (same reachability `em api generate` uses to decide what to declare), `{ name, slug, base }`
 // in declaration order — so a companion tool learns the OrderId -> uuid mapping without parsing
 // the generated `.tsp`. Additive only.
-export const API_SURFACE_SCHEMA_VERSION = "1.1";
+// 1.2 (GH #478, "enums"): a field's `type` gains the `"enum"` kind (`tsType` is the enum's own
+// name; `scalar`/`base` stay `null`, same convention `"scalar-alias"` already established).
+// Report gains top-level `enums`: every declared enum reachable from the public surface (same
+// reachability rule), `{ name, slug, members }` in declaration order — so a companion tool
+// learns the member set without parsing the generated `.tsp`. Bumped on its own, same per-
+// ticket cadence this file has followed since 1.0 (no "one bump per release" precedent here,
+// unlike `em export`'s `SCHEMA_VERSION`). Additive only.
+export const API_SURFACE_SCHEMA_VERSION = "1.2";
 
 export function buildApiSurfaceJson(r: ApiSurfaceReport): string {
   const doc = {
@@ -33,6 +40,7 @@ export function buildApiSurfaceJson(r: ApiSurfaceReport): string {
     views: r.views,
     types: r.types,
     scalars: r.scalars,
+    enums: r.enums,
   };
   return JSON.stringify(doc, null, 2);
 }

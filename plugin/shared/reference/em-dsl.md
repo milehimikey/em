@@ -354,6 +354,7 @@ arrow From Element -> To Element    # explicit cross-slice edge (overrides infer
 
 type Name { field: Type, ... }      # named structured type, reusable from any field (see Named types)
 scalar Name: base                   # identity alias over a public scalar table entry (see Named types)
+enum Name { member, ... }           # closed named value set, reusable from any field (see Named types)
 ```
 
 ### Element kinds (8 keywords, nothing else)
@@ -633,6 +634,19 @@ scalar once, after the table scalars, extending the formatted table scalar
 (`scalar OrderId extends Uuid;`) or the core type (`scalar Sku extends string;`) — a model with
 no `scalar` emits unchanged. `em export` adds `model.scalars[]` and an additive `scalarRef` field
 key, mutually exclusive with `typeRef`.
+
+**Enums** (GH #478): `enum Name { member, … }` declares a closed, named value set — members are
+bare identifiers or quoted strings, in declaration order. Reference it bare or `Name[]`, same
+as a declared `type`/`scalar`; on a `public` element it satisfies the strict table directly, on
+an internal element it resolves opportunistically. `em validate` errors on an empty enum, a
+case-insensitive duplicate member, a redeclared name, or a name colliding with a declared
+`type`/`scalar` (either direction). `em api generate` declares a used enum once, members in
+declaration order (`enum OrderStatus { placed, shipped }`), after the scalar declarations and
+before type blocks — a member that isn't a bare TypeSpec identifier emits as a quoted string
+literal; a model with no `enum` emits unchanged. `em export` adds `model.enums[]` and an
+additive `enumRef` field key, mutually exclusive with both `typeRef` and `scalarRef`. `em api
+check --base` judges a surviving enum's member changes by role: removed/renamed is breaking on
+an output, added is breaking on an input, additive on a pure output.
 
 ### Swimlane band order (top → bottom)
 Header row → **Automation** (only if used) → **persona** rows (in declared order) → **API**
@@ -964,12 +978,17 @@ not the prose above has caught up yet. `--slice-ready <key>`-only codes are excl
 | `doc-names-unfed-event` | warning | Doc names an event its view does not read | Add the event to the view's `from` in the model (if the edge is real), or fix the doc's Source column / scenario. |
 | `doc-omits-fed-event` | warning | Doc omits an event its view reads | Mention the event in the view's Source column (run `em slice sync`), or drop it from the view's `from`. |
 | `duplicate-element-ref` | warning | Duplicate element ref | Rename the element so its export ref is unique. |
+| `duplicate-enum-ref` | warning | Duplicate enum ref | Rename the enum so its export ref is unique. |
 | `duplicate-model-key` | warning | Duplicate model key | Give each model a unique `model "Name"` so its key (and every cross-model ref) is stable. |
 | `duplicate-name` | warning | Duplicate name | Rename one of the duplicates. |
 | `duplicate-scalar-ref` | warning | Duplicate scalar ref | Rename the scalar so its export ref is unique. |
 | `duplicate-slice-name` | warning | Duplicate slice name | Rename the slice so its export key is unique. |
 | `duplicate-type-name` | warning | Duplicate type name | Rename one of the duplicate `type` declarations. |
 | `duplicate-type-ref` | warning | Duplicate type ref | Rename the type so its export ref is unique. |
+| `enum-duplicate-member` | error | Enum duplicate member | Remove or rename the duplicate member — members are compared case-insensitively. |
+| `enum-duplicate-name` | error | Enum duplicate name | Declare the enum once; rename or remove the duplicate `enum` block. |
+| `enum-empty` | error | Empty enum | Give the enum at least one member, or remove the declaration. |
+| `enum-name-collision` | error | Enum/type/scalar name collision | Rename the `enum` or the colliding `type`/`scalar` so the names no longer collide — a name can't mean both at once. |
 | `fields-completeness/event-field-no-source` | warning | Event field not from a command | Add the field to a command that records the event (in any slice), mark it assigned if the handler sets it, or remove it from the event. |
 | `fields-completeness/view-field-no-source` | warning | View field with no source | Add the field to a source event, or remove it from the view. |
 | `frontmatter-coherence-implemented-without-link` | warning | Implemented without a link | Add `implementedIn` once the slice ships. |

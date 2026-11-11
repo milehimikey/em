@@ -30,7 +30,13 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // `scalar-base-changed` (a surviving scalar's `base` changed, `name`/`ref` plus `oldType`/
 // `newType` carrying the old/new base). No new fields; existing ones widen their meaning for
 // the new types (documented on `ChangeEntry` itself). Additive-only.
-export const DIFF_SCHEMA_VERSION = "1.9";
+// 1.10 (GH #478, "enums"): four new ChangeTypes — `enum-added`/`enum-removed` (declared
+// `enum Name { member, … }` additions/removals, `name`/`ref` populated) and
+// `enum-member-added`/`enum-member-removed` (a surviving enum's member set changed, `name`/
+// `ref` plus the new `member` key carrying the raw member string). Bumped on its own, same
+// per-ticket cadence `DIFF_SCHEMA_VERSION` has followed since 1.5 (unlike `em export`'s
+// `SCHEMA_VERSION`, this file has no "one bump per release" precedent to ride). Additive-only.
+export const DIFF_SCHEMA_VERSION = "1.10";
 
 /**
  * The `## Delta` section's own vocabulary (MIL-88): four Title Case operations, matching the
@@ -82,6 +88,10 @@ const CHANGE_TYPE_TO_OP: Record<ChangeType, DeltaOp> = {
   "scalar-added": "Added",
   "scalar-removed": "Removed",
   "scalar-base-changed": "Modified",
+  "enum-added": "Added",
+  "enum-removed": "Removed",
+  "enum-member-added": "Modified",
+  "enum-member-removed": "Modified",
 };
 
 /** One side of the diff: what it was called, its source text, and its warnings. */
@@ -119,6 +129,7 @@ function serializeEntry(e: ChangeEntry): SerializedEntry {
     toSliceKey: e.toSliceKey ?? null,
     field: e.field ?? null,
     fieldType: e.fieldType ?? null,
+    member: e.member ?? null,
     optional: e.optional ?? null,
     oldType: e.oldType ?? null,
     newType: e.newType ?? null,

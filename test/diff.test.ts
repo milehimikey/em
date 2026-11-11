@@ -992,6 +992,83 @@ describe("declared `scalar` add/remove/base changes (GH #477)", () => {
   });
 });
 
+describe("declared `enum` add/remove/member changes (GH #478)", () => {
+  it("reports an enum added", () => {
+    const diff = diffOf(``, `enum OrderStatus { placed, shipped }`);
+    expect(diff.changes).toEqual([{ type: "enum-added", name: "OrderStatus", ref: "enums/orderstatus" }]);
+    expect(diff.counts.enumsAdded).toBe(1);
+  });
+
+  it("reports an enum removed symmetrically", () => {
+    const diff = diffOf(`enum OrderStatus { placed, shipped }`, ``);
+    expect(diff.removals).toEqual([{ type: "enum-removed", name: "OrderStatus", ref: "enums/orderstatus" }]);
+    expect(diff.counts.enumsRemoved).toBe(1);
+  });
+
+  it("reports a surviving enum's member added, HEAD order", () => {
+    const diff = diffOf(`enum OrderStatus { placed }`, `enum OrderStatus { placed, shipped }`);
+    expect(diff.changes).toEqual([
+      { type: "enum-member-added", name: "OrderStatus", ref: "enums/orderstatus", member: "shipped" },
+    ]);
+    expect(diff.counts.enumMemberChanges).toBe(1);
+  });
+
+  it("reports a surviving enum's member removed, base order", () => {
+    const diff = diffOf(`enum OrderStatus { placed, shipped }`, `enum OrderStatus { placed }`);
+    expect(diff.changes).toEqual([
+      { type: "enum-member-removed", name: "OrderStatus", ref: "enums/orderstatus", member: "shipped" },
+    ]);
+    expect(diff.counts.enumMemberChanges).toBe(1);
+  });
+
+  it("reports both an addition and a removal for a one-member swap (a rename reads as remove+add)", () => {
+    const diff = diffOf(`enum OrderStatus { placed, shipped }`, `enum OrderStatus { placed, delivered }`);
+    expect(diff.changes).toEqual([
+      { type: "enum-member-added", name: "OrderStatus", ref: "enums/orderstatus", member: "delivered" },
+      { type: "enum-member-removed", name: "OrderStatus", ref: "enums/orderstatus", member: "shipped" },
+    ]);
+    expect(diff.counts.enumMemberChanges).toBe(2);
+  });
+
+  it("matches members case-insensitively: no change reported when only casing differs", () => {
+    const diff = diffOf(`enum OrderStatus { placed }`, `enum OrderStatus { Placed }`);
+    expect(diff.changes).toEqual([]);
+    expect(diff.counts.enumMemberChanges).toBe(0);
+  });
+
+  it("an enum rename reads as remove+add, same convention as elements, declared types and scalars", () => {
+    const diff = diffOf(`enum OrderStatus { placed }`, `enum PaymentStatus { placed }`);
+    expect(diff.changes).toEqual([{ type: "enum-added", name: "PaymentStatus", ref: "enums/paymentstatus" }]);
+    expect(diff.removals).toEqual([{ type: "enum-removed", name: "OrderStatus", ref: "enums/orderstatus" }]);
+  });
+
+  it("reports no change for an untouched enum", () => {
+    const src = `enum OrderStatus { placed, shipped }`;
+    const diff = diffOf(src, src);
+    expect(diff.changes).toEqual([]);
+    expect(diff.removals).toEqual([]);
+  });
+
+  it("includes enum counters in the summary rollup line", () => {
+    const report = reportOf(``, `enum OrderStatus { placed }`);
+    expect(report.split("\n")[0]).toBe("1 enum added");
+  });
+
+  it("formats enum-added/removed/member-added/member-removed lines", () => {
+    const added = formatModelDiff(diffOf(``, `enum OrderStatus { placed }`));
+    expect(added).toContain('+ enum "OrderStatus"');
+
+    const removed = formatModelDiff(diffOf(`enum OrderStatus { placed }`, ``));
+    expect(removed).toContain('- enum "OrderStatus"');
+
+    const memberAdded = formatModelDiff(diffOf(`enum OrderStatus { placed }`, `enum OrderStatus { placed, shipped }`));
+    expect(memberAdded).toContain('~ member "shipped" added to enum "OrderStatus"');
+
+    const memberRemoved = formatModelDiff(diffOf(`enum OrderStatus { placed, shipped }`, `enum OrderStatus { placed }`));
+    expect(memberRemoved).toContain('~ member "shipped" removed from enum "OrderStatus"');
+  });
+});
+
 describe("optional fields and public commands (MIL-237)", () => {
   const base = (fields: string, pub = "") => `slice "S" {\n  command Do${pub} { ${fields} }\n  event Done @D\n}\n`;
 

@@ -16,11 +16,13 @@ import { againInstancesOf } from "../model/continuation.js";
 import {
   collectTags,
   Element,
+  EnumDecl,
   NormalizedModel,
   ScalarDecl,
   TypeDecl,
   normalizeName,
   resolveByName,
+  resolveEnumRef,
   resolveScalarRef,
   resolveTypeRef,
 } from "../model/model.js";
@@ -206,6 +208,16 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // never has to pick a winner). Additive-only; a model declaring no `scalar` emits byte-identical
 // `scalars: []` and `scalarRef: null` everywhere, same "zero behavior change" posture `types`
 // already gives a model with no `type` blocks.
+// Also 1.21 (GH #478, "enums"), same schema version: `model.enums: { ref, name, members, line }[]`
+// — declared `enum Name { member, … }` declarations, in document order; `members` are the raw
+// (unquoted) member strings, in declaration order. Also: field `enumRef: { name, ref, array } |
+// null` — `typeRef`/`scalarRef`-style nullable, non-null only when the field's type (bare or
+// `[]`-suffixed) names a declared enum. A field's type resolves to at most one of
+// `typeRef`/`scalarRef`/`enumRef` (an enum, a scalar and a declared `type` can never share a
+// name — `enum-name-collision`/`scalar-type-name-collision` are validate errors precisely so
+// this never has to pick a winner). Additive-only; a model declaring no `enum` emits byte-
+// identical `enums: []` and `enumRef: null` everywhere, same "zero behavior change" posture
+// `scalars`/`types` already give a model with no `scalar`/`type` blocks.
 export const SCHEMA_VERSION = "1.21";
 
 export interface ExportResult {
@@ -231,6 +243,15 @@ export interface ScalarExport {
   ref: string;
   name: string;
   base: string;
+  line: number;
+}
+
+/** One declared `enum Name { member, … }`'s exported shape (`model.enums[]`, schema 1.21, GH
+ *  #478). `members` are the raw (unquoted) member strings, in declaration order. */
+export interface EnumExport {
+  ref: string;
+  name: string;
+  members: string[];
   line: number;
 }
 
@@ -368,6 +389,8 @@ export interface ExportDoc {
     types: TypeExport[];
     /** Schema 1.21, GH #477: declared `scalar Name: base` identity aliases, in document order. */
     scalars: ScalarExport[];
+    /** Schema 1.21, GH #478: declared `enum Name { member, … }` declarations, in document order. */
+    enums: EnumExport[];
     slices: SliceExport[];
     /** GH #277, schema 1.19: the `storyline` blocks in document order. */
     storylines: StorylineExport[];
@@ -404,6 +427,11 @@ export interface FieldExport {
    *  value `model.scalars[]`'s own `base` carries for this scalar, so a consumer never has to
    *  cross-reference `model.scalars` just to learn what the alias extends. */
   scalarRef: { name: string; ref: string; base: string; array: boolean } | null;
+  /** Schema 1.21 (GH #478): non-null only when `type` (bare or `[]`-suffixed) names a declared
+   *  `enum Name { member, … }`, `null` otherwise — same nullable convention as `typeRef`/
+   *  `scalarRef`, and mutually exclusive with both (an enum, a scalar and a declared `type` can
+   *  never share a name). */
+  enumRef: { name: string; ref: string; array: boolean } | null;
   /** `true` when the field carries a trailing `tag` clause (identity tag) — same `=== true`
    *  convention as `public`. Always present; `false` on every field that isn't one, including
    *  every field of a declared type (MIL-66). */
@@ -458,12 +486,17 @@ function fieldExport(
   refByTypeId: Map<string, string>,
   scalarsByName: Map<string, ScalarDecl>,
   refByScalarId: Map<string, string>,
+  enumsByName: Map<string, EnumDecl>,
+  refByEnumId: Map<string, string>,
 ): FieldExport {
   const resolved = resolveTypeRef(f.type, typesByName);
   // A declared type and a declared scalar can never both match (scalar-type-name-collision is a
   // validate error precisely so this never has to pick a winner) — declared type checked first,
   // same precedence `resolvePublicType` gives.
   const scalarResolved = resolved ? null : resolveScalarRef(f.type, scalarsByName);
+  // Same reasoning for an enum (enum-name-collision rules out a declared type or scalar ever
+  // matching the same name too) — checked last, after both.
+  const enumResolved = resolved || scalarResolved ? null : resolveEnumRef(f.type, enumsByName);
   return {
     name: f.name,
     type: f.type ?? null,
@@ -476,6 +509,13 @@ function fieldExport(
           ref: refByScalarId.get(scalarResolved.scalarDecl.id)!,
           base: normalizeName(scalarResolved.scalarDecl.base),
           array: scalarResolved.array,
+        }
+      : null,
+    enumRef: enumResolved
+      ? {
+          name: enumResolved.enumDecl.name,
+          ref: refByEnumId.get(enumResolved.enumDecl.id)!,
+          array: enumResolved.array,
         }
       : null,
     tag: f.tag === true,
@@ -578,7 +618,7 @@ export function buildExportDoc(
   source: string,
   path: string,
 ): { doc: ExportDoc; diagnostics: Diagnostic[] } {
-  const { sliceKeys, refById, refByTypeId, refByScalarId } = refs;
+  const { sliceKeys, refById, refByTypeId, refByScalarId, refByEnumId } = refs;
   const baseDir = dirname(path);
   const docDiagnostics: Diagnostic[] = [];
 
@@ -676,7 +716,7 @@ export function buildExportDoc(
         name: el.name,
         line: el.line,
         fields: el.fields
-          ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId, model.scalarsByName, refByScalarId))
+          ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId, model.scalarsByName, refByScalarId, model.enumsByName, refByEnumId))
           : null,
         note: el.note ?? null,
         issue: el.issue ?? null,
@@ -735,7 +775,7 @@ export function buildExportDoc(
         ref: refByTypeId.get(t.id)!,
         name: t.name,
         line: t.line,
-        fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId, model.scalarsByName, refByScalarId)),
+        fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId, model.scalarsByName, refByScalarId, model.enumsByName, refByEnumId)),
       })),
       // Declared identity scalars (GH #477, schema 1.21) — same "independent of the slice
       // timeline" posture as `types` above.
@@ -744,6 +784,14 @@ export function buildExportDoc(
         name: s.name,
         base: normalizeName(s.base),
         line: s.line,
+      })),
+      // Declared enums (GH #478, schema 1.21) — same "independent of the slice timeline"
+      // posture as `types`/`scalars` above.
+      enums: model.enums.map((e) => ({
+        ref: refByEnumId.get(e.id)!,
+        name: e.name,
+        members: e.members,
+        line: e.line,
       })),
       slices,
       storylines: (model.storylines ?? []).map((st) => ({

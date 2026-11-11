@@ -38,7 +38,7 @@ const report = (src: string, path = "model.em") => {
 describe("buildApiSurfaceReport: shape", () => {
   it("carries file, modelKey, and empty arrays for a model with no public element", () => {
     const r = report(`slice "Internal" {\n  command Do Thing\n  event Thing Done @Domain\n}\n`, "m.em");
-    expect(r).toEqual({ file: "m.em", modelKey: "m", commands: [], events: [], views: [], types: [], scalars: [] });
+    expect(r).toEqual({ file: "m.em", modelKey: "m", commands: [], events: [], views: [], types: [], scalars: [], enums: [] });
   });
 
   it("names the model's own key", () => {
@@ -140,6 +140,22 @@ slice "S" {
     expect(byName.get("b")).toEqual({ kind: "scalar-alias", scalar: null, base: "uuid", tsType: "OrderId", array: true });
   });
 
+  it("resolves a declared enum (bare and array) as kind enum, tsType the enum's own name (GH #478)", () => {
+    const r = report(`
+enum OrderStatus { placed, shipped }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public {
+    a: OrderStatus
+    b: OrderStatus[]
+  }
+}
+`);
+    const byName = new Map(r.events[0].fields.map((f) => [f.name, f.type]));
+    expect(byName.get("a")).toEqual({ kind: "enum", scalar: null, base: null, tsType: "OrderStatus", array: false });
+    expect(byName.get("b")).toEqual({ kind: "enum", scalar: null, base: null, tsType: "OrderStatus", array: true });
+  });
+
   it("throws rather than falling back to unknown when handed an unvalidated model (same posture as em api generate)", () => {
     expect(() => report(`slice "S" {\n  event Thing Done @Domain public { a: Money }\n}\n`)).toThrow(
       /has no public type/,
@@ -232,6 +248,25 @@ slice "S" {
   });
 });
 
+describe("reachable declared enums (GH #478)", () => {
+  it("lists only enums reachable from a public element's fields, in declaration order, with their members", () => {
+    const r = report(`
+enum OrderStatus { placed, shipped }
+enum PaymentStatus { pending, paid }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { a: OrderStatus }
+}
+`);
+    expect(r.enums).toEqual([{ name: "OrderStatus", slug: "orderstatus", members: ["placed", "shipped"] }]);
+  });
+
+  it("lists no enums when nothing public references a declared enum", () => {
+    const r = report(`enum OrderStatus { placed, shipped }\nslice "S" {\n  command Do public\n  event Done @D\n}\n`);
+    expect(r.enums).toEqual([]);
+  });
+});
+
 describe("repeated view (`again`): contributes one entry", () => {
   it("a view declared `again` is folded into its first public instance, same as em api generate", () => {
     const r = report(`
@@ -256,7 +291,7 @@ describe("buildApiSurfaceJson: envelope + determinism", () => {
     const r = report(`model "Shop"\nslice "S" {\n  command Buy public { sku: string }\n  event Bought @D\n}\n`);
     const text = buildApiSurfaceJson(r);
     const doc = JSON.parse(text);
-    expect(Object.keys(doc)).toEqual(["apiSurfaceSchemaVersion", "generator", "file", "modelKey", "commands", "events", "views", "types", "scalars"]);
+    expect(Object.keys(doc)).toEqual(["apiSurfaceSchemaVersion", "generator", "file", "modelKey", "commands", "events", "views", "types", "scalars", "enums"]);
     expect(doc.apiSurfaceSchemaVersion).toBe(API_SURFACE_SCHEMA_VERSION);
     expect(doc.generator.name).toBe("@milehimikey/em");
     expect(doc.modelKey).toBe("shop");

@@ -246,6 +246,20 @@ export interface ScalarDeclNode {
   line: number;
 }
 
+/** A top-level `enum <Name> { member, member, … }` declaration (GH #478) — a closed, named
+ *  value set, same top-level tier as `type`/`scalar` (#477). Members are bare identifiers or
+ *  quoted strings, kept exactly as written (unquoted, case preserved) and in declaration
+ *  order; `model/model.ts`'s `normalize()`/`validate.ts` are where empty-enum/duplicate-
+ *  member/name-collision checks live (house style — parse time stays permissive, same as
+ *  `type`/`scalar`). Supports both the one-line inline form (`enum X { a, b }`) and a
+ *  multi-line block, following exactly how a `type { … }` block parses (one or more members
+ *  per line, comma-separated within a line, no comma required between lines). No clauses. */
+export interface EnumDeclNode {
+  name: string;
+  members: string[];
+  line: number;
+}
+
 export interface ModelNode {
   name: string;
   /** True when the source declared `model "Name"`; false when `name` is the parser's default
@@ -269,4 +283,6 @@ export interface ModelNode {
   types: TypeDeclNode[];
   /** `scalar <Name>: <base>` declarations (GH #477), in document order. */
   scalars: ScalarDeclNode[];
+  /** `enum <Name> { member, … }` declarations (GH #478), in document order. */
+  enums: EnumDeclNode[];
 }

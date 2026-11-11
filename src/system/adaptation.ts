@@ -15,8 +15,9 @@ import { typeIdentity, typeLabel } from "../cli/api.js";
 
 /** The slice of a field export the check reads. GH #477: `scalarRef` joins `type`/`typeRef` as a
  *  "this field has a resolved identity, not just raw text" signal — a producer field using a
- *  declared identity scalar is exactly as comparable as one using a declared `type`. */
-export type AdaptationField = Pick<FieldExport, "name" | "type" | "typeRef" | "scalarRef" | "renamedFrom">;
+ *  declared identity scalar is exactly as comparable as one using a declared `type`. GH #478:
+ *  `enumRef` joins the same way, for a declared enum. */
+export type AdaptationField = Pick<FieldExport, "name" | "type" | "typeRef" | "scalarRef" | "enumRef" | "renamedFrom">;
 
 export interface AdaptationProblem {
   field: string;
@@ -33,9 +34,9 @@ export function compareConsumerFields(consumer: AdaptationField[], producer: Ada
     const key = normalizeName(c.name);
     const same = byName.get(key);
     if (same) {
-      if (c.type !== null || c.typeRef !== null || c.scalarRef !== null) {
+      if (c.type !== null || c.typeRef !== null || c.scalarRef !== null || c.enumRef !== null) {
         if (
-          (same.type !== null || same.typeRef !== null || same.scalarRef !== null) &&
+          (same.type !== null || same.typeRef !== null || same.scalarRef !== null || same.enumRef !== null) &&
           typeIdentity(c) !== typeIdentity(same)
         ) {
           problems.push({ field: c.name, what: `type changed ${typeLabel(c)} → ${typeLabel(same)}` });
@@ -47,7 +48,7 @@ export function compareConsumerFields(consumer: AdaptationField[], producer: Ada
     if (renamed) {
       let what = `renamed to "${renamed.name}"`;
       if (
-        (c.type !== null || c.typeRef !== null || c.scalarRef !== null) &&
+        (c.type !== null || c.typeRef !== null || c.scalarRef !== null || c.enumRef !== null) &&
         typeIdentity(c) !== typeIdentity(renamed)
       ) {
         what += ` (type also changed ${typeLabel(c)} → ${typeLabel(renamed)})`;

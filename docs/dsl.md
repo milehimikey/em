@@ -30,6 +30,7 @@ arrow From Element -> To Element    # explicit extra edge
 
 type Name { field: Type, ... }      # named structured type, reusable from any field (see Named types)
 scalar Name: base                   # identity alias over a public scalar table entry (see Identity scalars)
+enum Name { member, ... }           # closed named value set, reusable from any field (see Enums)
 ```
 
 Comments are `#` to end of line, anywhere outside quotes.
@@ -755,6 +756,56 @@ exclusive with `typeRef` (a scalar and a declared `type` can never share a name)
 --base`/`em diff` both treat a field's scalar changing names, or a scalar's own `base` changing,
 as a breaking/structural change — see [cli.md](cli.md).
 
+## Enums
+
+A top-level `enum Name { member, member, … }` declaration (GH #478) names a closed, ordered
+value set — so a status/kind field can carry its real values on the wire instead of degrading
+to a bare `string`:
+
+```
+enum OrderStatus { placed, shipped, "out-of-stock" }
+
+event Order Submitted @Order public {
+  status: OrderStatus
+  history: OrderStatus[]
+}
+```
+
+Members are bare identifiers or quoted strings, in declaration order; both the one-line inline
+form above and a multi-line block (one or more comma-separated members per line, no comma
+required between lines) parse the same way a `type { … }` block does. `em validate` errors on
+an empty enum (`enum-empty`), a case-insensitive duplicate member within one enum
+(`enum-duplicate-member`), a name declared twice (`enum-duplicate-name`), or a name that
+collides with a declared `type` or `scalar` (`enum-name-collision`, checked every direction — a
+`type`/`scalar` can't shadow an enum either). See
+[validation.md](validation.md#strict-public-types).
+
+**On a `public` element, an enum name satisfies the strict table directly** — no `[]`-of-table
+workaround needed. **On an internal element, an enum name resolves opportunistically**, the
+same "no primitive whitelist, just whatever's declared" rule a `type`/`scalar` reference
+already gets.
+
+`em api generate` declares a reachable enum once, members in declaration order
+(`enum OrderStatus { placed, shipped }`) — a member that isn't itself a bare TypeSpec identifier
+(a dash, a space, a leading digit) emits as a quoted string literal instead, TypeSpec's own
+enum string-member form (`enum X { "out-of-stock", c }`). Placement: after the scalar
+declarations, before the type blocks. A model declaring no `enum` emits byte-identical contract
+text to before GH #478.
+
+`em export` carries every declared enum under `model.enums[]` (`{ ref, name, members, line }`,
+`members` raw/unquoted, in declaration order), and adds an additive `enumRef` key to every
+field — `{ name, ref, array }` when the field's type names a declared enum, `null` otherwise,
+mutually exclusive with both `typeRef` and `scalarRef` (an enum, a declared `type` and a
+declared `scalar` can never share a name). `em api check --base` treats a field switching to or
+from an enum as a breaking type change (same name-identity posture `typeIdentity` already gives
+a declared `type`/`scalar`); a surviving enum's own MEMBER changes are judged by which role(s)
+reach it: a member removed or renamed is breaking wherever the enum reaches an output (an
+existing receiver may still expect that known value); a member added is breaking wherever it
+reaches an input (existing senders are unaffected, but a strict receiver built against the old
+member set rejects the new value) and additive on a pure output. `em diff` tracks enums being
+added/removed and their members being added/removed, the same shape scalar/type changes get —
+see [cli.md](cli.md).
+
 ## Notes
 
 Any element can carry `note "path.md"`. The prose lives in the markdown file, keeping the
@@ -1060,9 +1111,9 @@ or a `ui` consumer on a view, means that slice ships an endpoint; no `ui` means 
 
 Every field of a `public` element — and every field of a declared `type` reachable from one —
 must have a type from the fixed **public type table**, `X[]` of a table entry or of a declared
-`type`, a declared `type` name, a declared [identity scalar](#identity-scalars) name, or `X[]`
-of one. Matching is case-insensitive. Anything else (including a field with no type) is an `em
-validate` error, `public-field-type-unresolved`
+`type`, a declared `type` name, a declared [identity scalar](#identity-scalars) name, a declared
+[enum](#enums) name, or `X[]` of one. Matching is case-insensitive. Anything else (including a
+field with no type) is an `em validate` error, `public-field-type-unresolved`
 ([validation.md](validation.md#strict-public-types)). Internal elements keep free-text types.
 
 | Type | Meaning | TypeSpec (`em api generate`) |

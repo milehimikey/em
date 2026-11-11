@@ -235,7 +235,10 @@ For each slice:
 1. Hold a Socratic deep-dive to fill every section of `${CLAUDE_PLUGIN_ROOT}/shared/templates/slice.md`:
    intent, trigger/actor,
    command fields (types & rules), event(s) + payload (mark immutable facts) — field names and
-   types go into the `.em`, the doc's tables are generated from it — invariants
+   types go into the `.em`, the doc's tables are generated from it (on a `public` element, a
+   field's type must be the fixed scalar table, a declared `type`, a declared identity `scalar`,
+   or a declared `enum` — see `em-dsl.md`'s Strict public types/Identity scalars/Enums
+   sections) — invariants
    (give each a stable ID — see **Invariants live in the model** below), Given/When/Then scenarios (happy path + rule boundaries + edge cases),
    alternate/error flows (retries, idempotency, compensations), non-functional requirements
    (security/authz, PII/compliance, performance/SLA), read models affected, open questions. Park

@@ -43,6 +43,25 @@ export interface ScalarRef {
   array: boolean;
 }
 
+/** A declared `enum Name { member, … }` (GH #478) — its own top-level namespace, same tier as
+ *  `type`/`scalar` (a declared enum may NOT share a name with either — see
+ *  `enum-name-collision` — but an enum and an ELEMENT may, same as `type`/`scalar` today).
+ *  `members` are kept exactly as written (unquoted, case preserved), in declaration order;
+ *  duplicate-member/empty-enum checks live in `em validate`. */
+export interface EnumDecl {
+  id: string;
+  name: string;
+  members: string[];
+  line: number;
+}
+
+/** A field's type string resolved to a declared enum, when it names one — bare or `[]`-
+ *  suffixed, the same shape `TypeRef`/`ScalarRef` give declared types/scalars. */
+export interface EnumRef {
+  enumDecl: EnumDecl;
+  array: boolean;
+}
+
 export const DEFAULT_PERSONA = "User";
 export const DEFAULT_CONTEXT = "Domain";
 
@@ -208,6 +227,10 @@ export interface NormalizedModel {
   scalars: ScalarDecl[];
   /** Normalized name -> first-declared ScalarDecl (same first-wins convention as `typesByName`). */
   scalarsByName: Map<string, ScalarDecl>;
+  /** Declared enums (`enum Name { member, … }`, GH #478), in document order. */
+  enums: EnumDecl[];
+  /** Normalized name -> first-declared EnumDecl (same first-wins convention as `typesByName`). */
+  enumsByName: Map<string, EnumDecl>;
 }
 
 /** One model-declared invariant with the element that declares it (MIL-265). */
@@ -295,6 +318,23 @@ export function normalize(ast: ModelNode): NormalizedModel {
   for (const s of scalars) {
     const key = normalizeName(s.name);
     if (!scalarsByName.has(key)) scalarsByName.set(key, s); // first declaration wins
+  }
+
+  // Enums (GH #478) are their own namespace too, same id-dedup machinery as types/scalars — an
+  // enum shares neither id-registry nor name with a type or a scalar (that's the
+  // enum-name-collision check, validate.ts).
+  const usedEnumIds = new Set<string>();
+  const makeEnumId = (name: string): string => dedupe(slug(name), usedEnumIds, "_");
+  const enums: EnumDecl[] = ast.enums.map((e) => ({
+    id: makeEnumId(e.name),
+    name: e.name,
+    members: e.members,
+    line: e.line,
+  }));
+  const enumsByName = new Map<string, EnumDecl>();
+  for (const e of enums) {
+    const key = normalizeName(e.name);
+    if (!enumsByName.has(key)) enumsByName.set(key, e); // first declaration wins
   }
 
   expandAgainSugar(ast.slices).forEach((sliceNode, sliceIndex) => {
@@ -432,6 +472,8 @@ export function normalize(ast: ModelNode): NormalizedModel {
     typesByName,
     scalars,
     scalarsByName,
+    enums,
+    enumsByName,
   };
 
   // `view X again` continues the instance that is first on the COMPOSED timeline (GH #277): when a
@@ -501,6 +543,27 @@ export function resolveScalarRef(
   return scalarDecl ? { scalarDecl, array } : null;
 }
 
+/**
+ * Resolve a field's raw type string to a declared enum (GH #478's `enum Name { … }`), when it
+ * names one — bare or `[]`-suffixed, same matching rule as `resolveTypeRef`/`resolveScalarRef`.
+ * An enum name, a declared `type` name and a declared `scalar` name can never all match the
+ * same name (that's a validate error, `enum-name-collision`), so this and the other two are
+ * mutually exclusive on any model without that error. Shared by `fieldExport` (the `enumRef`
+ * export) and `resolvePublicType` below.
+ */
+export function resolveEnumRef(
+  typeStr: string | undefined,
+  enumsByName: Map<string, EnumDecl>,
+): EnumRef | null {
+  if (!typeStr) return null;
+  const trimmed = typeStr.trim();
+  const array = trimmed.endsWith("[]");
+  const base = (array ? trimmed.slice(0, -2) : trimmed).trim();
+  if (!base) return null;
+  const enumDecl = enumsByName.get(normalizeName(base));
+  return enumDecl ? { enumDecl, array } : null;
+}
+
 /** One `PUBLIC_SCALAR_TYPES` entry: the TypeSpec type a field of this em type emits as, plus —
  *  when the entry narrows a TypeSpec core type with `@format` (GH #444, #443 ask 1) — the one
  *  scalar declaration `em api generate` must prepend to the namespace, verbatim, before any
@@ -539,30 +602,34 @@ export const PUBLIC_SCALAR_TYPES: Readonly<Record<string, PublicScalarEntry>> = 
 /** The table's names in declaration order, as printed in diagnostics and docs. */
 export const PUBLIC_SCALAR_TYPE_NAMES: readonly string[] = Object.freeze(Object.keys(PUBLIC_SCALAR_TYPES));
 
-/** A public field's type resolved against the fixed table, a declared identity scalar, or a
- *  declared type. `"identity"` (GH #477) carries the matched `ScalarDecl` plus `base` (the
- *  table key it extends, always a `PUBLIC_SCALAR_TYPES` key) and `tsType` (that table entry's
- *  own TypeSpec type, e.g. `"Uuid"` for a `uuid`-based scalar) — the same pair `em api
- *  generate`'s emitter needs to decide what the identity scalar's own `scalar X extends …;`
- *  declaration extends. */
+/** A public field's type resolved against the fixed table, a declared identity scalar, a
+ *  declared enum, or a declared type. `"identity"` (GH #477) carries the matched `ScalarDecl`
+ *  plus `base` (the table key it extends, always a `PUBLIC_SCALAR_TYPES` key) and `tsType`
+ *  (that table entry's own TypeSpec type, e.g. `"Uuid"` for a `uuid`-based scalar) — the same
+ *  pair `em api generate`'s emitter needs to decide what the identity scalar's own
+ *  `scalar X extends …;` declaration extends. `"enum"` (GH #478) carries the matched
+ *  `EnumDecl` — an enum emits its own `enum X { … }` declaration, nothing to extend. */
 export type PublicTypeResolution =
   | { kind: "scalar"; scalar: string; tsType: string; array: boolean }
   | { kind: "declared"; typeDecl: TypeDecl; array: boolean }
-  | { kind: "identity"; scalarDecl: ScalarDecl; base: string; tsType: string; array: boolean };
+  | { kind: "identity"; scalarDecl: ScalarDecl; base: string; tsType: string; array: boolean }
+  | { kind: "enum"; enumDecl: EnumDecl; array: boolean };
 
 /**
  * Resolve a field type string under the strict public-surface rule (R7). Declared types win
  * (same precedence `resolveTypeRef` already gives `em export`'s `typeRef`), then a declared
- * identity scalar (GH #477), then the fixed scalar table, bare or `[]`-suffixed. A declared
- * type and a declared scalar can never both match the same name (`scalar-type-name-collision`
- * is a validate error precisely so this precedence never has to break a real tie). Anything
- * else — including an absent type, or an identity scalar whose own `base` doesn't resolve in
- * the table (`scalar-unknown-base`, itself a validate error) — is `null`.
+ * identity scalar (GH #477), then a declared enum (GH #478), then the fixed scalar table, bare
+ * or `[]`-suffixed. A declared type, a declared scalar and a declared enum can never all match
+ * the same name (`scalar-type-name-collision`/`enum-name-collision` are validate errors
+ * precisely so this precedence never has to break a real tie). Anything else — including an
+ * absent type, or an identity scalar whose own `base` doesn't resolve in the table
+ * (`scalar-unknown-base`, itself a validate error) — is `null`.
  */
 export function resolvePublicType(
   typeStr: string | undefined,
   typesByName: Map<string, TypeDecl>,
   scalarsByName: Map<string, ScalarDecl>,
+  enumsByName: Map<string, EnumDecl>,
 ): PublicTypeResolution | null {
   if (!typeStr) return null;
   const declared = resolveTypeRef(typeStr, typesByName);
@@ -574,6 +641,8 @@ export function resolvePublicType(
     if (!baseEntry) return null; // scalar-unknown-base: already a validate error elsewhere
     return { kind: "identity", scalarDecl: scalarRef.scalarDecl, base, tsType: baseEntry.tsType, array: scalarRef.array };
   }
+  const enumRef = resolveEnumRef(typeStr, enumsByName);
+  if (enumRef) return { kind: "enum", enumDecl: enumRef.enumDecl, array: enumRef.array };
   const trimmed = typeStr.trim();
   const array = trimmed.endsWith("[]");
   const base = (array ? trimmed.slice(0, -2) : trimmed).trim().toLowerCase();
