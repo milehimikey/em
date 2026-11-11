@@ -122,7 +122,7 @@ slice "S" {
   it("exports `updatesFrom` beside the full `from` list, and the edge source, at schema 1.20", () => {
     const { model, refs, diagnostics } = compile(SRC);
     const doc = JSON.parse(buildExport(model, refs, diagnostics, SRC, "model.em").text);
-    expect(doc.schemaVersion).toBe("1.20");
+    expect(doc.schemaVersion).toBe("1.21");
     const view = doc.model.slices.flatMap((s: { elements: { name: string; again: boolean; from: { name: string }[]; updatesFrom: { name: string; ref: string | null }[] | null }[] }) => s.elements)
       .find((e: { name: string; again: boolean }) => e.name === "Overdue Loans To Notify" && !e.again);
     expect(view.from.map((f: { name: string }) => f.name)).toEqual(["Tool Checked Out", "Loan Extended", "Tool Returned"]);

@@ -232,6 +232,20 @@ export interface TypeDeclNode {
   line: number;
 }
 
+/** A top-level `scalar <Name>: <base>` declaration (GH #477) — an identity alias over one entry
+ *  of the fixed public scalar table (`model/model.ts`'s `PUBLIC_SCALAR_TYPES`), so a field can
+ *  carry a domain name (`OrderId`) on the wire instead of degrading to the bare table type
+ *  (`uuid`) to satisfy the strict public-types rule. `base` is kept exactly as written (case as
+ *  typed); `model/model.ts`'s `normalize()` is where it gets matched against the table
+ *  case-insensitively and where unknown-base/duplicate/type-collision checks live (`em
+ *  validate`, house style — parse time stays permissive, same as `type`). Same top-level tier
+ *  as `type`, but a one-line declaration: no `{ fields }` block, no clauses. */
+export interface ScalarDeclNode {
+  name: string;
+  base: string;
+  line: number;
+}
+
 export interface ModelNode {
   name: string;
   /** True when the source declared `model "Name"`; false when `name` is the parser's default
@@ -253,4 +267,6 @@ export interface ModelNode {
   arrows: ArrowNode[];
   /** Named structured type declarations, in document order. */
   types: TypeDeclNode[];
+  /** `scalar <Name>: <base>` declarations (GH #477), in document order. */
+  scalars: ScalarDeclNode[];
 }

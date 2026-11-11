@@ -13,8 +13,10 @@ import { normalizeName } from "../model/model.js";
 import type { FieldExport } from "../emit/json.js";
 import { typeIdentity, typeLabel } from "../cli/api.js";
 
-/** The slice of a field export the check reads. */
-export type AdaptationField = Pick<FieldExport, "name" | "type" | "typeRef" | "renamedFrom">;
+/** The slice of a field export the check reads. GH #477: `scalarRef` joins `type`/`typeRef` as a
+ *  "this field has a resolved identity, not just raw text" signal — a producer field using a
+ *  declared identity scalar is exactly as comparable as one using a declared `type`. */
+export type AdaptationField = Pick<FieldExport, "name" | "type" | "typeRef" | "scalarRef" | "renamedFrom">;
 
 export interface AdaptationProblem {
   field: string;
@@ -31,8 +33,11 @@ export function compareConsumerFields(consumer: AdaptationField[], producer: Ada
     const key = normalizeName(c.name);
     const same = byName.get(key);
     if (same) {
-      if (c.type !== null || c.typeRef !== null) {
-        if ((same.type !== null || same.typeRef !== null) && typeIdentity(c) !== typeIdentity(same)) {
+      if (c.type !== null || c.typeRef !== null || c.scalarRef !== null) {
+        if (
+          (same.type !== null || same.typeRef !== null || same.scalarRef !== null) &&
+          typeIdentity(c) !== typeIdentity(same)
+        ) {
           problems.push({ field: c.name, what: `type changed ${typeLabel(c)} → ${typeLabel(same)}` });
         }
       }
@@ -41,7 +46,10 @@ export function compareConsumerFields(consumer: AdaptationField[], producer: Ada
     const renamed = producer.find((p) => (p.renamedFrom ?? []).some((old) => normalizeName(old) === key));
     if (renamed) {
       let what = `renamed to "${renamed.name}"`;
-      if ((c.type !== null || c.typeRef !== null) && typeIdentity(c) !== typeIdentity(renamed)) {
+      if (
+        (c.type !== null || c.typeRef !== null || c.scalarRef !== null) &&
+        typeIdentity(c) !== typeIdentity(renamed)
+      ) {
         what += ` (type also changed ${typeLabel(c)} → ${typeLabel(renamed)})`;
       }
       problems.push({ field: c.name, what });

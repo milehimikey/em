@@ -71,7 +71,7 @@ describe("shared events (GH #279)", () => {
     const evs = doc.model.slices.flatMap((s) => s.elements).filter((e) => e.kind === "event");
     expect(evs[0].logicalRef).toBeNull();
     expect(evs[1].logicalRef).toBe(evs[0].ref);
-    expect(doc.schemaVersion).toBe("1.20");
+    expect(doc.schemaVersion).toBe("1.21");
   });
 
   it("a differing field block is shared-event-field-mismatch (error)", () => {

@@ -49,6 +49,9 @@ function emptyCounts(): DiffCounts {
     typesAdded: 0,
     typesRemoved: 0,
     typeFieldChanges: 0,
+    scalarsAdded: 0,
+    scalarsRemoved: 0,
+    scalarBaseChanges: 0,
     slicesSplit: 0,
     slicesMerged: 0,
     slicesSuperseded: 0,
@@ -172,11 +175,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 23 counters", () => {
+  it("passes DiffCounts through as-is, all 26 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(23);
+    expect(Object.keys(doc.counts)).toHaveLength(26);
   });
 });
 
@@ -619,6 +622,25 @@ describe("one correctly-serialized entry per ChangeType", () => {
       entry: { type: "type-removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" },
       expected: expectedEntry({ type: "type-removed", op: "Removed", name: "QuoteAcceptedLine", ref: "types/quoteacceptedline" }),
     },
+    "scalar-added": {
+      entry: { type: "scalar-added", name: "OrderId", ref: "scalars/orderid" },
+      expected: expectedEntry({ type: "scalar-added", op: "Added", name: "OrderId", ref: "scalars/orderid" }),
+    },
+    "scalar-removed": {
+      entry: { type: "scalar-removed", name: "OrderId", ref: "scalars/orderid" },
+      expected: expectedEntry({ type: "scalar-removed", op: "Removed", name: "OrderId", ref: "scalars/orderid" }),
+    },
+    "scalar-base-changed": {
+      entry: { type: "scalar-base-changed", name: "OrderId", ref: "scalars/orderid", oldType: "uuid", newType: "string" },
+      expected: expectedEntry({
+        type: "scalar-base-changed",
+        op: "Modified",
+        name: "OrderId",
+        ref: "scalars/orderid",
+        oldType: "uuid",
+        newType: "string",
+      }),
+    },
     "field-optionality-changed": {
       entry: {
         type: "field-optionality-changed",
@@ -719,7 +741,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
   // missing a key, and a stale one makes it an excess key. Both are errors.
   // This runtime assertion just pins the count for anyone reading the suite.
   it("covers every declared ChangeType exactly once", () => {
-    expect(Object.keys(cases)).toHaveLength(30);
+    expect(Object.keys(cases)).toHaveLength(33);
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 
@@ -799,7 +821,7 @@ describe("lineage annotations (MIL-84)", () => {
   });
 
   it("bumps DIFF_SCHEMA_VERSION to 1.8 (MIL-237: `optional`)", () => {
-    expect(DIFF_SCHEMA_VERSION).toBe("1.8");
+    expect(DIFF_SCHEMA_VERSION).toBe("1.9");
   });
 });
 

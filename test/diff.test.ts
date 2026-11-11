@@ -935,6 +935,63 @@ describe("declared `type` add/remove/field changes (MIL-64)", () => {
   });
 });
 
+describe("declared `scalar` add/remove/base changes (GH #477)", () => {
+  it("reports a scalar added", () => {
+    const diff = diffOf(``, `scalar OrderId: uuid`);
+    expect(diff.changes).toEqual([{ type: "scalar-added", name: "OrderId", ref: "scalars/orderid" }]);
+    expect(diff.counts.scalarsAdded).toBe(1);
+  });
+
+  it("reports a scalar removed symmetrically", () => {
+    const diff = diffOf(`scalar OrderId: uuid`, ``);
+    expect(diff.removals).toEqual([{ type: "scalar-removed", name: "OrderId", ref: "scalars/orderid" }]);
+    expect(diff.counts.scalarsRemoved).toBe(1);
+  });
+
+  it("reports a surviving scalar's base changing, old/new base in oldType/newType", () => {
+    const diff = diffOf(`scalar OrderId: uuid`, `scalar OrderId: string`);
+    expect(diff.changes).toEqual([
+      { type: "scalar-base-changed", name: "OrderId", ref: "scalars/orderid", oldType: "uuid", newType: "string" },
+    ]);
+    expect(diff.counts.scalarBaseChanges).toBe(1);
+  });
+
+  it("matches the base case-insensitively: no change reported when only casing differs", () => {
+    const diff = diffOf(`scalar OrderId: uuid`, `scalar OrderId: UUID`);
+    expect(diff.changes).toEqual([]);
+    expect(diff.counts.scalarBaseChanges).toBe(0);
+  });
+
+  it("a scalar rename reads as remove+add, same convention as elements and declared types", () => {
+    const diff = diffOf(`scalar OrderId: uuid`, `scalar CustomerOrderId: uuid`);
+    expect(diff.changes).toEqual([{ type: "scalar-added", name: "CustomerOrderId", ref: "scalars/customerorderid" }]);
+    expect(diff.removals).toEqual([{ type: "scalar-removed", name: "OrderId", ref: "scalars/orderid" }]);
+  });
+
+  it("reports no change for an untouched scalar", () => {
+    const src = `scalar OrderId: uuid`;
+    const diff = diffOf(src, src);
+    expect(diff.changes).toEqual([]);
+    expect(diff.removals).toEqual([]);
+  });
+
+  it("includes scalar counters in the summary rollup line", () => {
+    const report = reportOf(``, `scalar OrderId: uuid`);
+    expect(report.split("\n")[0]).toBe("1 scalar added");
+  });
+
+  it("formats scalar-added/removed/base-changed lines", () => {
+    const added = formatModelDiff(diffOf(``, `scalar OrderId: uuid`));
+    expect(added).toContain('+ scalar "OrderId"');
+
+    const removed = formatModelDiff(diffOf(`scalar OrderId: uuid`, ``));
+    expect(removed).toContain('- scalar "OrderId"');
+
+    const baseChanged = formatModelDiff(diffOf(`scalar OrderId: uuid`, `scalar OrderId: string`));
+    expect(baseChanged).toContain('~ scalar "OrderId" base changed: uuid -> string');
+  });
+});
+
 describe("optional fields and public commands (MIL-237)", () => {
   const base = (fields: string, pub = "") => `slice "S" {\n  command Do${pub} { ${fields} }\n  event Done @D\n}\n`;
 

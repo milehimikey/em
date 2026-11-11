@@ -12,7 +12,15 @@ import type { ApiSurfaceReport } from "../cli/api.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 
 // 1.0 (GH #448): initial shape.
-export const API_SURFACE_SCHEMA_VERSION = "1.0";
+// 1.1 (GH #477, "identity scalars"): a field's `type` gains the `"scalar-alias"` kind — a
+// declared `scalar Name: base` identity alias, resolved the same way `em api generate`'s
+// emitter picks what to extend (`tsType` is the alias's own name, e.g. `"OrderId"`; `base` is
+// the `PUBLIC_SCALAR_TYPES` key it extends, e.g. `"uuid"` — `null` on the other two kinds).
+// Report gains top-level `scalars`: every identity scalar reachable from the public surface
+// (same reachability `em api generate` uses to decide what to declare), `{ name, slug, base }`
+// in declaration order — so a companion tool learns the OrderId -> uuid mapping without parsing
+// the generated `.tsp`. Additive only.
+export const API_SURFACE_SCHEMA_VERSION = "1.1";
 
 export function buildApiSurfaceJson(r: ApiSurfaceReport): string {
   const doc = {
@@ -24,6 +32,7 @@ export function buildApiSurfaceJson(r: ApiSurfaceReport): string {
     events: r.events,
     views: r.views,
     types: r.types,
+    scalars: r.scalars,
   };
   return JSON.stringify(doc, null, 2);
 }

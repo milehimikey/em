@@ -835,7 +835,8 @@ field types must be ones `em api generate` can map without guessing. Every field
 command, event or view — and every field of a declared `type` reachable from one, transitively —
 must be one of `string`, `text`, `int`, `long`, `decimal`, `boolean`, `uuid`, `date`,
 `datetime`, `duration`, `bytes` (case-insensitive), `X[]` of one of those or of a declared
-`type`, or a declared `type` name. Internal elements are never checked.
+`type` or declared [identity scalar](dsl.md#identity-scalars), a declared `type` name, or a
+declared identity scalar name. Internal elements are never checked.
 
 | Code | Meaning |
 |---|---|
@@ -847,9 +848,23 @@ error:4 public event "Order Submitted" field "orderId" has no type — use strin
 ```
 
 Fix: write a table type (`total: decimal`), declare a domain type (`type Money { amount:
-decimal, currency: string }` and `total: Money`), spell a list `X[]` rather than `List<X>`, or
-drop `public` if the element is not part of the integration surface. `em upgrade` lists every
-offending field as the human item `public-field-types-unresolved`.
+decimal, currency: string }` and `total: Money`), declare an identity scalar (`scalar OrderId:
+uuid` and `orderId: OrderId`), spell a list `X[]` rather than `List<X>`, or drop `public` if the
+element is not part of the integration surface. `em upgrade` lists every offending field as the
+human item `public-field-types-unresolved`.
+
+**Identity scalars** (`scalar Name: base`, GH #477, [dsl.md](dsl.md#identity-scalars)) are their
+own declaration tier, checked independently of the field-level table above:
+
+| Code | Meaning |
+|---|---|
+| `scalar-unknown-base` | A `scalar`'s `base` doesn't match any public scalar table entry (case-insensitive). |
+| `scalar-duplicate-name` | The same scalar name is declared more than once. |
+| `scalar-type-name-collision` | A `scalar` and a declared `type` share a name — checked both directions, so a `type` can't shadow a scalar either. |
+
+Unlike a duplicate `type` name (a warning — references resolve unambiguously to the first
+declaration), all three are errors: a scalar is a wire-identity declaration, so getting it wrong
+is a contract defect, not a cosmetic duplicate.
 
 ### Invariants
 
@@ -886,6 +901,7 @@ only stable until someone renames or reorders the earlier one:
 | `duplicate-slice-name` | Two slices in one model share a name (export `key`). |
 | `duplicate-element-ref` | Two same-kind elements in one slice share a name (export `ref`). |
 | `duplicate-type-ref` | Two declared `type`s share a name (export `ref`). |
+| `duplicate-scalar-ref` | Two declared `scalar`s share a name (export `ref`). |
 | `duplicate-model-key` | Two models in one multi-model invocation (`em query a.em b.em`, `em system`) derive the same `modelKey` — the kebab-slug of the declared `model "Name"`, or of the file basename when none is declared (MIL-193). Never raised by a single-model command. |
 
 The fix is always to rename: for `duplicate-model-key`, give each model a unique `model "Name"`.

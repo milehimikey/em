@@ -21,6 +21,8 @@ export interface RefsResult {
   refById: Map<string, string>;
   /** Internal `TypeDecl.id` -> stable export `ref` (`types/<slug(name)>`). */
   refByTypeId: Map<string, string>;
+  /** Internal `ScalarDecl.id` -> stable export `ref` (`scalars/<slug(name)>`, GH #477). */
+  refByScalarId: Map<string, string>;
   /** Ref-collision warnings raised while assigning keys/refs (duplicate names). */
   diagnostics: Diagnostic[];
 }
@@ -92,5 +94,23 @@ export function computeRefs(model: NormalizedModel): RefsResult {
     refByTypeId.set(t.id, ref);
   }
 
-  return { sliceKeys, refById, refByTypeId, diagnostics };
+  // Scalars (GH #477) get the same ref scheme as types, in their own `scalars/` prefix — never
+  // `types/`, so a scalar and a type can never collide on ref even if `scalar-type-name-
+  // collision` somehow didn't fire first.
+  const usedScalarRefs = new Set<string>();
+  const refByScalarId = new Map<string, string>();
+  for (const s of model.scalars) {
+    const base = `scalars/${kebabSlug(s.name)}`;
+    const ref = dedupe(base, usedScalarRefs, "~");
+    if (ref !== base) {
+      pushDiag(diagnostics, "duplicate-scalar-ref", {
+        message: `duplicate scalar "${s.name}" (export ref "${base}" already used); rename for a stable export ref`,
+        line: s.line,
+        refs: [ref, base],
+      });
+    }
+    refByScalarId.set(s.id, ref);
+  }
+
+  return { sliceKeys, refById, refByTypeId, refByScalarId, diagnostics };
 }

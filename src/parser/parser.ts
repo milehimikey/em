@@ -20,6 +20,7 @@
 //   }
 //   arrow <From Element> -> <To Element>
 //   type "Name" { field: Type, ... }
+//   scalar Name: base   # identity alias over a public-scalar-table entry (GH #477)
 
 import {
   ArrowNode,
@@ -29,6 +30,7 @@ import {
   Field,
   InvariantDecl,
   ModelNode,
+  ScalarDeclNode,
   SliceNode,
   StorylineNode,
   TypeDeclNode,
@@ -79,6 +81,7 @@ export function parse(source: string): ModelNode {
     storylines: [],
     arrows: [],
     types: [],
+    scalars: [],
     owner: [],
   };
 
@@ -451,6 +454,21 @@ export function parse(source: string): ModelNode {
           }
           model.types.push(decl);
         }
+        break;
+      }
+      case "scalar": {
+        // Quote-aware so a literal ':' can't hide inside a quoted name (there's no legitimate
+        // reason for one, but the scan should still be consistent with the rest of the parser).
+        const colonAt = indexOfUnquoted(remainder, ":");
+        if (colonAt < 0) {
+          throw new ParseError("scalar must name a base type after ':' (scalar Name: base)", lineNo);
+        }
+        const name = unquote(remainder.slice(0, colonAt).trim());
+        if (!name) throw new ParseError("scalar requires a name", lineNo);
+        const base = unquote(remainder.slice(colonAt + 1).trim());
+        if (!base) throw new ParseError(`scalar "${name}" requires a base type after ':'`, lineNo);
+        const decl: ScalarDeclNode = { name, base, line: lineNo };
+        model.scalars.push(decl);
         break;
       }
       default:

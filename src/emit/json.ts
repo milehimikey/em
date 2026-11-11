@@ -13,7 +13,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { againInstancesOf } from "../model/continuation.js";
-import { collectTags,Element, NormalizedModel, TypeDecl, resolveByName, resolveTypeRef } from "../model/model.js";
+import {
+  collectTags,
+  Element,
+  NormalizedModel,
+  ScalarDecl,
+  TypeDecl,
+  normalizeName,
+  resolveByName,
+  resolveScalarRef,
+  resolveTypeRef,
+} from "../model/model.js";
 import { Field } from "../parser/ast.js";
 import { Diagnostic, serializeDiagnostic } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -185,7 +195,18 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // 1.19 (GH #278), same schema version: `element.alternativeGroup: string | null` — for the events
 // of one `event A | B @Ctx` line or one `oneof { … }` block, the ref of the group's first alternative (shared by all of them,
 // so a consumer groups by equal value); null on every other element. Additive-only.
-export const SCHEMA_VERSION = "1.20";
+// 1.21 (GH #477, "identity scalars"): `model.scalars: { ref, name, base, line }[]` — declared
+// `scalar Name: base` identity-alias declarations, in document order; `base` is the matched
+// `PUBLIC_SCALAR_TYPES` key, normalized lowercase (never the as-written casing — a consumer
+// never has to re-normalize it). Also: field `scalarRef: { name, ref, base, array } | null` —
+// `typeRef`-style nullable, non-null only when the field's type (bare or `[]`-suffixed) names a
+// declared scalar; `base` on the field's own resolution is the same normalized table key. A
+// field's type resolves to at most one of `typeRef`/`scalarRef` (a scalar and a declared `type`
+// can never share a name — `scalar-type-name-collision` is a validate error precisely so this
+// never has to pick a winner). Additive-only; a model declaring no `scalar` emits byte-identical
+// `scalars: []` and `scalarRef: null` everywhere, same "zero behavior change" posture `types`
+// already gives a model with no `type` blocks.
+export const SCHEMA_VERSION = "1.21";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */
@@ -202,6 +223,15 @@ export interface TypeExport {
   name: string;
   line: number;
   fields: FieldExport[];
+}
+
+/** One declared `scalar Name: base` identity-alias's exported shape (`model.scalars[]`, schema
+ *  1.21, GH #477). `base` is the matched `PUBLIC_SCALAR_TYPES` key, normalized lowercase. */
+export interface ScalarExport {
+  ref: string;
+  name: string;
+  base: string;
+  line: number;
 }
 
 /** One slice element's exported shape (`model.slices[].elements[]`). Exported (MIL-159)
@@ -336,6 +366,8 @@ export interface ExportDoc {
      *  own doc comment above. */
     version: { design: number | null; certified: { version: number; at: string; on: string } | null };
     types: TypeExport[];
+    /** Schema 1.21, GH #477: declared `scalar Name: base` identity aliases, in document order. */
+    scalars: ScalarExport[];
     slices: SliceExport[];
     /** GH #277, schema 1.19: the `storyline` blocks in document order. */
     storylines: StorylineExport[];
@@ -365,6 +397,13 @@ export interface FieldExport {
   name: string;
   type: string | null;
   typeRef: { name: string; ref: string; array: boolean } | null;
+  /** Schema 1.21 (GH #477): non-null only when `type` (bare or `[]`-suffixed) names a declared
+   *  `scalar Name: base` identity alias, `null` otherwise — same nullable convention as
+   *  `typeRef`, and mutually exclusive with it (a scalar and a declared `type` can never share
+   *  a name). `base` is the matched `PUBLIC_SCALAR_TYPES` key, normalized lowercase — the same
+   *  value `model.scalars[]`'s own `base` carries for this scalar, so a consumer never has to
+   *  cross-reference `model.scalars` just to learn what the alias extends. */
+  scalarRef: { name: string; ref: string; base: string; array: boolean } | null;
   /** `true` when the field carries a trailing `tag` clause (identity tag) — same `=== true`
    *  convention as `public`. Always present; `false` on every field that isn't one, including
    *  every field of a declared type (MIL-66). */
@@ -417,13 +456,27 @@ function fieldExport(
   f: Field,
   typesByName: Map<string, TypeDecl>,
   refByTypeId: Map<string, string>,
+  scalarsByName: Map<string, ScalarDecl>,
+  refByScalarId: Map<string, string>,
 ): FieldExport {
   const resolved = resolveTypeRef(f.type, typesByName);
+  // A declared type and a declared scalar can never both match (scalar-type-name-collision is a
+  // validate error precisely so this never has to pick a winner) — declared type checked first,
+  // same precedence `resolvePublicType` gives.
+  const scalarResolved = resolved ? null : resolveScalarRef(f.type, scalarsByName);
   return {
     name: f.name,
     type: f.type ?? null,
     typeRef: resolved
       ? { name: resolved.typeDecl.name, ref: refByTypeId.get(resolved.typeDecl.id)!, array: resolved.array }
+      : null,
+    scalarRef: scalarResolved
+      ? {
+          name: scalarResolved.scalarDecl.name,
+          ref: refByScalarId.get(scalarResolved.scalarDecl.id)!,
+          base: normalizeName(scalarResolved.scalarDecl.base),
+          array: scalarResolved.array,
+        }
       : null,
     tag: f.tag === true,
     renamedFrom: f.renamedFrom ?? null,
@@ -525,7 +578,7 @@ export function buildExportDoc(
   source: string,
   path: string,
 ): { doc: ExportDoc; diagnostics: Diagnostic[] } {
-  const { sliceKeys, refById, refByTypeId } = refs;
+  const { sliceKeys, refById, refByTypeId, refByScalarId } = refs;
   const baseDir = dirname(path);
   const docDiagnostics: Diagnostic[] = [];
 
@@ -623,7 +676,7 @@ export function buildExportDoc(
         name: el.name,
         line: el.line,
         fields: el.fields
-          ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId))
+          ? el.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId, model.scalarsByName, refByScalarId))
           : null,
         note: el.note ?? null,
         issue: el.issue ?? null,
@@ -682,7 +735,15 @@ export function buildExportDoc(
         ref: refByTypeId.get(t.id)!,
         name: t.name,
         line: t.line,
-        fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId)),
+        fields: t.fields.map((f) => fieldExport(f, model.typesByName, refByTypeId, model.scalarsByName, refByScalarId)),
+      })),
+      // Declared identity scalars (GH #477, schema 1.21) — same "independent of the slice
+      // timeline" posture as `types` above.
+      scalars: model.scalars.map((s) => ({
+        ref: refByScalarId.get(s.id)!,
+        name: s.name,
+        base: normalizeName(s.base),
+        line: s.line,
       })),
       slices,
       storylines: (model.storylines ?? []).map((st) => ({

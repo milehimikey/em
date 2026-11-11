@@ -27,6 +27,9 @@ slice "Name" [source "url"] {    # one column; time runs left -> right; source i
 }
 
 arrow From Element -> To Element    # explicit extra edge
+
+type Name { field: Type, ... }      # named structured type, reusable from any field (see Named types)
+scalar Name: base                   # identity alias over a public scalar table entry (see Identity scalars)
 ```
 
 Comments are `#` to end of line, anywhere outside quotes.
@@ -709,6 +712,49 @@ field's type names a declared type, `null` otherwise. `em diff` tracks types bei
 added/removed and their fields changing, the same shape as element field changes. See
 [cli.md](cli.md).
 
+## Identity scalars
+
+A top-level `scalar Name: base` declaration (GH #477) names an identity alias over ONE entry of
+the [public scalar table](#strict-public-types) — so a field can carry a domain name on the wire
+(`orderId: OrderId`) instead of degrading to the bare table type (`orderId: uuid`) just to
+satisfy the strict public-types rule:
+
+```
+scalar OrderId: uuid
+scalar Sku: string
+
+event Order Submitted @Order public {
+  orderId: OrderId
+  sku: Sku[]
+}
+```
+
+`base` must be a public scalar table entry (`string`, `text`, `int`, `long`, `decimal`,
+`boolean`, `uuid`, `date`, `datetime`, `duration`, `bytes`), matched case-insensitively — there
+is no chaining a scalar off another scalar. Declare it once, then reference it from any field
+anywhere — bare or `Name[]` for an array — the same way a declared `type` is referenced. `em
+validate` errors on an unknown base (`scalar-unknown-base`), a name declared twice
+(`scalar-duplicate-name`), or a name that collides with a declared `type`
+(`scalar-type-name-collision`, checked both directions — a `type` can't shadow a scalar either).
+See [validation.md](validation.md#strict-public-types).
+
+**On a `public` element, a scalar name satisfies the strict table directly** — no `[]`-of-table
+workaround needed. **On an internal element, a scalar name resolves opportunistically**, the
+same "no primitive whitelist, just whatever's declared" rule a `type` reference already gets.
+
+`em api generate` declares a used identity scalar once, after the table scalars, in declaration
+order — extending the formatted table scalar when its base has one (`scalar OrderId extends
+Uuid;`, which also pulls the `Uuid` declaration itself into the file even if no field uses bare
+`uuid`) or the core type otherwise (`scalar Sku extends string;`). A model declaring no `scalar`
+emits byte-identical contract text to before GH #477.
+
+`em export` carries every declared scalar under `model.scalars[]` (`{ ref, name, base, line }`,
+`base` normalized lowercase), and adds an additive `scalarRef` key to every field — `{ name,
+ref, base, array }` when the field's type names a declared scalar, `null` otherwise, mutually
+exclusive with `typeRef` (a scalar and a declared `type` can never share a name). `em api check
+--base`/`em diff` both treat a field's scalar changing names, or a scalar's own `base` changing,
+as a breaking/structural change — see [cli.md](cli.md).
+
 ## Notes
 
 Any element can carry `note "path.md"`. The prose lives in the markdown file, keeping the
@@ -1014,8 +1060,9 @@ or a `ui` consumer on a view, means that slice ships an endpoint; no `ui` means 
 
 Every field of a `public` element — and every field of a declared `type` reachable from one —
 must have a type from the fixed **public type table**, `X[]` of a table entry or of a declared
-`type`, or a declared `type` name. Matching is case-insensitive. Anything else (including a
-field with no type) is an `em validate` error, `public-field-type-unresolved`
+`type`, a declared `type` name, a declared [identity scalar](#identity-scalars) name, or `X[]`
+of one. Matching is case-insensitive. Anything else (including a field with no type) is an `em
+validate` error, `public-field-type-unresolved`
 ([validation.md](validation.md#strict-public-types)). Internal elements keep free-text types.
 
 | Type | Meaning | TypeSpec (`em api generate`) |

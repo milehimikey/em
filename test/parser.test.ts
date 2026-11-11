@@ -719,6 +719,60 @@ slice "S" {
     });
   });
 
+  describe("`scalar Name: base` declarations (GH #477)", () => {
+    it("parses a bare `scalar Name: base` line", () => {
+      const ast = parse(`scalar OrderId: uuid`);
+      expect(ast.scalars).toHaveLength(1);
+      expect(ast.scalars[0]).toMatchObject({ name: "OrderId", base: "uuid" });
+    });
+
+    it("preserves document order across multiple `scalar` declarations", () => {
+      const ast = parse(`
+scalar OrderId: uuid
+scalar Sku: string
+`);
+      expect(ast.scalars.map((s) => s.name)).toEqual(["OrderId", "Sku"]);
+      expect(ast.scalars.map((s) => s.base)).toEqual(["uuid", "string"]);
+    });
+
+    it("trims whitespace around the name and base", () => {
+      const ast = parse(`scalar   OrderId  :   uuid  `);
+      expect(ast.scalars[0]).toMatchObject({ name: "OrderId", base: "uuid" });
+    });
+
+    it("rejects a `scalar` with no ':'", () => {
+      expect(() => parse(`scalar OrderId uuid`)).toThrow(/scalar must name a base type after ':'/);
+    });
+
+    it("rejects a `scalar` with no name before ':'", () => {
+      expect(() => parse(`scalar : uuid`)).toThrow(/scalar requires a name/);
+    });
+
+    it("rejects a `scalar` with no base after ':'", () => {
+      expect(() => parse(`scalar OrderId:`)).toThrow(/scalar "OrderId" requires a base type after ':'/);
+    });
+
+    it("rejects `scalar` used inside a slice", () => {
+      expect(() => parse(`slice "S" {\n  scalar OrderId: uuid\n}`)).toThrow(/not valid inside a slice/);
+    });
+
+    it("lets a field elsewhere reference a declared scalar by name, bare or as an array", () => {
+      const ast = parse(`
+scalar OrderId: uuid
+slice "S" {
+  event Order Placed {
+    orderId: OrderId
+    relatedIds: OrderId[]
+  }
+}
+`);
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "orderId", type: "OrderId" },
+        { name: "relatedIds", type: "OrderId[]" },
+      ]);
+    });
+  });
+
   describe("quoted string literals: braces and escapes (MIL-122)", () => {
     it("treats a REST path-template `{param}` inside `issue` as literal text, not a field block", () => {
       const ast = parse(`

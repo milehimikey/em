@@ -23,6 +23,26 @@ export interface TypeRef {
   array: boolean;
 }
 
+/** A declared identity scalar (`scalar Name: base`, GH #477) — its own top-level namespace,
+ *  same tier as `type` (a scalar and a declared `type` may NOT share a name — see
+ *  `scalar-type-name-collision` — but a scalar and an ELEMENT may, same as `type` today).
+ *  `base` is kept exactly as written; it is matched against `PUBLIC_SCALAR_TYPES` case-
+ *  insensitively wherever it's resolved (`scalar-unknown-base` is the validate error for a
+ *  base that doesn't match any entry). */
+export interface ScalarDecl {
+  id: string;
+  name: string;
+  base: string;
+  line: number;
+}
+
+/** A field's type string resolved to a declared scalar, when it names one — bare or `[]`-
+ *  suffixed, the same shape `TypeRef` gives declared types. */
+export interface ScalarRef {
+  scalarDecl: ScalarDecl;
+  array: boolean;
+}
+
 export const DEFAULT_PERSONA = "User";
 export const DEFAULT_CONTEXT = "Domain";
 
@@ -184,6 +204,10 @@ export interface NormalizedModel {
   /** Normalized name -> first-declared TypeDecl (references resolve to the first occurrence,
    *  same convention as `byName`). */
   typesByName: Map<string, TypeDecl>;
+  /** Declared identity scalars (`scalar Name: base`, GH #477), in document order. */
+  scalars: ScalarDecl[];
+  /** Normalized name -> first-declared ScalarDecl (same first-wins convention as `typesByName`). */
+  scalarsByName: Map<string, ScalarDecl>;
 }
 
 /** One model-declared invariant with the element that declares it (MIL-265). */
@@ -253,6 +277,24 @@ export function normalize(ast: ModelNode): NormalizedModel {
   for (const t of types) {
     const key = normalizeName(t.name);
     if (!typesByName.has(key)) typesByName.set(key, t); // first declaration wins
+  }
+
+  // Scalars (GH #477) are their own namespace too, same id-dedup machinery as types — a scalar
+  // and a type may legitimately share neither id-registry nor name (that's the
+  // scalar-type-name-collision check, validate.ts), but the id itself never collides with a
+  // type's just because the slugs match, same isolation types already get from elements.
+  const usedScalarIds = new Set<string>();
+  const makeScalarId = (name: string): string => dedupe(slug(name), usedScalarIds, "_");
+  const scalars: ScalarDecl[] = ast.scalars.map((s) => ({
+    id: makeScalarId(s.name),
+    name: s.name,
+    base: s.base,
+    line: s.line,
+  }));
+  const scalarsByName = new Map<string, ScalarDecl>();
+  for (const s of scalars) {
+    const key = normalizeName(s.name);
+    if (!scalarsByName.has(key)) scalarsByName.set(key, s); // first declaration wins
   }
 
   expandAgainSugar(ast.slices).forEach((sliceNode, sliceIndex) => {
@@ -388,6 +430,8 @@ export function normalize(ast: ModelNode): NormalizedModel {
     arrows,
     types,
     typesByName,
+    scalars,
+    scalarsByName,
   };
 
   // `view X again` continues the instance that is first on the COMPOSED timeline (GH #277): when a
@@ -434,6 +478,29 @@ export function resolveTypeRef(
   return typeDecl ? { typeDecl, array } : null;
 }
 
+/**
+ * Resolve a field's raw type string to a declared scalar (GH #477's `scalar Name: base`), when
+ * it names one — bare or `[]`-suffixed, same matching rule as `resolveTypeRef`. A scalar name
+ * and a declared `type` name can never both match (that collision is a validate error,
+ * `scalar-type-name-collision`), so this and `resolveTypeRef` are mutually exclusive on any
+ * model without that error; callers that need to try both (`resolvePublicType`,
+ * `emit/json.ts`'s `fieldExport`) check the declared type first; either order, on a model the
+ * error is already red on, is equally well-founded. Shared by `fieldExport` (the `scalarRef`
+ * export) and `resolvePublicType` below.
+ */
+export function resolveScalarRef(
+  typeStr: string | undefined,
+  scalarsByName: Map<string, ScalarDecl>,
+): ScalarRef | null {
+  if (!typeStr) return null;
+  const trimmed = typeStr.trim();
+  const array = trimmed.endsWith("[]");
+  const base = (array ? trimmed.slice(0, -2) : trimmed).trim();
+  if (!base) return null;
+  const scalarDecl = scalarsByName.get(normalizeName(base));
+  return scalarDecl ? { scalarDecl, array } : null;
+}
+
 /** One `PUBLIC_SCALAR_TYPES` entry: the TypeSpec type a field of this em type emits as, plus —
  *  when the entry narrows a TypeSpec core type with `@format` (GH #444, #443 ask 1) — the one
  *  scalar declaration `em api generate` must prepend to the namespace, verbatim, before any
@@ -472,23 +539,41 @@ export const PUBLIC_SCALAR_TYPES: Readonly<Record<string, PublicScalarEntry>> = 
 /** The table's names in declaration order, as printed in diagnostics and docs. */
 export const PUBLIC_SCALAR_TYPE_NAMES: readonly string[] = Object.freeze(Object.keys(PUBLIC_SCALAR_TYPES));
 
-/** A public field's type resolved against the fixed table or a declared type. */
+/** A public field's type resolved against the fixed table, a declared identity scalar, or a
+ *  declared type. `"identity"` (GH #477) carries the matched `ScalarDecl` plus `base` (the
+ *  table key it extends, always a `PUBLIC_SCALAR_TYPES` key) and `tsType` (that table entry's
+ *  own TypeSpec type, e.g. `"Uuid"` for a `uuid`-based scalar) — the same pair `em api
+ *  generate`'s emitter needs to decide what the identity scalar's own `scalar X extends …;`
+ *  declaration extends. */
 export type PublicTypeResolution =
   | { kind: "scalar"; scalar: string; tsType: string; array: boolean }
-  | { kind: "declared"; typeDecl: TypeDecl; array: boolean };
+  | { kind: "declared"; typeDecl: TypeDecl; array: boolean }
+  | { kind: "identity"; scalarDecl: ScalarDecl; base: string; tsType: string; array: boolean };
 
 /**
  * Resolve a field type string under the strict public-surface rule (R7). Declared types win
- * (same precedence `resolveTypeRef` already gives `em export`'s `typeRef`), then the fixed
- * scalar table, bare or `[]`-suffixed. Anything else — including an absent type — is `null`.
+ * (same precedence `resolveTypeRef` already gives `em export`'s `typeRef`), then a declared
+ * identity scalar (GH #477), then the fixed scalar table, bare or `[]`-suffixed. A declared
+ * type and a declared scalar can never both match the same name (`scalar-type-name-collision`
+ * is a validate error precisely so this precedence never has to break a real tie). Anything
+ * else — including an absent type, or an identity scalar whose own `base` doesn't resolve in
+ * the table (`scalar-unknown-base`, itself a validate error) — is `null`.
  */
 export function resolvePublicType(
   typeStr: string | undefined,
   typesByName: Map<string, TypeDecl>,
+  scalarsByName: Map<string, ScalarDecl>,
 ): PublicTypeResolution | null {
   if (!typeStr) return null;
   const declared = resolveTypeRef(typeStr, typesByName);
   if (declared) return { kind: "declared", typeDecl: declared.typeDecl, array: declared.array };
+  const scalarRef = resolveScalarRef(typeStr, scalarsByName);
+  if (scalarRef) {
+    const base = normalizeName(scalarRef.scalarDecl.base);
+    const baseEntry = Object.prototype.hasOwnProperty.call(PUBLIC_SCALAR_TYPES, base) ? PUBLIC_SCALAR_TYPES[base] : undefined;
+    if (!baseEntry) return null; // scalar-unknown-base: already a validate error elsewhere
+    return { kind: "identity", scalarDecl: scalarRef.scalarDecl, base, tsType: baseEntry.tsType, array: scalarRef.array };
+  }
   const trimmed = typeStr.trim();
   const array = trimmed.endsWith("[]");
   const base = (array ? trimmed.slice(0, -2) : trimmed).trim().toLowerCase();

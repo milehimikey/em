@@ -5,7 +5,7 @@
 // and the shared `resolveTypeRef()` resolver.
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
-import { normalize, resolveTypeRef } from "../src/model/model.js";
+import { normalize, resolvePublicType, resolveScalarRef, resolveTypeRef } from "../src/model/model.js";
 
 const normalizeOf = (src: string) => normalize(parse(src));
 
@@ -94,5 +94,119 @@ describe("resolveTypeRef", () => {
     expect(resolveTypeRef("", model.typesByName)).toBeNull();
     expect(resolveTypeRef("   ", model.typesByName)).toBeNull();
     expect(resolveTypeRef("[]", model.typesByName)).toBeNull(); // array suffix with no base name
+  });
+});
+
+describe("scalar declarations registry (GH #477)", () => {
+  it("populates `scalars` in document order and `scalarsByName` by normalized name", () => {
+    const model = normalizeOf(`
+scalar OrderId: uuid
+scalar Sku: string
+`);
+    expect(model.scalars.map((s) => s.name)).toEqual(["OrderId", "Sku"]);
+    expect(model.scalarsByName.get("orderid")?.base).toBe("uuid");
+    expect(model.scalarsByName.get("sku")?.base).toBe("string");
+  });
+
+  it("dedupes a duplicate scalar name's id but keeps `scalarsByName` pointed at the first declaration", () => {
+    const model = normalizeOf(`
+scalar OrderId: uuid
+scalar OrderId: string
+`);
+    expect(model.scalars).toHaveLength(2);
+    expect(model.scalars[0].id).not.toBe(model.scalars[1].id);
+    expect(model.scalarsByName.get("orderid")?.base).toBe("uuid");
+  });
+
+  it("dedupes a scalar's id within its own registry, independent of a same-named type's or element's own dedup counter", () => {
+    // A scalar and a type sharing a name is a validate error (scalar-type-name-collision) —
+    // this exercises normalize() alone, before validation, and only the dedup-independence
+    // claim: each registry (types/scalars/elements) starts its own `~2`-style counter, so one
+    // colliding name in one registry never bumps the *other* registry's id for the same name.
+    const model = normalizeOf(`
+scalar Money: string
+type Money { amount: int }
+slice "S" {
+  event Money Recorded { amount: int }
+}
+`);
+    expect(model.scalars[0].id).toBe("money");
+    expect(model.types[0].id).toBe("money");
+    expect(model.elements[0].id).not.toBe("money");
+  });
+
+  it("returns empty scalars/scalarsByName for a model with no `scalar` declarations", () => {
+    const model = normalizeOf(`slice "S" {\n  command Do Thing\n}`);
+    expect(model.scalars).toEqual([]);
+    expect(model.scalarsByName.size).toBe(0);
+  });
+});
+
+describe("resolveScalarRef", () => {
+  const model = normalizeOf(`scalar OrderId: uuid`);
+
+  it("resolves a bare reference to a declared scalar", () => {
+    const ref = resolveScalarRef("OrderId", model.scalarsByName);
+    expect(ref?.scalarDecl.name).toBe("OrderId");
+    expect(ref?.array).toBe(false);
+  });
+
+  it("resolves an array reference (`Name[]`), flagging array: true", () => {
+    const ref = resolveScalarRef("OrderId[]", model.scalarsByName);
+    expect(ref?.scalarDecl.name).toBe("OrderId");
+    expect(ref?.array).toBe(true);
+  });
+
+  it("resolves case- and whitespace-insensitively", () => {
+    expect(resolveScalarRef("orderid", model.scalarsByName)?.scalarDecl.name).toBe("OrderId");
+    expect(resolveScalarRef("  OrderId  ", model.scalarsByName)?.scalarDecl.name).toBe("OrderId");
+  });
+
+  it("resolves to null for an undeclared name, and for undefined/empty type strings", () => {
+    expect(resolveScalarRef("Sku", model.scalarsByName)).toBeNull();
+    expect(resolveScalarRef(undefined, model.scalarsByName)).toBeNull();
+    expect(resolveScalarRef("", model.scalarsByName)).toBeNull();
+  });
+});
+
+describe("resolvePublicType: identity scalars (GH #477)", () => {
+  it("resolves a declared scalar to kind identity, carrying the matched table base and its tsType", () => {
+    const model = normalizeOf(`scalar OrderId: uuid`);
+    const r = resolvePublicType("OrderId", model.typesByName, model.scalarsByName);
+    expect(r).toEqual({ kind: "identity", scalarDecl: model.scalars[0], base: "uuid", tsType: "Uuid", array: false });
+  });
+
+  it("resolves the array form, flagging array: true", () => {
+    const model = normalizeOf(`scalar Sku: string`);
+    const r = resolvePublicType("Sku[]", model.typesByName, model.scalarsByName);
+    expect(r).toMatchObject({ kind: "identity", base: "string", tsType: "string", array: true });
+  });
+
+  it("matches the base case-insensitively", () => {
+    const model = normalizeOf(`scalar OrderId: UUID`);
+    const r = resolvePublicType("OrderId", model.typesByName, model.scalarsByName);
+    expect(r).toMatchObject({ kind: "identity", base: "uuid" });
+  });
+
+  it("a declared type and a declared scalar never both match (collision is a validate error, not resolved here)", () => {
+    const model = normalizeOf(`
+type Money { amount: int }
+scalar Money: string
+`);
+    // Declared type wins the (invalid, collision-guarded) tie — see model/validate.ts's
+    // scalar-type-name-collision for the error this model would actually raise.
+    const r = resolvePublicType("Money", model.typesByName, model.scalarsByName);
+    expect(r?.kind).toBe("declared");
+  });
+
+  it("falls back to the fixed scalar table for an ordinary table name", () => {
+    const model = normalizeOf(`scalar OrderId: uuid`);
+    const r = resolvePublicType("string", model.typesByName, model.scalarsByName);
+    expect(r).toEqual({ kind: "scalar", scalar: "string", tsType: "string", array: false });
+  });
+
+  it("resolves to null for an undeclared name", () => {
+    const model = normalizeOf(`scalar OrderId: uuid`);
+    expect(resolvePublicType("Money", model.typesByName, model.scalarsByName)).toBeNull();
   });
 });

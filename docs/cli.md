@@ -829,7 +829,11 @@ the source text, so a consumer can tell whether an export is stale without re-ru
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `slices`, `arrows`, `edges`.
+- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `scalars`, `slices`, `arrows`, `edges`.
+  - `scalars` (added in schema `1.21`, GH #477) is the model's declared `scalar Name: base`
+    identity-alias declarations, in document order: `{ ref, name, base, line }` — `ref` is
+    `scalars/<slug(name)>` (its own namespace, never `types/…`), `base` the matched public
+    scalar table key, normalized lowercase. See [dsl.md](dsl.md#identity-scalars).
   - `storylines[].file` (added in schema `1.20`, GH #421) is the storyline model file holding the storyline's
     slices, posix and relative to the root's directory; `null` for an inline block.
   - `storylines` (added in schema `1.19`, GH #277) is the model's `storyline` blocks in document
@@ -981,7 +985,12 @@ the source text, so a consumer can tell whether an export is stale without re-ru
   - Each **field** — on both a declared type's own `fields` and an element's `fields` — has
     `name`, `type` (the raw type string, unchanged), `typeRef` (added in schema `1.3`):
     `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a declared type, `null`
-    otherwise (see [dsl.md](dsl.md#named-types)), `tag` (added in schema `1.6`, MIL-66):
+    otherwise (see [dsl.md](dsl.md#named-types)), `scalarRef` (added in schema `1.21`, GH #477):
+    `{ name, ref, base, array }` when `type` (bare or `[]`-suffixed) names a declared identity
+    scalar, `null` otherwise — `typeRef`-style nullable convention, mutually exclusive with
+    `typeRef` (a scalar and a declared `type` can never share a name); `base` is the matched
+    public scalar table key, normalized lowercase, same value `model.scalars[]` carries for that
+    scalar. See [dsl.md](dsl.md#identity-scalars). `tag` (added in schema `1.6`, MIL-66):
     `true` when the field carries a trailing `tag` clause (an identity tag), `false` otherwise
     — always present, same `=== true` convention as `public` — and `renamedFrom` (added in
     schema `1.6`, MIL-68): `string[] | null` — the field's own trailing `renamed from "Old1",
@@ -1148,6 +1157,9 @@ release train; versioning is not modeled):
 - **`public` views** → one `model` each plus `interface Views { op get<View>(): <View>; }` — the
   read API. A repeated view (`view X again`) contributes its first public instance only.
 - **Declared `type`s** reachable from any of the above → one `model` each.
+- **Declared identity [scalars](dsl.md#identity-scalars)** reachable from any of the above → one
+  `scalar Name extends …;` declaration each (GH #477), alongside the table scalars below — never
+  a nested `model`, since a scalar has no fields of its own.
 
 Every `model` carries the doc comment `Consumers tolerate unknown fields; additive changes do not
 break them.` `tag`, `renamed from` and `assigned` become `/** ... */` doc comments, never
@@ -1177,6 +1189,15 @@ public field resolves to `uuid`, the namespace gets one prepended declaration,
 model with no `uuid` field in its public surface emits no such declaration. `@format` is a
 TypeSpec built-in decorator (no import needed), so the file stays dependency-free; the openapi3
 emitter turns it into `type: string, format: uuid` natively.
+
+**Identity scalars** (`scalar Name: base`, GH #477, [dsl.md](dsl.md#identity-scalars)) emit one
+declaration each, after the table scalars, in declaration order — extending the formatted
+table scalar when the base has one (`scalar OrderId extends Uuid;`, which also pulls `Uuid`'s
+own declaration into the file even if no field uses bare `uuid`) or the core type otherwise
+(`scalar Sku extends string;`). A field typed with the scalar's name emits that name. Only a
+scalar reachable from the public surface is declared — never a dead declaration, same rule as
+the table scalars above. A model declaring no `scalar` emits byte-identical text to before
+GH #477.
 
 There is no alias table, no generic-wrapper handling, and no `unknown` fallback — `em validate`
 guarantees every public field resolves. Teams compile the TypeSpec to OpenAPI / JSON Schema /
@@ -1213,7 +1234,8 @@ slice, so moving an element between slices is not a contract change.
 | element added, or marked `public` | additive |
 | element removed, renamed (`renamed from`), or `public` dropped | breaking |
 | field removed, or renamed (`renamed from`) | breaking |
-| field type changed | breaking |
+| field type changed (including a bare table type naming an identity scalar, e.g. `uuid` → `OrderId`, GH #477 — name identity, same posture `typeIdentity` already gives a declared `type`) | breaking |
+| a declared identity scalar's own `base` changes (e.g. `OrderId: uuid` → `OrderId: string`), on every field that uses it | breaking |
 | field optional → required | breaking |
 | field required → optional — on an event, view, or a type an event/view reaches | breaking |
 | field required → optional — on a command (input) | additive |
@@ -1278,12 +1300,12 @@ timestamps, no absolute paths (`file` is the path as given on the command line).
 view (`view X again`) contributes one entry. Without `--json`, a terse listing: one line per
 element with its field count.
 
-`--json` (`apiSurfaceSchemaVersion` `"1.0"`; MCP tool `api_surface` returns the same document
+`--json` (`apiSurfaceSchemaVersion` `"1.1"`; MCP tool `api_surface` returns the same document
 byte-for-byte):
 
 ```json
 {
-  "apiSurfaceSchemaVersion": "1.0",
+  "apiSurfaceSchemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "models/checkout/checkout.em",
   "modelKey": "checkout",
@@ -1294,8 +1316,16 @@ byte-for-byte):
       "fields": [
         {
           "name": "note",
-          "type": { "kind": "scalar", "scalar": "text", "tsType": "string", "array": false },
+          "type": { "kind": "scalar", "scalar": "text", "base": null, "tsType": "string", "array": false },
           "optional": true,
+          "tag": false,
+          "assigned": false,
+          "renamedFrom": null
+        },
+        {
+          "name": "orderId",
+          "type": { "kind": "scalar-alias", "scalar": null, "base": "uuid", "tsType": "OrderId", "array": false },
+          "optional": false,
           "tag": false,
           "assigned": false,
           "renamedFrom": null
@@ -1308,20 +1338,28 @@ byte-for-byte):
   "views": [],
   "types": [
     { "name": "Line Item", "slug": "line-item", "fields": [] }
+  ],
+  "scalars": [
+    { "name": "OrderId", "slug": "orderid", "base": "uuid" }
   ]
 }
 ```
 
 - `commands`/`events`/`views` — the public elements, in export (timeline) order; `types` — every
-  declared `type` reachable (transitively) from their fields, in declaration order. Each element
-  carries its `name` as written and its kebab `slug` (the same slugging `em api check`'s element
-  ids use).
+  declared `type` reachable (transitively) from their fields, in declaration order; `scalars`
+  (added in schema `1.1`, GH #477) — every declared identity scalar reachable the same way, in
+  declaration order (`{ name, slug, base }`, `base` the public scalar table key it extends).
+  Each element/type/scalar carries its `name` as written and its kebab `slug` (the same slugging
+  `em api check`'s element ids use).
 - `type` — the field's resolved public type: `kind` is `"scalar"` (one of the fixed table's
   entries — `scalar` names the matched entry, `tsType` the TypeSpec core scalar `em api
-  generate` emits for it) or `"declared"` (`scalar` is `null`, `tsType` is the declared type's
-  name — find its own fields under `types`); `array` is the `[]` arity.
-- Absent optionals are explicit `null`s (`renamedFrom`, `invariants`, a type's `scalar`) —
-  consumers destructure, never sniff.
+  generate` emits for it, `base` always `null`), `"declared"` (`scalar`/`base` both `null`,
+  `tsType` is the declared type's name — find its own fields under `types`), or `"scalar-alias"`
+  (added in schema `1.1`, GH #477: `scalar` is `null`, `base` is the public scalar table key the
+  alias extends, `tsType` is the alias's own name — find it under `scalars`); `array` is the
+  `[]` arity.
+- Absent optionals are explicit `null`s (`renamedFrom`, `invariants`, a type's `scalar`, a
+  field's `base` on `"scalar"`/`"declared"`) — consumers destructure, never sniff.
 
 ## `em typespec <file>` (deprecated)
 
@@ -1409,6 +1447,15 @@ as an element rename. A surviving type's own field changes are reported the same
 element's field changes (`type-field-added`/`-removed`/`-changed`), just without the
 slice/from/note/issue/public dimensions a `type` declaration doesn't have.
 
+**Declared identity scalars** (`scalar-added`/`scalar-removed`/`scalar-base-changed`, added in
+schema `1.9`, GH #477, [dsl.md](dsl.md#identity-scalars)). Same ref-matched, no-slice-scoping,
+no-move-detection posture as declared types — a scalar rename also reads as remove+add. A
+scalar has no fields of its own, so the only thing that can change about a surviving one is its
+`base`: `scalar-base-changed` carries the old/new base (a public scalar table key) in
+`oldType`/`newType`, the same two keys `type-field-changed` already uses for a field's old/new
+type (reused rather than adding scalar-specific keys, since a scalar's `base` plays the same
+role a field's `type` does).
+
 Example output:
 
 ```
@@ -1424,7 +1471,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.8"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.9"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -1434,10 +1481,11 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 23 counters the text rollup line summarizes (`slicesAdded`,
+- `counts` — the same 26 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
   `eventsMarkedPublic`, `eventsUnmarkedPublic`, `typesAdded`, `typesRemoved`,
-  `typeFieldChanges`, `slicesSplit`, `slicesMerged`, `slicesSuperseded`, …), as-is.
+  `typeFieldChanges`, `scalarsAdded`, `scalarsRemoved`, `scalarBaseChanges`, `slicesSplit`,
+  `slicesMerged`, `slicesSuperseded`, …), as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:
@@ -1478,8 +1526,9 @@ elements, `types/<slug>` for declared types); `sliceKey` is a slice's export key
 present on slice-scoped entries (`slice-added`/`slice-removed`, `source-*` — `sliceKey` only,
 no single element `ref` applies) and element-scoped entries (`element-added`/`element-removed`,
 `field-*`, `from-*`, `note-*`, `issue-*`, `event-marked-public`/`event-unmarked-public` — both
-`ref` and `sliceKey`). `type-added`/`type-removed`/`type-field-*` carry `ref` only — types
-aren't slice-scoped. `element-moved` carries `ref` (the element's new/target-side identity)
+`ref` and `sliceKey`). `type-added`/`type-removed`/`type-field-*` and
+`scalar-added`/`scalar-removed`/`scalar-base-changed` carry `ref` only — types and scalars
+aren't slice-scoped (a scalar's `ref` is `scalars/<slug>`, its own namespace, never `types/…`). `element-moved` carries `ref` (the element's new/target-side identity)
 plus `fromSliceKey`/`toSliceKey` alongside `fromSlice`/`toSlice`, mirroring that pair's shape.
 `arrow-added`/`arrow-removed` carry none of these — `em export` has no ref concept for arrows.
 A `~2`/`~3`-style dedupe suffix on a colliding name flows through automatically, since these
