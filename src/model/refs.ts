@@ -23,6 +23,8 @@ export interface RefsResult {
   refByTypeId: Map<string, string>;
   /** Internal `ScalarDecl.id` -> stable export `ref` (`scalars/<slug(name)>`, GH #477). */
   refByScalarId: Map<string, string>;
+  /** Internal `EnumDecl.id` -> stable export `ref` (`enums/<slug(name)>`, GH #478). */
+  refByEnumId: Map<string, string>;
   /** Ref-collision warnings raised while assigning keys/refs (duplicate names). */
   diagnostics: Diagnostic[];
 }
@@ -112,5 +114,23 @@ export function computeRefs(model: NormalizedModel): RefsResult {
     refByScalarId.set(s.id, ref);
   }
 
-  return { sliceKeys, refById, refByTypeId, refByScalarId, diagnostics };
+  // Enums (GH #478) get the same ref scheme too, in their own `enums/` prefix — never
+  // `types/`/`scalars/`, so an enum can never collide on ref with either even if
+  // `enum-name-collision` somehow didn't fire first.
+  const usedEnumRefs = new Set<string>();
+  const refByEnumId = new Map<string, string>();
+  for (const e of model.enums) {
+    const base = `enums/${kebabSlug(e.name)}`;
+    const ref = dedupe(base, usedEnumRefs, "~");
+    if (ref !== base) {
+      pushDiag(diagnostics, "duplicate-enum-ref", {
+        message: `duplicate enum "${e.name}" (export ref "${base}" already used); rename for a stable export ref`,
+        line: e.line,
+        refs: [ref, base],
+      });
+    }
+    refByEnumId.set(e.id, ref);
+  }
+
+  return { sliceKeys, refById, refByTypeId, refByScalarId, refByEnumId, diagnostics };
 }

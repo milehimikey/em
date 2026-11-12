@@ -371,6 +371,40 @@ export const RULES = {
     usageCategory: "scalar type name collision",
     docAnchor: "strict-public-types",
   },
+  // GH #478: `enum Name { member, … }` declarations. Same house-style posture as #477's
+  // scalar errors (above) — an enum is a wire-identity value set, so getting it wrong is a
+  // contract defect, not a cosmetic duplicate. `enum-duplicate-name` extends the scalar
+  // precedent (two declarations under one name silently picking first-wins is a worse defect
+  // for a value-set identity than it is for a `type`'s shape) even though the issue's own list
+  // named only three checks — see REPORT.md.
+  "enum-empty": {
+    severity: "error",
+    title: "Empty enum",
+    fix: "Give the enum at least one member, or remove the declaration.",
+    usageCategory: "enum empty",
+    docAnchor: "strict-public-types",
+  },
+  "enum-duplicate-member": {
+    severity: "error",
+    title: "Enum duplicate member",
+    fix: "Remove or rename the duplicate member — members are compared case-insensitively.",
+    usageCategory: "enum duplicate member",
+    docAnchor: "strict-public-types",
+  },
+  "enum-duplicate-name": {
+    severity: "error",
+    title: "Enum duplicate name",
+    fix: "Declare the enum once; rename or remove the duplicate `enum` block.",
+    usageCategory: "enum duplicate name",
+    docAnchor: "strict-public-types",
+  },
+  "enum-name-collision": {
+    severity: "error",
+    title: "Enum/type/scalar name collision",
+    fix: "Rename the `enum` or the colliding `type`/`scalar` so the names no longer collide — a name can't mean both at once.",
+    usageCategory: "enum name collision",
+    docAnchor: "strict-public-types",
+  },
   "lineage-ref-malformed": {
     severity: "error",
     title: "Malformed lineage ref",
@@ -578,6 +612,12 @@ export const RULES = {
     title: "Duplicate scalar ref",
     fix: "Rename the scalar so its export ref is unique.",
     usageCategory: "duplicate scalar ref",
+  },
+  "duplicate-enum-ref": {
+    severity: "warning",
+    title: "Duplicate enum ref",
+    fix: "Rename the enum so its export ref is unique.",
+    usageCategory: "duplicate enum ref",
   },
   // MIL-193: two models in one multi-model invocation whose model keys (kebab-slugged declared
   // names, model/qualifiedRef.ts) collide — the later one takes a `~n` suffix, exactly as

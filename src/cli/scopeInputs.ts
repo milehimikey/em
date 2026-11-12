@@ -90,8 +90,8 @@ export function buildScopeModels(
       const baseDoc = text === null ? null : docFromText(text, baseRel);
       baseConsumes = baseDoc === null ? [] : collectConsumes(baseDoc);
       if (change.changed.has(h.rel) || change.changed.has(baseRel)) {
-        const headSurface = surfaceOf(h.doc.model.slices, h.doc.model.types);
-        const baseSurface = baseDoc === null ? null : surfaceOf(baseDoc.model.slices, baseDoc.model.types);
+        const headSurface = surfaceOf(h.doc.model.slices, h.doc.model.types, h.doc.model.enums);
+        const baseSurface = baseDoc === null ? null : surfaceOf(baseDoc.model.slices, baseDoc.model.types, baseDoc.model.enums);
         surfaceChanges = diffSurfaces(baseSurface, headSurface);
       }
     }

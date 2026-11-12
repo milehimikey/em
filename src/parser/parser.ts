@@ -21,12 +21,14 @@
 //   arrow <From Element> -> <To Element>
 //   type "Name" { field: Type, ... }
 //   scalar Name: base   # identity alias over a public-scalar-table entry (GH #477)
+//   enum Name { member, ... }   # closed named value set (GH #478)
 
 import {
   ArrowNode,
   AUTOMATION_KINDS,
   ElementKind,
   ElementNode,
+  EnumDeclNode,
   Field,
   InvariantDecl,
   ModelNode,
@@ -82,6 +84,7 @@ export function parse(source: string): ModelNode {
     arrows: [],
     types: [],
     scalars: [],
+    enums: [],
     owner: [],
   };
 
@@ -89,6 +92,7 @@ export function parse(source: string): ModelNode {
   let currentSlice: SliceNode | null = null;
   let currentElement: ElementNode | null = null; // open `{ … }` field block
   let currentTypeDecl: TypeDeclNode | null = null; // open `type Name { … }` block
+  let currentEnumDecl: EnumDeclNode | null = null; // open `enum Name { … }` block (GH #478)
   let currentStoryline: StorylineNode | null = null; // open `storyline "Name" { … }` block
   let storylineIsContinuation = false; // the open block reopens an already-declared storyline
   let oneofStart: number | null = null; // GH #278: index in currentSlice.elements where the open `oneof {` began
@@ -108,7 +112,8 @@ export function parse(source: string): ModelNode {
     if (
       line === "}" ||
       (currentElement && line.startsWith("}")) ||
-      (currentTypeDecl && line.startsWith("}"))
+      (currentTypeDecl && line.startsWith("}")) ||
+      (currentEnumDecl && line.startsWith("}"))
     ) {
       if (currentElement) {
         const trailing = line.slice(1).trim();
@@ -134,6 +139,18 @@ export function parse(source: string): ModelNode {
         }
         model.types.push(currentTypeDecl);
         currentTypeDecl = null;
+        continue;
+      }
+      if (currentEnumDecl) {
+        const trailing = line.slice(1).trim();
+        if (trailing) {
+          throw new ParseError(
+            `unrecognized trailing text after '}': '${trailing}' (enum declarations support no clauses)`,
+            lineNo,
+          );
+        }
+        model.enums.push(currentEnumDecl);
+        currentEnumDecl = null;
         continue;
       }
       if (currentSlice && oneofStart !== null) {
@@ -207,6 +224,14 @@ export function parse(source: string): ModelNode {
         );
       }
       currentTypeDecl.fields.push(...parseInlineFields(line, lineNo, "type-decl"));
+      continue;
+    }
+
+    // Inside an open `enum` block: each line is one or more comma-separated members (bare
+    // identifiers or quoted strings) — no field syntax (no `:`), so no `tag`/`invariant` guard
+    // is needed the way `type`'s block needs one.
+    if (currentEnumDecl) {
+      currentEnumDecl.members.push(...splitQuotedList(line));
       continue;
     }
 
@@ -471,6 +496,30 @@ export function parse(source: string): ModelNode {
         model.scalars.push(decl);
         break;
       }
+      case "enum": {
+        const braceAt = indexOfUnquoted(remainder, "{");
+        if (braceAt < 0) throw new ParseError("enum must open a block with '{'", lineNo);
+        const name = unquote(remainder.slice(0, braceAt).trim());
+        if (!name) throw new ParseError("enum requires a name", lineNo);
+        const decl: EnumDeclNode = { name, members: [], line: lineNo };
+        const after = remainder.slice(braceAt + 1);
+        const closeAt = indexOfUnquoted(after, "}");
+        const inner = closeAt >= 0 ? after.slice(0, closeAt) : after;
+        decl.members.push(...splitQuotedList(inner));
+        if (closeAt < 0) {
+          currentEnumDecl = decl; // block stays open across lines
+        } else {
+          const trailing = after.slice(closeAt + 1).trim();
+          if (trailing) {
+            throw new ParseError(
+              `unrecognized trailing text after '{ … }' block: '${trailing}' (enum declarations support no clauses)`,
+              lineNo,
+            );
+          }
+          model.enums.push(decl);
+        }
+        break;
+      }
       default:
         throw new ParseError(`unknown keyword '${keyword}'`, lineNo);
     }
@@ -489,6 +538,12 @@ export function parse(source: string): ModelNode {
     throw new ParseError(
       `type "${currentTypeDecl.name}" is missing a closing '}'`,
       currentTypeDecl.line,
+    );
+  }
+  if (currentEnumDecl) {
+    throw new ParseError(
+      `enum "${currentEnumDecl.name}" is missing a closing '}'`,
+      currentEnumDecl.line,
     );
   }
   if (currentSlice) {

@@ -773,6 +773,97 @@ slice "S" {
     });
   });
 
+  describe("`enum Name { member, ... }` declarations (GH #478)", () => {
+    it("parses the one-line inline form, bare identifiers, declaration order preserved", () => {
+      const ast = parse(`enum OrderStatus { placed, shipped }`);
+      expect(ast.enums).toHaveLength(1);
+      expect(ast.enums[0]).toMatchObject({ name: "OrderStatus", members: ["placed", "shipped"] });
+    });
+
+    it("parses quoted string members alongside bare ones, unquoted in the AST", () => {
+      const ast = parse(`enum OrderStatus { "out-of-stock", "in stock", shipped }`);
+      expect(ast.enums[0].members).toEqual(["out-of-stock", "in stock", "shipped"]);
+    });
+
+    it("parses a multi-line block, one member per line, no comma required between lines", () => {
+      const ast = parse(`
+enum OrderStatus {
+  placed
+  shipped
+  "out-of-stock"
+}
+`);
+      expect(ast.enums[0].members).toEqual(["placed", "shipped", "out-of-stock"]);
+    });
+
+    it("parses a multi-line block with comma-separated members on one line too", () => {
+      const ast = parse(`
+enum OrderStatus {
+  placed, shipped
+  "out-of-stock"
+}
+`);
+      expect(ast.enums[0].members).toEqual(["placed", "shipped", "out-of-stock"]);
+    });
+
+    it("preserves document order across multiple `enum` declarations", () => {
+      const ast = parse(`
+enum OrderStatus { placed, shipped }
+enum PaymentStatus { pending, paid }
+`);
+      expect(ast.enums.map((e) => e.name)).toEqual(["OrderStatus", "PaymentStatus"]);
+    });
+
+    it("parses a declared-but-empty enum permissively (house-style error lives in em validate, not the parser)", () => {
+      const ast = parse(`enum Empty {}`);
+      expect(ast.enums[0]).toMatchObject({ name: "Empty", members: [] });
+    });
+
+    it("rejects an `enum` with no '{'", () => {
+      expect(() => parse(`enum OrderStatus placed, shipped`)).toThrow(/enum must open a block with '\{'/);
+    });
+
+    it("rejects an `enum` with no name before '{'", () => {
+      expect(() => parse(`enum { placed }`)).toThrow(/enum requires a name/);
+    });
+
+    it("rejects trailing text after the one-line block's closing '}'", () => {
+      expect(() => parse(`enum OrderStatus { placed } public`)).toThrow(
+        /enum declarations support no clauses/,
+      );
+    });
+
+    it("rejects trailing text after a multi-line block's closing '}'", () => {
+      expect(() =>
+        parse(`enum OrderStatus {\n  placed\n} public`),
+      ).toThrow(/enum declarations support no clauses/);
+    });
+
+    it("rejects an unterminated `enum` block", () => {
+      expect(() => parse(`enum OrderStatus {\n  placed`)).toThrow(/enum "OrderStatus" is missing a closing '\}'/);
+    });
+
+    it("rejects `enum` used inside a slice", () => {
+      expect(() => parse(`slice "S" {\n  enum OrderStatus { placed }\n}`)).toThrow(/not valid inside a slice/);
+    });
+
+    it("lets a field elsewhere reference a declared enum by name, bare or as an array", () => {
+      const ast = parse(`
+enum OrderStatus { placed, shipped }
+slice "S" {
+  event Order Placed {
+    status: OrderStatus
+    history: OrderStatus[]
+  }
+}
+`);
+      expect(ast.slices[0].elements[0].fields).toEqual([
+        { name: "status", type: "OrderStatus" },
+        { name: "history", type: "OrderStatus[]" },
+      ]);
+    });
+  });
+
   describe("quoted string literals: braces and escapes (MIL-122)", () => {
     it("treats a REST path-template `{param}` inside `issue` as literal text, not a field block", () => {
       const ast = parse(`

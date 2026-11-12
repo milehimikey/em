@@ -5,7 +5,7 @@
 // and the shared `resolveTypeRef()` resolver.
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parser/parser.js";
-import { normalize, resolvePublicType, resolveScalarRef, resolveTypeRef } from "../src/model/model.js";
+import { normalize, resolveEnumRef, resolvePublicType, resolveScalarRef, resolveTypeRef } from "../src/model/model.js";
 
 const normalizeOf = (src: string) => normalize(parse(src));
 
@@ -172,19 +172,19 @@ describe("resolveScalarRef", () => {
 describe("resolvePublicType: identity scalars (GH #477)", () => {
   it("resolves a declared scalar to kind identity, carrying the matched table base and its tsType", () => {
     const model = normalizeOf(`scalar OrderId: uuid`);
-    const r = resolvePublicType("OrderId", model.typesByName, model.scalarsByName);
+    const r = resolvePublicType("OrderId", model.typesByName, model.scalarsByName, model.enumsByName);
     expect(r).toEqual({ kind: "identity", scalarDecl: model.scalars[0], base: "uuid", tsType: "Uuid", array: false });
   });
 
   it("resolves the array form, flagging array: true", () => {
     const model = normalizeOf(`scalar Sku: string`);
-    const r = resolvePublicType("Sku[]", model.typesByName, model.scalarsByName);
+    const r = resolvePublicType("Sku[]", model.typesByName, model.scalarsByName, model.enumsByName);
     expect(r).toMatchObject({ kind: "identity", base: "string", tsType: "string", array: true });
   });
 
   it("matches the base case-insensitively", () => {
     const model = normalizeOf(`scalar OrderId: UUID`);
-    const r = resolvePublicType("OrderId", model.typesByName, model.scalarsByName);
+    const r = resolvePublicType("OrderId", model.typesByName, model.scalarsByName, model.enumsByName);
     expect(r).toMatchObject({ kind: "identity", base: "uuid" });
   });
 
@@ -195,18 +195,123 @@ scalar Money: string
 `);
     // Declared type wins the (invalid, collision-guarded) tie — see model/validate.ts's
     // scalar-type-name-collision for the error this model would actually raise.
-    const r = resolvePublicType("Money", model.typesByName, model.scalarsByName);
+    const r = resolvePublicType("Money", model.typesByName, model.scalarsByName, model.enumsByName);
     expect(r?.kind).toBe("declared");
   });
 
   it("falls back to the fixed scalar table for an ordinary table name", () => {
     const model = normalizeOf(`scalar OrderId: uuid`);
-    const r = resolvePublicType("string", model.typesByName, model.scalarsByName);
+    const r = resolvePublicType("string", model.typesByName, model.scalarsByName, model.enumsByName);
     expect(r).toEqual({ kind: "scalar", scalar: "string", tsType: "string", array: false });
   });
 
   it("resolves to null for an undeclared name", () => {
     const model = normalizeOf(`scalar OrderId: uuid`);
-    expect(resolvePublicType("Money", model.typesByName, model.scalarsByName)).toBeNull();
+    expect(resolvePublicType("Money", model.typesByName, model.scalarsByName, model.enumsByName)).toBeNull();
+  });
+});
+
+describe("enum declarations registry (GH #478)", () => {
+  it("populates `enums` in document order and `enumsByName` by normalized name", () => {
+    const model = normalizeOf(`
+enum OrderStatus { placed, shipped }
+enum PaymentStatus { pending, paid }
+`);
+    expect(model.enums.map((e) => e.name)).toEqual(["OrderStatus", "PaymentStatus"]);
+    expect(model.enumsByName.get("orderstatus")?.members).toEqual(["placed", "shipped"]);
+    expect(model.enumsByName.get("paymentstatus")?.members).toEqual(["pending", "paid"]);
+  });
+
+  it("dedupes a duplicate enum name's id but keeps `enumsByName` pointed at the first declaration", () => {
+    const model = normalizeOf(`
+enum OrderStatus { placed }
+enum OrderStatus { shipped }
+`);
+    expect(model.enums).toHaveLength(2);
+    expect(model.enums[0].id).not.toBe(model.enums[1].id);
+    expect(model.enumsByName.get("orderstatus")?.members).toEqual(["placed"]);
+  });
+
+  it("dedupes an enum's id within its own registry, independent of a same-named type's or scalar's own dedup counter", () => {
+    // An enum sharing a name with a `type` or `scalar` is a validate error (enum-name-collision)
+    // — this exercises normalize() alone, before validation, and only the dedup-independence
+    // claim: each registry starts its own `~2`-style counter.
+    const model = normalizeOf(`
+enum Money { dollars, cents }
+type Money { amount: int }
+scalar MoneyAlias: string
+`);
+    expect(model.enums[0].id).toBe("money");
+    expect(model.types[0].id).toBe("money");
+  });
+
+  it("returns empty enums/enumsByName for a model with no `enum` declarations", () => {
+    const model = normalizeOf(`slice "S" {\n  command Do Thing\n}`);
+    expect(model.enums).toEqual([]);
+    expect(model.enumsByName.size).toBe(0);
+  });
+});
+
+describe("resolveEnumRef", () => {
+  const model = normalizeOf(`enum OrderStatus { placed, shipped }`);
+
+  it("resolves a bare reference to a declared enum", () => {
+    const ref = resolveEnumRef("OrderStatus", model.enumsByName);
+    expect(ref?.enumDecl.name).toBe("OrderStatus");
+    expect(ref?.array).toBe(false);
+  });
+
+  it("resolves an array reference (`Name[]`), flagging array: true", () => {
+    const ref = resolveEnumRef("OrderStatus[]", model.enumsByName);
+    expect(ref?.enumDecl.name).toBe("OrderStatus");
+    expect(ref?.array).toBe(true);
+  });
+
+  it("resolves case- and whitespace-insensitively", () => {
+    expect(resolveEnumRef("orderstatus", model.enumsByName)?.enumDecl.name).toBe("OrderStatus");
+    expect(resolveEnumRef("  OrderStatus  ", model.enumsByName)?.enumDecl.name).toBe("OrderStatus");
+  });
+
+  it("resolves to null for an undeclared name, and for undefined/empty type strings", () => {
+    expect(resolveEnumRef("PaymentStatus", model.enumsByName)).toBeNull();
+    expect(resolveEnumRef(undefined, model.enumsByName)).toBeNull();
+    expect(resolveEnumRef("", model.enumsByName)).toBeNull();
+  });
+});
+
+describe("resolvePublicType: declared enums (GH #478)", () => {
+  it("resolves a declared enum to kind enum, carrying the matched EnumDecl", () => {
+    const model = normalizeOf(`enum OrderStatus { placed, shipped }`);
+    const r = resolvePublicType("OrderStatus", model.typesByName, model.scalarsByName, model.enumsByName);
+    expect(r).toEqual({ kind: "enum", enumDecl: model.enums[0], array: false });
+  });
+
+  it("resolves the array form, flagging array: true", () => {
+    const model = normalizeOf(`enum OrderStatus { placed, shipped }`);
+    const r = resolvePublicType("OrderStatus[]", model.typesByName, model.scalarsByName, model.enumsByName);
+    expect(r).toMatchObject({ kind: "enum", array: true });
+  });
+
+  it("a declared type wins over a same-named enum (collision is a validate error, not resolved here)", () => {
+    const model = normalizeOf(`
+type Status { code: int }
+enum Status { ok, error }
+`);
+    const r = resolvePublicType("Status", model.typesByName, model.scalarsByName, model.enumsByName);
+    expect(r?.kind).toBe("declared");
+  });
+
+  it("a declared scalar wins over a same-named enum (collision is a validate error, not resolved here)", () => {
+    const model = normalizeOf(`
+scalar Status: string
+enum Status { ok, error }
+`);
+    const r = resolvePublicType("Status", model.typesByName, model.scalarsByName, model.enumsByName);
+    expect(r?.kind).toBe("identity");
+  });
+
+  it("resolves to null for an undeclared name", () => {
+    const model = normalizeOf(`enum OrderStatus { placed, shipped }`);
+    expect(resolvePublicType("PaymentStatus", model.typesByName, model.scalarsByName, model.enumsByName)).toBeNull();
   });
 });

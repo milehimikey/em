@@ -105,10 +105,43 @@ export function reachableScalarRefs(
   return reachable;
 }
 
+/** Declared enums (GH #478) reachable from any of the given elements' fields, directly or
+ *  through a reachable declared type's own fields — the enum-namespace sibling of
+ *  `reachableScalarRefs` above, same "no dead declarations" rule. Enums have no fields of their
+ *  own either, so there's no recursion through an enum itself. Shared with `em api surface`. */
+export function reachableEnumRefs(
+  elements: { fields: FieldExport[] | null }[],
+  typesByRef: Map<string, TypeExport>,
+): Set<string> {
+  const reachable = new Set<string>();
+  const seenTypes = new Set<string>();
+  const walk = (fields: FieldExport[] | null) => {
+    for (const f of fields ?? []) {
+      if (f.enumRef) reachable.add(f.enumRef.ref);
+      if (f.typeRef && !seenTypes.has(f.typeRef.ref)) {
+        seenTypes.add(f.typeRef.ref);
+        walk(typesByRef.get(f.typeRef.ref)?.fields ?? null);
+      }
+    }
+  };
+  for (const el of elements) walk(el.fields);
+  return reachable;
+}
+
 /** A field name that isn't a bare TypeSpec identifier is backtick-quoted (TypeSpec's own escape). */
 function fieldIdentifier(name: string): string {
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name;
   return "`" + name.replace(/\\/g, "\\\\").replace(/`/g, "\\`") + "`";
+}
+
+/** GH #478: an enum member that is itself a bare TypeSpec identifier emits unquoted (`placed`);
+ *  anything else — a dash, a space, a leading digit, punctuation — emits as a quoted string
+ *  literal instead (`"out-of-stock"`), TypeSpec's own enum string-member form (verified against
+ *  the installed @typespec/compiler; see REPORT.md's probe: `enum X { "a-b", c }` compiles).
+ *  Unlike `fieldIdentifier` above, there is no backtick escape for an enum member — a non-
+ *  identifier member is always a plain value, never a name that needs quoting-as-identifier. */
+function enumMemberText(member: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(member) ? member : JSON.stringify(member);
 }
 
 // `tag`, `renamed from` and `assigned` are modeling concerns, not wire shape — carried as doc
@@ -216,6 +249,14 @@ export function buildApiContract(
     if (reachableScalars.has(s.ref)) scalarNameByRef.set(s.ref, dedupe(pascalCase(s.name), usedNames, "_"));
   }
 
+  // GH #478: declared enums reachable from the public surface, named through the SAME
+  // `usedNames` dedup set, same allocate-up-front-in-declaration-order posture as scalars above.
+  const reachableEnums = reachableEnumRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
+  const enumNameByRef = new Map<string, string>();
+  for (const e of doc.model.enums) {
+    if (reachableEnums.has(e.ref)) enumNameByRef.set(e.ref, dedupe(pascalCase(e.name), usedNames, "_"));
+  }
+
   // GH #444 (#443 ask 1): which table entries this contract actually uses, so the namespace
   // declares exactly the scalars its own fields need — never a dead declaration. GH #477: an
   // identity scalar's own base counts as "used" too (via the branch below), so the base's
@@ -232,7 +273,11 @@ export function buildApiContract(
       usedScalars.add(f.scalarRef.base);
       return f.scalarRef.array ? `${name}[]` : name;
     }
-    const r = resolvePublicType(f.type ?? undefined, model.typesByName, model.scalarsByName);
+    if (f.enumRef) {
+      const name = enumNameByRef.get(f.enumRef.ref) ?? pascalCase(f.enumRef.name);
+      return f.enumRef.array ? `${name}[]` : name;
+    }
+    const r = resolvePublicType(f.type ?? undefined, model.typesByName, model.scalarsByName, model.enumsByName);
     if (!r || r.kind !== "scalar") {
       throw new Error(
         `em api generate: ${owner} field "${f.name}" has no public type — em validate's public-field-type-unresolved should have refused this model`,
@@ -348,6 +393,21 @@ export function buildApiContract(
     if (!name) continue; // not reachable from the public surface — no dead declaration
     scalarDecls.push(`scalar ${name} extends ${PUBLIC_SCALAR_TYPES[s.base].tsType};`);
   }
+
+  // GH #478: a reachable enum emits once, members in declaration order, right after the scalar
+  // declarations and ahead of the type blocks (the two unshifts below, called in this order,
+  // land the sections as [scalars, enums, types, …]). Members join on a single line like the
+  // issue's own example (`enum OrderStatus { placed, shipped }`) — joined with ", " since every
+  // member is short; a bare identifier emits unquoted, anything else as a quoted string literal
+  // (`enumMemberText`). Pinned by test: a model declaring no `enum` contributes nothing here.
+  const enumBlocks: string[] = [];
+  for (const e of doc.model.enums) {
+    const name = enumNameByRef.get(e.ref);
+    if (!name) continue; // not reachable from the public surface — no dead declaration
+    enumBlocks.push(`enum ${name} { ${e.members.map(enumMemberText).join(", ")} }`);
+  }
+  if (enumBlocks.length > 0) sections.unshift(enumBlocks.join("\n"));
+
   if (scalarDecls.length > 0) sections.unshift(scalarDecls.join("\n"));
 
   const namespaceName = pascalCase(doc.model.name ?? "Model");

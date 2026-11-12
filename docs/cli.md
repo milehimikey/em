@@ -829,11 +829,15 @@ the source text, so a consumer can tell whether an export is stale without re-ru
 - `source` — `{ path, sha256 }`; `path` is exactly what was passed on the command line. (This is
   the *document's* provenance — the `.em` file itself. Not to be confused with a slice's own
   `source`, below: same key name, different scope and shape.)
-- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `scalars`, `slices`, `arrows`, `edges`.
+- `model` — `name`, `key`, `personas`, `contexts`, `hasAutomation`, `version`, `types`, `scalars`, `enums`, `slices`, `arrows`, `edges`.
   - `scalars` (added in schema `1.21`, GH #477) is the model's declared `scalar Name: base`
     identity-alias declarations, in document order: `{ ref, name, base, line }` — `ref` is
     `scalars/<slug(name)>` (its own namespace, never `types/…`), `base` the matched public
     scalar table key, normalized lowercase. See [dsl.md](dsl.md#identity-scalars).
+  - `enums` (added in schema `1.21`, GH #478, same release bump as `scalars` above) is the
+    model's declared `enum Name { member, … }` declarations, in document order: `{ ref, name,
+    members, line }` — `ref` is `enums/<slug(name)>` (its own namespace), `members` the raw
+    (unquoted) member strings, in declaration order. See [dsl.md](dsl.md#enums).
   - `storylines[].file` (added in schema `1.20`, GH #421) is the storyline model file holding the storyline's
     slices, posix and relative to the root's directory; `null` for an inline block.
   - `storylines` (added in schema `1.19`, GH #277) is the model's `storyline` blocks in document
@@ -990,7 +994,11 @@ the source text, so a consumer can tell whether an export is stale without re-ru
     scalar, `null` otherwise — `typeRef`-style nullable convention, mutually exclusive with
     `typeRef` (a scalar and a declared `type` can never share a name); `base` is the matched
     public scalar table key, normalized lowercase, same value `model.scalars[]` carries for that
-    scalar. See [dsl.md](dsl.md#identity-scalars). `tag` (added in schema `1.6`, MIL-66):
+    scalar. See [dsl.md](dsl.md#identity-scalars). `enumRef` (added in schema `1.21`, GH #478,
+    same release bump): `{ name, ref, array }` when `type` (bare or `[]`-suffixed) names a
+    declared enum, `null` otherwise — same nullable convention, mutually exclusive with both
+    `typeRef` and `scalarRef` (an enum, a declared `type` and a declared `scalar` can never
+    share a name). See [dsl.md](dsl.md#enums). `tag` (added in schema `1.6`, MIL-66):
     `true` when the field carries a trailing `tag` clause (an identity tag), `false` otherwise
     — always present, same `=== true` convention as `public` — and `renamedFrom` (added in
     schema `1.6`, MIL-68): `string[] | null` — the field's own trailing `renamed from "Old1",
@@ -1160,6 +1168,9 @@ release train; versioning is not modeled):
 - **Declared identity [scalars](dsl.md#identity-scalars)** reachable from any of the above → one
   `scalar Name extends …;` declaration each (GH #477), alongside the table scalars below — never
   a nested `model`, since a scalar has no fields of its own.
+- **Declared [enums](dsl.md#enums)** reachable from any of the above → one
+  `enum Name { member, … }` declaration each (GH #478), members in declaration order — never a
+  nested `model`, since an enum has no fields of its own.
 
 Every `model` carries the doc comment `Consumers tolerate unknown fields; additive changes do not
 break them.` `tag`, `renamed from` and `assigned` become `/** ... */` doc comments, never
@@ -1199,6 +1210,15 @@ scalar reachable from the public surface is declared — never a dead declaratio
 the table scalars above. A model declaring no `scalar` emits byte-identical text to before
 GH #477.
 
+**Enums** (`enum Name { member, … }`, GH #478, [dsl.md](dsl.md#enums)) emit one declaration
+each, members in declaration order (`enum OrderStatus { placed, shipped }`), placed after the
+scalar declarations above and before the type blocks. A member that isn't itself a bare
+TypeSpec identifier (a dash, a space, a leading digit, punctuation) emits as a quoted string
+literal instead — TypeSpec's own enum string-member form (`enum X { "out-of-stock", c }`). A
+field typed with the enum's name emits that name. Only an enum reachable from the public
+surface is declared — never a dead declaration. A model declaring no `enum` emits
+byte-identical text to before GH #478.
+
 There is no alias table, no generic-wrapper handling, and no `unknown` fallback — `em validate`
 guarantees every public field resolves. Teams compile the TypeSpec to OpenAPI / JSON Schema /
 AsyncAPI in their own toolchain.
@@ -1234,8 +1254,13 @@ slice, so moving an element between slices is not a contract change.
 | element added, or marked `public` | additive |
 | element removed, renamed (`renamed from`), or `public` dropped | breaking |
 | field removed, or renamed (`renamed from`) | breaking |
-| field type changed (including a bare table type naming an identity scalar, e.g. `uuid` → `OrderId`, GH #477 — name identity, same posture `typeIdentity` already gives a declared `type`) | breaking |
+| field type changed (including a bare table type naming an identity scalar, e.g. `uuid` → `OrderId`, GH #477, or an enum, e.g. `uuid` → `OrderStatus`, GH #478 — name identity, same posture `typeIdentity` already gives a declared `type`) | breaking |
 | a declared identity scalar's own `base` changes (e.g. `OrderId: uuid` → `OrderId: string`), on every field that uses it | breaking |
+| enum added, or removed/`public` dropped (declaration-level, GH #478) | added: additive · removed: breaking |
+| enum member removed or renamed — where the enum reaches an output (event, view, or a type/field one reaches) | breaking |
+| enum member removed or renamed — where the enum reaches ONLY an input (command) | additive |
+| enum member added — where the enum reaches an input (command) | breaking |
+| enum member added — where the enum reaches ONLY an output | additive |
 | field optional → required | breaking |
 | field required → optional — on an event, view, or a type an event/view reaches | breaking |
 | field required → optional — on a command (input) | additive |
@@ -1245,7 +1270,10 @@ slice, so moving an element between slices is not a contract change.
 | invariant added, or its rule text changed — on a public command or event (MIL-265) | breaking (the contract got tighter) |
 | invariant removed — on a public command or event (MIL-265) | additive (looser) |
 
-A declared type reached from both a command and an event/view takes the stricter rule.
+A declared type reached from both a command and an event/view takes the stricter rule. An enum
+reached by both an input and an output is judged by EITHER rule independently per member change
+(member removed: breaking via the output reach; member added: breaking via the input reach) —
+see [dsl.md](dsl.md#enums) for the full role matrix.
 
 ```
 contract models/checkout/contracts/checkout.tsp is current
@@ -1300,12 +1328,12 @@ timestamps, no absolute paths (`file` is the path as given on the command line).
 view (`view X again`) contributes one entry. Without `--json`, a terse listing: one line per
 element with its field count.
 
-`--json` (`apiSurfaceSchemaVersion` `"1.1"`; MCP tool `api_surface` returns the same document
+`--json` (`apiSurfaceSchemaVersion` `"1.2"`; MCP tool `api_surface` returns the same document
 byte-for-byte):
 
 ```json
 {
-  "apiSurfaceSchemaVersion": "1.1",
+  "apiSurfaceSchemaVersion": "1.2",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "file": "models/checkout/checkout.em",
   "modelKey": "checkout",
@@ -1329,6 +1357,14 @@ byte-for-byte):
           "tag": false,
           "assigned": false,
           "renamedFrom": null
+        },
+        {
+          "name": "status",
+          "type": { "kind": "enum", "scalar": null, "base": null, "tsType": "OrderStatus", "array": false },
+          "optional": false,
+          "tag": false,
+          "assigned": false,
+          "renamedFrom": null
         }
       ],
       "invariants": [{ "id": "INV-CHK-1", "rule": "An order is submitted with a positive total" }]
@@ -1341,6 +1377,9 @@ byte-for-byte):
   ],
   "scalars": [
     { "name": "OrderId", "slug": "orderid", "base": "uuid" }
+  ],
+  "enums": [
+    { "name": "OrderStatus", "slug": "orderstatus", "members": ["placed", "shipped"] }
   ]
 }
 ```
@@ -1348,18 +1387,21 @@ byte-for-byte):
 - `commands`/`events`/`views` — the public elements, in export (timeline) order; `types` — every
   declared `type` reachable (transitively) from their fields, in declaration order; `scalars`
   (added in schema `1.1`, GH #477) — every declared identity scalar reachable the same way, in
-  declaration order (`{ name, slug, base }`, `base` the public scalar table key it extends).
-  Each element/type/scalar carries its `name` as written and its kebab `slug` (the same slugging
-  `em api check`'s element ids use).
+  declaration order (`{ name, slug, base }`, `base` the public scalar table key it extends);
+  `enums` (added in schema `1.2`, GH #478) — every declared enum reachable the same way, in
+  declaration order (`{ name, slug, members }`, `members` raw/unquoted, in declaration order).
+  Each element/type/scalar/enum carries its `name` as written and its kebab `slug` (the same
+  slugging `em api check`'s element ids use).
 - `type` — the field's resolved public type: `kind` is `"scalar"` (one of the fixed table's
   entries — `scalar` names the matched entry, `tsType` the TypeSpec core scalar `em api
   generate` emits for it, `base` always `null`), `"declared"` (`scalar`/`base` both `null`,
-  `tsType` is the declared type's name — find its own fields under `types`), or `"scalar-alias"`
+  `tsType` is the declared type's name — find its own fields under `types`), `"scalar-alias"`
   (added in schema `1.1`, GH #477: `scalar` is `null`, `base` is the public scalar table key the
-  alias extends, `tsType` is the alias's own name — find it under `scalars`); `array` is the
-  `[]` arity.
+  alias extends, `tsType` is the alias's own name — find it under `scalars`), or `"enum"` (added
+  in schema `1.2`, GH #478: `scalar`/`base` both `null`, `tsType` is the enum's own name — find
+  its members under `enums`); `array` is the `[]` arity.
 - Absent optionals are explicit `null`s (`renamedFrom`, `invariants`, a type's `scalar`, a
-  field's `base` on `"scalar"`/`"declared"`) — consumers destructure, never sniff.
+  field's `base` on `"scalar"`/`"declared"`/`"enum"`) — consumers destructure, never sniff.
 
 ## `em typespec <file>` (deprecated)
 
@@ -1456,6 +1498,16 @@ scalar has no fields of its own, so the only thing that can change about a survi
 type (reused rather than adding scalar-specific keys, since a scalar's `base` plays the same
 role a field's `type` does).
 
+**Declared enums** (`enum-added`/`enum-removed`/`enum-member-added`/`enum-member-removed`,
+added in schema `1.10`, GH #478, [dsl.md](dsl.md#enums)). Same ref-matched, no-slice-scoping,
+no-move-detection posture as declared types/scalars — an enum rename also reads as remove+add.
+An enum has no fields of its own, so the only thing that can change about a surviving one is
+its member set: `enum-member-added`/`enum-member-removed` carry the raw member string in the
+new `member` key (a dedicated key rather than reusing `field` — a member is a value, not a
+field name). This is `em diff`'s plain structural changelog — it does not classify a member
+change additive/breaking by role; that classification is `em api check --base`'s job (see
+above).
+
 Example output:
 
 ```
@@ -1471,7 +1523,7 @@ A moved element's own field/note/issue changes aren't further diffed in v1 — o
 itself is reported (`kind` + normalized name is the whole match key). Diff a version before
 and after a move separately if you need both.
 
-**`--json` shape** (`diffSchemaVersion: "1.9"`, versioned independently of the npm package,
+**`--json` shape** (`diffSchemaVersion: "1.10"`, versioned independently of the npm package,
 same policy as `em export`'s `schemaVersion`): stdout is exactly one JSON document (no text
 report). Diagnostics are still printed to stderr, *and* carried in the document.
 
@@ -1481,11 +1533,12 @@ report). Diagnostics are still printed to stderr, *and* carried in the document.
   that side's source text, so a consumer can pin exactly what was compared.
 - `identical` — `true` when the models have no structural differences (`hasChanges()`
   negated).
-- `counts` — the same 26 counters the text rollup line summarizes (`slicesAdded`,
+- `counts` — the same 29 counters the text rollup line summarizes (`slicesAdded`,
   `elementsMoved`, `fieldChanges`, `issuesResolved`, `sourceChanges`, `acceptedDivergences`,
   `eventsMarkedPublic`, `eventsUnmarkedPublic`, `typesAdded`, `typesRemoved`,
-  `typeFieldChanges`, `scalarsAdded`, `scalarsRemoved`, `scalarBaseChanges`, `slicesSplit`,
-  `slicesMerged`, `slicesSuperseded`, …), as-is.
+  `typeFieldChanges`, `scalarsAdded`, `scalarsRemoved`, `scalarBaseChanges`, `enumsAdded`,
+  `enumsRemoved`, `enumMemberChanges`, `slicesSplit`, `slicesMerged`, `slicesSuperseded`, …),
+  as-is.
 - `changes` — `ChangeEntry[]` in new-file document order (additions and changes).
 - `removals` — `ChangeEntry[]` in old-file document order.
 - `diagnostics` — both sides' warnings, flat and side-tagged:
@@ -1499,11 +1552,12 @@ Every key is a valid JavaScript identifier — hence `oldModel`/`newModel` rathe
 
 Every `ChangeEntry` carries all its optional fields (`kind`, `name`, `ref`, `sliceName`,
 `sliceKey`, `fromSlice`, `fromSliceKey`, `toSlice`, `toSliceKey`, `field`, `fieldType`,
-`oldType`, `newType`, `source`, `oldNote`, `newNote`, `oldText`, `newText`, `from`, `to`,
-`acceptedDivergence`, `splitFrom`, `mergedFrom`, `supersededBy`) — explicit `null` when unused
-by that entry's `type`, never omitted, so a typed consumer can destructure without sniffing
-for key presence (same convention as `em export`). Output is byte-deterministic for the same
-two inputs.
+`member`, `oldType`, `newType`, `source`, `oldNote`, `newNote`, `oldText`, `newText`, `from`,
+`to`, `acceptedDivergence`, `splitFrom`, `mergedFrom`, `supersededBy`) — explicit `null` when
+unused by that entry's `type`, never omitted, so a typed consumer can destructure without
+sniffing for key presence (same convention as `em export`). `member` (added in schema `1.10`,
+GH #478) is non-null only on `enum-member-added`/`enum-member-removed`. Output is
+byte-deterministic for the same two inputs.
 
 **Accepted divergence** (`acceptedDivergence`, added in schema `1.1`): non-null when the
 **old**-side (canonical) element behind this entry carries a `divergence "text"` annotation —
@@ -1526,9 +1580,11 @@ elements, `types/<slug>` for declared types); `sliceKey` is a slice's export key
 present on slice-scoped entries (`slice-added`/`slice-removed`, `source-*` — `sliceKey` only,
 no single element `ref` applies) and element-scoped entries (`element-added`/`element-removed`,
 `field-*`, `from-*`, `note-*`, `issue-*`, `event-marked-public`/`event-unmarked-public` — both
-`ref` and `sliceKey`). `type-added`/`type-removed`/`type-field-*` and
-`scalar-added`/`scalar-removed`/`scalar-base-changed` carry `ref` only — types and scalars
-aren't slice-scoped (a scalar's `ref` is `scalars/<slug>`, its own namespace, never `types/…`). `element-moved` carries `ref` (the element's new/target-side identity)
+`ref` and `sliceKey`). `type-added`/`type-removed`/`type-field-*`,
+`scalar-added`/`scalar-removed`/`scalar-base-changed`, and
+`enum-added`/`enum-removed`/`enum-member-added`/`enum-member-removed` carry `ref` only — types,
+scalars and enums aren't slice-scoped (a scalar's `ref` is `scalars/<slug>`, an enum's `ref` is
+`enums/<slug>`, each its own namespace, never `types/…`). `element-moved` carries `ref` (the element's new/target-side identity)
 plus `fromSliceKey`/`toSliceKey` alongside `fromSlice`/`toSlice`, mirroring that pair's shape.
 `arrow-added`/`arrow-removed` carry none of these — `em export` has no ref concept for arrows.
 A `~2`/`~3`-style dedupe suffix on a colliding name flows through automatically, since these

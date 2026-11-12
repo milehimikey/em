@@ -374,6 +374,114 @@ slice "S" {
   });
 });
 
+describe("declared enums (GH #478)", () => {
+  it("emits a reachable enum, members in declaration order, bare identifiers only", () => {
+    const { text } = generate(`
+enum OrderStatus { placed, shipped }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { status: OrderStatus }
+}
+`);
+    expect(text).toContain("enum OrderStatus { placed, shipped }");
+    expect(text).toContain("status: OrderStatus;");
+  });
+
+  it("emits a quoted member as TypeSpec's string-member form when it isn't a bare identifier", () => {
+    const { text } = generate(`
+enum OrderStatus { "out-of-stock", "in stock", shipped }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { status: OrderStatus }
+}
+`);
+    expect(text).toContain('enum OrderStatus { "out-of-stock", "in stock", shipped }');
+  });
+
+  it("emits the array form on the field, the enum decl unsuffixed", () => {
+    const { text } = generate(`
+enum OrderStatus { placed, shipped }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { statuses: OrderStatus[] }
+}
+`);
+    expect(text).toContain("statuses: OrderStatus[];");
+    expect((text.match(/enum OrderStatus \{ placed, shipped \}/g) ?? []).length).toBe(1);
+  });
+
+  it("placement: after scalar declarations, before type blocks", () => {
+    const { text } = generate(`
+scalar OrderId: uuid
+enum OrderStatus { placed, shipped }
+type Ref { status: OrderStatus }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { orderId: OrderId, ref: Ref }
+}
+`);
+    const scalarIndex = text.indexOf("scalar OrderId extends Uuid;");
+    const enumIndex = text.indexOf("enum OrderStatus { placed, shipped }");
+    const typeIndex = text.indexOf("model Ref {");
+    expect(scalarIndex).toBeGreaterThan(-1);
+    expect(scalarIndex).toBeLessThan(enumIndex);
+    expect(enumIndex).toBeLessThan(typeIndex);
+  });
+
+  it("declares no dead enum: a declared but unreferenced-from-the-public-surface enum emits nothing", () => {
+    const { text } = generate(`
+enum OrderStatus { placed, shipped }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { note: text }
+}
+`);
+    expect(text).not.toContain("OrderStatus");
+    expect(text).not.toContain("placed");
+  });
+
+  it("dedupes a colliding generated identifier through the same shared `usedNames` set the enum is allocated from first", () => {
+    const { text } = generate(`
+enum OrderStatus { placed, shipped }
+slice "S1" {
+  command Do Thing
+  event Thing Done @Domain public { status: OrderStatus }
+}
+slice "S2" {
+  command Order Status public
+}
+`);
+    expect(text).toContain("enum OrderStatus { placed, shipped }");
+    expect(text).toContain("model OrderStatus_2 {}");
+    expect(text).toContain("op orderStatus(payload: OrderStatus_2): void;");
+  });
+
+  it("a declared type's own field may also use an enum", () => {
+    const { text } = generate(`
+enum OrderStatus { placed, shipped }
+type Ref { status: OrderStatus }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { ref: Ref }
+}
+`);
+    expect(text).toContain("enum OrderStatus { placed, shipped }");
+    expect(text).toContain("status: OrderStatus;");
+  });
+
+  it("a model declaring no `enum` contributes nothing — the enum machinery leaves text byte-identical to before GH #478 (pinned on the committed example contracts separately)", () => {
+    const src = `
+scalar OrderId: uuid
+type Ref { orderId: OrderId }
+slice "S" {
+  command Do Thing
+  event Thing Done @Domain public { orderId: OrderId, ref: Ref }
+}
+`;
+    expect(generate(src).text).not.toMatch(/\benum\b/);
+  });
+});
+
 describe("optional fields (R8)", () => {
   it("emits `name?: T` on models, including a command's payload model", () => {
     const { text } = generate(`
@@ -618,7 +726,7 @@ describe("examples/multi-model: both models' committed contracts are current", (
 const surface = (src: string) => {
   const c = compile(src);
   const doc = buildExportDoc(c.model, c.refs, c.diagnostics, src, "m.em").doc;
-  return surfaceOf(doc.model.slices, doc.model.types);
+  return surfaceOf(doc.model.slices, doc.model.types, doc.model.enums);
 };
 const changes = (before: string, after: string) => diffSurfaces(surface(before), surface(after));
 const ev = (fields: string) => `slice "S" {\n  command Do public { x: string }\n  event Done @D public { ${fields} }\n}\n`;
@@ -738,6 +846,114 @@ describe("diffSurfaces: identity scalars (GH #477)", () => {
   });
 });
 
+// GH #478: an enum's own member set, diffed by the role(s) that reach it — the full matrix the
+// issue pins: member removed/renamed is breaking wherever the enum reaches an OUTPUT; member
+// added is breaking wherever it reaches an INPUT, additive on a pure output.
+describe("diffSurfaces: declared enums — member role matrix (GH #478)", () => {
+  // `both` puts the identical field list on a command AND an event, so a type/enum named there
+  // is reachable through both roles — the "input+output" cell of the matrix.
+  const both = (fields: string) => `slice "S" {\n  command Do public { ${fields} }\n  event Done @D public { ${fields} }\n}\n`;
+
+  describe("output-only (event field)", () => {
+    it("member removed is breaking", () => {
+      const before = `enum OrderStatus { placed, shipped }\n${ev("status: OrderStatus")}`;
+      const after = `enum OrderStatus { placed }\n${ev("status: OrderStatus")}`;
+      expect(changes(before, after)).toEqual([
+        { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "shipped" removed' },
+      ]);
+    });
+
+    it("member added is additive", () => {
+      const before = `enum OrderStatus { placed }\n${ev("status: OrderStatus")}`;
+      const after = `enum OrderStatus { placed, shipped }\n${ev("status: OrderStatus")}`;
+      expect(changes(before, after)).toEqual([
+        { kind: "additive", element: "enum.orderstatus", field: null, what: 'member "shipped" added' },
+      ]);
+    });
+  });
+
+  describe("input-only (command field)", () => {
+    it("member removed is additive", () => {
+      const before = `enum OrderStatus { placed, shipped }\n${cmd("status: OrderStatus")}`;
+      const after = `enum OrderStatus { placed }\n${cmd("status: OrderStatus")}`;
+      expect(changes(before, after)).toEqual([
+        { kind: "additive", element: "enum.orderstatus", field: null, what: 'member "shipped" removed' },
+      ]);
+    });
+
+    it("member added is breaking", () => {
+      const before = `enum OrderStatus { placed }\n${cmd("status: OrderStatus")}`;
+      const after = `enum OrderStatus { placed, shipped }\n${cmd("status: OrderStatus")}`;
+      expect(changes(before, after)).toEqual([
+        { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "shipped" added' },
+      ]);
+    });
+  });
+
+  describe("both input and output", () => {
+    it("member removed is breaking (output reach alone is enough)", () => {
+      const before = `enum OrderStatus { placed, shipped }\n${both("status: OrderStatus")}`;
+      const after = `enum OrderStatus { placed }\n${both("status: OrderStatus")}`;
+      expect(changes(before, after)).toEqual([
+        { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "shipped" removed' },
+      ]);
+    });
+
+    it("member added is breaking (input reach alone is enough)", () => {
+      const before = `enum OrderStatus { placed }\n${both("status: OrderStatus")}`;
+      const after = `enum OrderStatus { placed, shipped }\n${both("status: OrderStatus")}`;
+      expect(changes(before, after)).toEqual([
+        { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "shipped" added' },
+      ]);
+    });
+  });
+
+  it("a rename reads as remove+add, each half scored by its own rule (output-only: breaking removal, additive addition)", () => {
+    const before = `enum OrderStatus { placed, shipped }\n${ev("status: OrderStatus")}`;
+    const after = `enum OrderStatus { placed, delivered }\n${ev("status: OrderStatus")}`;
+    expect(changes(before, after)).toEqual([
+      { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "shipped" removed' },
+      { kind: "additive", element: "enum.orderstatus", field: null, what: 'member "delivered" added' },
+    ]);
+  });
+
+  it("a rename on an input-only enum scores the opposite way (additive removal, breaking addition)", () => {
+    const before = `enum OrderStatus { placed, shipped }\n${cmd("status: OrderStatus")}`;
+    const after = `enum OrderStatus { placed, delivered }\n${cmd("status: OrderStatus")}`;
+    expect(changes(before, after)).toEqual([
+      { kind: "additive", element: "enum.orderstatus", field: null, what: 'member "shipped" removed' },
+      { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "delivered" added' },
+    ]);
+  });
+
+  it("a whole enum added is additive, alongside the field's own type-changed entry (declaration-level, not a member diff)", () => {
+    expect(changes(ev("status: string"), `enum OrderStatus { placed, shipped }\n${ev("status: OrderStatus")}`)).toEqual([
+      { kind: "breaking", element: "event.done", field: "status", what: "type changed string → OrderStatus" },
+      { kind: "additive", element: "enum.orderstatus", field: null, what: "added" },
+    ]);
+  });
+
+  it("a whole enum removed is breaking, alongside the field's own type-changed entry", () => {
+    expect(changes(`enum OrderStatus { placed, shipped }\n${ev("status: OrderStatus")}`, ev("status: string"))).toEqual([
+      { kind: "breaking", element: "event.done", field: "status", what: "type changed OrderStatus → string" },
+      { kind: "breaking", element: "enum.orderstatus", field: null, what: "removed" },
+    ]);
+  });
+
+  it("no change when the enum and its usage are identical on both sides", () => {
+    const src = `enum OrderStatus { placed, shipped }\n${ev("status: OrderStatus")}`;
+    expect(changes(src, src)).toEqual([]);
+  });
+
+  it("a field switching from a bare enum reference to the raw table type is a breaking type change (same posture scalars get), and the now-unreachable enum reports removed", () => {
+    const withEnum = `enum OrderStatus { placed, shipped }\n${ev("a: OrderStatus")}`;
+    expect(changes(withEnum, ev("a: string"))).toEqual([
+      { kind: "breaking", element: "event.done", field: "a", what: "type changed OrderStatus → string" },
+      { kind: "breaking", element: "enum.orderstatus", field: null, what: "removed" },
+    ]);
+  });
+});
+
 // MIL-265: invariants on public elements are part of the contract.
 describe("invariants on the public surface (MIL-265)", () => {
   const withInv = (cmdInv: string, evInv = "", internalInv = "") =>
@@ -812,6 +1028,43 @@ describe("em api generate / check (CLI): identity scalars (GH #477)", () => {
       const doc = JSON.parse(c.stdout);
       expect(doc.changes).toEqual([
         { kind: "breaking", element: "event.bought", field: "orderId", what: "type changed uuid → OrderId" },
+      ]);
+    } finally {
+      rmTemp(dir);
+    }
+  });
+});
+
+describe("em api generate / check / surface (CLI): declared enums (GH #478)", () => {
+  it("generate writes the enum decl via the real CLI; surface reports it; check --base reports a member-added change breaking (the field is also an input)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-api-enum-"));
+    try {
+      writeFileSync(
+        join(dir, "shop.em"),
+        `model "Shop"\nenum OrderStatus { placed }\nslice "S" {\n  command Set Status public { status: OrderStatus }\n  event Bought @D public { orderId: uuid }\n}\n`,
+      );
+      gitInitQuiet(dir);
+      git(dir, "add", "-A");
+      git(dir, "commit", "-q", "-m", "seed");
+      let g = em(["api", "generate", "shop.em"], dir);
+      expect(g.status).toBe(0);
+      const s = em(["api", "surface", "shop.em", "--json"], dir);
+      expect(s.status).toBe(0);
+      const surfaceDoc = JSON.parse(s.stdout);
+      expect(surfaceDoc.enums).toEqual([{ name: "OrderStatus", slug: "orderstatus", members: ["placed"] }]);
+      writeFileSync(
+        join(dir, "shop.em"),
+        `model "Shop"\nenum OrderStatus { placed, shipped }\nslice "S" {\n  command Set Status public { status: OrderStatus }\n  event Bought @D public { orderId: uuid }\n}\n`,
+      );
+      g = em(["api", "generate", "shop.em"], dir);
+      expect(g.status).toBe(0);
+      const contract = readFileSync(join(dir, "contracts", "shop.tsp"), "utf8");
+      expect(contract).toContain("enum OrderStatus { placed, shipped }");
+      const c = em(["api", "check", "shop.em", "--base", "HEAD", "--json"], dir);
+      expect(c.status).toBe(0); // just regenerated, so current — --base annotation never affects the exit code
+      const doc = JSON.parse(c.stdout);
+      expect(doc.changes).toEqual([
+        { kind: "breaking", element: "enum.orderstatus", field: null, what: 'member "shipped" added' },
       ]);
     } finally {
       rmTemp(dir);
@@ -1160,6 +1413,22 @@ slice "S" {
   }
   event Order Placed @Domain public {
     orderId: OrderId
+  }
+}
+`);
+    const { status, out } = tspCompile(text);
+    expect(status, `tsp compile failed:\n${out}`).toBe(0);
+  });
+
+  it("a fixture with a declared enum (bare and quoted string members) compiles (GH #478)", () => {
+    const { text } = generate(`
+enum OrderStatus { placed, shipped, "out-of-stock" }
+slice "S" {
+  command Place Order public {
+    status: OrderStatus
+  }
+  event Order Placed @Domain public {
+    statuses: OrderStatus[]
   }
 }
 `);

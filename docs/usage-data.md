@@ -83,6 +83,7 @@ affected lines written by hand.
 | doc omits event view reads |
 | doc pattern disagrees with model |
 | duplicate element ref |
+| duplicate enum ref |
 | duplicate model key |
 | duplicate name referenced |
 | duplicate scalar ref |
@@ -148,6 +149,10 @@ affected lines written by hand.
 | consumes unknown model |
 | derived from names unresolved event |
 | duplicate tag key |
+| enum duplicate member |
+| enum duplicate name |
+| enum empty |
+| enum name collision |
 | event feeds earlier view instance |
 | illegal connection |
 | invariant id declared twice |

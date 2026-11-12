@@ -9,14 +9,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { NormalizedModel, ScalarDecl, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
+import { EnumDecl, NormalizedModel, ScalarDecl, TypeDecl, normalizeName, resolvePublicType } from "../model/model.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { hasErrors, Diagnostic } from "../model/validate.js";
 import { compile, compileModelFile } from "../pipeline.js";
 import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
-import { buildApiContract, publicSurfaceOf, reachableScalarRefs, reachableTypeRefs } from "../emit/api.js";
-import { buildExportDoc, ElementExport, FieldExport, TypeExport } from "../emit/json.js";
+import { buildApiContract, publicSurfaceOf, reachableEnumRefs, reachableScalarRefs, reachableTypeRefs } from "../emit/api.js";
+import { buildExportDoc, ElementExport, EnumExport, FieldExport, TypeExport } from "../emit/json.js";
 import { RefsResult } from "../model/refs.js";
 import { kebabSlug } from "../util/slug.js";
 import { GitRunner, realGit, resolveRevision } from "./diff-inputs.js";
@@ -77,7 +77,7 @@ export interface ApiCheckChange {
 type Role = "input" | "output";
 
 interface SurfaceEntry {
-  /** command | event | view | type */
+  /** command | event | view | type | enum */
   kind: string;
   name: string;
   /** Normalized identity key: kind + normalizeName(name). */
@@ -85,8 +85,10 @@ interface SurfaceEntry {
   fields: FieldExport[];
   renamedFrom: string[];
   roles: Set<Role>;
-  /** Model-declared invariants (MIL-265), declaration order; `[]` for a type. */
+  /** Model-declared invariants (MIL-265), declaration order; `[]` for a type/enum. */
   invariants: { id: string; rule: string | null }[];
+  /** GH #478: an enum's own members, in declaration order — `[]` for every non-enum kind. */
+  members: string[];
 }
 
 interface Surface {
@@ -100,14 +102,29 @@ const keyOf = (kind: string, name: string) => `${kind}:${normalizeName(name)}`;
 
 
 /** Build the public surface of one compiled model: public commands (input), events and views
- *  (output), and every declared type reachable from them (carrying the roles that reach it). */
-export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeExport[]): Surface {
+ *  (output), and every declared type/enum reachable from them (carrying the roles that reach
+ *  it — GH #478 extends the existing type-reach walk to also track an `enumRef` field,
+ *  directly or through a reachable type's own fields, the same way `reachableEnumRefs`
+ *  (emit/api.ts) tracks it for `em api generate`). `enums` defaults to `[]` so every existing
+ *  caller (and the one test helper that built a `Surface` before enums existed) keeps compiling
+ *  without a required third argument at a call site that never has one. */
+export function surfaceOf(
+  slices: { elements: ElementExport[] }[],
+  types: TypeExport[],
+  enums: EnumExport[] = [],
+): Surface {
   const s = publicSurfaceOf(slices);
   const entries: SurfaceEntry[] = [];
   const typesByRef = new Map(types.map((t) => [t.ref, t]));
   const typeRoles = new Map<string, Set<Role>>();
+  const enumRoles = new Map<string, Set<Role>>();
   const reach = (fields: FieldExport[] | null, role: Role) => {
     for (const f of fields ?? []) {
+      if (f.enumRef) {
+        const roles = enumRoles.get(f.enumRef.ref) ?? new Set<Role>();
+        roles.add(role);
+        enumRoles.set(f.enumRef.ref, roles);
+      }
       if (!f.typeRef) continue;
       const roles = typeRoles.get(f.typeRef.ref) ?? new Set<Role>();
       if (roles.has(role)) continue;
@@ -125,6 +142,7 @@ export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeEx
       renamedFrom: el.renamedFrom ?? [],
       roles: new Set([role]),
       invariants: el.invariants ?? [],
+      members: [],
     });
     reach(el.fields, role);
   };
@@ -134,19 +152,26 @@ export function surfaceOf(slices: { elements: ElementExport[] }[], types: TypeEx
   for (const t of types) {
     const roles = typeRoles.get(t.ref);
     if (!roles) continue;
-    entries.push({ kind: "type", name: t.name, key: keyOf("type", t.name), fields: t.fields, renamedFrom: [], roles, invariants: [] });
+    entries.push({ kind: "type", name: t.name, key: keyOf("type", t.name), fields: t.fields, renamedFrom: [], roles, invariants: [], members: [] });
+  }
+  for (const e of enums) {
+    const roles = enumRoles.get(e.ref);
+    if (!roles) continue;
+    entries.push({ kind: "enum", name: e.name, key: keyOf("enum", e.name), fields: [], renamedFrom: [], roles, invariants: [], members: e.members });
   }
   const allElements = new Set<string>();
   for (const slice of slices) for (const el of slice.elements) allElements.add(keyOf(el.kind, el.name));
   for (const t of types) allElements.add(keyOf("type", t.name));
+  for (const e of enums) allElements.add(keyOf("enum", e.name));
   return { entries, allElements };
 }
 
-/** A field's type as the contract sees it: a declared type's or identity scalar's name, or the
- *  raw string, normalized, with its array arity. */
-export function typeLabel(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef">): string {
+/** A field's type as the contract sees it: a declared type's, identity scalar's or enum's
+ *  name, or the raw string, normalized, with its array arity. */
+export function typeLabel(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef" | "enumRef">): string {
   if (f.typeRef) return `${f.typeRef.name}${f.typeRef.array ? "[]" : ""}`;
   if (f.scalarRef) return `${f.scalarRef.name}${f.scalarRef.array ? "[]" : ""}`;
+  if (f.enumRef) return `${f.enumRef.name}${f.enumRef.array ? "[]" : ""}`;
   return f.type ?? "(none)";
 }
 /**
@@ -155,11 +180,14 @@ export function typeLabel(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef">
  * registers as a type change on every field that uses it, even though the scalar's own ref and
  * the field's array arity are unchanged. This reuses `diffFields`' existing per-field
  * `compare()` rather than adding a second comparison path — see its `scalarRef`-aware branch
- * below for the breaking-change message this produces.
+ * below for the breaking-change message this produces. GH #478: `enumRef` needs no equivalent
+ * fold — an enum's MEMBER changes are diffed on the enum's own `SurfaceEntry` (`diffEnumMembers`
+ * below), not per using field, so `ref`/`array` alone identify a field's enum reference here.
  */
-export function typeIdentity(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef">): string {
+export function typeIdentity(f: Pick<FieldExport, "type" | "typeRef" | "scalarRef" | "enumRef">): string {
   if (f.typeRef) return `ref:${f.typeRef.ref}:${f.typeRef.array}`;
   if (f.scalarRef) return `ref:${f.scalarRef.ref}:${f.scalarRef.array}:${f.scalarRef.base}`;
+  if (f.enumRef) return `enum-ref:${f.enumRef.ref}:${f.enumRef.array}`;
   return `raw:${(f.type ?? "").replace(/\s+/g, "").toLowerCase()}`;
 }
 
@@ -242,6 +270,36 @@ function diffFields(base: SurfaceEntry, head: SurfaceEntry, element: string, out
   }
 }
 
+/**
+ * GH #478: an enum's own member set, base vs HEAD, diffed by role (the same `isInput`/
+ * `isOutput` union `diffFields` computes above) — the issue's pinned severity matrix:
+ *   - member REMOVED (or, since there's no rename clause, the removal half of what reads as a
+ *     rename) is breaking wherever the enum reaches an OUTPUT (an existing receiver may still
+ *     expect that known value) — not conditioned on input reach at all.
+ *   - member ADDED is breaking wherever the enum reaches an INPUT (existing senders are
+ *     unaffected; a strict receiver built against the old member set rejects the new value) —
+ *     additive on a PURE output (`isInput` false): a receiver tolerates an unknown value.
+ * A rename is never detected as such (same "no rename detection" posture `em diff` already
+ * takes for a `type`/element rename, model/diff.ts) — it reads as remove+add, each half scored
+ * independently by the rules above. Base order first (removals), then HEAD-only (additions),
+ * same convention `diffFields` uses.
+ */
+function diffEnumMembers(base: SurfaceEntry, head: SurfaceEntry, element: string, out: ApiCheckChange[]): void {
+  const roles = new Set([...base.roles, ...head.roles]);
+  const isInput = roles.has("input");
+  const isOutput = roles.has("output");
+  const baseKeys = new Set(base.members.map(normalizeName));
+  const headKeys = new Set(head.members.map(normalizeName));
+  for (const b of base.members) {
+    if (headKeys.has(normalizeName(b))) continue;
+    out.push({ kind: isOutput ? "breaking" : "additive", element, field: null, what: `member "${b}" removed` });
+  }
+  for (const h of head.members) {
+    if (baseKeys.has(normalizeName(h))) continue;
+    out.push({ kind: isInput ? "breaking" : "additive", element, field: null, what: `member "${h}" added` });
+  }
+}
+
 /** MIL-265: a public element's invariants, base vs HEAD, matched by ID. Added or rule text
  *  changed = breaking (the contract got tighter); removed = additive (looser). HEAD order for
  *  additions/changes, then base order for removals. */
@@ -274,7 +332,8 @@ export function diffSurfaces(base: Surface | null, head: Surface): ApiCheckChang
     const same = baseByKey.get(h.key);
     if (same) {
       matchedBase.add(same.key);
-      diffFields(same, h, element, out);
+      if (h.kind === "enum") diffEnumMembers(same, h, element, out);
+      else diffFields(same, h, element, out);
       diffInvariants(same, h, element, out);
       continue;
     }
@@ -284,11 +343,12 @@ export function diffSurfaces(base: Surface | null, head: Surface): ApiCheckChang
     if (renamedFrom) {
       matchedBase.add(renamedFrom.key);
       out.push({ kind: "breaking", element, field: null, what: `renamed from "${renamedFrom.name}"` });
-      diffFields(renamedFrom, h, element, out);
+      if (h.kind === "enum") diffEnumMembers(renamedFrom, h, element, out);
+      else diffFields(renamedFrom, h, element, out);
       diffInvariants(renamedFrom, h, element, out);
       continue;
     }
-    if (h.kind !== "type" && base.allElements.has(h.key)) {
+    if (h.kind !== "type" && h.kind !== "enum" && base.allElements.has(h.key)) {
       out.push({ kind: "additive", element, field: null, what: "marked public" });
     } else {
       out.push({ kind: "additive", element, field: null, what: "added" });
@@ -297,7 +357,7 @@ export function diffSurfaces(base: Surface | null, head: Surface): ApiCheckChang
   for (const b of base.entries) {
     if (matchedBase.has(b.key)) continue;
     const element = elementId(b);
-    if (b.kind !== "type" && head.allElements.has(b.key)) {
+    if (b.kind !== "type" && b.kind !== "enum" && head.allElements.has(b.key)) {
       out.push({ kind: "breaking", element, field: null, what: "`public` dropped" });
     } else {
       out.push({ kind: "breaking", element, field: null, what: "removed" });
@@ -365,7 +425,7 @@ export function runApiCheck(file: string, base: string | undefined, runGit: GitR
       return { ok: false, message: `em api check: unknown revision "${base}" (needed for --base)`, diagnostics: head.diagnostics };
     }
     const headDoc = buildExportDoc(head.model, head.refs, head.diagnostics, head.source, file).doc;
-    const headSurface = surfaceOf(headDoc.model.slices, headDoc.model.types);
+    const headSurface = surfaceOf(headDoc.model.slices, headDoc.model.types, headDoc.model.enums);
     const atBase = resolveRevision(file, base, runGit);
     let baseSurface: Surface | null = null;
     if (atBase.ok) {
@@ -392,7 +452,7 @@ export function runApiCheck(file: string, base: string | undefined, runGit: GitR
       // Base-side validate errors (e.g. a pre-1.14 free-text public type) do not block the
       // structural diff — the diff reads shapes, not strictness.
       const baseDoc = buildExportDoc(baseCompiled.model, baseCompiled.refs, baseCompiled.diagnostics, atBase.content, file).doc;
-      baseSurface = surfaceOf(baseDoc.model.slices, baseDoc.model.types);
+      baseSurface = surfaceOf(baseDoc.model.slices, baseDoc.model.types, baseDoc.model.enums);
     } else if (!/is not tracked by git/.test(atBase.message)) {
       return { ok: false, message: atBase.message.replace(/^em diff:/, "em api check:"), diagnostics: head.diagnostics };
     }
@@ -423,18 +483,20 @@ export function formatApiCheckText(r: ApiCheckReport): string[] {
 
 // ---- `em api surface` (GH #448) ---------------------------------------------------------
 
-/** A public field's resolved type (R7's fixed table, a declared identity scalar, or a declared
- *  type), the same shape `resolvePublicType` (model/model.ts) computes — `scalar` carries the
- *  matched table entry's key and the TypeSpec core scalar `em api generate` emits for it;
- *  `declared` carries the reachable type's own name (see `ApiSurfaceType` below for its full
- *  field shape); `scalar-alias` (GH #477, schema 1.1) carries the declared identity scalar's own
- *  name in `tsType` (what actually appears in the generated contract, same convention
- *  `declared` already uses) and the table key it extends in `base` — `scalar`/`declared` leave
- *  `base` `null`. */
+/** A public field's resolved type (R7's fixed table, a declared identity scalar, a declared
+ *  enum, or a declared type), the same shape `resolvePublicType` (model/model.ts) computes —
+ *  `scalar` carries the matched table entry's key and the TypeSpec core scalar `em api
+ *  generate` emits for it; `declared` carries the reachable type's own name (see
+ *  `ApiSurfaceType` below for its full field shape); `scalar-alias` (GH #477, schema 1.1)
+ *  carries the declared identity scalar's own name in `tsType` (what actually appears in the
+ *  generated contract, same convention `declared` already uses) and the table key it extends
+ *  in `base` — `scalar`/`declared` leave `base` `null`; `enum` (GH #478, schema 1.2) carries
+ *  the declared enum's own name in `tsType`, same convention — find its members under the
+ *  report's own `enums` list. */
 export interface ApiSurfaceFieldType {
-  kind: "scalar" | "declared" | "scalar-alias";
+  kind: "scalar" | "declared" | "scalar-alias" | "enum";
   scalar: string | null;
-  /** The `PUBLIC_SCALAR_TYPES` key a `scalar-alias` extends; `null` for `scalar`/`declared`. */
+  /** The `PUBLIC_SCALAR_TYPES` key a `scalar-alias` extends; `null` for every other kind. */
   base: string | null;
   tsType: string;
   array: boolean;
@@ -475,6 +537,14 @@ export interface ApiSurfaceScalar {
   base: string;
 }
 
+/** One declared `enum Name { member, … }` reachable from a public command/event/view's fields
+ *  (GH #478, schema 1.2) — `members` in declaration order, raw (unquoted). */
+export interface ApiSurfaceEnum {
+  name: string;
+  slug: string;
+  members: string[];
+}
+
 export interface ApiSurfaceReport {
   file: string;
   modelKey: string;
@@ -483,6 +553,7 @@ export interface ApiSurfaceReport {
   views: ApiSurfaceElement[];
   types: ApiSurfaceType[];
   scalars: ApiSurfaceScalar[];
+  enums: ApiSurfaceEnum[];
 }
 
 export type ApiSurfaceOutcome =
@@ -491,16 +562,18 @@ export type ApiSurfaceOutcome =
 
 /** Resolve one field's public type exactly as `em api generate`'s own `fieldType()` does
  *  (emit/api.ts) — declared types win (same precedence `resolvePublicType` already gives), then
- *  a declared identity scalar (GH #477), else the fixed scalar table. A model with errors never
- *  reaches here (both CLI callers refuse first), so an unresolved type is a programming error,
- *  not a user-facing case — same posture as `buildApiContract`'s own throw. */
+ *  a declared identity scalar (GH #477), then a declared enum (GH #478), else the fixed scalar
+ *  table. A model with errors never reaches here (both CLI callers refuse first), so an
+ *  unresolved type is a programming error, not a user-facing case — same posture as
+ *  `buildApiContract`'s own throw. */
 function surfaceFieldType(
   f: FieldExport,
   typesByName: Map<string, TypeDecl>,
   scalarsByName: Map<string, ScalarDecl>,
+  enumsByName: Map<string, EnumDecl>,
   owner: string,
 ): ApiSurfaceFieldType {
-  const r = resolvePublicType(f.type ?? undefined, typesByName, scalarsByName);
+  const r = resolvePublicType(f.type ?? undefined, typesByName, scalarsByName, enumsByName);
   if (!r) {
     throw new Error(
       `em api surface: ${owner} field "${f.name}" has no public type — em validate's ` +
@@ -511,6 +584,7 @@ function surfaceFieldType(
   if (r.kind === "identity") {
     return { kind: "scalar-alias", scalar: null, base: r.base, tsType: r.scalarDecl.name, array: r.array };
   }
+  if (r.kind === "enum") return { kind: "enum", scalar: null, base: null, tsType: r.enumDecl.name, array: r.array };
   return { kind: "declared", scalar: null, base: null, tsType: r.typeDecl.name, array: r.array };
 }
 
@@ -518,11 +592,12 @@ function surfaceField(
   f: FieldExport,
   typesByName: Map<string, TypeDecl>,
   scalarsByName: Map<string, ScalarDecl>,
+  enumsByName: Map<string, EnumDecl>,
   owner: string,
 ): ApiSurfaceField {
   return {
     name: f.name,
-    type: surfaceFieldType(f, typesByName, scalarsByName, owner),
+    type: surfaceFieldType(f, typesByName, scalarsByName, enumsByName, owner),
     optional: f.optional,
     tag: f.tag,
     assigned: f.assigned,
@@ -534,11 +609,12 @@ function surfaceElement(
   el: ElementExport,
   typesByName: Map<string, TypeDecl>,
   scalarsByName: Map<string, ScalarDecl>,
+  enumsByName: Map<string, EnumDecl>,
 ): ApiSurfaceElement {
   return {
     name: el.name,
     slug: kebabSlug(el.name),
-    fields: (el.fields ?? []).map((f) => surfaceField(f, typesByName, scalarsByName, `${el.kind} "${el.name}"`)),
+    fields: (el.fields ?? []).map((f) => surfaceField(f, typesByName, scalarsByName, enumsByName, `${el.kind} "${el.name}"`)),
     invariants: el.invariants ?? null,
   };
 }
@@ -547,8 +623,9 @@ function surfaceElement(
  * Build the `em api surface` report for an already-validated (error-free) model: the `public`
  * commands/events/views (`publicSurfaceOf`, same as `em api generate`/`em api check`) plus every
  * declared type reachable from their fields (`reachableTypeRefs`, same walk `em api generate`'s
- * contract body uses) and every declared identity scalar reachable the same way
- * (`reachableScalarRefs`, GH #477), each field's type resolved through `resolvePublicType` — the
+ * contract body uses), every declared identity scalar reachable the same way
+ * (`reachableScalarRefs`, GH #477), and every declared enum reachable the same way
+ * (`reachableEnumRefs`, GH #478), each field's type resolved through `resolvePublicType` — the
  * one notion of the public surface every em surface shares, so a companion tool never re-derives
  * it from `em export --json` and risks drifting from it.
  */
@@ -564,22 +641,26 @@ export function buildApiSurfaceReport(
   const typesByRef = new Map(doc.model.types.map((t) => [t.ref, t]));
   const reachable = reachableTypeRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
   const reachableScalars = reachableScalarRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
+  const reachableEnums = reachableEnumRefs([...surface.commands, ...surface.events, ...surface.views], typesByRef);
   return {
     file,
     modelKey: doc.model.key,
-    commands: surface.commands.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName)),
-    events: surface.events.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName)),
-    views: surface.views.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName)),
+    commands: surface.commands.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName, model.enumsByName)),
+    events: surface.events.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName, model.enumsByName)),
+    views: surface.views.map((el) => surfaceElement(el, model.typesByName, model.scalarsByName, model.enumsByName)),
     types: doc.model.types
       .filter((t) => reachable.has(t.ref))
       .map((t) => ({
         name: t.name,
         slug: kebabSlug(t.name),
-        fields: t.fields.map((f) => surfaceField(f, model.typesByName, model.scalarsByName, `type "${t.name}"`)),
+        fields: t.fields.map((f) => surfaceField(f, model.typesByName, model.scalarsByName, model.enumsByName, `type "${t.name}"`)),
       })),
     scalars: doc.model.scalars
       .filter((s) => reachableScalars.has(s.ref))
       .map((s) => ({ name: s.name, slug: kebabSlug(s.name), base: s.base })),
+    enums: doc.model.enums
+      .filter((e) => reachableEnums.has(e.ref))
+      .map((e) => ({ name: e.name, slug: kebabSlug(e.name), members: e.members })),
   };
 }
 
@@ -632,9 +713,13 @@ export function formatApiSurfaceText(r: ApiSurfaceReport): string[] {
     lines.push("scalars:");
     for (const s of r.scalars) lines.push(`  ${s.slug} extends ${s.base}`);
   }
+  if (r.enums.length > 0) {
+    lines.push("enums:");
+    for (const e of r.enums) lines.push(`  ${e.slug} { ${e.members.join(", ")} }`);
+  }
   if (
     r.commands.length === 0 && r.events.length === 0 && r.views.length === 0 &&
-    r.types.length === 0 && r.scalars.length === 0
+    r.types.length === 0 && r.scalars.length === 0 && r.enums.length === 0
   ) {
     lines.push("(no public surface)");
   }

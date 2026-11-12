@@ -248,7 +248,7 @@ slice "Orders Again" {
   it("lists `edges` after `arrows` on `model`, and exports `[]` for a model with no connections", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc.model)).toEqual([
-      "name", "key", "owner", "personas", "contexts", "hasAutomation", "version", "types", "scalars", "slices", "storylines", "storylineEdges", "arrows", "edges",
+      "name", "key", "owner", "personas", "contexts", "hasAutomation", "version", "types", "scalars", "enums", "slices", "storylines", "storylineEdges", "arrows", "edges",
     ]);
     expect(docOf(`slice "Lonely" {
   event Nothing Happened
@@ -439,16 +439,16 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[0].fields;
     expect(fields).toEqual([
-      { name: "priceId", type: "UUID", typeRef: null, scalarRef: null, tag: true, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "productId", type: "UUID", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "priceId", type: "UUID", typeRef: null, scalarRef: null, enumRef: null, tag: true, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "productId", type: "UUID", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
   it("exports `tag: false` on every field of a declared type (types carry no tag clause)", () => {
     const doc = docOf(`type Money { amount: int, currency: String }`);
     expect(doc.model.types[0].fields).toEqual([
-      { name: "amount", type: "int", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "currency", type: "String", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "amount", type: "int", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "currency", type: "String", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
@@ -568,12 +568,12 @@ slice "S" {
 }
 `);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "paymentId", type: "UUID", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
       {
         name: "amountCents",
         type: "long",
         typeRef: null,
-        scalarRef: null,
+        scalarRef: null, enumRef: null,
         tag: false,
         renamedFrom: ["amount", "amt"],
         assigned: false,
@@ -603,7 +603,7 @@ slice "S" {
     );
     const evt = doc.model.slices[0].elements[0];
     expect(evt.fields).toEqual([
-      { name: "paymentId", type: "UUID", typeRef: null, scalarRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "paymentId", type: "UUID", typeRef: null, scalarRef: null, enumRef: null, tag: true, renamedFrom: ["id", "pid"], assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
     expect(evt.tags).toEqual([
       { key: "paymentId", kind: "identity", fields: ["paymentId"], description: null },
@@ -627,9 +627,9 @@ slice "S" {
 `);
     const fields = doc.model.slices[0].elements[1].fields;
     expect(fields).toEqual([
-      { name: "orderId", type: null, typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "customerId", type: null, typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "placedAt", type: "Instant", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "orderId", type: null, typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "customerId", type: null, typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "placedAt", type: "Instant", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: true, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
@@ -677,8 +677,8 @@ slice "T" {
 `);
     const view = doc.model.slices[1].elements.find((e: any) => e.kind === "view");
     expect(view.fields).toEqual([
-      { name: "entryId", type: null, typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "position", type: null, typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: true, derivedFrom: null, collection: false, optional: false },
+      { name: "entryId", type: null, typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "position", type: null, typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: true, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
@@ -709,12 +709,12 @@ slice "T" {
 `);
     const view = doc.model.slices[2].elements.find((e: any) => e.kind === "view");
     expect(view.fields).toEqual([
-      { name: "roomId", type: null, typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "roomId", type: null, typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
       {
         name: "availability",
         type: "String",
         typeRef: null,
-        scalarRef: null,
+        scalarRef: null, enumRef: null,
         tag: false,
         renamedFrom: null,
         assigned: false,
@@ -860,8 +860,8 @@ slice "Catalog" {
     expect(event.note).toBe("notes/stock.md");
     expect(event.issue).toBe("still open?");
     expect(event.fields).toEqual([
-      { name: "sku", type: null, typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "qty", type: "Int", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "sku", type: null, typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "qty", type: "Int", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
@@ -1028,9 +1028,9 @@ slice "Accept" {
     expect(t.name).toBe("QuoteAcceptedLine");
     expect(typeof t.line).toBe("number");
     expect(t.fields).toEqual([
-      { name: "lineId", type: "UUID", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "unitPrice", type: "Money", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
-      { name: "discountIds", type: "UUID[]", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "lineId", type: "UUID", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "unitPrice", type: "Money", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "discountIds", type: "UUID[]", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
@@ -1038,12 +1038,12 @@ slice "Accept" {
     const doc = docOf(SRC);
     const eventFields = doc.model.slices[0].elements[1].fields;
     expect(eventFields).toEqual([
-      { name: "quoteId", type: "UUID", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "quoteId", type: "UUID", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
       {
         name: "lines",
         type: "QuoteAcceptedLine[]",
         typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: true },
-        scalarRef: null,
+        scalarRef: null, enumRef: null,
         tag: false,
         renamedFrom: null,
         assigned: false,
@@ -1056,7 +1056,7 @@ slice "Accept" {
         name: "winner",
         type: "QuoteAcceptedLine",
         typeRef: { name: "QuoteAcceptedLine", ref: "types/quoteacceptedline", array: false },
-        scalarRef: null,
+        scalarRef: null, enumRef: null,
         tag: false,
         renamedFrom: null,
         assigned: false,
@@ -1079,7 +1079,7 @@ type Order { billing: Address }
         name: "billing",
         type: "Address",
         typeRef: { name: "Address", ref: "types/address", array: false },
-        scalarRef: null,
+        scalarRef: null, enumRef: null,
         tag: false,
         renamedFrom: null,
         collection: false,
@@ -1095,11 +1095,102 @@ type Order { billing: Address }
     const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
     expect(doc.model.types).toEqual([]);
     expect(doc.model.slices[0].elements[0].fields).toEqual([
-      { name: "a", type: "Money", typeRef: null, scalarRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+      { name: "a", type: "Money", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
     ]);
   });
 
   it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
+    expect(docOf(SRC).schemaVersion).toBe("1.21");
+  });
+});
+
+describe("declared `enum` export (GH #478, schema 1.21)", () => {
+  const SRC = `
+enum OrderStatus { placed, shipped, "out-of-stock" }
+slice "S" {
+  command Set Status
+  event Status Set {
+    status: OrderStatus
+    history: OrderStatus[]
+  }
+}
+`;
+
+  it("lists every declared enum under model.enums with a stable ref, name, members (raw, unquoted), and line", () => {
+    const doc = docOf(SRC);
+    expect(doc.model.enums).toHaveLength(1);
+    const e = doc.model.enums[0];
+    expect(e.ref).toBe("enums/orderstatus");
+    expect(e.name).toBe("OrderStatus");
+    expect(e.members).toEqual(["placed", "shipped", "out-of-stock"]);
+    expect(typeof e.line).toBe("number");
+  });
+
+  it("resolves enumRef on an ordinary element field referencing a declared enum, bare and array", () => {
+    const doc = docOf(SRC);
+    const eventFields = doc.model.slices[0].elements[1].fields;
+    expect(eventFields).toEqual([
+      {
+        name: "status",
+        type: "OrderStatus",
+        typeRef: null,
+        scalarRef: null,
+        enumRef: { name: "OrderStatus", ref: "enums/orderstatus", array: false },
+        tag: false,
+        renamedFrom: null,
+        assigned: false,
+        derived: false,
+        derivedFrom: null,
+        collection: false,
+        optional: false,
+      },
+      {
+        name: "history",
+        type: "OrderStatus[]",
+        typeRef: null,
+        scalarRef: null,
+        enumRef: { name: "OrderStatus", ref: "enums/orderstatus", array: true },
+        tag: false,
+        renamedFrom: null,
+        assigned: false,
+        derived: false,
+        derivedFrom: null,
+        collection: false,
+        optional: false,
+      },
+    ]);
+  });
+
+  it("resolves enumRef on a declared type's own field referencing an enum", () => {
+    const doc = docOf(`
+enum OrderStatus { placed, shipped }
+type Ref { status: OrderStatus }
+`);
+    const ref = doc.model.types.find((t: any) => t.name === "Ref");
+    expect(ref.fields[0]).toMatchObject({
+      name: "status",
+      type: "OrderStatus",
+      typeRef: null,
+      scalarRef: null,
+      enumRef: { name: "OrderStatus", ref: "enums/orderstatus", array: false },
+    });
+  });
+
+  it("emits enums: [] and every field's enumRef: null for a model with no `enum` declarations", () => {
+    const doc = docOf(`slice "S" {\n  event E { a: Money }\n}`);
+    expect(doc.model.enums).toEqual([]);
+    expect(doc.model.slices[0].elements[0].fields).toEqual([
+      { name: "a", type: "Money", typeRef: null, scalarRef: null, enumRef: null, tag: false, renamedFrom: null, assigned: false, derived: false, derivedFrom: null, collection: false, optional: false },
+    ]);
+  });
+
+  it("exports the same source text to byte-identical JSON twice (determinism, enums included)", () => {
+    const doc1 = JSON.stringify(docOf(SRC));
+    const doc2 = JSON.stringify(docOf(SRC));
+    expect(doc1).toBe(doc2);
+  });
+
+  it("schemaVersion stays 1.21 — GH #478 rides GH #477's bump, same release (additive-only)", () => {
     expect(docOf(SRC).schemaVersion).toBe("1.21");
   });
 });

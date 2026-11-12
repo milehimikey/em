@@ -2469,6 +2469,12 @@ slice "S" {
       codes(`scalar OrderId: uuid\nslice "S" {\n  command Do\n  event Done @D public { a: OrderId, b: OrderId[] }\n}\n`),
     ).toEqual([]);
   });
+
+  it("a declared enum satisfies the strict table directly, bare and as an array (GH #478)", () => {
+    expect(
+      codes(`enum OrderStatus { placed, shipped }\nslice "S" {\n  command Do\n  event Done @D public { a: OrderStatus, b: OrderStatus[] }\n}\n`),
+    ).toEqual([]);
+  });
 });
 
 describe("scalar declarations (GH #477)", () => {
@@ -2530,6 +2536,85 @@ slice "S" {
   it("a model with no scalar/type collision and a valid base is clean", () => {
     const d = diagsFor(`scalar OrderId: uuid\nslice "S" {\n  command Do public { a: OrderId }\n}\n`);
     expect(d.filter((x) => x.severity === "error")).toEqual([]);
+  });
+});
+
+describe("enum declarations (GH #478)", () => {
+  const codesOf = (src: string, code: string) => diagsFor(src).filter((d) => d.code === code);
+
+  it("enum-empty: errors when the enum has no members", () => {
+    const d = codesOf(`enum OrderStatus {}\nslice "S" {\n  command Do\n}\n`, "enum-empty");
+    expect(d).toEqual([
+      {
+        severity: "error",
+        code: "enum-empty",
+        message: 'enum "OrderStatus" has no members — give it at least one',
+        line: 1,
+        refs: ["enums/orderstatus"],
+      },
+    ]);
+  });
+
+  it("enum-duplicate-member: errors on a case-insensitive duplicate member within one enum", () => {
+    const d = codesOf(`enum OrderStatus { placed, Placed }\nslice "S" {\n  command Do\n}\n`, "enum-duplicate-member");
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({
+      severity: "error",
+      line: 1,
+      message: expect.stringContaining('enum "OrderStatus" has duplicate member "placed"/"Placed"'),
+      refs: ["enums/orderstatus"],
+    });
+  });
+
+  it("enum-duplicate-member: a model with no duplicate member is clean", () => {
+    expect(codesOf(`enum OrderStatus { placed, shipped }\nslice "S" {\n  command Do\n}\n`, "enum-duplicate-member")).toEqual([]);
+  });
+
+  it("enum-duplicate-name: errors when the same enum name is declared twice, naming both lines", () => {
+    const d = codesOf(`enum OrderStatus { placed }\nenum OrderStatus { shipped }\nslice "S" {\n  command Do\n}\n`, "enum-duplicate-name");
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ severity: "error", line: 1, message: expect.stringContaining('enum "OrderStatus" is declared 2 times') });
+    expect(d[0].refs).toHaveLength(2);
+  });
+
+  it("enum-name-collision: errors when an enum and a declared type share a name", () => {
+    const d = codesOf(`enum Status { ok, error }\ntype Status { code: int }\nslice "S" {\n  command Do\n}\n`, "enum-name-collision");
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe("error");
+    expect(d[0].refs).toEqual(expect.arrayContaining(["types/status", "enums/status"]));
+  });
+
+  it("enum-name-collision: fires the same way when the `type` is declared first (checked both directions)", () => {
+    const d = codesOf(`type Status { code: int }\nenum Status { ok, error }\nslice "S" {\n  command Do\n}\n`, "enum-name-collision");
+    expect(d).toHaveLength(1);
+  });
+
+  it("enum-name-collision: errors when an enum and a declared scalar share a name", () => {
+    const d = codesOf(`enum Status { ok, error }\nscalar Status: string\nslice "S" {\n  command Do\n}\n`, "enum-name-collision");
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe("error");
+    expect(d[0].refs).toEqual(expect.arrayContaining(["scalars/status", "enums/status"]));
+  });
+
+  it("enum-name-collision: fires the same way when the `scalar` is declared first (checked both directions)", () => {
+    const d = codesOf(`scalar Status: string\nenum Status { ok, error }\nslice "S" {\n  command Do\n}\n`, "enum-name-collision");
+    expect(d).toHaveLength(1);
+  });
+
+  it("a model with no enum collision, no duplicate member, and at least one member is clean", () => {
+    const d = diagsFor(`enum OrderStatus { placed, shipped }\nslice "S" {\n  command Do public { a: OrderStatus }\n}\n`);
+    expect(d.filter((x) => x.severity === "error")).toEqual([]);
+  });
+});
+
+describe("duplicate-enum-ref (GH #478)", () => {
+  it("warns when two enums share a kebab-slug export ref", () => {
+    // Ref-collision diagnostics come from computeRefs(), not validate() — same split
+    // `duplicate-scalar-ref`/`duplicate-type-ref` already have (see model/refs.ts).
+    const model = modelFrom(`enum "Order Status" { a }\nenum "Order_Status" { b }\nslice "S" {\n  command Do\n}\n`);
+    const d = computeRefs(model).diagnostics.filter((x) => x.code === "duplicate-enum-ref");
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe("warning");
   });
 });
 

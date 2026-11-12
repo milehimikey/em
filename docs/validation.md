@@ -835,8 +835,9 @@ field types must be ones `em api generate` can map without guessing. Every field
 command, event or view — and every field of a declared `type` reachable from one, transitively —
 must be one of `string`, `text`, `int`, `long`, `decimal`, `boolean`, `uuid`, `date`,
 `datetime`, `duration`, `bytes` (case-insensitive), `X[]` of one of those or of a declared
-`type` or declared [identity scalar](dsl.md#identity-scalars), a declared `type` name, or a
-declared identity scalar name. Internal elements are never checked.
+`type`, declared [identity scalar](dsl.md#identity-scalars) or declared [enum](dsl.md#enums), a
+declared `type` name, a declared identity scalar name, or a declared enum name. Internal
+elements are never checked.
 
 | Code | Meaning |
 |---|---|
@@ -865,6 +866,20 @@ own declaration tier, checked independently of the field-level table above:
 Unlike a duplicate `type` name (a warning — references resolve unambiguously to the first
 declaration), all three are errors: a scalar is a wire-identity declaration, so getting it wrong
 is a contract defect, not a cosmetic duplicate.
+
+**Enums** (`enum Name { member, … }`, GH #478, [dsl.md](dsl.md#enums)) are their own
+declaration tier too, checked independently of the field-level table above:
+
+| Code | Meaning |
+|---|---|
+| `enum-empty` | An `enum` declares no members. |
+| `enum-duplicate-member` | The same enum has a case-insensitive duplicate member. |
+| `enum-duplicate-name` | The same enum name is declared more than once. |
+| `enum-name-collision` | An `enum` and a declared `type` or `scalar` share a name — checked every direction, so a `type`/`scalar` can't shadow an enum either. |
+
+All four are errors, same house-style posture `scalar`'s three checks take: an enum is a
+wire-identity value-set declaration, so getting it wrong is a contract defect, not a cosmetic
+duplicate.
 
 ### Invariants
 
@@ -902,6 +917,7 @@ only stable until someone renames or reorders the earlier one:
 | `duplicate-element-ref` | Two same-kind elements in one slice share a name (export `ref`). |
 | `duplicate-type-ref` | Two declared `type`s share a name (export `ref`). |
 | `duplicate-scalar-ref` | Two declared `scalar`s share a name (export `ref`). |
+| `duplicate-enum-ref` | Two declared `enum`s share a name (export `ref`). |
 | `duplicate-model-key` | Two models in one multi-model invocation (`em query a.em b.em`, `em system`) derive the same `modelKey` — the kebab-slug of the declared `model "Name"`, or of the file basename when none is declared (MIL-193). Never raised by a single-model command. |
 
 The fix is always to rename: for `duplicate-model-key`, give each model a unique `model "Name"`.

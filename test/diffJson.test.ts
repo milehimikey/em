@@ -52,6 +52,9 @@ function emptyCounts(): DiffCounts {
     scalarsAdded: 0,
     scalarsRemoved: 0,
     scalarBaseChanges: 0,
+    enumsAdded: 0,
+    enumsRemoved: 0,
+    enumMemberChanges: 0,
     slicesSplit: 0,
     slicesMerged: 0,
     slicesSuperseded: 0,
@@ -71,6 +74,7 @@ const OPTIONAL_FIELDS = [
   "toSliceKey",
   "field",
   "fieldType",
+  "member",
   "optional",
   "oldType",
   "newType",
@@ -175,11 +179,11 @@ describe("envelope shape", () => {
     expect(docFor(diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n}`)).diagnostics).toEqual([]);
   });
 
-  it("passes DiffCounts through as-is, all 26 counters", () => {
+  it("passes DiffCounts through as-is, all 29 counters", () => {
     const diff = diffOf(`slice "S" {\n  command A\n}`, `slice "S" {\n  command A\n  event B\n}`);
     const doc = docFor(diff);
     expect(Object.keys(doc.counts).sort()).toEqual(Object.keys(emptyCounts()).sort());
-    expect(Object.keys(doc.counts)).toHaveLength(26);
+    expect(Object.keys(doc.counts)).toHaveLength(29);
   });
 });
 
@@ -734,6 +738,34 @@ describe("one correctly-serialized entry per ChangeType", () => {
         newType: "Decimal",
       }),
     },
+    "enum-added": {
+      entry: { type: "enum-added", name: "OrderStatus", ref: "enums/orderstatus" },
+      expected: expectedEntry({ type: "enum-added", op: "Added", name: "OrderStatus", ref: "enums/orderstatus" }),
+    },
+    "enum-removed": {
+      entry: { type: "enum-removed", name: "OrderStatus", ref: "enums/orderstatus" },
+      expected: expectedEntry({ type: "enum-removed", op: "Removed", name: "OrderStatus", ref: "enums/orderstatus" }),
+    },
+    "enum-member-added": {
+      entry: { type: "enum-member-added", name: "OrderStatus", ref: "enums/orderstatus", member: "cancelled" },
+      expected: expectedEntry({
+        type: "enum-member-added",
+        op: "Modified",
+        name: "OrderStatus",
+        ref: "enums/orderstatus",
+        member: "cancelled",
+      }),
+    },
+    "enum-member-removed": {
+      entry: { type: "enum-member-removed", name: "OrderStatus", ref: "enums/orderstatus", member: "placed" },
+      expected: expectedEntry({
+        type: "enum-member-removed",
+        op: "Modified",
+        name: "OrderStatus",
+        ref: "enums/orderstatus",
+        member: "placed",
+      }),
+    },
   };
 
   // `cases` is keyed by ChangeType, so coverage is enforced by the compiler
@@ -741,7 +773,7 @@ describe("one correctly-serialized entry per ChangeType", () => {
   // missing a key, and a stale one makes it an excess key. Both are errors.
   // This runtime assertion just pins the count for anyone reading the suite.
   it("covers every declared ChangeType exactly once", () => {
-    expect(Object.keys(cases)).toHaveLength(33);
+    expect(Object.keys(cases)).toHaveLength(37);
     expect(new Set(Object.keys(cases)).size).toBe(Object.keys(cases).length);
   });
 
@@ -821,7 +853,7 @@ describe("lineage annotations (MIL-84)", () => {
   });
 
   it("bumps DIFF_SCHEMA_VERSION to 1.8 (MIL-237: `optional`)", () => {
-    expect(DIFF_SCHEMA_VERSION).toBe("1.9");
+    expect(DIFF_SCHEMA_VERSION).toBe("1.10");
   });
 });
 
