@@ -670,6 +670,15 @@ The 1.19.1 step: `ci-block` (regenerates the `glossary` job with `--waive-file`)
 
 Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-20-0` / `v1.20.0` on plugin repos, and the mise pin), all together. `em upgrade <model>.em` has no 1.20.0 step and only bumps the `Em version:` line. Re-run `em validate`: `doc-names-unfed-event` warnings backed by a `loops-to` disappear, and the new advisory `view-lookup-source` may surface lookup-shaped view sources — apply the generation rule or waive per [validation.md](validation.md#shape). Everything else is opt-in: the path source form, `--doc-json`, `conform --preview`, inline ratification, `refs --check-order` and the viewer's storyline filter.
 
+## 1.22.1
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **Identity scalars** (GH #477, [dsl.md](dsl.md#identity-scalars)): top-level `scalar <Name>: <base>` (base = a public-table type); public fields may use the name, bare or `[]`; `em api generate` emits `scalar NeighborId extends Uuid;` / `scalar Sku extends string;` for reachable scalars only. Export schema **1.21** (`model.scalars[]` always present, field `scalarRef` explicit-null); surface 1.2, diff 1.10. `uuid → OrderId` classifies as a breaking type change; a scalar base change surfaces per-field | no action needed — opt-in; a model declaring no scalars emits a byte-identical contract. Adopting: re-run `em api generate` once |
+| **Enums** (GH #478, [dsl.md](dsl.md#enums)): top-level `enum <Name> { member, … }` (bare or quoted members, order preserved); public fields may use the name; reachable enums emit TypeSpec enums. Export `model.enums[]` + field `enumRef` (same 1.21 schema). Member diffs are role-aware: removed/renamed = breaking where the enum reaches an output; added = breaking where it reaches an input, additive on pure outputs | no action needed — opt-in; same one-time regen on adoption |
+| **Local `npm pack` runs the build** (GH #474): `prepack` script — affects only contributors packing tarballs locally; published releases were always built by CI | no action needed |
+| **Companion note:** the typespec-asyncapi emitter (0.2.0) drops `@format` through a two-level scalar extends chain (`NeighborId extends Uuid`) — [typespec-asyncapi#5](https://github.com/milehimikey/typespec-asyncapi/issues/5); `@typespec/openapi3` carries it correctly | n/a — tracked in that repo |
+
 ## 1.22.0
 
 | What changed for a model repo | Handled by `em upgrade`? |
