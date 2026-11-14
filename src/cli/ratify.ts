@@ -53,7 +53,7 @@ import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
-import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { parseSliceDoc, ratifiedHashScope, sliceDocBodyHash, uncheckedOpenQuestions } from "../catalog/sliceDoc.js";
 import { ratifiedSectionsValue } from "../catalog/sectionSignature.js";
 import { buildModelIndex } from "../model/queryIndex.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
@@ -211,6 +211,9 @@ export type ApplyRatifyResult =
        *  passed on its own merits, so the caller prints the skip notice exactly when the flag
        *  actually did something. */
       skippedReviewFrom: string | null;
+      /** GH #494: `reviewedBy:`/`reviewedOn:` were written with this sign-off because the policy
+       *  says the pull-request review is the review record and the doc was still a `draft`. */
+      reviewRecorded?: boolean;
     }
   | { ok: false; message: string };
 
@@ -309,6 +312,8 @@ export function applyRatifyFrontmatter(
   skipReview = false,
   confirmation: MeaningConfirmation | null = null,
   identity: RatifiedIdentity | null = null,
+  /** GH #494: `review: pull-request` — a `draft` records the review with the sign-off. */
+  reviewByPullRequest = false,
 ): ApplyRatifyResult {
   const trimmedBy = ratifiedBy.trim();
   if (!trimmedBy) return { ok: false, message: "a ratifier name is required (--by)" };
@@ -376,7 +381,23 @@ export function applyRatifyFrontmatter(
   // or another signer's record refuses: `em slice revise` reopens the former as a draft.
   const sameSignerCompleting =
     currentStatus === RATIFIED_STATUS && currentBy === trimmedBy && (currentOn === null || currentOn === ratifiedOn);
-  const gateWouldRefuse = currentStatus === null || !(RATIFIABLE_STATUSES.includes(currentStatus) || sameSignerCompleting);
+  // GH #494: under `review: pull-request` the PR review IS the review session, so a `draft` is not
+  // refused and not marked `reviewSkipped:` — the sign-off carries `reviewedBy`/`reviewedOn` instead,
+  // behind review's own Open Questions gate (ratify has no `--allow-open`).
+  const recordReview = reviewByPullRequest && currentStatus === "draft";
+  if (recordReview) {
+    const open = uncheckedOpenQuestions(parseSliceDoc(raw).body);
+    if (open.length > 0) {
+      return {
+        ok: false,
+        message:
+          `${open.length} unchecked Open Questions item(s) — first: "${open[0]}". ` +
+          "Resolve or defer them (`em slice defer`) before ratifying; `em slice ratify` has no --allow-open " +
+          "(`em slice review --allow-open` records a deliberately partial walk first)",
+      };
+    }
+  }
+  const gateWouldRefuse = !recordReview && (currentStatus === null || !(RATIFIABLE_STATUSES.includes(currentStatus) || sameSignerCompleting));
   if (gateWouldRefuse && !skipReview) {
     // A `ready-to-implement` doc is past the review gate already, so sending it to `em slice
     // review` would be a dead end (review refuses that status too). Its exit is `em slice
@@ -445,6 +466,13 @@ export function applyRatifyFrontmatter(
   const confirmationText = confirmation ? meaningConfirmationLine(confirmation) : null;
   const afterOnLines = [...identityLines, ...(confirmationText ? [confirmationText] : [])];
   if (!onMatch) missingLines.push(...afterOnLines);
+  // GH #494: where `em slice review` puts them — straight after `status:` when they are new (ratify's
+  // own lines then sit between, as after a review session followed by a ratify); an existing line
+  // (a draft that kept a stale pair) is replaced in place.
+  const revByMatch = recordReview ? fieldLineRegex("reviewedBy").exec(inner) : null;
+  const revOnMatch = recordReview ? fieldLineRegex("reviewedOn").exec(inner) : null;
+  if (recordReview && !revByMatch) missingLines.push(`reviewedBy: ${trimmedBy}`);
+  if (recordReview && !revOnMatch) missingLines.push(`reviewedOn: ${ratifiedOn}`);
   const newStatusText = `${statusMatch[1]}${RATIFIED_STATUS}`;
   const statusNext = missingLines.length > 0 ? `${newStatusText}${eol}${missingLines.join(eol)}` : newStatusText;
 
@@ -464,6 +492,8 @@ export function applyRatifyFrontmatter(
       next: afterOnLines.length > 0 ? `${onNext}${eol}${afterOnLines.join(eol)}` : onNext,
     });
   }
+  if (revByMatch) edits.push({ index: revByMatch.index, oldLen: revByMatch[0].length, next: `${revByMatch[1]}${trimmedBy}` });
+  if (revOnMatch) edits.push({ index: revOnMatch.index, oldLen: revOnMatch[0].length, next: `${revOnMatch[1]}${ratifiedOn}` });
   if (identity && refMatch && identity.ref !== null) {
     edits.push({ index: refMatch.index, oldLen: refMatch[0].length, next: `${refMatch[1]}${identity.ref}` });
   }
@@ -481,7 +511,7 @@ export function applyRatifyFrontmatter(
   }
 
   const content = raw.slice(0, range.innerStart) + updatedInner + raw.slice(range.innerEnd);
-  return { ok: true, content, changed: true, skippedReviewFrom };
+  return { ok: true, content, changed: true, skippedReviewFrom, ...(recordReview ? { reviewRecorded: true } : {}) };
 }
 
 export type RunRatifyResult =
@@ -490,6 +520,8 @@ export type RunRatifyResult =
       path: string;
       changed: boolean;
       skippedReviewFrom: string | null;
+      /** GH #494: the review was recorded with this sign-off (policy `review: pull-request`). */
+      reviewRecorded?: boolean;
       /** MIL-198's upstream-timeline advisory — see `upstreamUnratifiedSlices` above. Always
        *  computed once the gate has passed (whether or not `--skip-review` is what let it
        *  through), never gates the ratification itself. */
@@ -516,6 +548,9 @@ export function runRatify(
   noRef = false,
   /** GH #491: plan only — run every check, write nothing (batch ratify plans before it writes). */
   dryRun = false,
+  /** GH #494: set when the effective policy is `review: pull-request`; `checkReviewer` is the
+   *  `reviewers:` roster check, run only when a review is actually about to be recorded. */
+  reviewByPullRequest: { checkReviewer: () => string | null } | null = null,
 ): RunRatifyResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -569,9 +604,13 @@ export function runRatify(
   // MIL-284: probe first without an identity. The idempotent re-run and every refusal need no
   // git at all — and must not be turned into a "uncommitted changes" refusal by a ratify edit
   // that simply has not been committed yet. Only a run that WILL write resolves the identity.
-  const probe = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation);
+  const probe = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation, null, reviewByPullRequest !== null);
   if (!probe.ok) {
     return { ok: false, message: `${doc.path}: ${probe.message}` };
+  }
+  if (probe.reviewRecorded && reviewByPullRequest) {
+    const refused = reviewByPullRequest.checkReviewer();
+    if (refused !== null) return { ok: false, message: `${doc.path}: ${refused}` };
   }
   // MIL-284: the no-op path still compares the body to the recorded hash — pure text, no git. A
   // doc whose body moved after sign-off, re-run with the same --by/--on, is not "already
@@ -592,7 +631,7 @@ export function runRatify(
   if (probe.changed) {
     const identity = resolveRatifiedIdentity(git, baseDir, doc.path, raw, { noRef });
     if (!identity.ok) return identity;
-    const applied = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation, identity.identity);
+    const applied = applyRatifyFrontmatter(raw, sliceKey, ratifiedBy, ratifiedOn, skipReview, confirmation, identity.identity, reviewByPullRequest !== null);
     if (!applied.ok) return { ok: false, message: `${doc.path}: ${applied.message}` };
     result = applied;
   }
@@ -612,6 +651,7 @@ export function runRatify(
     path: doc.path,
     changed: result.changed,
     skippedReviewFrom: result.skippedReviewFrom,
+    ...(result.reviewRecorded === true ? { reviewRecorded: true } : {}),
     upstreamWarnings,
   };
 }

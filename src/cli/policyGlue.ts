@@ -21,3 +21,24 @@ export function effectiveNoRef(command: string, baseDir: string, flagNoRef: bool
   }
   return false;
 }
+
+/** GH #494: the policy file that says the pull-request review is the review record (`review:
+ *  pull-request`), or null (`session`, or no policy). An invalid policy file refuses the write. */
+export function reviewByPullRequestSource(command: string, baseDir: string): string | null {
+  const res = effectivePolicy(baseDir);
+  if (!res.ok) {
+    console.error(`${command}: ${policyRefusal(res)}`);
+    process.exit(1);
+  }
+  const { review } = res.policy;
+  return review.value === "pull-request" ? review.source : null;
+}
+
+/** GH #494: the stderr lines for a slice whose review was recorded with its sign-off. */
+export function reviewRecordedNotices(source: string, sliceKey: string, skipReviewPassed: boolean): string[] {
+  const lines = [
+    `notice: ${source} sets review: pull-request -- recording the pull-request review as the review record for "${sliceKey}" (reviewedBy/reviewedOn written with the sign-off, no reviewSkipped)`,
+  ];
+  if (skipReviewPassed) lines.push(`notice: --skip-review was unnecessary for "${sliceKey}" -- ${source} sets review: pull-request, so the review is recorded and no reviewSkipped marker is written`);
+  return lines;
+}

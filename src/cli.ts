@@ -46,7 +46,7 @@ import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
 import { checkRosterForWrite, findRosterAbove, loadRoster, POLICY_FILE } from "./roster/roster.js";
 import { effectivePolicy, policyRefusal, statusPolicyEntry } from "./policy/policy.js";
-import { effectiveNoRef } from "./cli/policyGlue.js";
+import { effectiveNoRef, reviewByPullRequestSource, reviewRecordedNotices } from "./cli/policyGlue.js";
 import { observeSigners, renderRoster } from "./roster/init.js";
 import { rosterContextFor } from "./roster/context.js";
 import { computeModelKey } from "./model/qualifiedRef.js";
@@ -1320,7 +1320,8 @@ slice
   .option(
     "--skip-review",
     "ratify without a recorded review — prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc " +
-      "(GH #260) so the bypass is visible to later readers, `em export` and `--slice-ready --json`; cleared by `em slice revise`",
+      "(GH #260) so the bypass is visible to later readers, `em export` and `--slice-ready --json`; cleared by `em slice revise`. Unnecessary under `review: pull-request` in em-policy.yaml (GH #494): a draft then records " +
+      "`reviewedBy:`/`reviewedOn:` with the sign-off and no marker",
   )
   .option(
     "--meaning-unchanged",
@@ -1343,8 +1344,10 @@ slice
       // GH #493: `merge: squash|rebase` in em-policy.yaml means hash only, as if --no-ref were passed —
       // computed once, for the single-key path and the batch (GH #491) alike.
       const noRef = effectiveNoRef("em slice ratify", dirname(file), opts.ref === false);
+      // GH #494: `review: pull-request` in em-policy.yaml makes a draft's ratify record the review.
+      const prReviewSource = reviewByPullRequestSource("em slice ratify", dirname(file));
       if (batch) {
-        return batchAction({ kind: "ratify", file, keys: sliceKeys, storyline: opts.storyline, by: opts.by, on: opts.on, roster: opts.roster, skipReview: opts.skipReview, noRef });
+        return batchAction({ kind: "ratify", file, keys: sliceKeys, storyline: opts.storyline, by: opts.by, on: opts.on, roster: opts.roster, skipReview: opts.skipReview, noRef, reviewByPullRequest: prReviewSource });
       }
       let sliceKey = sliceKeys[0];
       const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
@@ -1390,10 +1393,17 @@ slice
         flags.confirmation,
         undefined,
         noRef,
+        false,
+        prReviewSource === null
+          ? null
+          : { checkReviewer: () => checkRosterForWrite(loadRoster(dirname(file), opts.roster, rosterContextFor(model, file)), "reviewers", opts.by, model, refs.sliceKeys.indexOf(sliceKey), computeModelKey(model, file)) },
       );
       if (!result.ok) {
         console.error(`em slice ratify: ${result.message}`);
         process.exit(1);
+      }
+      if (result.reviewRecorded && prReviewSource !== null) {
+        for (const line of reviewRecordedNotices(prReviewSource, sliceKey, opts.skipReview === true)) console.error(line);
       }
       // Loud, on stderr, exactly when --skip-review is what let this through — the skip is a
       // visible act in the terminal and in CI logs, and deliberately leaves no trace in the doc.

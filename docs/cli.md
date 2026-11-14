@@ -4357,6 +4357,21 @@ with the rest of the sign-off (the next version takes both gates afresh). Docs r
 `em slice ratify` never clears `reviewedBy:`/`reviewedOn:`: the review record is provenance for
 the version being ratified, not something ratification consumes.
 
+**Review by pull request (GH #494, 1.23.0).** With `review: pull-request` in
+[`em-policy.yaml`](policy.md), the pull-request review *is* the review session, so a team that
+reviews in the PR does not end up with `reviewSkipped:` on every slice. `ratify --by <name>` on a doc
+still `status: draft` then does not refuse and needs no `--skip-review`: it writes `reviewedBy:` and
+`reviewedOn:` (the same name and date as the sign-off, in the position `em slice review` would put
+them) together with the sign-off, and writes no `reviewSkipped:` line. The Open Questions gate of
+`em slice review` still applies: an unchecked `- [ ]` item refuses, the file untouched (`ratify` has no
+`--allow-open`; resolve or defer the item with `em slice defer`). When a `reviewers:` list exists,
+`--by` must satisfy it exactly as `em slice review --by` would. One stderr notice names the policy
+file that made the PR review the record; passing `--skip-review` as well adds a notice that the flag
+was unnecessary (the policy wins, no marker). A doc already `reviewed` is ratified as always, its own
+`reviewedBy`/`reviewedOn` kept. Batch ratify behaves the same way (plan first, all-or-nothing). With
+`review: session` or no policy file, nothing here applies. Readers (`em export`, `--slice-ready
+--json`) change shape not at all: such a doc simply has a review and no marker.
+
 **API-first sign-off (MIL-238).** On a *public-touching* slice — one owning at least one
 `public` command, event or view — ratification also asserts that the model's contract is current
 and says whether this version changes what the contract *means* to a consumer. Exactly one of two
@@ -4400,7 +4415,7 @@ singly. And passing `--meaning-unchanged` or `--contract-change` with a batch is
 | `--by <name>` | **Required.** The ratifier's name |
 | `--storyline <name>` | Batch: every slice of this storyline (not with slice keys) |
 | `--on <date>` | Ratification date, `YYYY-MM-DD` (default: today, local date) |
-| `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc (GH #260) |
+| `--skip-review` | Ratify a doc that never passed the review gate; prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc (GH #260). Unnecessary under `review: pull-request` in `em-policy.yaml` (GH #494), where the review is recorded instead and no marker is written |
 | `--no-ref` | (GH #255) Record `ratifiedHash:` only — no `ratifiedRef:`, and git is not consulted (the uncommitted-changes check does not apply). For a repo whose squash/rebase merges would leave the ref unreachable. Removes a `ratifiedRef:` line already on the doc |
 | `--meaning-unchanged` | (MIL-238) API-first sign-off: records `meaningConfirmed: true`. Required, or `--contract-change`, on a public-touching slice |
 | `--contract-change <why>` | (MIL-238) API-first sign-off: records `contractChange: "<why>"` — a consumer must read this change differently |
