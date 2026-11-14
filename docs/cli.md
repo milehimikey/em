@@ -665,13 +665,13 @@ unless **all** of the following hold, printing which ones don't and why
   `--slice-ready`. The MCP `slice_ready` tool takes the same switch as `requireRatifiedHash`.
   `em engagement plan` runs the default verdict.
 - **ratifier roster, `--roster <path>` (GH #259, 1.18.0):** (one `ready-to-implement` slice, ratifier
-  only - `em roster check` is the whole-model gate; the `grandfathered ...` placeholder is exempt) when a
+  only - `em roster check` is the whole-model gate; the `grandfathered ...` placeholder is exempt) when an opt-in
   roster ([`em-policy.yaml`](slice-doc-schema.md#who-may-ratify) lists, or a legacy `ratifiers.yaml`) exists (the nearest one above the model,
   or the given path), a `ready-to-implement` doc whose `ratifiedBy` is not permitted for the
   slice's context gets `ratified-by-not-in-roster` (error, `refs: [<slice key>]`, in `--json`
   `diagnostics`) and `ready: false` — this is what catches a hand-edited frontmatter that
   `em slice ratify`'s own refusal never saw. A schema-invalid roster is a `roster-invalid` error
-  on the slice. No roster file: nothing changes. `gates` gain no boolean. The flag is refused
+  on the slice. No roster file (the normal state; the git host decides who may approve): nothing changes. `gates` gain no boolean. The flag is refused
   without `--slice-ready`; the MCP `slice_ready` tool takes it as `roster`.
 
 ```bash
@@ -4087,7 +4087,7 @@ still gets written, with that slice's Status reading `"no doc yet"`/`"unknown"` 
 
 ## `em roster check <file>`
 
-The whole-model CI gate for the [ratifier roster](slice-doc-schema.md#who-may-ratify) (GH #259).
+The whole-model CI gate for the optional [ratifier roster](slice-doc-schema.md#who-may-ratify) (GH #259).
 Tests every bound slice doc's recorded signers against the roster: `ratifiedBy` on
 `ready-to-implement` **and** `implemented` docs, `reviewedBy` on any doc that has one - which
 `--slice-ready <key>` (one ready slice) does not. Exit 1 on any violation
@@ -4102,7 +4102,7 @@ generated workflow when a roster is discovered ([ci.md](ci.md#ratifier-roster-ga
 
 ## `em roster init <file>`
 
-Writes a starting [`em-policy.yaml`](policy.md) (the roster lists; before 1.23.0 it wrote
+Optional: only for teams with no git-host enforcement of who may approve (CODEOWNERS and branch rules are the primary answer). Writes a starting [`em-policy.yaml`](policy.md) (the roster lists; before 1.23.0 it wrote
 `ratifiers.yaml`) beside the model (GH #259, GH #493) from the names the slice docs already record: every distinct `ratifiedBy:` becomes a `ratifiers:`
 entry and every distinct `reviewedBy:` a `reviewers:` entry, each covering the whole model (narrow
 them with `contexts:` by hand). The placeholder `em upgrade`'s `ratified-signoff` step writes
@@ -4140,7 +4140,7 @@ fine). `--on <date>` is optional, `YYYY-MM-DD`; defaults to today (local date), 
 status (docs/slice-doc-schema.md) — a doc that never went through this command simply has
 neither, and every existing `em` command already tolerates an absent field.
 
-**Reviewer roster (GH #259, 1.18.0).** `--by` is checked the same way against the `reviewers:`
+**Reviewer roster (GH #259, 1.18.0; optional).** `--by` is free text; the git host decides who may approve. With an opt-in roster, `--by` is checked against the `reviewers:`
 list of the [roster](slice-doc-schema.md#who-may-ratify) (`em-policy.yaml`) when the file has one (`--roster
 <path>` overrides discovery); a roster without `reviewers:`, or no roster at all, leaves review
 unrestricted.
@@ -4238,11 +4238,11 @@ are additive, optional frontmatter keys (docs/slice-doc-schema.md) — a doc tha
 feature, or was hand-ratified, simply has neither key, and every existing `em` command already
 tolerates an unknown/absent field.
 
-**Ratifier roster (GH #259, 1.18.0).** When a [roster](slice-doc-schema.md#who-may-ratify) (`em-policy.yaml` lists, or a legacy `ratifiers.yaml`)
+**Ratifier roster (GH #259, 1.18.0; optional).** `--by` is free text and unauthenticated; the git host decides who may approve. Only when an opt-in [roster](slice-doc-schema.md#who-may-ratify) (`em-policy.yaml` lists, or a legacy `ratifiers.yaml`)
 exists (beside the model, or the nearest one above it up to the repo root; `--roster <path>`
 overrides), `--by` must be a name the roster permits for the slice's context(s) - all of them, for
 a cross-context slice: a name that is not listed is refused (non-zero exit, file untouched) and the message lists who is permitted. No
-roster file means today's behaviour. An unreadable or schema-invalid roster refuses too
+roster file (the normal state) means no check. An unreadable or schema-invalid roster refuses too
 (`roster-invalid`) rather than silently opening the gate.
 
 **Ratification has an address (MIL-284, 1.15.0).** The sign-off also records *what* was
