@@ -166,7 +166,7 @@ describe("em skill install | sync | check carry the agents (CLI, real fs)", () =
     expect(c.stdout).toContain("[agents] em-critic.md: not installed");
     expect(c.stdout).not.toContain("my-agent");
     const j = JSON.parse(em(["skill", "check", ".", "--json"], dir).stdout);
-    expect(j.skillCheckSchemaVersion).toBe("1.1");
+    expect(j.skillCheckSchemaVersion).toBe("1.2");
     expect(j.findings.map((f: { code: string }) => f.code).sort()).toEqual(["agent-content-drift", "agent-not-installed"]);
 
     const s = em(["skill", "sync", ".", "--no-agents-md"], dir);
