@@ -2992,7 +2992,7 @@ program
       "changed) in the same `<base>...HEAD` change set that touched implementation code. `ratification.inline` in em-policy.yaml " +
       "decides which: `internal` (default) reports public-touching slices, `never` any slice, `always` none. Advisory by default " +
       "(printed, exit 0); `ratification.inline-violation: error` makes a finding exit non-zero. PR-time check — never part of " +
-      "validate/--slice-ready/ratify (see docs/policy.md, docs/cli.md)",
+      "validate/--slice-ready/ratify",
   )
   .argument("<file>", "model .em file (compiled for its slices; its directory locates the docs, the policy and the repository)")
   .requiredOption("--base <rev>", "the branch or commit the change set is measured from (e.g. origin/main)")
