@@ -53,6 +53,7 @@ import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
 import { listAllFindingsFiles, unruledFindingsInScope } from "./findings.js";
 import { MEANING_CONFIRMATION_KEYS } from "./ratify.js";
+import { AMEND_KEYS } from "./amend.js";
 import { clearQueue, injectQueuedQuestions, readQueue, reopenDeferred } from "./defer.js";
 import { QueuedItem } from "../catalog/deferQueue.js";
 import { docAbsPath } from "../catalog/docLocate.js";
@@ -72,6 +73,7 @@ export const SIGN_OFF_KEYS: readonly string[] = [
   "reviewedBy",
   "reviewedOn",
   ...MEANING_CONFIRMATION_KEYS,
+  ...AMEND_KEYS, // GH #488: an amendment describes the signed version being left behind
 ];
 
 /** See the module header. `unsigned` and `unshipped-kept` are the kinds that do not bump

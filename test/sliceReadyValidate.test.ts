@@ -415,7 +415,7 @@ describe("slice-ready-body-changed-since-ratification (MIL-284)", () => {
         severity: "error",
         code: "slice-ready-body-changed-since-ratification",
         message:
-          'slice "signed-edited"\'s doc slices/signed-edited.md was edited after ratification (body no longer matches ratifiedHash) — revert, or re-ratify the new content',
+          'slice "signed-edited"\'s doc slices/signed-edited.md was edited after ratification (body no longer matches ratifiedHash) — revert, re-sign a prose-only change in place (`em slice amend --by`), or re-ratify the new content',
         refs: ["signed-edited"],
       }),
     ]);

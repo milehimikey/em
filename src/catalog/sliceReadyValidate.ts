@@ -180,7 +180,7 @@ export function validateSliceReady(
   // generated region `em slice sync` rewrote is outside the hash since 1.19.0 (GH #347).
   if (doc.status === "ready-to-implement" && doc.ratifiedHash !== null && ratifiedHashScope(parsed.raw, doc.ratifiedHash) === "mismatch") {
     pushDiag(diags, "slice-ready-body-changed-since-ratification", {
-      message: `slice "${sliceKey}"'s doc ${doc.path} was edited after ratification (body no longer matches ratifiedHash) — revert, or re-ratify the new content`,
+      message: `slice "${sliceKey}"'s doc ${doc.path} was edited after ratification (body no longer matches ratifiedHash) — revert, re-sign a prose-only change in place (\`em slice amend --by\`), or re-ratify the new content`,
       line: slice.line,
       refs: [sliceKey],
     });
