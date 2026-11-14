@@ -34,6 +34,7 @@ import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.j
 import { planMigration, verifyMigration, MigrationPlan } from "./migrateReactionShape.js";
 import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./skillSync.js";
 import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs } from "./skillDirs.js";
+import { detectMisePin, rewriteMiseEmPin } from "./misePin.js";
 import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, pluginInstallCommands, pluginSettingsEntries } from "./pluginPin.js";
 import { syncAgentsMd } from "./agentsMd.js";
 import {
@@ -110,7 +111,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "mise-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -226,6 +227,26 @@ function applySkillPlugin(ctx: UpgradeContext): StepApplyOutcome {
   const agents = syncAgentsMd(ctx.repoRoot);
   if (agents.wrote) changedFiles.push("AGENTS.md");
   return { ok: true, changedFiles };
+}
+
+// ---- Step 1c: mise-pin (GH #298) — the mise.toml em pin follows the installed em. ----
+
+function detectMisePinStep(ctx: UpgradeContext): StepDetection {
+  const pin = detectMisePin(ctx.repoRoot, ctx.repoRoot);
+  if (!pin) return { applicable: false, reason: "no mise.toml in the repo pins npm:@milehimikey/em — nothing to move" };
+  const rel = relative(ctx.repoRoot, pin.file);
+  if (pin.version === ctx.installedVersion) return { applicable: false, reason: `${rel} already pins npm:@milehimikey/em at ${ctx.installedVersion}` };
+  return { applicable: true, reason: `${rel} pins npm:@milehimikey/em at ${pin.version}, installed em is ${ctx.installedVersion} — rewrite that one value in place` };
+}
+
+function applyMisePinStep(ctx: UpgradeContext): StepApplyOutcome {
+  const pin = detectMisePin(ctx.repoRoot, ctx.repoRoot);
+  if (!pin) return { ok: false, message: "no mise.toml pin found — nothing changed" };
+  const text = readFileSync(pin.file, "utf8");
+  const next = rewriteMiseEmPin(text, ctx.installedVersion);
+  if (next === null || next === text) return { ok: false, message: `${relative(ctx.repoRoot, pin.file)}: could not rewrite the pin — nothing changed` };
+  writeFileSync(pin.file, next);
+  return { ok: true, changedFiles: [relative(ctx.repoRoot, pin.file)] };
 }
 
 // ---- Step 2: reaction-shape — delegates to `em migrate`'s own plan/verify/apply. ----
@@ -1227,6 +1248,7 @@ function applyRatifiedSections(ctx: UpgradeContext): StepApplyOutcome {
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-plugin", sinceVersion: "1.14.0", detect: detectSkillPlugin, apply: applySkillPlugin },
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
+  { id: "mise-pin", sinceVersion: "1.23.0", detect: detectMisePinStep, apply: applyMisePinStep },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
   { id: "ci-block", sinceVersion: "1.9.0", detect: detectCiBlock, apply: applyCiBlock },

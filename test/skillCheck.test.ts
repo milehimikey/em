@@ -140,7 +140,7 @@ describe("checkSkillSync", () => {
       const result = checkSkillSync(packaged, vendored, "1.7.0");
       const json = JSON.parse(buildSkillCheckJson(result, vendored, "1.7.0"));
       expect(json).toMatchObject({
-        skillCheckSchemaVersion: "1.1",
+        skillCheckSchemaVersion: "1.2",
         generator: { name: "@milehimikey/em" },
         installedVersion: "1.7.0",
         vendoredDir: vendored,
@@ -326,7 +326,7 @@ describe("em skill check - the em plugin (CLI, MIL-231)", () => {
   it("--json carries the plugin object, the findings and ok", () => {
     const repo = pluginRepo();
     const bad = JSON.parse(em(["skill", "check", "--json", "--ci"], repo, registry(null)).stdout);
-    expect(bad.skillCheckSchemaVersion).toBe("1.1");
+    expect(bad.skillCheckSchemaVersion).toBe("1.2");
     expect(bad.plugin).toEqual({ declared: true, name: NAME, ref: `v${VERSION}`, enabled: true });
     expect(bad.ok).toBe(false);
     expect(bad.findings.map((f: { code: string }) => f.code)).toEqual(["plugin-not-installed-locally"]);
