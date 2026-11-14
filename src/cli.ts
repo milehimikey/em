@@ -45,7 +45,7 @@ import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
 import { checkRosterForWrite, findRosterAbove, loadRoster, POLICY_FILE } from "./roster/roster.js";
-import { statusPolicyEntry } from "./policy/policy.js";
+import { effectivePolicy, policyRefusal, statusPolicyEntry } from "./policy/policy.js";
 import { effectiveNoRef, reviewByPullRequestSource, reviewRecordedNotices } from "./cli/policyGlue.js";
 import { observeSigners, renderRoster } from "./roster/init.js";
 import { rosterContextFor } from "./roster/context.js";
@@ -76,6 +76,8 @@ import { planMigration, verifyMigration } from "./cli/migrateReactionShape.js";
 import { buildLedgerJson } from "./emit/ledgerJson.js";
 import { buildRefsJson } from "./emit/refsJson.js";
 import { buildShapeReport, formatShapeText } from "./cli/shape.js";
+import { checkInlineRatification } from "./cli/inlineCheck.js";
+import { buildInlineJson } from "./emit/inlineJson.js";
 import { applyRefWaivers, checkRatificationOrder, checkRefs, readWaiveFile } from "./cli/refsCheck.js";
 import { buildCoverageReport, resolveScopedSlices, resolveCoverageSliceKey, CoverageReport } from "./cli/coverage.js";
 import { buildCoverageJson } from "./emit/coverageJson.js";
@@ -2991,6 +2993,44 @@ program
     // Set the code rather than process.exit(): stdout to a pipe shouldn't risk truncation.
     // `orderResults` never participates — advisory only, per R5.
     if (!result.ok) process.exitCode = 1;
+  });
+
+program
+  .command("inline-check")
+  .description(
+    "report slices ratified INLINE against the policy (GH #496): a slice whose doc was ratified (`ratifiedHash:` recorded or " +
+      "changed) in the same `<base>...HEAD` change set that touched implementation code. `ratification.inline` in em-policy.yaml " +
+      "decides which: `internal` (default) reports public-touching slices, `never` any slice, `always` none. Advisory by default " +
+      "(printed, exit 0); `ratification.inline-violation: error` makes a finding exit non-zero. PR-time check — never part of " +
+      "validate/--slice-ready/ratify",
+  )
+  .argument("<file>", "model .em file (compiled for its slices; its directory locates the docs, the policy and the repository)")
+  .requiredOption("--base <rev>", "the branch or commit the change set is measured from (e.g. origin/main)")
+  .option("--json", "print a JSON document instead of the text report (see docs/cli.md)")
+  .action((file: string, opts: { base: string; json?: boolean }) => {
+    const { model, refs } = compileFile(file);
+    const policy = effectivePolicy(dirname(file));
+    if (!policy.ok) {
+      console.error(`em inline-check: ${policyRefusal(policy)}`);
+      process.exit(1);
+    }
+    const outcome = checkInlineRatification(model, refs, dirname(file), opts.base, policy.policy);
+    if (!outcome.ok) {
+      console.error(`em inline-check: ${outcome.message}`);
+      process.exit(1);
+    }
+    const r = outcome.result;
+    if (opts.json) {
+      process.stdout.write(buildInlineJson(r, file) + "\n");
+    } else {
+      for (const f of r.findings) {
+        console.log(`${r.inlineViolation.value === "error" ? "error" : "warn"}: ${f.code} ${f.message}`);
+      }
+      if (r.findings.length === 0) {
+        console.log(`ok -- no slice ratified inline against policy (${r.ratified.length} ratified in ${r.base}...HEAD, ${r.codePaths.length} code path(s) changed)`);
+      }
+    }
+    if (!r.ok) process.exitCode = 1;
   });
 
 program
