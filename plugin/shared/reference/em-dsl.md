@@ -370,6 +370,11 @@ enum Name { member, ... }           # closed named value set, reusable from any 
 - **Tags:** `@Persona` only on `ui`; `@Context` only on `event`. Undeclared tags auto-create a
   row. Multi-word tags need no quoting — the tag captures everything after `@` to end of line
   (`ui Ticket Queue @Customer Service` matches `persona Customer Service`).
+- **Optional fields:** a trailing `?` on a field name marks it optional (it may be absent);
+  fields are required by default (MIL-237). `note?: text`, typeless `note?` and quoted
+  `"display name"?: text` all work, and the `?` is never part of the name. `em export` carries
+  `optional: true|false`, `em api generate` emits `name?: T`, the slice-doc table shows
+  Required `no`, and `em diff` / `em api check` report a required<->optional flip.
 - **`from "X"`** on views/automations declares the source(s); names are quoted, comma-separated.
   Matching is case-insensitive and whitespace-normalized. A `from` may never point at an event or
   view that first appears in a LATER slice (forward-only timeline — validation error).
