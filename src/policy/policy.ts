@@ -5,7 +5,7 @@
 //
 //   policySchemaVersion: "1.0"
 //   merge: squash | rebase | merge-commit          # squash/rebase = hash only (`ratify --no-ref`)
-//   review: session | pull-request                 # parsed + reported; behaviour lands with #494
+//   review: session | pull-request                 # pull-request = `ratify` on a draft records the review (GH #494)
 //   ratification:
 //     inline: internal | never | always            # parsed + reported; behaviour lands with #496
 //     inline-violation: advisory | error

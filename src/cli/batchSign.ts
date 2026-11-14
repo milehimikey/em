@@ -25,6 +25,7 @@ import { computeModelKey } from "../model/qualifiedRef.js";
 import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
 import { runReview } from "./review.js";
 import { runRatify } from "./ratify.js";
+import { reviewRecordedNotices } from "./policyGlue.js";
 
 export type BatchKind = "review" | "ratify";
 
@@ -44,6 +45,8 @@ export interface BatchInput {
   allowOpen?: boolean;
   skipReview?: boolean;
   noRef?: boolean;
+  /** GH #494: the policy file when `review: pull-request` is in effect (ratify only). */
+  reviewByPullRequest?: string | null;
 }
 
 /** `ok: false`: `errors` are complete stderr lines (already prefixed); nothing was written. */
@@ -140,9 +143,12 @@ function runOne(input: BatchInput, key: string, dryRun: boolean): One {
       : `already reviewed (no-op): ${r.path}`;
     return { ok: true, path: r.path, changed: r.changed, stdout: [line], stderr };
   }
-  const r = runRatify(model, refs, baseDir, key, by, on, input.skipReview === true, null, undefined, input.noRef === true, dryRun);
+  const prSource = input.reviewByPullRequest ?? null;
+  const reviewByPr = prSource === null ? null : { checkReviewer: () => checkRosterForWrite(loadRoster(baseDir, input.roster, rosterContextFor(model, file)), "reviewers", by, model, refs.sliceKeys.indexOf(key), computeModelKey(model, file)) };
+  const r = runRatify(model, refs, baseDir, key, by, on, input.skipReview === true, null, undefined, input.noRef === true, dryRun, reviewByPr);
   if (!r.ok) return r;
   const stderr: string[] = [];
+  if (r.reviewRecorded && prSource !== null) stderr.push(...reviewRecordedNotices(prSource, key, input.skipReview === true));
   if (r.skippedReviewFrom !== null) {
     stderr.push(`notice: --skip-review — ratifying "${key}" without a recorded review (status was ${r.skippedReviewFrom})`);
   }
