@@ -1302,7 +1302,7 @@ slice "Order Status" {
     }
   });
 
-  it("check --base refuses on a storyline model — the base revision's storyline files cannot be loaded (no multi-file-at-revision loader yet)", () => {
+  it("check --base works on a storyline model — the base revision's storyline files load at that revision (GH #475)", () => {
     const dir = mkdtempSync(join(tmpdir(), "em-api-storyline-"));
     try {
       writeStorylineFixture(dir);
@@ -1310,10 +1310,8 @@ slice "Order Status" {
       git(dir, "add", "-A");
       git(dir, "commit", "-q", "-m", "seed");
       const r = em(["api", "check", "shop.em", "--base", "HEAD"], dir);
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain(
-        "em api check: --base does not yet support storyline models (the base revision's storyline files cannot be loaded) — see GH #475",
-      );
+      expect(r.stderr).not.toContain("does not yet support storyline models");
+      expect(r.stdout).toContain("no public-surface changes since HEAD");
     } finally {
       rmTemp(dir);
     }

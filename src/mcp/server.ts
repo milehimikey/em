@@ -243,6 +243,7 @@ function compileFilesForQueryMcp(files: string[]): { system: QuerySystem } | { e
       compiled = compileForQuery(source, dirname(file));
     } catch (e) {
       if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
+      if (e instanceof ModelLoadError) return { error: e.message };
       throw e;
     }
     if (hasErrors(compiled.diagnostics)) {

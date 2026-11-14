@@ -225,11 +225,11 @@ describe("em export (CLI)", () => {
 });
 
 describe("em export --doc-json (CLI, GH #401)", () => {
-  it("emits the structured doc export under its own schema version (1.0), not the model schema", () => {
+  it("emits the structured doc export under its own schema version (1.1), not the model schema", () => {
     const r = em(["export", "clean.em", "--doc-json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
     expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
     expect(doc.model.slices[0]).toHaveProperty("errorFlows");
     expect(doc.model.slices[0]).toHaveProperty("openQuestions");
@@ -4043,10 +4043,10 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
     expect(JSON.parse(em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir).stdout).ready).toBe(true);
   });
 
-  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft v3; a second revise refuses (already open)", () => {
+  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft at the same v2 (GH #486); a second revise refuses (already open)", () => {
     const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     const again = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(again.status).not.toBe(0);
     expect(again.stderr).toContain("the next version is already open");
@@ -4060,7 +4060,7 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
     writeFileSync(join(dir, "over.em"), 'slice "Over" {\n  ui Screen @Customer\n  command Do Thing note "slices/over.md"\n  event Thing Done\n}\n');
     const r = em(["slice", "revise", "over.em", "over"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(r.stdout).not.toContain("never shipped");
   });
 
@@ -4219,6 +4219,80 @@ describe("em slice conform (CLI, MIL-214)", () => {
     expect(r.stderr).toContain("notice: --skip-findings-check");
     expect(r.stderr).toContain("1 unruled conformance finding(s) still in scope");
     expect(r.stdout).toContain("certified: slices/gated-slice.md");
+  });
+});
+
+describe("em conform-supersede auto-certification (CLI, GH #497)", () => {
+  let dir: string;
+  const DOC = () =>
+    "---\nschemaVersion: 1\npattern: state-change\nswimlane: order\nstatus: implemented\nversion: 1\n" +
+    "implementedIn: https://github.com/org/repo/pull/1\n---\n# Slice\n\nbody\n";
+  const finding = (id: number, slice: string | null) => ({
+    id, surface: "structural", class: "Real drift", slice, evidence: `e${id}`, locus: null, resolvedBy: null, resolvedOn: null,
+  });
+  const writeFindings = (name: string, rev: string, findings: unknown[]) => {
+    writeFileSync(join(dir, "conformance", `${name}-report.md`), `# Report\n\n- **Target repo:** x @ \`${rev}\`\n`);
+    writeFileSync(
+      join(dir, "conformance", `${name}-findings.json`),
+      JSON.stringify({ findingsSchemaVersion: "1.0", model: "m.em", report: `conformance/${name}-report.md`, revision: rev, findings }, null, 2),
+    );
+  };
+  const rule = (name: string, rev: string, ids: string) =>
+    em(["conform-supersede", "m.em", `conformance/${name}-report.md`, "--as-of", rev, "--findings", ids, "--locus", "code", "--by", "Alex", "--on", "2026-11-13"], dir);
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-supersede-certify-"));
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(join(dir, "slices", "alpha.md"), DOC());
+    writeFileSync(join(dir, "slices", "beta.md"), DOC());
+    writeFileSync(join(dir, "slices", "gamma.md"), DOC());
+    writeFileSync(
+      join(dir, "m.em"),
+      'slice "Alpha" {\n  command Do Alpha note "slices/alpha.md"\n  event Alpha Done\n}\n' +
+        'slice "Beta" {\n  command Do Beta note "slices/beta.md"\n  event Beta Done\n}\n' +
+        'slice "Gamma" {\n  command Do Gamma note "slices/gamma.md"\n  event Gamma Done\n}\n',
+    );
+  });
+  afterAll(() => rmTemp(dir));
+
+  it("certifies at --as-of only when the last in-scope finding is ruled; one line per slice; re-run and slice conform are no-ops", () => {
+    writeFindings("2026-11-10", "rev1", [finding(1, "alpha"), finding(2, "alpha"), finding(3, "beta")]);
+    const first = rule("2026-11-10", "rev1", "1");
+    expect(first.status).toBe(0);
+    expect(first.stdout).not.toContain("certified:");
+    expect(readFileSync(join(dir, "slices", "alpha.md"), "utf8")).not.toContain("conformedVersion");
+
+    const second = rule("2026-11-10", "rev1", "2-3");
+    expect(second.status).toBe(0);
+    const lines = second.stdout.split("\n").filter((l) => l.startsWith("certified:"));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("slices/alpha.md (conformedVersion: 1, conformedAt: rev1, conformedOn: 2026-11-13)");
+    expect(lines[1]).toContain("slices/beta.md");
+    expect(readFileSync(join(dir, "slices", "alpha.md"), "utf8")).toContain("conformedAt: rev1");
+
+    expect(rule("2026-11-10", "rev1", "2-3").stdout).not.toContain("certified:");
+    const conform = em(["slice", "conform", "m.em", "alpha", "--at", "rev1", "--on", "2026-11-14"], dir);
+    expect(conform.stdout).toContain("already certified (no-op)");
+  });
+
+  it("a slice: null finding certifies nothing, and a still-unruled null finding blocks the ruled slice", () => {
+    writeFindings("2026-11-11", "rev2", [finding(1, null), finding(2, "gamma")]);
+    const ruledGamma = rule("2026-11-11", "rev2", "2");
+    expect(ruledGamma.stdout).not.toContain("certified:");
+    expect(readFileSync(join(dir, "slices", "gamma.md"), "utf8")).not.toContain("conformedVersion");
+    const ruledNull = rule("2026-11-11", "rev2", "1");
+    expect(ruledNull.status).toBe(0);
+    expect(ruledNull.stdout).not.toContain("certified:"); // null slice names no slice
+    expect(readFileSync(join(dir, "slices", "gamma.md"), "utf8")).not.toContain("conformedVersion");
+  });
+
+  it("an unshipped slice is not certified", () => {
+    writeFileSync(join(dir, "slices", "gamma.md"), DOC().replace("status: implemented", "status: draft"));
+    writeFindings("2026-11-12", "rev3", [finding(1, "gamma")]);
+    const r = rule("2026-11-12", "rev3", "1");
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain("certified:");
   });
 });
 
@@ -6058,7 +6132,7 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("ratified: slices/place-order.md (ratifiedBy: Alex Rivera, ratifiedOn: 2026-10-07, meaningConfirmed: true)");
     // MIL-284: the body hash sits between ratifiedOn and the confirmation (no ref: the fixture is not a git repo).
-    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nmeaningConfirmed: true\n/);
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nratifiedSections: .+\nmeaningConfirmed: true\n/);
     const again = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
     expect(again.stdout).toContain("already ratified (no-op): slices/place-order.md");
     const after = em(["status", "shop.em", "--json"], dir);
@@ -6080,11 +6154,11 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(JSON.parse(after.stdout).gates.contractCurrent).toBe(true);
   });
 
-  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify of v2 requires it again", () => {
+  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify requires it again (GH #486: same version)", () => {
     const r = em(["slice", "revise", "shop.em", "place-order", "--withdraw"], dir);
     expect(r.status).toBe(0);
     const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
-    expect(content).toContain("status: draft\nversion: 2\n");
+    expect(content).toContain("status: draft\nversion: 1\n");
     expect(content).not.toContain("meaningConfirmed");
     expect(content).not.toContain("contractChange");
     expect(em(["slice", "review", "shop.em", "place-order", "--by", "Sam", "--on", "2026-10-07"], dir).status).toBe(0);

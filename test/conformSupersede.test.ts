@@ -199,7 +199,7 @@ describe("runConformSupersede — --locus/--by findings ruling (MIL-214)", () =>
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.changed).toBe(true);
-    expect(result.findingsRuling).toEqual({ kind: "applied", path: FINDINGS_PATH, changed: true, ids: [1] });
+    expect(result.findingsRuling).toEqual({ kind: "applied", path: FINDINGS_PATH, changed: true, ids: [1], revision: "8f12ed8", slices: ["checkout"] });
     const onDisk = JSON.parse(readFileSync(join(dir, FINDINGS_PATH), "utf8"));
     expect(onDisk.findings.find((f: { id: number }) => f.id === 1)).toEqual({
       id: 1,
@@ -225,7 +225,7 @@ describe("runConformSupersede — --locus/--by findings ruling (MIL-214)", () =>
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.findingsRuling).toEqual({ kind: "applied", path: FINDINGS_PATH, changed: false, ids: [1] });
+    expect(result.findingsRuling).toEqual({ kind: "applied", path: FINDINGS_PATH, changed: false, ids: [1], revision: "8f12ed8", slices: ["checkout"] });
     expect(readFileSync(join(dir, FINDINGS_PATH), "utf8")).toBe(before);
   });
 

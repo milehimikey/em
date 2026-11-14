@@ -45,9 +45,10 @@ validate; run `em state set-conformance <revision> --report <path>` to update th
 Ruling on a finding is a human gate, like ratifying a slice
 (docs/process.md#the-slice-lifecycle-gates): the sweep gathers evidence and proposes, a person
 decides, and `em conform-supersede ... --locus <model|doc|code|none> --by <name>` records the
-ruling on the findings record (and stamps the report) — never rule on your own judgment. Once
-every finding touching a slice is ruled, `em slice conform <model-name>.em <key> --at <rev>`
-certifies that version of the slice (`--at build:<id>` / `deploy:<id>` when the swept commit
+ruling on the findings record (and stamps the report) — never rule on your own judgment. Ruling
+the last finding touching a shipped slice certifies that slice in the same run (a `certified:`
+line per slice, at `--as-of`); run `em slice conform <model-name>.em <key> --at <rev>` only for a
+slice with no findings, a re-run, or one the ruling left uncertified. It certifies that version of the slice (`--at build:<id>` / `deploy:<id>` when the swept commit
 will not stay reachable — a PR branch under squash/rebase merges; GH #261).
 
 End of phase: state file's `Last conformance:` marker updated (via `em state set-conformance` —

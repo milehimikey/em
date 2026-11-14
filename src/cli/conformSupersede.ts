@@ -33,7 +33,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isValidDateString } from "./stateFile.js";
 import { applyFindingsRuling, FindingLocus, parseFindingsSpec, serializeFindingsDoc } from "./findings.js";
-import { resolveFindingsForReport } from "./sliceConform.js";
+import { resolveFindingsForReport, runSliceConform } from "./sliceConform.js";
+import { NormalizedModel } from "../model/model.js";
+import { RefsResult } from "../model/refs.js";
 
 const BANNER_PREFIX = "> **Superseded as of `";
 
@@ -109,7 +111,16 @@ export interface ConformSupersedeRuling {
 export type FindingsRulingOutcome =
   | { kind: "not-requested" }
   | { kind: "no-findings-file"; warning: string }
-  | { kind: "applied"; path: string; changed: boolean; ids: number[] };
+  | {
+      kind: "applied";
+      path: string;
+      changed: boolean;
+      ids: number[];
+      /** GH #497: the findings file's own `revision`, and the distinct non-null `slice` keys of the
+       *  named findings — what `certifyRuledSlices` considers. A `slice: null` finding adds nothing. */
+      revision: string;
+      slices: string[];
+    };
 
 export type RunConformSupersedeResult =
   | { ok: true; path: string; changed: boolean; findingsRuling: FindingsRulingOutcome }
@@ -171,7 +182,9 @@ export function runConformSupersede(
       if (applied.changed) {
         writeFileSync(join(baseDir, lookup.path), serializeFindingsDoc(applied.doc), "utf8");
       }
-      findingsRuling = { kind: "applied", path: lookup.path, changed: applied.changed, ids };
+      const named = new Set(ids);
+      const slices = [...new Set(applied.doc.findings.filter((f) => named.has(f.id) && f.slice !== null).map((f) => f.slice as string))].sort();
+      findingsRuling = { kind: "applied", path: lookup.path, changed: applied.changed, ids, revision: applied.doc.revision, slices };
     }
   }
 
@@ -184,4 +197,42 @@ export function runConformSupersede(
     writeFileSync(absPath, result.content, "utf8");
   }
   return { ok: true, path: reportPath, changed: result.changed, findingsRuling };
+}
+
+/** GH #497: one slice certified as a side effect of a ruling. */
+export interface CertifiedByRuling {
+  slice: string;
+  path: string;
+  version: number;
+  at: string;
+  on: string;
+}
+
+/**
+ * GH #497: after a ruling lands, certifies every slice it touched whose conformance gate now passes
+ * — by calling `runSliceConform` itself (no second copy of the gate: unruled in-scope findings at
+ * the revision, the shipped-slice and `implementedIn:` preconditions all live there). A slice that
+ * `runSliceConform` refuses for ANY reason is simply not certified here (still-unruled findings,
+ * not shipped yet, no `implementedIn:`, unknown key) — `em slice conform` stays the explicit
+ * command and reports why. The certification revision is the ruling's `--as-of`; the gate keys on
+ * findings files whose `revision` equals it, so a ruled file recorded at a DIFFERENT revision
+ * certifies nothing (the gate would otherwise pass vacuously against files it never read).
+ * Returns only slices whose frontmatter actually changed, so a re-run after certification is silent.
+ */
+export function certifyRuledSlices(
+  model: NormalizedModel,
+  refs: RefsResult,
+  baseDir: string,
+  outcome: Extract<FindingsRulingOutcome, { kind: "applied" }>,
+  asOf: string,
+  on: string,
+): CertifiedByRuling[] {
+  const at = asOf.trim();
+  if (outcome.revision !== at) return [];
+  const certified: CertifiedByRuling[] = [];
+  for (const slice of outcome.slices) {
+    const r = runSliceConform(model, refs, baseDir, slice, at, on, false);
+    if (r.ok && r.changed) certified.push({ slice, path: r.path, version: r.version, at, on });
+  }
+  return certified;
 }

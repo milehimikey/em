@@ -30,6 +30,7 @@ import { buildExportDoc } from "./json.js";
 import { SliceDocExport } from "../catalog/docJoin.js";
 import { Scenario } from "../catalog/scenarios.js";
 import { errorFlows, openQuestions, OpenQuestionExport } from "../catalog/sliceDoc.js";
+import { classifySections, SectionStatus } from "../catalog/sectionSignature.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { buildSliceRegions, splitCells } from "../catalog/sliceSections.js";
 import { extractDeclaredInvariantRules, INV_TOKEN_RE } from "../cli/coverage.js";
@@ -37,7 +38,10 @@ import { extractDeclaredInvariantRules, INV_TOKEN_RE } from "../cli/coverage.js"
 // 1.0 (GH #401): the first structured slice-doc export. Separate constant from the model export's
 // SCHEMA_VERSION on purpose — a change to the model snapshot does not bump this, and a change to
 // the doc-structure shape does not bump that.
-export const DOC_EXPORT_SCHEMA_VERSION = "1.0";
+// 1.1 (GH #487): per-slice `sections` — `{ heading, class, changed }[]`, the doc's authored `##`
+// sections classed prose/behaviour with whether each changed since sign-off (`changed: null` when
+// the doc records no `ratifiedSections:`); `null` when no usable doc is bound. Additive-only.
+export const DOC_EXPORT_SCHEMA_VERSION = "1.1";
 
 /** One field-table row as data — `name`/`type` are the first two columns of the generated table,
  *  `notes` is the remaining column(s) (Required+Rules for a command, Source/Notes for an event or
@@ -88,6 +92,10 @@ export interface DocJsonSlice {
   scenarios: Scenario[];
   errorFlows: string[];
   openQuestions: OpenQuestionExport[];
+  /** GH #487 (schema 1.1): the authored sections of the doc — `heading`, `class` (`prose` |
+   *  `behaviour`, default list in catalog/sectionSignature.ts) and `changed` since sign-off
+   *  (`null` when the doc records no `ratifiedSections:`). `null` when no doc is bound. */
+  sections: SectionStatus[] | null;
   /** The doc body rendered to HTML (the existing `marked` path) — present only with
    *  `--include-html`; `null` when no usable doc is bound. */
   html?: string | null;
@@ -256,6 +264,7 @@ export function buildDocJsonExport(
       scenarios: frontmatter.scenarios ?? [],
       errorFlows: errorFlows(body),
       openQuestions: openQuestions(body),
+      sections: parsed ? classifySections(parsed.raw) : null,
     };
     if (opts.includeHtml) slice.html = parsed?.html ?? null;
     return { slice, body };

@@ -5,7 +5,7 @@
 // process.exit/console wiring; see test/diff-inputs.test.ts).
 
 import { spawnSync } from "node:child_process";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
 
 /** Resolved `em diff` invocation, or a user-facing `error` for an invalid form. */
@@ -107,6 +107,20 @@ export function resolveRevision(file: string, rev: string, runGit: GitRunner = r
     case "show-failed":
       return { ok: false, message: `em diff: cannot read ${result.relPath} at revision "${rev}": ${result.detail}` };
   }
+}
+
+/**
+ * GH #475: a `SourceReader` for a root model's storyline model files as of git revision `rev`:
+ * `rel` (posix, relative to the root's directory) is read with `git show <rev>:<path>`, the root
+ * sitting at `rootFile`. Throws when the file is not readable at that revision — the loader turns
+ * that into a `ModelLoadError` naming the storyline. The git runner is injectable for tests.
+ */
+export function gitSourceReader(rootFile: string, rev: string, runGit: GitRunner = realGit): (rel: string) => string {
+  return (rel) => {
+    const r = resolveRevision(join(dirname(resolve(rootFile)), rel), rev, runGit);
+    if (!r.ok) throw new Error(r.message);
+    return r.content;
+  };
 }
 
 /**

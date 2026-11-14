@@ -128,7 +128,7 @@ import { runSliceIndex } from "./cli/sliceIndex.js";
 import { formatNextDraftNotice, runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
-import { runConformSupersede } from "./cli/conformSupersede.js";
+import { certifyRuledSlices, runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { buildSliceSyncJson, formatSliceSync, runSliceSync, sliceSyncFailed } from "./cli/sliceSync.js";
@@ -1402,6 +1402,9 @@ function reviseAction(commandName: "revise" | "reratify") {
         `note: no conformance findings file (conformance/<date>[-<name>]-findings.json) was found beside the model — unruled findings on "${sliceKey}" could not be checked`,
       );
     }
+    if (opts.keepVersion === true && result.kind === "unshipped-kept") {
+      console.error("notice: --keep-version is the default since 1.23.0 for a ratified version that has not shipped — a version number moves only once that version has shipped; the flag is a no-op here");
+    }
     const what =
       result.kind === "shipped"
         ? `v${result.newVersion - 1} stays shipped; v${result.newVersion} opened as draft`
@@ -1411,8 +1414,8 @@ function reviseAction(commandName: "revise" | "reratify") {
             : `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
           : result.kind === "unshipped-kept"
             ? result.shippedVersion !== null
-              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version (--keep-version)`
-              : `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version (--keep-version)`
+              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version`
+              : `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version`
             : `v${result.newVersion} was never signed; reopened as draft at the same version`;
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
@@ -1427,14 +1430,14 @@ const REVISE_DESCRIPTION =
   "`meaningConfirmed`/`contractChange`) and re-opens the questions deferred to the new version. The " +
   "shipped version stays shipped: `implementedIn:` and the `shipped*` keys are untouched (written first on " +
   "a doc shipped before 1.15). Applies to `status: implemented` (the shipped case) and to a ratified " +
-  "`ready-to-implement` doc (ratification withdrawn, never shipped); a `ready-to-implement` doc with no " +
+  "`ready-to-implement` doc (ratification withdrawn, never shipped — since 1.23.0 that case keeps `version:`, GH #486); a `ready-to-implement` doc with no " +
   "`ratifiedBy:` reopens as draft at the same version; `draft`/`reviewed` refuse — the next version is " +
   "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`. " +
   "A ratified, never-shipped doc REFUSES without --withdraw (revising withdraws the only implementable version; " +
   "record a question with `em slice defer` instead — it sits outside the hash, GH #253). " +
-  "With --keep-version (GH #262) a ratified, never-shipped doc " +
-  "reopens as a draft at the SAME `version:` — same status flip and sign-off clearing, no bump — for a project that " +
-  "holds every slice at its initial version until a first release; refused on a shipped doc";
+  "Since 1.23.0 (GH #486) a ratified version that has not shipped reopens as a draft at the SAME `version:` (a number " +
+  "moves only once that version has shipped) — a never-shipped doc and a later version ratified over a shipped one " +
+  "alike; --keep-version is a no-op there; refused on a shipped doc";
 
 slice
   .command("revise")
@@ -1444,8 +1447,8 @@ slice
   .option("--withdraw", "GH #236: required on a ratified, never-shipped doc — confirms withdrawing the ratification of the only implementable version")
   .option(
     "--keep-version",
-    "GH #262: reopen a ratified, never-shipped doc as a draft at the same `version:` (no bump) — a correction before a first " +
-      "release, not a delta; refused on a shipped doc, whose version must stay distinct from the next one",
+    "GH #262: reopen at the same `version:` (no bump). The default since 1.23.0 for a ratified, never-shipped doc (a no-op with a " +
+      "notice there), and for a later version ratified over a shipped one; refused on a shipped doc",
   )
   .action(reviseAction("revise"));
 
@@ -2128,7 +2131,10 @@ program
       "ruling itself — locus/resolvedBy/resolvedOn — on the findings named by --findings in the " +
       "sibling conformance/<date>-findings.json, when one exists (refuses, naming them, when only " +
       "other findings files exist at the report's revision; warns once and stamps the " +
-      "banner only when it doesn't — the migration path for a report predating em conform-findings)",
+      "banner only when it doesn't — the migration path for a report predating em conform-findings). " +
+      "GH #497: when a ruling leaves a shipped slice with no unruled in-scope finding, that slice is " +
+      "certified in the same run (conformedVersion/conformedAt/conformedOn, at --as-of) — one " +
+      "`certified:` line per slice; em slice conform stays for the no-findings case and re-runs",
   )
   .argument("<file>", "input .em file (used only to resolve the report path's base directory)")
   .argument("<report-path>", "path to the conformance report, relative to the model's directory")
@@ -2173,6 +2179,29 @@ program
         ? `stamped superseded: ${result.path} (as of ${opts.asOf}, findings ${opts.findings}, on ${on})`
         : `already stamped (no-op): ${result.path}`,
     );
+
+    // GH #497: ruling the last in-scope finding of a shipped slice certifies it in the same run —
+    // `em slice conform`'s own gate decides, so nothing is certified while findings remain unruled.
+    if (result.findingsRuling.kind === "applied" && result.findingsRuling.slices.length > 0) {
+      let compiled: ReturnType<typeof compileFile> | null = null;
+      try {
+        compiled = compileFile(file, {}, { survive: true });
+      } catch (e) {
+        console.error(`warn: not auto-certifying — ${(e as Error).message}; run \`em slice conform\` once the model compiles`);
+      }
+      if (compiled) {
+        const { model, refs, diagnostics } = compiled;
+        const ruledSlices = {
+          ...result.findingsRuling,
+          slices: result.findingsRuling.slices.filter(
+            (s) => !diagnostics.some((d) => d.severity === "error" && d.refs?.some((r) => r === s || r.startsWith(`${s}/`))),
+          ),
+        };
+        for (const c of certifyRuledSlices(model, refs, dirname(file), ruledSlices, opts.asOf, on)) {
+          console.log(`certified: ${c.path} (conformedVersion: ${c.version}, conformedAt: ${c.at}, conformedOn: ${c.on}) — last in-scope finding ruled`);
+        }
+      }
+    }
   });
 
 const conformFindings = program.command("conform-findings").description("read-only checks for the conformance findings record (MIL-214)");
@@ -3160,6 +3189,10 @@ function compileFilesForQuery(files: string[]): QuerySystem {
     } catch (e) {
       if (e instanceof ParseError) {
         console.error(`parse error in ${file} ${e.message}`);
+        process.exit(1);
+      }
+      if (e instanceof ModelLoadError) {
+        console.error(e.message);
         process.exit(1);
       }
       throw e;

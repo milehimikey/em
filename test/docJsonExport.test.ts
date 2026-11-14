@@ -126,9 +126,9 @@ function docJson(opts: { includeHtml?: boolean } = {}) {
 const sliceByKey = (doc: any, key: string) => doc.model.slices.find((s: any) => s.key === key);
 
 describe("schema version (R3/R6: own constant, separate from the export schema)", () => {
-  it("emits DOC_EXPORT_SCHEMA_VERSION \"1.0\", not the export SCHEMA_VERSION", () => {
-    expect(DOC_EXPORT_SCHEMA_VERSION).toBe("1.0");
-    expect(docJson().schemaVersion).toBe("1.0");
+  it("emits DOC_EXPORT_SCHEMA_VERSION \"1.1\", not the export SCHEMA_VERSION", () => {
+    expect(DOC_EXPORT_SCHEMA_VERSION).toBe("1.1");
+    expect(docJson().schemaVersion).toBe("1.1");
     // The two constants are distinct surfaces — a bump to one never touches the other.
     expect(DOC_EXPORT_SCHEMA_VERSION).not.toBe(SCHEMA_VERSION);
   });
@@ -216,6 +216,23 @@ describe("per slice: error flows", () => {
       "Submitting the same basket twice records one order (idempotent on basket id).",
       "External payment call fails → compensating `Order Cancelled`.",
     ]);
+  });
+});
+
+describe("per slice: sections (GH #487, schema 1.1)", () => {
+  it("lists the authored sections with class; changed is null for a doc with no section hashes", () => {
+    const sections: Array<{ heading: string; class: string; changed: boolean | null }> = sliceByKey(docJson(), "checkout").sections;
+    expect(sections.map((s) => s.heading)).toContain("Scenarios (Given / When / Then)");
+    expect(sections.find((s) => s.heading === "Scenarios (Given / When / Then)")).toEqual({
+      heading: "Scenarios (Given / When / Then)",
+      class: "behaviour",
+      changed: null,
+    });
+    expect(sections.every((s) => s.changed === null)).toBe(true);
+  });
+
+  it("is null when no doc is bound", () => {
+    expect(sliceByKey(docJson(), "ship").sections).toBeNull();
   });
 });
 
