@@ -1698,11 +1698,30 @@ means the file still needs a human.
 ## `em ledger <file>`
 
 Checks that a slice doc's `version:` frontmatter field and its content — body text plus the
-three lineage fields (`split-from`/`merged-from`/`superseded-by`) — always change together
+three lineage fields (`split-from`/`merged-from`/`superseded-by`) — change together
 between two git revisions (MIL-89). `version:` is a pure "cache of git truth" (see
 [slice-doc-schema.md](slice-doc-schema.md)): a version bump with no real content change is a
-no-op ledger entry, a content change with no version bump is a stale ratification signal, and
-a version going backwards is almost always a typo. **Opt-in and CI-recipe-tier** — deliberately
+no-op ledger entry, a content change at the same version of a **shipped** version is a stale
+ratification signal, and a version going backwards is almost always a typo.
+
+**Same-version changes that are clean (GH #489, 1.23.0).** A content change with no version
+bump is accepted, not reported, in two states:
+
+- **Before ship.** The version had not shipped at the `--from` revision — judged by the shipped
+  record (`shippedVersion:`, or a pre-1.15 `status: implemented`), not by `status`. A `draft`,
+  `reviewed` or `ready-to-implement` doc with no shipped record qualifies, and so does a doc
+  reopened for the next version after an earlier one shipped. `em slice revise` on an unshipped
+  version reopens it at the same `version:`, so editing it before it ships never moves the number.
+- **A recorded amendment.** The version had shipped, but at the `--to` revision `amendedOn:` /
+  `amendedBy:` differ from the `--from` revision's (or are newly present), `ratifiedHash:` moved,
+  the body matches the new `ratifiedHash:` (so [`em slice amend`](#em-slice-amend-file-slice-key---by-name) re-signed
+  exactly this content) and the lineage fields did not change. A hand-typed `amendedOn:` beside a
+  stale hash is still `ledger-content-without-version-bump`.
+
+A shipped version whose content changed with no amendment, or an amendment whose hash does not
+match, stays an error. The version-regression and version-without-content-change findings, the
+hash finding and the waivers are unchanged; the JSON document lists only findings, so it has no
+per-slice "accepted" entry and its schema is unchanged. **Opt-in and CI-recipe-tier** — deliberately
 never folded into `em validate`, which stays a fast function of the current tree with no git
 history access; see [ci.md](ci.md#em-ledger-opt-in) for the recipe.
 

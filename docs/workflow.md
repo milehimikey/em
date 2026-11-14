@@ -365,7 +365,7 @@ and treat a finding as the start of a conversation.
 | Slice readiness at handoff | `em validate --slice-ready <key>` exits non-zero (opt-in, per slice) | — |
 | Ratifying a slice that was never reviewed | `em slice ratify` exits non-zero (`--skip-review` bypasses, with a notice on stderr) | — |
 | Model changed at all | only with `em diff --exit-code` | — |
-| Slice-doc `version:` ↔ content agreement | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
+| Slice-doc `version:` ↔ content agreement (a shipped version's content changes only with a bump or a recorded `em slice amend`; edits before ship are free) | `em ledger` exits non-zero (opt-in, needs git history; a formatting-only finding can be explicitly waived — `--waive` or an `Em-Ledger-Waive:` commit trailer, see [ci.md](ci.md#em-ledger-opt-in)) | — |
 | Strict types on `public` fields | `em validate` exits non-zero (`public-field-type-unresolved`) | — |
 | Contract current for a public-touching slice | `em validate --slice-ready <key>` and `em api check` exit non-zero on a stale or missing contract | `em api check --base` additive/breaking annotation |
 | Meaning question on a public-touching ratification | `em slice ratify` refuses without `--meaning-unchanged` or `--contract-change` (and asks again on every revised version) | — |

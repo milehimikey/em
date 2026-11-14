@@ -32,7 +32,7 @@ export function validateSignedBodies(model: NormalizedModel, refs: RefsResult, b
     pushDiag(diags, "slice-body-changed-since-ratification", {
       message:
         `slice "${sliceKey}"'s doc slices/${sliceKey}.md (status: ${doc.status ?? "(none)"}, v${doc.version ?? "?"}) was edited after ratification — ` +
-        "body no longer matches ratifiedHash; revert the edit, or open the next version (`em slice revise`) and re-ratify",
+        "body no longer matches ratifiedHash; revert the edit, re-sign a prose-only change in place (`em slice amend --by <name>`), or open the next version (`em slice revise`) and re-ratify",
       line: slice.line,
       refs: [sliceKey],
     });
