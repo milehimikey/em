@@ -1974,7 +1974,8 @@ A slice counts as ratified inline when one change set, `git diff <base>...HEAD` 
 form `em system scope` uses), both
 
 1. **ratified its doc**: `ratifiedHash:` is recorded at HEAD and was absent or different at the
-   merge-base (so `--no-ref` docs count, and so does an `em slice amend` re-sign), and
+   merge-base (so `--no-ref` docs count; an `em slice amend` re-sign under the same sign-off does
+   not — a prose amendment belongs in the implementation PR), and
 2. **touched implementation code**: any changed path that is not model material. Model material is
    a file under the model directory in `slices/`, `contracts/`, `model-versions/` or
    `conformance/`, a `.em` file, the `.event-modeling.md` state file, or `em-policy.yaml` /

@@ -6,7 +6,8 @@
 // "Ratified inline" is decided from git, mechanically, over ONE change set (`<base>...HEAD`, the
 // merge-base form `em system scope` uses): a slice counts when that change set both
 //   (a) ratified its doc -- `ratifiedHash:` is recorded at HEAD and was absent or different at the
-//       base (no dependence on `ratifiedRef:`, so `--no-ref` docs count), and
+//       base (no dependence on `ratifiedRef:`, so `--no-ref` docs count; an `em slice amend`
+//       re-sign under the same sign-off does NOT count), and
 //   (b) touched implementation code -- a path that is not model material (see `isModelMaterial`).
 // Pure aside from the injectable GitRunner and fs reads via readSliceDoc; no process.exit.
 import { realpathSync } from "node:fs";
@@ -109,6 +110,20 @@ export function checkInlineRatification(
     const shown = git(["show", `${mergeBase}:${repoPath}`]);
     const before = shown.status === 0 ? parseSliceDoc(shown.stdout) : null;
     if (before !== null && before.ratifiedHash === head.ratifiedHash) return;
+    // An `em slice amend` re-sign is not a ratification: the sign-off (who, when, which version)
+    // is unchanged and only the amendment record moved. Slate ruling R3 sends a prose amendment
+    // of an unshipped slice into the implementation PR, so it must not be reported here.
+    if (
+      before !== null &&
+      before.ratifiedHash !== null &&
+      before.ratifiedBy === head.ratifiedBy &&
+      before.ratifiedOn === head.ratifiedOn &&
+      before.version === head.version &&
+      head.amendedOn !== null &&
+      (before.amendedOn !== head.amendedOn || before.amendedBy !== head.amendedBy)
+    ) {
+      return;
+    }
     ratified.push(sliceKey);
     if (codePaths.length === 0 || inline.value === "always") return;
     if (inline.value === "internal" && !slicePublicTouching(slice)) return;

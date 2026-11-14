@@ -5,7 +5,7 @@
 // internal), then one branch per scenario.
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -168,6 +168,30 @@ describe("em inline-check (CLI, real git)", () => {
     const { status, json } = scenario({ keys: ["pay"], code: true, noRef: true });
     expect(status).toBe(0);
     expect(json.findings.map((f: any) => f.sliceKey)).toEqual(["pay"]);
+  });
+
+  it("a prose amendment in the same change set as code is not a ratification (slate R3)", () => {
+    // Base: ship ratified in a doc-only commit, policy `never` (so ANY inline ratification would
+    // be reported). Branch: prose edit + `em slice amend` + code.
+    git(dir, "checkout", "-q", "main");
+    git(dir, "checkout", "-q", "-b", "amend-base");
+    writeFileSync(join(dir, "em-policy.yaml"), policy("never", null));
+    const r = em(["slice", "ratify", "model.em", "ship", "--by", "Alex", "--on", "2026-10-02", "--no-ref"], dir);
+    expect(r.status).toBe(0);
+    git(dir, "add", "slices/ship.md", "em-policy.yaml");
+    git(dir, "commit", "-q", "-m", "ratify ship");
+    git(dir, "checkout", "-q", "-b", "amend-impl");
+    const docPath = join(dir, "slices", "ship.md");
+    writeFileSync(docPath, readFileSync(docPath, "utf8").replace("Do the thing.", "Do the thing, said better."));
+    const a = em(["slice", "amend", "model.em", "ship", "--by", "Alex", "--on", "2026-10-03", "--no-ref"], dir);
+    expect(a.status).toBe(0);
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "impl.ts"), "export const y = 2;\n");
+    git(dir, "add", "slices/ship.md", "src/impl.ts");
+    git(dir, "commit", "-q", "-m", "implement + amend");
+    const res = em(["inline-check", "model.em", "--base", "amend-base", "--json"], dir);
+    expect(res.status).toBe(0);
+    expect(JSON.parse(res.stdout).findings).toEqual([]);
   });
 
   it("an invalid policy file refuses, naming policy-invalid", () => {
