@@ -717,7 +717,7 @@ describe("status tool", () => {
   // totals are now 0/0 for this fixture (was 2/1/1 pre-MIL-207).
   it("happy path: returns the same document `em status --json` prints (parity, MIL-163)", async () => {
     const { doc } = await callJson(client, "status", { files: [join(dir, "ready.em")], testsDir: join(dir, "tests") });
-    expect(doc.statusSchemaVersion).toBe("1.12");
+    expect(doc.statusSchemaVersion).toBe("1.13");
     expect(doc.files).toEqual([join(dir, "ready.em")]);
     expect(doc.slices.total).toBe(2); // "Ready Slice" + "Read Model"
     expect(doc.slices.byStatus.readyToImplement).toBe(1);
@@ -1794,7 +1794,7 @@ describe("engagement_plan / engagement_status tools (MIL-268)", () => {
     const file = join(lendDir, "lending.em");
     const { result, doc } = await callJson(client, "engagement_plan", { file, slug: "loans" });
     expect(result.isError).toBeFalsy();
-    expect(doc.engagementPlanSchemaVersion).toBe("1.5");
+    expect(doc.engagementPlanSchemaVersion).toBe("1.6");
     // MIL-280: one upstream merged, one still open — base is main either way, and nothing is held.
     expect(doc.slices.find((s: { key: string }) => s.key === "reservations")).toMatchObject({ base: "main", held: null });
     const cli = em(["engagement", "plan", file, "loans", "--json"], lendDir);

@@ -900,7 +900,7 @@ export const RULES = {
   "ratified-by-not-in-roster": {
     severity: "error",
     title: "ratifiedBy is not on the ratifier roster",
-    fix: "The doc's `ratifiedBy:` names someone `ratifiers.yaml` does not permit for this slice's context — re-ratify it with a permitted name (`em slice revise --withdraw`, review, `em slice ratify --by <name>`), or update the roster.",
+    fix: "The doc's `ratifiedBy:` names someone the roster (`em-policy.yaml`'s `ratifiers:`, or a legacy `ratifiers.yaml`) does not permit for this slice's context — re-ratify it with a permitted name (`em slice revise --withdraw`, review, `em slice ratify --by <name>`), or update the roster.",
     usageCategory: "ratifiedBy not in roster",
     docAnchor: "slice-readiness",
     optIn: true,
@@ -908,7 +908,7 @@ export const RULES = {
   "reviewed-by-not-in-roster": {
     severity: "error",
     title: "reviewedBy is not on the reviewer roster",
-    fix: "The doc's `reviewedBy:` names someone `ratifiers.yaml`'s `reviewers:` does not permit for this slice's context -- re-review it with a permitted name, or update the roster.",
+    fix: "The doc's `reviewedBy:` names someone the roster's `reviewers:` list does not permit for this slice's context -- re-review it with a permitted name, or update the roster.",
     usageCategory: "reviewedBy not in roster",
     docAnchor: "slice-readiness",
     optIn: true,
@@ -916,8 +916,16 @@ export const RULES = {
   "roster-invalid": {
     severity: "error",
     title: "Ratifier roster invalid",
-    fix: "Fix `ratifiers.yaml`: `rosterSchemaVersion: \"1.0\"`, then `ratifiers:` and/or `reviewers:` as non-empty lists of `{ name, contexts? }`.",
+    fix: "Fix the roster file (`em-policy.yaml`, or a legacy `ratifiers.yaml` with `rosterSchemaVersion: \"1.0\"`): `ratifiers:` and/or `reviewers:` as non-empty lists of `{ name, contexts? }`.",
     usageCategory: "ratifier roster invalid",
+    docAnchor: "slice-readiness",
+    optIn: true,
+  },
+  "policy-invalid": {
+    severity: "error",
+    title: "Process policy invalid",
+    fix: "Fix `em-policy.yaml`: `policySchemaVersion: \"1.0\"`, then any of `merge`, `review`, `ratification` (`inline`, `inline-violation`), `amendment` (`prose-sections`), `ratifiers`, `reviewers` -- unknown keys and out-of-range values are errors.",
+    usageCategory: "policy file invalid",
     docAnchor: "slice-readiness",
     optIn: true,
   },

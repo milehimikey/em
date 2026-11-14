@@ -90,7 +90,12 @@ base is `main`), and every held slice with its reason (`not-ready`,
 enforcing slice, an `event-without-tag` whose consistency boundary is undeclared, a
 `shared-trigger` (one `ui`, two slices, no endpoint owner), a `doc-model-mismatch`, a `shape` (a
 `em validate --shape` lint fires on the slices; the answer is a `shape-accepted: <rule> <refs> —
-<reason>` bullet in `.event-modeling.md` `## Decisions log`, or a model fix). These are
+<reason>` bullet in `.event-modeling.md` `## Decisions log`, or a model fix). The plan may
+also print a **`reviewed, not yet ratified` block**: the engagement's slices whose doc is still
+`reviewed`, with the exact `em slice ratify` batch command (and one single command per
+public-touching slice, which needs a meaning flag). Show it to the human as the handoff step
+still owed, since ratification is the handoff gate and those slices are held until it is done.
+It is information, not a hold; you never run the command, and `<name>` is theirs to fill in. These are
 exactly what every implementer would otherwise stop on and report separately. Put them to the
 human **in the same single question round** as the ceiling, one bullet each with the slices it
 spans, and ask for a ruling on each (the answer goes where it belongs: the model, the foundation

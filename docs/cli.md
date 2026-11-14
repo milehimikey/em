@@ -666,7 +666,7 @@ unless **all** of the following hold, printing which ones don't and why
   `em engagement plan` runs the default verdict.
 - **ratifier roster, `--roster <path>` (GH #259, 1.18.0):** (one `ready-to-implement` slice, ratifier
   only - `em roster check` is the whole-model gate; the `grandfathered ...` placeholder is exempt) when a
-  [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) exists (the nearest one above the model,
+  roster ([`em-policy.yaml`](slice-doc-schema.md#who-may-ratify) lists, or a legacy `ratifiers.yaml`) exists (the nearest one above the model,
   or the given path), a `ready-to-implement` doc whose `ratifiedBy` is not permitted for the
   slice's context gets `ratified-by-not-in-roster` (error, `refs: [<slice key>]`, in `--json`
   `diagnostics`) and `ready: false` — this is what catches a hand-edited frontmatter that
@@ -812,7 +812,8 @@ markdown body still never appears in a plain export; here the rendered HTML is o
   bullets lifted out of the view section — plus, after the current ones, any section recorded at
   sign-off and since deleted). `class` is `prose` (`Intent`, `Trigger & Actor`, `Dependencies & Read
   Models Affected`, `Consumed by`) or `behaviour` (everything else, any unrecognised heading
-  included). `changed` is whether the section's text differs from the hash `em slice ratify`
+  included); since 1.23.0 (GH #493) the prose list is `amendment.prose-sections` from the project's
+  [`em-policy.yaml`](policy.md) when it declares one, else that default. `changed` is whether the section's text differs from the hash `em slice ratify`
   recorded in `ratifiedSections:` (same exclusions as `ratifiedHash`: generated regions and Open
   Questions deferrals); `null` for every section when the doc records none — ratified before
   1.23.0 and not yet stamped by `em upgrade`'s `ratified-sections` step. `null` (the whole field)
@@ -2278,13 +2279,13 @@ information) never counts, same as `em conform-scope`'s own rule. Like `commitsB
 `null` exactly when the conformance record couldn't be verified at all (see `error` below) — a
 `null` here is never the same fact as "0 slice-PRs behind," so it's never coalesced to 0.
 
-**`--json` shape** (`statusSchemaVersion: "1.12"`, versioned independently of the npm package and
+**`--json` shape** (`statusSchemaVersion: "1.13"`, versioned independently of the npm package and
 every other command's own schema — this is also the exact document the MCP `status` tool returns,
 see [mcp.md](mcp.md)):
 
 ```json
 {
-  "statusSchemaVersion": "1.12",
+  "statusSchemaVersion": "1.13",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "files": ["model.em"],
   "slices": {
@@ -2356,8 +2357,17 @@ written (see [`em state set-conformance`](#em-state-set-conformance-revision-dir
 `unruledFindings` (added in schema `1.5`, MIL-214) is the count described above — `null` when no
 findings JSON exists beside the recorded report.
 
+`policy` (added in schema `1.13`, GH #493) is one entry per input model: `{ file, policyFile, invalid,
+merge, review, ratificationInline, ratificationInlineViolation, amendmentProseSections, ratifiers,
+reviewers }`. Each key from `em-policy.yaml` ([policy.md](policy.md)) is `{ value, source }`, `source`
+being the policy file's path (as reached from the input) or `"default"`; `ratifiers`/`reviewers` carry
+the entry count (`null` = no list, unrestricted). `policyFile` is `null` with no file; `invalid` is
+`null`, or the list of `policy-invalid` messages when the file is unusable (status itself still
+succeeds). The text report prints a `policy:` block per model. Only `merge` and
+`amendment.prose-sections` change any behaviour today; the rest are reported.
+
 `roster` (added in schema `1.12`, GH #259) is `"present"`, `"absent"` or `"invalid"`: whether a
-[`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) governs `em slice ratify --by` /
+[roster](slice-doc-schema.md#who-may-ratify) (`em-policy.yaml` lists or a legacy `ratifiers.yaml`) governs `em slice ratify --by` /
 `em slice review --by` for the first input model (`invalid` = found but unusable; both commands
 refuse until it is fixed). The text report prints `roster: <state>`.
 
@@ -2805,6 +2815,21 @@ Plan schema **`1.5`** (GH #455) adds one more `preflight[].kind`:
 |---|---|
 | `context-missing` | One of the engagement's `context:` paths does not exist on disk at plan time, resolved against the current working directory. `subject` = the path, `slices` = every slice in the engagement (a context document is engagement-wide, not per-slice). Add the file before fan-out, or drop it from `context:` |
 
+Plan schema **`1.6`** (GH #492) adds `ratifyAtHandoff`, the **reviewed-but-not-ratified** block.
+Ratification is the handoff gate: while a storyline is still being shaped, slices stay at
+`reviewed` (a `reviewed` doc is free to edit — `em slice review --again` re-records the review; a
+ratified one is not), and the storyline is ratified together when it is shaped end to end or its
+slices are about to be dispatched. So the plan lists the engagement's slices whose doc is
+`status: reviewed` with the exact command(s) that ratify them: one batch
+`em slice ratify <file> <keys…> --by <name>` for the non-public-touching ones (see the batch
+paragraph of [`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)), and one single-slice command per
+public-touching one, which names a meaning flag (`--meaning-unchanged`, or `--contract-change
+"<why>"`) because a batch refuses those. `<name>` is printed literally; the plan never guesses who
+ratifies. Information only: it changes no slice's `ready`/`held` and no exit code.
+`ratifyAtHandoff: [{ kind: "batch" | "single", slices, command, meaningFlagRequired }]` — batch
+entry first, then singles in plan order; `[]` when nothing is `reviewed`, and the text form prints
+nothing then.
+
 The text form prints one block per level with its width against the ceiling, with a `context:`
 line first when the engagement has one:
 
@@ -2821,10 +2846,10 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.5"`, `generator`, `file`, `engagement` (the
+`--json` prints `engagementPlanSchemaVersion: "1.6"`, `generator`, `file`, `engagement` (the
 file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `context` (the engagement's `context:` paths, `[]` when absent, added in `1.5`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
-(added in `1.2`, GH #239 — see above). The MCP
+(added in `1.2`, GH #239 — see above), and `ratifyAtHandoff[]` (added in `1.6`, GH #492 — see above). The MCP
 `engagement_plan` tool returns the same document. Two kinds of edge never order a build and are
 left out of the levelling graph: a `loops-to` edge (it re-feeds an earlier read model) and, since
 1.19.5 (GH #378), any edge into a `view … again` instance — a continuation has no doc or PR of its own
@@ -4027,8 +4052,8 @@ generated workflow when a roster is discovered ([ci.md](ci.md#ratifier-roster-ga
 
 ## `em roster init <file>`
 
-Writes a starting [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) beside the model (GH #259)
-from the names the slice docs already record: every distinct `ratifiedBy:` becomes a `ratifiers:`
+Writes a starting [`em-policy.yaml`](policy.md) (the roster lists; before 1.23.0 it wrote
+`ratifiers.yaml`) beside the model (GH #259, GH #493) from the names the slice docs already record: every distinct `ratifiedBy:` becomes a `ratifiers:`
 entry and every distinct `reviewedBy:` a `reviewers:` entry, each covering the whole model (narrow
 them with `contexts:` by hand). The placeholder `em upgrade`'s `ratified-signoff` step writes
 (`grandfathered (unsigned before em 1.14)`) is not a person and is skipped (the count is printed).
@@ -4066,7 +4091,7 @@ status (docs/slice-doc-schema.md) — a doc that never went through this command
 neither, and every existing `em` command already tolerates an absent field.
 
 **Reviewer roster (GH #259, 1.18.0).** `--by` is checked the same way against the `reviewers:`
-list of [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) when the file has one (`--roster
+list of the [roster](slice-doc-schema.md#who-may-ratify) (`em-policy.yaml`) when the file has one (`--roster
 <path>` overrides discovery); a roster without `reviewers:`, or no roster at all, leaves review
 unrestricted.
 
@@ -4163,7 +4188,7 @@ are additive, optional frontmatter keys (docs/slice-doc-schema.md) — a doc tha
 feature, or was hand-ratified, simply has neither key, and every existing `em` command already
 tolerates an unknown/absent field.
 
-**Ratifier roster (GH #259, 1.18.0).** When a [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify)
+**Ratifier roster (GH #259, 1.18.0).** When a [roster](slice-doc-schema.md#who-may-ratify) (`em-policy.yaml` lists, or a legacy `ratifiers.yaml`)
 exists (beside the model, or the nearest one above it up to the repo root; `--roster <path>`
 overrides), `--by` must be a name the roster permits for the slice's context(s) - all of them, for
 a cross-context slice: a name that is not listed is refused (non-zero exit, file untouched) and the message lists who is permitted. No
@@ -4211,8 +4236,12 @@ work tree carries, which every reader already accepts — and `mark-implemented`
 does not apply: that check exists only to make the recorded ref's tree match the body, and with
 no ref there is nothing for it to protect (the hash is computed from the body itself). A
 `ratifiedRef:` line already on the doc is removed, not carried forward. The command prints
-`ratified: … — ratifiedHash only, no ratifiedRef (--no-ref)`. There is no repo-level default
-yet — the flag is per run.
+`ratified: … — ratifiedHash only, no ratifiedRef (--no-ref)`. Since 1.23.0 (GH #493) the repo-level
+default is [`merge:` in `em-policy.yaml`](policy.md): `merge: squash` or `merge: rebase` makes every
+`ratify` behave as if `--no-ref` were passed and says so on stderr (`notice: <policy file> sets
+merge: squash -- recording the hash only`); `merge: merge-commit`, or no key, is the behaviour above.
+The `--no-ref` flag still works under any policy. There is **no flag to force a ref against
+policy** (edit the policy for that). An invalid policy file refuses the ratify with `policy-invalid`.
 
 Never touches `version:` or the doc body: the write is a surgical in-place edit of just the
 `status:`/`ratifiedBy:`/`ratifiedOn:` lines (inserting whichever of `ratifiedBy:`/`ratifiedOn:`
@@ -6076,6 +6105,13 @@ The mechanical steps, in this fixed order:
    re-signing: `ratifiedHash`, `ratifiedRef` and the sign-off stay as they are. Until stamped (or
    re-signed) the doc's sections classify as unknown. A doc whose body no longer matches is listed
    (`left alone: <keys>`) and not stamped.
+9b. **`policy-file`** (1.23.0, GH #493) — moves a legacy `ratifiers.yaml` into `em-policy.yaml`
+   beside it (the file em reads since 1.23.0; see [policy.md](policy.md)): content carried over
+   verbatim, `rosterSchemaVersion` becomes `policySchemaVersion`, comments preserved, and the old
+   file is removed — the commit's rename is the record. The result is re-parsed and must carry the
+   same roster lists, else nothing is written. **Refuses rather than guess** (a human item, nothing
+   changed) when an `em-policy.yaml` already exists beside the `ratifiers.yaml` — merge the lists by
+   hand — and when the `ratifiers.yaml` is not a valid roster.
 10. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
    command (identical command text, identical `ui`, no `note` or `issue` on the later slices) and
    differ only in the event they record on one context become ONE slice recording `event A | B
@@ -6163,7 +6199,7 @@ The human list — detect-only, never applied, printed by every mode:
 | `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only, shown while upgrading from before 1.18.0: an event is recorded by more than one command — legal now, one logical event, nothing to change |
 | `ci-paths-hand-edited` | (1.19.0, GH #346) em-ci.yml has a hand-edited `pull_request.paths` filter missing entries of the current preset, so a PR touching only those files runs no CI; em leaves it alone - add the listed entries |
 | `api-contract-blocked` | (1.18.1, GH #331) the `api-check` job needs `contracts/<model key>.tsp` but the model has compile errors or can't be read, so `api-contract-missing` could not generate it - run `em validate <model>`, fix, then `em api generate <model>` |
-| `roster-not-initialised` | (1.18.0, GH #290 / #259) slice docs carry `ratifiedBy` / `reviewedBy` names and no `ratifiers.yaml` exists above the model — run `em roster init <model>.em` and review it; never generated by `em upgrade` |
+| `roster-not-initialised` | (1.18.0, GH #290 / #259) slice docs carry `ratifiedBy` / `reviewedBy` names and no roster (`ratifiers:` in `em-policy.yaml`) exists above the model — run `em roster init <model>.em` and review it; never generated by `em upgrade` |
 | `plugin-install-locally` | The `skill-plugin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
 
 `--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a

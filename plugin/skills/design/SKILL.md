@@ -376,6 +376,13 @@ A finished draft doesn't become implementable here: it goes through the review g
 ratification gate, both human, both outside this phase — see
 `docs/process.md#the-slice-lifecycle-gates` for who runs which and in what order.
 
+Ratification is the handoff gate, so time it that way: while a storyline is still being shaped,
+hold its slices at `reviewed`. A `reviewed` doc is free to edit (`em slice review --again`
+re-records the review); a ratified one is not, and the slices ratified early are the ones later
+slices force back open. When the storyline is shaped end to end, or its slices are about to be
+dispatched for building, the human ratifies them together in one run
+(`em slice ratify <model>.em <key>... --by <name>`, or `--storyline <name>`). You still never run it.
+
 Before the project's first slice is implemented it also needs a ratified implementation
 constitution (stack, code style, testing norms, NFR baselines, review norms) — the
 `em:implement` skill elicits it, see its `reference/implement.md` §7.

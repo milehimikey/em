@@ -95,11 +95,16 @@ convention, not parser-enforced.
 
 The schema records *who* signed (`reviewedBy`, `ratifiedBy`) but, by default, accepts any
 non-empty name: who is allowed to sign is the host repo's decision. A host that wants em to
-enforce it supplies an optional **roster**, `ratifiers.yaml`, beside the model. See
-[examples/order-fulfillment/ratifiers.yaml](https://github.com/milehimikey/em/blob/main/examples/order-fulfillment/ratifiers.yaml).
+enforce it supplies an optional **roster**: the `ratifiers:` / `reviewers:` lists of the project's
+`em-policy.yaml` (GH #493), beside the model. See
+[examples/order-fulfillment/em-policy.yaml](https://github.com/milehimikey/em/blob/main/examples/order-fulfillment/em-policy.yaml).
+The file also carries the project's other process policy; the roster lists are one part of it.
+A pre-1.23 `ratifiers.yaml` (same lists, `rosterSchemaVersion: "1.0"` instead of
+`policySchemaVersion: "1.0"`) is still read for a deprecation window, with a notice on stderr;
+`em upgrade`'s `policy-file` step moves it into `em-policy.yaml`.
 
 ```yaml
-rosterSchemaVersion: "1.0"
+policySchemaVersion: "1.0"
 ratifiers:
   - name: Aaron McKay
     contexts: [Product, Attribute]   # omit = the whole model
@@ -110,15 +115,18 @@ reviewers:                           # optional; same shape, checked by `em slic
   - name: Mike Key
 ```
 
-- **Schema.** `rosterSchemaVersion` is required (`"1.0"`); at least one of `ratifiers:` /
-  `reviewers:` is required; each is a non-empty list of `{ name, contexts?, models? }`. Unknown
-  keys are errors (`roster-invalid`). A missing `ratifiers:` / `reviewers:` key leaves that role
-  unrestricted.
-- **Placement.** The nearest `ratifiers.yaml` walking up from the model's directory, stopping at
-  the nearest directory holding `.git` (or the filesystem root). If no `.git` exists anywhere
-  above the model, only the model's own directory is searched. `--roster <path>` on `ratify`,
-  `review`, `validate --slice-ready`, `roster check` overrides discovery; a path that does not
-  exist is an error, never "no roster".
+- **Schema.** `policySchemaVersion` is required (`"1.0"`); each of `ratifiers:` / `reviewers:` is
+  optional, and when present a non-empty list of `{ name, contexts?, models? }`. Unknown keys are
+  errors (`policy-invalid` in `em-policy.yaml`, `roster-invalid` in a legacy `ratifiers.yaml`,
+  which needs at least one list). A missing `ratifiers:` / `reviewers:` key leaves that role
+  unrestricted. The other policy keys are in [policy.md](policy.md).
+- **Placement.** The nearest `em-policy.yaml` that declares a list (else, in the same directory, a
+  legacy `ratifiers.yaml`) walking up from the model's directory, stopping at the nearest
+  directory holding `.git` (or the filesystem root). If no `.git` exists anywhere above the model,
+  only the model's own directory is searched. If both files sit in one directory, `em-policy.yaml`
+  wins and a notice says the other is ignored. `--roster <path>` on `ratify`, `review`,
+  `validate --slice-ready`, `roster check` overrides discovery and accepts either file; a path
+  that does not exist is an error, never "no roster".
 - **A slice's contexts** are the contexts of its **events** plus the contexts of the events its
   **views read** - each view instance's **own** `from`, never a union across the read model's
   instances (adding a later `again` instance never changes an earlier slice's contexts). A
@@ -137,7 +145,7 @@ reviewers:                           # optional; same shape, checked by `em slic
   `system.yaml` does not list is `roster-invalid`.
 - **Validation against the model.** A `contexts:` entry the model does not declare (case-sensitive)
   is `roster-invalid`, naming the context; only entries that apply to the model are checked.
-- **File absent: today's behaviour**, no warning. **File present but invalid: fail closed** -
+- **No roster: today's behaviour**, no warning. **File present but invalid: fail closed** -
   `ratify` and `review` refuse, `--slice-ready` and `roster check` report `roster-invalid`.
 - **`grandfathered (unsigned before em 1.14)`** is em's own migration marker (`em upgrade`'s
   `ratified-signoff`), not a signer: exempt from the `--slice-ready` check and from `roster check`

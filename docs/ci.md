@@ -567,7 +567,7 @@ Ground rules, matching the phase's own stance (see
 ## Ratifier roster gate
 
 `ratifiedBy:` and `reviewedBy:` are free text, so a PR can type any name into the frontmatter.
-With a [`ratifiers.yaml`](slice-doc-schema.md#who-may-ratify) in the repo, **`em roster check
+With a roster ([`em-policy.yaml`](slice-doc-schema.md#who-may-ratify) `ratifiers:`/`reviewers:`, or a legacy `ratifiers.yaml`) in the repo, **`em roster check
 <model>`** is the CI gate: it walks every slice doc and fails (exit 1) when a recorded signer is
 not permitted for the slice's contexts - `ratifiedBy` on `ready-to-implement` **and**
 `implemented` docs, `reviewedBy` on any doc - or when the roster itself is invalid. `--json`
@@ -578,14 +578,14 @@ checked). Once a repo has re-ratified its grandfathered docs, also run `em valid
 <key> --require-ratified-hash`, which closes the marker as a way around the roster. With no roster file it prints "nothing to check" and exits 0.
 
 `em ci init` (and `em upgrade`'s regeneration of the block) emits a `roster` job - `roster-<id>`
-per model in the `em ci init <system.yaml>` form - **only when a `ratifiers.yaml` is discovered
-for the model**; a repo without one gets no extra job. Run `em ci init` again after adding the
+per model in the `em ci init <system.yaml>` form - **only when a roster is discovered
+for the model** (`em-policy.yaml` with a list, or a legacy `ratifiers.yaml`); a repo without one gets no extra job. Run `em ci init` again after adding the
 roster to pick the job up.
 
 `em validate <model> --slice-ready <key>` also reports `ratified-by-not-in-roster`, but only for
 the one slice it is asked about and only while it is `ready-to-implement`; it is the handoff
 check, not the repo-wide gate. The roster itself is reviewed like any other file, so pair it with
-the CODEOWNERS rule below (own `ratifiers.yaml` as well as `slices/**`) - otherwise whoever can
+the CODEOWNERS rule below (own `em-policy.yaml` as well as `slices/**`) - otherwise whoever can
 edit the doc can edit the list. Adopt it with `em roster init <model>`.
 
 ## CODEOWNERS: routing ratification review

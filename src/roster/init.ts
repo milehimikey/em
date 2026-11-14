@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// `em roster init` (GH #259, the upgrade path #290 names): write a starting `ratifiers.yaml` from
+// `em roster init` (GH #259, the upgrade path #290 names): write a starting `em-policy.yaml` (roster lists) from
 // the names the model's slice docs already record in `ratifiedBy:` / `reviewedBy:`, so adopting the
 // roster does not start by locking out everyone who has already signed something. Entries carry no
 // `contexts` (whole model) -- narrowing them is the host's decision, made by editing the file.
@@ -7,7 +7,8 @@
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
-import { ROSTER_SCHEMA_VERSION, isGrandfatheredSignoff } from "./roster.js";
+import { POLICY_SCHEMA_VERSION } from "../policy/policy.js";
+import { isGrandfatheredSignoff } from "./roster.js";
 
 /** `em upgrade`'s ratified-signoff step writes this placeholder; it is not a person. */
 export interface ObservedSigners {
@@ -43,10 +44,11 @@ const yamlName = (n: string) => JSON.stringify(n);
  *  caller refuses to write when both lists are empty. */
 export function renderRoster(observed: ObservedSigners): string {
   const lines = [
-    "# ratifiers.yaml -- who may sign slice docs for this model (em roster init).",
-    "# Seeded from the names already recorded in the slice docs. Narrow an entry with",
-    "# `contexts: [Name, ...]` (omit = whole model). Delete the file to lift the restriction.",
-    `rosterSchemaVersion: "${ROSTER_SCHEMA_VERSION}"`,
+    "# em-policy.yaml -- process policy for this model (docs/policy.md). Written by em roster init.",
+    "# The ratifiers/reviewers lists are seeded from the names already recorded in the slice docs.",
+    "# Narrow an entry with `contexts: [Name, ...]` (omit = whole model). Delete a list to lift its",
+    "# restriction. Other keys (merge, review, ...) are optional: see docs/policy.md.",
+    `policySchemaVersion: "${POLICY_SCHEMA_VERSION}"`,
   ];
   const list = (key: string, names: string[]) => {
     lines.push(`${key}:`);

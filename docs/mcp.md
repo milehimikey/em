@@ -143,7 +143,7 @@ error here — it's represented in the document itself (`gates: null`, `ready: f
 again-view-only slice with no legacy doc of its own) — the originating slice's export key;
 `gates` themselves already resolve straight through to that slice's own doc/status.
 `roster` (GH #259) is the path of a [ratifier roster](slice-doc-schema.md#who-may-ratify) to check
-`ratifiedBy` against - the CLI's `--roster`; omitted, the nearest `ratifiers.yaml` above the model
+`ratifiedBy` against - the CLI's `--roster`; omitted, the nearest `em-policy.yaml` roster (or legacy `ratifiers.yaml`) above the model
 is used, and with none nothing changes. A signer it does not permit is a
 `ratified-by-not-in-roster` diagnostic (and `ready: false`).
 

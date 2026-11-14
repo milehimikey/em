@@ -4,7 +4,7 @@
 // binary in a real temporary git repository (the ref/uncommitted rules are git behaviour).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -192,8 +192,22 @@ describe("applyAmendFrontmatter (GH #488)", () => {
 });
 
 describe("proseHeadingsFor", () => {
-  it("returns the default list for now (GH #493 wires the policy file in here later)", () => {
-    expect(proseHeadingsFor("/anywhere")).toBe(DEFAULT_PROSE_HEADINGS);
+  it("returns the default list when no em-policy.yaml declares one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-prose-default-"));
+    try {
+      expect(proseHeadingsFor(dir)).toEqual(DEFAULT_PROSE_HEADINGS);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("returns amendment.prose-sections from em-policy.yaml when declared (GH #493)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "em-prose-policy-"));
+    try {
+      writeFileSync(join(dir, "em-policy.yaml"), 'policySchemaVersion: "1.0"\namendment:\n  prose-sections:\n    - Intent\n');
+      expect(proseHeadingsFor(dir)).toEqual(["Intent"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

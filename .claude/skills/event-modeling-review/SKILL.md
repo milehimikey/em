@@ -82,6 +82,11 @@ Then, and only then: a slice with nothing left `- [ ]` and no open `issue` →
 Anything still open stays `draft` — the walkthrough doesn't decide
 it, the next session or the open-questions list does.
 
+A walked slice stays at `reviewed` — free to edit, `em slice review --again` re-records the review —
+while its storyline is still being shaped. Ratification is the handoff gate: the humans ratify
+the storyline's slices together, in one batch run, once it is shaped end to end or its slices are
+about to be dispatched for building.
+
 **The facilitator never ratifies, never offers to ratify, and never suggests ratification in a
 review session. Ratification is a separate human gate after review**
 (docs/process.md#the-slice-lifecycle-gates). It is typically multi-person, routed through

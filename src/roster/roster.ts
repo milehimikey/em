@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// The optional ratifier roster (GH #259): `ratifiers.yaml` beside the model — a host-supplied list
+// The optional ratifier roster (GH #259): since GH #493 the `ratifiers:`/`reviewers:` lists of
+// `em-policy.yaml` (a legacy `ratifiers.yaml` is still read, deprecated) beside the model — a host-supplied list
 // of who may sign slice docs. File absent = em behaves exactly as before (any non-empty name);
 // file present = `em slice ratify --by` / `em slice review --by` refuse a name the roster does not
 // permit for the slice's context(s), and `em validate --slice-ready` reports a hand-edited
@@ -10,14 +11,16 @@
 // Pure parsing (`parseRoster`) is separate from filesystem discovery (`loadRoster`).
 
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join, normalize, resolve, sep } from "node:path";
-import { LineCounter, parseDocument, isMap, isSeq, isScalar, Node, Pair } from "yaml";
+import { basename, dirname, join, normalize, resolve, sep } from "node:path";
+import { LineCounter, parseDocument, isMap, isSeq, isScalar, Node, Pair, YAMLMap } from "yaml";
 import type { Diagnostic } from "../model/validate.js";
 import { normalizeName, type NormalizedModel } from "../model/model.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
 import { pushDiag } from "../model/rules.js";
+import { rosterOfPolicyText } from "../policy/policy.js";
 
 export const ROSTER_FILE = "ratifiers.yaml";
+export const POLICY_FILE = "em-policy.yaml";
 export const ROSTER_SCHEMA_VERSION = "1.0";
 
 export interface RosterEntry {
@@ -94,54 +97,8 @@ export function parseRoster(text: string): ParseRosterResult {
     }
   }
 
-  const readList = (key: "ratifiers" | "reviewers"): RosterEntry[] | null => {
-    const node = root.get(key, true) as Node | undefined;
-    if (node === undefined) return null;
-    if (!isSeq(node) || node.items.length === 0) {
-      invalid(`\`${key}\` must be a non-empty list of { name, contexts? } entries (omit the key to leave it unrestricted)`, lineOf(node));
-      return null;
-    }
-    const out: RosterEntry[] = [];
-    for (const item of node.items) {
-      if (!isMap(item)) {
-        invalid(`\`${key}\` entries must be mappings with a \`name\` (and optional \`contexts\`)`, lineOf(item as Node));
-        continue;
-      }
-      for (const p of item.items) {
-        const k = scalarString(p.key);
-        if (k === undefined || !ENTRY_KEYS.has(k)) invalid(`${key}: unknown key ${JSON.stringify(k ?? "?")} — expected name, contexts, models`, lineOf(p));
-      }
-      const name = scalarString(item.get("name", true));
-      if (name === undefined || name.trim() === "") {
-        invalid(`${key}: every entry needs a non-empty string \`name\``, lineOf(item));
-        continue;
-      }
-      const ctxNode = item.get("contexts", true) as Node | undefined;
-      let contexts: string[] | null = null;
-      if (ctxNode !== undefined) {
-        const names = isSeq(ctxNode) ? ctxNode.items.map((i) => scalarString(i)) : [];
-        if (!isSeq(ctxNode) || names.length === 0 || names.some((n) => n === undefined || n.trim() === "")) {
-          invalid(`${key}: "${name}": \`contexts\` must be a non-empty list of context names (omit it for the whole model)`, lineOf(ctxNode));
-          continue;
-        }
-        contexts = (names as string[]).map(normalizeContext);
-      }
-      const modelsNode = item.get("models", true) as Node | undefined;
-      let models: string[] | null = null;
-      if (modelsNode !== undefined) {
-        const keys = isSeq(modelsNode) ? modelsNode.items.map((i) => scalarString(i)) : [];
-        if (!isSeq(modelsNode) || keys.length === 0 || keys.some((n) => n === undefined || n.trim() === "")) {
-          invalid(`${key}: "${name}": \`models\` must be a non-empty list of model keys (omit it to apply to every model)`, lineOf(modelsNode));
-          continue;
-        }
-        models = (keys as string[]).map((k) => k.trim());
-      }
-      out.push({ name: name.trim(), contexts, models });
-    }
-    return out;
-  };
-  const ratifiers = readList("ratifiers");
-  const reviewers = readList("reviewers");
+  const ratifiers = readRosterList(root, "ratifiers", invalid, lineOf);
+  const reviewers = readRosterList(root, "reviewers", invalid, lineOf);
   if (root.get("ratifiers", true) === undefined && root.get("reviewers", true) === undefined) {
     invalid("a roster needs `ratifiers:` and/or `reviewers:`");
   }
@@ -149,16 +106,71 @@ export function parseRoster(text: string): ParseRosterResult {
   return { ok: true, roster: { rosterSchemaVersion: version!, ratifiers, reviewers } };
 }
 
+/** Read one roster list (`ratifiers` / `reviewers`) from a parsed YAML mapping. Shared by
+ *  `ratifiers.yaml` and `em-policy.yaml` (GH #493): same shape, same meaning. */
+export function readRosterList(
+  root: YAMLMap,
+  key: "ratifiers" | "reviewers",
+  invalid: (message: string, line?: number) => void,
+  lineOf: (n: Node | Pair | null | undefined) => number | undefined,
+): RosterEntry[] | null {
+  const node = root.get(key, true) as Node | undefined;
+  if (node === undefined) return null;
+  if (!isSeq(node) || node.items.length === 0) {
+    invalid(`\`${key}\` must be a non-empty list of { name, contexts? } entries (omit the key to leave it unrestricted)`, lineOf(node));
+    return null;
+  }
+  const out: RosterEntry[] = [];
+  for (const item of node.items) {
+    if (!isMap(item)) {
+      invalid(`\`${key}\` entries must be mappings with a \`name\` (and optional \`contexts\`)`, lineOf(item as Node));
+      continue;
+    }
+    for (const p of item.items) {
+      const k = scalarString(p.key);
+      if (k === undefined || !ENTRY_KEYS.has(k)) invalid(`${key}: unknown key ${JSON.stringify(k ?? "?")} — expected name, contexts, models`, lineOf(p));
+    }
+    const name = scalarString(item.get("name", true));
+    if (name === undefined || name.trim() === "") {
+      invalid(`${key}: every entry needs a non-empty string \`name\``, lineOf(item));
+      continue;
+    }
+    const ctxNode = item.get("contexts", true) as Node | undefined;
+    let contexts: string[] | null = null;
+    if (ctxNode !== undefined) {
+      const names = isSeq(ctxNode) ? ctxNode.items.map((i) => scalarString(i)) : [];
+      if (!isSeq(ctxNode) || names.length === 0 || names.some((n) => n === undefined || n.trim() === "")) {
+        invalid(`${key}: "${name}": \`contexts\` must be a non-empty list of context names (omit it for the whole model)`, lineOf(ctxNode));
+        continue;
+      }
+      contexts = (names as string[]).map(normalizeContext);
+    }
+    const modelsNode = item.get("models", true) as Node | undefined;
+    let models: string[] | null = null;
+    if (modelsNode !== undefined) {
+      const keys = isSeq(modelsNode) ? modelsNode.items.map((i) => scalarString(i)) : [];
+      if (!isSeq(modelsNode) || keys.length === 0 || keys.some((n) => n === undefined || n.trim() === "")) {
+        invalid(`${key}: "${name}": \`models\` must be a non-empty list of model keys (omit it to apply to every model)`, lineOf(modelsNode));
+        continue;
+      }
+      models = (keys as string[]).map((k) => k.trim());
+    }
+    out.push({ name: name.trim(), contexts, models });
+  }
+  return out;
+}
+
 export type LoadedRoster =
   | { state: "absent" }
   | { state: "present"; path: string; roster: Roster }
   | { state: "invalid"; path: string; diagnostics: Diagnostic[] };
 
-/** The nearest `ratifiers.yaml` walking up from `startDir`, stopping at the nearest directory that
- *  holds `.git` (a directory or a file) or at the filesystem root. When no `.git` exists anywhere
- *  above, only `startDir` itself is searched -- without a repo root there is no principled place
- *  to stop, and a roster in some unrelated parent must not govern the model. */
-export function findRosterAbove(startDir: string): string | null {
+/** The nearest directory-level file named in `names` walking up from `startDir`, stopping at the
+ *  nearest directory that holds `.git` (a directory or a file) or at the filesystem root. When no
+ *  `.git` exists anywhere above, only `startDir` itself is searched -- without a repo root there
+ *  is no principled place to stop, and a file in some unrelated parent must not govern the model.
+ *  Within one directory the names are tried in order; `accept` can skip a candidate. */
+export function findFileAbove(startDir: string, names: readonly string[], accept: (path: string) => boolean = () => true): string | null {
   let hasGit = false;
   for (let d = safeReal(resolve(startDir)); ; ) {
     if (existsSync(join(d, ".git"))) {
@@ -172,14 +184,37 @@ export function findRosterAbove(startDir: string): string | null {
   let dir = startDir;
   let abs = safeReal(resolve(dir));
   for (;;) {
-    const candidate = join(dir, ROSTER_FILE);
-    if (existsSync(candidate)) return normalize(candidate).split(sep).join("/");
+    for (const name of names) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate) && accept(candidate)) return normalize(candidate).split(sep).join("/");
+    }
     if (!hasGit || existsSync(join(abs, ".git"))) return null;
     const parent = dirname(abs);
     if (parent === abs) return null;
     abs = parent;
     dir = join(dir, "..");
   }
+}
+
+/** Whether a file is an `em-policy.yaml`-shaped document (by name or by its schema key). */
+export function isPolicyText(path: string, text: string): boolean {
+  return basename(path) === POLICY_FILE || /^policySchemaVersion\s*:/m.test(text);
+}
+
+function policyHasRosterLists(path: string): boolean {
+  try {
+    return /^(ratifiers|reviewers)\s*:/m.test(readFileSync(path, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+/** The nearest roster file walking up from `startDir`: an `em-policy.yaml` that declares
+ *  `ratifiers:`/`reviewers:` (GH #493; a policy file with neither does not govern the roster and
+ *  does not mask a `ratifiers.yaml` above it), else a legacy `ratifiers.yaml` in the same
+ *  directory. */
+export function findRosterAbove(startDir: string): string | null {
+  return findFileAbove(startDir, [POLICY_FILE, ROSTER_FILE], (p) => basename(p) !== POLICY_FILE || policyHasRosterLists(p));
 }
 
 function safeReal(p: string): string {
@@ -190,9 +225,17 @@ function safeReal(p: string): string {
   }
 }
 
+const noticed = new Set<string>();
+function noticeOnce(key: string, message: string): void {
+  if (noticed.has(key)) return;
+  noticed.add(key);
+  console.error(message);
+}
+
 /** Discover (or take an explicit `override` path) and parse the roster for a model in `baseDir`.
  *  An explicit path that does not exist is `invalid` — asking for a roster and not finding it must
- *  not silently mean "no roster". */
+ *  not silently mean "no roster". The roster lives in `em-policy.yaml` (`ratifiers:`/`reviewers:`);
+ *  a legacy `ratifiers.yaml` is still read, with a deprecation notice, when no policy file governs. */
 export function loadRoster(baseDir: string, override?: string, modelCtx?: RosterModelContext): LoadedRoster {
   let path: string | null;
   if (override !== undefined) {
@@ -205,8 +248,18 @@ export function loadRoster(baseDir: string, override?: string, modelCtx?: Roster
   } else {
     path = findRosterAbove(baseDir);
     if (path === null) return { state: "absent" };
+    if (basename(path) === ROSTER_FILE) {
+      noticeOnce(
+        `legacy:${path}`,
+        `em: ${path} is deprecated -- process policy now lives in em-policy.yaml; \`em upgrade\` moves it (step policy-file)`,
+      );
+      if (existsSync(join(dirname(path), POLICY_FILE))) {
+        noticeOnce(`shadow:${path}`, `em: ${join(dirname(path), POLICY_FILE)} exists beside ${path}; em-policy.yaml wins and ${path} is ignored`);
+      }
+    }
   }
-  const parsed = parseRoster(readFileSync(path, "utf8"));
+  const text = readFileSync(path, "utf8");
+  const parsed = isPolicyText(path, text) ? rosterOfPolicyText(text) : parseRoster(text);
   if (!parsed.ok) return { state: "invalid", path, diagnostics: parsed.diagnostics };
   if (modelCtx) {
     const problems = validateRosterForModel(parsed.roster, modelCtx);
