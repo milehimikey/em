@@ -15,8 +15,11 @@
 //                  away from `implemented` does not lose the fact that v<N> shipped), clear the
 //                  sign-off, re-open the questions deferred to the new version.
 //  - `unshipped` — `status: ready-to-implement` WITH `ratifiedBy:` (ratified, never shipped — the
-//                  implementer hit a gap, the doc must change): bump `version:`, clear the
-//                  sign-off. The ratification of v<N> is withdrawn; v<N> never shipped.
+//                  implementer hit a gap, the doc must change): GH #486 (1.23.0) keeps `version:`
+//                  (a number moves only once that version has shipped; `--keep-version` is a
+//                  no-op here) and clears the sign-off. The ratification of v<N> is withdrawn.
+//                  A ratified doc that ALSO carries a `shippedVersion:` (a later version ratified
+//                  over a shipped one) still bumps by default (kind `unshipped`).
 //  - `unsigned`  — `status: ready-to-implement` with NO `ratifiedBy:`: the 1.13.1–1.14.x reratify
 //                  leftover. Nothing was signed at this version, so `version:` stays and only the
 //                  status moves — the exit path for a doc stuck in a state that no longer exists.
@@ -141,6 +144,12 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
         '`em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"`. ' +
         "If the spec itself must change, pass --withdraw to open the next version as a draft",
     };
+  }
+  if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && !hasShipped) {
+    // GH #486 (1.23.0): a version's number moves only once that version has shipped. A ratified,
+    // never-shipped doc reopens at the SAME `version:` by default; --keep-version (GH #262) is
+    // an accepted no-op here (the CLI prints a notice).
+    return applyRevise(raw, "unshipped-kept", opts);
   }
   if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && opts.keepVersion) {
     // GH #262: a later version ratified over a shipped one may keep its number too — unless that

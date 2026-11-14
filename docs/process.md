@@ -60,8 +60,9 @@ three specific points:
    next version's state. The command prints a notice saying so, and `em status` shows the slice as
    `implemented (v<n>) · draft v<n+1> open`.) Record the hop in the `## Delta` section, then the new version takes both
    gates again: review, then `em slice ratify --by <name>`. The same command revises a ratified
-   doc that **never shipped** (a gap answered mid-build): the ratification is withdrawn and the
-   draft of the next version opens.
+   doc that **never shipped** (a gap answered mid-build): the ratification is withdrawn (`--withdraw`) and
+   the doc reopens as a draft at the **same** `version:` — a number moves only once that version has
+   shipped (GH #486), so no `## Delta` is owed.
    **API first (MIL-238):** ratifying a *public-touching* slice — one that owns a `public`
    command, event or view — also asserts that the model's generated contract
    (`contracts/<model key>.tsp`, written by `em api generate`) is current, and says whether this
@@ -140,7 +141,7 @@ skips all four statuses and both gates above: it inherits the originating slice'
 wholesale, since it isn't a spec unit to review, ratify, or mark implemented separately. See
 [slice-doc-schema.md](slice-doc-schema.md#continuations).
 
-**Revision re-enters the loop at the top** (MIL-283): `em slice revise <model>.em <key>`
+**Revision re-enters the loop at the top** (MIL-283; a ratified doc that never shipped keeps its `version:`, GH #486): `em slice revise <model>.em <key>`
 ([cli.md](cli.md#em-slice-revise-file-slice-key)) opens the next version as a **`draft`** — `version:`
 bumped, the old sign-off and the old review record cleared (neither describes the new version),
 the shipped version kept in the shipped record so every reader still sees it in production. The

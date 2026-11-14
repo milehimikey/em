@@ -6080,11 +6080,11 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(JSON.parse(after.stdout).gates.contractCurrent).toBe(true);
   });
 
-  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify of v2 requires it again", () => {
+  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify requires it again (GH #486: same version)", () => {
     const r = em(["slice", "revise", "shop.em", "place-order", "--withdraw"], dir);
     expect(r.status).toBe(0);
     const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
-    expect(content).toContain("status: draft\nversion: 2\n");
+    expect(content).toContain("status: draft\nversion: 1\n");
     expect(content).not.toContain("meaningConfirmed");
     expect(content).not.toContain("contractChange");
     expect(em(["slice", "review", "shop.em", "place-order", "--by", "Sam", "--on", "2026-10-07"], dir).status).toBe(0);
