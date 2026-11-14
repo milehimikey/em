@@ -13,12 +13,17 @@
 //
 // There is no `--json` on either command, so none is added here.
 
+import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { Diagnostic } from "../model/validate.js";
 import { resolveSliceKey } from "../model/resolveSlice.js";
-import { buildUnitIndex, resolveSelection } from "./engagement.js";
+import { findStoryline, storylineOfSlice } from "../model/storylines.js";
+import { continuationOf } from "../model/continuation.js";
+import { readSliceDoc } from "../catalog/readSliceDoc.js";
+import { locateDoc } from "../catalog/docLocate.js";
+import { ratifiedHashScope } from "../catalog/sliceDoc.js";
 import { checkRosterForWrite, loadRoster } from "../roster/roster.js";
 import { rosterContextFor } from "../roster/context.js";
 import { computeModelKey } from "../model/qualifiedRef.js";
@@ -62,11 +67,61 @@ export function runBatch(input: BatchInput): BatchResult {
   // 1. Which slices.
   const keys: string[] = [];
   const errors: string[] = [];
+  const skipped: string[] = [];
   if (input.storyline !== undefined) {
-    const sel = resolveSelection({ file, model, refs, baseDir }, buildUnitIndex(model, refs, baseDir), { kind: "storyline", name: input.storyline });
-    if (!sel.ok) return { ok: false, errors: [`${cmd}: ${sel.message}`] };
-    if (sel.units.length === 0) return { ok: false, errors: [`${cmd}: --storyline "${input.storyline}" has no slices`] };
-    keys.push(...sel.units);
+    // The storyline's OWN slices. Two kinds are left out with a line saying so, because neither
+    // is something this run can sign and refusing the whole storyline for them would make the
+    // option useless on a second pass:
+    //  - a view shown again here whose doc belongs to a slice of another storyline;
+    //  - a slice that has shipped with no next version open (nothing to review or ratify), or,
+    //    for a review, one that is already ratified.
+    const found = findStoryline(model, input.storyline);
+    if (!found) {
+      const declared = [...new Set((model.storylines ?? []).map((s) => s.name))];
+      return {
+        ok: false,
+        errors: [
+          declared.length === 0
+            ? `${cmd}: --storyline "${input.storyline}": no storylines are declared in this model`
+            : `${cmd}: --storyline: no storyline "${input.storyline}" (declared: ${declared.map((n) => `"${n}"`).join(", ")})`,
+        ],
+      };
+    }
+    const foreign = new Map<string, string>();
+    model.slices.forEach((_slice, i) => {
+      if (storylineOfSlice(model, i) !== found) return;
+      const cont = continuationOf(model, refs, i);
+      if (cont === null) {
+        if (!keys.includes(refs.sliceKeys[i])) keys.push(refs.sliceKeys[i]);
+        return;
+      }
+      const origin = storylineOfSlice(model, cont.sliceIndex);
+      if (origin !== found) foreign.set(cont.sliceKey, origin?.name ?? "no storyline");
+    });
+    if (foreign.size > 0) {
+      skipped.push(
+        `not included: ${[...foreign].map(([key, origin]) => `${key} (${origin})`).join(", ")} — this storyline only shows their views again; each doc belongs to the storyline named (sign one by key if its doc changed)`,
+      );
+    }
+    for (const key of [...keys]) {
+      const doc = readSliceDoc(baseDir, key);
+      const status = doc?.status;
+      // A ratified doc whose body moved since sign-off is NOT skipped on ratify: it has to refuse.
+      const located = locateDoc(baseDir, `slices/${key}.md`);
+      const intact = doc?.ratifiedHash != null && located !== null && ratifiedHashScope(readFileSync(located, "utf8"), doc.ratifiedHash) !== "mismatch";
+      const why =
+        status === "implemented"
+          ? "shipped, no next version open"
+          : status === "ready-to-implement" && (kind === "review" || intact)
+            ? "already ratified"
+            : null;
+      if (why === null) continue;
+      keys.splice(keys.indexOf(key), 1);
+      skipped.push(`not included: ${key} — ${why}`);
+    }
+    if (keys.length === 0) {
+      return { ok: false, errors: [...skipped.map((l) => `${cmd}: ${l}`), `${cmd}: --storyline "${input.storyline}" has no slice to ${kind}`] };
+    }
   } else {
     for (const raw of input.keys) {
       const r = resolveSliceKey(model, refs, raw);
@@ -109,7 +164,7 @@ export function runBatch(input: BatchInput): BatchResult {
 
   // 3. Write — once per distinct doc (a `covers:` cross-binding can put two keys on one doc).
   const stdout: string[] = [];
-  const stderr: string[] = [];
+  const stderr: string[] = skipped.map((l) => `${cmd}: ${l}`);
   const writtenBy = new Map<string, string>();
   for (const p of planned) {
     const first = writtenBy.get(p.path);

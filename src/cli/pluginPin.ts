@@ -71,6 +71,55 @@ export function mergePluginSettings(existing: string | null, version: string): s
   return JSON.stringify(out, null, 2) + "\n";
 }
 
+/**
+ * Move the plugin pin in the text of a `.claude/settings.json` to `version` (GH #516): every
+ * `em-<x>-<y>-<z>` marketplace entry whose source is the em repository is replaced, in place, by
+ * the one for `version`, and its `em@em-<x>-<y>-<z>` key in `enabledPlugins` likewise. Other
+ * marketplaces, other plugins, unknown keys and key order are preserved. Returns `null` when the
+ * text is not a JSON object or declares no em marketplace (nothing to move), and the text
+ * unchanged in content when the pin is already at `version`.
+ */
+export function movePluginSettings(existing: string, version: string): string | null {
+  let settings: Record<string, unknown>;
+  try {
+    const v: unknown = JSON.parse(existing);
+    if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+    settings = v as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const markets = obj(settings.extraKnownMarketplaces);
+  if (!markets) return null;
+  const isEm = (k: string): boolean => {
+    const src = obj(obj(markets[k])?.source);
+    return PLUGIN_MARKETPLACE_RE.test(k) && src?.source === "github" && src.repo === PLUGIN_REPO;
+  };
+  const stale = Object.keys(markets).filter(isEm);
+  if (stale.length === 0) return null;
+  const e = pluginSettingsEntries(version);
+  const nextMarkets: Record<string, unknown> = {};
+  let placed = false;
+  for (const [k, v] of Object.entries(markets)) {
+    if (!isEm(k)) nextMarkets[k] = v;
+    else if (!placed) {
+      nextMarkets[e.name] = e.marketplace;
+      placed = true;
+    }
+  }
+  const staleEnabled = new Set(stale.map((k) => `${PLUGIN_NAME}@${k}`));
+  const nextEnabled: Record<string, unknown> = {};
+  let enabledPlaced = false;
+  for (const [k, v] of Object.entries(obj(settings.enabledPlugins) ?? {})) {
+    if (!staleEnabled.has(k)) nextEnabled[k] = v;
+    else if (!enabledPlaced) {
+      nextEnabled[e.enabledKey] = true;
+      enabledPlaced = true;
+    }
+  }
+  if (!enabledPlaced) nextEnabled[e.enabledKey] = true;
+  return JSON.stringify({ ...settings, extraKnownMarketplaces: nextMarkets, enabledPlugins: nextEnabled }, null, 2) + "\n";
+}
+
 export interface PluginDeclaration {
   declared: true;
   /** The marketplace key, e.g. `em-1-14-0`. */

@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
 import { rmTemp } from "./helpers/rmTemp.js";
 import { isModelMaterial } from "../src/cli/inlineCheck.js";
+import { renderEngagementFile } from "../src/cli/engagementFile.js";
+import { ENGAGEMENT_SCHEMA_VERSION } from "../src/emit/engagementJson.js";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -124,6 +126,33 @@ describe("em inline-check (CLI, real git)", () => {
     expect(json.findings[0].policySource).toBe("default"); // `inline` itself is undeclared
     expect(text.status).toBe(1);
     expect(text.stdout).toMatch(/^error: slice-ratified-inline pay /m);
+  });
+
+  it("an internal slice an open engagement lists is reported (reason engagement); a closed engagement is not", () => {
+    const engagement = (status: "open" | "closed") =>
+      renderEngagementFile(
+        { engagementSchemaVersion: ENGAGEMENT_SCHEMA_VERSION, slug: "wave-1", model: "../model.em", created: "2026-10-01", createdBy: "Alex", tracking: null, prTitle: null, context: [], parallel: 2, status, slices: [{ key: "ship", state: "planned", branch: null, base: null, pr: null }] },
+        [],
+      );
+    const run = (status: "open" | "closed") => {
+      git(dir, "checkout", "-q", "main");
+      git(dir, "checkout", "-q", "-b", `eng-${status}`);
+      mkdirSync(join(dir, "engagements"), { recursive: true });
+      writeFileSync(join(dir, "engagements", "wave-1.md"), engagement(status));
+      const r = em(["slice", "ratify", "model.em", "ship", "--by", "Alex", "--on", "2026-10-02"], dir);
+      if (r.status !== 0) throw new Error(`ratify ship: ${r.stderr}`);
+      mkdirSync(join(dir, "src"), { recursive: true });
+      writeFileSync(join(dir, "src", "code.ts"), "export const x = 1;\n");
+      git(dir, "add", "engagements/wave-1.md", "slices/ship.md", "src/code.ts");
+      git(dir, "commit", "-q", "-m", "scenario");
+      return JSON.parse(em(["inline-check", "model.em", "--base", "main", "--json"], dir).stdout);
+    };
+    const open = run("open");
+    expect(open.codePaths).toEqual(["src/code.ts"]); // the engagement file is model material
+    expect(open.findings).toHaveLength(1);
+    expect(open.findings[0]).toMatchObject({ sliceKey: "ship", reason: "engagement" });
+    expect(open.findings[0].message).toContain('open engagement "wave-1"');
+    expect(run("closed").findings).toEqual([]);
   });
 
   it("an internal slice ratified inline is silent under the default policy", () => {

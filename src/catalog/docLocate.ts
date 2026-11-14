@@ -89,3 +89,36 @@ export function docDirs(baseDir: string): string[] {
     .map((f) => join(baseDir, f, "slices"))
     .filter((d) => existsSync(d));
 }
+
+/** Storyline model files under `baseDir` (GH #421): every `.em` in an immediate subdirectory whose
+ *  first significant line is a `storyline "…"` header with no `{`. Paths are posix, relative to
+ *  `baseDir`, sorted. The files whose history is the model's history beside the root file. */
+export function storylineModelFiles(baseDir: string): string[] {
+  const out: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(baseDir).sort();
+  } catch {
+    return out;
+  }
+  for (const name of entries) {
+    if (name.startsWith(".") || name === "slices" || name === "node_modules") continue;
+    const sub = join(baseDir, name);
+    let files: string[];
+    try {
+      if (!statSync(sub).isDirectory()) continue;
+      files = readdirSync(sub).filter((n) => n.endsWith(".em")).sort();
+    } catch {
+      continue;
+    }
+    for (const n of files) {
+      try {
+        const first = readFileSync(join(sub, n), "utf8").split(/\r?\n/).map((l) => stripComment(l).trim()).find((l) => l.length > 0);
+        if (first && /^storyline\b/.test(first) && !first.includes("{")) out.push(`${name}/${n}`);
+      } catch {
+        // unreadable — skip
+      }
+    }
+  }
+  return out;
+}

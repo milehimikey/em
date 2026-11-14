@@ -31,12 +31,22 @@ import { STATE_FILE_NAME } from "./stateFile.js";
  * entry's error note, never a crash. Diffs are computed against the previous *parseable*
  * revision, so a single bad revision in the middle of the walk doesn't break every entry after
  * it. Content is read at each commit's own path (`readFileAtCommit`), so the walk survives
- * renames.
+ * renames. With a `baseline` (a `--from` walk, see `changelogBaseline`) the oldest listed commit
+ * is diffed against the model before the walk instead of being shown as its introduction.
  */
-export function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[], runGit: GitRunner = realGit): string {
+export function buildChangelogDoc(
+  file: string,
+  repoRoot: string,
+  listed: CommitInfo[],
+  runGit: GitRunner = realGit,
+  baseline: CommitInfo | null = null,
+): string {
   const models: (NormalizedModel | null)[] = [];
   const refsList: (RefsResult | null)[] = [];
   const errors: (string | null)[] = [];
+  // A baseline (`changelogBaseline`) is compiled like a commit and diffed against, but gets no
+  // entry of its own: it is the state before the walk, not part of it.
+  const commits = baseline ? [baseline, ...listed] : listed;
 
   for (const c of commits) {
     const rev = readFileAtCommit(repoRoot, c, runGit);
@@ -76,11 +86,11 @@ export function buildChangelogDoc(file: string, repoRoot: string, commits: Commi
   commits.forEach((c, i) => {
     const base = { shortHash: c.shortHash, date: c.date, subject: c.subject };
     if (i === 0) {
-      entries.push({ ...base, diff: null });
+      if (!baseline) entries.push({ ...base, diff: null });
     } else if (!models[i]) {
       entries.push({ ...base, diff: null, error: errors[i]! });
     } else if (prevParseable === -1) {
-      entries.push({ ...base, diff: null, error: `no earlier parseable revision to diff against (${commits[0].shortHash}: ${errors[0]})` });
+      entries.push({ ...base, diff: null, error: `no earlier parseable revision to diff against (${baseline ? "the model before the walk" : commits[0].shortHash}: ${errors[0]})` });
     } else {
       entries.push({
         ...base,
@@ -96,5 +106,5 @@ export function buildChangelogDoc(file: string, repoRoot: string, commits: Commi
   const stateFile = join(dirname(file), STATE_FILE_NAME);
   const decisions = existsSync(stateFile) ? parseDecisionsLog(readFileSync(stateFile, "utf8")) : [];
 
-  return buildChangelog(entries, decisions, { file, intro, introError });
+  return buildChangelog(entries, decisions, { file, intro, introError, ...(baseline ? { diffedFromBaseline: true } : {}) });
 }

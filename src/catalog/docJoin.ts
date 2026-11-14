@@ -46,6 +46,7 @@ import { makeDiag } from "../model/rules.js";
 import { classifyImplementationDrift, DriftSignalKind } from "./driftSignal.js";
 import { readSliceDoc } from "./readSliceDoc.js";
 import { hasUsableFrontmatter, ShippedRecord, shippedRecordOf, SliceDoc, SliceRef } from "./sliceDoc.js";
+import { classifySections, proseHeadingsFor, SectionStatus } from "./sectionSignature.js";
 
 export type { ShippedRecord } from "./sliceDoc.js";
 
@@ -130,6 +131,15 @@ export interface SliceDocExport {
    *  `sliceDoc.ts`'s `ratifiedBody`), and since 1.19.0 so is the inside of every generated region (GH #347);
    *  a hash in an older scope (pre-1.17 whole-body, 1.17–1.18) is still accepted as intact. */
   ratifiedHash: string | null;
+  /** GH #488 (export schema 1.22): frontmatter `amendedBy:` / `amendedOn:` — the latest in-place
+   *  prose amendment (`em slice amend`); null when the doc was never amended. */
+  amendedBy: string | null;
+  amendedOn: string | null;
+  /** GH #487 (export schema 1.22): the doc's authored `##` sections, each classed prose or
+   *  behaviour with whether it changed since sign-off (`changed: null` = no section hashes
+   *  recorded, treat as behaviour). The same list `em export --doc-json` carries. Null when no
+   *  usable doc is bound. */
+  sections: SectionStatus[] | null;
   /** MIL-283/284: the shipped record — `em slice mark-implemented`'s `shippedVersion:`/
    *  `shippedRef:`/`shippedOn:` beside `implementedIn:`, or, for a doc shipped before em 1.15
    *  (no `shippedVersion:`), the `status: implemented` it carries (read-both rule,
@@ -206,6 +216,9 @@ const EMPTY_CONTENT = {
   ratifiedOn: null as string | null,
   ratifiedRef: null as string | null,
   ratifiedHash: null as string | null,
+  amendedBy: null as string | null,
+  amendedOn: null as string | null,
+  sections: null as SectionStatus[] | null,
   shipped: null as ShippedRecord | null,
   owner: null as string | null,
   tracking: null as string | null,
@@ -346,6 +359,9 @@ function foundDoc(path: string, parsed: SliceDoc, baseDir: string, docKey: strin
     ratifiedOn: parsed.ratifiedOn,
     ratifiedRef: parsed.ratifiedRef,
     ratifiedHash: parsed.ratifiedHash,
+    amendedBy: parsed.amendedBy,
+    amendedOn: parsed.amendedOn,
+    sections: classifySections(parsed.raw, proseHeadingsFor(baseDir)),
     shipped: shippedRecordOf(parsed),
     owner: parsed.owner,
     tracking: parsed.tracking,

@@ -24,6 +24,7 @@
 
 import { existsSync, readFileSync, readdirSync, realpathSync, rmSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { locateDoc } from "../catalog/docLocate.js";
 import { findFileAbove, findRosterAbove, GRANDFATHERED_RATIFIER, parseRoster, POLICY_FILE, ROSTER_FILE } from "../roster/roster.js";
 import { parsePolicy, POLICY_SCHEMA_VERSION } from "../policy/policy.js";
 import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES } from "../model/model.js";
@@ -36,7 +37,7 @@ import { planMigration, verifyMigration, MigrationPlan } from "./migrateReaction
 import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./skillSync.js";
 import { EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs } from "./skillDirs.js";
 import { detectMisePin, rewriteMiseEmPin } from "./misePin.js";
-import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, pluginInstallCommands, pluginSettingsEntries } from "./pluginPin.js";
+import { detectPlugin, checkPlugin, claudePluginsDir, mergePluginSettings, movePluginSettings, pluginInstallCommands, pluginMarketplaceName, pluginSettingsEntries } from "./pluginPin.js";
 import { syncAgentsMd } from "./agentsMd.js";
 import {
   ciWorkflowPath,
@@ -70,7 +71,6 @@ import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc
 import { runSliceSync } from "./sliceSync.js";
 import { runSliceIndex } from "./sliceIndex.js";
 import { planCollapseAlternativeEvents, planFoldContinuations, planStackContinuations } from "./upgradeReshape.js";
-import { observeSigners } from "../roster/init.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
 import { compile, compileModelFile, compileModelText } from "../pipeline.js";
@@ -99,6 +99,8 @@ export interface UpgradeContext {
   foldContinuations?: boolean;
   /** `--to-sugar` (implies `--fold-continuations`): fold into the host command slice instead. */
   toSugar?: boolean;
+  /** `--baseline-ratified-hash`: apply the opt-in `ratified-hash-baseline` step. */
+  baselineRatifiedHash?: boolean;
 }
 
 export interface StepDetection {
@@ -112,7 +114,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "mise-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest" | "policy-file";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "plugin-pin" | "mise-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "ratified-hash-baseline" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest" | "policy-file";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -228,6 +230,51 @@ function applySkillPlugin(ctx: UpgradeContext): StepApplyOutcome {
   const agents = syncAgentsMd(ctx.repoRoot);
   if (agents.wrote) changedFiles.push("AGENTS.md");
   return { ok: true, changedFiles };
+}
+
+// ---- Step 1b': plugin-pin (GH #516) — the plugin pin in .claude/settings.json follows the installed em. ----
+// The marketplace name carries the exact version (`em-1-22-2`), so every em release needs the pin
+// moved. em can rewrite the repo's declaration; the machine-level registration is per user and
+// stays the two `claude plugin` commands, which the step prints.
+
+function pluginPinState(ctx: UpgradeContext): { path: string; text: string; next: string } | { reason: string } {
+  const path = join(ctx.repoRoot, ".claude", "settings.json");
+  if (!existsSync(path)) return { reason: "no .claude/settings.json — no plugin pin to move" };
+  const text = readFileSync(path, "utf8");
+  const next = movePluginSettings(text, ctx.installedVersion);
+  if (next === null) return { reason: ".claude/settings.json declares no em plugin marketplace — nothing to move" };
+  let same = false;
+  try {
+    same = JSON.stringify(JSON.parse(text)) === JSON.stringify(JSON.parse(next));
+  } catch {
+    same = false;
+  }
+  if (same) return { reason: `.claude/settings.json already pins the em plugin at ${pluginMarketplaceName(ctx.installedVersion)}` };
+  return { path, text, next };
+}
+
+function detectPluginPinStep(ctx: UpgradeContext): StepDetection {
+  const state = pluginPinState(ctx);
+  if ("reason" in state) return { applicable: false, reason: state.reason };
+  const pin = detectPlugin(ctx.repoRoot);
+  const e = pluginSettingsEntries(ctx.installedVersion);
+  return {
+    applicable: true,
+    reason:
+      `.claude/settings.json pins the em plugin at ${pin?.name ?? "an older version"} (ref ${pin?.ref ?? "none"}), installed em is ${ctx.installedVersion} — ` +
+      `rewrite extraKnownMarketplaces to "${e.name}" (ref ${e.marketplace.source.ref}) and enabledPlugins to "${e.enabledKey}"; each developer then runs: ${pluginInstallCommands(ctx.installedVersion).join(" && ")}`,
+  };
+}
+
+function applyPluginPinStep(ctx: UpgradeContext): StepApplyOutcome {
+  const state = pluginPinState(ctx);
+  if ("reason" in state) return { ok: false, message: `${state.reason} — nothing changed` };
+  writeFileSync(state.path, state.next);
+  return {
+    ok: true,
+    changedFiles: [join(".claude", "settings.json")],
+    notes: [`plugin pin moved to ${pluginMarketplaceName(ctx.installedVersion)}; register it on this machine: ${pluginInstallCommands(ctx.installedVersion).join(" && ")}`],
+  };
 }
 
 // ---- Step 1c: mise-pin (GH #298) — the mise.toml em pin follows the installed em. ----
@@ -432,7 +479,7 @@ function detectCiBlock(ctx: UpgradeContext): StepDetection {
   if (!args && blocked) return { applicable: false, reason: blocked };
   if (!args) return { applicable: false, reason: "can't determine the <model>/--tests arguments em-ci.yml was generated with — run `em ci init <model>` by hand if it needs refreshing" };
   if (!ciStale && !conformStale) return { applicable: false, reason: "generated CI block(s) already match the installed em" };
-  if (pathsOnly && !conformStale) return { applicable: true, reason: "em-ci.yml pull_request paths filter is the pre-1.19.0 list" };
+  if (pathsOnly && !conformStale) return { applicable: true, reason: "em-ci.yml pull_request paths filter is a list an earlier em generated" };
   return { applicable: true, reason: "generated CI block(s) are stale" };
 }
 
@@ -626,7 +673,7 @@ function applyRatifiedSignoff(ctx: UpgradeContext): StepApplyOutcome {
   const today = localIsoDate();
   const writes: Array<{ file: string; text: string }> = [];
   for (const c of candidates) {
-    const file = join(ctx.baseDir, c.path);
+    const file = docFile(ctx, c.path);
     const next = applyGrandfatherSignoff(readFileSync(file, "utf8"), today);
     if (next === null) return { ok: false, message: `${c.path}: could not locate status: in the frontmatter` };
     writes.push({ file, text: next });
@@ -657,13 +704,19 @@ interface HashScopeCandidate {
   scope: RatifiedHashScope;
 }
 
+/** Absolute path of a slice doc. The doc join reports `slices/<key>.md`; in a storyline model the
+ *  file lives under the storyline's folder, so every read and write goes through the locator. */
+function docFile(ctx: UpgradeContext, relPath: string): string {
+  return locateDoc(ctx.baseDir, relPath) ?? join(ctx.baseDir, relPath);
+}
+
 function hashScopeCandidates(ctx: UpgradeContext): HashScopeCandidate[] {
   const seen = new Set<string>();
   const out: HashScopeCandidate[] = [];
   for (const d of nonContinuationDocs(ctx)) {
     if (d.ratifiedHash === null || seen.has(d.path)) continue;
     seen.add(d.path);
-    const file = join(ctx.baseDir, d.path);
+    const file = docFile(ctx, d.path);
     if (!existsSync(file)) continue;
     out.push({ key: d.key, path: d.path, version: d.version, scope: ratifiedHashScope(readFileSync(file, "utf8"), d.ratifiedHash) });
   }
@@ -712,7 +765,7 @@ function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
   const current = (path: string): string => touched.get(path) ?? readFileSync(path, "utf8");
   // Queue first, on the doc as read: `finishSignedDocEdit` re-stamps an old-scope hash itself.
   for (const q of queued) {
-    const file = join(ctx.baseDir, q.path);
+    const file = docFile(ctx, q.path);
     let content = current(file);
     const before = content;
     for (const item of q.items) {
@@ -735,7 +788,7 @@ function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
     oldScope.delete(q.path);
   }
   for (const path of oldScope) {
-    const file = join(ctx.baseDir, path);
+    const file = docFile(ctx, path);
     const raw = current(file);
     const next = replaceFieldValue(raw, "ratifiedHash", sliceDocBodyHash(raw));
     if (next === null) return { ok: false, message: `${path}: could not locate ratifiedHash: in the frontmatter` };
@@ -801,7 +854,7 @@ function signedDocsStaleAfter(ctx: UpgradeContext, nextText: string): string[] {
     const r = runSliceSync(c.model, c.refs, ctx.baseDir, undefined, true);
     if (!r.ok) return out;
     for (const d of r.docs) {
-      if (d.status === "stale" && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8"))) {
+      if (d.status === "stale" && isSignedDoc(readFileSync(docFile(ctx, d.path), "utf8"))) {
         out.set(d.path, d.regions.filter((g) => g.status === "stale").map((g) => g.name));
       }
     }
@@ -1065,7 +1118,7 @@ function applyViewDocSourcesStale(ctx: UpgradeContext): StepApplyOutcome {
     if (!r.ok) return { ok: false, message: r.message };
     const bad = r.docs.find((x) => x.status === "malformed");
     if (bad) return { ok: false, message: `${bad.path}: em slice sync could not rewrite it — ${bad.problems.join("; ")}` };
-    changedFiles.push(join(ctx.baseDir, d.path));
+    changedFiles.push(docFile(ctx, d.path));
   }
   return { ok: true, changedFiles };
 }
@@ -1090,7 +1143,7 @@ function applySliceIndexStale(ctx: UpgradeContext): StepApplyOutcome {
 function parkingLotDocs(ctx: UpgradeContext): Map<string, string> {
   const docs = new Map<string, string>();
   for (const d of nonContinuationDocs(ctx)) {
-    const file = join(ctx.baseDir, d.path);
+    const file = docFile(ctx, d.path);
     if (d.path !== "" && existsSync(file)) docs.set(d.key, readFileSync(file, "utf8"));
   }
   return docs;
@@ -1213,7 +1266,7 @@ function sectionStampCandidates(ctx: UpgradeContext): { stamp: string[]; edited:
   const stamp: string[] = [];
   const edited: string[] = [];
   for (const c of hashScopeCandidates(ctx)) {
-    const raw = readFileSync(join(ctx.baseDir, c.path), "utf8");
+    const raw = readFileSync(docFile(ctx, c.path), "utf8");
     if (recordedSectionHashes(raw) !== null) continue;
     (c.scope === "mismatch" ? edited : stamp).push(c.key);
   }
@@ -1236,7 +1289,7 @@ function applyRatifiedSections(ctx: UpgradeContext): StepApplyOutcome {
   const writes: Array<{ file: string; text: string }> = [];
   for (const c of hashScopeCandidates(ctx)) {
     if (!keys.has(c.key)) continue;
-    const file = join(ctx.baseDir, c.path);
+    const file = docFile(ctx, c.path);
     const raw = readFileSync(file, "utf8");
     const next = insertLineAfterField(raw, "ratifiedHash", `ratifiedSections: ${ratifiedSectionsValue(raw)}`);
     if (next === null) return { ok: false, message: `${c.path}: could not locate ratifiedHash: in the frontmatter` };
@@ -1244,6 +1297,83 @@ function applyRatifiedSections(ctx: UpgradeContext): StepApplyOutcome {
   }
   for (const w of writes) writeFileSync(w.file, w.text, "utf8");
   return { ok: true, changedFiles: writes.map((w) => w.file) };
+}
+
+// ---- Step 7c: ratified-hash-baseline (GH #516, opt-in) — a hash for docs signed before em 1.15.0. ----
+// `ratifiedHash:` arrived with em 1.15.0. A doc ratified before that carries a sign-off
+// (`ratifiedBy:`) and no hash, so nothing can say whether its body changed since — and `em slice
+// amend`, which re-signs a prose-only change in place, has no signed body to compare against and
+// refuses. This step records the hash of the body AS IT STANDS, with its section hashes, and marks
+// the record `ratifiedHashBaseline: <date>`.
+//
+// Opt-in (`--baseline-ratified-hash`) because it is a statement only the owner can make: em
+// cannot prove today's body is the body that was signed. The marker keeps that visible: a
+// baselined hash says "unchanged since this date", not "unchanged since ratification". The
+// sign-off itself (`ratifiedBy`/`ratifiedOn`, `status`, `version`) is untouched, and `em slice
+// revise` clears the marker with the rest of the sign-off, so a re-ratified doc carries a real hash.
+
+const BASELINE_KEY = "ratifiedHashBaseline";
+
+function baselineCandidates(ctx: UpgradeContext): { stamp: Array<{ key: string; path: string }>; unsigned: string[] } {
+  const stamp: Array<{ key: string; path: string }> = [];
+  const unsigned: string[] = [];
+  const seen = new Set<string>();
+  for (const d of nonContinuationDocs(ctx)) {
+    if (d.ratifiedHash !== null || seen.has(d.path)) continue;
+    if (d.status !== "ready-to-implement" && d.status !== "implemented") continue;
+    seen.add(d.path);
+    if (!existsSync(docFile(ctx, d.path))) continue;
+    if (d.ratifiedBy === null || d.ratifiedBy.trim() === "") unsigned.push(d.key);
+    else stamp.push({ key: d.key, path: d.path });
+  }
+  const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
+  return { stamp: stamp.sort(byKey), unsigned: unsigned.sort() };
+}
+
+function detectRatifiedHashBaseline(ctx: UpgradeContext): StepDetection {
+  const { stamp, unsigned } = baselineCandidates(ctx);
+  const left = unsigned.length > 0 ? `left alone: ${unsigned.join(", ")} — no ratifiedBy recorded, so there is no sign-off to attach a hash to` : null;
+  if (stamp.length === 0) {
+    return { applicable: false, reason: `no signed doc is missing a ratifiedHash${left ? `; ${left}` : ""}` };
+  }
+  const parts = [
+    `${stamp.length} doc(s) signed before em 1.15.0 record no ratifiedHash, so em slice amend refuses them: ${stamp.map((c) => c.key).join(", ")} — ` +
+      `with --baseline-ratified-hash, em upgrade records ratifiedHash: and ratifiedSections: from each body as it stands and marks it ${BASELINE_KEY}: <today> ` +
+      "(a baseline, not proof the body is what was signed; the sign-off is untouched)",
+  ];
+  if (left) parts.push(left);
+  return { applicable: true, reason: parts.join("; ") };
+}
+
+function applyRatifiedHashBaseline(ctx: UpgradeContext): StepApplyOutcome {
+  const today = localIsoDate();
+  const writes: Array<{ file: string; text: string }> = [];
+  for (const c of baselineCandidates(ctx).stamp) {
+    const file = docFile(ctx, c.path);
+    const raw = readFileSync(file, "utf8");
+    const lines = [`ratifiedHash: ${sliceDocBodyHash(raw)}`, `ratifiedSections: ${ratifiedSectionsValue(raw)}`, `${BASELINE_KEY}: ${today}`];
+    // After the last sign-off line the doc has, in the order `em slice ratify` writes them.
+    let next: string | null = null;
+    for (const anchor of ["ratifiedRef", "reviewSkipped", "ratifiedOn", "ratifiedBy"]) {
+      next = insertLineAfterField(raw, anchor, lines.join(detectDocEol(raw)));
+      if (next !== null) break;
+    }
+    if (next === null) return { ok: false, message: `${c.path}: could not locate ratifiedBy: in the frontmatter — nothing written` };
+    if (ratifiedHashScope(next, sliceDocBodyHash(raw)) !== "current") {
+      return { ok: false, message: `${c.path}: the recorded hash would not match the body — aborting, nothing written` };
+    }
+    writes.push({ file, text: next });
+  }
+  for (const w of writes) writeFileSync(w.file, w.text, "utf8");
+  return {
+    ok: true,
+    changedFiles: writes.map((w) => w.file),
+    notes: [`${writes.length} doc(s) baselined on ${today}: the hash describes the body as it stands today, not the body at ratification`],
+  };
+}
+
+function detectDocEol(text: string): string {
+  return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
 // ---- Step policy-file (GH #493) — a legacy `ratifiers.yaml` moves into `em-policy.yaml`. ----
@@ -1301,6 +1431,7 @@ function applyPolicyFile(ctx: UpgradeContext): StepApplyOutcome {
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-plugin", sinceVersion: "1.14.0", detect: detectSkillPlugin, apply: applySkillPlugin },
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
+  { id: "plugin-pin", sinceVersion: "1.23.0", detect: detectPluginPinStep, apply: applyPluginPinStep },
   { id: "mise-pin", sinceVersion: "1.23.0", detect: detectMisePinStep, apply: applyMisePinStep },
   { id: "reaction-shape", sinceVersion: "1.8.0", detect: detectReactionShape, apply: applyReactionShape },
   { id: "state-file", sinceVersion: "1.13.0", detect: detectStateFile, apply: applyStateFile },
@@ -1310,6 +1441,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
   { id: "ratified-hash-scope", sinceVersion: "1.19.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
   { id: "ratified-sections", sinceVersion: "1.23.0", detect: detectRatifiedSections, apply: applyRatifiedSections },
+  { id: "ratified-hash-baseline", sinceVersion: "1.23.0", detect: detectRatifiedHashBaseline, apply: applyRatifiedHashBaseline, optedIn: (c) => c.baselineRatifiedHash === true },
   { id: "policy-file", sinceVersion: "1.23.0", detect: detectPolicyFile, apply: applyPolicyFile },
   { id: "collapse-alternative-events", sinceVersion: "1.18.0", detect: detectCollapseAlternativeEvents, apply: applyCollapseAlternativeEvents },
   { id: "fold-continuations", sinceVersion: "1.18.0", detect: detectFoldContinuations, apply: applyFoldContinuations, optedIn: (c) => c.foldContinuations === true || c.toSugar === true },
@@ -1334,7 +1466,6 @@ export type HumanItemId =
   | "lineage-backlink-missing"
   | "fold-continuations-opt-in"
   | "shared-event-now-legal"
-  | "roster-not-initialised"
   | "api-contract-blocked"
   | "ci-paths-hand-edited";
 
@@ -1462,6 +1593,9 @@ function detectPluginInstallLocally(ctx: UpgradeContext): HumanItem | null {
   if (detectSkillPlugin(ctx).applicable) {
     return { id: "plugin-install-locally", reason: `the em plugin will be declared in .claude/settings.json but is registered per machine — after --apply, ${snippet}` };
   }
+  if (detectPluginPinStep(ctx).applicable) {
+    return { id: "plugin-install-locally", reason: `the em plugin pin in .claude/settings.json will move to ${pluginMarketplaceName(ctx.installedVersion)}, which is registered per machine — after --apply, ${snippet}` };
+  }
   const check = checkPlugin(ctx.repoRoot, ctx.installedVersion, claudePluginsDir());
   if (check && check.findings.some((f) => f.code === "plugin-not-installed-locally")) {
     return { id: "plugin-install-locally", reason: `the em plugin is declared but not registered on this machine — ${snippet}` };
@@ -1480,7 +1614,7 @@ function detectSliceDocStaleSigned(ctx: UpgradeContext): HumanItem | null {
   // A doc with a stale view region is `view-doc-sources-stale`'s — unless sync could not rewrite it
   // (`signatureRefused`), in which case that step fails on it and the human item must still name it.
   const docs = r.docs.filter(
-    (d) => d.status === "stale" && (!hasStaleViewRegion(d) || d.signatureRefused !== undefined) && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")),
+    (d) => d.status === "stale" && (!hasStaleViewRegion(d) || d.signatureRefused !== undefined) && isSignedDoc(readFileSync(docFile(ctx, d.path), "utf8")),
   );
   if (docs.length === 0) return null;
   return {
@@ -1535,17 +1669,9 @@ function recordedFromVersion(ctx: UpgradeContext): string {
   return resolveFromVersion(ctx, recorded).version;
 }
 
-/** GH #290 / #259: signatures are a human decision, so the roster is never generated silently. */
-function detectRosterNotInitialised(ctx: UpgradeContext): HumanItem | null {
-  if (findRosterAbove(ctx.baseDir) !== null) return null;
-  const { ratifiers } = observeSigners(ctx.model, ctx.refs, ctx.baseDir);
-  if (ratifiers.length === 0) return null;
-  return {
-    id: "roster-not-initialised",
-    reason: `${ratifiers.length} ratifier(s) have signed slice docs (${ratifiers.join(", ")}) and there is no roster (\`ratifiers:\` in em-policy.yaml) — decide who may sign, then run \`em roster init ${basename(ctx.modelFile)}\` to seed one from those names and review it before committing`,
-  };
-}
-
+// GH #495: the `roster-not-initialised` human item is retired. The git host decides who may
+// approve, the roster is opt-in, and an item that only a roster could clear would be listed on
+// every upgrade of a repo that chose not to have one.
 
 /** GH #290 / #279: information only. Since 1.18.0 the same event recorded by several commands (same
  *  name and context) is one logical event and `duplicate-name` no longer fires; nothing to change. */
@@ -1599,7 +1725,6 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectLineageBacklinkMissing,
   detectFoldContinuationsOptIn,
   detectSharedEventNowLegal,
-  detectRosterNotInitialised,
   detectApiContractBlocked,
   detectCiPathsHandEdited,
 ];

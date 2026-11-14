@@ -5,7 +5,8 @@
 // formattable/parseable (markdown assembly, decisions parsing) lives in
 // ../emit/changelog.ts, unit-tested without git.
 
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { storylineModelFiles } from "../catalog/docLocate.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 
 export interface CommitInfo {
@@ -117,6 +118,47 @@ export function listModelCommits(
       commits[commits.length - 1].path = line;
     }
   }
+  // GH #475: a storyline model's history is also the history of its storyline files. A commit
+  // that changed only one of them never shows in the root file's log, so those are added here,
+  // in history order, each read at the root's path as of that commit.
+  const storylineFiles = storylineModelFiles(dirname(abs));
+  if (storylineFiles.length > 0) {
+    const more = runGit([
+      "-C",
+      repoRoot,
+      "-c",
+      "core.quotepath=false",
+      "log",
+      `--format=%H${FS}%h${FS}%ad${FS}%s`,
+      "--date=short",
+      range,
+      "--",
+      relPath,
+      ...storylineFiles.map((f) => join(dirname(abs), f)),
+    ]);
+    if (more.status === 0) {
+      const byHash = new Map(commits.map((c) => [c.hash, c]));
+      const merged: CommitInfo[] = [];
+      for (const line of more.stdout.split("\n")) {
+        if (!line.includes(FS)) continue;
+        const [hash, shortHash, date, ...subjectParts] = line.split(FS);
+        merged.push(byHash.get(hash) ?? { hash, shortHash, date, subject: subjectParts.join(FS), path: "" });
+        byHash.delete(hash);
+      }
+      // Root-file commits the second walk did not list (before a rename of the root) are older
+      // than everything it did list.
+      merged.push(...commits.filter((c) => byHash.has(c.hash)));
+      // Newest first: a commit that did not touch the root reads it at the path of the nearest
+      // older commit that did (or the current path when there is none).
+      let known = relPath;
+      for (let i = merged.length - 1; i >= 0; i--) {
+        if (merged[i].path === "") merged[i].path = known;
+        else known = merged[i].path;
+      }
+      commits.length = 0;
+      commits.push(...merged);
+    }
+  }
   commits.reverse(); // git log is newest-first; changelog building wants oldest->newest
 
   if (commits.length === 0) {
@@ -124,6 +166,28 @@ export function listModelCommits(
   }
 
   return { ok: true, repoRoot, commits };
+}
+
+/**
+ * The model as it stood just before a `--from` walk: the parent of `from`, read at the path the
+ * oldest listed commit has. `null` when there is no `--from`, `from` is a root commit, or the
+ * model did not exist at that parent (the walk then really does start at its introduction).
+ * With a baseline the oldest commit in the walk gets a diff like every other one, instead of
+ * being presented as the commit that introduced the model.
+ */
+export function changelogBaseline(
+  repoRoot: string,
+  from: string | undefined,
+  commits: CommitInfo[],
+  runGit: GitRunner = realGit,
+): CommitInfo | null {
+  if (!from || commits.length === 0) return null;
+  const parent = runGit(["-C", repoRoot, "rev-parse", "--verify", "--end-of-options", `${from}^`]);
+  if (parent.status !== 0) return null;
+  const hash = parent.stdout.trim();
+  const path = commits[0].path;
+  if (runGit(["-C", repoRoot, "cat-file", "-e", `${hash}:${path}`]).status !== 0) return null;
+  return { hash, shortHash: hash.slice(0, 7), date: "", subject: "", path };
 }
 
 /** File content at a commit, or a note-ready `message` (no command prefix — it lands inside a changelog section). */

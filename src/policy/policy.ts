@@ -224,6 +224,22 @@ export function effectivePolicy(baseDir: string): EffectivePolicyResult {
   };
 }
 
+/** `em validate`'s view of the policy file: one `policy-invalid` error per problem in the nearest
+ *  `em-policy.yaml`, each naming the file (and its line, when known). Empty when there is no policy
+ *  file or it is valid. A broken legacy `ratifiers.yaml` is not reported here -- it is not policy,
+ *  and the roster check names it (`roster-invalid`). */
+export function validatePolicyFile(baseDir: string): Diagnostic[] {
+  const file = findPolicyAbove(baseDir);
+  if (file === null) return [];
+  const parsed = parsePolicy(readFileSync(file, "utf8"));
+  if (parsed.ok) return [];
+  const out: Diagnostic[] = [];
+  for (const d of parsed.diagnostics) {
+    pushDiag(out, "policy-invalid", { message: `${file}${d.line !== undefined ? `:${d.line}` : ""}: ${d.message}` });
+  }
+  return out;
+}
+
 /** The refusal text for an invalid policy on a write path. */
 export function policyRefusal(res: Extract<EffectivePolicyResult, { ok: false }>): string {
   return `policy-invalid: ${res.path} -- ${res.diagnostics.map((d) => d.message).join("; ")}`;

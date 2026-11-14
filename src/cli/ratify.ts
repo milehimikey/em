@@ -49,6 +49,7 @@
 // The line goes directly after `ratifiedOn:`, replacing any earlier confirmation line.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { relative } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
@@ -61,7 +62,7 @@ import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normaliz
 import { REVIEWED_STATUS } from "./review.js";
 import { isValidDateString } from "./stateFile.js";
 import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
-import { docAbsPath } from "../catalog/docLocate.js";
+import { docAbsPath, locateDoc } from "../catalog/docLocate.js";
 
 /** MIL-238: the ratifier's API-first statement about this version of a public-touching slice. */
 export type MeaningConfirmation = { kind: "meaning-unchanged" } | { kind: "contract-change"; why: string };
@@ -279,7 +280,11 @@ export function resolveRatifiedIdentity(
   if (git === null || opts.noRef === true) return { ok: true, identity: { ref: null, hash, sections } };
   const inside = git(["-C", baseDir, "rev-parse", "--is-inside-work-tree"]);
   if (inside.status !== 0 || inside.stdout.trim() !== "true") return { ok: true, identity: { ref: null, hash, sections } };
-  const status = git(["-C", baseDir, "status", "--porcelain", "--", docPath]);
+  // The doc join reports `slices/<key>.md`; in a storyline model the file lives under the
+  // storyline's folder, and git must be asked about the file that exists.
+  const located = locateDoc(baseDir, docPath);
+  const gitPath = located !== null ? relative(baseDir, located) : docPath;
+  const status = git(["-C", baseDir, "status", "--porcelain", "--", gitPath]);
   if (status.status !== 0) {
     return { ok: false, message: `git status failed for ${docPath}: ${status.stderr.trim() || "unknown error"}` };
   }

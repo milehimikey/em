@@ -934,6 +934,13 @@ the source text, so a consumer can tell whether an export is stale without re-ru
       `em slice mark-implemented` writes beside the link: `{ version, ratifiedRef, implementedIn,
       on }`, or `null` when the doc carries no `shippedVersion:`. `status`/`implementedIn` are
       unchanged and still carry the lifecycle for every reader in 1.15.
+      `amendedBy`/`amendedOn` (added in schema `1.22`, GH #488) are the latest in-place prose
+      amendment `em slice amend` recorded — both `null` when the doc was never amended. `sections`
+      (schema `1.22`, GH #487) is the doc's authored sections, `{ heading, class, changed }[]`:
+      `class` is `prose` or `behaviour` (the project's `amendment.prose-sections`, else em's
+      default list) and `changed` says whether the section moved since sign-off (`null` when the
+      doc records no section hashes — treat as behaviour); `null` when no usable doc is bound.
+      The same values `em export --doc-json` carries.
       `queuedForNext` (added in schema `1.17`, GH #236; re-sourced in 1.17.0, GH #253) is a
       number — the doc's `## Open Questions` items `em slice defer` deferred to a version past
       its `version`, plus any question 1.16's defer still has queued in `.event-modeling.md` for
@@ -1992,26 +1999,29 @@ state of a PR under review; and because `--no-ref` docs have no `ratifiedRef:` t
 A slice counts as ratified inline when one change set, `git diff <base>...HEAD` (the merge-base
 form `em system scope` uses), both
 
-1. **ratified its doc**: `ratifiedHash:` is recorded at HEAD and was absent or different at the
-   merge-base (so `--no-ref` docs count; an `em slice amend` re-sign under the same sign-off does
-   not — a prose amendment belongs in the implementation PR), and
-2. **touched implementation code**: any changed path that is not model material. Model material is
-   a file under the model directory in `slices/`, `contracts/`, `model-versions/` or
-   `conformance/`, a `.em` file, the `.event-modeling.md` state file, or `em-policy.yaml` /
-   `ratifiers.yaml`.
+1. **ratified its doc**: `ratifiedHash:` is recorded at HEAD and the sign-off (hash, `ratifiedBy:`,
+   `ratifiedOn:`, `version:`) differs from the merge-base, or there was none there. So `--no-ref`
+   docs count, and so does a doc withdrawn and signed again over the same text; an `em slice amend`
+   re-sign under the same sign-off does not — a prose amendment belongs in the implementation PR.
+2. **touched implementation code**: any changed path that is not model or process material. That
+   material is: any Markdown or SVG file, `em-policy.yaml` / `ratifiers.yaml`, the workflows
+   `em ci init` generates (`.github/workflows/em-*.yml`), and, under the model directory, a `.em`
+   file, the `.event-modeling.md` state file, and anything in `slices/`, `contracts/`,
+   `model-versions/`, `conformance/`, `storylines/` or `engagements/` — at the model root or inside
+   a storyline model's folder.
 
 With nothing ratified in the change set, or no code in it, the command is silent.
 
 | `ratification.inline` | Reported |
 |---|---|
-| `internal` (default) | a **public-touching** slice (owns a `public` command, event or view) |
+| `internal` (default) | a **public-touching** slice (owns a `public` command, event or view), and a slice an **open engagement** lists (`engagements/<slug>.md`, `status: open`) — an engagement's slices are ratified before any of them is built, so one ratified with its code broke that order |
 | `never` | **any** slice ratified inline |
 | `always` | nothing |
 
 `ratification.inline-violation` sets the severity: `advisory` (default) prints a `warn:` line and
 exits 0; `error` prints `error:` and exits 1. With no `em-policy.yaml` the defaults apply. One line
-per slice, code `slice-ratified-inline`, naming the slice, the reason (public-touching, or policy
-`never`) and where the policy value came from:
+per slice, code `slice-ratified-inline`, naming the slice, the reason (public-touching, in an open
+engagement, or policy `never`) and where the policy value came from:
 
 ```bash
 $ em inline-check model.em --base origin/main
@@ -2025,7 +2035,7 @@ init` does not generate a job for it (one line for CI: [ci.md](ci.md#em-inline-c
 **`--json`**: `{ inlineSchemaVersion: "1.0", generator, file, base, mergeBase, policy: { inline:
 { value, source }, inlineViolation: { value, source } }, ratified[], codePaths[], findings[], ok }`.
 `findings[]` entries are `{ code, sliceKey, path, reason, policySource, message }`, `reason` one of
-`public-touching | policy-never`; `ratified` lists every slice ratified in the change set; `ok` is
+`public-touching | policy-never | engagement`; `ratified` lists every slice ratified in the change set; `ok` is
 `false` only with findings under `inline-violation: error`. Schema `1.0` is new with the command,
 so no existing document changed shape.
 
@@ -4178,8 +4188,12 @@ refuses — an unrelated slice's breakage elsewhere in a large, still-WIP model 
 **Batch (GH #491, 1.23.0).** A storyline is walked as a unit, so it can be signed as one:
 `em slice review <file> <key> <key>... --by <name>` (two or more keys) or
 `em slice review <file> --storyline <name> --by <name>`. Keys together with `--storyline` is an error;
-`--storyline` resolves exactly as `em engagement new --storyline` does (a continuation slice stands in as
-its originating unit). The batch is **all-or-nothing**: every slice is planned first through the same checks
+`--storyline` takes the storyline's **own** slices that still have something to sign. It leaves out, with
+one `not included:` line on stderr for each reason: a slice whose doc belongs to another storyline (this
+storyline only shows its view again; sign that one by key if its doc changed), a slice that has shipped
+with no next version open, and one that is already ratified with its body intact (for `review`, any
+ratified slice). A ratified doc that was edited since sign-off is not left out: it refuses. A storyline
+with nothing left to sign exits 1 and says so. Explicit keys are never left out. The batch is **all-or-nothing**: every slice is planned first through the same checks
 a single key gets (errors scoped to the slice, roster, the Open Questions gate, `--again`, `--allow-open`),
 and the docs are written only when every slice is accepted — otherwise nothing is written, every refusal is
 listed on stderr (`em slice review: <key>: <reason>`, then a summary line) and the exit code is 1. A slice
@@ -5232,7 +5246,10 @@ the last revision that *did* compile.
 
 **The oldest commit is the introduction**, not a diff (it has no predecessor): its
 section reads `Model introduced: N slices, M elements.` — computed by compiling that
-revision, not by diffing against an empty model.
+revision, not by diffing against an empty model. A `--from` walk is different: the model
+usually existed before it, so the oldest commit in the walk is diffed against the model as it
+stood at the parent of `--from` and reads like every other section. It is shown as the
+introduction only when the model did not exist at that parent.
 
 **Decisions weaving.** If `<file>`'s directory has a `.event-modeling.md` state file (see
 [ai-workflow.md](ai-workflow.md)), `em changelog` parses its `## Decisions log` section
@@ -5945,7 +5962,7 @@ gets them by running one command instead of copy-pasting YAML (MIL-166):
 
 | File | Triggers | Jobs |
 |---|---|---|
-| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`, `.github/workflows/em-*.yml`, `**/.event-modeling.md`, `.claude/settings.json`, `**/ratifiers.yaml`, `**/system.yaml`, `**/contracts/**` - so an `em upgrade` PR that only changes the workflows, state file or plugin pin still runs the gates; `em upgrade` and `em ci init` both refresh a workflow still carrying the old three-entry list (`em ci init` prints `<path>: pull_request paths filter updated to the 1.19.0 list`), a hand-edited filter is left alone), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check` (vendored bundle or pinned plugin, MIL-231), `glossary` — all PR merge gates; `upgrade-check` — advisory, fails only on a hard incompatibility (MIL-219); `status-badge` — push-triggered, publish-only, never a gate |
+| `em-ci.yml` | `pull_request` (paths touching `**/*.em`, `**/slices/**`, `**/README.md`, `.github/workflows/em-*.yml`, `**/.event-modeling.md`, `.claude/settings.json`, `**/ratifiers.yaml`, `**/em-policy.yaml` (since 1.23.0), `**/system.yaml`, `**/contracts/**` - so an `em upgrade` PR that only changes the workflows, state file, plugin pin or policy still runs the gates; `em upgrade` and `em ci init` both refresh a workflow still carrying a list an earlier em generated (the pre-1.19 three entries, or the 1.19–1.22 list; `em ci init` prints `<path>: pull_request paths filter updated to the current list`), a hand-edited filter is left alone), `push` to `main` | `validate`, `slice-index`, `coverage`, `ledger`, `skill-check` (vendored bundle or pinned plugin, MIL-231), `glossary` — all PR merge gates; `upgrade-check` — advisory, fails only on a hard incompatibility (MIL-219); `status-badge` — push-triggered, publish-only, never a gate |
 | `em-conform.yml` | `schedule` (weekly), `workflow_dispatch` | `conform` — advisory only, see [ci.md#conformance-cadence-advisory](ci.md#conformance-cadence-advisory) |
 
 `<model>` is the anchor `.em` file the `slice index`/`coverage`/`ledger`/`status-badge` steps
@@ -6122,6 +6139,14 @@ The mechanical steps, in this fixed order:
 2. **`skill-bundle`** — delegates to `em skill sync`'s own plan/apply: refreshes the vendored
    `.claude/skills/` bundle. Not applicable when no bundle is vendored at all (`em upgrade` never
    installs one that wasn't there).
+2a. **`plugin-pin`** (1.23.0, GH #516) — when `.claude/settings.json` declares the em plugin at a
+   version other than the installed em, moves the pin: the `em-<ver-dashed>` entry in
+   `extraKnownMarketplaces` and its `em@em-<ver-dashed>` key in `enabledPlugins` are replaced in
+   place by the ones for the installed em (other marketplaces, other plugins, other keys and key
+   order are kept; 2-space JSON), in one commit. `.claude/settings.local.json` is never edited.
+   Not applicable without a declared plugin or when the pin already matches. The machine-level
+   registration still cannot be done by `em upgrade`: the step's note and the
+   `plugin-install-locally` human item print the two `claude plugin` commands.
 3. **`mise-pin`** (1.23.0, GH #298) — when a `mise.toml` / `.mise.toml` inside the repo pins
    `"npm:@milehimikey/em"` at a version other than the installed em, rewrites that one version
    value in place (a surgical edit: comments, ordering, quoting and LF/CRLF endings are untouched,
@@ -6170,6 +6195,18 @@ The mechanical steps, in this fixed order:
    re-signing: `ratifiedHash`, `ratifiedRef` and the sign-off stay as they are. Until stamped (or
    re-signed) the doc's sections classify as unknown. A doc whose body no longer matches is listed
    (`left alone: <keys>`) and not stamped.
+9a′. **`ratified-hash-baseline`** (1.23.0, GH #516, **opt-in**: `--baseline-ratified-hash`) — for
+   every signed doc (`ready-to-implement` or `implemented`, with a `ratifiedBy:`) that records no
+   `ratifiedHash:` — one ratified before em 1.15.0 — records `ratifiedHash:` and
+   `ratifiedSections:` from the body **as it stands** and marks the record
+   `ratifiedHashBaseline: <today>`. Without a hash `em slice amend` has no signed body to compare
+   against and refuses the doc; with the baseline it works. **A baseline, not proof**: em cannot
+   show that today's body is the body that was signed, which is why the step runs only when asked
+   and why the marker stays on the doc — the hash says "unchanged since this date". The sign-off
+   (`ratifiedBy`/`ratifiedOn`, `status`, `version`) is untouched; `em slice revise` clears the
+   marker with the rest of the sign-off, so a re-ratified doc carries a real hash. Listed by every
+   run (`[~]` when docs qualify), applied only with the flag; a signed-status doc with no
+   `ratifiedBy:` is listed (`left alone`) and not stamped. Does not combine with `--check`.
 9b. **`policy-file`** (1.23.0, GH #493) — moves a legacy `ratifiers.yaml` into `em-policy.yaml`
    beside it (the file em reads since 1.23.0; see [policy.md](policy.md)): content carried over
    verbatim, `rosterSchemaVersion` becomes `policySchemaVersion`, comments preserved, and the old
@@ -6264,8 +6301,8 @@ The human list — detect-only, never applied, printed by every mode:
 | `shared-event-now-legal` | (1.18.0, GH #290 / #279) information only, shown while upgrading from before 1.18.0: an event is recorded by more than one command — legal now, one logical event, nothing to change |
 | `ci-paths-hand-edited` | (1.19.0, GH #346) em-ci.yml has a hand-edited `pull_request.paths` filter missing entries of the current preset, so a PR touching only those files runs no CI; em leaves it alone - add the listed entries |
 | `api-contract-blocked` | (1.18.1, GH #331) the `api-check` job needs `contracts/<model key>.tsp` but the model has compile errors or can't be read, so `api-contract-missing` could not generate it - run `em validate <model>`, fix, then `em api generate <model>` |
-| `roster-not-initialised` | (1.18.0, GH #290 / #259) slice docs carry `ratifiedBy` / `reviewedBy` names and no roster (`ratifiers:` in `em-policy.yaml`) exists above the model — run `em roster init <model>.em` and review it; never generated by `em upgrade` |
-| `plugin-install-locally` | The `skill-plugin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
+| `roster-not-initialised` | Retired in 1.23.0 (GH #495): the roster is optional and the git host decides who may approve, so `em upgrade` no longer lists it. `em roster init` still seeds a roster for a team that wants one. |
+| `plugin-install-locally` | The `skill-plugin` or `plugin-pin` step is pending, or the repo declares the plugin at the installed version but `known_marketplaces.json` under `$EM_CLAUDE_PLUGINS_DIR` (default `~/.claude/plugins`) has no entry for it (MIL-232). Run `claude plugin marketplace add milehimikey/em@v<ver> --scope project && claude plugin install em@em-<ver-dashed> --scope project` on each developer machine and in CI (the generated workflow does it) |
 
 `--check` (what CI runs, via `em ci init`'s generated `upgrade-check` job) exits 1 **only** on a
 hard incompatibility — a state file that exists but is unparseable (e.g. missing required

@@ -5,7 +5,8 @@
 // 1.0: initial shape -- `{ inlineSchemaVersion, generator, file, base, mergeBase, policy: { inline:
 //   { value, source }, inlineViolation: { value, source } }, ratified[], codePaths[], findings[], ok }`.
 //   `findings[]` entries are `{ code: "slice-ratified-inline", sliceKey, path, reason, policySource,
-//   message }`, `reason` one of `public-touching | policy-never`. `ok` is false only when there are
+//   message }`, `reason` one of `public-touching | policy-never | engagement` (`engagement`: the slice
+//   is listed by an open engagement, reported under `internal`). `ok` is false only when there are
 //   findings and `inline-violation: error`.
 import { InlineCheckResult } from "../cli/inlineCheck.js";
 import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";

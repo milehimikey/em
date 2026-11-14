@@ -81,7 +81,7 @@ import { planDiffArgs, resolveRevision, resolveDocAtRevision } from "../cli/diff
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { buildGlossary, detectKindConflicts, detectFieldTypeConflicts, applyGlossaryWaivers, GlossaryModelInput } from "../model/glossary.js";
 import { buildGlossaryJson, GlossaryFileSide } from "../emit/glossaryJson.js";
-import { listModelCommits } from "../cli/changelog-git.js";
+import { changelogBaseline, listModelCommits } from "../cli/changelog-git.js";
 import { buildChangelogDoc } from "../cli/changelogBuild.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, SliceDocFacts } from "../cli/conformScope.js";
 import { loadStateFile, parseState, modelPathMismatch } from "../cli/stateFile.js";
@@ -823,7 +823,8 @@ export function createServer(): McpServer {
     async ({ file, from, to }) => {
       const commitsResult = listModelCommits(file, { from, to });
       if (!commitsResult.ok) return errorResult(commitsResult.message);
-      return textResult(buildChangelogDoc(file, commitsResult.repoRoot, commitsResult.commits));
+      const baseline = changelogBaseline(commitsResult.repoRoot, from, commitsResult.commits);
+      return textResult(buildChangelogDoc(file, commitsResult.repoRoot, commitsResult.commits, undefined, baseline));
     },
   );
 

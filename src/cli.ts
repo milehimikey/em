@@ -45,7 +45,7 @@ import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
 import { checkRosterForWrite, findRosterAbove, loadRoster, POLICY_FILE } from "./roster/roster.js";
-import { effectivePolicy, policyRefusal, statusPolicyEntry } from "./policy/policy.js";
+import { effectivePolicy, policyRefusal, statusPolicyEntry, validatePolicyFile } from "./policy/policy.js";
 import { effectiveNoRef, reviewByPullRequestSource, reviewRecordedNotices } from "./cli/policyGlue.js";
 import { observeSigners, renderRoster } from "./roster/init.js";
 import { rosterContextFor } from "./roster/context.js";
@@ -66,7 +66,7 @@ import {
   formatEngagementPlanText,
   formatEngagementStatusText,
 } from "./cli/engagement.js";
-import { LEDGER_STATES, engagementPath, loadEngagement, readOpenEngagements } from "./cli/engagementFile.js";
+import { LEDGER_STATES, engagementPath, loadEngagement, openEngagementSlices, readOpenEngagements } from "./cli/engagementFile.js";
 import { buildEngagementBriefJson, buildEngagementFoundationJson, buildEngagementPlanJson, buildEngagementStatusJson } from "./emit/engagementJson.js";
 import { checkFoundation, formatFoundationText } from "./cli/engagementFoundation.js";
 import { engagementBriefFor, formatEngagementBriefText } from "./cli/engagementBrief.js";
@@ -141,7 +141,7 @@ import { buildSliceSyncJson, formatSliceSync, runSliceSync, sliceSyncFailed } fr
 import { buildSliceRegions, GeneratedRegion } from "./catalog/sliceSections.js";
 import { wireSliceNote } from "./cli/sliceLink.js";
 import { isStubStatus, runStubAll, STUB_STATUSES } from "./cli/sliceStubAll.js";
-import { listModelCommits } from "./cli/changelog-git.js";
+import { changelogBaseline, listModelCommits } from "./cli/changelog-git.js";
 import { buildChangelogDoc } from "./cli/changelogBuild.js";
 import { runRevise } from "./cli/revise.js";
 import { runDefer, runDeferFromIssue } from "./cli/defer.js";
@@ -1178,7 +1178,7 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("[slice-key...]", "slice export key (kebab-case); two or more keys review them as one all-or-nothing batch (GH #491)")
-  .option("--storyline <name>", "review every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys")
+  .option("--storyline <name>", "review this storyline's own slices that are not yet ratified as one all-or-nothing batch (GH #491); a slice whose doc belongs to another storyline, or that shipped with no version open, is left out and named; not with slice keys")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
   .option("--roster <path>", "optional ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = no check, the git host decides who may approve; either file may be named)")
@@ -1309,7 +1309,7 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("[slice-key...]", "slice export key (kebab-case); two or more keys ratify them as one all-or-nothing batch (GH #491)")
-  .option("--storyline <name>", "ratify every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys; a public-touching slice is refused from a batch")
+  .option("--storyline <name>", "ratify this storyline's own slices that are not yet ratified as one all-or-nothing batch (GH #491); a slice whose doc belongs to another storyline, or that has nothing to sign, is left out and named; not with slice keys; a public-touching slice is refused from a batch")
   .requiredOption("--by <name>", "the ratifier's name")
   .option(
     "--no-ref",
@@ -1832,7 +1832,8 @@ program
       console.error(commitsResult.message);
       process.exit(1);
     }
-    const markdown = buildChangelogDoc(file, commitsResult.repoRoot, commitsResult.commits);
+    const baseline = changelogBaseline(commitsResult.repoRoot, opts.from, commitsResult.commits);
+    const markdown = buildChangelogDoc(file, commitsResult.repoRoot, commitsResult.commits, undefined, baseline);
 
     if (opts.out) {
       writeFileSync(opts.out, markdown + "\n");
@@ -2767,6 +2768,9 @@ program
       // exit code all see it the same way every other diagnostic is seen.
       const allDiagnostics = [
         ...computeAllDiagnostics(file, model, refs, diagnostics, hashSource),
+        // An invalid em-policy.yaml refuses every write that reads it (ratify, amend, review), so
+        // validate reports it too rather than leaving it to surface at sign-off.
+        ...validatePolicyFile(dirname(file)),
         ...(opts.checkSignedBodies ? validateSignedBodies(model, refs, dirname(file)) : []),
       ];
       // GH #293: --strict promotes advisory lints to errors (the --slice-ready branch below does
@@ -3001,7 +3005,7 @@ program
   .description(
     "report slices ratified INLINE against the policy (GH #496): a slice whose doc was ratified (`ratifiedHash:` recorded or " +
       "changed) in the same `<base>...HEAD` change set that touched implementation code. `ratification.inline` in em-policy.yaml " +
-      "decides which: `internal` (default) reports public-touching slices, `never` any slice, `always` none. Advisory by default " +
+      "decides which: `internal` (default) reports public-touching slices and slices an open engagement lists, `never` any slice, `always` none. Advisory by default " +
       "(printed, exit 0); `ratification.inline-violation: error` makes a finding exit non-zero. PR-time check — never part of " +
       "validate/--slice-ready/ratify",
   )
@@ -3015,7 +3019,7 @@ program
       console.error(`em inline-check: ${policyRefusal(policy)}`);
       process.exit(1);
     }
-    const outcome = checkInlineRatification(model, refs, dirname(file), opts.base, policy.policy);
+    const outcome = checkInlineRatification(model, refs, dirname(file), opts.base, policy.policy, undefined, openEngagementSlices(file));
     if (!outcome.ok) {
       console.error(`em inline-check: ${outcome.message}`);
       process.exit(1);
@@ -4463,7 +4467,7 @@ ci.command("init")
           drift = true;
         } else if (path === ciPath && status.kind === "ok" && refreshCiPullRequestPaths(readFileSync(ciPath, "utf8")) !== null) {
           // GH #346: the `on:` filter sits outside the managed block; the legacy list is outdated too.
-          console.log(`stale: ${path} - pull_request paths filter is the pre-1.19.0 list; run \`em ci init ${model}\` or \`em upgrade --apply\``);
+          console.log(`stale: ${path} - pull_request paths filter is a list an earlier em generated; run \`em ci init ${model}\` or \`em upgrade --apply\``);
           drift = true;
         } else {
           console.log(`ok: ${path}`);
@@ -4488,7 +4492,7 @@ ci.command("init")
     for (const [path, status] of files) {
       applyCiFile(path, status);
       if (path === ciPath && (status.kind === "ok" || status.kind === "stale") && applyCiPullRequestPathsRefresh(path)) {
-        console.log(status.kind === "stale" ? `updated ${path}` : `${path}: pull_request paths filter updated to the 1.19.0 list`);
+        console.log(status.kind === "stale" ? `updated ${path}` : `${path}: pull_request paths filter updated to the current list`);
         continue;
       }
       if (status.kind === "replace-models") console.log(`replaced ${path} (--force; was generated for ${status.previous.join(", ")})`);
@@ -4609,9 +4613,14 @@ program
   .option("--json", "print a JSON document instead of text (dry-run/--check only, never with --apply)")
   .option("--fold-continuations", "also run the opt-in fold-continuations step (stack consecutive continuations of one view into the first; continuationOf, doc join and index rows unchanged)")
   .option("--to-sugar", "(implies --fold-continuations; without --apply it is a dry run listing exactly what would fold): fold continuations into their host command slice as `view X again … shown on` lines — CHANGES continuationOf and the doc join to `<host>--again` and removes the folded slices' index rows")
-  .action((file: string, opts: { apply?: boolean; check?: boolean; json?: boolean; foldContinuations?: boolean; toSugar?: boolean }) => {
-    if ((opts.foldContinuations || opts.toSugar) && opts.check) {
-      console.error("em upgrade: --fold-continuations / --to-sugar do not combine with --check");
+  .option(
+    "--baseline-ratified-hash",
+    "also run the opt-in ratified-hash-baseline step: for every signed doc with no `ratifiedHash:` (ratified before em 1.15.0), record the hash of the body " +
+      "as it stands, its section hashes, and `ratifiedHashBaseline: <today>` — so `em slice amend` can work on it. A baseline, not proof the body is what was signed",
+  )
+  .action((file: string, opts: { apply?: boolean; check?: boolean; json?: boolean; foldContinuations?: boolean; toSugar?: boolean; baselineRatifiedHash?: boolean }) => {
+    if ((opts.foldContinuations || opts.toSugar || opts.baselineRatifiedHash) && opts.check) {
+      console.error("em upgrade: --fold-continuations / --to-sugar / --baseline-ratified-hash do not combine with --check");
       process.exit(1);
     }
     if (opts.apply && opts.check) {
@@ -4651,6 +4660,7 @@ program
       refs,
       ...(opts.foldContinuations ? { foldContinuations: true } : {}),
       ...(opts.toSugar ? { toSugar: true } : {}),
+      ...(opts.baselineRatifiedHash ? { baselineRatifiedHash: true } : {}),
     };
 
     if (opts.check) {

@@ -1305,7 +1305,7 @@ describe("api-contract-missing step - pre-1.12 workflow, multi-model, blocked (G
 
 describe("GH #346 - ci preset pull_request paths", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "**/contracts/**"];
+  const NEW = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**"];
   const legacyOf = (content: string): string => {
     // what 1.18.1 generated: three-entry filter (the header is outside the managed block)
     let out = content;
@@ -1349,7 +1349,7 @@ describe("GH #346 - ci preset pull_request paths", () => {
 
 describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity, multi-model", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "**/contracts/**"];
+  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**"];
   const legacyOf = (content: string): string => {
     let out = content;
     for (const p of EXTRA) out = out.replace(`      - "${p}"\n`, "");
@@ -1383,7 +1383,7 @@ describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity
   it("reason names the filter when only the filter is legacy, and keeps the old wording when the block is stale", () => {
     const current = buildCiWorkflowFile("checkout.em", "test", INSTALLED_VERSION);
     const a = repoWithCi(legacyOf(current));
-    expect(stepOf(a.dir, a.packagedSkillsRoot).reason).toBe("em-ci.yml pull_request paths filter is the pre-1.19.0 list");
+    expect(stepOf(a.dir, a.packagedSkillsRoot).reason).toBe("em-ci.yml pull_request paths filter is a list an earlier em generated");
     const b = repoWithCi(legacyOf(buildCiWorkflowFile("checkout.em", "test", "1.9.0")));
     expect(stepOf(b.dir, b.packagedSkillsRoot).reason).toBe("generated CI block(s) are stale");
   });
@@ -1409,7 +1409,7 @@ describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity
     expect(run(current.dir).stdout).toMatch(/ok: .*em-ci\.yml/);
     const legacy = repoWithCi(legacyOf(buildCiWorkflowFile("checkout.em", "test", pkgVersion)));
     const bad = run(legacy.dir);
-    expect(bad.stdout).toContain("pre-1.19.0 list");
+    expect(bad.stdout).toContain("a list an earlier em generated");
     expect(bad.status).not.toBe(0);
   }, 20_000); // spawns the CLI (up to three times); matches the file-level 20 s of test/ciInit.test.ts
 
@@ -1431,7 +1431,7 @@ describe("GH #346 round 2 - opt-out, reasons, hand-edited filter, --check parity
 
 describe("GH #346 round 3 - em ci init applies the filter refresh; comment-tolerant parsing", () => {
   const CLEAN_SOURCE = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order\n  event Order Placed\n}\n';
-  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/system.yaml", "**/contracts/**"];
+  const EXTRA = [".github/workflows/em-*.yml", "**/.event-modeling.md", ".claude/settings.json", "**/ratifiers.yaml", "**/em-policy.yaml", "**/system.yaml", "**/contracts/**"];
   const legacyOf = (content: string): string => {
     let out = content;
     for (const p of EXTRA) out = out.replace(`      - "${p}"\n`, "");
@@ -1448,7 +1448,7 @@ describe("GH #346 round 3 - em ci init applies the filter refresh; comment-toler
     writeFileSync(ciWorkflowPath(dir), legacyOf(buildCiWorkflowFile("checkout.em", "test", pkgVersion)));
     expect(em(dir, "--check").status).not.toBe(0);
     const first = em(dir);
-    expect(first.stdout).toContain("pull_request paths filter updated to the 1.19.0 list");
+    expect(first.stdout).toContain("pull_request paths filter updated to the current list");
     expect(readFileSync(ciWorkflowPath(dir), "utf8")).toBe(buildCiWorkflowFile("checkout.em", "test", pkgVersion));
     const check = em(dir, "--check");
     expect(check.stdout).toMatch(/ok: .*em-ci\.yml/);

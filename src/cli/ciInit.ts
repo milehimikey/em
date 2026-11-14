@@ -176,7 +176,7 @@ function glossaryJob(em: string, waiverDir = "."): string {
  *  is opt-in; a repo without one gets no extra job). `suffix`/`label` are empty for a single model. */
 function rosterJob(em: string, modelPath: string, suffix = "", label = ""): string {
   return `  roster${suffix}:
-    name: "em roster check (recorded signers are on ratifiers.yaml)${label}"
+    name: "em roster check (recorded signers are on the roster)${label}"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -339,11 +339,18 @@ export const CI_PR_PATHS: readonly string[] = [
   "**/.event-modeling.md",
   ".claude/settings.json",
   "**/ratifiers.yaml",
+  "**/em-policy.yaml",
   "**/system.yaml",
   "**/contracts/**",
 ];
 
-const LEGACY_CI_PR_PATHS = CI_PR_PATHS.slice(0, 3);
+/** The lists earlier em versions generated, oldest first: the pre-1.19 three entries, and the
+ *  1.19-1.22 list (everything but `em-policy.yaml`, which 1.23.0 added). A workflow carrying one of
+ *  these exactly was never hand-edited, so the refresh may replace it. */
+const GENERATED_CI_PR_PATHS: readonly (readonly string[])[] = [
+  CI_PR_PATHS.slice(0, 3),
+  CI_PR_PATHS.filter((p) => p !== "**/em-policy.yaml"),
+];
 
 /** GH #346: rewrite the legacy filter of the workflow at `path` in place; true when it changed.
  *  Shared by `em ci init` and the `ci-block` upgrade step. The caller decides eligibility (managed
@@ -367,13 +374,15 @@ export function missingCiPullRequestPaths(content: string): string[] | null {
 const pathLines = (paths: readonly string[]): string => paths.map((p) => `      - "${p}"`).join("\n");
 
 /** GH #346: the `on:` block sits in the header, outside the GENERATED markers, so the managed-block
- *  refresh never reaches it. When a workflow still carries EXACTLY the pre-1.19 three-entry
- *  `pull_request.paths` list, return the content with the current list; otherwise null (already
+ *  refresh never reaches it. When a workflow still carries EXACTLY a list an earlier em generated
+ *  (`GENERATED_CI_PR_PATHS`), return the content with the current list; otherwise null (already
  *  current, or the repo edited its own filter - which stays untouched). */
 export function refreshCiPullRequestPaths(content: string): string | null {
-  const legacy = `  pull_request:\n    paths:\n${pathLines(LEGACY_CI_PR_PATHS)}\n  push:`;
-  if (!content.includes(legacy)) return null;
-  return content.replace(legacy, () => `  pull_request:\n    paths:\n${pathLines(CI_PR_PATHS)}\n  push:`);
+  for (const paths of GENERATED_CI_PR_PATHS) {
+    const earlier = `  pull_request:\n    paths:\n${pathLines(paths)}\n  push:`;
+    if (content.includes(earlier)) return content.replace(earlier, () => `  pull_request:\n    paths:\n${pathLines(CI_PR_PATHS)}\n  push:`);
+  }
+  return null;
 }
 
 function ciWorkflowHeader(model: string, emVersion: string): string {

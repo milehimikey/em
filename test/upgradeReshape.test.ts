@@ -314,19 +314,14 @@ slice "Orders after timeout cancel" {
   });
 });
 
-describe("human items (GH #259 roster)", () => {
-  it("lists roster-not-initialised when docs carry signers and there is no ratifiers.yaml; never writes one", () => {
+describe("human items (GH #495 roster is optional)", () => {
+  it("never lists a roster item: signed docs with no roster are a legitimate state", () => {
     const dir = repo();
-    const humanOf = () => detectUpgrade(ctxOf(dir)).human.find((h) => h.id === "roster-not-initialised");
-    expect(humanOf()).toBeUndefined();
     const doc = join(dir, "slices", "place-order.md");
     writeFileSync(doc, readFileSync(doc, "utf8").replace("status: draft", "status: reviewed\nratifiedBy: Alex\nratifiedOn: 2026-10-02"));
-    const item = humanOf()!;
-    expect(item.reason).toContain("Alex");
-    expect(item.reason).toContain("em roster init");
-    expect(existsSync(join(dir, "ratifiers.yaml"))).toBe(false);
-    writeFileSync(join(dir, "ratifiers.yaml"), 'rosterSchemaVersion: "1.0"\nratifiers:\n  - name: "Alex"\n');
-    expect(humanOf()).toBeUndefined();
+    const human = detectUpgrade(ctxOf(dir)).human;
+    expect(human.some((h) => (h.id as string) === "roster-not-initialised")).toBe(false);
+    expect(human.some((h) => h.reason.includes("em roster init"))).toBe(false);
   });
 });
 
