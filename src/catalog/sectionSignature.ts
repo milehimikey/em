@@ -77,8 +77,8 @@ function splitSections(body: string): RawSection[] {
       else if (open[1][0] === fence) fence = null;
     }
     if (fence === null && !open) {
-      if (!inComment && /<!--/.test(text) && !/-->/.test(text.slice(text.indexOf("<!--")))) inComment = true;
-      else if (inComment && /-->/.test(text)) inComment = false;
+      if (!inComment && /<!--/.test(text) && !/--!?>/.test(text.slice(text.indexOf("<!--")))) inComment = true;
+      else if (inComment && /--!?>/.test(text)) inComment = false;
     }
     const heading = fence === null && !inComment && !open ? /^##[ \t]+(\S.*?)[ \t]*$/.exec(text) : null;
     if (heading && !heading[1].startsWith("#")) {
