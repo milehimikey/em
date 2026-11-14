@@ -31,8 +31,8 @@ key; nothing here is breaking.**
 |---|---|---|
 | `merge` | `merge-commit` | `squash` and `rebase` make `em slice ratify` record the hash only, as if `--no-ref` were passed, and say so on stderr. `merge-commit` (or no key) records `ratifiedRef:` as before. |
 | `review` | `session` | **Parsed and shown in `em status`; no command changes yet.** Reserved for the review-by-pull-request work (GH #494). |
-| `ratification.inline` | `internal` | **Parsed and shown only.** Reserved for the inline-ratification advisory (GH #496). |
-| `ratification.inline-violation` | `advisory` | **Parsed and shown only**, same issue. |
+| `ratification.inline` | `internal` | Read by [`em inline-check`](cli.md#em-inline-check-file---base-rev) (GH #496): which slices may be ratified on the same branch as their implementation. `internal` reports a public-touching slice ratified inline, `never` reports any, `always` none. |
+| `ratification.inline-violation` | `advisory` | Severity of an `em inline-check` finding: `advisory` prints a warning and exits 0, `error` exits non-zero. |
 | `amendment.prose-sections` | em's list: `Intent`, `Trigger & Actor`, `Dependencies & Read Models Affected`, `Consumed by` | Replaces the list that classifies a slice doc's sections as prose or behaviour. A heading not listed is behaviour. Used today by `em export --doc-json`'s per-slice `sections`. |
 | `ratifiers`, `reviewers` | none (the git host decides) | The optional roster: same shape and meaning as in [slice-doc-schema.md](slice-doc-schema.md#who-may-ratify). Declare it only if you have no host enforcement; see [the roster is optional](#the-roster-is-optional). |
 
