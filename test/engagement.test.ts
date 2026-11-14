@@ -631,7 +631,7 @@ describe("engagement tracking key (GH #241)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "cli", "--slices", "order-list", "--tracking", "PROJ-7"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "cli"), "utf8")).toContain('tracking: "PROJ-7"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "cli", "--json"], dir).stdout);
-    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.5", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
+    expect(p).toMatchObject({ engagementPlanSchemaVersion: "1.6", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
     const s = JSON.parse(em(["engagement", "status", "lifecycles.em", "cli", "--json"], dir).stdout);
     expect(s).toMatchObject({ engagementStatusSchemaVersion: "1.1", tracking: "PROJ-7", slices: [{ tracking: "PROJ-7" }] });
   }, 60_000);
@@ -726,7 +726,7 @@ describe("engagement prTitle template (GH #334)", () => {
     expect(em(["engagement", "new", "lifecycles.em", "titled-cli", "--slices", "order-list", "--tracking", "PROJ-7", "--pr-title", "feat: {slice} [{key}]"], dir).status).toBe(0);
     expect(readFileSync(engagementPath(file, "titled-cli"), "utf8")).toContain('prTitle: "feat: {slice} [{key}]"');
     const p = JSON.parse(em(["engagement", "plan", "lifecycles.em", "titled-cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.5");
+    expect(p.engagementPlanSchemaVersion).toBe("1.6");
     expect(p.prTitle).toBe("feat: {slice} [{key}]");
     expect(p.slices[0].prTitle).toMatch(/^feat: .+ \[PROJ-7\]$/);
   }, 60_000);
@@ -830,7 +830,7 @@ describe("engagement context documents (GH #455)", () => {
     expect(readFileSync(engagementPath(file, "docd"), "utf8")).toContain('context: ["docs/constitution.md", "docs/missing.md"]');
 
     const p = JSON.parse(em(["engagement", "plan", rel, "docd", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.5");
+    expect(p.engagementPlanSchemaVersion).toBe("1.6");
     expect(p.context).toEqual(["docs/constitution.md", "docs/missing.md"]);
     expect(p.preflight).toEqual([
       {
@@ -998,8 +998,66 @@ describe("plan pre-flight (GH #239)", () => {
     const file = write();
     create(file, "cli", { kind: "slices", keys: ["place-order", "cancel-order"] });
     const p = JSON.parse(em(["engagement", "plan", "orders.em", "cli", "--json"], dir).stdout);
-    expect(p.engagementPlanSchemaVersion).toBe("1.5");
+    expect(p.engagementPlanSchemaVersion).toBe("1.6");
     expect(p.preflight.map((f: { kind: string }) => f.kind)).toEqual(["repeated-invariant", "event-without-tag", "shared-trigger"]);
     expect(em(["engagement", "plan", "orders.em", "cli"], dir).stdout).toContain("pre-flight: 3 model-wide gap(s)");
+  }, 60_000);
+});
+
+// GH #492: ratification is the handoff gate — the plan lists the engagement's reviewed-not-ratified
+// slices with the exact ratify command(s). Information only: never a hold, never an exit code.
+describe("plan ratify-at-handoff (GH #492)", () => {
+  const doc = (status: string) => `---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ${status}\nversion: 1\n---\n# Slice\n\n## Intent\n\nbody\n`;
+  const MODEL = [
+    'slice "Place Order" {',
+    '  command Place Order note "slices/place-order.md"',
+    "  event Order Placed @Orders { orderId tag }",
+    "}",
+    'slice "Cancel Order" {',
+    '  command Cancel Order public { orderId: uuid } note "slices/cancel-order.md"',
+    "  event Order Cancelled @Orders { orderId tag }",
+    "}",
+    'slice "Ship Order" {',
+    '  command Ship Order note "slices/ship-order.md"',
+    "  event Order Shipped @Orders { orderId tag }",
+    "}",
+    "",
+  ].join("\n");
+  function write(statuses: Record<string, string>): string {
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    for (const [k, s] of Object.entries(statuses)) writeFileSync(join(dir, "slices", `${k}.md`), doc(s));
+    const file = join(dir, "orders.em");
+    writeFileSync(file, MODEL);
+    return file;
+  }
+
+  it("lists one batch for the non-public reviewed slices and one single per public one, with <name> literal", () => {
+    const file = write({ "place-order": "reviewed", "cancel-order": "reviewed", "ship-order": "reviewed" });
+    create(file, "all", { kind: "slices", keys: ["place-order", "cancel-order", "ship-order"] });
+    const p = plan(file, "all");
+    expect(p.ratifyAtHandoff).toEqual([
+      { kind: "batch", slices: ["place-order", "ship-order"], command: `em slice ratify ${file} place-order ship-order --by <name>`, meaningFlagRequired: false },
+      { kind: "single", slices: ["cancel-order"], command: `em slice ratify ${file} cancel-order --by <name> --meaning-unchanged`, meaningFlagRequired: true },
+    ]);
+    const text = formatEngagementPlanText(p);
+    expect(text).toContain("reviewed, not yet ratified");
+    expect(text).toContain(`em slice ratify ${file} place-order ship-order --by <name>\n`);
+    expect(text).toContain("a meaning flag is required");
+    expect(formatEngagementPlanText(p)).toBe(text);
+  });
+
+  it("only reviewed slices count; an empty set prints nothing in text and [] in JSON; holds are unchanged", () => {
+    const file = write({ "place-order": "draft", "cancel-order": "ready-to-implement", "ship-order": "reviewed" });
+    create(file, "all", { kind: "slices", keys: ["place-order", "cancel-order", "ship-order"] });
+    const before = plan(file, "all");
+    expect(before.ratifyAtHandoff.map((e) => e.slices)).toEqual([["ship-order"]]);
+    writeFileSync(join(dir, "slices", "ship-order.md"), doc("draft"));
+    const after = plan(file, "all");
+    expect(after.ratifyAtHandoff).toEqual([]);
+    expect(formatEngagementPlanText(after)).not.toContain("not yet ratified");
+    expect(after.slices.map((s) => [s.key, s.ready, s.held])).toEqual(before.slices.map((s) => [s.key, s.ready, s.held]));
+    const j = JSON.parse(em(["engagement", "plan", "orders.em", "all", "--json"], dir).stdout);
+    expect(j.engagementPlanSchemaVersion).toBe("1.6");
+    expect(j.ratifyAtHandoff).toEqual([]);
   }, 60_000);
 });

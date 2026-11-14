@@ -130,6 +130,13 @@ draft ──(review session)──▶ reviewed ──(ratification gate)──�
    not by `em`: put a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on
    `slices/**` naming your ratifiers, so the edit itself can't merge without their review.
    Confirm readiness mechanically with `em validate <model>.em --slice-ready <key>`.
+   **Ratification is the handoff gate, so time it that way.** Hold slices at `reviewed` while a
+   storyline is still being shaped — a `reviewed` doc is free to edit (`em slice review --again`
+   re-records the review), a ratified one is not — and ratify the storyline's slices together, in
+   one batch run (`em slice ratify <model>.em <key>... --by <name>` or `--storyline <name>`), once
+   it is shaped end to end or the slices are about to be dispatched. A public-touching slice is
+   ratified singly, with its meaning flag. `em engagement plan` lists an engagement's
+   reviewed-but-not-ratified slices with the command to run.
 4. **The merge → `implemented`.** Not a gate — bookkeeping. The implementing agent or engineer
    runs `em slice mark-implemented <model>.em <key> <pr-url>` at merge; the human checkpoint here
    was the PR review, which already happened. It writes the **shipped record** (`shippedVersion:`,

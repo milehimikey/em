@@ -146,6 +146,13 @@ em validate model.em --slice-ready <key>            # exits non-zero until the s
 
 Only then does the slice go out.
 
+Time the ratification as the handoff gate it is: hold slices at `reviewed` while a storyline is
+still being shaped (a `reviewed` doc is free to edit, and `em slice review --again` re-records
+the review; a ratified one is not), then ratify the storyline's slices together in one batch run,
+`em slice ratify model.em <key>... --by "Sam Okafor"` (or `--storyline <name>`), when it is shaped
+end to end or the slices are about to be dispatched. Public-touching slices are ratified singly,
+with a meaning flag. `em engagement plan` prints this command for an engagement's `reviewed` slices.
+
 For an agent implementer, the bundled skill ships the full contract to follow —
 [the agent guide](../.claude/skills/event-modeling-implement/reference/implement.md): the readiness
 gate, the read-only rule on ratified docs, propose-don't-decide for gaps, the merge-time

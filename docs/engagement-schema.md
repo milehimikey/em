@@ -92,10 +92,10 @@ or a link to the plan.
 ## Versioning
 
 `engagementSchemaVersion` is versioned independently of the npm package and of the two JSON
-documents (`engagementPlanSchemaVersion` `"1.5"` and `engagementStatusSchemaVersion` `"1.1"`). An
+documents (`engagementPlanSchemaVersion` `"1.6"` and `engagementStatusSchemaVersion` `"1.1"`). An
 additive key bumps the minor version (`tracking` took all three from 1.0 to 1.1; `prTitle` took
 the file to 1.2 and the plan document to 1.4; `context` took the file to 1.3 and the plan document
-to 1.5). `new` writes the lowest version that still covers what was actually given — `"1.1"` when
+to 1.5; `ratifyAtHandoff` took the plan document to 1.6, GH #492). `new` writes the lowest version that still covers what was actually given — `"1.1"` when
 neither `--pr-title` nor `--context-doc` is given, `"1.2"` when `--pr-title` is given but not
 `--context-doc`, `"1.3"` when `--context-doc` is given (regardless of `--pr-title`) — so a file
 that does not use a feature stays readable by an em pinned to the version before that feature

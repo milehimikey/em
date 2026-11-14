@@ -58,6 +58,7 @@ import {
   validateContextPaths,
 } from "./engagementFile.js";
 import { shapeRuleCodes } from "./shape.js";
+import { isPublicTouchingSlice } from "../catalog/apiFirst.js";
 import { ENGAGEMENT_SCHEMA_VERSION } from "../emit/engagementJson.js";
 
 /** Everything a plan/status needs about one compiled model — what both the CLI action and the
@@ -461,6 +462,33 @@ export interface EngagementPlan {
   slices: EngagementPlanSlice[];
   /** GH #239 (plan schema 1.2; `shape` kind added in 1.3, GH #282). `[]` when the engagement's slices share no gap. */
   preflight: PreflightFinding[];
+  /** GH #492 (plan schema 1.6): the slices whose doc is `reviewed` (reviewed, not yet ratified) and
+   *  the exact command(s) that ratify them — one batch for the non-public-touching ones, one single
+   *  command per public-touching one. Information only: never a hold. `[]` when none. */
+  ratifyAtHandoff: RatifyAtHandoffEntry[];
+}
+
+export interface RatifyAtHandoffEntry {
+  /** `batch`: several keys in one `em slice ratify` run; `single`: one public-touching slice. */
+  kind: "batch" | "single";
+  slices: string[];
+  /** `<name>` is a literal placeholder — the plan never guesses who ratifies. */
+  command: string;
+  /** True for a public-touching slice: `--meaning-unchanged` or `--contract-change "<why>"` is required. */
+  meaningFlagRequired: boolean;
+}
+
+/** GH #492: the reviewed-but-unratified slices of the engagement and the commands that ratify them. */
+export function computeRatifyAtHandoff(input: EngagementModelInput, slices: EngagementPlanSlice[]): RatifyAtHandoffEntry[] {
+  const reviewed = slices.filter((s) => s.docStatus === "reviewed").map((s) => s.key);
+  const isPublic = (k: string) => isPublicTouchingSlice(input.model, input.refs, k);
+  const out: RatifyAtHandoffEntry[] = [];
+  const batch = reviewed.filter((k) => !isPublic(k));
+  if (batch.length > 0) out.push({ kind: "batch", slices: batch, command: `em slice ratify ${input.file} ${batch.join(" ")} --by <name>`, meaningFlagRequired: false });
+  for (const k of reviewed.filter(isPublic)) {
+    out.push({ kind: "single", slices: [k], command: `em slice ratify ${input.file} ${k} --by <name> --meaning-unchanged`, meaningFlagRequired: true });
+  }
+  return out;
 }
 
 /** The doc↔model diagnostics (MIL-124) a pre-flight rolls up per slice: an event table listing a
@@ -682,7 +710,7 @@ export function buildEngagementPlan(input: EngagementModelInput, engagementFile:
       message: `context document "${path}" does not exist — add it before fan-out, or remove it from the engagement's context: list`,
     });
   }
-  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, context: eng.context, parallel: eng.parallel, levels, slices, preflight } };
+  return { ok: true, plan: { file: input.file, engagement: engagementFile, slug: eng.slug, status: eng.status, tracking: eng.tracking, prTitle: eng.prTitle, context: eng.context, parallel: eng.parallel, levels, slices, preflight, ratifyAtHandoff: computeRatifyAtHandoff(input, slices) } };
 }
 
 /** Walk predecessors among the unlevelled nodes until one repeats: `a -> b -> a` (upstream
@@ -719,6 +747,13 @@ export function formatEngagementPlanText(p: EngagementPlan): string {
     const parts = [modelWide > 0 ? `${modelWide} model-wide gap(s) the engagement's slices share — answer once, before dispatch` : null, perSlice > 0 ? `${perSlice} per-slice PR-title advisory(ies)` : null].filter(Boolean);
     lines.push(`pre-flight: ${parts.join("; ")}`);
     for (const f of p.preflight) lines.push(`  ${f.kind}: ${f.message}`);
+  }
+  // GH #492: ratification is the handoff gate — information, never a hold.
+  if (p.ratifyAtHandoff.length > 0) {
+    lines.push("reviewed, not yet ratified — ratify together when the storyline is shaped or the slices are about to be dispatched (ratification is the handoff gate; `<name>` is whoever signs off):");
+    for (const e of p.ratifyAtHandoff) {
+      lines.push(`  ${e.command}${e.meaningFlagRequired ? ' (public-touching: a meaning flag is required — --meaning-unchanged, or --contract-change "<why>")' : ""}`);
+    }
   }
   return lines.join("\n");
 }
