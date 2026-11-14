@@ -172,7 +172,7 @@ function glossaryJob(em: string, waiverDir = "."): string {
  *  `--check` from a different em version reports the block as stale — the same
  *  upgrade-visibility `em skill check` gets from its version stamp — and a file scaffolded
  *  by a pre-pin em shows stale the same way. */
-/** GH #259: the `roster` job, emitted only when a `ratifiers.yaml` governs the model (the roster
+/** GH #259: the `roster` job, emitted only when a roster (`em-policy.yaml` lists, or a legacy `ratifiers.yaml`) governs the model (the roster
  *  is opt-in; a repo without one gets no extra job). `suffix`/`label` are empty for a single model. */
 function rosterJob(em: string, modelPath: string, suffix = "", label = ""): string {
   return `  roster${suffix}:

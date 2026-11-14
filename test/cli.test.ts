@@ -2842,7 +2842,7 @@ slice "Billing" {
     const r = em(["status", "checkout.em", "--tests", "tests", "--json"], modelDir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.statusSchemaVersion).toBe("1.12");
+    expect(doc.statusSchemaVersion).toBe("1.13");
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: expect.any(String) });
     expect(doc.files).toEqual(["checkout.em"]);
     expect(doc.slices).toEqual({
@@ -5288,7 +5288,7 @@ describe("em scaffold in a spec-kit project (CLI, real fs, MIL-202)", () => {
     const r = em(["status", model, "--json"], cwd);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout) as { statusSchemaVersion: string; conformance: Array<{ constitution: { present: boolean; path: string } }> };
-    expect(doc.statusSchemaVersion).toBe("1.12");
+    expect(doc.statusSchemaVersion).toBe("1.13");
     expect(doc.conformance[0].constitution).toEqual({ present: false, path: "../.specify/memory/constitution.md" });
     writeFileSync(join(cwd, ".specify", "memory", "constitution.md"), "# house rules\n");
     const r2 = em(["status", model, "--json"], cwd);

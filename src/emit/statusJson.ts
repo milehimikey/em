@@ -58,7 +58,9 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 // `ready-to-implement`) over a shipped one: `{ file, key, shippedVersion, version, status }`.
 // 1.12 (GH #259): a new top-level `roster` -- "present" | "absent" | "invalid": whether a ratifier
 // roster (`ratifiers.yaml`) governs `em slice ratify --by` / `review --by` for the first input model.
-export const STATUS_SCHEMA_VERSION = "1.12";
+// 1.13 (GH #493): a new top-level `policy` -- one entry per input model with the effective
+// `em-policy.yaml` policy, each key as `{ value, source }` (source = the file path or "default").
+export const STATUS_SCHEMA_VERSION = "1.13";
 
 /** Build the `em status <files...> --json` document. Pretty-printed (2-space), no trailing
  *  newline — the caller adds it, same convention as buildCoverageJson/buildLedgerJson. No
@@ -82,6 +84,7 @@ export function buildStatusJson(report: StatusReport): string {
     publicSlicesUnconfirmed: report.publicSlicesUnconfirmed,
     engagements: report.engagements,
     roster: report.roster,
+    policy: report.policy,
     // Doc-join diagnostics (binding-missing-file/frontmatter-invalid), tagged with the file
     // each concerns — same serialized diagnostic shape em export/em diff use (severity, code,
     // message, line, refs), plus `file` since this is a multi-model surface.

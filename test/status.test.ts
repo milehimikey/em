@@ -803,6 +803,7 @@ describe("text/markdown/badge formatting", () => {
       publicSlicesUnconfirmed: 0,
       engagements: { open: 0, slugs: [] },
       roster: "absent",
+      policy: [],
       ...overrides,
     };
   }

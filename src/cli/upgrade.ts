@@ -22,9 +22,10 @@
 // repository — same requirement `em conform-scope` holds, for the same reason (there is no
 // "changed since when" or "commit per step" without one).
 
-import { existsSync, readFileSync, readdirSync, realpathSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, rmSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { findRosterAbove, GRANDFATHERED_RATIFIER } from "../roster/roster.js";
+import { findFileAbove, findRosterAbove, GRANDFATHERED_RATIFIER, parseRoster, POLICY_FILE, ROSTER_FILE } from "../roster/roster.js";
+import { parsePolicy, POLICY_SCHEMA_VERSION } from "../policy/policy.js";
 import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES } from "../model/model.js";
 import { findUnresolvedPublicFieldTypes } from "../model/validate.js";
 import { RefsResult } from "../model/refs.js";
@@ -111,7 +112,7 @@ export interface StepDetection {
 
 export type StepApplyOutcome = { ok: true; changedFiles: string[]; notes?: string[] } | { ok: false; message: string };
 
-export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "mise-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest";
+export type UpgradeStepId = "skill-bundle" | "skill-plugin" | "mise-pin" | "reaction-shape" | "state-file" | "ci-block" | "api-contract-missing" | "constitution" | "ratified-signoff" | "ratified-hash-scope" | "ratified-sections" | "collapse-alternative-events" | "fold-continuations" | "view-doc-sources-stale" | "slice-index-stale" | "parking-lot-fragments" | "system-manifest" | "policy-file";
 
 export interface UpgradeStepDef {
   id: UpgradeStepId;
@@ -1245,6 +1246,58 @@ function applyRatifiedSections(ctx: UpgradeContext): StepApplyOutcome {
   return { ok: true, changedFiles: writes.map((w) => w.file) };
 }
 
+// ---- Step policy-file (GH #493) — a legacy `ratifiers.yaml` moves into `em-policy.yaml`. ----
+// Process policy now lives in `em-policy.yaml`; its `ratifiers:`/`reviewers:` lists are the roster.
+// A tracked `ratifiers.yaml` is renamed in place: `rosterSchemaVersion` becomes
+// `policySchemaVersion` and a one-line comment records the move; everything else (entries,
+// `contexts:`, `models:`, every comment) is carried over byte for byte. If an `em-policy.yaml`
+// already exists beside it, em refuses rather than guess how to merge two files.
+
+function legacyRosterFile(ctx: UpgradeContext): string | null {
+  return findFileAbove(ctx.baseDir, [ROSTER_FILE]);
+}
+
+function policyFromRosterText(text: string): string {
+  const swapped = text.replace(/^rosterSchemaVersion(\s*:)/m, "policySchemaVersion$1");
+  return `# em-policy.yaml -- moved from ratifiers.yaml by em upgrade (policy-file); docs/policy.md\n${swapped}`;
+}
+
+function detectPolicyFile(ctx: UpgradeContext): StepDetection {
+  const legacy = legacyRosterFile(ctx);
+  if (legacy === null) return { applicable: false, reason: "no ratifiers.yaml to move" };
+  const target = join(dirname(legacy), POLICY_FILE);
+  if (existsSync(target)) {
+    return {
+      applicable: false,
+      human: true,
+      reason: `${legacy} and ${target} both exist -- em-policy.yaml wins and ratifiers.yaml is ignored; merge the roster lists into em-policy.yaml by hand and delete ratifiers.yaml (em will not guess)`,
+    };
+  }
+  const parsed = parseRoster(readFileSync(legacy, "utf8"));
+  if (!parsed.ok) {
+    return { applicable: false, human: true, reason: `${legacy} is not a valid roster (${parsed.diagnostics.map((d) => d.message).join("; ")}) -- fix it, then em upgrade can move it` };
+  }
+  return { applicable: true, reason: `${legacy} is the legacy roster file -- em upgrade will move it to ${target} (content carried over, policySchemaVersion "${POLICY_SCHEMA_VERSION}" added)` };
+}
+
+function applyPolicyFile(ctx: UpgradeContext): StepApplyOutcome {
+  const legacy = legacyRosterFile(ctx);
+  if (legacy === null) return { ok: true, changedFiles: [] };
+  const target = join(dirname(legacy), POLICY_FILE);
+  if (existsSync(target)) return { ok: false, message: `${target} already exists beside ${legacy} -- merge by hand` };
+  const text = readFileSync(legacy, "utf8");
+  const before = parseRoster(text);
+  if (!before.ok) return { ok: false, message: `${legacy} is not a valid roster -- nothing written` };
+  const next = policyFromRosterText(text);
+  const after = parsePolicy(next);
+  if (!after.ok || JSON.stringify(after.policy.ratifiers) !== JSON.stringify(before.roster.ratifiers) || JSON.stringify(after.policy.reviewers) !== JSON.stringify(before.roster.reviewers)) {
+    return { ok: false, message: `the rewritten ${POLICY_FILE} would not carry the roster over unchanged -- aborting, nothing written` };
+  }
+  writeFileSync(target, next, "utf8");
+  unlinkSync(legacy);
+  return { ok: true, changedFiles: [target, legacy] };
+}
+
 export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "skill-plugin", sinceVersion: "1.14.0", detect: detectSkillPlugin, apply: applySkillPlugin },
   { id: "skill-bundle", sinceVersion: "1.7.0", detect: detectSkillBundle, apply: applySkillBundle },
@@ -1257,6 +1310,7 @@ export const UPGRADE_STEPS: readonly UpgradeStepDef[] = [
   { id: "ratified-signoff", sinceVersion: "1.14.0", detect: detectRatifiedSignoff, apply: applyRatifiedSignoff },
   { id: "ratified-hash-scope", sinceVersion: "1.19.0", detect: detectRatifiedHashScope, apply: applyRatifiedHashScope },
   { id: "ratified-sections", sinceVersion: "1.23.0", detect: detectRatifiedSections, apply: applyRatifiedSections },
+  { id: "policy-file", sinceVersion: "1.23.0", detect: detectPolicyFile, apply: applyPolicyFile },
   { id: "collapse-alternative-events", sinceVersion: "1.18.0", detect: detectCollapseAlternativeEvents, apply: applyCollapseAlternativeEvents },
   { id: "fold-continuations", sinceVersion: "1.18.0", detect: detectFoldContinuations, apply: applyFoldContinuations, optedIn: (c) => c.foldContinuations === true || c.toSugar === true },
   { id: "view-doc-sources-stale", sinceVersion: "1.18.0", detect: detectViewDocSourcesStale, apply: applyViewDocSourcesStale },
@@ -1488,7 +1542,7 @@ function detectRosterNotInitialised(ctx: UpgradeContext): HumanItem | null {
   if (ratifiers.length === 0) return null;
   return {
     id: "roster-not-initialised",
-    reason: `${ratifiers.length} ratifier(s) have signed slice docs (${ratifiers.join(", ")}) and there is no ratifiers.yaml — decide who may sign, then run \`em roster init ${basename(ctx.modelFile)}\` to seed one from those names and review it before committing`,
+    reason: `${ratifiers.length} ratifier(s) have signed slice docs (${ratifiers.join(", ")}) and there is no roster (\`ratifiers:\` in em-policy.yaml) — decide who may sign, then run \`em roster init ${basename(ctx.modelFile)}\` to seed one from those names and review it before committing`,
   };
 }
 
