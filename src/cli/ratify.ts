@@ -505,6 +505,8 @@ export function runRatify(
   git: GitRunner | null = realGit,
   /** GH #255: record `ratifiedHash:` only — no `ratifiedRef:`, no git consulted (`--no-ref`). */
   noRef = false,
+  /** GH #491: plan only — run every check, write nothing (batch ratify plans before it writes). */
+  dryRun = false,
 ): RunRatifyResult {
   const sliceIndex = refs.sliceKeys.indexOf(sliceKey);
   if (sliceIndex === -1) {
@@ -593,7 +595,7 @@ export function runRatify(
   // MIL-198: computed once the gate above has passed, before the write — advisory only, so it
   // runs the same whether the gate passed on its own merits or via --skip-review.
   const upstreamWarnings = upstreamUnratifiedSlices(model, refs, baseDir, sliceKey);
-  if (result.changed) {
+  if (result.changed && !dryRun) {
     writeFileSync(absPath, result.content, "utf8");
   }
   return {
