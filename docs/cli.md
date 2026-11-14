@@ -5614,6 +5614,18 @@ content the agent runs. Findings:
 
 (b) is only checked once (a) passes: a wrong pin is reported once, not twice.
 
+**mise pin (GH #298).** When a `mise.toml` or `.mise.toml` (nearest directory walking up from
+`[path]`; within a directory `mise.toml` first) pins the CLI (`"npm:@milehimikey/em" = "<ver>"` under
+`[tools]`, as a string, an inline table with `version`, or a `[tools."npm:@milehimikey/em"]` table),
+`em skill check` compares that version with the plugin pin's version when the repo declares the plugin,
+and with the installed em otherwise. This adds to whatever else the repo is checked for; a repo with no
+`mise.toml`, or one with no em entry, is checked exactly as before. `em` reads only that entry (no TOML
+library, and it never runs `mise`).
+
+| Code | Meaning | Exit |
+|---|---|---|
+| `mise-pin-mismatch` | the mise pin is not the plugin pin's version (or, with no plugin, the installed em's); the message prints the fix line `mise use npm:@milehimikey/em@<ver>` | 1 |
+
 **Vendored bundle.** Checks every directory in `[path]/.claude/skills/` that belongs to the em
 skill bundle for drift against the bundle shipped with the installed `em`. Two independent
 signals are checked and reported together (never short-circuited on the first), per directory:
@@ -5653,14 +5665,15 @@ when everything agrees. Every finding is a
 defect once you've opted into running this command — `em skill check` exits 1 on any mismatch,
 same no-opt-in-flag-needed convention as `em ledger`.
 
-**`--json` shape** (`skillCheckSchemaVersion: "1.1"`, versioned independently of the npm
-package and every other command's own schema; 1.1 added `plugin` and the plugin finding fields):
+**`--json` shape** (`skillCheckSchemaVersion: "1.2"`, versioned independently of the npm
+package and every other command's own schema; 1.1 added `plugin` and the plugin finding fields; 1.2
+added the `mise-pin-mismatch` code and the `misePin` / `miseFile` finding fields):
 
 - `generator` — `{ name, version }` of the tool that produced the document.
 - `vendoredDir` — the root the whole bundle was checked under: `[path]/.claude/skills`, or the `--skills-dir` / detected `.agents/skills` location (GH #412).
 - `installedVersion` — the installed `em`'s own version (`em --version`).
 - `plugin` — `{ declared: true, name, ref, enabled }` when the repo declares the plugin, else `null`.
-- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles, pluginName, pluginRef, installCommands }[]` across every
+- `findings` — `{ code, message, vendoredStamp, installedVersion, driftedFiles, pluginName, pluginRef, installCommands, misePin, miseFile }[]` across every
   bundle directory, `message` and `driftedFiles` prefixed with `[<directory>]`/`<directory>/`
   respectively so a finding always names which part of the bundle it's about. Every key is
   always present (explicit `null` when unused by `code`, so a consumer can destructure without
@@ -5672,7 +5685,8 @@ package and every other command's own schema; 1.1 added `plugin` and the plugin 
   `skill-check-content-drift` (one or more files in that directory differ by hash from the
   packaged skill — `driftedFiles` non-null, sorted), or one of the four plugin codes above
   (`pluginName`/`pluginRef` non-null; `installCommands` is the two-command snippet when it
-  applies, else `null`).
+  applies, else `null`), or `mise-pin-mismatch` (`misePin` is the version `mise.toml` pins, `miseFile`
+  the file relative to `[path]`, `installCommands` is the one `mise use` line; all three `null` for every other code).
 - `ok` — `true` iff the command exits 0: `findings` is empty, or holds only a
   `plugin-not-installed-locally` outside `--ci`.
 
@@ -5864,9 +5878,16 @@ The mechanical steps, in this fixed order:
 2. **`skill-bundle`** — delegates to `em skill sync`'s own plan/apply: refreshes the vendored
    `.claude/skills/` bundle. Not applicable when no bundle is vendored at all (`em upgrade` never
    installs one that wasn't there).
-3. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
+3. **`mise-pin`** (1.23.0, GH #298) — when a `mise.toml` / `.mise.toml` inside the repo pins
+   `"npm:@milehimikey/em"` at a version other than the installed em, rewrites that one version
+   value in place (a surgical edit: comments, ordering, quoting and LF/CRLF endings are untouched,
+   nothing else in the file is parsed back out or rewritten) in one commit. It never creates a
+   `mise.toml`, never edits one outside the repo, and never runs `mise` — run `mise install`
+   afterwards. Not applicable without a pin, or when the pin already matches. It runs right after
+   `skill-plugin`/`skill-bundle`, so one `em upgrade --apply` moves the CLI pin and the plugin pin together.
+4. **`reaction-shape`** — delegates to `em migrate`'s own plan/verify/apply: rewrites the old
    pre-1.7.1 two-slice Automation/Translation shape into the merged single-slice shape.
-4. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same
+5. **`state-file`** — when the state file is **absent**, scaffolds one (MIL-257; the same
    generator `em scaffold` uses, so it parses and carries `Em version:` = the installed em,
    `Model version: none`, `Certified: never`; honest initial values: `Current phase: discover`,
    `Current step: 1`, `Last conformance: never`, `Last stakeholder review: never` — edit them with
@@ -5877,18 +5898,18 @@ The mechanical steps, in this fixed order:
    (em can't guess `Current step:` etc.): it is a hard incompatibility, and this step's checklist
    line shows the specific reason. `Em version:` itself is NOT this step's job for an existing
    file — see below.
-5. **`ci-block`** — refreshes the `GENERATED:em-ci`/`GENERATED:em-conform` blocks via `em ci
+6. **`ci-block`** — refreshes the `GENERATED:em-ci`/`GENERATED:em-conform` blocks via `em ci
    init`'s own plan/apply, reusing whatever `<model>`/`--tests` arguments the existing
    `em-ci.yml` was generated with. Only touches a file that already carries the markers — never
    creates a workflow the repo didn't ask for. Directly after it, **`api-contract-missing`**
    (1.18.1, GH #331) generates `contracts/<model key>.tsp` (the same generator as `em api
    generate`) for each model whose `api-check` job has no contract, as its own commit.
-6. **`constitution`** — scaffolds `constitution.md` (MIL-202, draft, unratified) when it's absent
+7. **`constitution`** — scaffolds `constitution.md` (MIL-202, draft, unratified) when it's absent
    and the repo has no `.specify/` directory. When `.specify/` exists instead, that's a human
    item, not mechanical (spec-kit owns the slot).
-7. **`ratified-signoff`** (1.14.0, MIL-259) — grandfathers a version-1 `ready-to-implement` doc
+8. **`ratified-signoff`** (1.14.0, MIL-259) — grandfathers a version-1 `ready-to-implement` doc
    that never recorded a sign-off (see [upgrading.md](upgrading.md#1140)).
-8. **`ratified-hash-scope`** (1.19.0; GH #347, first shipped in 1.17.0 for GH #253) — re-stamps
+9. **`ratified-hash-scope`** (1.19.0; GH #347, first shipped in 1.17.0 for GH #253) — re-stamps
    every `ratifiedHash:` still in an older scope whose body is intact — the 1.17.0–1.18.x scope
    (generated regions inside the hash) or the pre-1.17 whole-body scope — with the current-scope
    hash of the **same** body (authored text only: the text between generated region markers and
@@ -5899,7 +5920,7 @@ The mechanical steps, in this fixed order:
    matches its hash in any scope is listed in the reason (`left alone: <keys>`) and left alone; so is a queued question whose doc
    has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
    would not match its hash afterwards.
-9. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
+10. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
    command (identical command text, identical `ui`, no `note` or `issue` on the later slices) and
    differ only in the event they record on one context become ONE slice recording `event A | B
    @Ctx` (when the events' declarations are identical but for the name) or `oneof { … }` (when
@@ -5918,7 +5939,7 @@ The mechanical steps, in this fixed order:
    later slice's event moves with that event (above the merged `event A | B` line, or above its
    entry in `oneof { … }`); any other comment in a merged-away slice cannot be placed and is named
    in the step's reason as dropped — move it by hand first (GH #374).
-10. **`fold-continuations`** (1.18.0, GH #290 / #287) — **opt-in**: every run detects and lists it
+11. **`fold-continuations`** (1.18.0, GH #290 / #287) — **opt-in**: every run detects and lists it
    (and raises the human item `fold-continuations-opt-in`), but a plain `--apply` does not apply it;
    run `em upgrade <model>.em --apply --fold-continuations`. Default form: consecutive hand-named
    continuation slices that continue the SAME read model and show the same `ui`s are stacked into
@@ -5935,23 +5956,23 @@ The mechanical steps, in this fixed order:
    verified by recompiling like the step above. In both forms a `#` comment directly above a
    moved `view … again` line moves with it; a comment elsewhere in a folded slice (above its `ui`,
    say) is named in the step's reason as dropped — move it by hand first (GH #374).
-11. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
+12. **`view-doc-sources-stale`** (1.18.0, GH #290 / #280) — `em slice sync --check` would change a
    bound doc's generated view region (the read model's "built from" line now lists the union of
    `from` across its `again` instances): runs `em slice sync` on those docs, one commit. Since
    1.19.0 (GH #347) that includes a ratified (`ready-to-implement` with `ratifiedBy:`) or shipped
    (`implemented`) doc, which keeps its signature: `ratifiedHash` covers the authored text only.
    Nothing else in a doc moves but the text between region markers (and, for an intact older-scope
    hash the step before did not already move, the `ratifiedHash:` value).
-12. **`slice-index-stale`** (1.18.0, GH #290 / #275) — `em slice index --check` reports the README
+13. **`slice-index-stale`** (1.18.0, GH #290 / #275) — `em slice index --check` reports the README
     Slices table stale: regenerates it, one commit. Not applicable without a `README.md` carrying the
     `GENERATED:slices` markers.
-13. **`parking-lot-fragments`** (1.18.0, GH #290 / #283) — a `.event-modeling.md` parking-lot bullet
+14. **`parking-lot-fragments`** (1.18.0, GH #290 / #283) — a `.event-modeling.md` parking-lot bullet
     `- <text> (from slice <key>, deferred to v<n>)` whose `<text>` is a strict substring of exactly
     one Open Questions item of that slice's doc (the shape pre-1.18 `em slice defer` wrote) is
     rewritten to the item's label — the bold title, else the whole item, as `defer` writes it now.
     Bullets that already equal an item or its label, name an unbound slice, or match several items
     are left alone.
-14. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
+15. **`system-manifest`** (1.14.0, MIL-235) — migrates the nearest `system.yaml` from schema 1.0
    to 2.0 (see [upgrading.md](upgrading.md#running-it)).
 
 Deliberately does **not** refuse when the model has validation errors: the old two-slice reaction

@@ -13,7 +13,10 @@ import { GENERATOR_NAME, GENERATOR_VERSION } from "./json.js";
 //     declare the em plugin); findings gain pluginName / pluginRef / installCommands (null when
 //     unused by `code`); new finding codes plugin-pin-mismatch, plugin-not-enabled,
 //     plugin-registered-at-different-ref, plugin-not-installed-locally.
-export const SKILL_CHECK_SCHEMA_VERSION = "1.1";
+// 1.2 (GH #298): findings gain misePin / miseFile (null unless `code` is `mise-pin-mismatch`); new
+//     finding code mise-pin-mismatch (the mise.toml em pin disagrees with the plugin pin, or with the
+//     installed em when no plugin is declared).
+export const SKILL_CHECK_SCHEMA_VERSION = "1.2";
 
 /**
  * `SkillCheckFinding` with every optional field widened to an explicit `null`. Mapped off
@@ -36,6 +39,8 @@ function serializeFinding(f: SkillCheckFinding): SerializedFinding {
     pluginName: f.pluginName ?? null,
     pluginRef: f.pluginRef ?? null,
     installCommands: f.installCommands ?? null,
+    misePin: f.misePin ?? null,
+    miseFile: f.miseFile ?? null,
   };
 }
 

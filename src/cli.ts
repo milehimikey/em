@@ -103,6 +103,7 @@ import { buildMetricsJson } from "./emit/metricsJson.js";
 import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSyncBundle, checkAgentFiles } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
+import { checkMisePin } from "./cli/misePin.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
 import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs, VendoredDirs } from "./cli/skillDirs.js";
@@ -4045,7 +4046,14 @@ skill
     const agents = vendoredPresent
       ? checkAgentFiles(packagedAgentsRoot(), dirs.agentsRoot, EM_AGENT_FILES)
       : { findings: [], ok: true };
-    const findings = [...vendored.findings, ...agents.findings, ...(pluginCheck?.findings ?? [])];
+    // GH #298: the mise.toml pin of the em CLI, when one is declared (a repo without it is unchanged).
+    const miseCheck = checkMisePin(resolve(path), PKG_VERSION, pluginCheck?.plugin ?? null);
+    const findings = [
+      ...vendored.findings,
+      ...agents.findings,
+      ...(pluginCheck?.findings ?? []),
+      ...(miseCheck?.finding ? [miseCheck.finding] : []),
+    ];
     const failing = findings.filter((f) => f.code !== "plugin-not-installed-locally" || ciMode);
     const ok = failing.length === 0;
     const result = { findings, ok };
@@ -4067,6 +4075,7 @@ skill
               (unregistered ? " (not registered on this machine - see the install commands on stderr)" : ""),
           );
         }
+        if (miseCheck) console.log(`ok — mise pin (${miseCheck.pin.version}) matches`);
       }
     }
 

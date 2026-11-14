@@ -1468,3 +1468,51 @@ describe("GH #346 round 3 - em ci init applies the filter refresh; comment-toler
     expect(missingCiPullRequestPaths(commented)).toEqual([]);
   });
 });
+
+describe("mise-pin step (GH #298)", () => {
+  const MISE = `# toolchain\n[tools]\nnode = "22"\n"npm:@milehimikey/em" = "1.12.0" # em pin\njava = "21"\n`;
+
+  function miseRepo(text: string | null): { dir: string; packagedSkillsRoot: string } {
+    const r = makeFixtureRepo();
+    if (text !== null) {
+      writeFileSync(join(r.dir, "mise.toml"), text);
+      git(r.dir, "add", "mise.toml");
+      git(r.dir, "commit", "-q", "-m", "mise");
+    }
+    return r;
+  }
+
+  it("is not applicable without a mise.toml, and never creates one", () => {
+    const { dir, packagedSkillsRoot } = miseRepo(null);
+    const s = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((x) => x.id === "mise-pin")!;
+    expect(s.applicable).toBe(false);
+    applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(existsSync(join(dir, "mise.toml"))).toBe(false);
+  });
+
+  it("is not applicable when the pin already matches the installed em", () => {
+    const { dir, packagedSkillsRoot } = miseRepo(MISE.replace("1.12.0", INSTALLED_VERSION));
+    expect(detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((x) => x.id === "mise-pin")!.applicable).toBe(false);
+  });
+
+  it("dry-run lists mise-pin and writes nothing", () => {
+    const { dir, packagedSkillsRoot } = miseRepo(MISE);
+    const s = detectUpgrade(makeCtx(dir, packagedSkillsRoot)).steps.find((x) => x.id === "mise-pin")!;
+    expect(s.applicable).toBe(true);
+    expect(s.reason).toContain("1.12.0");
+    expect(readFileSync(join(dir, "mise.toml"), "utf8")).toBe(MISE);
+  });
+
+  it("--apply rewrites only the version value (comments, order, CRLF kept) in one trailered commit", () => {
+    const crlf = MISE.replace(/\n/g, "\r\n");
+    const { dir, packagedSkillsRoot } = miseRepo(crlf);
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    expect(readFileSync(join(dir, "mise.toml"), "utf8")).toBe(crlf.replace("1.12.0", INSTALLED_VERSION));
+    const out = spawnSync("git", ["-C", dir, "log", "--format=%(trailers:key=Em-Upgrade,valueonly)"], { encoding: "utf8" }).stdout;
+    expect(out.split("\n").filter((l) => l.trim() === "mise-pin")).toHaveLength(1);
+    expect(isWorkingTreeClean(dir)).toBe(true);
+    const applied = result.ok ? result.applied : [];
+    expect(applied.find((a) => a.id === "mise-pin")!.changedFiles).toEqual(["mise.toml"]);
+  });
+});
