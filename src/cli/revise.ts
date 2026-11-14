@@ -18,8 +18,8 @@
 //                  implementer hit a gap, the doc must change): GH #486 (1.23.0) keeps `version:`
 //                  (a number moves only once that version has shipped; `--keep-version` is a
 //                  no-op here) and clears the sign-off. The ratification of v<N> is withdrawn.
-//                  A ratified doc that ALSO carries a `shippedVersion:` (a later version ratified
-//                  over a shipped one) still bumps by default (kind `unshipped`).
+//                  A later version ratified over a shipped one keeps its number the same way;
+//                  only a `version:` equal to `shippedVersion:` still bumps (kind `unshipped`).
 //  - `unsigned`  — `status: ready-to-implement` with NO `ratifiedBy:`: the 1.13.1–1.14.x reratify
 //                  leftover. Nothing was signed at this version, so `version:` stays and only the
 //                  status moves — the exit path for a doc stuck in a state that no longer exists.
@@ -151,14 +151,17 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
     // an accepted no-op here (the CLI prints a notice).
     return applyRevise(raw, "unshipped-kept", opts);
   }
-  if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && opts.keepVersion) {
-    // GH #262: a later version ratified over a shipped one may keep its number too — unless that
-    // number IS the shipped one (a hand-edited state no command produces), which plain revise
-    // handles by bumping.
+  if (currentStatus === RATIFIED_STATUS && hasRatifiedBy) {
+    // GH #486 (1.23.0): the same rule for a later version ratified over a shipped one — v<N> has
+    // not shipped, so it keeps its number by default (--keep-version, GH #262, is a no-op). The
+    // exception is a `version:` that IS the shipped one (a hand-edited state no command
+    // produces): reopening it in place would rewrite the version in production, so plain revise
+    // bumps and --keep-version refuses.
     const versionMatch = fieldLineRegex("version").exec(inner);
     const current = versionMatch ? normalizeFieldValue(versionMatch[2]) : null;
     const shippedVersion = shippedVersionMatch ? normalizeFieldValue(shippedVersionMatch[2]) : null;
-    if (shippedVersion !== null && current !== null && shippedVersion === current) {
+    const isShippedNumber = shippedVersion !== null && current !== null && shippedVersion === current;
+    if (isShippedNumber && opts.keepVersion) {
       return {
         ok: false,
         message:
@@ -166,7 +169,7 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
           "reopen the shipped version in place; use plain `em slice revise` to open the next version as a draft",
       };
     }
-    return applyRevise(raw, "unshipped-kept", opts);
+    if (!isShippedNumber) return applyRevise(raw, "unshipped-kept", opts);
   }
   if (currentStatus === RATIFIED_STATUS) return applyRevise(raw, hasRatifiedBy ? "unshipped" : "unsigned", opts);
   if (currentStatus === DRAFT_STATUS || currentStatus === "reviewed") {

@@ -374,13 +374,13 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(ratifiedV2).toContain("version: 2\n");
     const plain = em(["slice", "revise", "model.em", "pay"], dir);
     expect(plain.status).toBe(0);
-    expect(plain.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(plain.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(plain.stdout).not.toContain("never shipped");
     // Same ratified v2 again, now with --keep-version.
     writeFileSync(docPath(), ratifiedV2);
     const kept = em(["slice", "revise", "model.em", "pay", "--withdraw", "--keep-version"], dir);
     expect(kept.status).toBe(0);
-    expect(kept.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version (--keep-version)");
+    expect(kept.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(kept.stdout).not.toContain("never shipped");
   });
 

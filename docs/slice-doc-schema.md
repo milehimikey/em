@@ -631,8 +631,8 @@ previous version lands. Version 2 then takes both human gates like version 1 did
 **A version number moves only once that version has shipped** (GH #486, 1.23.0). A ratified doc that
 never shipped is reopened at the **same** `version:` by `em slice revise --withdraw` — a correction
 before the first release, not a delta, so no `## Delta` is owed; the status flip and sign-off
-clearing are the same. (`--keep-version`, GH #262, is an accepted no-op there; it still keeps the
-number of a later version ratified over a shipped one.) Refused on a shipped doc: the shipped
+clearing are the same. (`--keep-version`, GH #262, is an accepted no-op there. A later version
+ratified over a shipped one keeps its number the same way.) Refused on a shipped doc: the shipped
 version keeps its number and `revise` opens v<N+1>.
 
 The deliberate mismatch — `version: 2` open while `implementedIn`/`shippedVersion` still name v1's

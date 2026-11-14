@@ -1401,8 +1401,8 @@ function reviseAction(commandName: "revise" | "reratify") {
         `note: no conformance findings file (conformance/<date>[-<name>]-findings.json) was found beside the model — unruled findings on "${sliceKey}" could not be checked`,
       );
     }
-    if (opts.keepVersion === true && result.kind === "unshipped-kept" && result.shippedVersion === null) {
-      console.error("notice: --keep-version is the default since 1.23.0 for a ratified, never-shipped doc — a version number moves only once that version has shipped; the flag is a no-op here");
+    if (opts.keepVersion === true && result.kind === "unshipped-kept") {
+      console.error("notice: --keep-version is the default since 1.23.0 for a ratified version that has not shipped — a version number moves only once that version has shipped; the flag is a no-op here");
     }
     const what =
       result.kind === "shipped"
@@ -1413,7 +1413,7 @@ function reviseAction(commandName: "revise" | "reratify") {
             : `ratification of v${result.newVersion - 1} withdrawn (never shipped); v${result.newVersion} opened as draft`
           : result.kind === "unshipped-kept"
             ? result.shippedVersion !== null
-              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version (--keep-version)`
+              ? `ratification of v${result.newVersion} withdrawn; v${result.shippedVersion} stays shipped; reopened as draft at the same version`
               : `ratification of v${result.newVersion} withdrawn (never shipped); reopened as draft at the same version`
             : `v${result.newVersion} was never signed; reopened as draft at the same version`;
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
@@ -1434,9 +1434,9 @@ const REVISE_DESCRIPTION =
   "already open. The new version then takes the normal road: `em slice review --by`, `em slice ratify --by`. " +
   "A ratified, never-shipped doc REFUSES without --withdraw (revising withdraws the only implementable version; " +
   "record a question with `em slice defer` instead — it sits outside the hash, GH #253). " +
-  "Since 1.23.0 (GH #486) a ratified, never-shipped doc reopens as a draft at the SAME `version:` (a number moves only " +
-  "once that version has shipped); --keep-version is a no-op there, and keeps the number of a later version ratified " +
-  "over a shipped one; refused on a shipped doc";
+  "Since 1.23.0 (GH #486) a ratified version that has not shipped reopens as a draft at the SAME `version:` (a number " +
+  "moves only once that version has shipped) — a never-shipped doc and a later version ratified over a shipped one " +
+  "alike; --keep-version is a no-op there; refused on a shipped doc";
 
 slice
   .command("revise")
@@ -1447,7 +1447,7 @@ slice
   .option(
     "--keep-version",
     "GH #262: reopen at the same `version:` (no bump). The default since 1.23.0 for a ratified, never-shipped doc (a no-op with a " +
-      "notice there); still opt-in for a later version ratified over a shipped one; refused on a shipped doc",
+      "notice there), and for a later version ratified over a shipped one; refused on a shipped doc",
   )
   .action(reviseAction("revise"));
 

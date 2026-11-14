@@ -4449,7 +4449,7 @@ Starting states:
 |---|---|---|
 | `status: implemented` — the **shipped** case | `draft`, `version + 1`, sign-off cleared. On a doc shipped before 1.15 (no `shippedVersion:`), the shipped record is written first (`shippedVersion: <current>`, and `shippedRef:` from `ratifiedRef:` when present) so leaving `implemented` loses nothing: every reader still sees v<N> shipped via [`shippedRecordOf`](slice-doc-schema.md#status-under-re-ratification) | `v<N> stays shipped; v<N+1> opened as draft` |
 | `status: ready-to-implement` **with** `ratifiedBy:`, no `shippedVersion` — ratified, never shipped (a gap answered mid-build) | **refuses without `--withdraw`** (GH #236: it would withdraw the only implementable version). With `--withdraw`: `draft` at the **same** `version` (GH #486), sign-off cleared; the ratification of v<N> is withdrawn, nothing shipped. `--keep-version` is accepted as a no-op with a `notice:` on stderr | `ratification of v<N> withdrawn (never shipped); reopened as draft at the same version` |
-| `status: ready-to-implement` **with** `ratifiedBy:` **and a `shippedVersion`** — a later version ratified over a shipped one (GH #284) | **no `--withdraw` needed** (an earlier version is in production, so this is not the only implementable one). `draft`, `version + 1`, sign-off cleared; v<S> stays shipped | `ratification of v<N> withdrawn; v<S> stays shipped; v<N+1> opened as draft`; with `--keep-version` (GH #262) the same draft at the **same** version: `ratification of v<N> withdrawn; v<S> stays shipped; reopened as draft at the same version (--keep-version)` |
+| `status: ready-to-implement` **with** `ratifiedBy:` **and a `shippedVersion`** — a later version ratified over a shipped one (GH #284) | **no `--withdraw` needed** (an earlier version is in production, so this is not the only implementable one). `draft` at the **same** version (GH #486, 1.23.0: v<N> has not shipped, so its number does not move; before 1.23.0 this bumped unless `--keep-version` was passed), sign-off cleared; v<S> stays shipped | `ratification of v<N> withdrawn; v<S> stays shipped; reopened as draft at the same version` |
 | `status: ready-to-implement` **without** `ratifiedBy:` — the unsigned leftover a pre-1.15 `reratify` produced | `draft` at the **same** version (nothing was signed at this version, so nothing is left behind) — the exit path for a state no command produces any more | `v<N> was never signed; reopened as draft at the same version` |
 | `draft` / `reviewed` | **refuses**: the next version is already open — edit it | — |
 
@@ -4470,9 +4470,9 @@ the state that needed it: a v2 is a new spec and gets both gates.
 never-shipped doc avoided the bump (a correction before a first release is not a *delta*, and a
 `version` above 1 with no `## Delta` sits between the two implementation modes). Since GH #486 that is
 the default, so on the never-shipped path the flag is a **no-op**: same result, plus `notice:
---keep-version is the default since 1.23.0 ...` on stderr. It remains meaningful for a later version
-ratified over a shipped one (`version: 2`, `shippedVersion: 1`), which bumps by default and keeps its
-number with the flag. On a never-shipped doc `--withdraw` is still required (it confirms *withdrawing
+--keep-version is the default since 1.23.0 ...` on stderr. The same holds for a later version
+ratified over a shipped one (`version: 2`, `shippedVersion: 1`): v2 has not shipped, so it keeps its
+number by default and the flag is a no-op there too. On a never-shipped doc `--withdraw` is still required (it confirms *withdrawing
 the ratification*); the doc then takes `em slice review --by`, `em slice ratify --by` and
 `--slice-ready` again with no hand edit of the frontmatter. Nothing is reopened or injected into Open
 Questions when the number does not move: a question deferred to v<N+1> still waits for v<N+1>.
