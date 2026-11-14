@@ -105,7 +105,7 @@ describe("em state (CLI)", () => {
       cwd,
     );
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("bump a model version first");
+    expect(r.stderr).toContain("pass --by");
     // Refuses BEFORE writing anything — Last conformance: must stay untouched.
     const after = readFileSync(join(modelDir(), ".event-modeling.md"), "utf8");
     expect(after).toBe(before);

@@ -40,7 +40,7 @@ run `em diff <model-name>.em
 `conformance/<date>-report.md` **and its structured twin `conformance/<date>-findings.json`**
 (one entry per finding, `em conform-findings check <path>` to verify) with proposed `issue
 "conformance: …"` red notes; apply only the proposals the user ratifies, then re-render and
-validate; run `em state set-conformance <revision> --report <path>` to update the state file's
+validate; run `em state set-conformance <revision> --report <path> --by <name>` to update the state file's
 `Last conformance:` marker.
 
 Ruling on a finding is a human gate, like ratifying a slice
@@ -58,10 +58,9 @@ loud notice), Decisions log entry if any proposals were applied. Conform doesn't
 another phase — it's a recurring loop, run again whenever the codebase has moved.
 
 A full (non-`--partial`) `em state set-conformance` also **certifies the model's current design
-version** (MIL-218, `docs/process.md#model-versions`) — it refuses if no design version has ever
-been bumped ("bump a model version first") or if the model changed during this run without a
-re-bump; run `em model version bump <model-name>.em --by <name>` before the final `em state
-set-conformance` call if either applies.
+version** (MIL-218, `docs/process.md#model-versions`) — if no design version has ever
+been bumped, or the model changed since the last bump, pass `--by <name>` to `em state set-conformance` and it bumps the design version itself
+before certifying (it refuses, writing nothing, if a bump is needed and `--by` is missing).
 
 ## Phase: `validate`
 
