@@ -26,6 +26,7 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { NormalizedModel } from "../model/model.js";
 import { RefsResult } from "../model/refs.js";
+import type { StatusPolicyEntry } from "../policy/policy.js";
 import { resolveSliceDocJoin, DocReason } from "../catalog/docJoin.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { DriftSignalKind } from "../catalog/driftSignal.js";
@@ -674,6 +675,9 @@ export interface StatusReport {
    *  `present` (`ratifiers.yaml` found and valid), `invalid` (found but unusable: `ratify`/`review`
    *  refuse), or `absent` (today's behaviour, any name accepted). */
   roster: "present" | "absent" | "invalid";
+  /** GH #493 (status schema 1.13): the effective `em-policy.yaml` policy per input model, each key
+   *  with where its value came from (a file path or "default"). */
+  policy: StatusPolicyEntry[];
 }
 
 /** Aggregate everything `em status` reports into one `StatusReport` — pure, no I/O. Callers
@@ -691,6 +695,7 @@ export function buildStatusReport(
   system: StatusReport["system"] = null,
   engagements: StatusReport["engagements"] = { open: 0, slugs: [] },
   roster: StatusReport["roster"] = "absent",
+  policy: StatusPolicyEntry[] = [],
 ): StatusReport {
   const byStatus = { draft: 0, reviewed: 0, readyToImplement: 0, implemented: 0, shipped: 0, noDoc: 0, frontmatterInvalid: 0, unknown: 0 };
   const nextOpen: StatusSliceCounts["nextOpen"] = [];
@@ -809,6 +814,7 @@ export function buildStatusReport(
     publicSlicesUnconfirmed,
     engagements,
     roster,
+    policy,
   };
 }
 
@@ -995,6 +1001,8 @@ export function formatStatusDetail(report: StatusReport): string {
   // MIL-268: the open engagements line (always present; slugs only when there are any).
   lines.push(`open engagements: ${report.engagements.open}${report.engagements.open > 0 ? ` (${report.engagements.slugs.join(", ")})` : ""}`);
   lines.push(`roster: ${report.roster}`);
+  const multiPolicy = report.policy.length > 1;
+  for (const e of report.policy) lines.push(...formatPolicyLines(e, multiPolicy));
   if (report.system) lines.push(`consumer adaptation: ${report.system.consumerNotAdapted} not adapted (${report.system.manifest})`);
   if (report.diagnostics.length > 0) {
     lines.push(`doc issues: ${pluralize(report.diagnostics.length, "warning")} — see diagnostics (${report.diagnostics.map((d) => d.code).join(", ")})`);
@@ -1169,4 +1177,24 @@ function badgeColor(report: StatusReport): string {
 /** Build the `em status --badge` SVG document. */
 export function buildStatusBadge(report: StatusReport): string {
   return renderBadgeSvg("em status", badgeMessage(report), badgeColor(report));
+}
+
+/** GH #493: the effective-policy lines of `em status` -- one per key, each with its source. */
+function formatPolicyLines(e: StatusPolicyEntry, labelled: boolean): string[] {
+  const at = labelled ? ` (${e.file})` : "";
+  const src = (s: { source: string }) => (s.source === "default" ? "default" : s.source);
+  const lines = [`policy${at}: ${e.policyFile === null ? "no em-policy.yaml (defaults)" : e.policyFile}`];
+  if (e.invalid !== null) {
+    lines.push(`  INVALID: ${e.invalid.join("; ")}`);
+    return lines;
+  }
+  const row = (label: string, value: string, s: { source: string }) => lines.push(`  ${label}: ${value}  [${src(s)}]`);
+  row("merge", e.merge.value, e.merge);
+  row("review", e.review.value, e.review);
+  row("ratification.inline", e.ratificationInline.value, e.ratificationInline);
+  row("ratification.inline-violation", e.ratificationInlineViolation.value, e.ratificationInlineViolation);
+  row("amendment.prose-sections", e.amendmentProseSections.value.join(", "), e.amendmentProseSections);
+  row("ratifiers", e.ratifiers.value === null ? "unrestricted" : `${e.ratifiers.value} entr${e.ratifiers.value === 1 ? "y" : "ies"}`, e.ratifiers);
+  row("reviewers", e.reviewers.value === null ? "unrestricted" : `${e.reviewers.value} entr${e.reviewers.value === 1 ? "y" : "ies"}`, e.reviewers);
+  return lines;
 }

@@ -50,6 +50,7 @@ import { validateOrphanedSliceDocs } from "../catalog/orphanedSliceDocValidate.j
 import { validateModelVersionStale } from "../catalog/modelVersionValidate.js";
 import { validateInvariants } from "../catalog/invariantsValidate.js";
 import { loadRoster } from "../roster/roster.js";
+import { statusPolicyEntry } from "../policy/policy.js";
 import { computeSliceReadiness } from "../catalog/sliceReadyValidate.js";
 import { engagementMembersFor, engagementPlanFor, engagementStatusFor } from "../cli/engagement.js";
 import { checkFoundation } from "../cli/engagementFoundation.js";
@@ -632,7 +633,7 @@ export function createServer(): McpServer {
         .map(({ file }) => resolveEmVersionStatusEntry(file, GENERATOR_VERSION))
         .filter((e): e is EmVersionStatusEntry => e !== null);
 
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]), readOpenEngagements(files), loadRoster(dirname(files[0])).state);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, statusSystemBlock(files[0]), readOpenEngagements(files), loadRoster(dirname(files[0])).state, files.map((f) => statusPolicyEntry(f, dirname(f))));
       return textResult(buildStatusJson(report));
     },
   );

@@ -32,6 +32,7 @@
 // behaviour section.
 
 import { createHash } from "node:crypto";
+import { effectivePolicy } from "../policy/policy.js";
 import { splitFrontmatter, stripGeneratedRegions, withoutDeferrals } from "./sliceDoc.js";
 
 export type SectionClass = "prose" | "behaviour";
@@ -200,4 +201,12 @@ export function classifySections(markdown: string, proseHeadings: readonly strin
     }
   }
   return out;
+}
+
+/** GH #493: the prose headings for the model in `baseDir` -- `amendment.prose-sections` from
+ *  `em-policy.yaml` when declared, else `DEFAULT_PROSE_HEADINGS`. An unreadable/invalid policy
+ *  falls back to the default here (reads never refuse; `em status` reports the problem). */
+export function proseHeadingsFor(baseDir: string): readonly string[] {
+  const res = effectivePolicy(baseDir);
+  return res.ok ? res.policy.amendment.proseSections.value : DEFAULT_PROSE_HEADINGS;
 }

@@ -93,7 +93,7 @@ export function grandfatheredNotice(n: number): string | null {
 }
 
 export function formatRosterCheck(report: RosterCheckReport): string[] {
-  if (report.roster.state === "absent") return ["no ratifiers.yaml found - nothing to check"];
+  if (report.roster.state === "absent") return ["no roster found (em-policy.yaml ratifiers/reviewers, or a legacy ratifiers.yaml) - nothing to check"];
   const lines: string[] = [];
   if (report.roster.state === "invalid") return lines;
   const bad = report.results.filter((r) => !r.ok).length;

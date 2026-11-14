@@ -163,6 +163,7 @@ affected lines written by hand.
 | lineage version impossible |
 | loops-to points forward |
 | loops-to target unresolved |
+| policy file invalid |
 | public field type unresolved |
 | public name not unique |
 | ratifiedBy not in roster |

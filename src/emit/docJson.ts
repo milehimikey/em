@@ -30,7 +30,7 @@ import { buildExportDoc } from "./json.js";
 import { SliceDocExport } from "../catalog/docJoin.js";
 import { Scenario } from "../catalog/scenarios.js";
 import { errorFlows, openQuestions, OpenQuestionExport } from "../catalog/sliceDoc.js";
-import { classifySections, SectionStatus } from "../catalog/sectionSignature.js";
+import { classifySections, proseHeadingsFor, SectionStatus } from "../catalog/sectionSignature.js";
 import { readSliceDoc } from "../catalog/readSliceDoc.js";
 import { buildSliceRegions, splitCells } from "../catalog/sliceSections.js";
 import { extractDeclaredInvariantRules, INV_TOKEN_RE } from "../cli/coverage.js";
@@ -245,6 +245,7 @@ export function buildDocJsonExport(
 ): DocJsonExportResult {
   const { doc: fullDoc, diagnostics: allDiagnostics } = buildExportDoc(model, refs, diagnostics, source, path);
   const baseDir = dirname(path);
+  const proseHeadings = proseHeadingsFor(baseDir);
 
   // Read each slice's bound doc once: its body feeds error flows / open questions / HTML here and
   // the invariant catalog's reference scan below.
@@ -264,7 +265,7 @@ export function buildDocJsonExport(
       scenarios: frontmatter.scenarios ?? [],
       errorFlows: errorFlows(body),
       openQuestions: openQuestions(body),
-      sections: parsed ? classifySections(parsed.raw) : null,
+      sections: parsed ? classifySections(parsed.raw, proseHeadings) : null,
     };
     if (opts.includeHtml) slice.html = parsed?.html ?? null;
     return { slice, body };

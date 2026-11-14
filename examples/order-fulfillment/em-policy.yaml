@@ -1,0 +1,11 @@
+# em-policy.yaml -- process policy for this model (optional; GH #493, docs/policy.md).
+# Here only the roster: who may sign slice docs (docs/slice-doc-schema.md#who-may-ratify). Delete the
+# `ratifiers:`/`reviewers:` lists and em accepts any name again. Entries without `contexts` cover the whole model.
+policySchemaVersion: "1.0"
+ratifiers:
+  - name: em examples
+  - name: Payments Lead
+    contexts: [Payment]       # may sign only slices whose events live in the Payment context
+reviewers:                    # optional; checked by `em slice review --by`
+  - name: em examples
+  - name: Facilitator

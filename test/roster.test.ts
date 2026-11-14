@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRoster, rosterRefusal, loadRoster } from "../src/roster/roster.js";
 import { renderRoster } from "../src/roster/init.js";
+import { rosterOfPolicyText } from "../src/policy/policy.js";
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -85,7 +86,9 @@ describe("parseRoster (schema validation)", () => {
 
   it("renderRoster output round-trips through parseRoster", () => {
     const text = renderRoster({ ratifiers: ["Alex", 'Quote "Q"'], reviewers: ["Sam"], grandfathered: 0 });
-    const r = parseRoster(text);
+    // GH #493: `em roster init` now writes em-policy.yaml; its lists are the roster.
+    expect(text).toContain('policySchemaVersion: "1.0"');
+    const r = rosterOfPolicyText(text);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.roster.ratifiers?.map((e) => e.name)).toEqual(["Alex", 'Quote "Q"']);
   });
@@ -138,7 +141,7 @@ describe("roster through the CLI (GH #259)", () => {
     expect(em(["slice", "ratify", "model.em", "pay", "--by", "Anyone At All"], dir).status).toBe(0);
     expect(em(["validate", "model.em", "--slice-ready", "pay"], dir).status).toBe(0);
     const status = JSON.parse(em(["status", "model.em", "--json"], dir).stdout);
-    expect(status.statusSchemaVersion).toBe("1.12");
+    expect(status.statusSchemaVersion).toBe("1.13");
     expect(status.roster).toBe("absent");
   });
 
@@ -238,7 +241,7 @@ describe("roster through the CLI (GH #259)", () => {
     writeFileSync(join(dir, "slices", "list.md"), hand("grandfathered (unsigned before em 1.14)") + body("List"));
     const r = em(["roster", "init", "model.em"], dir);
     expect(r.status).toBe(0);
-    const parsed = parseRoster(readFileSync(join(dir, "ratifiers.yaml"), "utf8"));
+    const parsed = rosterOfPolicyText(readFileSync(join(dir, "em-policy.yaml"), "utf8"));
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
       expect(parsed.roster.ratifiers).toEqual([{ name: "Alex", contexts: null, models: null }]);
@@ -253,7 +256,7 @@ describe("roster through the CLI (GH #259)", () => {
   it("em roster init with no signed docs writes nothing", () => {
     const r = em(["roster", "init", "model.em"], dir);
     expect(r.status).toBe(1);
-    expect(existsSync(join(dir, "ratifiers.yaml"))).toBe(false);
+    expect(existsSync(join(dir, "em-policy.yaml"))).toBe(false);
   });
 });
 

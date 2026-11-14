@@ -44,7 +44,9 @@ import { validateOrphanedSliceDocs } from "./catalog/orphanedSliceDocValidate.js
 import { validateModelVersionStale } from "./catalog/modelVersionValidate.js";
 import { validateInvariants } from "./catalog/invariantsValidate.js";
 import { computeSliceReadiness } from "./catalog/sliceReadyValidate.js";
-import { checkRosterForWrite, findRosterAbove, loadRoster, ROSTER_FILE } from "./roster/roster.js";
+import { checkRosterForWrite, findRosterAbove, loadRoster, POLICY_FILE } from "./roster/roster.js";
+import { statusPolicyEntry } from "./policy/policy.js";
+import { effectiveNoRef } from "./cli/policyGlue.js";
 import { observeSigners, renderRoster } from "./roster/init.js";
 import { rosterContextFor } from "./roster/context.js";
 import { computeModelKey } from "./model/qualifiedRef.js";
@@ -1172,7 +1174,7 @@ slice
   .argument("<slice-key>", "slice export key (kebab-case)")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
-  .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest ratifiers.yaml above the model, none = unrestricted)")
+  .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = unrestricted; either file may be named)")
   .option("--again", "re-record reviewedBy/reviewedOn on a doc already `status: reviewed` (prints old -> new); still refused on ready-to-implement/implemented")
   .option("--allow-open", "record the review although `## Open Questions` has unchecked items (a deliberately partial walk); prints a notice with the open count")
   .action((file: string, sliceKey: string, opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean }) => {
@@ -1256,7 +1258,7 @@ slice
       "points at a commit a squash or rebase merge would orphan; the uncommitted-changes check does not apply",
   )
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
-  .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest ratifiers.yaml above the model, none = unrestricted)")
+  .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = unrestricted; either file may be named)")
   .option(
     "--skip-review",
     "ratify without a recorded review — prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc " +
@@ -1279,7 +1281,8 @@ slice
       opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string; ref?: boolean; roster?: string },
     ) => {
       // commander: `--no-ref` sets `opts.ref === false`; unset leaves it undefined (ref recorded).
-      const noRef = opts.ref === false;
+      // GH #493: `merge: squash|rebase` in em-policy.yaml means hash only, as if --no-ref were passed.
+      const noRef = effectiveNoRef("em slice ratify", dirname(file), opts.ref === false);
       const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
       if (!flags.ok) {
         console.error(`em slice ratify: ${flags.message}`);
@@ -2517,7 +2520,7 @@ program
   .option(
     "--roster <path>",
     "with --slice-ready (GH #259): the ratifier roster to check `ratifiedBy` against (default: the nearest " +
-      "ratifiers.yaml above the model; none = unrestricted). A name the roster does not permit for the slice's " +
+      "em-policy.yaml (or legacy ratifiers.yaml) above the model; none = unrestricted). A name the roster does not permit for the slice's " +
       "context is `ratified-by-not-in-roster` (error)",
   )
   .option(
@@ -3093,7 +3096,7 @@ program
 
       // MIL-239 (R11): the nearest system.yaml above the first input file, consumer-adaptation counted.
       const system = statusSystemBlock(files[0], realGit, (m) => console.error(`warn: em status: ${m}`));
-      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, system, readOpenEngagements(files), loadRoster(dirname(files[0])).state);
+      const report = buildStatusReport(files, sliceFacts, openIssuesCount, invariants, conformance, statusDiagnostics, modelVersion, emVersion, system, readOpenEngagements(files), loadRoster(dirname(files[0])).state, files.map((f) => statusPolicyEntry(f, dirname(f))));
 
       let output: string;
       if (opts.json) output = buildStatusJson(report);
@@ -3629,22 +3632,22 @@ engagement
 
 const rosterCommand = program
   .command("roster")
-  .description("the optional ratifier roster (ratifiers.yaml, GH #259) -- who may sign slice docs");
+  .description("the optional ratifier roster (em-policy.yaml's ratifiers:/reviewers:, GH #259/#493) -- who may sign slice docs");
 
 rosterCommand
   .command("init")
   .description(
-    "write ratifiers.yaml beside the model, seeded from the names already recorded in the slice docs' " +
+    "write em-policy.yaml beside the model, seeded from the names already recorded in the slice docs' " +
       "`ratifiedBy:`/`reviewedBy:` (whole-model entries; narrow them with `contexts:` by hand). Refuses " +
       "to overwrite an existing file unless --force; `em upgrade`'s grandfathered placeholder is not a name",
   )
   .argument("<file>", "input .em file")
-  .option("--roster <path>", "write the roster here instead of <model dir>/ratifiers.yaml")
+  .option("--roster <path>", "write the roster here instead of <model dir>/em-policy.yaml")
   .option("--force", "overwrite an existing roster file")
   .action((file: string, opts: { roster?: string; force?: boolean }) => {
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
-    const target = opts.roster ?? join(dirname(file), ROSTER_FILE);
+    const target = opts.roster ?? join(dirname(file), POLICY_FILE);
     if (existsSync(target) && !opts.force) {
       console.error(`em roster init: ${target} already exists -- pass --force to overwrite it`);
       process.exit(1);
@@ -3659,7 +3662,7 @@ rosterCommand
     if (observed.ratifiers.length === 0 && observed.reviewers.length === 0) {
       const gfNone = grandfatheredNotice(observed.grandfathered);
       if (gfNone) console.log(gfNone);
-      console.error("em roster init: no ratifiedBy/reviewedBy names found in the slice docs -- write ratifiers.yaml by hand (docs/slice-doc-schema.md#who-may-ratify)");
+      console.error("em roster init: no ratifiedBy/reviewedBy names found in the slice docs -- write the ratifiers: list in em-policy.yaml by hand (docs/slice-doc-schema.md#who-may-ratify)");
       process.exit(1);
     }
     writeFileSync(target, renderRoster(observed), "utf8");
@@ -3677,7 +3680,7 @@ rosterCommand
       "roster file = nothing to check, exit 0. The `grandfathered ...` placeholder is exempt (counted)",
   )
   .argument("<file>", "input .em file")
-  .option("--roster <path>", "roster to check against (default: the nearest ratifiers.yaml above the model)")
+  .option("--roster <path>", "roster to check against (default: the nearest em-policy.yaml (or legacy ratifiers.yaml) above the model)")
   .option("--json", "print a JSON document (per-doc results, diagnostics with refs); exit codes unchanged")
   .action((file: string, opts: { roster?: string; json?: boolean }) => {
     const { model, refs } = compileFile(file);
