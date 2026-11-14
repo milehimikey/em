@@ -54,6 +54,7 @@ import { RefsResult } from "../model/refs.js";
 import { continuationOf } from "../model/continuation.js";
 import { resolveSliceDocJoin } from "../catalog/docJoin.js";
 import { ratifiedHashScope, sliceDocBodyHash } from "../catalog/sliceDoc.js";
+import { ratifiedSectionsValue } from "../catalog/sectionSignature.js";
 import { buildModelIndex } from "../model/queryIndex.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 import { fieldLineRegex, fieldLineWithEolRegex, locateFrontmatterInner, normalizeFieldValue } from "./frontmatterSurgery.js";
@@ -239,6 +240,9 @@ export type ApplyRatifyResult =
 export interface RatifiedIdentity {
   ref: string | null;
   hash: string;
+  /** GH #487: the `ratifiedSections:` value (a hash per authored section, beside `ratifiedHash:`);
+   *  omitted or null writes no such line. */
+  sections?: string | null;
 }
 
 export type RatifiedIdentityResult = { ok: true; identity: RatifiedIdentity } | { ok: false; message: string };
@@ -268,9 +272,10 @@ export function resolveRatifiedIdentity(
   opts: { noRef?: boolean } = {},
 ): RatifiedIdentityResult {
   const hash = sliceDocBodyHash(raw);
-  if (git === null || opts.noRef === true) return { ok: true, identity: { ref: null, hash } };
+  const sections = ratifiedSectionsValue(raw);
+  if (git === null || opts.noRef === true) return { ok: true, identity: { ref: null, hash, sections } };
   const inside = git(["-C", baseDir, "rev-parse", "--is-inside-work-tree"]);
-  if (inside.status !== 0 || inside.stdout.trim() !== "true") return { ok: true, identity: { ref: null, hash } };
+  if (inside.status !== 0 || inside.stdout.trim() !== "true") return { ok: true, identity: { ref: null, hash, sections } };
   const status = git(["-C", baseDir, "status", "--porcelain", "--", docPath]);
   if (status.status !== 0) {
     return { ok: false, message: `git status failed for ${docPath}: ${status.stderr.trim() || "unknown error"}` };
@@ -285,7 +290,7 @@ export function resolveRatifiedIdentity(
   if (head.status !== 0 || !/^[0-9a-f]{7,64}$/.test(head.stdout.trim())) {
     return { ok: false, message: `cannot resolve HEAD in ${baseDir} (no commits yet?) — ratification records the exact ref it signs` };
   }
-  return { ok: true, identity: { ref: head.stdout.trim(), hash } };
+  return { ok: true, identity: { ref: head.stdout.trim(), hash, sections } };
 }
 
 /** MIL-284: the `ratifiedHash:` a doc currently records, or null when it has none. */
@@ -416,6 +421,8 @@ export function applyRatifyFrontmatter(
   // else appended to the existing line's edit, ahead of the MIL-238 confirmation line.
   const refMatch = identity ? fieldLineRegex("ratifiedRef").exec(inner) : null;
   const hashMatch = identity ? fieldLineRegex("ratifiedHash").exec(inner) : null;
+  const sectionsText = identity?.sections ?? null;
+  const sectionsMatch = sectionsText !== null ? fieldLineRegex("ratifiedSections").exec(inner) : null;
   // GH #255: a ref-less identity (`--no-ref`, or outside git) must not leave an earlier
   // `ratifiedRef:` line standing — that stale pointer is exactly what the caller asked not to
   // record. The whole line goes, EOL included.
@@ -431,6 +438,7 @@ export function applyRatifyFrontmatter(
   if (skippedReviewFrom !== null && !skippedMatch) identityLines.push(`reviewSkipped: ${skippedReviewFrom}`);
   if (identity && identity.ref !== null && !refMatch) identityLines.push(`ratifiedRef: ${identity.ref}`);
   if (identity && !hashMatch) identityLines.push(`ratifiedHash: ${identity.hash}`);
+  if (sectionsText !== null && !sectionsMatch) identityLines.push(`ratifiedSections: ${sectionsText}`);
   // MIL-238: the confirmation line goes directly after `ratifiedOn:` (and the identity lines) —
   // at the end of the inserted block when `ratifiedOn:` is new, else appended to the existing
   // line's edit below.
@@ -464,6 +472,7 @@ export function applyRatifyFrontmatter(
     edits.push({ index: skippedMatch.index, oldLen: skippedMatch[0].length, next: `${skippedMatch[1]}${skippedReviewFrom}` });
   }
   if (identity && hashMatch) edits.push({ index: hashMatch.index, oldLen: hashMatch[0].length, next: `${hashMatch[1]}${identity.hash}` });
+  if (sectionsText !== null && sectionsMatch) edits.push({ index: sectionsMatch.index, oldLen: sectionsMatch[0].length, next: `${sectionsMatch[1]}${sectionsText}` });
   edits.sort((a, b) => b.index - a.index);
 
   let updatedInner = inner;

@@ -743,7 +743,7 @@ re-parsing `slices/*.md` themselves. It serialises the parse em already does —
 re-parsed ad hoc. Whole model only; it does not combine with `--slice` (that is a usage error).
 Refuses on errors, same gate as a full export.
 
-It carries its **own schema version**, `schemaVersion: "1.0"` (the `DOC_EXPORT_SCHEMA_VERSION`
+It carries its **own schema version**, `schemaVersion: "1.1"` (the `DOC_EXPORT_SCHEMA_VERSION`
 constant), independent of the model export's `schemaVersion` above: the doc-structure shape
 evolves on its own cadence, and a plain `em export` stays byte-for-byte unchanged. The authored
 markdown body still never appears in a plain export; here the rendered HTML is opt-in via
@@ -751,7 +751,7 @@ markdown body still never appears in a plain export; here the rendered HTML is o
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "model": {
@@ -772,7 +772,8 @@ markdown body still never appears in a plain export; here the rendered HTML is o
         "invariants": [ { "id": "INV-CHK-1", "text": "the order total must be positive", "source": "model" } ],
         "scenarios": [ { "title": "Happy path", "given": [ "…" ], "when": [ "…" ], "then": [ "…" ] } ],
         "errorFlows": [ "Submitting the same basket twice records one order." ],
-        "openQuestions": [ { "text": "Should tax be included?", "checked": false, "deferredToVersion": null } ]
+        "openQuestions": [ { "text": "Should tax be included?", "checked": false, "deferredToVersion": null } ],
+        "sections": [ { "heading": "Intent", "class": "prose", "changed": false }, { "heading": "Scenarios (Given / When / Then)", "class": "behaviour", "changed": true } ]
       }
     ]
   },
@@ -806,6 +807,16 @@ markdown body still never appears in a plain export; here the rendered HTML is o
 - `openQuestions` — each `## Open Questions` item as `{ text, checked, deferredToVersion }` —
   `deferredToVersion` is the `v<n>` an `em slice defer` `deferred to v<n>` marker names, else
   `null`; wrapped items join their continuation lines the same way `errorFlows` does.
+- `sections` (schema `1.1`, GH #487) — the doc's authored `##` sections as `{ heading, class,
+  changed }`, in document order (a synthetic `Consumed by` section last — the `- **Consumed by:**`
+  bullets lifted out of the view section — plus, after the current ones, any section recorded at
+  sign-off and since deleted). `class` is `prose` (`Intent`, `Trigger & Actor`, `Dependencies & Read
+  Models Affected`, `Consumed by`) or `behaviour` (everything else, any unrecognised heading
+  included). `changed` is whether the section's text differs from the hash `em slice ratify`
+  recorded in `ratifiedSections:` (same exclusions as `ratifiedHash`: generated regions and Open
+  Questions deferrals); `null` for every section when the doc records none — ratified before
+  1.23.0 and not yet stamped by `em upgrade`'s `ratified-sections` step. `null` (the whole field)
+  when no usable doc is bound. The model export (`em export`) is unchanged.
 - `html` — present on each slice only with `--include-html` (the rendered doc body, `null` when no
   usable doc is bound).
 
@@ -4151,7 +4162,7 @@ the `## Open Questions` heading and its `deferred to v<n>` items are excluded to
 moving the hash; everything else, the region marker lines included, stays signed). A hash recorded
 by 1.17.0–1.18.x (generated regions inside) or before 1.17.0 (the whole body) is still read as
 intact while the body is; `em upgrade`'s `ratified-hash-scope` step re-stamps it, and `sync` and
-`defer` do so on first touch. The same-sign-off re-run (`ratify --again` with the same `--by`/`--on`)
+`defer` do so on first touch. Beside `ratifiedHash:` it records `ratifiedSections:` (GH #487) — a hash per authored `##` section under the same exclusions, so a reader can tell which sections changed since sign-off and whether each is prose or behaviour without the old body; see the [`ratifiedSections` row](slice-doc-schema.md) of the slice-doc schema. The same-sign-off re-run (`ratify --again` with the same `--by`/`--on`)
 reads the hash through the same scope check. Because a ref whose tree does not hold the signed body would
 be meaningless, **ratify refuses a doc with uncommitted changes** — commit the body first — and
 refuses in a repository with no commits. Outside a git work tree the ref is simply omitted; the
@@ -4456,7 +4467,7 @@ use (`resolveSliceDocJoin` — MIL-121 cross-binding included):
 
 ```yaml
 status: draft
-version: <current + 1>
+version: <current + 1>     # a shipped doc only — a never-shipped doc keeps its number (GH #486, below)
 ```
 
 and clears every key that described the version being left behind — `ratifiedBy`/`ratifiedOn`/
@@ -4465,14 +4476,18 @@ and clears every key that described the version being left behind — `ratifiedB
 `conformed*` keys are untouched: they describe the version that shipped, which is still the version
 in production. Questions deferred to the new version come back as `- [ ]` (MIL-275).
 
-Three starting states:
+**A version number moves only once that version has shipped (GH #486, 1.23.0).** `revise` on a
+shipped doc opens v(N+1); on a ratified, never-shipped doc it reopens v<N> in place — there is nothing
+shipped to be a delta of, and a higher version with no `## Delta` sits between "build the whole slice"
+and "build a delta". Before 1.23.0 the never-shipped path bumped unless `--keep-version` was passed.
+
+Starting states:
 
 | Doc is | Result | Printed as |
 |---|---|---|
 | `status: implemented` — the **shipped** case | `draft`, `version + 1`, sign-off cleared. On a doc shipped before 1.15 (no `shippedVersion:`), the shipped record is written first (`shippedVersion: <current>`, and `shippedRef:` from `ratifiedRef:` when present) so leaving `implemented` loses nothing: every reader still sees v<N> shipped via [`shippedRecordOf`](slice-doc-schema.md#status-under-re-ratification) | `v<N> stays shipped; v<N+1> opened as draft` |
-| `status: ready-to-implement` **with** `ratifiedBy:` — ratified, never shipped (a gap answered mid-build) | **refuses without `--withdraw`** (GH #236: it would withdraw the only implementable version). With `--withdraw`: `draft`, `version + 1`, sign-off cleared; the ratification of v<N> is withdrawn, nothing shipped | `ratification of v<N> withdrawn (never shipped); v<N+1> opened as draft` |
-| `status: ready-to-implement` **with** `ratifiedBy:` **and a `shippedVersion`** — a later version ratified over a shipped one (GH #284) | **no `--withdraw` needed** (an earlier version is in production, so this is not the only implementable one). `draft`, `version + 1`, sign-off cleared; v<S> stays shipped | `ratification of v<N> withdrawn; v<S> stays shipped; v<N+1> opened as draft`; with `--keep-version` (GH #262) the same draft at the **same** version: `ratification of v<N> withdrawn; v<S> stays shipped; reopened as draft at the same version (--keep-version)` |
-| `status: ready-to-implement` **with** `ratifiedBy:`, **`--withdraw --keep-version`** (GH #262) | `draft` at the **same** version, sign-off cleared — the correction-before-first-release path (below) | `ratification of v<N> withdrawn (never shipped); reopened as draft at the same version (--keep-version)` |
+| `status: ready-to-implement` **with** `ratifiedBy:`, no `shippedVersion` — ratified, never shipped (a gap answered mid-build) | **refuses without `--withdraw`** (GH #236: it would withdraw the only implementable version). With `--withdraw`: `draft` at the **same** `version` (GH #486), sign-off cleared; the ratification of v<N> is withdrawn, nothing shipped. `--keep-version` is accepted as a no-op with a `notice:` on stderr | `ratification of v<N> withdrawn (never shipped); reopened as draft at the same version` |
+| `status: ready-to-implement` **with** `ratifiedBy:` **and a `shippedVersion`** — a later version ratified over a shipped one (GH #284) | **no `--withdraw` needed** (an earlier version is in production, so this is not the only implementable one). `draft` at the **same** version (GH #486, 1.23.0: v<N> has not shipped, so its number does not move; before 1.23.0 this bumped unless `--keep-version` was passed), sign-off cleared; v<S> stays shipped | `ratification of v<N> withdrawn; v<S> stays shipped; reopened as draft at the same version` |
 | `status: ready-to-implement` **without** `ratifiedBy:` — the unsigned leftover a pre-1.15 `reratify` produced | `draft` at the **same** version (nothing was signed at this version, so nothing is left behind) — the exit path for a state no command produces any more | `v<N> was never signed; reopened as draft at the same version` |
 | `draft` / `reviewed` | **refuses**: the next version is already open — edit it | — |
 
@@ -4489,23 +4504,20 @@ API-first flag**: the confirmation belongs to the ratification of the new versio
 its draft. The pre-1.15 carve-out — "a reratified doc needs no fresh review session" — is gone with
 the state that needed it: a v2 is a new spec and gets both gates.
 
-**`--keep-version` (GH #262, 1.17.0): reopen without a bump.** A project that holds every slice at
-its initial version until a first public release treats a content change before that release as a
-*correction*, not a *delta* — and a `version` above 1 changes what implementation does with the doc
-(a first implementation builds the whole slice at v1; a higher version with a `## Delta` is a delta),
-so a bumped doc with no Delta sits between the two modes. `--keep-version` on a ratified,
-never-shipped doc does the same status flip and sign-off clearing as the unshipped path and leaves
-`version:` where it is; the doc then takes `em slice review --by`, `em slice ratify --by` and
-`--slice-ready` again with no hand edit of the frontmatter. `--withdraw` is still required with it
-(that flag confirms *withdrawing the ratification*; `--keep-version` only changes the numbering).
-Nothing is reopened or injected into Open Questions on this path — a question deferred to v<N+1>
-still waits for v<N+1>. **Refused on a shipped doc** (`status: implemented`): the version in
-production must keep its number, the next one is a new number — use plain `revise`. Also refused
-when a ratified doc's `version` is the very version that shipped (`shippedVersion`), a state no
-command produces. A later version ratified over a shipped one (`version: 2`, `shippedVersion: 1`)
-may keep its number, no `--withdraw` needed there. There is no model-level "pre-release: never
-bump" setting yet (which would also have to reach `mark-implemented`'s auto-open) — the flag is
-per run.
+**`--keep-version` (GH #262, 1.17.0): reopen without a bump.** Before 1.23.0 this was how a ratified,
+never-shipped doc avoided the bump (a correction before a first release is not a *delta*, and a
+`version` above 1 with no `## Delta` sits between the two implementation modes). Since GH #486 that is
+the default, so on the never-shipped path the flag is a **no-op**: same result, plus `notice:
+--keep-version is the default since 1.23.0 ...` on stderr. The same holds for a later version
+ratified over a shipped one (`version: 2`, `shippedVersion: 1`): v2 has not shipped, so it keeps its
+number by default and the flag is a no-op there too. On a never-shipped doc `--withdraw` is still required (it confirms *withdrawing
+the ratification*); the doc then takes `em slice review --by`, `em slice ratify --by` and
+`--slice-ready` again with no hand edit of the frontmatter. Nothing is reopened or injected into Open
+Questions when the number does not move: a question deferred to v<N+1> still waits for v<N+1>.
+**Refused on a shipped doc** (`status: implemented`): the version in production must keep its number,
+the next one is a new number, so use plain `revise`. Also refused when a ratified doc's `version` is
+the very version that shipped (`shippedVersion`), a state no command produces. `mark-implemented`'s
+auto-open is unchanged (it opens v<N+1> of a doc that just shipped).
 
 **Why `draft`, not an unsigned `ready-to-implement`.** Until 1.14 the bump left the doc at
 `status: ready-to-implement` with the sign-off cleared — a status that lied, which MIL-258/259 then
@@ -4531,6 +4543,7 @@ naming mismatch cannot hide the check.
 
 ```bash
 em slice revise model.em request-payment      # v1 stays shipped; v2 opens as draft
+em slice revise model.em request-payment --withdraw   # v1 ratified, never shipped: reopens as draft v1
 ```
 
 ### `em slice reratify <file> <slice-key>` (deprecated alias)
@@ -5959,6 +5972,12 @@ The mechanical steps, in this fixed order:
    matches its hash in any scope is listed in the reason (`left alone: <keys>`) and left alone; so is a queued question whose doc
    has already moved past the version it was queued for. Refuses, writing nothing, if any rewrite
    would not match its hash afterwards.
+8a. **`ratified-sections`** (1.23.0, GH #487) — stamps `ratifiedSections:` (a hash per authored
+   section, written beside `ratifiedHash:`) on every ratified doc that has none, **while the body
+   still matches `ratifiedHash:`** (any scope) — a record of the body that was signed, not a
+   re-signing: `ratifiedHash`, `ratifiedRef` and the sign-off stay as they are. Until stamped (or
+   re-signed) the doc's sections classify as unknown. A doc whose body no longer matches is listed
+   (`left alone: <keys>`) and not stamped.
 9. **`collapse-alternative-events`** (1.18.0, GH #290 / #278) — adjacent slices that repeat ONE
    command (identical command text, identical `ui`, no `note` or `issue` on the later slices) and
    differ only in the event they record on one context become ONE slice recording `event A | B

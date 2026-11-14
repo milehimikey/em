@@ -330,7 +330,7 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(d.stderr).toContain("body no longer matches ratifiedHash");
   });
 
-  it("revise still refuses without --withdraw (pointing at defer); --withdraw reopens the deferred item in v2", () => {
+  it("revise still refuses without --withdraw (pointing at defer); --withdraw reopens at the same version, the v2 deferral still waiting (GH #486)", () => {
     defer();
     const before = [read(docPath()), read(statePath())];
     const refused = em(["slice", "revise", "model.em", "pay"], dir);
@@ -339,13 +339,12 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect([read(docPath()), read(statePath())]).toEqual(before);
     const r = em(["slice", "revise", "model.em", "pay", "--withdraw"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v1 withdrawn (never shipped); v2 opened as draft");
-    expect(r.stdout).toContain("re-opened 1 deferred question(s)");
+    expect(r.stdout).toContain("ratification of v1 withdrawn (never shipped); reopened as draft at the same version");
+    expect(r.stdout).not.toContain("re-opened");
     const doc = read(docPath());
-    expect(doc).toContain("status: draft\nversion: 2\n");
+    expect(doc).toContain("status: draft\nversion: 1\n");
     expect(doc).not.toContain("ratifiedHash:");
-    expect(doc).toContain("## Open Questions\n\n- [ ] retry policy\n");
-    expect(exportDoc().queuedForNext).toBe(0);
+    expect(doc).toContain(DEFERRED);
   });
 
   it("mark-implemented opens v2 as a draft with the deferred item reopened; a shipped doc takes a further deferral too", () => {
@@ -375,13 +374,13 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
     expect(ratifiedV2).toContain("version: 2\n");
     const plain = em(["slice", "revise", "model.em", "pay"], dir);
     expect(plain.status).toBe(0);
-    expect(plain.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(plain.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(plain.stdout).not.toContain("never shipped");
     // Same ratified v2 again, now with --keep-version.
     writeFileSync(docPath(), ratifiedV2);
     const kept = em(["slice", "revise", "model.em", "pay", "--withdraw", "--keep-version"], dir);
     expect(kept.status).toBe(0);
-    expect(kept.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version (--keep-version)");
+    expect(kept.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(kept.stdout).not.toContain("never shipped");
   });
 
@@ -442,14 +441,14 @@ describe("lifecycle walk: ratify → defer → ready → revise / mark-implement
   });
 
   it("on a draft doc, defer still edits the existing item and never appends (unchanged behavior)", () => {
-    em(["slice", "revise", "model.em", "pay", "--withdraw"], dir); // now a v2 draft
+    em(["slice", "revise", "model.em", "pay", "--withdraw"], dir); // now a v1 draft (GH #486: no bump before ship)
     const none = defer("--until", "v3");
     expect(none.status).toBe(1);
     expect(none.stderr).toContain('no unchecked Open Question matching "retry policy"');
     writeFileSync(docPath(), read(docPath()).replace("## Open Questions\n", "## Open Questions\n\n- [ ] retry policy?\n"));
     const d = defer("--until", "v3");
     expect(d.stdout).toBe("deferred: slices/pay.md (retry policy → v3)\n");
-    expect(read(docPath())).toContain("- [x] retry policy? — v2: fail fast (no retries); deferred to v3");
+    expect(read(docPath())).toContain("- [x] retry policy? — v1: fail fast (no retries); deferred to v3");
   });
 });
 

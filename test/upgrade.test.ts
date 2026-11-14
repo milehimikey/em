@@ -7,6 +7,7 @@
 // CLI wiring (`em upgrade <file> [--apply|--check|--json]`) gets a light smoke check in
 // test/cli.test.ts; this file exercises the orchestration functions directly. Neutral domain
 // throughout (orders/catalog), per the engagement's non-negotiables.
+import { ratifiedSectionsValue } from "../src/catalog/sectionSignature.js";
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
@@ -1110,7 +1111,8 @@ describe("ratified-hash-scope step (GH #253)", () => {
     expect(step.applied).toBe(true);
     expect(step.changedFiles).toEqual([docPath]);
     const text = readFileSync(docPath, "utf8");
-    expect(text).toBe(signed(sliceDocBodyHash(signed("x"))));
+    // GH #487: the `ratified-sections` step, later in the same run, adds the section line after it.
+    expect(text).toBe(signed(sliceDocBodyHash(signed("x"))).replace(/(ratifiedHash: .*\n)/, `$1ratifiedSections: ${ratifiedSectionsValue(signed("x"))}\n`));
     const log = spawnSync("git", ["-C", dir, "log", "--format=%s"], { encoding: "utf8" }).stdout;
     expect(log.split("\n").filter((l) => l.startsWith("em upgrade: ratified-hash-scope"))).toHaveLength(1);
     expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
@@ -1466,5 +1468,48 @@ describe("GH #346 round 3 - em ci init applies the filter refresh; comment-toler
   it("missingCiPullRequestPaths tolerates trailing YAML comments on entries", () => {
     const commented = buildCiWorkflowFile("checkout.em", "test", pkgVersion).replace('      - "**/README.md"\n', '      - "**/README.md" # docs\n');
     expect(missingCiPullRequestPaths(commented)).toEqual([]);
+  });
+});
+
+describe("ratified-sections step (GH #487)", () => {
+  const CLEAN = 'slice "Place Order" {\n  ui Checkout @Customer\n  command Place Order note "slices/place-order.md"\n  event Order Placed\n}\n';
+  const BODY = "# Slice\n\n## Intent\n\nwhy\n\n## Open Questions\n\n- [x] answered — yes\n";
+  const doc = (body: string, hash: string) =>
+    `---\nschemaVersion: 1\npattern: state-change\nswimlane: orders\nstatus: ready-to-implement\nversion: 1\nratifiedBy: Alex\nratifiedOn: 2026-10-02\nratifiedHash: ${hash}\n---\n${body}`;
+  const STATE = `${SIX_BULLET_STATE_FILE}\n## Decisions log\n- 2026-01-01: old — why\n\n## Open questions / parking lot\n\n## Slice inventory\n`;
+  const stepOf = (dir: string, root: string) => detectUpgrade(makeCtx(dir, root)).steps.find((st) => st.id === "ratified-sections")!;
+
+  it("is registered right after ratified-hash-scope, since 1.23.0", () => {
+    const ids = UPGRADE_STEPS.map((s) => s.id);
+    expect(ids.indexOf("ratified-sections")).toBe(ids.indexOf("ratified-hash-scope") + 1);
+    expect(UPGRADE_STEPS.find((s) => s.id === "ratified-sections")!.sinceVersion).toBe("1.23.0");
+  });
+
+  it("stamps a doc whose body matches ratifiedHash (hash and sign-off untouched); a second run is a no-op", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: STATE });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docPath = join(dir, "slices", "place-order.md");
+    const hash = sliceDocBodyHash(doc(BODY, "x"));
+    writeFileSync(docPath, doc(BODY, hash));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "doc");
+    const d = stepOf(dir, packagedSkillsRoot);
+    expect(d.applicable).toBe(true);
+    expect(d.reason).toContain("1 ratified doc(s) record no section hashes: place-order");
+    const result = applyUpgrade(makeCtx(dir, packagedSkillsRoot));
+    expect(result.ok).toBe(true);
+    expect(readFileSync(docPath, "utf8")).toBe(doc(BODY, hash).replace(/(ratifiedHash: .*\n)/, `$1ratifiedSections: ${ratifiedSectionsValue(doc(BODY, hash))}\n`));
+    expect(stepOf(dir, packagedSkillsRoot).applicable).toBe(false);
+  });
+
+  it("leaves a doc whose body no longer matches ratifiedHash alone, and says so", () => {
+    const { dir, packagedSkillsRoot } = makeFixtureRepo({ source: CLEAN, stateFile: STATE });
+    mkdirSync(join(dir, "slices"), { recursive: true });
+    const docPath = join(dir, "slices", "place-order.md");
+    const hash = sliceDocBodyHash(doc(BODY, "x"));
+    writeFileSync(docPath, doc(BODY.replace("why", "edited"), hash));
+    const d = stepOf(dir, packagedSkillsRoot);
+    expect(d.applicable).toBe(false);
+    expect(d.reason).toContain("left alone: place-order");
   });
 });

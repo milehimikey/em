@@ -250,8 +250,10 @@ undocumented ordering, a contradiction with adjacent code. The discipline:
 - **How a delta is ratified on a doc that never shipped** (it is `ready-to-implement` with
   `ratifiedBy` set) when the spec itself must change: once the human has answered, the doc changes
   by `em slice revise <model>.em <slice-key> --withdraw` (MIL-283: opens the next version as a
-  `draft` — `version:` bumped, the old sign-off cleared; the ratification of the unshipped version
-  is withdrawn, which is why GH #236 makes you pass `--withdraw` — plain `revise` refuses),
+  `draft` at the SAME `version:` (GH #486: a number moves only once that version has shipped, so
+  there is no bump and no `--keep-version` to pass) with the old sign-off cleared; the ratification
+  of the unshipped version is withdrawn, which is why GH #236 makes you pass `--withdraw` — plain
+  `revise` refuses),
   the answer is written into the doc and committed, the room reviews it (`em slice review
   --by`), and the human re-signs with `em slice ratify
   <model>.em <slice-key> --by <name>` (it records the commit it signs and refuses uncommitted

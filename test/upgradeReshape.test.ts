@@ -247,7 +247,8 @@ describe("fold-continuations (GH #287) — opt-in", () => {
     const afterDoc = readFileSync(doc, "utf8");
     expect(sliceDocBodyHash(afterDoc)).toBe(sliceDocBodyHash(signedBytes));
     expect(/ratifiedHash: \S+/.exec(afterDoc)![0]).toBe(/ratifiedHash: \S+/.exec(signedBytes)![0]);
-    expect(afterDoc.replace(/<!-- GENERATED:em-slice-story:start[\s\S]*?<!-- GENERATED:em-slice-story:end -->/, "")).toBe(
+    // GH #487: the `ratified-sections` step also stamped the (intact) signed doc — a record line only.
+    expect(afterDoc.replace(/ratifiedSections: .*\n/, "").replace(/<!-- GENERATED:em-slice-story:start[\s\S]*?<!-- GENERATED:em-slice-story:end -->/, "")).toBe(
       signedBytes.replace(/<!-- GENERATED:em-slice-story:start[\s\S]*?<!-- GENERATED:em-slice-story:end -->/, ""),
     );
     for (const code of compile(after).diagnostics.map((x) => x.code)) expect(diagsBefore).toContain(code); // no new diagnostic (the collapse only removes one)

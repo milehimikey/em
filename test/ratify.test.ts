@@ -15,6 +15,7 @@
 // coverage lives in its own describe block near the bottom of this file, plus one `runRatify`
 // integration test proving the warnings ride the `ok: true` result. CLI-level stderr-line
 // coverage lives in test/cli.test.ts's ratify block.
+import { ratifiedSectionsValue } from "../src/catalog/sectionSignature.js";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { gitInitQuiet } from "./helpers/gitInitQuiet.js";
@@ -840,7 +841,7 @@ describe("runRatify — public-touching slices (MIL-238)", () => {
     // MIL-284: runRatify records the body hash between ratifiedOn and the confirmation line
     // (no ratifiedRef — the fixture dir is not a git repository).
     const written = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
-    expect(written).toContain(`ratifiedOn: 2026-08-28\nratifiedHash: ${sliceDocBodyHash(written)}\nmeaningConfirmed: true\n`);
+    expect(written).toContain(`ratifiedOn: 2026-08-28\nratifiedHash: ${sliceDocBodyHash(written)}\nratifiedSections: ${ratifiedSectionsValue(written)}\nmeaningConfirmed: true\n`);
     expect(written).not.toContain("ratifiedRef:");
   });
 
@@ -923,7 +924,7 @@ describe("resolveRatifiedIdentity (MIL-284, fake git)", () => {
     };
 
   it("hashes the body and skips the ref with no git at all", () => {
-    expect(resolveRatifiedIdentity(null, "/m", "slices/x.md", RAW)).toEqual({ ok: true, identity: { ref: null, hash: sliceDocBodyHash(RAW) } });
+    expect(resolveRatifiedIdentity(null, "/m", "slices/x.md", RAW)).toEqual({ ok: true, identity: { ref: null, hash: sliceDocBodyHash(RAW), sections: ratifiedSectionsValue(RAW) } });
   });
   it("skips the ref outside a work tree", () => {
     const git = fakeGit({ "rev-parse --is-inside-work-tree": { status: 128, stdout: "" } });
@@ -952,7 +953,7 @@ describe("resolveRatifiedIdentity (MIL-284, fake git)", () => {
     };
     expect(resolveRatifiedIdentity(git, "/models/shop", "slices/x.md", RAW)).toEqual({
       ok: true,
-      identity: { ref: "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a", hash: sliceDocBodyHash(RAW) },
+      identity: { ref: "3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a3f9c2e1a", hash: sliceDocBodyHash(RAW), sections: ratifiedSectionsValue(RAW) },
     });
     expect(seen.every((a) => a[0] === "-C" && a[1] === "/models/shop")).toBe(true);
   });
@@ -972,7 +973,7 @@ describe("resolveRatifiedIdentity (MIL-284, fake git)", () => {
         "status --porcelain -- slices/x.md": { status: 0, stdout: " M slices/x.md\n" },
       })(args);
     };
-    expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW, { noRef: true })).toEqual({ ok: true, identity: { ref: null, hash: sliceDocBodyHash(RAW) } });
+    expect(resolveRatifiedIdentity(git, "/m", "slices/x.md", RAW, { noRef: true })).toEqual({ ok: true, identity: { ref: null, hash: sliceDocBodyHash(RAW), sections: ratifiedSectionsValue(RAW) } });
     expect(calls).toBe(0);
   });
 });

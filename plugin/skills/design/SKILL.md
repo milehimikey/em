@@ -229,7 +229,8 @@ For each slice:
    (see `${CLAUDE_PLUGIN_ROOT}/shared/templates/slice.md` and
    `${CLAUDE_PLUGIN_ROOT}/shared/reference/slice-doc-schema.md#delta-section-grammar-and-lifecycle`)
    — **overwriting** whatever the section held before, never appending to it. Then continue at
-   step 2 to bump `version` and flip `status` back to `ready-to-implement`, leaving
+   step 2 to bump `version` (this is a shipped doc: the number moves because v<N> shipped) and
+   flip `status` back to `ready-to-implement`, leaving
    `implementedIn` naming the prior version's PR (intended drift signal, not a bug — see the
    schema doc). Otherwise, this is first-time authoring: continue at step 1.
 1. Hold a Socratic deep-dive to fill every section of `${CLAUDE_PLUGIN_ROOT}/shared/templates/slice.md`:
@@ -321,14 +322,17 @@ For each slice:
    already exists, so `em slice new` doesn't apply here
    (it refuses to overwrite an existing file without `--force`, and forcing would blow away the
    doc's authored body) — run `em slice revise <model>.em <slice-key>` instead (MIL-283): it
-   opens the next version as a **`draft`** in the existing frontmatter — `version` bumped,
+   opens the next version as a **`draft`** in the existing frontmatter — `version` bumped
+   (a shipped doc only),
    `status: draft`, the prior version's review and sign-off cleared — while the shipped version
    stays shipped in the shipped record (`implementedIn:`/`shippedVersion:`, untouched). If a
    question was deferred to this version, `em slice mark-implemented` already opened the draft
    at merge and the question is back on the list; `revise` then refuses ("the next version is
-   already open") and you simply edit. The same command revises a ratified doc that **never
-   shipped** (`ready-to-implement` with `ratifiedBy` set — a gap answered mid-build): the
-   ratification is withdrawn and the draft opens. Either way the new version is a new spec:
+   already open") and you simply edit. The same command (with `--withdraw`) revises a ratified doc
+   that **never shipped** (`ready-to-implement` with `ratifiedBy` set — a gap answered mid-build):
+   the ratification is withdrawn and the draft reopens at the **same** `version:` (GH #486 — a
+   number moves only once that version has shipped, so no `## Delta` is owed and no
+   `--keep-version` is needed; the flag is a no-op there). Either way the new version is a new spec:
    write the delta into `## Delta`, walk it in a review session (`em slice review --by`), and
    only then does `em slice ratify --by <name>` sign it. **Commit before ratifying (MIL-284):**
    `em slice ratify` records the commit and body hash it signs and refuses a doc with uncommitted

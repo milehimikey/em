@@ -225,11 +225,11 @@ describe("em export (CLI)", () => {
 });
 
 describe("em export --doc-json (CLI, GH #401)", () => {
-  it("emits the structured doc export under its own schema version (1.0), not the model schema", () => {
+  it("emits the structured doc export under its own schema version (1.1), not the model schema", () => {
     const r = em(["export", "clean.em", "--doc-json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.0");
+    expect(doc.schemaVersion).toBe("1.1");
     expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
     expect(doc.model.slices[0]).toHaveProperty("errorFlows");
     expect(doc.model.slices[0]).toHaveProperty("openQuestions");
@@ -4043,10 +4043,10 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
     expect(JSON.parse(em(["validate", "shipped.em", "--slice-ready", "shipped-slice", "--json"], dir).stdout).ready).toBe(true);
   });
 
-  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft v3; a second revise refuses (already open)", () => {
+  it("a ratified, unshipped doc is revised too: ratification withdrawn, draft at the same v2 (GH #486); a second revise refuses (already open)", () => {
     const r = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     const again = em(["slice", "revise", "shipped.em", "shipped-slice"], dir);
     expect(again.status).not.toBe(0);
     expect(again.stderr).toContain("the next version is already open");
@@ -4060,7 +4060,7 @@ describe("em slice revise (CLI, MIL-283 — successor of reratify)", () => {
     writeFileSync(join(dir, "over.em"), 'slice "Over" {\n  ui Screen @Customer\n  command Do Thing note "slices/over.md"\n  event Thing Done\n}\n');
     const r = em(["slice", "revise", "over.em", "over"], dir);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; v3 opened as draft");
+    expect(r.stdout).toContain("ratification of v2 withdrawn; v1 stays shipped; reopened as draft at the same version");
     expect(r.stdout).not.toContain("never shipped");
   });
 
@@ -6132,7 +6132,7 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("ratified: slices/place-order.md (ratifiedBy: Alex Rivera, ratifiedOn: 2026-10-07, meaningConfirmed: true)");
     // MIL-284: the body hash sits between ratifiedOn and the confirmation (no ref: the fixture is not a git repo).
-    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nmeaningConfirmed: true\n/);
+    expect(readFileSync(join(dir, "slices", "place-order.md"), "utf8")).toMatch(/ratifiedOn: 2026-10-07\nratifiedHash: sha256:[0-9a-f]{64}\nratifiedSections: .+\nmeaningConfirmed: true\n/);
     const again = em(["slice", "ratify", "shop.em", "place-order", "--by", "Alex Rivera", "--on", "2026-10-07", "--meaning-unchanged"], dir);
     expect(again.stdout).toContain("already ratified (no-op): slices/place-order.md");
     const after = em(["status", "shop.em", "--json"], dir);
@@ -6154,11 +6154,11 @@ describe("API-first gate (CLI, MIL-238)", () => {
     expect(JSON.parse(after.stdout).gates.contractCurrent).toBe(true);
   });
 
-  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify of v2 requires it again", () => {
+  it("revise takes no confirmation (MIL-283): it clears the prior one, and the follow-up ratify requires it again (GH #486: same version)", () => {
     const r = em(["slice", "revise", "shop.em", "place-order", "--withdraw"], dir);
     expect(r.status).toBe(0);
     const content = readFileSync(join(dir, "slices", "place-order.md"), "utf8");
-    expect(content).toContain("status: draft\nversion: 2\n");
+    expect(content).toContain("status: draft\nversion: 1\n");
     expect(content).not.toContain("meaningConfirmed");
     expect(content).not.toContain("contractChange");
     expect(em(["slice", "review", "shop.em", "place-order", "--by", "Sam", "--on", "2026-10-07"], dir).status).toBe(0);
