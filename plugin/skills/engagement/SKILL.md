@@ -1,6 +1,6 @@
 ---
 name: engagement
-em-version: 1.22.1
+em-version: 1.22.2
 description: >-
   Use when leading an engagement: building a named set of ratified event-modeling slices
   (`em engagement`) into one independent PR per slice, each against main, by dispatching the

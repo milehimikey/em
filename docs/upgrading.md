@@ -670,6 +670,13 @@ The 1.19.1 step: `ci-block` (regenerates the `glossary` job with `--waive-file`)
 
 Update the `@milehimikey/em` dependency (and the plugin pin to `em-1-20-0` / `v1.20.0` on plugin repos, and the mise pin), all together. `em upgrade <model>.em` has no 1.20.0 step and only bumps the `Em version:` line. Re-run `em validate`: `doc-names-unfed-event` warnings backed by a `loops-to` disappear, and the new advisory `view-lookup-source` may surface lookup-shaped view sources — apply the generation rule or waive per [validation.md](validation.md#shape). Everything else is opt-in: the path source form, `--doc-json`, `conform --preview`, inline ratification, `refs --check-order` and the viewer's storyline filter.
 
+## 1.22.2
+
+| What changed for a model repo | Handled by `em upgrade`? |
+|---|---|
+| **The skill/plugin DSL cheatsheet documents optional-field syntax** (PR #484): `em-dsl.md` in the skill bundle and the plugin gains an **Optional fields** bullet (`name?: type`, parsed since 1.14.0 and already in [dsl.md](dsl.md)). Assistants working from the cheatsheet no longer report the syntax as undocumented | `skill-bundle` (vendored) / the plugin pin `em-1-22-2` |
+| **Release note: update the `@milehimikey/em` dependency and move the plugin pin to `em-1-22-2` / `v1.22.2` (and mise) together.** No `.em` syntax, schema or CLI change; the `@hono/node-server` lockfile bump (PR #483) is internal to em | no action needed |
+
 ## 1.22.1
 
 | What changed for a model repo | Handled by `em upgrade`? |
