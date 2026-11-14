@@ -1702,7 +1702,7 @@ describe("em skill sync / em skill check (CLI, real fs, MIL-93)", () => {
     const r = em(["skill", "check", target, "--json"], ROOT);
     expect(r.status).toBe(1);
     const doc = JSON.parse(r.stdout);
-    expect(doc.skillCheckSchemaVersion).toBe("1.1");
+    expect(doc.skillCheckSchemaVersion).toBe("1.2");
     expect(doc.ok).toBe(false);
     expect(doc.findings.map((f: { code: string }) => f.code).sort()).toEqual([
       "skill-check-content-drift",
@@ -4524,7 +4524,7 @@ describe("em model version (CLI, MIL-218)", () => {
     expect(existsSync(join(dir, "model-versions", "v2.json"))).toBe(true);
   });
 
-  it("em slice ratify warns when the write moved the model past the last bumped version", () => {
+  it("em slice ratify no longer warns when the write moved the model past the last bumped version (GH #498)", () => {
     mkdirSync(join(dir, "slices"), { recursive: true });
     writeFileSync(
       join(dir, "slices", "place-order.md"),
@@ -4538,7 +4538,71 @@ describe("em model version (CLI, MIL-218)", () => {
     writeFileSync(modelFile, withNote);
     const r = em(["slice", "ratify", "orders.em", "place-order", "--by", "Alex Rivera"], dir);
     expect(r.status).toBe(0);
-    expect(r.stderr).toContain('warn: ratifying "place-order" moved the model past v2 — run `em model version bump` to record it');
+    expect(r.stderr).not.toContain("moved the model past");
+  });
+});
+
+describe("em state set-conformance bumps a missing/stale design version (CLI, GH #498)", () => {
+  let dir: string;
+  const state = () => readFileSync(join(dir, ".event-modeling.md"), "utf8");
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "em-cli-certify-bump-"));
+    writeFileSync(join(dir, "orders.em"), 'slice "Place Order" {\n  command Place Order\n  event Order Placed\n}\n');
+    writeFileSync(
+      join(dir, ".event-modeling.md"),
+      "# Event Modeling Progress — Orders\n\n" +
+        "- **Model file:** `orders.em`\n" +
+        "- **Current phase:** discover\n" +
+        "- **Current step:** 1\n" +
+        "- **Last updated:** 2026-09-08\n" +
+        "- **Last conformance:** never\n" +
+        "- **Last stakeholder review:** never\n",
+    );
+    mkdirSync(join(dir, "conformance"), { recursive: true });
+    writeFileSync(join(dir, "conformance", "r.md"), "report\n");
+  });
+  afterAll(() => rmTemp(dir));
+
+  it("refuses without --by when no design version exists, writing nothing", () => {
+    const r = em(["state", "set-conformance", "abc123", "--report", "conformance/r.md"], dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("--by");
+    expect(existsSync(join(dir, "model-versions"))).toBe(false);
+    expect(state()).toContain("Last conformance:** never");
+  });
+
+  it("bumps then certifies with --by, printing bumped: before certified:", () => {
+    const r = em(["state", "set-conformance", "abc123", "--report", "conformance/r.md", "--by", "Alex"], dir);
+    expect(r.status).toBe(0);
+    expect(r.stdout.indexOf("bumped:")).toBeGreaterThanOrEqual(0);
+    expect(r.stdout.indexOf("bumped:")).toBeLessThan(r.stdout.indexOf("certified:"));
+    const manifest = JSON.parse(readFileSync(join(dir, "model-versions", "v1.json"), "utf8"));
+    expect(manifest.bumpedBy).toBe("Alex");
+    expect(manifest.certified).toMatchObject({ at: "abc123" });
+    expect(state()).toContain("Model version:** 1");
+    expect(state()).toContain("abc123");
+  });
+
+  it("a fresh version needs no --by, and --by is ignored", () => {
+    const a = em(["state", "set-conformance", "def456", "--report", "conformance/r.md"], dir);
+    expect(a.status).toBe(0);
+    expect(a.stdout).not.toContain("bumped:");
+    const b = em(["state", "set-conformance", "def456", "--report", "conformance/r.md", "--by", "Alex"], dir);
+    expect(b.status).toBe(0);
+    expect(b.stdout).not.toContain("bumped:");
+    expect(existsSync(join(dir, "model-versions", "v2.json"))).toBe(false);
+  });
+
+  it("a stale version refuses without --by and bumps to v2 with it", () => {
+    writeFileSync(join(dir, "orders.em"), 'slice "Place Order" {\n  command Place Order\n  event Order Placed\n}\n\n');
+    const refused = em(["state", "set-conformance", "fed789", "--report", "conformance/r.md"], dir);
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("--by");
+    expect(state()).not.toContain("fed789");
+    const ok = em(["state", "set-conformance", "fed789", "--report", "conformance/r.md", "--by", "Alex"], dir);
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain("bumped:");
+    expect(JSON.parse(readFileSync(join(dir, "model-versions", "v2.json"), "utf8")).certified).toMatchObject({ at: "fed789" });
   });
 });
 

@@ -814,8 +814,8 @@ reintroduce exactly the false positive this rule exists to avoid.
 
 MIL-218's model-level counterpart to `em slice conform`'s per-slice certification: a warning that
 the `.em` file's own content hash, or its slice-version vector, has moved since the last `em
-model version bump` — the same `modelVersionDrift` predicate `em status` and the `em slice
-ratify`/`reratify` advisory both read (`src/cli/modelVersion.ts`).
+model version bump` — the same `modelVersionDrift` predicate `em status` reads
+(`src/cli/modelVersion.ts`).
 
 **Silent when no `model-versions/*.json` manifest exists at all** — a project that has never
 opted into `em model version bump` isn't nagged; this rule only ever fires once at least one
@@ -826,7 +826,7 @@ version has been bumped.
 | `model-version-stale` | The current design version's manifest (`model-versions/v<N>.json`) no longer matches the model: either the `.em` file's own bytes changed, or one or more slices' `version:` moved, since it was bumped. |
 
 Fix: run `em model version bump --by <name>` to record the current state as a new design
-version. See [model-versions.md](model-versions.md) for the manifest shape and
+version, or let the next full `em state set-conformance --by <name>` bump and certify in one step. See [model-versions.md](model-versions.md) for the manifest shape and
 [process.md](process.md#model-versions) for when to bump.
 
 ### Strict public types

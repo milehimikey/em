@@ -153,6 +153,8 @@ export interface ReviewOptions {
   again?: boolean;
   /** GH #333: record the review although `## Open Questions` still has unchecked items. */
   allowOpen?: boolean;
+  /** GH #491: plan only — run every check, write nothing (batch review plans before it writes). */
+  dryRun?: boolean;
 }
 
 /**
@@ -234,7 +236,7 @@ export function runReview(
       allowedOpen = open.length;
     }
   }
-  if (result.changed) {
+  if (result.changed && opts.dryRun !== true) {
     writeFileSync(absPath, result.content, "utf8");
   }
   return {
