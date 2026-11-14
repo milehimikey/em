@@ -289,9 +289,11 @@ workflow. `em ci init` wires it in by default as its own PR gate — the preset'
 once a repo has `slices/*.md` docs at all, ledger agreement is worth enforcing from the start.
 
 `em ledger` (MIL-89) checks that a slice doc's `version:` frontmatter field and its content
-(body + lineage refs) always change together between two git revisions — a version bump with
-no real content change, or a content change with no version bump, is a ledger bug (see
-[slice-doc-schema.md](slice-doc-schema.md)). Unlike the `em validate` job above, this needs
+(body + lineage refs) change together between two git revisions — a version bump with
+no real content change, or a content change at the same version of a *shipped* version, is a
+ledger bug (see [slice-doc-schema.md](slice-doc-schema.md)). Since 1.23.0 a same-version change
+is clean before the version ships (`em slice revise` reopens it at the same `version:`) and when
+it is a recorded `em slice amend`; see [cli.md](cli.md#em-ledger-file). Unlike the `em validate` job above, this needs
 git history to compare revisions, so it's **deliberately not part of `em validate`** — that
 command stays a fast function of the current tree (see
 [validation.md#lineage](validation.md#lineage)). It's its own opt-in step, only worth adding
