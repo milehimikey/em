@@ -85,7 +85,8 @@ ratified doc, and do not run `em slice revise` for it (an unshipped ratified doc
 `revise` without `--withdraw`).
 
 The question is answered in a design session (`event-modeling-design`), which re-ratifies the
-doc. The slice is then built in a later engagement.
+doc (a prose-only answer is a human's `em slice amend --by <name>` instead; the lead never runs
+either). The slice is then built in a later engagement.
 
 ## Model selection
 

@@ -27,6 +27,7 @@ agent can carry with human review.
 | Look up the per-slice bindings manifest schema (`conformance/bindings/<slice-key>.yaml`) | [bindings.md](bindings.md) |
 | Extend a generated contract (routes, envelopes, channel bindings) without forking it | [contract-bindings.md](contract-bindings.md) |
 | Declare process policy once (merge strategy, prose sections, roster) in `em-policy.yaml` | [policy.md](policy.md) |
+| Change a signed slice doc: re-sign a prose edit in place, or reopen it for a behaviour change | [process.md](process.md#revision-re-enters-the-loop-at-the-top) |
 | Look up a command or flag | [cli.md](cli.md) |
 | Understand a validation error or warning | [validation.md](validation.md) |
 | Understand why arrows can't point backward | [timeline.md](timeline.md) |

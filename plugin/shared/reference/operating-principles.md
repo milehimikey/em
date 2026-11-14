@@ -123,9 +123,12 @@ including sessions started from bare `/em:event-modeling`.
   `slices.byStatus.shipped === 0`. Pre-release: never run `em slice revise`; edit
   `draft`/`reviewed` docs in place and leave `version:` as it is. A pre-release doc that is
   already ratified (`ready-to-implement` with `ratifiedBy`) carries a human sign-off: STOP,
-  record the needed change as an open question, and let the ratifier decide. Released (either
-  condition false): changing a shipped or ratified doc goes through `em slice revise`, which
-  opens the next version as a `draft` (see `em:design`).
+  record the needed change as an open question, and let the ratifier decide; for a prose-only
+  change (Intent, Trigger & Actor, Dependencies & Read Models Affected, Consumed by) propose the
+  wording and the human re-signs it in place with `em slice amend --by <their name>` — you never
+  run `amend`. Released (either condition false): a behaviour change to a shipped or ratified doc
+  goes through `em slice revise`, which opens the next version as a `draft` (see
+  `em:design`); `version:` moves only once the version being left has shipped.
 - **Pre-commit check (STOP on any finding).** Stage the session's files, then run both:
   1. `em system scope --staged` from the repository root. Any `seam-crossing` error → STOP:
      unstage the other model's files and record a seam change request instead.
