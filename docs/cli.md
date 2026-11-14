@@ -2783,6 +2783,21 @@ Plan schema **`1.5`** (GH #455) adds one more `preflight[].kind`:
 |---|---|
 | `context-missing` | One of the engagement's `context:` paths does not exist on disk at plan time, resolved against the current working directory. `subject` = the path, `slices` = every slice in the engagement (a context document is engagement-wide, not per-slice). Add the file before fan-out, or drop it from `context:` |
 
+Plan schema **`1.6`** (GH #492) adds `ratifyAtHandoff`, the **reviewed-but-not-ratified** block.
+Ratification is the handoff gate: while a storyline is still being shaped, slices stay at
+`reviewed` (a `reviewed` doc is free to edit — `em slice review --again` re-records the review; a
+ratified one is not), and the storyline is ratified together when it is shaped end to end or its
+slices are about to be dispatched. So the plan lists the engagement's slices whose doc is
+`status: reviewed` with the exact command(s) that ratify them: one batch
+`em slice ratify <file> <keys…> --by <name>` for the non-public-touching ones (see the batch
+paragraph of [`em slice ratify`](#em-slice-ratify-file-slice-key---by-name)), and one single-slice command per
+public-touching one, which names a meaning flag (`--meaning-unchanged`, or `--contract-change
+"<why>"`) because a batch refuses those. `<name>` is printed literally; the plan never guesses who
+ratifies. Information only: it changes no slice's `ready`/`held` and no exit code.
+`ratifyAtHandoff: [{ kind: "batch" | "single", slices, command, meaningFlagRequired }]` — batch
+entry first, then singles in plan order; `[]` when nothing is `reviewed`, and the text form prints
+nothing then.
+
 The text form prints one block per level with its width against the ceiling, with a `context:`
 line first when the engagement has one:
 
@@ -2799,10 +2814,10 @@ level 2: 1 slice (ceiling 3)
   loan-history [state-view] impl/loan-history on main · state: planned
 ```
 
-`--json` prints `engagementPlanSchemaVersion: "1.5"`, `generator`, `file`, `engagement` (the
+`--json` prints `engagementPlanSchemaVersion: "1.6"`, `generator`, `file`, `engagement` (the
 file's path), `slug`, `status`, `tracking` (the engagement-level key or `null`), `prTitle` (the engagement's title template or `null`, added in `1.4`), `context` (the engagement's `context:` paths, `[]` when absent, added in `1.5`), `parallel`, `levels: [{ level, width, ceiling, slices }]`,
 `slices[]` (the fields above plus `key`, `pattern`, `docStatus`), level by level, and `preflight[]`
-(added in `1.2`, GH #239 — see above). The MCP
+(added in `1.2`, GH #239 — see above), and `ratifyAtHandoff[]` (added in `1.6`, GH #492 — see above). The MCP
 `engagement_plan` tool returns the same document. Two kinds of edge never order a build and are
 left out of the levelling graph: a `loops-to` edge (it re-feeds an earlier read model) and, since
 1.19.5 (GH #378), any edge into a `view … again` instance — a continuation has no doc or PR of its own

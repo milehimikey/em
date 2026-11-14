@@ -34,7 +34,10 @@ export const ENGAGEMENT_READABLE_VERSIONS: readonly string[] = ["1.0", "1.1", "1
 // 1.5 (GH #455): additive `context` on the document — the engagement's repo-relative document
 //   paths, `[]` when absent — and a `preflight[].kind: "context-missing"` per context path that
 //   does not exist on disk at plan time.
-export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.5";
+// 1.6 (GH #492): additive `ratifyAtHandoff: [{ kind, slices, command, meaningFlagRequired }]` — the
+//   engagement's `reviewed` (not yet ratified) slices and the exact ratify command(s); `[]` when none.
+//   Information only, never a hold.
+export const ENGAGEMENT_PLAN_SCHEMA_VERSION = "1.6";
 
 // 1.0 (MIL-268): initial shape.
 // 1.1 (GH #241): additive `tracking` on the document and on each slice.
@@ -55,6 +58,7 @@ export function buildEngagementPlanJson(plan: EngagementPlan): string {
     levels: plan.levels,
     slices: plan.slices,
     preflight: plan.preflight,
+    ratifyAtHandoff: plan.ratifyAtHandoff,
   };
   return JSON.stringify(doc, null, 2);
 }
