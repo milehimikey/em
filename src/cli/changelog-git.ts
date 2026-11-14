@@ -168,6 +168,28 @@ export function listModelCommits(
   return { ok: true, repoRoot, commits };
 }
 
+/**
+ * The model as it stood just before a `--from` walk: the parent of `from`, read at the path the
+ * oldest listed commit has. `null` when there is no `--from`, `from` is a root commit, or the
+ * model did not exist at that parent (the walk then really does start at its introduction).
+ * With a baseline the oldest commit in the walk gets a diff like every other one, instead of
+ * being presented as the commit that introduced the model.
+ */
+export function changelogBaseline(
+  repoRoot: string,
+  from: string | undefined,
+  commits: CommitInfo[],
+  runGit: GitRunner = realGit,
+): CommitInfo | null {
+  if (!from || commits.length === 0) return null;
+  const parent = runGit(["-C", repoRoot, "rev-parse", "--verify", "--end-of-options", `${from}^`]);
+  if (parent.status !== 0) return null;
+  const hash = parent.stdout.trim();
+  const path = commits[0].path;
+  if (runGit(["-C", repoRoot, "cat-file", "-e", `${hash}:${path}`]).status !== 0) return null;
+  return { hash, shortHash: hash.slice(0, 7), date: "", subject: "", path };
+}
+
 /** File content at a commit, or a note-ready `message` (no command prefix — it lands inside a changelog section). */
 export type FileAtCommitResult = { ok: true; content: string } | { ok: false; message: string };
 

@@ -218,7 +218,15 @@ export const GENERATOR_VERSION: string = JSON.parse(
 // this never has to pick a winner). Additive-only; a model declaring no `enum` emits byte-
 // identical `enums: []` and `enumRef: null` everywhere, same "zero behavior change" posture
 // `scalars`/`types` already give a model with no `scalar`/`type` blocks.
-export const SCHEMA_VERSION = "1.21";
+// 1.22 (GH #487 / GH #488, em 1.23.0): `slice.doc.amendedBy: string | null` and
+// `slice.doc.amendedOn: string | null` — who re-signed a prose-only change in place (`em slice
+// amend`) and when (the latest amendment; null when never amended or no doc is bound); and
+// `slice.doc.sections: { heading, class, changed }[] | null` — the doc's authored sections, each
+// classed `prose` or `behaviour` (the project's `amendment.prose-sections`, else em's default
+// list) with whether it changed since sign-off (`true`/`false`, or `null` when the doc records no
+// section hashes), `null` when no usable doc is bound. The same values `em export --doc-json`
+// has carried since doc-json 1.1 / 1.2. Additive-only.
+export const SCHEMA_VERSION = "1.22";
 
 export interface ExportResult {
   /** Pretty-printed JSON, no trailing newline. */

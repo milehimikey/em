@@ -9,6 +9,9 @@
 //       base (no dependence on `ratifiedRef:`, so `--no-ref` docs count; an `em slice amend`
 //       re-sign under the same sign-off does NOT count), and
 //   (b) touched implementation code -- a path that is not model material (see `isModelMaterial`).
+// Which ratified-inline slices are reported is the policy's call: `internal` (default) reports a
+// public-touching slice and a slice an open engagement lists (docs/process.md's "separate always"
+// tier), `never` any slice, `always` none.
 // Pure aside from the injectable GitRunner and fs reads via readSliceDoc; no process.exit.
 import { realpathSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
@@ -27,7 +30,7 @@ import { POLICY_FILE, ROSTER_FILE } from "../roster/roster.js";
 import { docFolders } from "../catalog/docLocate.js";
 
 export const INLINE_CODE = "slice-ratified-inline";
-export type InlineReason = "public-touching" | "policy-never";
+export type InlineReason = "public-touching" | "policy-never" | "engagement";
 
 export interface InlineFinding {
   code: typeof INLINE_CODE;
@@ -87,6 +90,9 @@ export function checkInlineRatification(
   base: string,
   policy: EffectivePolicy,
   run: GitRunner = realGit,
+  /** Slices an open engagement lists (key -> engagement slug) -- `openEngagementSlices`. Under
+   *  `internal` such a slice is reported even when it is not public-touching (reason `engagement`). */
+  engagementSlices: ReadonlyMap<string, string> = new Map(),
 ): InlineCheckOutcome {
   const git = (args: string[]) => run(["-C", baseDir, ...args]);
   const inside = git(["rev-parse", "--is-inside-work-tree"]);
@@ -146,9 +152,16 @@ export function checkInlineRatification(
     }
     ratified.push(sliceKey);
     if (codePaths.length === 0 || inline.value === "always") return;
-    if (inline.value === "internal" && !slicePublicTouching(slice)) return;
-    const reason: InlineReason = inline.value === "never" ? "policy-never" : "public-touching";
-    const why = reason === "public-touching" ? "it is public-touching" : "ratification.inline is `never`";
+    const isPublic = slicePublicTouching(slice);
+    const engagement = engagementSlices.get(sliceKey);
+    if (inline.value === "internal" && !isPublic && engagement === undefined) return;
+    const reason: InlineReason = inline.value === "never" ? "policy-never" : isPublic ? "public-touching" : "engagement";
+    const why =
+      reason === "public-touching"
+        ? "it is public-touching"
+        : reason === "engagement"
+          ? `it is in the open engagement "${engagement}", whose slices are ratified before any of them is built`
+          : "ratification.inline is `never`";
     findings.push({
       code: INLINE_CODE,
       sliceKey,

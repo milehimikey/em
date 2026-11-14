@@ -537,7 +537,7 @@ describe("export_model tool", () => {
     const modelFile = join(reviewedDocDir, "reviewed.em");
     const { result, doc } = await callJson(client, "export_model", { file: modelFile });
     expect(result.isError).toBeFalsy();
-    expect(doc.schemaVersion).toBe("1.21");
+    expect(doc.schemaVersion).toBe("1.22");
     expect(doc.model.slices[0].doc).toMatchObject({
       found: true,
       status: "reviewed",
@@ -1163,7 +1163,8 @@ describe("changelog tool", () => {
     const text = (result.content[0] as { type: "text"; text: string }).text;
     expect(text).not.toContain("introduce order placement");
     expect(text).toContain("add shipping slice");
-    expect(text).toContain("Model introduced:");
+    // The model existed before the walk, so its oldest commit is diffed, not shown as the introduction.
+    expect(text).not.toContain("Model introduced:");
   });
 
   it("a file outside a git repository is a tool error, not a crash", async () => {

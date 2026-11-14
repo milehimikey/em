@@ -70,6 +70,7 @@ export const SIGN_OFF_KEYS: readonly string[] = [
   "ratifiedRef",
   "ratifiedHash",
   "ratifiedSections",
+  "ratifiedHashBaseline", // GH #516: the mark of a hash recorded by `em upgrade --baseline-ratified-hash`
   "reviewedBy",
   "reviewedOn",
   ...MEANING_CONFIRMATION_KEYS,

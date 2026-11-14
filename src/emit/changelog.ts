@@ -97,6 +97,10 @@ export interface ChangelogOptions {
   intro: ChangelogIntro | null;
   /** Set when the oldest revision couldn't be compiled; `intro` is null in that case. */
   introError?: string;
+  /** True when the walk started part-way through the model's history (`--from`) and every entry,
+   *  the oldest included, carries a diff against the model as it stood before the walk. No entry
+   *  is then the model's introduction. */
+  diffedFromBaseline?: boolean;
 }
 
 function heading(entry: ChangelogEntry): string {
@@ -140,7 +144,8 @@ function renderUnmatchedSection(decisions: DecisionEntry[]): string {
  * section for any decision whose date matches no commit. A date's decisions
  * attach once, to the newest commit of that date. `entries` must be
  * oldest -> newest (matches `listModelCommits`); `entries[0]` is the model's
- * introduction (no predecessor to diff against — see `opts.intro`).
+ * introduction (no predecessor to diff against — see `opts.intro`), unless
+ * `opts.diffedFromBaseline` says the walk started later and it carries a diff too.
  *
  * A section is omitted when it has no structural change AND no matching
  * decision. The introduction and any error section always render — they're
@@ -171,7 +176,7 @@ export function buildChangelog(entries: ChangelogEntry[], decisions: DecisionEnt
     const entry = entries[i];
     const matching = takeDecisions(entry.date);
 
-    if (i === 0) {
+    if (i === 0 && !opts.diffedFromBaseline) {
       sections.push(renderIntroSection(entry, opts, matching));
       continue;
     }

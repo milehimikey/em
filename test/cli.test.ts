@@ -206,14 +206,14 @@ describe("em export (CLI)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("wrote out.json");
     const doc = JSON.parse(readFileSync(join(dir, "out.json"), "utf8"));
-    expect(doc.schemaVersion).toBe("1.21"); // MIL-235: 1.14.0 release bump (consumes, owner)
+    expect(doc.schemaVersion).toBe("1.22"); // MIL-235: 1.14.0 release bump (consumes, owner)
   });
 
   it("stdout stays clean parseable JSON when warnings are present (warnings go to stderr)", () => {
     const r = em(["export", "warn.em"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if any warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.21");
+    expect(doc.schemaVersion).toBe("1.22");
     expect(r.stderr).toContain("produces no event");
   });
 
@@ -260,7 +260,7 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
     const r = em(["export", "clean.em", "--slice", "place"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.schemaVersion).toBe("1.21");
+    expect(doc.schemaVersion).toBe("1.22");
     expect(doc.modelKey).toBe("clean"); // MIL-193: clean.em declares no `model` name -> basename
     expect(doc.sliceKey).toBe("place");
     expect(doc.slice.key).toBe("place");
@@ -284,6 +284,9 @@ describe("em export --slice <key> (CLI, MIL-128)", () => {
       ratifiedOn: null,
       ratifiedRef: null,
       ratifiedHash: null,
+      amendedBy: null,
+      amendedOn: null,
+      sections: null,
       shipped: null,
       owner: null,
       tracking: null,
@@ -2203,16 +2206,17 @@ describe("em changelog (CLI, real git repo)", () => {
     expect(r.stdout).toContain("Model introduced: 1 slice, 2 elements.");
   });
 
-  it("--from bounds the walk: the boundary commit becomes the introduction, earlier commits drop out", () => {
+  it("--from bounds the walk: the boundary commit is diffed against the model before it, earlier commits drop out", () => {
     const r = em(["changelog", "model.em", "--from", "HEAD~1"], repo);
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("introduce order placement");
     expect(r.stdout).not.toContain("add shipping slice with a field");
     expect(r.stdout).toContain("open delivery confirmation issue");
-    // HEAD~1 ("reformat only") has no predecessor inside the bounded walk,
-    // so it renders as the introduction instead of being diffed/omitted.
-    expect(r.stdout).toContain("reformat only");
-    expect(r.stdout).toContain("Model introduced:");
+    // HEAD~1 ("reformat only") is diffed against its parent like any other commit (GH #516): it
+    // changed nothing structural, so it has no section, and no commit in a walk that starts
+    // part-way through the history is presented as the model's introduction.
+    expect(r.stdout).not.toContain("reformat only");
+    expect(r.stdout).not.toContain("Model introduced:");
   });
 
   it("-o writes the file and confirms on stdout", () => {

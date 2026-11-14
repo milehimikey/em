@@ -19,6 +19,7 @@ on:
       - "**/.event-modeling.md"
       - ".claude/settings.json"
       - "**/ratifiers.yaml"
+      - "**/em-policy.yaml"
       - "**/system.yaml"
       - "**/contracts/**"
   push:

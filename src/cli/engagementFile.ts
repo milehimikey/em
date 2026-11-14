@@ -318,6 +318,34 @@ export function readOpenEngagements(modelFiles: string[]): { open: number; slugs
   return { open: slugs.length, slugs };
 }
 
+/** The slices an OPEN engagement of `modelFile` lists: slice key -> the engagement's slug (the
+ *  first in slug order when two list it). `em inline-check` reads it for the "separate always"
+ *  tier (docs/process.md): an engagement's implementers build in parallel against signed docs, so
+ *  a doc ratified in the same change set as its code broke that order. Unreadable files are skipped. */
+export function openEngagementSlices(modelFile: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const dir = join(dirname(modelFile), ENGAGEMENTS_DIR);
+  if (!existsSync(dir)) return out;
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith(".md")).sort();
+  } catch {
+    return out;
+  }
+  for (const name of names) {
+    let text: string;
+    try {
+      text = readFileSync(join(dir, name), "utf8");
+    } catch {
+      continue;
+    }
+    const parsed = parseEngagementFile(text);
+    if (!parsed.ok || parsed.file.status !== "open" || !belongsTo(join(dir, name), parsed.file, modelFile)) continue;
+    for (const e of parsed.file.slices) if (!out.has(e.key)) out.set(e.key, parsed.file.slug);
+  }
+  return out;
+}
+
 export type LoadResult = { ok: true; path: string; text: string; file: EngagementFile } | { ok: false; message: string };
 
 /** Read + parse `<modelDir>/engagements/<slug>.md`; the message completes `em engagement <verb>: `. */

@@ -32,7 +32,7 @@ describe("schema shape", () => {
   it("emits the top-level fields exactly", () => {
     const doc = docOf(STARTER_EM);
     expect(Object.keys(doc)).toEqual(["schemaVersion", "generator", "source", "model", "diagnostics"]);
-    expect(doc.schemaVersion).toBe("1.21"); // MIL-235: 1.14.0 release bump (consumes, owner)
+    expect(doc.schemaVersion).toBe("1.22"); // MIL-235: 1.14.0 release bump (consumes, owner)
     // generator.version is read from package.json at runtime — comparing against
     // the same file here means a release bump can never leave it stale.
     expect(doc.generator).toEqual({ name: "@milehimikey/em", version: PKG_VERSION });
@@ -85,6 +85,9 @@ slice "Submit Order" {
       ratifiedOn: null,
       ratifiedRef: null,
       ratifiedHash: null,
+      amendedBy: null,
+      amendedOn: null,
+      sections: null,
       shipped: null,
       owner: null,
       tracking: null,
@@ -1100,7 +1103,7 @@ type Order { billing: Address }
   });
 
   it("bumps schemaVersion to 1.12 (MIL-208), additive over 1.11", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.21");
+    expect(docOf(SRC).schemaVersion).toBe("1.22");
   });
 });
 
@@ -1191,7 +1194,7 @@ type Ref { status: OrderStatus }
   });
 
   it("schemaVersion stays 1.21 — GH #478 rides GH #477's bump, same release (additive-only)", () => {
-    expect(docOf(SRC).schemaVersion).toBe("1.21");
+    expect(docOf(SRC).schemaVersion).toBe("1.22");
   });
 });
 
@@ -1398,6 +1401,10 @@ describe("slice-doc join (MIL-91)", () => {
       ratifiedOn: null,
       ratifiedRef: null,
       ratifiedHash: null,
+      amendedBy: null,
+      amendedOn: null,
+      // schema 1.22: the doc's sections; no section hashes recorded, so `changed` is unknown.
+      sections: [{ heading: "(preamble)", class: "behaviour", changed: null }],
       // MIL-283 read-both rule: a pre-1.15 `status: implemented` doc is shipped at its current version.
       shipped: { version: 2, ratifiedRef: null, implementedIn: "https://github.com/example/pr/41", on: null },
       owner: null,
@@ -1506,6 +1513,9 @@ describe("slice-doc join: cross-binding (MIL-121)", () => {
       ratifiedOn: null,
       ratifiedRef: null,
       ratifiedHash: null,
+      amendedBy: null,
+      amendedOn: null,
+      sections: [{ heading: "(preamble)", class: "behaviour", changed: null }],
       shipped: null,
       owner: null,
       tracking: null,

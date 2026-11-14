@@ -32,7 +32,8 @@
 // behaviour section.
 
 import { createHash } from "node:crypto";
-import { effectivePolicy } from "../policy/policy.js";
+import { statSync } from "node:fs";
+import { effectivePolicy, findPolicyAbove } from "../policy/policy.js";
 import { splitFrontmatter, stripGeneratedRegions, withoutDeferrals } from "./sliceDoc.js";
 
 export type SectionClass = "prose" | "behaviour";
@@ -207,6 +208,23 @@ export function classifySections(markdown: string, proseHeadings: readonly strin
  *  `em-policy.yaml` when declared, else `DEFAULT_PROSE_HEADINGS`. An unreadable/invalid policy
  *  falls back to the default here (reads never refuse; `em status` reports the problem). */
 export function proseHeadingsFor(baseDir: string): readonly string[] {
+  // Called once per slice doc by the doc join, so the parse is kept per policy file until the
+  // file changes (path + mtime + size). No policy file is the common case and costs no read.
+  const file = findPolicyAbove(baseDir);
+  if (file === null) return DEFAULT_PROSE_HEADINGS;
+  let stamp: string;
+  try {
+    const st = statSync(file);
+    stamp = `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return DEFAULT_PROSE_HEADINGS;
+  }
+  const hit = proseHeadingsCache.get(file);
+  if (hit && hit.stamp === stamp) return hit.headings;
   const res = effectivePolicy(baseDir);
-  return res.ok ? res.policy.amendment.proseSections.value : DEFAULT_PROSE_HEADINGS;
+  const headings = res.ok ? res.policy.amendment.proseSections.value : DEFAULT_PROSE_HEADINGS;
+  proseHeadingsCache.set(file, { stamp, headings });
+  return headings;
 }
+
+const proseHeadingsCache = new Map<string, { stamp: string; headings: readonly string[] }>();

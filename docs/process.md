@@ -286,8 +286,9 @@ membership overrides the internal-inline allowance.
 `em` checks the table at PR time, not at ratification: `em inline-check <model>.em --base <rev>`
 ([cli.md](cli.md#em-inline-check-file---base-rev)) reports a slice whose doc was ratified in the same change set as implementation code,
 judged by `ratification.inline` in `em-policy.yaml` ([policy.md](policy.md)) — public-touching slices by default, any slice
-under `never` — as a warning unless `inline-violation: error`. Nothing refuses inline mode up front,
-and the engagement row is not checked. The API-first gate already does the part that
+under `never` — as a warning unless `inline-violation: error`. The engagement row is checked the
+same way: a slice an open engagement lists is reported when it is ratified with its code. Nothing
+refuses inline mode up front. The API-first gate already does the part that
 matters: `em slice ratify` on a public-touching slice refuses without
 `--meaning-unchanged`/`--contract-change`, inline or not, so the contract decision is still
 recorded either way. The table is a team's own judgment call about *when to choose* the inline
