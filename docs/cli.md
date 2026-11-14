@@ -1960,6 +1960,55 @@ byte-identical to before GH #399): `orderResults` — `{ sliceKey, path, ratifie
 status, detail }[]`, `commit` set only for `code-before-ratification`, `detail` the same
 plain-English reason the text report prints or `null`.
 
+## `em inline-check <file> --base <rev>`
+
+GH #496 (em 1.23.0). Reports a slice that was **ratified inline** against the policy in
+[`em-policy.yaml`](policy.md). Inline ratification (the slice doc ratified on the same branch as its
+implementation, [process.md](process.md#inline-ratification-approval-as-the-ratification-session))
+is allowed for internal slices and not for public-touching ones; this is the PR-time check that
+says so. It is its own command, not a mode of `em refs --check-order`, because `em refs` requires
+`--reachable-from` and fails on a `ratifiedRef:` not yet on the base branch, which is exactly the
+state of a PR under review; and because `--no-ref` docs have no `ratifiedRef:` to order against.
+
+A slice counts as ratified inline when one change set, `git diff <base>...HEAD` (the merge-base
+form `em system scope` uses), both
+
+1. **ratified its doc**: `ratifiedHash:` is recorded at HEAD and was absent or different at the
+   merge-base (so `--no-ref` docs count, and so does an `em slice amend` re-sign), and
+2. **touched implementation code**: any changed path that is not model material. Model material is
+   a file under the model directory in `slices/`, `contracts/`, `model-versions/` or
+   `conformance/`, a `.em` file, the `.event-modeling.md` state file, or `em-policy.yaml` /
+   `ratifiers.yaml`.
+
+With nothing ratified in the change set, or no code in it, the command is silent.
+
+| `ratification.inline` | Reported |
+|---|---|
+| `internal` (default) | a **public-touching** slice (owns a `public` command, event or view) |
+| `never` | **any** slice ratified inline |
+| `always` | nothing |
+
+`ratification.inline-violation` sets the severity: `advisory` (default) prints a `warn:` line and
+exits 0; `error` prints `error:` and exits 1. With no `em-policy.yaml` the defaults apply. One line
+per slice, code `slice-ratified-inline`, naming the slice, the reason (public-touching, or policy
+`never`) and where the policy value came from:
+
+```bash
+$ em inline-check model.em --base origin/main
+warn: slice-ratified-inline pay was ratified in the same change set as implementation code (1 path(s)); it is public-touching (policy ratification.inline: internal, from default) -- ratify it in a separate doc PR
+```
+
+It is not part of `em validate`, `--slice-ready`, `em slice ratify` or `em slice amend`, and `em ci
+init` does not generate a job for it (one line for CI: [ci.md](ci.md#em-inline-check-opt-in)). A
+`--base` with no merge-base with HEAD (a shallow clone) is a usage error, exit 1.
+
+**`--json`**: `{ inlineSchemaVersion: "1.0", generator, file, base, mergeBase, policy: { inline:
+{ value, source }, inlineViolation: { value, source } }, ratified[], codePaths[], findings[], ok }`.
+`findings[]` entries are `{ code, sliceKey, path, reason, policySource, message }`, `reason` one of
+`public-touching | policy-never`; `ratified` lists every slice ratified in the change set; `ok` is
+`false` only with findings under `inline-violation: error`. Schema `1.0` is new with the command,
+so no existing document changed shape.
+
 ## `em coverage <file> --tests <dir>`
 
 Mechanizes the one honor-system line in `reference/implement.md`'s definition of done: "every

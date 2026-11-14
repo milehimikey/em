@@ -966,6 +966,15 @@ contract file is the gate ([ci.md](ci.md#em-system-scope-the-seam-crossing-gate)
 | `multi-model-change-set` | warning | The change set touches two or more model directories and crosses no contract | Prefer one model per change set |
 | `code-spans-seam` | warning | Advisory: code under two seam-joined models' declared `Code roots:` changed together | One code module per model; change the two sides in separate change sets |
 
+### Inline ratification
+
+Not a validate rule: `em inline-check` (GH #496) is a PR-time command that reads git, and no validate
+or `--slice-ready` run raises it. Its one diagnostic code is listed here so a CI log line is findable.
+
+| Code | Severity | Rule | Fix |
+|---|---|---|---|
+| `slice-ratified-inline` | warning (error with `ratification.inline-violation: error`) | A slice's doc was ratified in the same change set as implementation code, and `ratification.inline` forbids it for that slice (public-touching under `internal`; any slice under `never`) | Ratify the doc in a separate doc PR, or declare `ratification.inline: always` if the team accepts it. See [cli.md](cli.md#em-inline-check-file---base-rev) |
+
 ## What the validator can't catch
 
 Connection legality is checked on `arrow` statements, which is where an illegal connection

@@ -363,6 +363,19 @@ new dangling refs; waived results still print in the log. The lasting fix is ups
 `--no-ref` and certify with `--at <kind>:<id>` in a squash/rebase repo — the hash identifies the
 signed content, the ref was only ever an address.
 
+## `em inline-check` (opt-in)
+
+`em inline-check` (GH #496) reports a slice ratified in the same change set as implementation code
+when `em-policy.yaml`'s `ratification.inline` forbids it ([cli.md](cli.md#em-inline-check-file---base-rev),
+[policy.md](policy.md)). It is advisory unless the policy says `inline-violation: error`. `em ci
+init` does not generate it; add one step to the pull-request job (same `fetch-depth: 0` checkout
+the ledger step needs):
+
+```yaml
+      - name: Check slices were ratified the way policy allows
+        run: npx @milehimikey/em inline-check model.em --base "origin/${{ github.event.pull_request.base.ref }}"
+```
+
 ## `em conform bindings check` (opt-in)
 
 GH #449: verifies every per-slice bindings manifest (`conformance/bindings/<slice-key>.yaml`,
