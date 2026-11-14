@@ -1000,7 +1000,7 @@ export function formatStatusDetail(report: StatusReport): string {
   }
   // MIL-268: the open engagements line (always present; slugs only when there are any).
   lines.push(`open engagements: ${report.engagements.open}${report.engagements.open > 0 ? ` (${report.engagements.slugs.join(", ")})` : ""}`);
-  lines.push(`roster: ${report.roster}`);
+  lines.push(report.roster === "absent" ? "roster: none (optional; the git host decides who may approve)" : `roster: ${report.roster}`);
   const multiPolicy = report.policy.length > 1;
   for (const e of report.policy) lines.push(...formatPolicyLines(e, multiPolicy));
   if (report.system) lines.push(`consumer adaptation: ${report.system.consumerNotAdapted} not adapted (${report.system.manifest})`);

@@ -562,10 +562,13 @@ Ground rules, matching the phase's own stance (see
 - If the model and code live in different repos, check both out and point the phase at the
   code path when it asks for the target repo (the state file's `Existing system refs`).
 
-## Ratifier roster gate
+## Ratifier roster gate (optional)
 
-`ratifiedBy:` and `reviewedBy:` are free text, so a PR can type any name into the frontmatter.
-With a roster ([`em-policy.yaml`](slice-doc-schema.md#who-may-ratify) `ratifiers:`/`reviewers:`, or a legacy `ratifiers.yaml`) in the repo, **`em roster check
+`ratifiedBy:` and `reviewedBy:` are free text, so a PR can type any name into the frontmatter. They
+are a **record** of who signed, not a permission: the git host decides who may approve, through the
+[CODEOWNERS rule](#codeowners-routing-ratification-review) below, and that is the primary answer.
+This gate is an opt-in for teams with no host enforcement; skip this section if the host enforces
+review. With a roster ([`em-policy.yaml`](slice-doc-schema.md#who-may-ratify) `ratifiers:`/`reviewers:`, or a legacy `ratifiers.yaml`) in the repo, **`em roster check
 <model>`** is the CI gate: it walks every slice doc and fails (exit 1) when a recorded signer is
 not permitted for the slice's contexts - `ratifiedBy` on `ready-to-implement` **and**
 `implemented` docs, `reviewedBy` on any doc - or when the roster itself is invalid. `--json`
@@ -582,8 +585,8 @@ roster to pick the job up.
 
 `em validate <model> --slice-ready <key>` also reports `ratified-by-not-in-roster`, but only for
 the one slice it is asked about and only while it is `ready-to-implement`; it is the handoff
-check, not the repo-wide gate. The roster itself is reviewed like any other file, so pair it with
-the CODEOWNERS rule below (own `em-policy.yaml` as well as `slices/**`) - otherwise whoever can
+check, not the repo-wide gate. If you opt in, the roster itself is reviewed like any other file, so
+add `em-policy.yaml` to the CODEOWNERS rule below as well as `slices/**` - otherwise whoever can
 edit the doc can edit the list. Adopt it with `em roster init <model>`.
 
 ## CODEOWNERS: routing ratification review
@@ -617,7 +620,7 @@ Notes on the recipe:
   they're out; GitHub accepts either, but a team survives roster changes without editing the
   file.
 - **This is a convention, not something `em` checks.** `em` stays git-only, account-free, and
-  server-free (no concept of "who is a ratifier" lives in the tool or the model) — CODEOWNERS
+  server-free (the host, not the tool, decides who is a ratifier; the roster is an optional extra) — CODEOWNERS
   enforcement lives entirely in your git host's branch protection, alongside whatever other
   required reviews and status checks (e.g. the `em validate` gate above) already apply to the
   same PR.

@@ -16,7 +16,7 @@ amendment:
   prose-sections:                 # overrides em's default prose list
     - Intent
     - Notes
-ratifiers:                        # the roster lists, unchanged: see slice-doc-schema.md#who-may-ratify
+ratifiers:                        # OPTIONAL roster lists (the git host decides who may approve): slice-doc-schema.md#who-may-ratify
   - name: Alex
 reviewers:
   - name: Sam
@@ -34,7 +34,7 @@ key; nothing here is breaking.**
 | `ratification.inline` | `internal` | **Parsed and shown only.** Reserved for the inline-ratification advisory (GH #496). |
 | `ratification.inline-violation` | `advisory` | **Parsed and shown only**, same issue. |
 | `amendment.prose-sections` | em's list: `Intent`, `Trigger & Actor`, `Dependencies & Read Models Affected`, `Consumed by` | Replaces the list that classifies a slice doc's sections as prose or behaviour. A heading not listed is behaviour. Used today by `em export --doc-json`'s per-slice `sections`. |
-| `ratifiers`, `reviewers` | none (unrestricted) | The roster: same shape and meaning as in [slice-doc-schema.md](slice-doc-schema.md#who-may-ratify). |
+| `ratifiers`, `reviewers` | none (the git host decides) | The optional roster: same shape and meaning as in [slice-doc-schema.md](slice-doc-schema.md#who-may-ratify). Declare it only if you have no host enforcement; see [the roster is optional](#the-roster-is-optional). |
 
 Unknown keys, a missing or unsupported `policySchemaVersion`, and a value outside its allowed set are
 `policy-invalid` errors that name the key and the allowed values ([validation.md](validation.md)).
@@ -52,6 +52,16 @@ directory is searched. One file can serve several models.
 An explicit flag on the command line always works. `em slice ratify --no-ref` keeps recording the
 hash only under any `merge:` value. There is **no flag to force a `ratifiedRef:` against
 `merge: squash|rebase`** in this release: change the policy for that.
+
+## The roster is optional
+
+The git host (CODEOWNERS and branch protection) is the authority on who may approve a change; see
+[ci.md](ci.md#codeowners-routing-ratification-review). The roster is a second, weaker list that
+stays available as an opt-in for teams with no host enforcement. **`ratifiedBy:` is a record of who
+signed, not a permission.** `--by` is free text and unauthenticated; the authenticated approval is
+the host's review of the pull request that carries the sign-off. With no `ratifiers:`/`reviewers:`
+lists, em checks nothing about who signs, `em ci init` emits no roster job, and `em status` reads
+`roster: none`. With a roster declared, every roster check works exactly as before.
 
 ## The roster moved here
 

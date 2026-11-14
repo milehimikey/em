@@ -1179,7 +1179,7 @@ slice
   .option("--storyline <name>", "review every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
-  .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = unrestricted; either file may be named)")
+  .option("--roster <path>", "optional ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = no check, the git host decides who may approve; either file may be named)")
   .option("--again", "re-record reviewedBy/reviewedOn on a doc already `status: reviewed` (prints old -> new); still refused on ready-to-implement/implemented")
   .option("--allow-open", "record the review although `## Open Questions` has unchecked items (a deliberately partial walk); prints a notice with the open count")
   .action((file: string, sliceKeys: string[], opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean; storyline?: string }) => {
@@ -1314,7 +1314,7 @@ slice
       "points at a commit a squash or rebase merge would orphan; the uncommitted-changes check does not apply",
   )
   .option("--on <date>", "ratification date, YYYY-MM-DD (default: today, local date)")
-  .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = unrestricted; either file may be named)")
+  .option("--roster <path>", "optional ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = no check, the git host decides who may approve; either file may be named)")
   .option(
     "--skip-review",
     "ratify without a recorded review — prints a loud notice on stderr and records `reviewSkipped: <status>` on the doc " +
@@ -1438,7 +1438,7 @@ slice
   .requiredOption("--by <name>", "the amender's name (a human, as for ratify)")
   .option("--on <date>", "amendment date, YYYY-MM-DD (default: today, local date)")
   .option("--no-ref", "record ratifiedHash: only, no ratifiedRef: (as `em slice ratify --no-ref`, GH #255); a stale ratifiedRef: is dropped")
-  .option("--roster <path>", "ratifier roster to check --by against (default: the nearest ratifiers.yaml above the model, none = unrestricted)")
+  .option("--roster <path>", "optional ratifier roster to check --by against (default: the nearest ratifiers.yaml above the model, none = no check, the git host decides who may approve)")
   .action((file: string, sliceKey: string, opts: { by: string; on?: string; ref?: boolean; roster?: string }) => {
     // GH #493: the policy's merge setting applies to an amendment as it does to ratify, and an invalid
     // em-policy.yaml refuses the write (the prose list would otherwise fall back to the default).
@@ -2676,8 +2676,8 @@ program
   )
   .option(
     "--roster <path>",
-    "with --slice-ready (GH #259): the ratifier roster to check `ratifiedBy` against (default: the nearest " +
-      "em-policy.yaml (or legacy ratifiers.yaml) above the model; none = unrestricted). A name the roster does not permit for the slice's " +
+    "with --slice-ready (GH #259): the optional ratifier roster to check `ratifiedBy` against (default: the nearest " +
+      "em-policy.yaml (or legacy ratifiers.yaml) above the model; none = no check, the git host decides who may approve). A name the roster does not permit for the slice's " +
       "context is `ratified-by-not-in-roster` (error)",
   )
   .option(
@@ -3794,7 +3794,7 @@ const rosterCommand = program
 rosterCommand
   .command("init")
   .description(
-    "write em-policy.yaml beside the model, seeded from the names already recorded in the slice docs' " +
+    "OPTIONAL (the git host decides who may approve): write em-policy.yaml beside the model, seeded from the names already recorded in the slice docs' " +
       "`ratifiedBy:`/`reviewedBy:` (whole-model entries; narrow them with `contexts:` by hand). Refuses " +
       "to overwrite an existing file unless --force; `em upgrade`'s grandfathered placeholder is not a name",
   )
