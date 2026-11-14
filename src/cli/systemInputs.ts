@@ -19,7 +19,8 @@
 
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
-import { compile } from "../pipeline.js";
+import { compileModelFile } from "../pipeline.js";
+import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
 import { hasErrors } from "../model/validate.js";
 import { buildExportDoc } from "../emit/json.js";
@@ -214,7 +215,7 @@ export function loadSource(file: string): LoadedSource {
   }
   if (extname(file).toLowerCase() === ".em") {
     try {
-      const { model, refs, diagnostics } = compile(text);
+      const { model, refs, diagnostics } = compileModelFile(file); // GH #475: root + storyline model files
       if (hasErrors(diagnostics)) {
         return { error: `${file} has validation errors — run \`em validate ${file}\` and fix them first` };
       }
@@ -224,6 +225,7 @@ export function loadSource(file: string): LoadedSource {
       return { sourceKind: "em", doc, model };
     } catch (e) {
       if (e instanceof ParseError) return { error: `parse error in ${file} ${e.message}` };
+      if (e instanceof ModelLoadError) return { error: e.message };
       throw e;
     }
   }

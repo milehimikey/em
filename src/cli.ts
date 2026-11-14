@@ -3161,6 +3161,10 @@ function compileFilesForQuery(files: string[]): QuerySystem {
         console.error(`parse error in ${file} ${e.message}`);
         process.exit(1);
       }
+      if (e instanceof ModelLoadError) {
+        console.error(e.message);
+        process.exit(1);
+      }
       throw e;
     }
     printDiagnosticsFor(file, compiled.diagnostics);

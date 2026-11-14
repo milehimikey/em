@@ -392,7 +392,13 @@ function computeSeamCrossings(repoRoot: string, from: string, to: string, runGit
     const heads: HeadModel[] = [];
     for (const rel of files) {
       const show = runGit(["-C", repoRoot, "show", `${hash}:${rel}`]);
-      const doc = show.status === 0 ? docFromText(show.stdout, rel) : null;
+      const doc =
+        show.status === 0
+          ? docFromText(show.stdout, rel, (r) => {
+              const s = runGit(["-C", repoRoot, "show", `${hash}:${r}`]);
+              return s.status === 0 ? s.stdout : null;
+            })
+          : null;
       if (doc !== null) heads.push({ key: doc.model.key, rel, doc });
     }
     const renames = new Map(entries.filter((e) => e.oldPath !== null).map((e) => [e.path, e.oldPath as string]));

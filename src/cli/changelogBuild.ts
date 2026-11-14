@@ -9,9 +9,10 @@
 // impure bit (`readFileAtCommit`, a `git show`) is injected in, same convention as
 // changelog-git.ts/diff-inputs.ts's GitRunner.
 
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { compile } from "../pipeline.js";
+import { compileModelText } from "../pipeline.js";
+import { ModelLoadError } from "../model/loadModel.js";
 import { ParseError } from "../parser/parser.js";
 import { hasErrors } from "../model/validate.js";
 import { NormalizedModel } from "../model/model.js";
@@ -19,6 +20,7 @@ import { RefsResult } from "../model/refs.js";
 import { diffModels } from "../model/diff.js";
 import { buildChangelog, parseDecisionsLog, ChangelogEntry, ChangelogIntro } from "../emit/changelog.js";
 import { readFileAtCommit, CommitInfo } from "./changelog-git.js";
+import { GitRunner, realGit } from "./diff-inputs.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 
 /**
@@ -31,13 +33,13 @@ import { STATE_FILE_NAME } from "./stateFile.js";
  * it. Content is read at each commit's own path (`readFileAtCommit`), so the walk survives
  * renames.
  */
-export function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[]): string {
+export function buildChangelogDoc(file: string, repoRoot: string, commits: CommitInfo[], runGit: GitRunner = realGit): string {
   const models: (NormalizedModel | null)[] = [];
   const refsList: (RefsResult | null)[] = [];
   const errors: (string | null)[] = [];
 
   for (const c of commits) {
-    const rev = readFileAtCommit(repoRoot, c);
+    const rev = readFileAtCommit(repoRoot, c, runGit);
     if (!rev.ok) {
       models.push(null);
       refsList.push(null);
@@ -45,7 +47,14 @@ export function buildChangelogDoc(file: string, repoRoot: string, commits: Commi
       continue;
     }
     try {
-      const { model, refs, diagnostics } = compile(rev.content);
+      // GH #475: a storyline root's model files are read at the same commit, next to the root's
+      // path AS OF that commit (so the walk survives renames of the root or its directory).
+      const read = (rel: string): string => {
+        const show = runGit(["-C", repoRoot, "show", `${c.hash}:${posix.join(posix.dirname(c.path), rel)}`]);
+        if (show.status !== 0) throw new Error((show.stderr || "").trim() || "unknown git error");
+        return show.stdout;
+      };
+      const { model, refs, diagnostics } = compileModelText(rev.content, read, c.path);
       if (hasErrors(diagnostics)) {
         models.push(null);
         refsList.push(null);
@@ -58,7 +67,7 @@ export function buildChangelogDoc(file: string, repoRoot: string, commits: Commi
     } catch (e) {
       models.push(null);
       refsList.push(null);
-      errors.push(e instanceof ParseError ? `parse error: ${e.message}` : e instanceof Error ? e.message : String(e));
+      errors.push(e instanceof ParseError ? `parse error: ${e.message}` : e instanceof ModelLoadError ? `${e.message} (at ${c.shortHash})` : e instanceof Error ? e.message : String(e));
     }
   }
 
