@@ -47,9 +47,12 @@ three specific points:
    `em slice ratify <model>.em <key> --by <name>` (MIL-165) makes the sign-off itself a
    mechanical, one-edit act, recording *who* ratified it and *when* in `ratifiedBy:`/
    `ratifiedOn:` frontmatter alongside the `status` flip
-   ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)) — pair it with a
-   [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**` so the edit
-   itself can't merge without review by a designated ratifier.
+   ([cli.md](cli.md#em-slice-ratify-file-slice-key---by-name)). `ratifiedBy:` is a *record* of who
+   signed, not a permission: `--by` is free text and unauthenticated, and the authenticated approval is
+   your git host's review of the pull request that carries the sign-off. Who may approve is the host's
+   decision — a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on `slices/**` plus
+   branch protection means the edit can't merge without review by a designated ratifier. (An optional
+   [roster](policy.md#the-roster-is-optional) exists for teams with no host enforcement.)
    **Revising** a slice that already shipped is the same act for a change: `em slice revise
    <model>.em <key>` (MIL-283, [cli.md](cli.md#em-slice-revise-file-slice-key)) opens the next
    version as a `draft` — `version:` bumped, the prior sign-off cleared, the shipped version kept
@@ -127,7 +130,7 @@ draft ──(review session)──▶ reviewed ──(ratification gate)──�
    mechanical edit recording `ratifiedBy:`/`ratifiedOn:`, and it **refuses a doc that never passed
    through `reviewed`** unless `--skip-review` is passed (which prints a loud notice on stderr and
    writes nothing about the skip into the doc). The "multi-person" part is routed by the platform,
-   not by `em`: put a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on
+   not by `em`: the git host decides who may approve. Put a [CODEOWNERS](ci.md#codeowners-routing-ratification-review) rule on
    `slices/**` naming your ratifiers, so the edit itself can't merge without their review.
    Confirm readiness mechanically with `em validate <model>.em --slice-ready <key>`.
    **Ratification is the handoff gate, so time it that way.** Hold slices at `reviewed` while a

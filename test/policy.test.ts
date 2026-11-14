@@ -190,6 +190,22 @@ describe("policy through the CLI", () => {
   });
   afterEach(() => rmTemp(dir));
 
+  it("GH #495: em ci init emits no roster job for a policy file without lists, and one when lists are declared", () => {
+    writeFileSync(join(dir, "em-policy.yaml"), `${V}merge: squash\n`);
+    expect(em(["ci", "init", "model.em"], dir).status).toBe(0);
+    const wf = join(dir, ".github", "workflows", "em-ci.yml");
+    expect(readFileSync(wf, "utf8")).not.toContain("em roster check");
+    writeFileSync(join(dir, "em-policy.yaml"), `${V}ratifiers:\n  - name: Alex\n`);
+    expect(em(["ci", "init", "model.em", "--force"], dir).status).toBe(0);
+    expect(readFileSync(wf, "utf8")).toContain("em roster check");
+  });
+
+  it("GH #495: em status reads 'roster: none' as a normal state, JSON unchanged", () => {
+    const text = em(["status", "model.em"], dir).stdout;
+    expect(text).toContain("roster: none (optional; the git host decides who may approve)");
+    expect(JSON.parse(em(["status", "model.em", "--json"], dir).stdout).roster).toBe("absent");
+  });
+
   it.each(["squash", "rebase"])("merge: %s makes ratify hash-only and says policy set it", (strategy) => {
     writeFileSync(join(dir, "em-policy.yaml"), `${V}merge: ${strategy}\n`);
     const r = ratify();

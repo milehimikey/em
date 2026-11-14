@@ -93,9 +93,10 @@ convention, not parser-enforced.
 
 ## Who may ratify
 
-The schema records *who* signed (`reviewedBy`, `ratifiedBy`) but, by default, accepts any
-non-empty name: who is allowed to sign is the host repo's decision. A host that wants em to
-enforce it supplies an optional **roster**: the `ratifiers:` / `reviewers:` lists of the project's
+The schema records *who* signed (`reviewedBy`, `ratifiedBy`) but accepts any non-empty name:
+`ratifiedBy` is a record, not a permission, and who may approve is decided by the git host
+(CODEOWNERS and branch rules, see [ci.md](ci.md#codeowners-routing-ratification-review)). A team with
+no host enforcement can opt in to em checking it by supplying an optional **roster**: the `ratifiers:` / `reviewers:` lists of the project's
 `em-policy.yaml` (GH #493), beside the model. See
 [examples/order-fulfillment/em-policy.yaml](https://github.com/milehimikey/em/blob/main/examples/order-fulfillment/em-policy.yaml).
 The file also carries the project's other process policy; the roster lists are one part of it.
@@ -145,7 +146,7 @@ reviewers:                           # optional; same shape, checked by `em slic
   `system.yaml` does not list is `roster-invalid`.
 - **Validation against the model.** A `contexts:` entry the model does not declare (case-sensitive)
   is `roster-invalid`, naming the context; only entries that apply to the model are checked.
-- **No roster: today's behaviour**, no warning. **File present but invalid: fail closed** -
+- **No roster: the normal state**, no warning; the host decides who may approve. **File present but invalid: fail closed** -
   `ratify` and `review` refuse, `--slice-ready` and `roster check` report `roster-invalid`.
 - **`grandfathered (unsigned before em 1.14)`** is em's own migration marker (`em upgrade`'s
   `ratified-signoff`), not a signer: exempt from the `--slice-ready` check and from `roster check`
