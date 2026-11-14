@@ -201,3 +201,14 @@ export function classifySections(markdown: string, proseHeadings: readonly strin
   }
   return out;
 }
+
+/**
+ * GH #488: the prose headings in force for the model rooted at `baseDir` — the one place a reader
+ * (`em slice amend` today) asks "which sections are prose?". Returns `DEFAULT_PROSE_HEADINGS`
+ * for now; a per-project policy file (GH #493) wires in here later, so callers never read a
+ * policy themselves.
+ */
+export function proseHeadingsFor(baseDir: string): readonly string[] {
+  void baseDir;
+  return DEFAULT_PROSE_HEADINGS;
+}

@@ -225,11 +225,11 @@ describe("em export (CLI)", () => {
 });
 
 describe("em export --doc-json (CLI, GH #401)", () => {
-  it("emits the structured doc export under its own schema version (1.1), not the model schema", () => {
+  it("emits the structured doc export under its own schema version (1.2), not the model schema", () => {
     const r = em(["export", "clean.em", "--doc-json"], dir);
     expect(r.status).toBe(0);
     const doc = JSON.parse(r.stdout); // throws if warning text leaked into stdout
-    expect(doc.schemaVersion).toBe("1.1");
+    expect(doc.schemaVersion).toBe("1.2");
     expect(doc.model.invariants).toBeDefined(); // the model-level invariant catalog
     expect(doc.model.slices[0]).toHaveProperty("errorFlows");
     expect(doc.model.slices[0]).toHaveProperty("openQuestions");

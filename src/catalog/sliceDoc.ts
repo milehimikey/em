@@ -212,6 +212,11 @@ export interface SliceDoc {
    *  null when the ratification passed the review gate, or the doc predates 1.17. Written only
    *  by `em slice ratify`, cleared by `em slice revise` with the rest of the sign-off. */
   reviewSkipped: string | null;
+  /** GH #488: `amendedBy:` / `amendedOn:` — who re-signed a prose-only change in place
+   *  (`em slice amend`), and when; the latest amendment only. Null when never amended. Cleared by
+   *  `em slice revise` with the rest of the sign-off. */
+  amendedBy: string | null;
+  amendedOn: string | null;
   /** True when a well-formed leading `---`/`---` frontmatter fence was found and
    *  closed — independent of which keys it contained. False for a legacy
    *  status-bullet-only doc, a doc with no frontmatter at all, or an
@@ -732,6 +737,8 @@ export function parseSliceDoc(markdown: string): SliceDoc {
     meaningConfirmed: fields.get("meaningconfirmed")?.toLowerCase() === "true",
     contractChange: fields.get("contractchange") ?? null,
     reviewSkipped: fields.get("reviewskipped") ?? null,
+    amendedBy: fields.get("amendedby") ?? null,
+    amendedOn: fields.get("amendedon") ?? null,
     frontmatterPresent,
     missingRequiredFields: REQUIRED_FRONTMATTER_KEYS.filter((k) => !fields.has(k)),
     html: renderSliceDocBodyHtml(body),

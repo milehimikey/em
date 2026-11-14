@@ -41,7 +41,10 @@ import { extractDeclaredInvariantRules, INV_TOKEN_RE } from "../cli/coverage.js"
 // 1.1 (GH #487): per-slice `sections` — `{ heading, class, changed }[]`, the doc's authored `##`
 // sections classed prose/behaviour with whether each changed since sign-off (`changed: null` when
 // the doc records no `ratifiedSections:`); `null` when no usable doc is bound. Additive-only.
-export const DOC_EXPORT_SCHEMA_VERSION = "1.1";
+// 1.2 (GH #488): per-slice `amendedBy` / `amendedOn` — who re-signed a prose-only change in place
+// (`em slice amend`) and when; `null` each when the doc was never amended or no doc is bound.
+// Exposed here only: the model export's `slice.doc` is unchanged (no model schema bump). Additive-only.
+export const DOC_EXPORT_SCHEMA_VERSION = "1.2";
 
 /** One field-table row as data — `name`/`type` are the first two columns of the generated table,
  *  `notes` is the remaining column(s) (Required+Rules for a command, Source/Notes for an event or
@@ -96,6 +99,10 @@ export interface DocJsonSlice {
    *  `behaviour`, default list in catalog/sectionSignature.ts) and `changed` since sign-off
    *  (`null` when the doc records no `ratifiedSections:`). `null` when no doc is bound. */
   sections: SectionStatus[] | null;
+  /** GH #488 (schema 1.2): frontmatter `amendedBy:` / `amendedOn:` — the latest in-place prose
+   *  amendment (`em slice amend`); `null` when never amended, or when no doc is bound. */
+  amendedBy: string | null;
+  amendedOn: string | null;
   /** The doc body rendered to HTML (the existing `marked` path) — present only with
    *  `--include-html`; `null` when no usable doc is bound. */
   html?: string | null;
@@ -265,6 +272,8 @@ export function buildDocJsonExport(
       errorFlows: errorFlows(body),
       openQuestions: openQuestions(body),
       sections: parsed ? classifySections(parsed.raw) : null,
+      amendedBy: parsed?.amendedBy ?? null,
+      amendedOn: parsed?.amendedOn ?? null,
     };
     if (opts.includeHtml) slice.html = parsed?.html ?? null;
     return { slice, body };

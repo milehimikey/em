@@ -743,7 +743,7 @@ re-parsing `slices/*.md` themselves. It serialises the parse em already does —
 re-parsed ad hoc. Whole model only; it does not combine with `--slice` (that is a usage error).
 Refuses on errors, same gate as a full export.
 
-It carries its **own schema version**, `schemaVersion: "1.1"` (the `DOC_EXPORT_SCHEMA_VERSION`
+It carries its **own schema version**, `schemaVersion: "1.2"` (the `DOC_EXPORT_SCHEMA_VERSION`
 constant), independent of the model export's `schemaVersion` above: the doc-structure shape
 evolves on its own cadence, and a plain `em export` stays byte-for-byte unchanged. The authored
 markdown body still never appears in a plain export; here the rendered HTML is opt-in via
@@ -751,7 +751,7 @@ markdown body still never appears in a plain export; here the rendered HTML is o
 
 ```json
 {
-  "schemaVersion": "1.1",
+  "schemaVersion": "1.2",
   "generator": { "name": "@milehimikey/em", "version": "…" },
   "source": { "path": "model.em", "sha256": "…" },
   "model": {
@@ -817,6 +817,9 @@ markdown body still never appears in a plain export; here the rendered HTML is o
   Questions deferrals); `null` for every section when the doc records none — ratified before
   1.23.0 and not yet stamped by `em upgrade`'s `ratified-sections` step. `null` (the whole field)
   when no usable doc is bound. The model export (`em export`) is unchanged.
+- `amendedBy`, `amendedOn` (schema `1.2`, GH #488) — the doc's frontmatter `amendedBy:`/`amendedOn:`, the latest
+  in-place prose amendment (`em slice amend`); `null` each when never amended or no usable doc is bound.
+  Exposed here only — the model export's `slice.doc` does not carry them.
 - `html` — present on each slice only with `--include-html` (the rendered doc body, `null` when no
   usable doc is bound).
 
@@ -4341,6 +4344,64 @@ warn: ratifying "<key>" moved the model past v<N> — run `em model version bump
 
 Silent when no manifest exists at all — a repo that's never bumped a design version isn't
 nagged. Advisory only, same never-refuses posture as the upstream advisory above.
+
+## `em slice amend <file> <slice-key> --by <name>`
+
+Re-signs a **prose-only** change to a signed slice doc in place (GH #488, 1.23.0). A one-word fix
+to a ratified doc used to cost what a rewrite costs — `em slice revise`, a review session,
+`em slice ratify`, a reviewed PR and a stopped build in between. The 1.15.0 rule "a new version
+takes both gates" is relaxed for **confined** changes: confined means every changed section is
+prose and the public surface is untouched. A behaviour change keeps both gates. Agents still never
+run this on their own behalf — `--by` names a human, same as `ratify`.
+
+```
+em slice amend model.em place-order --by "Alice Smith"
+em slice amend model.em place-order --by "Alice Smith" --on 2026-11-13 --no-ref
+```
+
+Legal when the doc is `status: ready-to-implement` with a recorded `ratifiedBy` and
+`ratifiedHash`, or shipped (`status: implemented`), **and** its body no longer matches
+`ratifiedHash`:
+
+- body still matches: a no-op that says so, exit 0;
+- `draft` / `reviewed`: refused — nothing is signed, just edit the doc;
+- no sign-off or no `ratifiedHash`: refused, pointing at `em slice ratify`;
+- no `ratifiedSections:` (signed before 1.23.0): refused — run `em upgrade` while the body still
+  matches (revert the edit first), or re-sign with `em slice revise` and `em slice ratify`;
+- any changed section of class **behaviour**: refused (exit 1, file untouched) with the headings
+  named, pointing at `em slice revise` (`--withdraw` for a never-shipped doc). The prose headings are
+  `Intent`, `Trigger & Actor`, `Dependencies & Read Models Affected` and `Consumed by`; any other
+  heading, or an unrecognised one, is behaviour ([slice-doc-schema.md](slice-doc-schema.md));
+- a public-touching slice whose committed contract is stale (the `slice-ready-contract-stale` check
+  `--slice-ready` runs) is refused — run `em api generate` first. A prose-only change cannot itself
+  move the public surface (it lives in the model and the generated contract, not in authored prose
+  sections), so this only stops an amendment from re-signing over a gate readiness would fail.
+
+On success it makes surgical frontmatter edits and never touches the body:
+
+```yaml
+ratifiedRef: <full commit sha>      # as ratify: HEAD inside git; dropped with --no-ref / outside git
+ratifiedHash: sha256:<hex>          # re-stamped to the amended body
+ratifiedSections: <heading>=<hex>; … # re-stamped
+amendedBy: <name>                   # new — the latest amendment wins; an earlier pair is replaced
+amendedOn: <date>
+```
+
+`version:`, `status:`, `ratifiedBy`/`ratifiedOn`, `reviewedBy`/`reviewedOn`,
+`meaningConfirmed`/`contractChange`, `implementedIn`, and the `shipped*` and `conformed*` keys are
+left alone, so `em validate --slice-ready` passes again and an in-flight build does not stop; on a
+shipped doc it re-signs at the shipped version and opens no draft. There is no `amendments:` count:
+the doc's git history is the audit trail, and a counter would be a second source of truth. For an
+unshipped slice the amendment travels in the implementation PR that found the gap, so that PR's
+reviewer sees the doc diff.
+
+`ratifiedRef:` follows `ratify`'s rule: inside a git work tree it refuses a doc with uncommitted
+changes (commit the prose edit first) and records `HEAD`; `--no-ref`, or no git, records the hash
+only and drops a stale `ratifiedRef:`. A doc shipped before 1.15 (`status: implemented` with no
+`shippedVersion:`) has its shipped record read from `ratifiedRef:`, so that line is left untouched.
+`--on <date>` defaults to today. `--roster <path>` and the default roster discovery check `--by`
+exactly as `ratify` does (the `ratifiers` list). `em slice revise` clears `amendedBy`/`amendedOn`
+with the rest of the sign-off.
 
 ## `em slice mark-implemented <file> <slice-key> <pr-url>`
 

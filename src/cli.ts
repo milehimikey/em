@@ -125,6 +125,7 @@ import { buildCatalog, CatalogModelInput } from "./catalog/build.js";
 import { planCatalogArgs } from "./cli/catalog-inputs.js";
 import { runSliceIndex } from "./cli/sliceIndex.js";
 import { formatNextDraftNotice, runMarkImplemented } from "./cli/markImplemented.js";
+import { runAmend } from "./cli/amend.js";
 import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
 import { certifyRuledSlices, runConformSupersede } from "./cli/conformSupersede.js";
@@ -1353,6 +1354,66 @@ slice
       warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);
     },
   );
+
+slice
+  .command("amend")
+  .description(
+    "re-sign a PROSE-ONLY change to a signed slice doc in place (GH #488) — the confined-change " +
+      "path that spares `em slice revise`, review and ratification. Legal on a `ready-to-implement` doc " +
+      "with a recorded sign-off, or a shipped (`implemented`) one, whose body no longer matches " +
+      "`ratifiedHash:`; a body that still matches is a no-op. Succeeds only when every changed section is " +
+      "prose (`Intent`, `Trigger & Actor`, `Dependencies & Read Models Affected`, `Consumed by`) and, for a " +
+      "public-touching slice, the committed contract is current; any changed behaviour section is refused " +
+      "(exit 1, nothing written) with the headings named. Re-stamps `ratifiedHash:`/`ratifiedSections:` " +
+      "(and `ratifiedRef:` as `ratify` does — HEAD inside git, refusing an uncommitted doc; hash only with " +
+      "--no-ref) and records `amendedBy:`/`amendedOn:`; `version:`, `status:`, the sign-off, review and " +
+      "shipped records and the body are untouched, so the slice stays `--slice-ready` and a shipped one " +
+      "opens no draft. `--by` names a human, never an agent",
+  )
+  .argument("<file>", "input .em file")
+  .argument("<slice-key>", "slice export key (kebab-case)")
+  .requiredOption("--by <name>", "the amender's name (a human, as for ratify)")
+  .option("--on <date>", "amendment date, YYYY-MM-DD (default: today, local date)")
+  .option("--no-ref", "record ratifiedHash: only, no ratifiedRef: (as `em slice ratify --no-ref`, GH #255); a stale ratifiedRef: is dropped")
+  .option("--roster <path>", "ratifier roster to check --by against (default: the nearest ratifiers.yaml above the model, none = unrestricted)")
+  .action((file: string, sliceKey: string, opts: { by: string; on?: string; ref?: boolean; roster?: string }) => {
+    const noRef = opts.ref === false;
+    const { model, refs, diagnostics, source } = compileFile(file);
+    printDiagnostics(diagnostics);
+    sliceKey = resolveSliceOrExit("em slice amend", model, refs, sliceKey);
+
+    const scopedErrors = diagnostics.filter(
+      (d) => d.severity === "error" && d.refs?.some((r) => r === sliceKey || r.startsWith(`${sliceKey}/`)),
+    );
+    if (scopedErrors.length > 0) {
+      console.error(`em slice amend: slice "${sliceKey}" has errors — fix them first`);
+      process.exit(1);
+    }
+
+    const rosterRefused = checkRosterForWrite(loadRoster(dirname(file), opts.roster, rosterContextFor(model, file)), "ratifiers", opts.by, model, refs.sliceKeys.indexOf(sliceKey), computeModelKey(model, file));
+    if (rosterRefused !== null) {
+      console.error(`em slice amend: ${rosterRefused}`);
+      process.exit(1);
+    }
+
+    if (opts.on !== undefined && !isValidDateString(opts.on)) {
+      console.error(`em slice amend: invalid --on date "${opts.on}" — expected YYYY-MM-DD`);
+      process.exit(1);
+    }
+    const amendedOn = opts.on ?? localIsoDate();
+
+    const result = runAmend(model, refs, dirname(file), sliceKey, opts.by, amendedOn, { file, source, diagnostics }, undefined, noRef);
+    if (!result.ok) {
+      console.error(`em slice amend: ${result.message}`);
+      process.exit(1);
+    }
+    console.log(
+      result.changed
+        ? `amended: ${result.path} (amendedBy: ${opts.by}, amendedOn: ${amendedOn}; prose changed: ${result.changedProse.join(", ") || "none (text moved only)"})` +
+            (noRef ? " — ratifiedHash only, no ratifiedRef (--no-ref)" : "")
+        : `body matches ratifiedHash — nothing to amend (no-op): ${result.path}`,
+    );
+  });
 
 /** MIL-283: `em slice revise` and its deprecated alias `em slice reratify` share one action. */
 function reviseAction(commandName: "revise" | "reratify") {
