@@ -295,9 +295,8 @@ Update the state file's `Last conformance:` marker (`em state set-conformance` â
 while any `implemented` slice still has an unruled finding, `--partial` escapes with a loud
 notice) and you're back at stage 1 with a model you have fresh evidence to trust. A full
 (non-`--partial`) run also certifies the model's current **design version** (MIL-218,
-[process.md#model-versions](process.md#model-versions)) â€” bump one first (`em model version
-bump <model>.em --by <name>`) if this is the first-ever run or the model changed since the
-last bump.
+[process.md#model-versions](process.md#model-versions)); when there is none yet, or the model
+changed since the last bump, pass `--by <name>` and the run bumps first, then certifies.
 
 ## Several models: seams and contracts
 

@@ -81,11 +81,13 @@ runs exactly that version inside the repo:
 Keep the two pins on the same version — the mise line and the plugin's `extraKnownMarketplaces`
 key — and the CLI, the skills and the MCP server cannot skew from each other. Commit both.
 
-Upgrading is then two edits: `em upgrade --apply` moves the plugin pin (and everything else in
-the repo it knows how to migrate), and you bump the `mise.toml` line by hand — `em upgrade` does
-not touch it yet. Until it does, `em skill check --ci` in the pipeline is the backstop: a
-contributor whose `em` disagrees with the committed plugin pin fails on `plugin-pin-mismatch`
-instead of producing silently different output.
+Upgrading is one step: `em upgrade --apply` moves the plugin pin, the `mise.toml` line (the
+`mise-pin` step rewrites only that version value, in its own commit, and never creates a
+`mise.toml`) and everything else in the repo it knows how to migrate; then run `mise install`.
+`em skill check --ci` in the pipeline is the backstop: a contributor whose `em` disagrees with the
+committed plugin pin fails on `plugin-pin-mismatch`, and a `mise.toml` that disagrees with the
+plugin pin (or, without the plugin, with the installed `em`) fails on `mise-pin-mismatch` with the
+`mise use npm:@milehimikey/em@<ver>` fix line, instead of producing silently different output.
 
 **Without mise.** Run the CLI through `npx` with the exact version, which needs no install at
 all — this is what the generated CI workflow does (`npx @milehimikey/em@<version> ...`, see

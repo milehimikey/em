@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync, rmSync } from "node:fs";
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,6 +103,7 @@ import { buildMetricsJson } from "./emit/metricsJson.js";
 import { planSkillSyncBundle, applySkillSyncBundle, planAgentSync, applySkillSync } from "./cli/skillSync.js";
 import { checkSkillSyncBundle, checkAgentFiles } from "./cli/skillCheck.js";
 import { buildSkillCheckJson } from "./emit/skillCheckJson.js";
+import { checkMisePin } from "./cli/misePin.js";
 import { checkPlugin, claudePluginsDir, detectPlugin, pluginInstallCommands } from "./cli/pluginPin.js";
 import { readContract } from "./cli/contract.js";
 import { EM_SKILL_DIR_NAMES, EM_SHARED_DIR_NAMES, EM_ALL_SKILL_BUNDLE_DIRS, EM_SKILL_ANCHOR_DIR, EM_AGENT_FILES, resolveVendoredDirs, VendoredDirs } from "./cli/skillDirs.js";
@@ -128,6 +129,7 @@ import { formatNextDraftNotice, runMarkImplemented } from "./cli/markImplemented
 import { runAmend } from "./cli/amend.js";
 import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
+import { runBatch, BatchInput } from "./cli/batchSign.js";
 import { certifyRuledSlices, runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
@@ -170,6 +172,7 @@ import {
   findCertifiedVersion,
   latestModelVersionNumber,
   modelVersionDrift,
+  modelVersionManifestPath,
   runCertifyModelVersion,
   runModelVersionBump,
 } from "./cli/modelVersion.js";
@@ -1170,13 +1173,18 @@ slice
       "refuses a doc already `ready-to-implement`/`implemented`; never touches `version:` or the doc body",
   )
   .argument("<file>", "input .em file")
-  .argument("<slice-key>", "slice export key (kebab-case)")
+  .argument("[slice-key...]", "slice export key (kebab-case); two or more keys review them as one all-or-nothing batch (GH #491)")
+  .option("--storyline <name>", "review every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
   .option("--roster <path>", "ratifier roster to check --by against (GH #259; default: the nearest ratifiers.yaml above the model, none = unrestricted)")
   .option("--again", "re-record reviewedBy/reviewedOn on a doc already `status: reviewed` (prints old -> new); still refused on ready-to-implement/implemented")
   .option("--allow-open", "record the review although `## Open Questions` has unchecked items (a deliberately partial walk); prints a notice with the open count")
-  .action((file: string, sliceKey: string, opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean }) => {
+  .action((file: string, sliceKeys: string[], opts: { by: string; on?: string; roster?: string; again?: boolean; allowOpen?: boolean; storyline?: string }) => {
+    if (isBatchRequest("em slice review", sliceKeys, opts.storyline, undefined)) {
+      return batchAction({ kind: "review", file, keys: sliceKeys, storyline: opts.storyline, by: opts.by, on: opts.on, roster: opts.roster, again: opts.again, allowOpen: opts.allowOpen });
+    }
+    let sliceKey = sliceKeys[0];
     const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     sliceKey = resolveSliceOrExit("em slice review", model, refs, sliceKey);
@@ -1224,7 +1232,53 @@ slice
     );
   });
 
-/** MIL-238: `, meaningConfirmed: true` / `, contractChange: "<why>"` for a success line, or "". */
+/** GH #491: is this `em slice review|ratify` a batch (two or more keys, or --storyline)? Exits 1 on
+ *  a misuse: no key and no --storyline, keys together with --storyline, or (ratify) the per-slice
+ *  --meaning-unchanged/--contract-change with a batch. A single key is not a batch: it keeps today's path. */
+function isBatchRequest(
+  command: string,
+  keys: string[],
+  storyline: string | undefined,
+  ratifyFlags: { meaningUnchanged?: boolean; contractChange?: string } | undefined,
+): boolean {
+  if (keys.length === 0 && storyline === undefined) {
+    console.error("error: missing required argument 'slice-key' (or pass --storyline <name>)");
+    process.exit(1);
+  }
+  if (keys.length > 0 && storyline !== undefined) {
+    console.error(`${command}: --storyline cannot be combined with slice keys`);
+    process.exit(1);
+  }
+  const batch = storyline !== undefined || keys.length > 1;
+  if (batch && ratifyFlags && (ratifyFlags.meaningUnchanged || ratifyFlags.contractChange !== undefined)) {
+    console.error(
+      `${command}: --meaning-unchanged/--contract-change answer for one slice and cannot be used with a batch — ` +
+        "ratify the public-touching slice singly",
+    );
+    process.exit(1);
+  }
+  return batch;
+}
+
+/** GH #491: the shared body of a batch review/ratify — compile, plan every slice, write only if all pass. */
+function batchAction(a: Omit<BatchInput, "model" | "refs" | "diagnostics" | "on"> & { on?: string }): void {
+  const command = `em slice ${a.kind}`;
+  const { model, refs, diagnostics } = compileFile(a.file);
+  printDiagnostics(diagnostics);
+  if (a.on !== undefined && !isValidDateString(a.on)) {
+    console.error(`${command}: invalid --on date "${a.on}" — expected YYYY-MM-DD`);
+    process.exit(1);
+  }
+  const result = runBatch({ ...a, model, refs, diagnostics, on: a.on ?? localIsoDate() });
+  if (!result.ok) {
+    for (const line of result.errors) console.error(line);
+    process.exit(1);
+  }
+  for (const line of result.stderr) console.error(line);
+  for (const line of result.stdout) console.log(line);
+}
+
+/** MIL-238: `, meaningConfirmed: true` /`, contractChange: "<why>"` for a success line, or "". */
 function confirmationSuffix(c: MeaningConfirmation | null): string {
   return c ? `, ${meaningConfirmationLine(c)}` : "";
 }
@@ -1249,7 +1303,8 @@ slice
       "git is not consulted",
   )
   .argument("<file>", "input .em file")
-  .argument("<slice-key>", "slice export key (kebab-case)")
+  .argument("[slice-key...]", "slice export key (kebab-case); two or more keys ratify them as one all-or-nothing batch (GH #491)")
+  .option("--storyline <name>", "ratify every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys; a public-touching slice is refused from a batch")
   .requiredOption("--by <name>", "the ratifier's name")
   .option(
     "--no-ref",
@@ -1276,9 +1331,13 @@ slice
   .action(
     (
       file: string,
-      sliceKey: string,
-      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string; ref?: boolean; roster?: string },
+      sliceKeys: string[],
+      opts: { by: string; on?: string; skipReview?: boolean; meaningUnchanged?: boolean; contractChange?: string; ref?: boolean; roster?: string; storyline?: string },
     ) => {
+      if (isBatchRequest("em slice ratify", sliceKeys, opts.storyline, opts)) {
+        return batchAction({ kind: "ratify", file, keys: sliceKeys, storyline: opts.storyline, by: opts.by, on: opts.on, roster: opts.roster, skipReview: opts.skipReview, noRef: opts.ref === false });
+      }
+      let sliceKey = sliceKeys[0];
       // commander: `--no-ref` sets `opts.ref === false`; unset leaves it undefined (ref recorded).
       const noRef = opts.ref === false;
       const flags = parseMeaningFlags(opts.meaningUnchanged, opts.contractChange);
@@ -1286,7 +1345,7 @@ slice
         console.error(`em slice ratify: ${flags.message}`);
         process.exit(1);
       }
-      const { model, refs, diagnostics, source } = compileFile(file);
+      const { model, refs, diagnostics } = compileFile(file);
       printDiagnostics(diagnostics);
       sliceKey = resolveSliceOrExit("em slice ratify", model, refs, sliceKey);
 
@@ -1351,7 +1410,6 @@ slice
               (noRef ? " — ratifiedHash only, no ratifiedRef (--no-ref)" : "")
           : `already ratified (no-op): ${result.path}`,
       );
-      warnModelVersionDrift(dirname(file), model, refs, source, `ratifying "${sliceKey}"`);
     },
   );
 
@@ -1430,7 +1488,7 @@ function reviseAction(commandName: "revise" | "reratify") {
           "API-first confirmation belongs to the ratification of the new version (`em slice ratify --by ... --meaning-unchanged`)",
       );
     }
-    const { model, refs, diagnostics, source } = compileFile(file);
+    const { model, refs, diagnostics } = compileFile(file);
     printDiagnostics(diagnostics);
     sliceKey = resolveSliceOrExit(`em slice ${commandName}`, model, refs, sliceKey);
 
@@ -1480,7 +1538,6 @@ function reviseAction(commandName: "revise" | "reratify") {
     console.log(`revised: ${result.path} (status: draft, version: ${result.newVersion} — ${what})`);
     if (result.reopened > 0) console.log(`re-opened ${result.reopened} deferred question(s)`);
     if (result.injected > 0) console.log(`injected ${result.injected} queued question(s) into Open Questions (queue cleared)`);
-    warnModelVersionDrift(dirname(file), model, refs, source, `revising "${sliceKey}"`);
   };
 }
 
@@ -1795,19 +1852,6 @@ function writeStateUpdate(dirOrFile: string, cmdLabel: string, mutate: (text: st
   console.log(`wrote ${loaded.path}`);
 }
 
-/** MIL-218 ruling C: the one-line advisory `em slice ratify`/`reratify` print when the write
- *  they just made pushed the slice-version vector (or, in principle, the `.em` content hash —
- *  never true for these two commands, which only ever edit a slice doc's frontmatter, but
- *  checked anyway so this helper stays the one true predicate) past the last bumped design
- *  version. Silent when no manifest exists at all (`drift.current === null`) — a repo that
- *  never bumped a design version has nothing to be stale against, same silence
- *  `model-version-stale` (rules.ts) holds. Never refuses; advisory only. */
-function warnModelVersionDrift(baseDir: string, model: NormalizedModel, refs: RefsResult, source: string, cmdLabel: string): void {
-  const drift = modelVersionDrift(baseDir, model, refs, source);
-  if (drift.current === null || (!drift.hashChanged && drift.slicesChanged.length === 0)) return;
-  console.error(`warn: ${cmdLabel} moved the model past v${drift.current} — run \`em model version bump\` to record it`);
-}
-
 const state = program
   .command("state")
   .description("read/write the state file's mechanical fields deterministically (see docs/cli.md)");
@@ -1859,7 +1903,11 @@ state
   .argument("[dir]", STATE_DIR_HELP, ".")
   .requiredOption("--report <path>", "path to the conformance report just written")
   .option("--partial", "record the marker as PARTIAL even though some in-scope findings are still unruled")
-  .action((revision: string, dir: string, opts: { report: string; partial?: boolean }) => {
+  .option(
+    "--by <name>",
+    "the bumper's name — required only when a full run must bump the design version first (none yet, or the model moved since); ignored when the current version is fresh",
+  )
+  .action((revision: string, dir: string, opts: { report: string; partial?: boolean; by?: string }) => {
     const loaded = loadStateFile(dir);
     if (!loaded.ok) {
       console.error(loaded.message);
@@ -1887,7 +1935,7 @@ state
       if (!hasErrors(compiled.diagnostics)) {
         const { facts } = resolveSliceDocFacts(compiled.model, compiled.refs, modelDir);
         inScope = new Set(facts.filter((f) => f.shipped).map((f) => f.key));
-        compiledForCertify = { model: compiled.model, refs: compiled.refs, source: compiled.source };
+        compiledForCertify = { model: compiled.model, refs: compiled.refs, source: compiled.hashSource };
       }
     }
 
@@ -1934,7 +1982,40 @@ state
     // rather than blocking the conformance marker on an unrelated model problem — `em validate`
     // is where that problem gets its own diagnostic.
     let certifiedVersion: number | null = null;
+    let bumpedVersion: number | null = null;
     if (!recordPartial && compiledForCertify) {
+      // GH #498: a missing or stale design version is bumped here, through the same
+      // `runModelVersionBump` `em model version bump` uses, then certified. Needs --by; refuses
+      // (nothing written) without it. A fresh current version never needs --by.
+      const drift = modelVersionDrift(modelDir, compiledForCertify.model, compiledForCertify.refs, compiledForCertify.source);
+      const needsBump = drift.current === null || drift.hashChanged || drift.slicesChanged.length > 0;
+      if (needsBump) {
+        const by = opts.by?.trim() ?? "";
+        if (!by) {
+          console.error(
+            `em state set-conformance: ${drift.current === null ? "no design version exists yet" : `the model moved past v${drift.current}`} — ` +
+              "pass --by <name> so this run can bump the design version before certifying it",
+          );
+          process.exit(1);
+        }
+        const bumped = runModelVersionBump(
+          modelDir,
+          basename(modelFile),
+          compiledForCertify.model,
+          compiledForCertify.refs,
+          compiledForCertify.source,
+          by,
+          today,
+          GENERATOR_VERSION,
+          false,
+        );
+        if (!bumped.ok) {
+          console.error(`em state set-conformance: ${bumped.message}`);
+          process.exit(1);
+        }
+        bumpedVersion = bumped.version;
+        console.log(`bumped: ${bumped.path} (v${bumped.version})`);
+      }
       const readFiles = findingsFilesOf(resolved);
       const findingsPath = readFiles ? readFiles.map((f) => f.path).join(", ") : null;
       const certifyResult = runCertifyModelVersion(
@@ -1948,6 +2029,8 @@ state
         findingsPath,
       );
       if (!certifyResult.ok) {
+        // No half state: take back the manifest this run just bumped.
+        if (bumpedVersion !== null) rmSync(modelVersionManifestPath(modelDir, bumpedVersion), { force: true });
         console.error(`em state set-conformance: ${certifyResult.message}`);
         process.exit(1);
       }
@@ -1955,10 +2038,19 @@ state
       console.log(`certified: ${certifyResult.path} (v${certifyResult.version} @ ${revision})`);
     }
 
-    writeStateUpdate(dir, "em state set-conformance", (text, t) => setConformance(text, revision, opts.report, t, recordPartial), today);
-    if (certifiedVersion !== null) {
-      writeStateUpdate(dir, "em state set-conformance", (text, t) => setCertified(text, certifiedVersion!, revision, t, t), today);
-    }
+    // One state-file write: `Model version:` (only when bumped), `Last conformance:`, `Certified:`.
+    writeStateUpdate(
+      dir,
+      "em state set-conformance",
+      (text, t) => {
+        let r: PatchResult = { ok: true, text };
+        if (bumpedVersion !== null) r = setModelVersion(text, bumpedVersion, t);
+        if (r.ok) r = setConformance(r.text, revision, opts.report, t, recordPartial);
+        if (r.ok && certifiedVersion !== null) r = setCertified(r.text, certifiedVersion, revision, t, t);
+        return r;
+      },
+      today,
+    );
   });
 
 state
@@ -4139,7 +4231,14 @@ skill
     const agents = vendoredPresent
       ? checkAgentFiles(packagedAgentsRoot(), dirs.agentsRoot, EM_AGENT_FILES)
       : { findings: [], ok: true };
-    const findings = [...vendored.findings, ...agents.findings, ...(pluginCheck?.findings ?? [])];
+    // GH #298: the mise.toml pin of the em CLI, when one is declared (a repo without it is unchanged).
+    const miseCheck = checkMisePin(resolve(path), PKG_VERSION, pluginCheck?.plugin ?? null);
+    const findings = [
+      ...vendored.findings,
+      ...agents.findings,
+      ...(pluginCheck?.findings ?? []),
+      ...(miseCheck?.finding ? [miseCheck.finding] : []),
+    ];
     const failing = findings.filter((f) => f.code !== "plugin-not-installed-locally" || ciMode);
     const ok = failing.length === 0;
     const result = { findings, ok };
@@ -4161,6 +4260,7 @@ skill
               (unregistered ? " (not registered on this machine - see the install commands on stderr)" : ""),
           );
         }
+        if (miseCheck) console.log(`ok — mise pin (${miseCheck.pin.version}) matches`);
       }
     }
 

@@ -92,7 +92,7 @@ directly and never trusts a possibly-stale bullet.
 | Question | Answer via |
 |---|---|
 | "What's the current design version, and has it been certified?" | `em model version show <model>.em [--json]` |
-| "Has the vector moved since the last bump?" | `em status --json`'s `modelVersion[]`, `em validate`'s `model-version-stale` warning (silent when no manifest exists at all), or the `warn:` line `em slice ratify`/`reratify` print |
+| "Has the vector moved since the last bump?" | `em status --json`'s `modelVersion[]`, `em validate`'s `model-version-stale` warning (silent when no manifest exists at all) (a full `em state set-conformance --by <name>` bumps it for you; `ratify`/`revise` no longer warn since 1.23.0) |
 | "What did version N look like?" | `model-versions/vN.json` directly |
 | Programmatic / cross-tool | `em export`'s `model.version: { design, certified: { version, at, on } | null }` |
 
