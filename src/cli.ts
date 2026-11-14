@@ -127,7 +127,7 @@ import { runSliceIndex } from "./cli/sliceIndex.js";
 import { formatNextDraftNotice, runMarkImplemented } from "./cli/markImplemented.js";
 import { runRatify, parseMeaningFlags, meaningConfirmationLine, MeaningConfirmation } from "./cli/ratify.js";
 import { runReview } from "./cli/review.js";
-import { runConformSupersede } from "./cli/conformSupersede.js";
+import { certifyRuledSlices, runConformSupersede } from "./cli/conformSupersede.js";
 import { buildConformScope, changedPathsSince, resolveSliceDocFacts, seedAsisModel, SliceDocFacts } from "./cli/conformScope.js";
 import { buildSliceDocContent, buildStubDocContent, isSlicePattern, sliceDocKey, SLICE_PATTERNS } from "./cli/sliceNew.js";
 import { buildSliceSyncJson, formatSliceSync, runSliceSync, sliceSyncFailed } from "./cli/sliceSync.js";
@@ -2127,7 +2127,10 @@ program
       "ruling itself — locus/resolvedBy/resolvedOn — on the findings named by --findings in the " +
       "sibling conformance/<date>-findings.json, when one exists (refuses, naming them, when only " +
       "other findings files exist at the report's revision; warns once and stamps the " +
-      "banner only when it doesn't — the migration path for a report predating em conform-findings)",
+      "banner only when it doesn't — the migration path for a report predating em conform-findings). " +
+      "GH #497: when a ruling leaves a shipped slice with no unruled in-scope finding, that slice is " +
+      "certified in the same run (conformedVersion/conformedAt/conformedOn, at --as-of) — one " +
+      "`certified:` line per slice; em slice conform stays for the no-findings case and re-runs",
   )
   .argument("<file>", "input .em file (used only to resolve the report path's base directory)")
   .argument("<report-path>", "path to the conformance report, relative to the model's directory")
@@ -2172,6 +2175,29 @@ program
         ? `stamped superseded: ${result.path} (as of ${opts.asOf}, findings ${opts.findings}, on ${on})`
         : `already stamped (no-op): ${result.path}`,
     );
+
+    // GH #497: ruling the last in-scope finding of a shipped slice certifies it in the same run —
+    // `em slice conform`'s own gate decides, so nothing is certified while findings remain unruled.
+    if (result.findingsRuling.kind === "applied" && result.findingsRuling.slices.length > 0) {
+      let compiled: ReturnType<typeof compileFile> | null = null;
+      try {
+        compiled = compileFile(file, {}, { survive: true });
+      } catch (e) {
+        console.error(`warn: not auto-certifying — ${(e as Error).message}; run \`em slice conform\` once the model compiles`);
+      }
+      if (compiled) {
+        const { model, refs, diagnostics } = compiled;
+        const ruledSlices = {
+          ...result.findingsRuling,
+          slices: result.findingsRuling.slices.filter(
+            (s) => !diagnostics.some((d) => d.severity === "error" && d.refs?.some((r) => r === s || r.startsWith(`${s}/`))),
+          ),
+        };
+        for (const c of certifyRuledSlices(model, refs, dirname(file), ruledSlices, opts.asOf, on)) {
+          console.log(`certified: ${c.path} (conformedVersion: ${c.version}, conformedAt: ${c.at}, conformedOn: ${c.on}) — last in-scope finding ruled`);
+        }
+      }
+    }
   });
 
 const conformFindings = program.command("conform-findings").description("read-only checks for the conformance findings record (MIL-214)");
