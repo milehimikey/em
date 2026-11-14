@@ -5,7 +5,8 @@
 // formattable/parseable (markdown assembly, decisions parsing) lives in
 // ../emit/changelog.ts, unit-tested without git.
 
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { storylineModelFiles } from "../catalog/docLocate.js";
 import { GitRunner, realGit } from "./diff-inputs.js";
 
 export interface CommitInfo {
@@ -115,6 +116,47 @@ export function listModelCommits(
       commits.push({ hash, shortHash, date, subject: subjectParts.join(FS), path: relPath });
     } else if (commits.length > 0) {
       commits[commits.length - 1].path = line;
+    }
+  }
+  // GH #475: a storyline model's history is also the history of its storyline files. A commit
+  // that changed only one of them never shows in the root file's log, so those are added here,
+  // in history order, each read at the root's path as of that commit.
+  const storylineFiles = storylineModelFiles(dirname(abs));
+  if (storylineFiles.length > 0) {
+    const more = runGit([
+      "-C",
+      repoRoot,
+      "-c",
+      "core.quotepath=false",
+      "log",
+      `--format=%H${FS}%h${FS}%ad${FS}%s`,
+      "--date=short",
+      range,
+      "--",
+      relPath,
+      ...storylineFiles.map((f) => join(dirname(abs), f)),
+    ]);
+    if (more.status === 0) {
+      const byHash = new Map(commits.map((c) => [c.hash, c]));
+      const merged: CommitInfo[] = [];
+      for (const line of more.stdout.split("\n")) {
+        if (!line.includes(FS)) continue;
+        const [hash, shortHash, date, ...subjectParts] = line.split(FS);
+        merged.push(byHash.get(hash) ?? { hash, shortHash, date, subject: subjectParts.join(FS), path: "" });
+        byHash.delete(hash);
+      }
+      // Root-file commits the second walk did not list (before a rename of the root) are older
+      // than everything it did list.
+      merged.push(...commits.filter((c) => byHash.has(c.hash)));
+      // Newest first: a commit that did not touch the root reads it at the path of the nearest
+      // older commit that did (or the current path when there is none).
+      let known = relPath;
+      for (let i = merged.length - 1; i >= 0; i--) {
+        if (merged[i].path === "") merged[i].path = known;
+        else known = merged[i].path;
+      }
+      commits.length = 0;
+      commits.push(...merged);
     }
   }
   commits.reverse(); // git log is newest-first; changelog building wants oldest->newest

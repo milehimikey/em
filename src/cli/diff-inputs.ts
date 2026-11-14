@@ -7,6 +7,8 @@
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseSliceDoc, SliceDoc } from "../catalog/sliceDoc.js";
+import { stripComment } from "../parser/lexer.js";
+import { docFolders } from "../catalog/docLocate.js";
 
 /** Resolved `em diff` invocation, or a user-facing `error` for an invalid form. */
 export type DiffPlan =
@@ -132,9 +134,72 @@ export function gitSourceReader(rootFile: string, rev: string, runGit: GitRunner
  * annotate with" rather than aborting the diff.
  */
 export function resolveDocAtRevision(anchorFile: string, sliceKey: string, rev: string, runGit: GitRunner = realGit): SliceDoc | null {
-  const targetAbs = resolve(dirname(resolve(anchorFile)), "slices", `${sliceKey}.md`);
+  const baseDirAbs = dirname(resolve(anchorFile));
+  const targetAbs = resolve(baseDirAbs, "slices", `${sliceKey}.md`);
   const result = showAtRevision(runGit, anchorFile, targetAbs, rev);
-  return result.ok ? parseSliceDoc(result.content) : null;
+  if (result.ok) return parseSliceDoc(result.content);
+  // GH #421: a storyline model's docs live in `<storyline folder>/slices/`. Root first, like
+  // `locateDoc` on disk.
+  const rel = storylineDocsAtRevision(runGit, baseDirAbs, rev).get(sliceKey);
+  if (rel === undefined) return null;
+  const show = runGit(["-C", baseDirAbs, "show", `${rev}:./${rel}`]);
+  return show.status === 0 ? parseSliceDoc(show.stdout) : null;
+}
+
+/** One listing per (git runner, model directory, revision): `em ledger` asks once per slice key. */
+const storylineDocsCache = new WeakMap<GitRunner, Map<string, Map<string, string>>>();
+
+/**
+ * Slice docs kept in storyline folders at git revision `rev`: slice key -> path relative to the
+ * root model's directory (`<dir>/slices/<key>.md`). A folder counts when, at that revision, it
+ * holds a `.em` file whose first significant line is a `storyline "…"` header with no `{` — the
+ * same test `docFolders` applies on disk, so a sibling model's `slices/` is never read as this
+ * model's. Empty when git cannot list the revision, or when the model has no storyline folder on
+ * disk.
+ */
+function storylineDocsAtRevision(runGit: GitRunner, baseDirAbs: string, rev: string): Map<string, string> {
+  let perRunner = storylineDocsCache.get(runGit);
+  if (!perRunner) storylineDocsCache.set(runGit, (perRunner = new Map()));
+  const cacheKey = `${baseDirAbs}\u0000${rev}`;
+  const cached = perRunner.get(cacheKey);
+  if (cached) return cached;
+  const out = new Map<string, string>();
+  perRunner.set(cacheKey, out);
+  // Only a model that has storyline folders today is asked about them at a revision: a root-only
+  // model makes no extra git call.
+  if (docFolders(baseDirAbs).length <= 1) return out;
+  const ls = runGit(["-C", baseDirAbs, "ls-tree", "-r", "--name-only", rev]);
+  if (ls.status !== 0 || typeof ls.stdout !== "string") return out;
+  const names = ls.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const emByDir = new Map<string, string[]>();
+  for (const n of names) {
+    const m = /^([^/]+)\/[^/]+\.em$/.exec(n);
+    if (m) emByDir.set(m[1], [...(emByDir.get(m[1]) ?? []), n]);
+  }
+  const isStoryline = new Map<string, boolean>();
+  const storylineDir = (dir: string): boolean => {
+    const known = isStoryline.get(dir);
+    if (known !== undefined) return known;
+    let yes = false;
+    for (const em of emByDir.get(dir) ?? []) {
+      const show = runGit(["-C", baseDirAbs, "show", `${rev}:./${em}`]);
+      if (show.status !== 0 || typeof show.stdout !== "string") continue;
+      const first = show.stdout.split(/\r?\n/).map((l) => stripComment(l).trim()).find((l) => l.length > 0);
+      if (first && /^storyline\b/.test(first) && !first.includes("{")) {
+        yes = true;
+        break;
+      }
+    }
+    isStoryline.set(dir, yes);
+    return yes;
+  };
+  for (const n of names.sort()) {
+    const m = /^([^/]+)\/slices\/([^/]+)\.md$/.exec(n);
+    if (!m || m[1] === "slices" || m[1].startsWith(".")) continue;
+    if (!storylineDir(m[1])) continue;
+    if (!out.has(m[2])) out.set(m[2], n);
+  }
+  return out;
 }
 
 /**
@@ -152,10 +217,15 @@ export function listSliceKeysAtRevision(anchorFile: string, rev: string, runGit:
   const repoRoot = toplevel.stdout.trim();
   const slicesDirAbs = resolve(dirname(resolve(anchorFile)), "slices");
   const lsTree = runGit(["-C", repoRoot, "ls-tree", "-r", "--name-only", rev, "--", slicesDirAbs]);
-  if (lsTree.status !== 0) return [];
-  return lsTree.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.endsWith(".md"))
-    .map((line) => basename(line, ".md"));
+  const rootKeys =
+    lsTree.status !== 0
+      ? []
+      : lsTree.stdout
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.endsWith(".md"))
+          .map((line) => basename(line, ".md"));
+  // GH #421: plus every doc in a storyline folder at that revision.
+  const storylineKeys = [...storylineDocsAtRevision(runGit, dirname(resolve(anchorFile)), rev).keys()];
+  return [...new Set([...rootKeys, ...storylineKeys])];
 }

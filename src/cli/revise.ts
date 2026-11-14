@@ -145,7 +145,7 @@ export function applyReviseFrontmatter(raw: string, opts: ReviseOptions = {}): A
         "doc is ratified and has never shipped — revising it would withdraw the ratification of the only implementable " +
         "version. To record a question found mid-build, defer it instead (the ratification stays valid): " +
         '`em slice defer <model> <key> "<question>" --until v<n> --decision "<what this version does>"`. ' +
-        "If the spec itself must change, pass --withdraw to open the next version as a draft",
+        "If the spec itself must change, pass --withdraw to reopen it as a draft at the same version",
     };
   }
   if (currentStatus === RATIFIED_STATUS && hasRatifiedBy && !hasShipped) {

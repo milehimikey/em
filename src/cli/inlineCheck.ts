@@ -24,6 +24,7 @@ import { STATE_FILE_NAME } from "./stateFile.js";
 import { modelForPath } from "../system/scope.js";
 import { EffectivePolicy } from "../policy/policy.js";
 import { POLICY_FILE, ROSTER_FILE } from "../roster/roster.js";
+import { docFolders } from "../catalog/docLocate.js";
 
 export const INLINE_CODE = "slice-ratified-inline";
 export type InlineReason = "public-touching" | "policy-never";
@@ -56,19 +57,27 @@ export interface InlineCheckResult {
 
 export type InlineCheckOutcome = { ok: true; result: InlineCheckResult } | { ok: false; message: string };
 
-const MODEL_SUBDIRS = new Set(["slices", "contracts", "model-versions", "conformance"]);
+const MODEL_SUBDIRS = new Set(["slices", "contracts", "model-versions", "conformance", "storylines", "engagements"]);
 
-/** Is `repoPath` model material rather than implementation code? Under the model directory
- *  (`modelDir`, repo-relative, "" = repo root) AND one of: an entry of `slices/` `contracts/`
- *  `model-versions/` `conformance/`, a `.em` file, or the `.event-modeling.md` state file.
- *  Containment is `em system scope`'s own (`modelForPath`). */
-export function isModelMaterial(repoPath: string, modelDir: string): boolean {
-  // The process files that govern the model (policy, roster) are not implementation either, wherever they sit.
+/** Is `repoPath` model or process material rather than implementation code?
+ *  - anywhere in the repo: the policy and roster files, any Markdown or SVG file (docs and rendered
+ *    diagrams are never the implementation), and the workflows `em ci init` generates
+ *    (`.github/workflows/em-*.yml`);
+ *  - under the model directory (`modelDir`, repo-relative, "" = repo root; containment is
+ *    `em system scope`'s own `modelForPath`): a `.em` file, the `.event-modeling.md` state file,
+ *    and anything inside `slices/` `contracts/` `model-versions/` `conformance/` `storylines/`
+ *    `engagements/`, at the model root or inside a storyline model's folder (`storylineDirs`, the
+ *    folder names under the model directory, GH #421). */
+export function isModelMaterial(repoPath: string, modelDir: string, storylineDirs: ReadonlySet<string> = new Set()): boolean {
   if (basename(repoPath) === POLICY_FILE || basename(repoPath) === ROSTER_FILE) return true;
+  const lower = repoPath.toLowerCase();
+  if (lower.endsWith(".md") || lower.endsWith(".svg")) return true;
+  if (/^\.github\/workflows\/em-[^/]+\.ya?ml$/.test(repoPath)) return true;
   if (modelForPath([{ key: "m", dir: modelDir }], repoPath) === null) return false;
   const rest = modelDir === "" ? repoPath : repoPath.slice(modelDir.length + 1);
-  const first = rest.split("/")[0];
-  return (rest.includes("/") && MODEL_SUBDIRS.has(first)) || rest.toLowerCase().endsWith(".em") || basename(rest) === STATE_FILE_NAME;
+  const segments = rest.split("/");
+  const inModelSubdir = segments.length > 1 && (MODEL_SUBDIRS.has(segments[0]) || (segments.length > 2 && storylineDirs.has(segments[0]) && MODEL_SUBDIRS.has(segments[1])));
+  return inModelSubdir || lower.endsWith(".em") || basename(rest) === STATE_FILE_NAME;
 }
 
 export function checkInlineRatification(
@@ -93,7 +102,8 @@ export function checkInlineRatification(
   if (!changed.ok) return { ok: false, message: changed.message };
   const modelDirRaw = relative(changed.repoRoot, realpathSync(resolve(baseDir))).split("\\").join("/");
   const modelDir = modelDirRaw === "." ? "" : modelDirRaw;
-  const codePaths = entryPaths(changed.entries).filter((p) => !isModelMaterial(p, modelDir));
+  const storylineDirs = new Set(docFolders(baseDir).filter((f) => f !== "").map((f) => f.replace(/\/$/, "")));
+  const codePaths = entryPaths(changed.entries).filter((p) => !isModelMaterial(p, modelDir, storylineDirs));
 
   const ratified: string[] = [];
   const findings: InlineFinding[] = [];
@@ -109,7 +119,17 @@ export function checkInlineRatification(
     const repoPath = modelDir === "" ? path : `${modelDir}/${path}`;
     const shown = git(["show", `${mergeBase}:${repoPath}`]);
     const before = shown.status === 0 ? parseSliceDoc(shown.stdout) : null;
-    if (before !== null && before.ratifiedHash === head.ratifiedHash) return;
+    // Unchanged sign-off: same body hash, same signer, date and version. A doc withdrawn and
+    // signed again over the same text keeps its hash, so the hash alone does not show it.
+    if (
+      before !== null &&
+      before.ratifiedHash === head.ratifiedHash &&
+      before.ratifiedBy === head.ratifiedBy &&
+      before.ratifiedOn === head.ratifiedOn &&
+      before.version === head.version
+    ) {
+      return;
+    }
     // An `em slice amend` re-sign is not a ratification: the sign-off (who, when, which version)
     // is unchanged and only the amendment record moved. Slate ruling R3 sends a prose amendment
     // of an unshipped slice into the implementation PR, so it must not be reported here.

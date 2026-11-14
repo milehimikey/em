@@ -1178,7 +1178,7 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("[slice-key...]", "slice export key (kebab-case); two or more keys review them as one all-or-nothing batch (GH #491)")
-  .option("--storyline <name>", "review every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys")
+  .option("--storyline <name>", "review this storyline's own slices that are not yet ratified as one all-or-nothing batch (GH #491); a slice whose doc belongs to another storyline, or that shipped with no version open, is left out and named; not with slice keys")
   .requiredOption("--by <name>", "the reviewer's (or facilitator's) name")
   .option("--on <date>", "review date, YYYY-MM-DD (default: today, local date)")
   .option("--roster <path>", "optional ratifier roster to check --by against (GH #259; default: the nearest em-policy.yaml with a roster above the model, else a legacy ratifiers.yaml; none = no check, the git host decides who may approve; either file may be named)")
@@ -1309,7 +1309,7 @@ slice
   )
   .argument("<file>", "input .em file")
   .argument("[slice-key...]", "slice export key (kebab-case); two or more keys ratify them as one all-or-nothing batch (GH #491)")
-  .option("--storyline <name>", "ratify every slice of this storyline as one all-or-nothing batch (GH #491; resolves as `em engagement new --storyline` does); not with slice keys; a public-touching slice is refused from a batch")
+  .option("--storyline <name>", "ratify this storyline's own slices that are not yet ratified as one all-or-nothing batch (GH #491); a slice whose doc belongs to another storyline, or that has nothing to sign, is left out and named; not with slice keys; a public-touching slice is refused from a batch")
   .requiredOption("--by <name>", "the ratifier's name")
   .option(
     "--no-ref",

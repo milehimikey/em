@@ -24,6 +24,7 @@
 
 import { existsSync, readFileSync, readdirSync, realpathSync, rmSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { locateDoc } from "../catalog/docLocate.js";
 import { findFileAbove, findRosterAbove, GRANDFATHERED_RATIFIER, parseRoster, POLICY_FILE, ROSTER_FILE } from "../roster/roster.js";
 import { parsePolicy, POLICY_SCHEMA_VERSION } from "../policy/policy.js";
 import { NormalizedModel, PUBLIC_SCALAR_TYPE_NAMES } from "../model/model.js";
@@ -70,7 +71,6 @@ import { applyDeferOrAppend, drainQueueInState, finishSignedDocEdit, isSignedDoc
 import { runSliceSync } from "./sliceSync.js";
 import { runSliceIndex } from "./sliceIndex.js";
 import { planCollapseAlternativeEvents, planFoldContinuations, planStackContinuations } from "./upgradeReshape.js";
-import { observeSigners } from "../roster/init.js";
 import { STATE_FILE_NAME } from "./stateFile.js";
 import { localIsoDate } from "../util/localDate.js";
 import { compile, compileModelFile, compileModelText } from "../pipeline.js";
@@ -626,7 +626,7 @@ function applyRatifiedSignoff(ctx: UpgradeContext): StepApplyOutcome {
   const today = localIsoDate();
   const writes: Array<{ file: string; text: string }> = [];
   for (const c of candidates) {
-    const file = join(ctx.baseDir, c.path);
+    const file = docFile(ctx, c.path);
     const next = applyGrandfatherSignoff(readFileSync(file, "utf8"), today);
     if (next === null) return { ok: false, message: `${c.path}: could not locate status: in the frontmatter` };
     writes.push({ file, text: next });
@@ -657,13 +657,19 @@ interface HashScopeCandidate {
   scope: RatifiedHashScope;
 }
 
+/** Absolute path of a slice doc. The doc join reports `slices/<key>.md`; in a storyline model the
+ *  file lives under the storyline's folder, so every read and write goes through the locator. */
+function docFile(ctx: UpgradeContext, relPath: string): string {
+  return locateDoc(ctx.baseDir, relPath) ?? join(ctx.baseDir, relPath);
+}
+
 function hashScopeCandidates(ctx: UpgradeContext): HashScopeCandidate[] {
   const seen = new Set<string>();
   const out: HashScopeCandidate[] = [];
   for (const d of nonContinuationDocs(ctx)) {
     if (d.ratifiedHash === null || seen.has(d.path)) continue;
     seen.add(d.path);
-    const file = join(ctx.baseDir, d.path);
+    const file = docFile(ctx, d.path);
     if (!existsSync(file)) continue;
     out.push({ key: d.key, path: d.path, version: d.version, scope: ratifiedHashScope(readFileSync(file, "utf8"), d.ratifiedHash) });
   }
@@ -712,7 +718,7 @@ function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
   const current = (path: string): string => touched.get(path) ?? readFileSync(path, "utf8");
   // Queue first, on the doc as read: `finishSignedDocEdit` re-stamps an old-scope hash itself.
   for (const q of queued) {
-    const file = join(ctx.baseDir, q.path);
+    const file = docFile(ctx, q.path);
     let content = current(file);
     const before = content;
     for (const item of q.items) {
@@ -735,7 +741,7 @@ function applyRatifiedHashScope(ctx: UpgradeContext): StepApplyOutcome {
     oldScope.delete(q.path);
   }
   for (const path of oldScope) {
-    const file = join(ctx.baseDir, path);
+    const file = docFile(ctx, path);
     const raw = current(file);
     const next = replaceFieldValue(raw, "ratifiedHash", sliceDocBodyHash(raw));
     if (next === null) return { ok: false, message: `${path}: could not locate ratifiedHash: in the frontmatter` };
@@ -801,7 +807,7 @@ function signedDocsStaleAfter(ctx: UpgradeContext, nextText: string): string[] {
     const r = runSliceSync(c.model, c.refs, ctx.baseDir, undefined, true);
     if (!r.ok) return out;
     for (const d of r.docs) {
-      if (d.status === "stale" && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8"))) {
+      if (d.status === "stale" && isSignedDoc(readFileSync(docFile(ctx, d.path), "utf8"))) {
         out.set(d.path, d.regions.filter((g) => g.status === "stale").map((g) => g.name));
       }
     }
@@ -1065,7 +1071,7 @@ function applyViewDocSourcesStale(ctx: UpgradeContext): StepApplyOutcome {
     if (!r.ok) return { ok: false, message: r.message };
     const bad = r.docs.find((x) => x.status === "malformed");
     if (bad) return { ok: false, message: `${bad.path}: em slice sync could not rewrite it — ${bad.problems.join("; ")}` };
-    changedFiles.push(join(ctx.baseDir, d.path));
+    changedFiles.push(docFile(ctx, d.path));
   }
   return { ok: true, changedFiles };
 }
@@ -1090,7 +1096,7 @@ function applySliceIndexStale(ctx: UpgradeContext): StepApplyOutcome {
 function parkingLotDocs(ctx: UpgradeContext): Map<string, string> {
   const docs = new Map<string, string>();
   for (const d of nonContinuationDocs(ctx)) {
-    const file = join(ctx.baseDir, d.path);
+    const file = docFile(ctx, d.path);
     if (d.path !== "" && existsSync(file)) docs.set(d.key, readFileSync(file, "utf8"));
   }
   return docs;
@@ -1213,7 +1219,7 @@ function sectionStampCandidates(ctx: UpgradeContext): { stamp: string[]; edited:
   const stamp: string[] = [];
   const edited: string[] = [];
   for (const c of hashScopeCandidates(ctx)) {
-    const raw = readFileSync(join(ctx.baseDir, c.path), "utf8");
+    const raw = readFileSync(docFile(ctx, c.path), "utf8");
     if (recordedSectionHashes(raw) !== null) continue;
     (c.scope === "mismatch" ? edited : stamp).push(c.key);
   }
@@ -1236,7 +1242,7 @@ function applyRatifiedSections(ctx: UpgradeContext): StepApplyOutcome {
   const writes: Array<{ file: string; text: string }> = [];
   for (const c of hashScopeCandidates(ctx)) {
     if (!keys.has(c.key)) continue;
-    const file = join(ctx.baseDir, c.path);
+    const file = docFile(ctx, c.path);
     const raw = readFileSync(file, "utf8");
     const next = insertLineAfterField(raw, "ratifiedHash", `ratifiedSections: ${ratifiedSectionsValue(raw)}`);
     if (next === null) return { ok: false, message: `${c.path}: could not locate ratifiedHash: in the frontmatter` };
@@ -1334,7 +1340,6 @@ export type HumanItemId =
   | "lineage-backlink-missing"
   | "fold-continuations-opt-in"
   | "shared-event-now-legal"
-  | "roster-not-initialised"
   | "api-contract-blocked"
   | "ci-paths-hand-edited";
 
@@ -1480,7 +1485,7 @@ function detectSliceDocStaleSigned(ctx: UpgradeContext): HumanItem | null {
   // A doc with a stale view region is `view-doc-sources-stale`'s — unless sync could not rewrite it
   // (`signatureRefused`), in which case that step fails on it and the human item must still name it.
   const docs = r.docs.filter(
-    (d) => d.status === "stale" && (!hasStaleViewRegion(d) || d.signatureRefused !== undefined) && isSignedDoc(readFileSync(join(ctx.baseDir, d.path), "utf8")),
+    (d) => d.status === "stale" && (!hasStaleViewRegion(d) || d.signatureRefused !== undefined) && isSignedDoc(readFileSync(docFile(ctx, d.path), "utf8")),
   );
   if (docs.length === 0) return null;
   return {
@@ -1535,17 +1540,9 @@ function recordedFromVersion(ctx: UpgradeContext): string {
   return resolveFromVersion(ctx, recorded).version;
 }
 
-/** GH #290 / #259: signatures are a human decision, so the roster is never generated silently. */
-function detectRosterNotInitialised(ctx: UpgradeContext): HumanItem | null {
-  if (findRosterAbove(ctx.baseDir) !== null) return null;
-  const { ratifiers } = observeSigners(ctx.model, ctx.refs, ctx.baseDir);
-  if (ratifiers.length === 0) return null;
-  return {
-    id: "roster-not-initialised",
-    reason: `${ratifiers.length} ratifier(s) have signed slice docs (${ratifiers.join(", ")}) and there is no roster (\`ratifiers:\` in em-policy.yaml) — decide who may sign, then run \`em roster init ${basename(ctx.modelFile)}\` to seed one from those names and review it before committing`,
-  };
-}
-
+// GH #495: the `roster-not-initialised` human item is retired. The git host decides who may
+// approve, the roster is opt-in, and an item that only a roster could clear would be listed on
+// every upgrade of a repo that chose not to have one.
 
 /** GH #290 / #279: information only. Since 1.18.0 the same event recorded by several commands (same
  *  name and context) is one logical event and `duplicate-name` no longer fires; nothing to change. */
@@ -1599,7 +1596,6 @@ const HUMAN_DETECTORS: ReadonlyArray<(ctx: UpgradeContext) => HumanItem | null> 
   detectLineageBacklinkMissing,
   detectFoldContinuationsOptIn,
   detectSharedEventNowLegal,
-  detectRosterNotInitialised,
   detectApiContractBlocked,
   detectCiPathsHandEdited,
 ];
